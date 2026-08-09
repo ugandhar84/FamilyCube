@@ -1,0 +1,28 @@
+{
+  "cli": {
+    "version": ">= 20.3.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {
+      "env": {
+        "LANG": "en_US.UTF-8",
+        "LC_ALL": "en_US.UTF-8"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6794719908"
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "PawBond",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--ios"],
+      "port": 8081
+    }
+  ]
+}

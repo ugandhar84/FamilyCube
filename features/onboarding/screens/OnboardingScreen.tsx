@@ -1,0 +1,349 @@
+import { useRef, useState, useEffect } from 'react';
+import { registerForPushNotifications } from '@/shared/services/notifications.service';
+import {
+  View, Text, StyleSheet, TouchableOpacity, Dimensions,
+  ScrollView, StatusBar, Image,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@/lib/ThemeContext';
+import {
+  IlloWelcome, IlloHealth, IlloReminders, IlloAIHealth,
+  IlloSocial, IlloAI, IlloGetStarted, IlloPlaydates,
+} from '@/features/onboarding/components/OnboardingIllos';
+import { TYPO } from '@/constants/theme';
+
+const { width, height } = Dimensions.get('window');
+
+// ─── Slide data ───────────────────────────────────────────────────────────────
+// ── Onboarding images ─────────────────────────────────────────────────────────
+// Replace each placeholder with your AI-generated 3D cartoon image.
+// Style guide for generation: warm Pixar/chibi 3D render, soft lighting,
+// intimate human-pet bond, vibrant but not garish. Portrait crop (9:16).
+// Drop the new PNG into assets/onboarding/ — no other code change needed.
+const IMG = {
+  // "3D cartoon child hugging dog/cat tightly, eyes closed, warm golden sunlight,
+  //  soft bokeh background, Pixar style, ultra detailed, emotional"
+  welcome:    require('../../../assets/onboarding/welcome.png'),
+
+  // "3D cartoon golden retriever looking up at owner with huge trusting eyes,
+  //  paw gently resting on owner's hand, soft clinic light, Pixar style"
+  health:     require('../../../assets/onboarding/health.jpeg'),
+
+  // "3D cartoon dog sitting alone by a front door, looking out hopefully,
+  //  soft morning light through window, warm tones, Pixar style, emotional"
+  reminders:  require('../../../assets/onboarding/reminders.jpeg'),
+
+  // "3D cartoon worried pet parent reading a vet document, small dog on lap
+  //  looking up reassuringly, warm lamp light, Pixar style, cozy but emotional"
+  records:    require('../../../assets/onboarding/records.jpeg'),
+
+  // "3D cartoon group of joyful people with their pets in a sunlit park,
+  //  dogs and cats, laughter, sense of belonging, Pixar style, warm afternoon"
+  community:  require('../../../assets/onboarding/community.jpeg'),
+
+  // "3D cartoon two dogs running freely through a flower field, pure unbridled
+  //  joy, blurred background, golden hour light, Pixar style, vibrant"
+  playdates:  require('../../../assets/onboarding/playdates.jpeg'),
+
+  // "3D cartoon cat/dog and owner sitting face to face, eye to eye, deep
+  //  connection, quiet moment, soft evening light, Pixar style, heartwarming"
+  mood:       require('../../../assets/onboarding/mood.jpeg'),
+
+  // "3D cartoon pet parent and dog walking together toward a glowing golden
+  //  sunset on a path, silhouette style but warm 3D, Pixar style, hopeful"
+  getstarted: require('../../../assets/onboarding/getstarted.jpeg'),
+};
+
+const SLIDES = [
+  {
+    key: 'welcome',
+    illustration: IlloWelcome,
+    image: IMG.welcome,
+    gradientColors: ['#B39DDB', '#D1C4F5'] as [string, string],
+    chip: 'For the love of your pet',
+    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#4527A0',
+    title: 'They only get\none life with you.',
+    sub: 'Every wag, every purr, every quiet moment — you are their whole world. Make it count.',
+    btnColor: '#7C5CBF',
+    btnLabel: "I'm ready",
+  },
+  {
+    key: 'health',
+    illustration: IlloHealth,
+    image: IMG.health,
+    gradientColors: ['#4DB6AC', '#80CBC4'] as [string, string],
+    chip: 'Their health, in your hands',
+    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#00695C',
+    title: 'They trust you\nwith their life.',
+    sub: 'They cannot tell you when something hurts. Vet visits, vaccines, daily health — never miss a thing.',
+    btnColor: '#14B8A6',
+    btnLabel: 'Next',
+  },
+  {
+    key: 'reminders',
+    illustration: IlloReminders,
+    image: IMG.reminders,
+    gradientColors: ['#FF8A65', '#FFAB91'] as [string, string],
+    chip: 'Never let them down',
+    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#BF360C',
+    title: 'They cannot\nremind you. But you can.',
+    sub: 'A missed pill, a forgotten shot — they never blame you. But you will always remember how it felt.',
+    btnColor: '#F4511E',
+    btnLabel: 'Next',
+  },
+  {
+    key: 'aihealth',
+    illustration: IlloAIHealth,
+    image: IMG.records,
+    gradientColors: ['#9575CD', '#B39DDB'] as [string, string],
+    chip: 'Understand everything',
+    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#4527A0',
+    title: 'What did the vet\nactually say?',
+    sub: 'Snap your report. AI reads every result, every medication — and tells you exactly what it means.',
+    btnColor: '#7C5CBF',
+    btnLabel: 'Next',
+  },
+  {
+    key: 'social',
+    illustration: IlloSocial,
+    image: IMG.community,
+    gradientColors: ['#FF7043', '#FF8A65'] as [string, string],
+    chip: 'You are not alone',
+    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#BF360C',
+    title: 'This love is too big\nto carry alone.',
+    sub: 'Share the joy, the worry, the milestones — with a community of pet parents who truly understand.',
+    btnColor: '#FF5722',
+    btnLabel: 'Next',
+  },
+  {
+    key: 'playdates',
+    illustration: IlloPlaydates,
+    image: IMG.playdates,
+    gradientColors: ['#FFA726', '#FFB74D'] as [string, string],
+    chip: 'Pure joy',
+    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#E65100',
+    title: 'Watch them run.\nWatch them shine.',
+    sub: 'The happiest version of your pet needs a friend too. Find them nearby, safely, in seconds.',
+    btnColor: '#FF8C55',
+    btnLabel: 'Next',
+  },
+  {
+    key: 'ai',
+    illustration: IlloAI,
+    image: IMG.mood,
+    gradientColors: ['#26A69A', '#4DB6AC'] as [string, string],
+    chip: 'They speak. Now listen.',
+    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#004D40',
+    title: 'They have been\ntelling you all along.',
+    sub: 'One photo. AI reads their mood, their feelings — so you always know how they truly are inside.',
+    btnColor: '#14B8A6',
+    btnLabel: 'Next',
+  },
+  {
+    key: 'getstarted',
+    illustration: IlloGetStarted,
+    image: IMG.getstarted,
+    gradientColors: ['#7E57C2', '#9575CD'] as [string, string],
+    chip: 'Begin the journey',
+    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#4527A0',
+    title: 'They gave you\ntheir whole heart.',
+    sub: '30 seconds to start. A lifetime of being the pet parent they always believed you were.',
+    btnColor: '#7C5CBF',
+    btnLabel: 'Begin',
+  },
+];
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export default function OnboardingScreen() {
+  const { colors, isDark } = useTheme();
+  const [index, setIndex] = useState(0);
+  const illoScrollRef  = useRef<ScrollView>(null);
+  const cardScrollRef  = useRef<ScrollView>(null);
+
+  const goTo = (i: number) => {
+    setIndex(i);
+    illoScrollRef.current?.scrollTo({ x: i * width, animated: true });
+    cardScrollRef.current?.scrollTo({ x: i * width, animated: true });
+  };
+
+  const handleNext = () => {
+    if (index < SLIDES.length - 1) {
+      // On the second-to-last slide (before the final CTA), silently request
+      // notification permission so the OS prompt appears at peak engagement.
+      if (index === SLIDES.length - 2) {
+        registerForPushNotifications().catch(() => {});
+      }
+      goTo(index + 1);
+    } else {
+      router.replace('/onboarding/terms');
+    }
+  };
+
+  const handleBack = () => { if (index > 0) goTo(index - 1); };
+
+  const slide = SLIDES[index];
+
+  return (
+    <View style={s.root}>
+      <StatusBar barStyle="light-content" />
+
+      {/* ── Full-bleed images — each fills the whole screen ── */}
+      <ScrollView
+        ref={illoScrollRef}
+        horizontal pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onMomentumScrollEnd={(e) => {
+          const i = Math.round(e.nativeEvent.contentOffset.x / width);
+          if (i !== index) {
+            setIndex(i);
+            cardScrollRef.current?.scrollTo({ x: i * width, animated: true });
+          }
+        }}
+        style={StyleSheet.absoluteFillObject}
+        scrollEnabled
+      >
+        {SLIDES.map((sl) => {
+          const Illo = sl.illustration;
+          return (
+            <View key={sl.key} style={{ width, height }}>
+              {sl.image
+                ? (
+                  /* Explicit width + natural aspect-ratio height anchored to top:
+                     no side cropping, no head cropping, image starts at top and
+                     extends downward — only the very bottom (behind text) is off-screen */
+                  <Image
+                    source={sl.image}
+                    style={{ position: 'absolute', top: 0, left: 0, width, height: width * (1024 / 472) }}
+                  />
+                )
+                : (
+                  <LinearGradient colors={sl.gradientColors} style={StyleSheet.absoluteFillObject}>
+                    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 }}>
+                      <Illo isDark={false} />
+                    </View>
+                  </LinearGradient>
+                )
+              }
+              {/* Gradient: starts at bottom of image zone, fades down to text area */}
+              <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.10)', 'rgba(0,0,0,0.65)', 'rgba(0,0,0,0.92)']}
+                locations={[0, 0.35, 0.68, 1]}
+                style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: height * 0.52 }}
+                pointerEvents="none"
+              />
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      {/* ── Skip / Back top bar ── */}
+      <SafeAreaView edges={['top']} style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
+        <View style={s.topBar}>
+          <TouchableOpacity
+            onPress={handleBack}
+            style={[s.floatBtn, { opacity: index === 0 ? 0 : 1 }]}
+            disabled={index === 0}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="chevron-back" size={20} color="#fff" />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }} />
+          {index < SLIDES.length - 1 && (
+            <TouchableOpacity onPress={() => router.replace('/onboarding/terms')} style={s.floatBtn}>
+              <Text style={s.skipTxt}>Skip</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </SafeAreaView>
+
+      {/* ── Text + CTA overlay — floats over image at the bottom ── */}
+      <SafeAreaView edges={['bottom']} style={s.overlay} pointerEvents="box-none">
+
+        {/* Dots */}
+        <View style={s.dots}>
+          {SLIDES.map((_, i) => (
+            <TouchableOpacity key={i} onPress={() => goTo(i)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+              <View style={[
+                s.dot,
+                i === index
+                  ? { width: 28, backgroundColor: slide.btnColor }
+                  : { width: 8, backgroundColor: 'rgba(255,255,255,0.35)' },
+              ]} />
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Swipeable copy */}
+        <ScrollView
+          ref={cardScrollRef}
+          horizontal pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={16}
+          scrollEnabled={false}
+          style={{ width }}
+        >
+          {SLIDES.map((sl) => (
+            <View key={sl.key} style={s.copyPanel}>
+              {/* Pill chip */}
+              <View style={[s.chip, { backgroundColor: sl.btnColor + 'CC' }]}>
+                <Text style={s.chipTxt}>{sl.chip}</Text>
+              </View>
+              {/* Title — always white over dark gradient */}
+              <Text style={s.title}>{sl.title}</Text>
+              {/* Subtitle */}
+              <Text style={s.sub}>{sl.sub}</Text>
+            </View>
+          ))}
+        </ScrollView>
+
+        {/* CTA row */}
+        <View style={s.ctaRow}>
+          <TouchableOpacity
+            onPress={handleBack}
+            style={[s.backCircle, { opacity: index === 0 ? 0 : 1 }]}
+            disabled={index === 0}>
+            <Ionicons name="arrow-back" size={20} color="#fff" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[s.btn, { backgroundColor: slide.btnColor }]}
+            onPress={handleNext}
+            activeOpacity={0.85}>
+            <Text style={s.btnTxt}>{slide.btnLabel}</Text>
+          </TouchableOpacity>
+        </View>
+
+      </SafeAreaView>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  root:       { flex: 1, backgroundColor: '#000' },
+  topBar:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8 },
+  floatBtn:   { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.30)', alignItems: 'center', justifyContent: 'center' },
+  skipTxt:    { fontSize: TYPO.body, fontWeight: '600', color: '#fff' },
+
+  // Entire overlay floats at bottom over the image — no solid card
+  overlay:    { position: 'absolute', bottom: 0, left: 0, right: 0 },
+
+  dots:       { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, paddingBottom: 14 },
+  dot:        { height: 7, borderRadius: 3.5 } as any,
+
+  copyPanel:  { width, paddingHorizontal: 28, gap: 10 },
+  chip:       { alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginBottom: 2 },
+  chipTxt:    { fontSize: TYPO.body, fontWeight: '700', letterSpacing: 0.4, color: '#fff' },
+  title:      { fontSize: TYPO.hero, fontWeight: '900', lineHeight: 38, letterSpacing: -0.8, color: '#fff',
+                textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
+  sub:        { fontSize: TYPO.body, lineHeight: 23, fontWeight: '400', color: 'rgba(255,255,255,0.82)' },
+
+  ctaRow:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 24, paddingTop: 22, paddingBottom: 8 },
+  backCircle: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: 'rgba(255,255,255,0.18)' },
+  btn:        { flex: 1, paddingVertical: 17, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  btnTxt:     { color: '#fff', fontSize: TYPO.subheading, fontWeight: '800', letterSpacing: 0.2 },
+});

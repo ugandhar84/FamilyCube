@@ -1,0 +1,1 @@
+-- Migration applied directly to remote on 2026-07-23 (multi_photo + user_follows). Placeholder to satisfy CLI version tracking.

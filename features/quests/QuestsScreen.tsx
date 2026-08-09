@@ -6,20 +6,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
-import { useFamilyStore, FamilyMember } from '@/store/familyStore';
+import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore, Quest, QuestStatus, QuestCategory } from '@/store/questStore';
 import { TYPO, RADIUS } from '@/constants/theme';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const STATUS_TABS: { key: QuestStatus | 'all' | 'pool'; label: string }[] = [
-  { key: 'all',              label: 'All'      },
-  { key: 'todo',             label: 'To Do'    },
-  { key: 'claimed',          label: 'In Progress' },
-  { key: 'pending_approval', label: 'Review'   },
-  { key: 'done',             label: 'Done'     },
-  { key: 'pool',             label: '🎯 Pool'  },
-];
+import type { FamilyMember } from '@/store/familyStore';
 
 const CATEGORIES: QuestCategory[] = ['Kitchen', 'Room', 'Yard', 'School', 'Pet', 'Living Room', 'Other'];
 const CAT_EMOJI: Record<QuestCategory, string> = {
@@ -27,16 +17,15 @@ const CAT_EMOJI: Record<QuestCategory, string> = {
 };
 
 const SUGGESTIONS = [
-  { label: '🍽️ Wash dishes', cat: 'Kitchen' as QuestCategory },
-  { label: '🗑️ Take out trash', cat: 'Kitchen' as QuestCategory },
-  { label: '🧹 Sweep floor', cat: 'Living Room' as QuestCategory },
-  { label: '🧺 Do laundry', cat: 'Room' as QuestCategory },
-  { label: '🛏️ Make the bed', cat: 'Room' as QuestCategory },
-  { label: '🐾 Feed the pet', cat: 'Pet' as QuestCategory },
-  { label: '🚿 Clean bathroom', cat: 'Room' as QuestCategory },
-  { label: '🌿 Water plants', cat: 'Yard' as QuestCategory },
-  { label: '📚 Homework done', cat: 'School' as QuestCategory },
-  { label: '♻️ Sort recycling', cat: 'Yard' as QuestCategory },
+  { label: 'Wash dishes', cat: 'Kitchen' as QuestCategory },
+  { label: 'Take out trash', cat: 'Kitchen' as QuestCategory },
+  { label: 'Sweep floor', cat: 'Living Room' as QuestCategory },
+  { label: 'Do laundry', cat: 'Room' as QuestCategory },
+  { label: 'Make the bed', cat: 'Room' as QuestCategory },
+  { label: 'Feed the pet', cat: 'Pet' as QuestCategory },
+  { label: 'Clean bathroom', cat: 'Room' as QuestCategory },
+  { label: 'Water plants', cat: 'Yard' as QuestCategory },
+  { label: 'Homework done', cat: 'School' as QuestCategory },
 ];
 
 function formatDate(iso?: string) {
@@ -50,135 +39,144 @@ function formatDate(iso?: string) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-// ─── Avatar chip ──────────────────────────────────────────────────────────────
+// ─── Parent quest card (spec layout) ─────────────────────────────────────────
 
-function AvatarChip({ member, selected, onPress }: {
-  member: FamilyMember; selected: boolean; onPress: () => void;
-}) {
-  const { colors } = useTheme();
-  const color = member.role === 'parent' ? colors.parent : colors.kid;
-  return (
-    <Pressable onPress={onPress} style={[styles.avatarChip, {
-      backgroundColor: selected ? color + '25' : colors.surface,
-      borderColor: selected ? color : colors.border,
-    }]}>
-      <Text style={{ fontSize: 18 }}>{member.emoji ?? member.name[0]}</Text>
-      <Text style={[styles.chipName, { color: selected ? color : colors.textSecondary }]}>
-        {member.name.split(' ')[0]}
-      </Text>
-    </Pressable>
-  );
-}
-
-// ─── Quest card ───────────────────────────────────────────────────────────────
-
-function QuestCard({ quest, members, isParent, activeMemberId, onClaim, onSubmit, onApprove, onDecline, onDelete }: {
-  quest: Quest;
-  members: FamilyMember[];
-  isParent: boolean;
-  activeMemberId: string;
-  onClaim: () => void;
-  onSubmit: () => void;
-  onApprove: () => void;
-  onDecline: () => void;
-  onDelete: () => void;
+function ParentQuestCard({ quest, members, activeMemberId, onApprove, onDecline, onDelete }: {
+  quest: Quest; members: FamilyMember[]; activeMemberId: string;
+  onApprove: () => void; onDecline: () => void; onDelete: () => void;
 }) {
   const { colors } = useTheme();
   const assignee = members.find(m => m.id === quest.assignedToId);
-
-  const statusColor: Record<QuestStatus, string> = {
-    todo:             colors.textTertiary,
-    claimed:          colors.primary,
-    pending_approval: colors.warning,
-    done:             colors.parent,
-  };
-  const statusLabel: Record<QuestStatus, string> = {
-    todo:             'To Do',
-    claimed:          'In Progress',
-    pending_approval: '⏳ Review',
-    done:             '✅ Done',
-  };
+  const isReview = quest.status === 'pending_approval';
+  const isDone   = quest.status === 'done';
 
   return (
-    <View style={[styles.questCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      {/* Header */}
-      <View style={styles.questHeader}>
-        <View style={[styles.catBadge, { backgroundColor: colors.primaryLight }]}>
-          <Text style={{ fontSize: 12 }}>{CAT_EMOJI[quest.category]}</Text>
-          <Text style={[styles.catText, { color: colors.primary }]}>{quest.category}</Text>
+    <View style={[s.card, {
+      backgroundColor: colors.card, borderColor: colors.border,
+      borderLeftWidth: isReview ? 3 : 1,
+      borderLeftColor: isReview ? colors.warning : colors.border,
+    }]}>
+      {/* Row 1 — category + assignee + status */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={[s.catBadge, { backgroundColor: colors.primaryLight }]}>
+          <Text style={{ fontSize: 11 }}>{CAT_EMOJI[quest.category]}</Text>
+          <Text style={[s.catText, { color: colors.primary }]}>{quest.category}</Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {quest.isDaily && (
-            <View style={[styles.badge, { backgroundColor: colors.accent + '20' }]}>
-              <Text style={[styles.badgeText, { color: colors.accent }]}>Daily</Text>
-            </View>
-          )}
-          {quest.isPool && (
-            <View style={[styles.badge, { backgroundColor: colors.warning + '20' }]}>
-              <Text style={[styles.badgeText, { color: colors.warning }]}>Pool</Text>
-            </View>
-          )}
-          <Text style={[styles.statusText, { color: statusColor[quest.status] }]}>
-            {statusLabel[quest.status]}
+        {assignee && (
+          <View style={[s.assigneeBadge, {
+            backgroundColor: (assignee.role === 'parent' ? colors.parentLight : colors.kidLight),
+          }]}>
+            <Text style={{ fontSize: 12 }}>{assignee.emoji ?? assignee.name[0]}</Text>
+            <Text style={{ fontSize: 11, fontWeight: '600', color: assignee.role === 'parent' ? colors.parent : colors.kidDark }}>
+              {assignee.name.split(' ')[0]}
+            </Text>
+          </View>
+        )}
+        <View style={{ flex: 1 }} />
+        <View style={[s.statusBadge, {
+          backgroundColor: isDone ? colors.parentLight : isReview ? colors.amberLight : colors.surface,
+        }]}>
+          <Text style={{ fontSize: 10, fontWeight: '700', color: isDone ? colors.parent : isReview ? colors.amberDark : colors.textTertiary }}>
+            {isDone ? '✓ Done' : isReview ? 'In Review' : quest.status === 'claimed' ? 'In Progress' : 'To Do'}
           </Text>
         </View>
       </View>
 
-      {/* Title + due */}
-      <Text style={[styles.questTitle, { color: colors.textPrimary }]}>{quest.title}</Text>
-      {quest.dueDate && (
-        <Text style={[styles.questDue, { color: colors.textTertiary }]}>
-          📅 Due {formatDate(quest.dueDate)}
+      {/* Row 2 — title + coin */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+        <Text style={{ flex: 1, fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>
+          {quest.title}
         </Text>
-      )}
-
-      {/* Assignee + coins */}
-      <View style={styles.questFooter}>
-        <View style={styles.questAssignee}>
-          {assignee ? (
-            <>
-              <Text style={{ fontSize: 16 }}>{assignee.emoji ?? assignee.name[0]}</Text>
-              <Text style={[styles.assigneeName, { color: colors.textSecondary }]}>
-                {assignee.name.split(' ')[0]}
-              </Text>
-            </>
-          ) : (
-            <Text style={[styles.assigneeName, { color: colors.textTertiary }]}>Unassigned</Text>
-          )}
-        </View>
-        <View style={[styles.coinPill, { backgroundColor: colors.kidLight }]}>
-          <Text style={[styles.coinPillText, { color: colors.kid }]}>🪙 {quest.coins}</Text>
-          <Text style={[styles.coinPillText, { color: colors.primary, marginLeft: 8 }]}>+{quest.xpReward}XP</Text>
+        <View style={[s.coinPill, { backgroundColor: colors.kidLight }]}>
+          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.kidDark }}>🪙 {quest.coins}</Text>
         </View>
       </View>
 
-      {/* Actions */}
-      <View style={styles.questActions}>
-        {quest.isPool && quest.status === 'todo' && (
-          <Pressable style={[styles.actionBtn, { backgroundColor: colors.primary }]} onPress={onClaim}>
-            <Text style={styles.actionBtnText}>🙋 Claim Quest</Text>
+      {quest.dueDate && (
+        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 2 }}>
+          Due {formatDate(quest.dueDate)}
+        </Text>
+      )}
+
+      {/* Row 4 — actions (only for review) */}
+      {isReview && (
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+          <Pressable
+            onPress={onApprove}
+            style={{ flex: 1, backgroundColor: colors.parent, borderRadius: RADIUS.md, paddingVertical: 9, alignItems: 'center' }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>Approve</Text>
           </Pressable>
-        )}
-        {quest.status === 'claimed' && quest.assignedToId === activeMemberId && (
-          <Pressable style={[styles.actionBtn, { backgroundColor: colors.parent }]} onPress={onSubmit}>
-            <Text style={styles.actionBtnText}>✅ Mark Done</Text>
+          <Pressable
+            onPress={onDecline}
+            style={{ flex: 1, borderWidth: 1.5, borderColor: colors.danger + '60', borderRadius: RADIUS.md, paddingVertical: 9, alignItems: 'center' }}
+          >
+            <Text style={{ color: colors.danger, fontWeight: '700', fontSize: 13 }}>Decline</Text>
           </Pressable>
-        )}
-        {quest.status === 'pending_approval' && isParent && (
-          <View style={{ flexDirection: 'row', gap: 8, flex: 1 }}>
-            <Pressable style={[styles.actionBtn, { backgroundColor: colors.parent, flex: 1 }]} onPress={onApprove}>
-              <Text style={styles.actionBtnText}>✅ Approve</Text>
-            </Pressable>
-            <Pressable style={[styles.actionBtn, { backgroundColor: colors.danger, flex: 1 }]} onPress={onDecline}>
-              <Text style={styles.actionBtnText}>↩️ Decline</Text>
-            </Pressable>
-          </View>
-        )}
-        {isParent && (
-          <Pressable onPress={onDelete} style={styles.deleteBtn}>
-            <Ionicons name="trash-outline" size={16} color={colors.textTertiary} />
+          <Pressable onPress={onDelete} style={{ padding: 9 }}>
+            <Ionicons name="ellipsis-horizontal" size={18} color={colors.textTertiary} />
           </Pressable>
-        )}
+        </View>
+      )}
+      {!isReview && (
+        <Pressable onPress={onDelete} style={{ position: 'absolute', top: 10, right: 10 }}>
+          <Ionicons name="trash-outline" size={14} color={colors.textTertiary} />
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+// ─── Kid quest card (simple checklist style) ──────────────────────────────────
+
+function KidQuestCard({ quest, activeMemberId, onSubmit, onClaim, colors }: {
+  quest: Quest; activeMemberId: string;
+  onSubmit: () => void; onClaim: () => void; colors: any;
+}) {
+  const canClaim  = quest.isPool && quest.status === 'todo';
+  const canSubmit = quest.status === 'claimed' && quest.assignedToId === activeMemberId;
+  const isDone    = quest.status === 'done';
+  const isPending = quest.status === 'pending_approval';
+
+  return (
+    <View style={[s.kidCard, {
+      backgroundColor: isDone ? colors.parentLight : colors.card,
+      borderColor: isDone ? colors.parent + '30' : colors.border,
+      opacity: isDone ? 0.7 : 1,
+    }]}>
+      {/* Checkbox */}
+      <Pressable
+        onPress={canSubmit ? onSubmit : canClaim ? onClaim : undefined}
+        style={[s.checkbox, {
+          backgroundColor: isDone ? colors.parent : isPending ? colors.amberLight : colors.surface,
+          borderColor: isDone ? colors.parent : isPending ? colors.amber : colors.border,
+          borderWidth: 2,
+        }]}
+      >
+        {isDone    && <Ionicons name="checkmark" size={14} color="#fff" />}
+        {isPending && <Ionicons name="time-outline" size={14} color={colors.amber} />}
+      </Pressable>
+
+      {/* Content */}
+      <View style={{ flex: 1 }}>
+        <Text style={{
+          fontSize: TYPO.caption, fontWeight: '700',
+          color: isDone ? colors.parent : colors.textPrimary,
+          textDecorationLine: isDone ? 'line-through' : 'none',
+        }}>
+          {quest.title}
+        </Text>
+        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 2 }}>
+          {CAT_EMOJI[quest.category]} {quest.category}
+          {quest.dueDate ? `  · Due ${formatDate(quest.dueDate)}` : ''}
+        </Text>
+      </View>
+
+      {/* Coin chip */}
+      <View style={[s.coinPill, { backgroundColor: isDone ? colors.parent + '20' : colors.kidLight }]}>
+        <Text style={{ fontSize: 12, fontWeight: '700', color: isDone ? colors.parent : colors.kidDark }}>
+          +{quest.coins} 🪙
+        </Text>
       </View>
     </View>
   );
@@ -197,10 +195,6 @@ function NewQuestModal({ visible, members, onClose, onAdd, activeMemberId }: {
   const [assignedToId, setAssignedToId] = useState<string | undefined>(undefined);
   const [isPool, setIsPool] = useState(false);
 
-  const filtered = SUGGESTIONS.filter(s =>
-    !title.trim() || s.label.toLowerCase().includes(title.toLowerCase().trim())
-  );
-
   const reset = () => { setTitle(''); setCoins('30'); setCategory('Kitchen'); setAssignedToId(undefined); setIsPool(false); };
 
   const handleAdd = () => {
@@ -218,34 +212,32 @@ function NewQuestModal({ visible, members, onClose, onAdd, activeMemberId }: {
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
-          {/* Header */}
-          <View style={styles.modalHeader}>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+          <View style={[s.modalHeader, { borderBottomColor: colors.border }]}>
             <Pressable onPress={() => { reset(); onClose(); }}>
-              <Text style={[styles.modalCancel, { color: colors.textSecondary }]}>Cancel</Text>
+              <Text style={{ fontSize: 16, color: colors.textSecondary }}>Cancel</Text>
             </Pressable>
-            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>New Quest</Text>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: colors.textPrimary }}>New Quest</Text>
             <Pressable onPress={handleAdd} disabled={!title.trim()}>
-              <Text style={[styles.modalSave, { color: title.trim() ? colors.primary : colors.textTertiary }]}>Add</Text>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: title.trim() ? colors.primary : colors.textTertiary }}>Add</Text>
             </Pressable>
           </View>
 
           <ScrollView contentContainerStyle={{ padding: 20, gap: 20 }} keyboardShouldPersistTaps="handled">
             {/* Title */}
             <View style={{ gap: 8 }}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Quest Title *</Text>
+              <Text style={s.label2}>Quest Title</Text>
               <TextInput
                 value={title} onChangeText={setTitle}
                 placeholder="What needs to be done?"
-                placeholderTextColor={colors.placeholder}
-                style={[styles.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                placeholderTextColor={colors.textTertiary}
+                style={[s.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
               />
-              {/* Suggestion chips */}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                {filtered.map(s => (
-                  <Pressable key={s.label} onPress={() => { setTitle(s.label.replace(/^[^\w\s]*\s/, '')); setCategory(s.cat); }}
-                    style={[styles.suggChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    <Text style={[styles.suggText, { color: colors.textSecondary }]}>{s.label}</Text>
+                {SUGGESTIONS.filter(s2 => !title.trim() || s2.label.toLowerCase().includes(title.toLowerCase())).map(sg => (
+                  <Pressable key={sg.label} onPress={() => { setTitle(sg.label); setCategory(sg.cat); }}
+                    style={[s.chip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <Text style={{ fontSize: 12, color: colors.textSecondary }}>{CAT_EMOJI[sg.cat]} {sg.label}</Text>
                   </Pressable>
                 ))}
               </ScrollView>
@@ -253,65 +245,61 @@ function NewQuestModal({ visible, members, onClose, onAdd, activeMemberId }: {
 
             {/* Coins */}
             <View style={{ gap: 8 }}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>🪙 Coin Reward</Text>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Text style={s.label2}>Coin Reward</Text>
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
                 {[10, 20, 30, 50, 100].map(c => (
                   <Pressable key={c} onPress={() => setCoins(String(c))}
-                    style={[styles.coinOption, {
-                      backgroundColor: coins === String(c) ? colors.kid + '20' : colors.surface,
+                    style={[s.coinOpt, {
+                      backgroundColor: coins === String(c) ? colors.kidLight : colors.surface,
                       borderColor: coins === String(c) ? colors.kid : colors.border,
                     }]}>
-                    <Text style={[{ color: coins === String(c) ? colors.kid : colors.textSecondary, fontWeight: '700', fontSize: 13 }]}>{c}</Text>
+                    <Text style={{ color: coins === String(c) ? colors.kidDark : colors.textSecondary, fontWeight: '700', fontSize: 13 }}>
+                      🪙 {c}
+                    </Text>
                   </Pressable>
                 ))}
-                <TextInput
-                  value={coins} onChangeText={setCoins} keyboardType="numeric"
-                  style={[styles.coinCustom, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
-                />
               </View>
             </View>
 
             {/* Category */}
             <View style={{ gap: 8 }}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Category</Text>
+              <Text style={s.label2}>Category</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
                 {CATEGORIES.map(cat => (
                   <Pressable key={cat} onPress={() => setCategory(cat)}
-                    style={[styles.catChip, {
-                      backgroundColor: category === cat ? colors.primary + '20' : colors.surface,
+                    style={[s.chip, {
+                      backgroundColor: category === cat ? colors.primaryLight : colors.surface,
                       borderColor: category === cat ? colors.primary : colors.border,
                     }]}>
-                    <Text>{CAT_EMOJI[cat]}</Text>
-                    <Text style={[{ color: category === cat ? colors.primary : colors.textSecondary, fontSize: 12, fontWeight: '600' }]}>{cat}</Text>
+                    <Text style={{ fontSize: 13 }}>{CAT_EMOJI[cat]}</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: category === cat ? colors.primary : colors.textSecondary }}>{cat}</Text>
                   </Pressable>
                 ))}
               </ScrollView>
             </View>
 
-            {/* Pool toggle */}
-            <Pressable onPress={() => setIsPool(!isPool)}
-              style={[styles.toggleRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View>
-                <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>🎯 Pool Quest</Text>
-                <Text style={[styles.toggleSub, { color: colors.textSecondary }]}>Anyone can claim this</Text>
-              </View>
-              <View style={[styles.toggle, { backgroundColor: isPool ? colors.primary : colors.border }]}>
-                <View style={[styles.toggleThumb, { left: isPool ? 22 : 2 }]} />
-              </View>
-            </Pressable>
-
-            {/* Assign to */}
-            {!isPool && (
-              <View style={{ gap: 8 }}>
-                <Text style={[styles.label, { color: colors.textSecondary }]}>Assign To</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                  {members.map(m => (
-                    <AvatarChip key={m.id} member={m} selected={assignedToId === m.id}
-                      onPress={() => setAssignedToId(assignedToId === m.id ? undefined : m.id)} />
-                  ))}
-                </ScrollView>
-              </View>
-            )}
+            {/* Assign */}
+            <View style={{ gap: 8 }}>
+              <Text style={s.label2}>Assign To</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {members.map(m => {
+                  const sel = assignedToId === m.id;
+                  const accent = m.role === 'parent' ? colors.parent : colors.kid;
+                  return (
+                    <Pressable key={m.id} onPress={() => setAssignedToId(sel ? undefined : m.id)}
+                      style={[s.chip, {
+                        backgroundColor: sel ? accent + '20' : colors.surface,
+                        borderColor: sel ? accent : colors.border,
+                      }]}>
+                      <Text style={{ fontSize: 16 }}>{m.emoji ?? m.name[0]}</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: sel ? accent : colors.textSecondary }}>
+                        {m.name.split(' ')[0]}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
@@ -319,14 +307,16 @@ function NewQuestModal({ visible, members, onClose, onAdd, activeMemberId }: {
   );
 }
 
-// ─── Quests Screen ────────────────────────────────────────────────────────────
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+
+type StatusTab = 'review' | 'todo' | 'done';
 
 export default function QuestsScreen() {
   const { colors } = useTheme();
   const { members, activeMemberId, loaded, loadFromStorage } = useFamilyStore();
   const { quests, loadFromStorage: loadQuests, claimQuest, submitQuest, approveQuest, declineQuest, deleteQuest, addQuest } = useQuestStore();
 
-  const [filter, setFilter] = useState<QuestStatus | 'all' | 'pool'>('all');
+  const [statusTab, setStatusTab] = useState<StatusTab>('todo');
   const [memberFilter, setMemberFilter] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const fabAnim = useRef(new Animated.Value(1)).current;
@@ -334,103 +324,183 @@ export default function QuestsScreen() {
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
   useEffect(() => { loadQuests(); }, []);
 
-  const active = members.find(m => m.id === activeMemberId) ?? members[0];
+  const active   = members.find(m => m.id === activeMemberId) ?? members[0];
   const isParent = active?.role === 'parent';
 
-  const filtered = quests.filter(q => {
-    if (filter === 'pool') return q.isPool && q.status === 'todo';
-    if (filter !== 'all' && q.status !== filter) return false;
+  const reviewCount = quests.filter(q => q.status === 'pending_approval').length;
+  const todoCount   = quests.filter(q => q.status === 'todo' || q.status === 'claimed').length;
+  const doneCount   = quests.filter(q => q.status === 'done').length;
+
+  const statusFilter = (q: Quest) => {
+    if (statusTab === 'review') return q.status === 'pending_approval';
+    if (statusTab === 'done')   return q.status === 'done';
+    return q.status === 'todo' || q.status === 'claimed';
+  };
+
+  const parentFiltered = quests.filter(q => {
+    if (!statusFilter(q)) return false;
     if (memberFilter && q.assignedToId !== memberFilter) return false;
-    if (!isParent) {
-      // Kids only see their own quests + pool quests
-      if (q.status !== 'todo' || !q.isPool) {
-        if (q.assignedToId !== activeMemberId) return false;
-      }
-    }
     return true;
   });
 
-  const pendingCount = quests.filter(q => q.status === 'pending_approval').length;
+  const kidQuests = quests.filter(q => {
+    if (q.isPool && q.status === 'todo') return true;
+    return q.assignedToId === activeMemberId;
+  });
 
   const animFab = () => {
     Animated.sequence([
-      Animated.spring(fabAnim, { toValue: 0.9, useNativeDriver: true, tension: 300, friction: 6 }),
-      Animated.spring(fabAnim, { toValue: 1,   useNativeDriver: true, tension: 260, friction: 7 }),
+      Animated.spring(fabAnim, { toValue: 0.88, useNativeDriver: true, tension: 300, friction: 6 }),
+      Animated.spring(fabAnim, { toValue: 1,    useNativeDriver: true, tension: 260, friction: 7 }),
     ]).start();
     setShowNew(true);
   };
 
+  // ── Kid view ──────────────────────────────────────────────────────────────
+  if (!isParent) {
+    const morning   = kidQuests.filter((_, i) => i < 2);
+    const afterSchool = kidQuests.filter((_, i) => i >= 2 && i < 4);
+    const evening   = kidQuests.filter((_, i) => i >= 4);
+
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+        {/* Kid header */}
+        <View style={[s.header, { borderBottomColor: colors.border }]}>
+          <View>
+            <Text style={[s.screenTitle, { color: colors.textPrimary }]}>My Quests</Text>
+            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>
+              {kidQuests.filter(q => q.status === 'todo' || (q.isPool && q.status === 'todo')).length} remaining today
+            </Text>
+          </View>
+          <View style={[s.coinBadge, { backgroundColor: colors.kidLight }]}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: colors.kidDark }}>🪙 {active?.coins ?? 0}</Text>
+          </View>
+        </View>
+
+        <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 100 }}>
+          {[
+            { label: '🌅 Morning', items: morning },
+            { label: '📚 After School', items: afterSchool },
+            { label: '🌙 Evening', items: evening },
+          ].filter(g => g.items.length > 0).map(group => (
+            <View key={group.label}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                {group.label}
+              </Text>
+              <View style={{ gap: 8 }}>
+                {group.items.map(q => (
+                  <KidQuestCard
+                    key={q.id} quest={q} activeMemberId={activeMemberId ?? ''}
+                    colors={colors}
+                    onSubmit={() => submitQuest(q.id)}
+                    onClaim={() => claimQuest(q.id, activeMemberId ?? '')}
+                  />
+                ))}
+              </View>
+            </View>
+          ))}
+
+          {kidQuests.length === 0 && (
+            <View style={s.empty}>
+              <Text style={{ fontSize: 48 }}>🎉</Text>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: colors.textPrimary }}>All done!</Text>
+              <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center' }}>No quests today. Check back tomorrow!</Text>
+            </View>
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Parent view ───────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+      <View style={[s.header, { borderBottomColor: colors.border }]}>
         <View>
-          <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>Quests</Text>
-          <Text style={[styles.screenSub, { color: colors.textSecondary }]}>
-            {isParent ? `${pendingCount} pending approval` : `${quests.filter(q => q.assignedToId === activeMemberId && q.status === 'todo').length} to complete`}
+          <Text style={[s.screenTitle, { color: colors.textPrimary }]}>Quests</Text>
+          <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>
+            {reviewCount > 0 ? `${reviewCount} pending approval` : 'Family task board'}
           </Text>
         </View>
-        <Pressable onPress={animFab} style={[styles.newBtn, { backgroundColor: colors.primary }]}>
-          <Ionicons name="add" size={20} color="#fff" />
-          <Text style={styles.newBtnText}>New</Text>
+        <Pressable onPress={animFab} style={[s.addBtn, { backgroundColor: colors.primary }]}>
+          <Ionicons name="add" size={18} color="#fff" />
+          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>New Quest</Text>
         </Pressable>
       </View>
 
-      {/* Member filter chips (parents only) */}
-      {isParent && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 10, gap: 8 }}>
-          <Pressable onPress={() => setMemberFilter(null)}
-            style={[styles.filterChip, {
-              backgroundColor: !memberFilter ? colors.primary + '20' : colors.surface,
-              borderColor: !memberFilter ? colors.primary : colors.border,
-            }]}>
-            <Text style={[{ color: !memberFilter ? colors.primary : colors.textSecondary, fontWeight: '600', fontSize: 12 }]}>Everyone</Text>
-          </Pressable>
-          {members.map(m => (
-            <AvatarChip key={m.id} member={m} selected={memberFilter === m.id}
-              onPress={() => setMemberFilter(memberFilter === m.id ? null : m.id)} />
-          ))}
-        </ScrollView>
-      )}
-
-      {/* Status tabs */}
+      {/* Member filter chips */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8 }}>
-        {STATUS_TABS.map(tab => {
-          const count = tab.key === 'pool'
-            ? quests.filter(q => q.isPool && q.status === 'todo').length
-            : tab.key === 'all' ? quests.length
-            : quests.filter(q => q.status === tab.key).length;
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6, gap: 8 }}>
+        <Pressable onPress={() => setMemberFilter(null)}
+          style={[s.chip, {
+            backgroundColor: !memberFilter ? colors.primaryLight : colors.surface,
+            borderColor: !memberFilter ? colors.primary : colors.border,
+          }]}>
+          <Text style={{ fontSize: 12, fontWeight: '600', color: !memberFilter ? colors.primary : colors.textSecondary }}>
+            All
+          </Text>
+        </Pressable>
+        {members.map(m => {
+          const sel   = memberFilter === m.id;
+          const accent = m.role === 'parent' ? colors.parent : colors.kid;
           return (
-            <Pressable key={tab.key} onPress={() => setFilter(tab.key)}
-              style={[styles.statusTab, {
-                backgroundColor: filter === tab.key ? colors.primary : colors.surface,
-                borderColor: filter === tab.key ? colors.primary : colors.border,
+            <Pressable key={m.id} onPress={() => setMemberFilter(sel ? null : m.id)}
+              style={[s.chip, {
+                backgroundColor: sel ? accent + '20' : colors.surface,
+                borderColor: sel ? accent : colors.border,
               }]}>
-              <Text style={[styles.statusTabText, { color: filter === tab.key ? '#fff' : colors.textSecondary }]}>
-                {tab.label} {count > 0 ? `(${count})` : ''}
+              <Text style={{ fontSize: 16 }}>{m.emoji ?? m.name[0]}</Text>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: sel ? accent : colors.textSecondary }}>
+                {m.name.split(' ')[0]}
               </Text>
             </Pressable>
           );
         })}
       </ScrollView>
 
+      {/* Status tabs */}
+      <View style={[s.statusBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        {[
+          { key: 'review' as StatusTab, label: 'Review', count: reviewCount, activeColor: colors.warning },
+          { key: 'todo'   as StatusTab, label: 'To Do',  count: todoCount,   activeColor: colors.primary },
+          { key: 'done'   as StatusTab, label: 'Done',   count: doneCount,   activeColor: colors.parent  },
+        ].map(tab => (
+          <Pressable key={tab.key} onPress={() => setStatusTab(tab.key)} style={[s.statusTabBtn, {
+            borderBottomWidth: statusTab === tab.key ? 2 : 0,
+            borderBottomColor: tab.activeColor,
+          }]}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: statusTab === tab.key ? '800' : '500',
+              color: statusTab === tab.key ? tab.activeColor : colors.textSecondary }}>
+              {tab.label}
+            </Text>
+            {tab.count > 0 && (
+              <View style={[s.tabBadge, { backgroundColor: statusTab === tab.key ? tab.activeColor : colors.border }]}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: statusTab === tab.key ? '#fff' : colors.textSecondary }}>
+                  {tab.count}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        ))}
+      </View>
+
       {/* Quest list */}
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 120 }}>
-        {filtered.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={{ fontSize: 48 }}>🎯</Text>
-            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>All clear!</Text>
-            <Text style={[styles.emptySub, { color: colors.textSecondary }]}>No quests here. Tap + New to add one.</Text>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 10, paddingBottom: 110 }}>
+        {parentFiltered.length === 0 ? (
+          <View style={s.empty}>
+            <Text style={{ fontSize: 40 }}>✓</Text>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: colors.textPrimary }}>
+              {statusTab === 'review' ? 'No pending approvals' : statusTab === 'done' ? 'Nothing done yet' : 'All clear!'}
+            </Text>
+            <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
+              {statusTab === 'todo' ? 'Tap + New Quest to add tasks for the family.' : ''}
+            </Text>
           </View>
         ) : (
-          filtered.map(q => (
-            <QuestCard
-              key={q.id} quest={q} members={members} isParent={isParent}
-              activeMemberId={activeMemberId ?? ''}
-              onClaim={() => claimQuest(q.id, activeMemberId ?? '')}
-              onSubmit={() => submitQuest(q.id)}
+          parentFiltered.map(q => (
+            <ParentQuestCard
+              key={q.id} quest={q} members={members} activeMemberId={activeMemberId ?? ''}
               onApprove={() => approveQuest(q.id)}
               onDecline={() => declineQuest(q.id)}
               onDelete={() => Alert.alert('Delete Quest', 'Remove this quest?', [
@@ -443,8 +513,8 @@ export default function QuestsScreen() {
       </ScrollView>
 
       {/* FAB */}
-      <Animated.View style={[styles.fab, { transform: [{ scale: fabAnim }] }]}>
-        <Pressable onPress={animFab} style={[styles.fabBtn, { backgroundColor: colors.primary }]}>
+      <Animated.View style={[s.fab, { transform: [{ scale: fabAnim }] }]}>
+        <Pressable onPress={animFab} style={[s.fabBtn, { backgroundColor: colors.primary }]}>
           <Ionicons name="add" size={28} color="#fff" />
         </Pressable>
       </Animated.View>
@@ -458,62 +528,36 @@ export default function QuestsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  header:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
-  screenTitle:  { fontSize: TYPO.heading, fontWeight: '800' },
-  screenSub:    { fontSize: TYPO.caption, marginTop: 2 },
-  newBtn:       { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
-  newBtnText:   { color: '#fff', fontWeight: '700', fontSize: 14 },
+const s = StyleSheet.create({
+  header:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
+  screenTitle:{ fontSize: TYPO.heading, fontWeight: '800' },
+  addBtn:     { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.full },
+  coinBadge:  { paddingHorizontal: 12, paddingVertical: 6, borderRadius: RADIUS.full },
 
-  avatarChip:   { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, borderWidth: 1.5 },
-  chipName:     { fontSize: 12, fontWeight: '600' },
-  filterChip:   { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1.5, justifyContent: 'center' },
+  chip:       { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: RADIUS.full, borderWidth: 1.5 },
 
-  statusTab:    { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1.5 },
-  statusTabText:{ fontSize: 12, fontWeight: '600' },
+  statusBar:  { flexDirection: 'row', borderBottomWidth: 1, marginHorizontal: 16, borderRadius: RADIUS.md, overflow: 'hidden' },
+  statusTabBtn:{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 10 },
+  tabBadge:   { minWidth: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
 
-  questCard:    { borderRadius: RADIUS.xl, borderWidth: 1, padding: 14, gap: 8 },
-  questHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  catBadge:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },
-  catText:      { fontSize: 11, fontWeight: '600' },
-  badge:        { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 },
-  badgeText:    { fontSize: 10, fontWeight: '700' },
-  statusText:   { fontSize: 11, fontWeight: '700' },
-  questTitle:   { fontSize: TYPO.body, fontWeight: '700' },
-  questDue:     { fontSize: 12 },
-  questFooter:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
-  questAssignee:{ flexDirection: 'row', alignItems: 'center', gap: 6 },
-  assigneeName: { fontSize: 13, fontWeight: '500' },
-  coinPill:     { flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 16 },
-  coinPillText: { fontSize: 12, fontWeight: '700' },
-  questActions: { flexDirection: 'row', gap: 8, marginTop: 4, alignItems: 'center' },
-  actionBtn:    { flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center' },
-  actionBtnText:{ color: '#fff', fontWeight: '700', fontSize: 13 },
-  deleteBtn:    { padding: 8 },
+  // Cards
+  card:       { borderRadius: RADIUS.xl, borderWidth: 1, padding: 14, position: 'relative' },
+  catBadge:   { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  catText:    { fontSize: 10, fontWeight: '700' },
+  assigneeBadge:{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10 },
+  statusBadge:{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  coinPill:   { paddingHorizontal: 9, paddingVertical: 4, borderRadius: RADIUS.full },
 
-  empty:        { alignItems: 'center', paddingTop: 60, gap: 10 },
-  emptyTitle:   { fontSize: 20, fontWeight: '700' },
-  emptySub:     { fontSize: 14, textAlign: 'center' },
+  kidCard:    { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: RADIUS.lg, borderWidth: 1, padding: 12 },
+  checkbox:   { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
 
-  fab:          { position: 'absolute', bottom: 24, right: 20 },
-  fabBtn:       { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 8, elevation: 8 },
+  empty:      { alignItems: 'center', paddingTop: 60, gap: 10 },
 
-  // Modal
-  modalSheet:   { flex: 1 },
-  modalHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.08)' },
-  modalTitle:   { fontSize: 17, fontWeight: '700' },
-  modalCancel:  { fontSize: 16 },
-  modalSave:    { fontSize: 16, fontWeight: '700' },
-  label:        { fontSize: 13, fontWeight: '600' },
-  input:        { borderWidth: 1, borderRadius: RADIUS.md, padding: 12, fontSize: TYPO.body },
-  suggChip:     { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1 },
-  suggText:     { fontSize: 12, fontWeight: '500' },
-  coinOption:   { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5, minWidth: 40, alignItems: 'center' },
-  coinCustom:   { borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, width: 56, textAlign: 'center' },
-  catChip:      { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, borderWidth: 1.5 },
-  toggleRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, borderRadius: RADIUS.lg, borderWidth: 1 },
-  toggleLabel:  { fontSize: 15, fontWeight: '600' },
-  toggleSub:    { fontSize: 12, marginTop: 2 },
-  toggle:       { width: 44, height: 24, borderRadius: 12, position: 'relative' },
-  toggleThumb:  { position: 'absolute', width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff', top: 2 },
+  fab:        { position: 'absolute', bottom: 24, right: 20 },
+  fabBtn:     { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 8, elevation: 8 },
+
+  modalHeader:{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1 },
+  label2:     { fontSize: 13, fontWeight: '600', color: '#64748B' },
+  input:      { borderWidth: 1, borderRadius: RADIUS.md, padding: 12, fontSize: TYPO.body },
+  coinOpt:    { paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.md, borderWidth: 1.5, alignItems: 'center' },
 });

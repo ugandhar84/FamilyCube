@@ -369,7 +369,7 @@ export default function QuestsScreen() {
           <View>
             <Text style={[s.screenTitle, { color: colors.textPrimary }]}>My Quests</Text>
             <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>
-              {kidQuests.filter(q => q.status === 'todo' || (q.isPool && q.status === 'todo')).length} remaining today
+              {kidQuests.filter(q => q.status !== 'done' && q.status !== 'pending_approval').length} remaining today
             </Text>
           </View>
           <View style={[s.coinBadge, { backgroundColor: colors.kidLight }]}>

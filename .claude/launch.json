@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "PawBond",
+      "name": "FamilyCubeApp",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["expo", "start", "--ios"],
       "port": 8081

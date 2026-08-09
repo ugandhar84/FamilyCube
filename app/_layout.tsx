@@ -2,7 +2,7 @@ import { showAlert } from '@/components/AppAlert';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';
 import { StyleSheet, AppState, LogBox, Linking, Modal, View, Text, TouchableOpacity, SafeAreaView, Image } from 'react-native';
-import PawBondSplashScreen from '@/components/PawBondSplashScreen';
+import FamilyCubeSplashScreen from '@/components/FamilyCubeSplashScreen';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
 import { fetchFeedPage } from '@/lib/db/social';
@@ -814,7 +814,7 @@ function RootNavigator() {
           style={[StyleSheet.absoluteFill, splashStyle]}
           onLayout={onSplashLayout}
         >
-          <PawBondSplashScreen />
+          <FamilyCubeSplashScreen />
         </Animated.View>
       </Modal>
     </>

@@ -15,6 +15,10 @@ export interface FamilyEvent {
   location?: string;
   notes?: string;
   allDay?: boolean;
+  category?: string;  // Medical | Work | Sports | School | Study
+  driver?: string;    // name of assigned driver/tutor
+  conflict?: boolean; // scheduling conflict flag
+  approvalPending?: boolean; // kid-requested, awaiting parent approval
 }
 
 interface EventState {
@@ -26,7 +30,7 @@ interface EventState {
   deleteEvent: (id: string) => void;
 }
 
-const KEY = '@familycube_events';
+const KEY = '@familycube_events_v2';
 
 const d = (offset: number) => {
   const dt = new Date(); dt.setDate(dt.getDate() + offset);
@@ -34,14 +38,16 @@ const d = (offset: number) => {
 };
 
 const SEED: FamilyEvent[] = [
-  { id: 'e1', title: 'School pickup',       date: d(0), time: '15:30', memberId: 'kid-1',    type: 'reminder',    color: '#F59E0B' },
-  { id: 'e2', title: 'Dentist appointment', date: d(0), time: '10:00', memberId: 'kid-1',    type: 'appointment', color: '#EF4444' },
-  { id: 'e3', title: 'Family game night',   date: d(0), time: '19:00',                        type: 'event',       color: '#6C5CE7' },
-  { id: 'e4', title: 'Soccer practice',     date: d(1), time: '16:00', memberId: 'kid-1',    type: 'event',       color: '#10B981' },
-  { id: 'e5', title: 'Grocery run',         date: d(1), time: '11:00', memberId: 'parent-1', type: 'reminder',    color: '#3B82F6' },
-  { id: 'e6', title: 'Leo\'s Birthday 🎂',  date: d(3), allDay: true,  memberId: 'kid-1',    type: 'birthday',    color: '#F59E0B' },
-  { id: 'e7', title: 'Movie night',         date: d(2), time: '20:00',                        type: 'event',       color: '#6C5CE7' },
-  { id: 'e8', title: 'Parent meeting',      date: d(4), time: '09:00', memberId: 'parent-2', type: 'appointment', color: '#10B981' },
+  { id: 'e1', title: 'Dentist appointment', date: d(0), time: '10:00', memberId: 'kid-1',    type: 'appointment', color: '#EF4444', category: 'Medical',  location: 'Dr. Smith Clinic' },
+  { id: 'e2', title: 'Soccer practice',     date: d(0), time: '15:30', memberId: 'kid-1',    type: 'event',       color: '#10B981', category: 'Sports',   driver: 'Priya (Mom)', location: 'Riverside Park' },
+  { id: 'e3', title: 'Math tutoring',       date: d(0), time: '17:00', memberId: 'kid-2',    type: 'event',       color: '#6C5CE7', category: 'School',   driver: 'Alex (Dad)',  conflict: true },
+  { id: 'e4', title: 'Family game night',   date: d(0), time: '19:00',                        type: 'event',       color: '#6C5CE7', category: 'Event' },
+  { id: 'e5', title: 'Grocery run',         date: d(1), time: '11:00', memberId: 'parent-1', type: 'reminder',    color: '#3B82F6', category: 'Work' },
+  { id: 'e6', title: 'Soccer tournament',   date: d(1), time: '09:00', memberId: 'kid-1',    type: 'event',       color: '#10B981', category: 'Sports',   driver: 'Alex (Dad)',  location: 'City Stadium' },
+  { id: 'e7', title: "Leo's Birthday 🎂",   date: d(3), allDay: true,  memberId: 'kid-1',    type: 'birthday',    color: '#F59E0B', category: 'Event' },
+  { id: 'e8', title: 'Work presentation',   date: d(2), time: '09:30', memberId: 'parent-1', type: 'appointment', color: '#9D4EDD', category: 'Work',     location: 'Office HQ' },
+  { id: 'e9', title: "Maya's Piano lesson", date: d(2), time: '16:00', memberId: 'kid-2',    type: 'event',       color: '#F59E0B', category: 'School',   driver: 'Grandma Mary', location: 'Music Academy' },
+  { id: 'e10',title: 'Vaccine checkup',     date: d(4), time: '11:00', memberId: 'kid-3',    type: 'appointment', color: '#EF4444', category: 'Medical',  location: 'Pediatric Center' },
 ];
 
 const save = (events: FamilyEvent[]) => AsyncStorage.setItem(KEY, JSON.stringify(events));

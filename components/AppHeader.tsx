@@ -1,16 +1,15 @@
 /**
  * AppHeader
- * Used on every screen: brand logo+name | persona switcher pill | notification bell
- *
- * Logo: cube rolls like a dice on mount then settles.
- * Wordmark: "Family" bold with a small purple ♥ above the dot of the "i", "Cube" multicolor.
+ * Left:  cube (dice-roll → settle → pulse loop) + "Family Cube" scales in
+ * Right: persona switcher pill | notification bell
+ * Heart replaces the dot of the "i" in "Family" (dotless ı + absolute SVG).
  */
 import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import Animated, {
   useSharedValue, useAnimatedStyle,
-  withDelay, withSpring, withTiming, withSequence,
+  withDelay, withSpring, withTiming, withSequence, withRepeat,
   Easing,
 } from 'react-native-reanimated';
 import { useTheme } from '@/lib/ThemeContext';
@@ -47,30 +46,35 @@ function PersonIcon({ color }: { color: string }) {
   );
 }
 
-// ── Animated cube (dice-roll settle on mount) ─────────────────────────────────
+// ── Animated cube: dice roll → settle → gentle pulse loop ────────────────────
 
 function AnimatedCubeMark({ size = 30 }: { size?: number }) {
-  const rotate  = useSharedValue(-420);  // start tumbled
-  const scale   = useSharedValue(0.3);
-  const opacity = useSharedValue(0);
+  const rotate = useSharedValue(-360);
+  const scale  = useSharedValue(0.4);
+  const op     = useSharedValue(0);
 
   useEffect(() => {
-    // fade + scale in
-    opacity.value = withTiming(1, { duration: 220 });
-    scale.value   = withSpring(1, { damping: 10, stiffness: 160 });
-    // spin fast then spring to 0 with a slight overshoot bounce
-    rotate.value  = withSequence(
-      withTiming(0, { duration: 520, easing: Easing.out(Easing.cubic) }),
-      withSpring(0, { damping: 6, stiffness: 80, velocity: -20 }),
+    // Fade + grow in
+    op.value    = withTiming(1, { duration: 200 });
+    // Roll from -360° and spring to 0 with slight overshoot
+    rotate.value = withTiming(0, { duration: 500, easing: Easing.out(Easing.cubic) });
+    // Scale: snap in, settle, then loop a soft pulse
+    scale.value = withSequence(
+      withSpring(1,    { damping: 8, stiffness: 180 }),
+      withDelay(200, withRepeat(
+        withSequence(
+          withTiming(1.08, { duration: 600, easing: Easing.inOut(Easing.sin) }),
+          withTiming(1,    { duration: 600, easing: Easing.inOut(Easing.sin) }),
+          withDelay(1800, withTiming(1, { duration: 1 })), // pause between pulses
+        ),
+        -1, false,
+      )),
     );
   }, []);
 
   const aStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [
-      { scale: scale.value },
-      { rotate: `${rotate.value}deg` },
-    ],
+    opacity: op.value,
+    transform: [{ rotate: `${rotate.value}deg` }, { scale: scale.value }],
   }));
 
   return (
@@ -80,47 +84,51 @@ function AnimatedCubeMark({ size = 30 }: { size?: number }) {
   );
 }
 
-// ── Header wordmark — heart above the "i" in Family ──────────────────────────
+// ── Brand name: scales + fades in; heart on dotless ı ────────────────────────
 
-function HeaderWordmark({ textColor }: { textColor: string }) {
-  const FONT = 17;
-  const HEART_SZ = 9;
-  // Approximate left offset of the dot of "i" in "Family" at fontSize 17 bold
-  // "Fam" takes ~65% of "Family" width; at 17px bold "Family" ≈ 53px → "i" dot at ~35px
-  const HEART_LEFT = 35;
+function AnimatedBrandName({ textColor }: { textColor: string }) {
+  const scale = useSharedValue(0.7);
+  const op    = useSharedValue(0);
+
+  useEffect(() => {
+    op.value    = withDelay(300, withTiming(1,  { duration: 350 }));
+    scale.value = withDelay(300, withSpring(1, { damping: 14, stiffness: 160 }));
+  }, []);
+
+  const aStyle = useAnimatedStyle(() => ({
+    opacity: op.value,
+    transform: [{ scale: scale.value }],
+  }));
+
+  const FONT     = 17;
+  const HEART_SZ = 7;
+  // At 17px bold: "Famı" ≈ 30px; heart center ≈ 30px from left
+  const HEART_LEFT = 29;
+  const HEART_TOP  = 2;
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-      {/* "Family" with heart above the i */}
-      <View style={{ position: 'relative' }}>
-        {/* Purple heart floats above the "i" */}
-        <Svg
-          width={HEART_SZ}
-          height={HEART_SZ}
-          viewBox="0 0 20 18"
-          style={{
-            position: 'absolute',
-            left: HEART_LEFT,
-            top: -(HEART_SZ + 1),
-            zIndex: 1,
-          }}
-        >
-          <Path
-            d="M10,16 C7,13 0,9 0,5 C0,0 5,-1 10,6 C15,-1 20,0 20,5 C20,9 13,13 10,16 Z"
-            fill="#D4870A"
-          />
-        </Svg>
-        <Text style={[s.wFamily, { color: textColor, fontSize: FONT }]}>Family </Text>
+    <Animated.View style={aStyle}>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+        <View style={{ position: 'relative' }}>
+          <Svg
+            width={HEART_SZ} height={HEART_SZ} viewBox="0 0 20 18"
+            style={{ position: 'absolute', left: HEART_LEFT, top: HEART_TOP, zIndex: 1 }}
+          >
+            <Path
+              d="M10,16 C7,13 0,9 0,5 C0,0 5,-1 10,6 C15,-1 20,0 20,5 C20,9 13,13 10,16 Z"
+              fill="#D4870A"
+            />
+          </Svg>
+          <Text style={[s.wFamily, { color: textColor, fontSize: FONT }]}>Famıly </Text>
+        </View>
+        <Text style={[s.wCube, { fontSize: FONT }]}>
+          <Text style={{ color: BRAND.teal   }}>C</Text>
+          <Text style={{ color: BRAND.amber  }}>u</Text>
+          <Text style={{ color: BRAND.pink   }}>b</Text>
+          <Text style={{ color: BRAND.purple }}>e</Text>
+        </Text>
       </View>
-
-      {/* "Cube" multicolor */}
-      <Text style={[s.wCube, { fontSize: FONT }]}>
-        <Text style={{ color: BRAND.teal   }}>C</Text>
-        <Text style={{ color: BRAND.amber  }}>u</Text>
-        <Text style={{ color: BRAND.pink   }}>b</Text>
-        <Text style={{ color: BRAND.purple }}>e</Text>
-      </Text>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -155,10 +163,10 @@ export default function AppHeader({
   return (
     <View style={[s.bar, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
 
-      {/* LEFT: animated cube + wordmark */}
+      {/* LEFT: dice cube + animated brand name */}
       <View style={s.left}>
         <AnimatedCubeMark size={30} />
-        <HeaderWordmark textColor={colors.textPrimary} />
+        <AnimatedBrandName textColor={colors.textPrimary} />
       </View>
 
       {/* RIGHT: persona pill + bell */}

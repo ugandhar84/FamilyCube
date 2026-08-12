@@ -813,7 +813,7 @@ export default function CalendarScreen() {
               <TouchableOpacity style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 14,
                 paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}
                 onPress={runAiScan}>
-                {aiLoading
+                {isAnalyzing
                   ? <ActivityIndicator size={12} color="#fff" />
                   : <I.AlertTriangle c="#fff" size={12} />}
                 <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Scan</Text>

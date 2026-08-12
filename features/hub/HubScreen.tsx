@@ -304,6 +304,12 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
           { icon: '📋', label: 'Scan Flyer', color: BRAND.purple,  action: onScanFlyer },
           { icon: '➕', label: '+ Quest',    color: '#10B981',      action: () => router.push('/(tabs)/quests') },
           { icon: '📅', label: '+ Event',    color: BRAND.amber,    action: () => router.push('/(tabs)/calendar') },
+          {
+            icon: '🛒',
+            label: groceryItems.length > 0 ? `${groceryItems.length} items` : 'Grocery',
+            color: '#0ea5e9',
+            action: () => router.push('/(tabs)/grocery' as any),
+          },
         ].map(a => (
           <Pressable key={a.label} onPress={a.action}
             style={{ flex: 1, borderRadius: 18, paddingVertical: 18, alignItems: 'center', gap: 6, backgroundColor: a.color }}>
@@ -486,62 +492,80 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
             <Text style={{ fontSize: 28, marginBottom: 6 }}>📅</Text>
             <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textTertiary }}>All clear — no events today</Text>
           </View>
-        ) : todayEvents.map(ev => {
+        ) : todayEvents.map((ev, idx) => {
           const chipColor = catColor(ev.category);
+          const dotColor  = ev.conflict ? BRAND.amber : chipColor;
+          const isLast    = idx === todayEvents.length - 1;
+          const lineColor = isDark ? colors.border : '#D1D5DB';
+
           return (
-            <View key={ev.id} style={{
-              backgroundColor: isDark ? colors.card : '#fff',
-              borderRadius: 16, borderWidth: 1,
-              borderColor: ev.conflict ? BRAND.amber + '60' : isDark ? colors.border : '#E8E8F0',
-              padding: 14, marginBottom: 10,
-            }}>
-              {/* Category chip + time */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <View style={{ backgroundColor: chipColor + '22', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4 }}>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: chipColor, textTransform: 'uppercase', letterSpacing: 0.6 }}>
-                    {ev.category ?? 'Event'}
-                  </Text>
-                </View>
-                {ev.time && (
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
-                    {fmtTime(ev.time)}
-                  </Text>
+            /* Each item: [dot+line | card] */
+            <View key={ev.id} style={{ flexDirection: 'row', gap: 10, marginBottom: isLast ? 0 : 10 }}>
+
+              {/* Left column: dot at top, line fills to bottom */}
+              <View style={{ width: 20, alignItems: 'center' }}>
+                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: dotColor, marginTop: 16, zIndex: 1 }} />
+                {!isLast && (
+                  <View style={{ flex: 1, width: 2, backgroundColor: lineColor, marginTop: 4 }} />
                 )}
               </View>
 
-              {/* Event title */}
-              <Text style={{ fontSize: TYPO.subheading, fontWeight: '800', color: colors.textPrimary, marginBottom: 4 }} numberOfLines={1}>
-                {ev.title}
-              </Text>
+              {/* Event card */}
+              <View style={{
+                flex: 1,
+                backgroundColor: isDark ? colors.card : '#fff',
+                borderRadius: 16, borderWidth: 1,
+                borderColor: ev.conflict ? BRAND.amber + '60' : isDark ? colors.border : '#E8E8F0',
+                padding: 14,
+              }}>
+                {/* Category chip + time */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <View style={{ backgroundColor: chipColor + '22', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4 }}>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: chipColor, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                      {ev.category ?? 'Event'}
+                    </Text>
+                  </View>
+                  {ev.time && (
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+                      {fmtTime(ev.time)}
+                    </Text>
+                  )}
+                </View>
 
-              {/* Driver / location row */}
-              {ev.driver ? (
-                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                  🚗 <Text style={{ fontWeight: '700', color: colors.textPrimary }}>Driver: {ev.driver}</Text>
-                  {ev.driverStatus === 'confirmed' && <Text style={{ color: '#10B981' }}> ✓</Text>}
-                  {ev.driverStatus === 'pending'   && <Text style={{ color: BRAND.amber }}> ⏳</Text>}
-                  {ev.driverStatus === 'rejected'  && <Text style={{ color: '#EF4444' }}> ✕</Text>}
+                {/* Event title */}
+                <Text style={{ fontSize: TYPO.subheading, fontWeight: '800', color: colors.textPrimary, marginBottom: 4 }} numberOfLines={1}>
+                  {ev.title}
                 </Text>
-              ) : ev.location ? (
-                <Text style={{ fontSize: TYPO.label, color: '#EF4444', fontWeight: '700' }}>⚠ No driver assigned</Text>
-              ) : null}
 
-              {ev.location && (
-                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>📍 {ev.location}</Text>
-              )}
+                {/* Driver row */}
+                {ev.driver ? (
+                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                    🚗 <Text style={{ fontWeight: '700', color: colors.textPrimary }}>Driver: {ev.driver}</Text>
+                    {ev.driverStatus === 'confirmed' && <Text style={{ color: '#10B981' }}> ✓</Text>}
+                    {ev.driverStatus === 'pending'   && <Text style={{ color: BRAND.amber }}> ⏳</Text>}
+                    {ev.driverStatus === 'rejected'  && <Text style={{ color: '#EF4444' }}> ✕</Text>}
+                  </Text>
+                ) : ev.location ? (
+                  <Text style={{ fontSize: TYPO.label, color: '#EF4444', fontWeight: '700' }}>⚠ No driver assigned</Text>
+                ) : null}
 
-              {ev.conflict && (
-                <Pressable onPress={() => router.push('/(tabs)/calendar')}
-                  style={{ marginTop: 8, backgroundColor: BRAND.amber, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7, alignSelf: 'flex-start' }}>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>Resolve Conflict</Text>
-                </Pressable>
-              )}
-              {ev.driverStatus === 'rejected' && (
-                <Pressable onPress={() => router.push('/(tabs)/calendar')}
-                  style={{ marginTop: 8, backgroundColor: '#EF4444', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7, alignSelf: 'flex-start' }}>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>Reassign Driver</Text>
-                </Pressable>
-              )}
+                {ev.location && (
+                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>📍 {ev.location}</Text>
+                )}
+
+                {ev.conflict && (
+                  <Pressable onPress={() => router.push('/(tabs)/calendar')}
+                    style={{ marginTop: 8, backgroundColor: BRAND.amber, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7, alignSelf: 'flex-start' }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>Resolve Conflict</Text>
+                  </Pressable>
+                )}
+                {ev.driverStatus === 'rejected' && (
+                  <Pressable onPress={() => router.push('/(tabs)/calendar')}
+                    style={{ marginTop: 8, backgroundColor: '#EF4444', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7, alignSelf: 'flex-start' }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>Reassign Driver</Text>
+                  </Pressable>
+                )}
+              </View>
             </View>
           );
         })}

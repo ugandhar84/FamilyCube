@@ -17,18 +17,16 @@ const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']
   quests:   'flag-outline',
   calendar: 'calendar-outline',
   chat:     'chatbubbles-outline',
-  gps:      'map-outline',
   store:    'gift-outline',
-  profile:  'person-outline',
+  profile:  'shield-outline',
 };
 const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
   index:    'home',
   quests:   'flag',
   calendar: 'calendar',
   chat:     'chatbubbles',
-  gps:      'map',
   store:    'gift',
-  profile:  'person',
+  profile:  'shield',
 };
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
@@ -37,9 +35,8 @@ const TABS = [
   { name: 'quests',   label: 'Quests'   },
   { name: 'calendar', label: 'Schedule' },
   { name: 'chat',     label: 'Chat'     },
-  { name: 'gps',      label: 'GPS'      },
-  { name: 'store',    label: 'Store'    },
-  { name: 'profile',  label: 'Profile'  },
+  { name: 'store',    label: 'Perks'    },
+  { name: 'profile',  label: 'Vault'    },
 ] as const;
 
 type TabName = typeof TABS[number]['name'];
@@ -210,11 +207,11 @@ export default function TabLayout() {
         <Tabs.Screen name="quests"   />
         <Tabs.Screen name="calendar" />
         <Tabs.Screen name="chat"     />
-        <Tabs.Screen name="gps"      />
         <Tabs.Screen name="store"    />
         <Tabs.Screen name="profile"  />
-        <Tabs.Screen name="grocery" options={{ href: null }} />
-        {/* Hidden — old Petkoinia screens kept as routes but removed from tab bar */}
+        {/* Hidden routes — not in tab bar */}
+        <Tabs.Screen name="gps"                  options={{ href: null }} />
+        <Tabs.Screen name="grocery"              options={{ href: null }} />
         <Tabs.Screen name="notifications"        options={{ href: null }} />
         <Tabs.Screen name="care"                 options={{ href: null }} />
         <Tabs.Screen name="connect"              options={{ href: null }} />

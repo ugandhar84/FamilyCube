@@ -790,8 +790,15 @@ export default function ChatScreen() {
 
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
   useEffect(() => { loadChannel(channelId); }, [channelId]);
-  useEffect(() => { setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 200); },
-    [channelId, channels[channelId]?.messages?.length]);
+  // Snap to bottom instantly on channel switch or first load; never animate the initial scroll
+  const prevChannelRef = useRef<string | null>(null);
+  useEffect(() => {
+    const isChannelSwitch = prevChannelRef.current !== channelId;
+    prevChannelRef.current = channelId;
+    // Instant snap — no animated slide from top to bottom
+    flatRef.current?.scrollToEnd({ animated: false });
+    if (isChannelSwitch) return; // don't auto-scroll on new messages when user is reading
+  }, [channelId, channels[channelId]?.messages?.length]);
   useEffect(() => {
     Animated.timing(searchAnim, { toValue: searchOpen ? 1 : 0, duration: 200, useNativeDriver: false }).start();
     if (!searchOpen) setSearchQuery('');
@@ -1057,7 +1064,10 @@ export default function ChatScreen() {
               style={{ backgroundColor: isDark ? '#13131F' : '#EEF2FF' }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
-              onContentSizeChange={() => flatRef.current?.scrollToEnd({ animated: true })}
+              onContentSizeChange={() => {
+                // Only auto-scroll to bottom if user is already near bottom
+                if (!showScrollBtn) flatRef.current?.scrollToEnd({ animated: false });
+              }}
               onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
                 const distFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
                 setShowScrollBtn(distFromBottom > 200);

@@ -160,8 +160,11 @@ function VoiceNoteBubble({ uri, duration, isMine, colors }: {
       setPlaying(false);
       return;
     }
-    if (!playerRef.current) playerRef.current = createAudioPlayer({ uri });
+    // Always create fresh player so replay works
+    playerRef.current?.remove();
+    playerRef.current = createAudioPlayer({ uri });
     playerRef.current.play();
+    setProgress(0);
     setPlaying(true);
     tickRef.current = setInterval(() => {
       const pos = playerRef.current?.currentTime ?? 0;
@@ -211,8 +214,10 @@ function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
       setPlaying(false);
       return;
     }
-    if (!playerRef.current) playerRef.current = createAudioPlayer({ uri });
+    playerRef.current?.remove();
+    playerRef.current = createAudioPlayer({ uri });
     playerRef.current.play();
+    setProgress(0);
     setPlaying(true);
     tickRef.current = setInterval(() => {
       const pos = playerRef.current?.currentTime ?? 0;

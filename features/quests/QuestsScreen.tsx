@@ -460,6 +460,44 @@ interface StepperProps {
   isDark:       boolean;
   colors:       ReturnType<typeof useTheme>['colors'];
 }
+// ─── Flash Bonus Badge ────────────────────────────────────────────────────────
+function FlashBonusBadge({ bonusCoins, expiresAt }: { bonusCoins: number; expiresAt: string }) {
+  const [remaining, setRemaining] = useState('');
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const calc = () => {
+      const ms = new Date(expiresAt).getTime() - Date.now();
+      if (ms <= 0) { setRemaining('Expired'); return; }
+      const h = Math.floor(ms / 3600000);
+      const m = Math.floor((ms % 3600000) / 60000);
+      setRemaining(h > 0 ? `${h}h ${m}m` : `${m}m`);
+    };
+    calc();
+    const id = setInterval(calc, 30000);
+    return () => clearInterval(id);
+  }, [expiresAt]);
+
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.55, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1,    duration: 900, useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, []);
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FCD34D20', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 3, borderWidth: 1, borderColor: '#FCD34D60' }}>
+      <Animated.Text style={{ fontSize: 10, opacity: pulse }}>🔥</Animated.Text>
+      <Text style={{ fontSize: 10, fontWeight: '800', color: '#D97706' }}>+{bonusCoins}🪙</Text>
+      <Text style={{ fontSize: 9, color: '#92400E', fontWeight: '600' }}>· {remaining}</Text>
+    </View>
+  );
+}
+
 function QuestStepper({ claimedAt, submittedAt, approvedAt, declinedAt, declineReason, accentColor, isDark, colors }: StepperProps) {
   if (!claimedAt && !submittedAt && !approvedAt && !declinedAt) return null;
 
@@ -1938,7 +1976,7 @@ export default function QuestsScreen() {
                       </Text>
                     </View>
 
-                    {/* Right: due chip + coins */}
+                    {/* Right: due chip + coins + flash bonus badge */}
                     <View style={{ alignItems: 'flex-end', gap: 4 }}>
                       {(isTodoCard || isPoolCard || isReview) && (
                         <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: dueBg }}>
@@ -1946,8 +1984,11 @@ export default function QuestsScreen() {
                         </View>
                       )}
                       <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontWeight: '600' }}>
-                        {hasBonus ? `+${q.coins + q.bonusCoins}🪙🔥` : `+${q.coins}🪙`}
+                        +{hasBonus ? q.coins + q.bonusCoins : q.coins}🪙
                       </Text>
+                      {hasBonus && q.bonusExpiresAt && (
+                        <FlashBonusBadge bonusCoins={q.bonusCoins} expiresAt={q.bonusExpiresAt} />
+                      )}
                     </View>
                   </View>
                 );

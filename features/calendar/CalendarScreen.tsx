@@ -239,7 +239,7 @@ function DayStrip({ selected, events, colors, isDark, onSelect }: {
   return (
     <View style={[ds.wrap, { backgroundColor: isDark ? colors.card : '#fff', borderBottomColor: colors.border }]}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 14, gap: 8, paddingVertical: 10 }}>
+        contentContainerStyle={{ paddingHorizontal: 14, gap: 6, paddingVertical: 7 }}>
         {days.map(d => {
           const date    = parseDate(d);
           const dayEvs  = events.filter(e => e.date === d);
@@ -262,7 +262,7 @@ function DayStrip({ selected, events, colors, isDark, onSelect }: {
                 color: isSel ? '#fff' : isToday ? BRAND.purple : colors.textTertiary }}>
                 {DAY_SHORT[(date.getDay() + 6) % 7]}
               </Text>
-              <Text style={{ fontSize: TYPO.heading, fontWeight: '900',
+              <Text style={{ fontSize: TYPO.subheading, fontWeight: '900',
                 color: isSel ? '#fff' : isToday ? BRAND.purple : colors.textPrimary }}>
                 {date.getDate()}
               </Text>
@@ -283,7 +283,7 @@ function DayStrip({ selected, events, colors, isDark, onSelect }: {
 }
 const ds = StyleSheet.create({
   wrap: { borderBottomWidth: 1 },
-  cell: { width: 52, borderRadius: 18, paddingVertical: 10, alignItems: 'center', gap: 2 },
+  cell: { width: 48, borderRadius: 16, paddingVertical: 6, alignItems: 'center', gap: 2 },
   dot:  { width: 5, height: 5, borderRadius: 3 },
   bar:  { height: 4, borderRadius: 3, width: '100%' },
 });

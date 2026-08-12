@@ -1069,7 +1069,7 @@ export default function HubScreen() {
 
   const [refreshing, setRefreshing]        = useState(false);
   const [pinTarget, setPinTarget]          = useState<FamilyMember | null>(null);
-  const [clock, setClock]                  = useState(fmtClock());
+  const [clock, setClock]                  = useState(fmtClock()); // kept for potential sub-components
   const [helpModalVisible, setHelpModal]    = useState(false);
   const [flyerVisible, setFlyerVisible]     = useState(false);
   const [enRouteVisible, setEnRouteVisible] = useState(false);

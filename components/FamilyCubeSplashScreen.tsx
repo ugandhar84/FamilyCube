@@ -12,7 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useSharedValue, useAnimatedStyle, useDerivedValue,
   withTiming, withSpring, withDelay, withRepeat,
-  Easing,
+  Easing, type SharedValue,
 } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 import { Tagline, IconCubeMark } from './FamilyCubeLogo';
@@ -80,7 +80,7 @@ const WAVE_AMP   = 13;
 const WAVE_MS    = 1400;
 
 function WaveDot({ phase, index, total, color, size }: {
-  phase: Animated.SharedValue<number>;
+  phase: SharedValue<number>;
   index: number;
   total: number;
   color: string;

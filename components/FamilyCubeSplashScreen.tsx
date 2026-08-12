@@ -88,36 +88,39 @@ function SplashCubeMark({ size = 130 }: { size?: number }) {
   );
 }
 
-// ── Wordmark: column layout so ♥ is guaranteed above the "i" ─────────────────
+// ── Wordmark: "Family" unchanged; heart drops onto the "i" dot ───────────────
+//
+// dotless-i (ı U+0131) removes the competing dot.
+// Heart is absolutely positioned AT the dot level (positive top) — the "i"
+// character never moves, only the dot is replaced.
 function SplashWordmark({ textColor }: { textColor: string }) {
   const FONT     = 44;
-  const LH       = 50;
   const HEART_SZ = 13;
+  // At 44px bold: "Fam" ≈ 90px; "i" center ≈ 97px from left of "Famıly "
+  // dot sits ~8px from top of the text's line box
+  const HEART_LEFT = 90;
+  const HEART_TOP  = 7;
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
-      <Text style={{ fontSize: FONT, fontWeight: '800', color: textColor, letterSpacing: -1.2, lineHeight: LH }}>
-        Fam
-      </Text>
-
-      {/* ♥ stacked above the "i" — replaces the dot */}
-      <View style={{ alignItems: 'center', paddingBottom: LH - FONT }}>
-        <Svg width={HEART_SZ} height={HEART_SZ} viewBox="0 0 20 18" style={{ marginBottom: 2 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+      <View style={{ position: 'relative' }}>
+        {/* Heart lands on the dot — "i" stays at normal baseline */}
+        <Svg
+          width={HEART_SZ} height={HEART_SZ} viewBox="0 0 20 18"
+          style={{ position: 'absolute', left: HEART_LEFT, top: HEART_TOP, zIndex: 1 }}
+        >
           <Path
             d="M10,16 C7,13 0,9 0,5 C0,0 5,-1 10,6 C15,-1 20,0 20,5 C20,9 13,13 10,16 Z"
             fill={DARK_AMBER}
           />
         </Svg>
-        <Text style={{ fontSize: FONT, fontWeight: '800', color: textColor, letterSpacing: -1.2, lineHeight: FONT }}>
-          i
+        {/* ı = dotless i (U+0131) hides the dot under the heart */}
+        <Text style={{ fontSize: FONT, fontWeight: '800', color: textColor, letterSpacing: -1.2 }}>
+          Famıly{' '}
         </Text>
       </View>
 
-      <Text style={{ fontSize: FONT, fontWeight: '800', color: textColor, letterSpacing: -1.2, lineHeight: LH }}>
-        ly{' '}
-      </Text>
-
-      <Text style={{ fontSize: FONT, fontWeight: '800', letterSpacing: -1.2, lineHeight: LH }}>
+      <Text style={{ fontSize: FONT, fontWeight: '800', letterSpacing: -1.2 }}>
         <Text style={{ color: TEAL   }}>C</Text>
         <Text style={{ color: AMBER  }}>u</Text>
         <Text style={{ color: PINK   }}>b</Text>

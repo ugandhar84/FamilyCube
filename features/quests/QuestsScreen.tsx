@@ -1886,22 +1886,14 @@ export default function QuestsScreen() {
                         )}
                       </View>
 
-                      {/* ── Meta row — only show extra context not in header ── */}
+                      {/* ── Meta row — due date + modified-by notice (avatar already in header) ── */}
                       <View style={[s.metaRow, { borderTopColor: isDark ? '#1E293B' : '#F0F4F8' }]}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, flex: 1 }}>
-                          {assignee
-                            ? <FamilyAvatar name={assignee.name} emoji={assignee.emoji} avatarUrl={(assignee as any).avatarUrl} size={26} ringColor={accentColor} ringWidth={1.5} />
-                            : <View style={[s.metaAvatar, { backgroundColor: BRAND.amber + '25' }]}><Text style={{ fontSize: 14 }}>⚡</Text></View>}
-                          <View>
-                            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontWeight: '700' }}>
-                              {isPoolCard ? 'Open for anyone' : (assignee?.name ?? 'Unassigned')}
+                        <View style={{ flex: 1 }}>
+                          {q.lastModifiedById && (
+                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
+                              ✏️ edited by {members.find(m => m.id === q.lastModifiedById)?.name ?? 'parent'}
                             </Text>
-                            {q.lastModifiedById && (
-                              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
-                                ✏️ edited by {members.find(m => m.id === q.lastModifiedById)?.name ?? 'parent'}
-                              </Text>
-                            )}
-                          </View>
+                          )}
                         </View>
                         <View style={{ alignItems: 'flex-end' }}>
                           <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>

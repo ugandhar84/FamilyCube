@@ -303,46 +303,75 @@ function RecordingBar({ elapsed, isDark, onStop }: {
 }
 
 // ─── Swipeable message bubble ─────────────────────────────────────────────────
+// Right swipe → reply (snappy: fires at 56px, snaps back instantly)
+// Left swipe  → reveal timestamp (capped at -52px, snaps back on release)
+
+const SWIPE_REPLY_THRESHOLD = 56;
+const SWIPE_MAX_RIGHT       = 72;
+const SWIPE_MAX_LEFT        = -52;
 
 function SwipeableBubble({ children, onSwipeRight, timeNode }: {
   children: React.ReactNode; onSwipeRight: () => void; timeNode: React.ReactNode;
 }) {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const swipedRef  = useRef(false);
+  const translateX  = useRef(new Animated.Value(0)).current;
+  const firedRef    = useRef(false);
+  const activeRef   = useRef(false);
 
-  // time pill opacity/slide driven by left-swipe (negative translateX)
-  const timeOpacity = translateX.interpolate({ inputRange: [-52, -16, 0], outputRange: [1, 0.4, 0], extrapolate: 'clamp' });
-  const timeSlide   = translateX.interpolate({ inputRange: [-52, 0], outputRange: [0, 14], extrapolate: 'clamp' });
+  const snapBack = () =>
+    Animated.timing(translateX, { toValue: 0, duration: 180, useNativeDriver: true }).start();
 
   const panResponder = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dy) < 20,
-    onPanResponderMove: (_, g) => {
-      if (g.dx < 0) translateX.setValue(Math.max(g.dx, -52));       // left → reveal time
-      else           translateX.setValue(Math.min(g.dx, 60));        // right → reply
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_, g) =>
+      Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+
+    onPanResponderGrant: () => {
+      firedRef.current  = false;
+      activeRef.current = true;
+      translateX.stopAnimation();
     },
-    onPanResponderRelease: (_, g) => {
-      if (g.dx > 40 && !swipedRef.current) {
-        swipedRef.current = true;
-        Animated.spring(translateX, { toValue: 50, useNativeDriver: true }).start(() => {
+
+    onPanResponderMove: (_, g) => {
+      if (!activeRef.current) return;
+      if (g.dx > 0) {
+        // Right swipe — apply sqrt damping so it feels resistive past threshold
+        const capped = Math.min(g.dx, SWIPE_MAX_RIGHT);
+        const damped = capped < SWIPE_REPLY_THRESHOLD
+          ? capped
+          : SWIPE_REPLY_THRESHOLD + Math.sqrt(capped - SWIPE_REPLY_THRESHOLD) * 3;
+        translateX.setValue(Math.min(damped, SWIPE_MAX_RIGHT));
+
+        // Fire reply the instant threshold is crossed (haptic feel)
+        if (g.dx >= SWIPE_REPLY_THRESHOLD && !firedRef.current) {
+          firedRef.current = true;
           onSwipeRight();
-          Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
-          swipedRef.current = false;
-        });
+        }
       } else {
-        Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
+        // Left swipe — reveal timestamp, hard cap
+        translateX.setValue(Math.max(g.dx, SWIPE_MAX_LEFT));
       }
     },
+
+    onPanResponderRelease: () => {
+      activeRef.current = false;
+      snapBack();
+    },
     onPanResponderTerminate: () => {
-      Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
+      activeRef.current = false;
+      snapBack();
     },
   })).current;
+
+  // time pill opacity/slide driven by left-swipe (negative translateX)
+  const timeOpacity = translateX.interpolate({ inputRange: [SWIPE_MAX_LEFT, -12, 0], outputRange: [1, 0.4, 0], extrapolate: 'clamp' });
+  const timeSlide   = translateX.interpolate({ inputRange: [SWIPE_MAX_LEFT, 0], outputRange: [0, 14], extrapolate: 'clamp' });
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <Animated.View style={{ transform: [{ translateX }], flex: 1 }} {...panResponder.panHandlers}>
         {children}
       </Animated.View>
-      {/* Time pill revealed on left-swipe */}
+      {/* Timestamp revealed on left-swipe */}
       <Animated.View style={{ position: 'absolute', right: 4, opacity: timeOpacity, transform: [{ translateX: timeSlide }], pointerEvents: 'none' }}>
         {timeNode}
       </Animated.View>
@@ -443,19 +472,6 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
             </Text>
           )}
 
-          {/* Reply quote — tappable to jump to quoted message */}
-          {msg.replyTo && (
-            <Pressable onPress={onQuoteTap} style={{ borderLeftWidth: 3, borderLeftColor: senderColor,
-              backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)',
-              borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
-              marginBottom: 2, maxWidth: '100%' }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: senderColor, marginBottom: 1 }}>
-                {memberMap[msg.replyTo.senderId]?.name?.split(' ')[0] ?? 'Family'}
-              </Text>
-              <Text style={{ fontSize: 12, color: tsColor }} numberOfLines={1}>{msg.replyTo.text}</Text>
-            </Pressable>
-          )}
-
           {/* Bubble */}
           <Pressable
             onPress={handlePress}
@@ -467,7 +483,9 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
               borderTopRightRadius: btrr,
               borderBottomLeftRadius: bblr,
               borderBottomRightRadius: bbrr,
+              overflow: 'hidden',
               padding: isVoice ? 8 : 10,
+              paddingTop: msg.replyTo ? 0 : (isVoice ? 8 : 10),
               shadowColor: '#000',
               shadowOpacity: isMe ? 0 : (isDark ? 0.22 : 0.07),
               shadowRadius: 3,
@@ -475,6 +493,30 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
               elevation: isMe ? 0 : 2,
             }}
           >
+            {/* Reply quote — inside bubble, WhatsApp style */}
+            {msg.replyTo && (
+              <Pressable onPress={onQuoteTap}
+                style={{ flexDirection: 'row', marginBottom: 6,
+                  marginLeft: -(isVoice ? 8 : 10), marginRight: -(isVoice ? 8 : 10),
+                  borderBottomWidth: StyleSheet.hairlineWidth,
+                  borderBottomColor: isMe ? 'rgba(255,255,255,0.2)' : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'),
+                }}>
+                {/* Accent strip */}
+                <View style={{ width: 4, backgroundColor: isMe ? 'rgba(255,255,255,0.7)' : senderColor }} />
+                <View style={{ flex: 1, paddingHorizontal: 10, paddingVertical: 7,
+                  backgroundColor: isMe ? 'rgba(0,0,0,0.15)' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)') }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', marginBottom: 2,
+                    color: isMe ? 'rgba(255,255,255,0.9)' : senderColor }}>
+                    {memberMap[msg.replyTo.senderId]?.name?.split(' ')[0] ?? 'Family'}
+                  </Text>
+                  <Text numberOfLines={1}
+                    style={{ fontSize: 12, color: isMe ? 'rgba(255,255,255,0.7)' : (isDark ? 'rgba(226,232,240,0.6)' : 'rgba(26,26,46,0.5)') }}>
+                    {msg.replyTo.text || '🎙️ Voice note'}
+                  </Text>
+                </View>
+              </Pressable>
+            )}
+
             {/* Voice note */}
             {isVoice && msg.voiceUri ? (
               <VoiceNoteBubble uri={msg.voiceUri} duration={msg.voiceDuration ?? 0} isMine={isMe} colors={colors} />

@@ -97,10 +97,10 @@ function SplashWordmark({ textColor }: { textColor: string }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
       <Text style={{ fontSize: FONT, fontWeight: '800', color: textColor, letterSpacing: -1.2, lineHeight: LH }}>
-        Famil
+        Fam
       </Text>
 
-      {/* ♥ stacked above the "i" */}
+      {/* ♥ stacked above the "i" — replaces the dot */}
       <View style={{ alignItems: 'center', paddingBottom: LH - FONT }}>
         <Svg width={HEART_SZ} height={HEART_SZ} viewBox="0 0 20 18" style={{ marginBottom: 2 }}>
           <Path

@@ -1,11 +1,15 @@
+// RevenueCat disabled — all RC calls are no-ops until re-enabled
+const RC_DISABLED = true;
 let Purchases: typeof import('react-native-purchases').default | null = null;
 let LOG_LEVEL: typeof import('react-native-purchases').LOG_LEVEL | null = null;
 type PurchasesOffering = import('react-native-purchases').PurchasesOffering;
-try {
-  const mod = require('react-native-purchases');
-  Purchases = mod.default;
-  LOG_LEVEL = mod.LOG_LEVEL;
-} catch {}
+if (!RC_DISABLED) {
+  try {
+    const mod = require('react-native-purchases');
+    Purchases = mod.default;
+    LOG_LEVEL = mod.LOG_LEVEL;
+  } catch {}
+}
 import { Platform } from 'react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { supabase } from '@/lib/supabase';

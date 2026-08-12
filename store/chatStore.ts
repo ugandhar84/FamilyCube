@@ -297,7 +297,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         image_url:   imageUri ?? null,
         media_type:  mediaType ?? null,
         reply_to:    replyTo ? { id: replyTo.id, senderId: replyTo.senderId, text: replyTo.text } : null,
-        duration_sec: voiceDuration ?? null,
+        duration_sec: voiceDuration != null ? Math.round(voiceDuration) : null,
         // voice_url omitted from initial insert — added via background update after upload
       };
       const { error } = await supabase.from('chat_messages').insert(row);

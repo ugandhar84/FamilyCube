@@ -39,7 +39,7 @@ const TABS = [
   { name: 'calendar', label: 'Schedule' },
   { name: 'chat',     label: 'Chat'     },
   { name: 'store',    label: 'Perks'    },
-  { name: 'profile',  label: 'Vault'    },
+  { name: 'profile',  label: 'Hearth'   },
 ] as const;
 
 type TabName = typeof TABS[number]['name'];

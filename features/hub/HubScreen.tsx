@@ -1,285 +1,304 @@
 /**
- * HubScreen — 100% port of gemini-code HubView / KidView / SeniorView.
- * Parent: action bar, carpool requests, help queue, dual wallet, en route, chore approvals, timeline.
- * Kid:    conflict alert, help queue, quick launcher, dual wallet strip.
- * Senior: SOS, driving assignments, GP coin tip dispenser, medication, memories.
+ * HubScreen — Family OS command center.
+ * Matches HTML reference design exactly.
+ * Parent: action bar · kid requests · dual wallet · en-route · approvals · timeline
+ * Kid:    conflict warning · quick actions · status strip · wallets · quests · schedule
+ * Senior: bonus tip card · payout receipts
  */
-import React, { useState, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert,
-  TextInput, ActivityIndicator,
+  View, Text, ScrollView, Pressable, StyleSheet, RefreshControl,
+  Animated, Modal, Alert, Dimensions, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
-import { useEventStore } from '@/store/eventStore';
-import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useQuestStore } from '@/store/questStore';
-import AppHeader from '@/components/AppHeader';
-import { BRAND } from '@/components/FamilyCubeLogo';
-import HelpDispatchQueue from './HelpDispatchQueue';
-import RequestHelpModal from './RequestHelpModal';
+import { useEventStore } from '@/store/eventStore';
+import { useRewardStore } from '@/store/rewardStore';
+import { useGroceryStore } from '@/store/groceryStore';
+import { RADIUS } from '@/constants/theme';
+import type { FamilyMember } from '@/store/familyStore';
+import PinEntryModal from '@/components/PinEntryModal';
 
-// ─── Inline Icons ─────────────────────────────────────────────────────────────
+const { width: W } = Dimensions.get('window');
+const isTablet = W >= 768;
 
-const Icon = {
-  Sparkles: ({ c }: { c: string }) => (
-    <Svg width={13} height={13} viewBox="0 0 24 24">
-      <Path d="M12,2 L14.5,9.5 L22,12 L14.5,14.5 L12,22 L9.5,14.5 L2,12 L9.5,9.5 Z" stroke={c} strokeWidth={1.5} fill={c} strokeLinejoin="round" />
-    </Svg>
-  ),
-  PlusCircle: ({ c }: { c: string }) => (
-    <Svg width={13} height={13} viewBox="0 0 24 24">
-      <Circle cx={12} cy={12} r={10} stroke={c} strokeWidth={2} fill="none" />
-      <Path d="M12,8 L12,16 M8,12 L16,12" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
-    </Svg>
-  ),
-  Calendar: ({ c }: { c: string }) => (
-    <Svg width={13} height={13} viewBox="0 0 24 24">
-      <Rect x={3} y={4} width={18} height={18} rx={2} stroke={c} strokeWidth={2} fill="none" />
-      <Path d="M16,2 L16,6 M8,2 L8,6 M3,10 L21,10" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
-    </Svg>
-  ),
-  Wallet: ({ c }: { c: string }) => (
-    <Svg width={15} height={15} viewBox="0 0 24 24">
-      <Path d="M20,7 H4 C2.9,7 2,7.9 2,9 V20 C2,21.1 2.9,22 4,22 H20 C21.1,22 22,21.1 22,20 V9 C22,7.9 21.1,7 20,7 Z" stroke={c} strokeWidth={2} fill="none" />
-      <Path d="M16,2 L4,7" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
-      <Circle cx={17} cy={15} r={1.5} fill={c} />
-    </Svg>
-  ),
-  ArrowRight: ({ c }: { c: string }) => (
-    <Svg width={10} height={10} viewBox="0 0 24 24">
-      <Path d="M5,12 L19,12 M13,6 L19,12 L13,18" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </Svg>
-  ),
-  Navigation: ({ c }: { c: string }) => (
-    <Svg width={20} height={20} viewBox="0 0 24 24">
-      <Path d="M3,11 L22,2 L13,21 L11,13 Z" stroke={c} strokeWidth={2} fill="none" strokeLinejoin="round" />
-    </Svg>
-  ),
-  Clock: ({ c }: { c: string }) => (
-    <Svg width={15} height={15} viewBox="0 0 24 24">
-      <Circle cx={12} cy={12} r={10} stroke={c} strokeWidth={2} fill="none" />
-      <Path d="M12,7 L12,12 L16,14" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
-    </Svg>
-  ),
-  HelpCircle: ({ c }: { c: string }) => (
-    <Svg width={15} height={15} viewBox="0 0 24 24">
-      <Circle cx={12} cy={12} r={10} stroke={c} strokeWidth={2} fill="none" />
-      <Path d="M9,9 C9,6.2 15,6.2 15,9 C15,11 13,11.5 12,13" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
-      <Circle cx={12} cy={17} r={1} fill={c} />
-    </Svg>
-  ),
-  AlertTriangle: ({ c }: { c: string }) => (
-    <Svg width={15} height={15} viewBox="0 0 24 24">
-      <Path d="M10.3,3 L1,21 H23 Z" stroke={c} strokeWidth={2} fill="none" strokeLinejoin="round" />
-      <Path d="M12,10 L12,14 M12,17 L12,18" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
-    </Svg>
-  ),
-  Zap: ({ c }: { c: string }) => (
-    <Svg width={15} height={15} viewBox="0 0 24 24">
-      <Path d="M13,2 L3,14 H12 L11,22 L21,10 H12 Z" stroke={c} strokeWidth={2} fill="none" strokeLinejoin="round" />
-    </Svg>
-  ),
-  MessageSquare: ({ c }: { c: string }) => (
-    <Svg width={18} height={18} viewBox="0 0 24 24">
-      <Path d="M21,15 C21,15.5 20.5,16 20,16 H8 L4,20 V6 C4,5.5 4.5,5 5,5 H20 C20.5,5 21,5.5 21,6 Z" stroke={c} strokeWidth={2} fill="none" strokeLinejoin="round" />
-    </Svg>
-  ),
-  Car: ({ c }: { c: string }) => (
-    <Svg width={18} height={18} viewBox="0 0 24 24">
-      <Path d="M5,11 L7,6 L17,6 L19,11" stroke={c} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
-      <Rect x={2} y={11} width={20} height={7} rx={2} stroke={c} strokeWidth={1.5} fill="none" />
-      <Circle cx={7} cy={18} r={2} fill={c} />
-      <Circle cx={17} cy={18} r={2} fill={c} />
-    </Svg>
-  ),
-  BookOpen: ({ c }: { c: string }) => (
-    <Svg width={18} height={18} viewBox="0 0 24 24">
-      <Path d="M2,3 H8 C9.7,3 11,4.3 11,6 V20 C11,18.3 9.7,17 8,17 H2 Z" stroke={c} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
-      <Path d="M22,3 H16 C14.3,3 13,4.3 13,6 V20 C13,18.3 14.3,17 16,17 H22 Z" stroke={c} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
-    </Svg>
-  ),
-  ThumbsUp: ({ c }: { c: string }) => (
-    <Svg width={18} height={18} viewBox="0 0 24 24">
-      <Path d="M14,9 V5 C14,3.3 12.7,2 11,2 L7,13 V22 H18.3 C19.3,22 20.1,21.3 20.3,20.3 L21.7,12.3 C21.9,11 20.9,10 19.6,10 H14 Z" stroke={c} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
-      <Path d="M7,13 H4 C2.9,13 2,13.9 2,15 V20 C2,21.1 2.9,22 4,22 H7" stroke={c} strokeWidth={1.5} fill="none" />
-    </Svg>
-  ),
-  Award: ({ c }: { c: string }) => (
-    <Svg width={16} height={16} viewBox="0 0 24 24">
-      <Circle cx={12} cy={8} r={6} stroke={c} strokeWidth={2} fill="none" />
-      <Path d="M8.2,14.2 L6,22 L12,19 L18,22 L15.8,14.2" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </Svg>
-  ),
-};
+function fmtClock() {
+  const now = new Date();
+  const h = now.getHours(), m = now.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
 
-// ─── Category chip colors ─────────────────────────────────────────────────────
+function fmtTime(t?: string) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+}
 
-const CAT_CHIP: Record<string, { bg: string; text: string }> = {
-  Sports:    { bg: '#D1FAE5', text: '#065F46' },
-  Medical:   { bg: '#FEE2E2', text: '#991B1B' },
-  School:    { bg: '#EEF2FF', text: '#3730A3' },
-  Work:      { bg: '#EDE9FE', text: '#5B21B6' },
-  Event:     { bg: '#FEF3C7', text: '#92400E' },
-  Birthday:  { bg: '#FCE7F3', text: '#9D174D' },
-};
+// ─── Glass card style helper ──────────────────────────────────────────────────
+function glassStyle(colors: any, extraBorder?: string) {
+  return {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: extraBorder ?? colors.border,
+    borderRadius: 24,
+  };
+}
 
-// ─── PARENT VIEW ──────────────────────────────────────────────────────────────
-
-function ParentView({ activeMemberId, colors, isDark, onHelpOpen }: {
-  activeMemberId: string; colors: any; isDark: boolean; onHelpOpen: () => void;
+// ─── Profile Switcher Modal ───────────────────────────────────────────────────
+function ProfileSwitcherModal({ visible, onClose, members, activeId, onSelect }: {
+  visible: boolean; onClose: () => void; members: FamilyMember[];
+  activeId: string | null; onSelect: (m: FamilyMember) => void;
 }) {
-  const members = useFamilyStore(s => s.members);
-  const events  = useEventStore(s => s.events);
-  const quests  = useQuestStore(s => s.quests);
-  const { approveQuest } = useQuestStore();
+  const { colors } = useTheme();
+  const parents = members.filter(m => m.role === 'parent');
+  const kids    = members.filter(m => m.role === 'kid');
+  const seniors = members.filter(m => m.role === 'senior');
 
-  const today = new Date().toISOString().split('T')[0];
+  const Group = ({ title, list }: { title: string; list: FamilyMember[] }) =>
+    list.length === 0 ? null : (
+      <View style={{ marginBottom: 16 }}>
+        <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8, marginLeft: 4 }}>{title}</Text>
+        {list.map(m => {
+          const isActive = m.id === activeId;
+          const accent = m.role === 'parent' ? colors.parent : m.role === 'senior' ? '#9D4EDD' : colors.primary;
+          return (
+            <Pressable key={m.id} onPress={() => { onSelect(m); onClose(); }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, marginBottom: 4, backgroundColor: isActive ? accent + '18' : 'transparent' }}>
+              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: accent + '22', borderWidth: 2, borderColor: isActive ? accent : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 22 }}>{m.emoji ?? m.name[0]}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>{m.name}</Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary, textTransform: 'capitalize' }}>{m.role}</Text>
+              </View>
+              {m.role === 'kid' && (
+                <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#F59E0B' }}>🪙 {m.mainCoins}</Text>
+                  <Text style={{ fontSize: 10, color: '#9D4EDD' }}>⭐ {m.gpCoins} GP</Text>
+                </View>
+              )}
+              {isActive && <Ionicons name="checkmark-circle" size={22} color={accent} />}
+            </Pressable>
+          );
+        })}
+      </View>
+    );
 
-  const familyEventsToday = events.filter(e => e.date === today && e.category !== 'Work');
-  const pendingKidRequests = events.filter(e => e.approvalPending);
-  const pendingReviews = quests.filter(q => q.status === 'pending_approval');
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }} onPress={onClose} />
+      <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40, borderTopWidth: 1, borderColor: colors.border }}>
+        <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 20 }} />
+        <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary, marginBottom: 4 }}>Switch Profile</Text>
+        <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 20 }}>Tap a member to switch your active view</Text>
+        <Group title="Parents" list={parents} />
+        <Group title="Kids" list={kids} />
+        <Group title="Grandparents / Seniors" list={seniors} />
+        <Pressable onPress={() => { onClose(); router.push('/(tabs)/profile'); }}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border, marginTop: 4 }}>
+          <Ionicons name="settings-outline" size={20} color={colors.textSecondary} />
+          <Text style={{ fontSize: 14, color: colors.textSecondary, fontWeight: '600' }}>Manage Members & Settings</Text>
+        </Pressable>
+      </View>
+    </Modal>
+  );
+}
 
-  // Kids for wallet display
+// ─── En Route Modal ───────────────────────────────────────────────────────────
+function EnRouteModal({ visible, onClose, kids, onDispatch }: {
+  visible: boolean; onClose: () => void; kids: FamilyMember[]; onDispatch: (kid: string, eta: string) => void;
+}) {
+  const { colors } = useTheme();
+  const [selected, setSelected] = useState<string | null>(null);
+  const ETAS = ['5 min', '10 min', '15 min', '20 min', '30 min', '45 min'];
+  const [eta, setEta] = useState('10 min');
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }} onPress={onClose} />
+      <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40, borderTopWidth: 1, borderColor: colors.border }}>
+        <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 20 }} />
+        <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary, marginBottom: 4 }}>🚗 Dispatch En Route</Text>
+        <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 20 }}>Notify your kids you're on the way</Text>
+
+        <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Picking up</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
+          {kids.map(k => (
+            <Pressable key={k.id} onPress={() => setSelected(selected === k.id ? null : k.id)}
+              style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 6,
+                backgroundColor: selected === k.id ? '#10B981' : colors.card, borderColor: selected === k.id ? '#10B981' : colors.border }}>
+              <Text style={{ fontSize: 16 }}>{k.emoji ?? '👤'}</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: selected === k.id ? '#fff' : colors.textPrimary }}>{k.name.split(' ')[0]}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>ETA</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
+          {ETAS.map(e => (
+            <Pressable key={e} onPress={() => setEta(e)}
+              style={{ paddingHorizontal: 13, paddingVertical: 7, borderRadius: 16, borderWidth: 1,
+                backgroundColor: eta === e ? colors.primary : colors.card, borderColor: eta === e ? colors.primary : colors.border }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: eta === e ? '#fff' : colors.textSecondary }}>{e}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Pressable onPress={() => {
+          const kidName = selected ? kids.find(k => k.id === selected)?.name ?? 'kids' : 'kids';
+          onDispatch(kidName, eta);
+          onClose();
+        }}
+          style={{ backgroundColor: '#10B981', borderRadius: 16, paddingVertical: 14, alignItems: 'center' }}>
+          <Text style={{ fontSize: 15, fontWeight: '800', color: '#fff' }}>🚗 Send En Route Ping</Text>
+        </Pressable>
+      </View>
+    </Modal>
+  );
+}
+
+// ─── Parent View ──────────────────────────────────────────────────────────────
+function ParentView({ active, members, colors, onEnRoute }: {
+  active: FamilyMember; members: FamilyMember[]; colors: any; onEnRoute: () => void;
+}) {
+  const { quests, approveQuest } = useQuestStore();
+  const { events } = useEventStore();
+  const { items: groceryItems, load: loadGrocery } = useGroceryStore();
   const kids = members.filter(m => m.role === 'kid');
 
-  const cardBg    = isDark ? '#131927' : '#FFFFFF';
-  const cardBord  = isDark ? '#1E293B' : '#E2E8F0';
-  const subText   = isDark ? '#94A3B8' : '#64748B';
-  const divColor  = isDark ? 'rgba(255,255,255,0.07)' : '#F1F5F9';
+  useEffect(() => { loadGrocery('family-1'); }, []);
+  const inReview = quests.filter(q => q.status === 'pending_approval');
 
-  const timeStr = (t?: string) => {
-    if (!t) return '';
-    try { return new Date(`2000-01-01T${t}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); }
-    catch { return t; }
-  };
+  const today = new Date().toISOString().slice(0, 10);
+  const todayEvents = events.filter(e => e.date === today).sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
+
+  const MOCK_REQUESTS = [
+    { emoji: '🚗', type: 'Ride', who: 'Leo', detail: 'Soccer practice at 3:30 PM' },
+  ];
+
+  const pad = { paddingHorizontal: 16 };
 
   return (
     <>
-      {/* ── Quick Action Bar ── */}
-      <View style={[p.actionBar, { backgroundColor: cardBg, borderColor: cardBord }]}>
-        <TouchableOpacity style={[p.actionBtn, { backgroundColor: BRAND.purple }]}>
-          <Icon.Sparkles c="#fff" />
-          <Text style={p.actionBtnText}>Scan Flyer</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[p.actionBtn, { backgroundColor: isDark ? '#0F172A' : '#F1F5F9' }]}>
-          <Icon.PlusCircle c="#10B981" />
-          <Text style={[p.actionBtnText, { color: isDark ? '#E2E8F0' : '#1E293B' }]}>+ Quest</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[p.actionBtn, { backgroundColor: isDark ? '#0F172A' : '#F1F5F9' }]}>
-          <Icon.Calendar c={BRAND.purple} />
-          <Text style={[p.actionBtnText, { color: isDark ? '#E2E8F0' : '#1E293B' }]}>+ Event</Text>
-        </TouchableOpacity>
+      {/* Action bar */}
+      <View style={[{ flexDirection: 'row', gap: 8, marginBottom: 14 }, pad]}>
+        {/* Scan Flyer — purple gradient */}
+        <Pressable style={{ flex: 1, borderRadius: 20, paddingVertical: 13, alignItems: 'center', gap: 4, backgroundColor: '#6C5CE7', overflow: 'hidden' }}>
+          <Text style={{ fontSize: 18 }}>📋</Text>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>Scan Flyer</Text>
+        </Pressable>
+        {/* + Quest */}
+        <Pressable onPress={() => router.push('/(tabs)/quests')}
+          style={{ flex: 1, borderRadius: 20, paddingVertical: 13, alignItems: 'center', gap: 4, backgroundColor: '#10B981' }}>
+          <Text style={{ fontSize: 18 }}>➕</Text>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>+ Quest</Text>
+        </Pressable>
+        {/* + Event */}
+        <Pressable onPress={() => router.push('/(tabs)/calendar')}
+          style={{ flex: 1, borderRadius: 20, paddingVertical: 13, alignItems: 'center', gap: 4, backgroundColor: '#F59E0B' }}>
+          <Text style={{ fontSize: 18 }}>📅</Text>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>+ Event</Text>
+        </Pressable>
+        {/* Grocery */}
+        <Pressable onPress={() => router.push('/(tabs)/grocery' as any)}
+          style={{ flex: 1, borderRadius: 20, paddingVertical: 13, alignItems: 'center', gap: 4, backgroundColor: '#0ea5e9' }}>
+          <Text style={{ fontSize: 18 }}>🛒</Text>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>
+            {groceryItems.length > 0 ? `${groceryItems.length} items` : 'Grocery'}
+          </Text>
+        </Pressable>
       </View>
 
-      {/* ── Pending Kid Schedule / Carpool Requests ── */}
-      {pendingKidRequests.length > 0 && (
-        <View style={[p.card, { backgroundColor: isDark ? '#1C1000' : '#FFFBEB', borderColor: isDark ? '#78350F' : '#FCD34D', marginHorizontal: 14, marginBottom: 12 }]}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Icon.HelpCircle c={isDark ? '#FCD34D' : '#D97706'} />
-              <Text style={[p.sectionTitle, { color: isDark ? '#FCD34D' : '#92400E' }]}>Kid Schedule / Carpool Request</Text>
+      {/* Kid schedule requests — amber gradient */}
+      {MOCK_REQUESTS.map((r, i) => (
+        <Pressable key={i} style={[pad, { marginBottom: 12 }]}>
+          <View style={{ backgroundColor: '#78350F22', borderRadius: 24, borderWidth: 1, borderColor: '#F59E0B60', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Text style={{ fontSize: 22 }}>{r.emoji}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: '#F59E0B' }}>Schedule Request · {r.type}</Text>
+              <Text style={{ fontSize: 12, color: colors.textSecondary }}>{r.who}: {r.detail}</Text>
             </View>
-            <View style={[p.statusPill, { backgroundColor: isDark ? '#78350F' : '#FEF3C7' }]}>
-              <Text style={[p.statusPillText, { color: isDark ? '#FCD34D' : '#92400E' }]}>Needs Approval</Text>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              <Pressable style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="checkmark" size={14} color="#fff" />
+              </Pressable>
+              <Pressable style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name="close" size={14} color="#fff" />
+              </Pressable>
             </View>
           </View>
-          {pendingKidRequests.map(kr => (
-            <View key={kr.id} style={[p.carPoolRow, { backgroundColor: isDark ? '#0F172A' : '#fff', borderColor: isDark ? '#78350F' : '#FDE68A' }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={[p.carPoolTitle, { color: colors.textPrimary }]}>{kr.memberId}: {kr.title}</Text>
-                <Text style={[p.carPoolSub, { color: subText }]}>Time: {timeStr(kr.time)} ({kr.category})</Text>
-              </View>
-              <TouchableOpacity style={[p.claimBtn, { backgroundColor: BRAND.purple }]}>
-                <Text style={p.claimBtnText}>✓ Claim Duty</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
-        </View>
-      )}
+        </Pressable>
+      ))}
 
-      {/* ── Help Queue ── */}
-      <HelpDispatchQueue onRequestHelpOpen={onHelpOpen} />
-
-      {/* ── Dual-Wallet Balances ── */}
-      <View style={[p.card, { backgroundColor: cardBg, borderColor: cardBord, marginHorizontal: 14, marginBottom: 12 }]}>
-        <View style={[p.cardHeaderRow, { borderBottomColor: divColor }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Icon.Wallet c="#10B981" />
-            <Text style={[p.sectionTitle, { color: colors.textPrimary }]}>Family Dual-Wallet Balances</Text>
+      {/* Dual wallet summary glass card */}
+      <View style={[pad, { marginBottom: 14 }]}>
+        <View style={[glassStyle(colors), { padding: 14, gap: 10 }]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 10 }}>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary }}>💰 Family Wallet Summary</Text>
+            <Pressable onPress={() => router.push('/(tabs)/profile')}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary }}>Full Ledger →</Text>
+            </Pressable>
           </View>
-          <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-            <Text style={{ fontSize: 10, color: BRAND.purple, fontWeight: '700' }}>Full Audit Ledger</Text>
-            <Icon.ArrowRight c={BRAND.purple} />
-          </TouchableOpacity>
-        </View>
-        <View style={{ gap: 8, marginTop: 10 }}>
           {kids.map(k => (
-            <View key={k.id} style={[p.walletRow, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: cardBord }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ fontSize: 18 }}>{k.emoji ?? '👦'}</Text>
-                <Text style={[p.walletName, { color: colors.textPrimary }]}>{k.name}</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={[p.walletMain, { color: isDark ? '#FCD34D' : '#D97706' }]}>
-                  Store Wallet: {k.mainCoins}🪙 (${(k.mainCoins * 0.1).toFixed(2)})
-                </Text>
-                <Text style={[p.walletGP, { color: isDark ? '#C4B5FD' : '#7C3AED' }]}>
-                  GP Gift Bonus: {k.gpCoins}🪙 (${(k.gpCoins * 0.1).toFixed(2)})
-                </Text>
-              </View>
+            <View key={k.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Text style={{ fontSize: 18 }}>{k.emoji ?? '👤'}</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary, flex: 1 }}>{k.name.split(' ')[0]}</Text>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#F59E0B' }}>Store: {k.mainCoins}🪙</Text>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#9D4EDD', marginLeft: 8 }}>GP: {k.gpCoins}⭐</Text>
             </View>
           ))}
         </View>
       </View>
 
-      {/* ── En Route Dispatcher ── */}
-      <View style={[p.card, { backgroundColor: isDark ? '#052E16' : '#F0FDF4', borderColor: isDark ? '#14532D' : '#BBF7D0', marginHorizontal: 14, marginBottom: 12, flexDirection: 'row', alignItems: 'center' }]}>
-        <View style={[p.navIconWrap, { backgroundColor: isDark ? '#14532D' : '#D1FAE5' }]}>
-          <Icon.Navigation c={isDark ? '#6EE7B7' : '#065F46'} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[p.enRouteTitle, { color: colors.textPrimary }]}>Start Pickup / Trip</Text>
-          <Text style={[p.enRouteSub, { color: subText }]}>Broadcast "En Route" with ETA to family chat</Text>
-        </View>
-        <TouchableOpacity style={p.enRouteBtn}>
-          <Text style={p.enRouteBtnText}>En Route</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── Chore Approval Center ── */}
-      {pendingReviews.length > 0 && (
-        <View style={[p.card, { backgroundColor: isDark ? '#1E0D3D' : '#FAF5FF', borderColor: isDark ? '#4C1D95' : '#DDD6FE', marginHorizontal: 14, marginBottom: 12 }]}>
-          <View style={[p.cardHeaderRow, { borderBottomColor: isDark ? '#4C1D95' : '#EDE9FE' }]}>
-            <Text style={[p.sectionLabelUpper, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>Action Center: Chore Approvals</Text>
-            <View style={[p.statusPill, { backgroundColor: isDark ? '#4C1D95' : '#EDE9FE' }]}>
-              <Text style={[p.statusPillText, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>{pendingReviews.length} Awaiting Clearance</Text>
-            </View>
+      {/* En Route launcher */}
+      <Pressable onPress={onEnRoute} style={[pad, { marginBottom: 14 }]}>
+        <View style={{ backgroundColor: '#064E3B', borderRadius: 24, borderWidth: 1, borderColor: '#10B98140', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#10B98130', alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 22 }}>🚗</Text>
           </View>
-          <View style={{ gap: 10, marginTop: 10 }}>
-            {pendingReviews.map(pr => {
-              const assignee = members.find(m => m.id === pr.assignedToId);
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 14, fontWeight: '800', color: '#10B981' }}>Dispatch En Route</Text>
+            <Text style={{ fontSize: 12, color: '#6EE7B7' }}>Notify kids you're on your way home</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#10B981" />
+        </View>
+      </Pressable>
+
+      {/* Approvals */}
+      {inReview.length > 0 && (
+        <View style={[pad, { marginBottom: 14 }]}>
+          <View style={[glassStyle(colors, '#10B98140'), { padding: 14, gap: 10 }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: '#10B981' }}>
+                ✅ {inReview.length} Quest{inReview.length !== 1 ? 's' : ''} Awaiting Approval
+              </Text>
+              <Pressable onPress={() => inReview.forEach(q => approveQuest(q.id, active.id))}
+                style={{ backgroundColor: '#10B981', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: '#fff' }}>Approve All</Text>
+              </Pressable>
+            </View>
+            {inReview.slice(0, 3).map(q => {
+              const kid = members.find(m => m.id === q.assignedToId);
               return (
-                <View key={pr.id} style={[p.choreRow, { backgroundColor: isDark ? '#0F172A' : '#fff', borderColor: isDark ? '#4C1D95' : '#DDD6FE' }]}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                    <View style={[p.photoThumb, { backgroundColor: isDark ? '#4C1D95' : '#EDE9FE' }]}>
-                      <Text style={{ fontSize: 20 }}>📷</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[p.choreSubmitter, { color: subText }]}>{assignee?.name ?? 'Member'} submitted:</Text>
-                      <Text style={[p.choreTitle, { color: colors.textPrimary }]}>{pr.title}</Text>
-                      <Text style={[p.choreCoin, { color: BRAND.amber }]}>+{pr.coins} 🪙 (${(pr.coins * 0.1).toFixed(2)})</Text>
-                    </View>
+                <View key={q.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.background, borderRadius: 16, padding: 10, borderWidth: 1, borderColor: colors.border }}>
+                  {/* Photo proof thumbnail placeholder */}
+                  <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: '#6C5CE720', borderWidth: 2, borderColor: '#6C5CE750', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 20 }}>📸</Text>
                   </View>
-                  <TouchableOpacity
-                    style={[p.payBtn, { backgroundColor: BRAND.purple }]}
-                    onPress={() => approveQuest(pr.id, activeMemberId)}
-                  >
-                    <Text style={p.payBtnText}>✓ Pay {pr.coins}🪙</Text>
-                  </TouchableOpacity>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>{q.title}</Text>
+                    {kid && <Text style={{ fontSize: 11, color: '#9D4EDD', fontWeight: '600' }}>{kid.emoji} {kid.name.split(' ')[0]}</Text>}
+                    <Text style={{ fontSize: 10, color: '#9D8FF5' }}>Photo Proof Attached</Text>
+                  </View>
+                  <Pressable onPress={() => approveQuest(q.id, active.id)}
+                    style={{ backgroundColor: '#10B981', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>Pay 🪙{q.coins}</Text>
+                  </Pressable>
                 </View>
               );
             })}
@@ -287,487 +306,413 @@ function ParentView({ activeMemberId, colors, isDark, onHelpOpen }: {
         </View>
       )}
 
-      {/* ── Today's Family Timeline ── */}
-      <View style={[p.card, { backgroundColor: cardBg, borderColor: cardBord, marginHorizontal: 14, marginBottom: 20 }]}>
-        <View style={[p.cardHeaderRow, { borderBottomColor: divColor }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Icon.Clock c={BRAND.purple} />
-            <Text style={[p.sectionTitle, { color: colors.textPrimary }]}>Today's Family Timeline</Text>
-          </View>
-          <TouchableOpacity>
-            <Text style={{ fontSize: 11, color: BRAND.purple, fontWeight: '700' }}>Full Schedule →</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={{ gap: 8, marginTop: 10 }}>
-          {familyEventsToday.length === 0 ? (
-            <Text style={[p.emptyTimeline, { color: subText }]}>No events today 🎉</Text>
-          ) : (
-            familyEventsToday.map(ev => {
-              const cat  = ev.category ?? 'Event';
-              const chip = CAT_CHIP[cat] ?? { bg: '#E2E8F0', text: '#475569' };
-              return (
-                <View key={ev.id} style={[p.tlRow, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: cardBord }]}>
-                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={[p.tlTime, { color: isDark ? '#C4B5FD' : '#7C3AED' }]}>{timeStr(ev.time)}</Text>
-                    <Text style={[p.tlTitle, { color: colors.textPrimary }]}>{ev.title}</Text>
-                  </View>
-                  <View style={[p.tlChip, { backgroundColor: ev.conflict ? (isDark ? '#451A03' : '#FEF3C7') : chip.bg }]}>
-                    <Text style={[p.tlChipText, { color: ev.conflict ? '#D97706' : chip.text }]}>
-                      {ev.driver ? ev.driver.split(' ')[0] : 'No Driver'}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })
-          )}
-        </View>
-      </View>
-    </>
-  );
-}
-
-// ─── KID VIEW ─────────────────────────────────────────────────────────────────
-
-function KidView({ activeMember, colors, isDark, onHelpOpen }: {
-  activeMember: any; colors: any; isDark: boolean; onHelpOpen: () => void;
-}) {
-  const events = useEventStore(s => s.events);
-  const today  = new Date().toISOString().split('T')[0];
-
-  const parentWorkConflicts = events.filter(e => e.date === today && e.category === 'Work' && e.conflict);
-
-  const cardBg   = isDark ? '#131927' : '#FFFFFF';
-  const cardBord = isDark ? '#1E293B' : '#E2E8F0';
-
-  return (
-    <>
-      {/* ── Parent Conflict Alert ── */}
-      {parentWorkConflicts.length > 0 && (
-        <View style={[k.card, { backgroundColor: isDark ? '#1C1000' : '#FFFBEB', borderColor: isDark ? '#78350F' : '#FCD34D', marginHorizontal: 14, marginBottom: 12 }]}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Icon.AlertTriangle c={isDark ? '#FCD34D' : '#D97706'} />
-              <Text style={[k.alertTitle, { color: isDark ? '#FCD34D' : '#92400E' }]}>Parent Schedule Conflict Alert</Text>
-            </View>
-            <View style={[k.statusPill, { backgroundColor: isDark ? '#78350F' : '#FEF3C7' }]}>
-              <Text style={[k.statusPillText, { color: isDark ? '#FCD34D' : '#92400E' }]}>Parent Busy</Text>
-            </View>
-          </View>
-          <Text style={[k.alertBody, { color: isDark ? '#E2E8F0' : '#475569' }]}>
-            Mom has a work call during afternoon activities. Dad or Grandma is covering pickups!
-          </Text>
-        </View>
-      )}
-
-      {/* ── Help Queue ── */}
-      <HelpDispatchQueue onRequestHelpOpen={onHelpOpen} />
-
-      {/* ── Kid Quick Launcher ── */}
-      <View style={[k.card, { backgroundColor: cardBg, borderColor: cardBord, marginHorizontal: 14, marginBottom: 12 }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-          <Icon.Zap c={BRAND.amber} />
-          <Text style={[k.cardTitle, { color: colors.textPrimary }]}>Kid Quick Launcher</Text>
-        </View>
-        <View style={k.launcherGrid}>
-          {[
-            { icon: <Icon.MessageSquare c="#9333EA" />, label: 'Parent Chat',  color: '#9333EA' },
-            { icon: <Icon.Car          c="#10B981" />, label: 'Ask Ride',     color: '#10B981' },
-            { icon: <Icon.BookOpen     c={BRAND.amber} />, label: 'Ask Tutor', color: BRAND.amber },
-            { icon: <Icon.ThumbsUp     c="#6366F1" />, label: 'Cheer',        color: '#6366F1' },
-          ].map(item => (
-            <TouchableOpacity
-              key={item.label}
-              style={[k.launcherBtn, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: cardBord }]}
-            >
-              {item.icon}
-              <Text style={[k.launcherLabel, { color: colors.textPrimary }]}>{item.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      {/* ── Dual Sub-Wallets Strip ── */}
-      <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 14, marginBottom: 20 }}>
-        <View style={[k.walletCard, { backgroundColor: cardBg, borderColor: cardBord, flex: 1 }]}>
-          <Text style={[k.walletLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>Main Store Wallet</Text>
-          <Text style={[k.walletAmount, { color: BRAND.amber }]}>{activeMember.mainCoins} Coins 🪙</Text>
-          <Text style={[k.walletSub, { color: isDark ? '#94A3B8' : '#64748B' }]}>Redeem Perks in Store</Text>
-        </View>
-        <View style={[k.walletCard, { backgroundColor: isDark ? '#1E0D3D' : '#FAF5FF', borderColor: isDark ? '#4C1D95' : '#DDD6FE', flex: 1 }]}>
-          <Text style={[k.walletLabel, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>Grandparent Bonus</Text>
-          <Text style={[k.walletAmount, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>{activeMember.gpCoins} Coins 🪙</Text>
-          <Text style={[k.walletSub, { color: isDark ? '#C4B5FD' : '#7C3AED' }]}>Cash Out via Parents</Text>
-        </View>
-      </View>
-    </>
-  );
-}
-
-// ─── SENIOR VIEW ──────────────────────────────────────────────────────────────
-
-function SeniorView({ activeMember, colors, isDark, onHelpOpen }: {
-  activeMember: any; colors: any; isDark: boolean; onHelpOpen: () => void;
-}) {
-  const members    = useFamilyStore(s => s.members);
-  const { requests, completeRequest } = useKidRequestStore();
-  const events     = useEventStore(s => s.events);
-  const today      = new Date().toISOString().split('T')[0];
-
-  const [sosTriggered, setSosTriggered]   = useState(false);
-  const [tipTargetKid, setTipTargetKid]   = useState('');
-  const [tipCoins,     setTipCoins]       = useState(25);
-  const [tipMessage,   setTipMessage]     = useState('Great job cleaning your bedroom, sweetheart!');
-  const [isSendingTip, setIsSendingTip]   = useState(false);
-
-  const kids       = members.filter(m => m.role === 'kid');
-  const targetKid  = kids.find(k => k.id === tipTargetKid) ?? kids[0];
-
-  // Today's events assigned to this senior as driver
-  const gpName = activeMember?.name?.toLowerCase() ?? '';
-  const pendingRides   = events.filter(e => e.driver && e.driver.toLowerCase().includes(gpName.split(' ')[0]) && e.date === today && !e.approvalPending);
-  const myAssignedHelp = requests.filter(r => r.assignedHelper === activeMember?.id && r.status === 'approved');
-
-  const doSendTip = async () => {
-    if (isSendingTip || !targetKid) return;
-    setIsSendingTip(true);
-    await new Promise(r => setTimeout(r, 800));
-    useFamilyStore.getState().awardCoins(targetKid.id, tipCoins, 'gpCoins');
-    Alert.alert('🎉 Tip Sent!', `${tipCoins} bonus coins sent to ${targetKid.name}!`);
-    setIsSendingTip(false);
-  };
-
-  const cardBg   = isDark ? '#131927' : '#FFFFFF';
-  const cardBord = isDark ? '#1E293B' : '#E2E8F0';
-
-  const timeStr = (t?: string) => {
-    if (!t) return '';
-    try { return new Date(`2000-01-01T${t}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); }
-    catch { return t; }
-  };
-
-  return (
-    <>
-      {/* ── Senior Mode Banner ── */}
-      <View style={[sv.banner, { backgroundColor: isDark ? '#0F0A1E' : '#1E0D3D', borderColor: isDark ? '#6D28D9' : '#7C3AED' }]}>
-        <View style={{ flex: 1 }}>
-          <Text style={sv.bannerName}>{activeMember?.name}</Text>
-          <Text style={sv.bannerSub}>Welcome back! Here are your daily schedule items</Text>
-        </View>
-        <TouchableOpacity
-          style={[sv.sosBtn, sosTriggered && { backgroundColor: '#7F1D1D' }]}
-          onPress={() => setSosTriggered(t => !t)}
-        >
-          <Text style={sv.sosBtnText}>⚠️ Emergency SOS</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── SOS Alert ── */}
-      {sosTriggered && (
-        <View style={[sv.sosAlert, { marginHorizontal: 14, marginBottom: 12 }]}>
-          <Text style={sv.sosAlertTitle}>🆘 EMERGENCY SOS ALERT BROADCASTED</Text>
-          <Text style={sv.sosAlertBody}>Alert sent to Parents! Live location shared & emergency response notified.</Text>
-          <TouchableOpacity style={sv.sosCancelBtn} onPress={() => setSosTriggered(false)}>
-            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Cancel Alert</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* ── Driving & Care Assignments ── */}
-      <View style={[sv.card, { backgroundColor: cardBg, borderColor: cardBord }]}>
-        <View style={[sv.cardHeader, { borderBottomColor: isDark ? 'rgba(255,255,255,0.07)' : '#F1F5F9' }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Icon.Car c={BRAND.purple} />
-            <Text style={[sv.cardTitle, { color: colors.textPrimary }]}>Your Driving & Care Assignments</Text>
-          </View>
-          <View style={[sv.countPill, { backgroundColor: isDark ? '#4C1D95' : '#EDE9FE' }]}>
-            <Text style={[sv.countPillText, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>
-              {pendingRides.length} Active • {myAssignedHelp.length} Help
-            </Text>
-          </View>
-        </View>
-
-        {pendingRides.length === 0 && myAssignedHelp.length === 0 ? (
-          <View style={sv.emptyAssignment}>
-            <Text style={[sv.emptyText, { color: colors.textTertiary }]}>🎈 No scheduled trips or care duties today! Relax and enjoy.</Text>
+      {/* Today's timeline */}
+      <View style={pad}>
+        <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 12 }}>Today's Timeline</Text>
+        {todayEvents.length === 0 ? (
+          <View style={[glassStyle(colors), { padding: 24, alignItems: 'center', gap: 6 }]}>
+            <Text style={{ fontSize: 28 }}>📅</Text>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textTertiary }}>No events scheduled today</Text>
           </View>
         ) : (
-          <View style={{ gap: 8, marginTop: 10 }}>
-            {pendingRides.map(ev => (
-              <View key={ev.id} style={[sv.dutyRow, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: cardBord }]}>
-                <View style={{ flex: 1 }}>
-                  <View style={sv.dutyChips}>
-                    <View style={[sv.dutyBadge, { backgroundColor: isDark ? '#14532D' : '#D1FAE5' }]}>
-                      <Text style={[sv.dutyBadgeText, { color: isDark ? '#6EE7B7' : '#065F46' }]}>✓ Confirmed Ride</Text>
-                    </View>
-                    <Text style={[sv.dutyTime, { color: colors.textTertiary }]}>{timeStr(ev.time)}</Text>
-                  </View>
-                  <Text style={[sv.dutyTitle, { color: colors.textPrimary }]}>{ev.title}</Text>
-                  {ev.location && <Text style={[sv.dutySub, { color: colors.textSecondary }]}>📍 {ev.location}</Text>}
-                </View>
-              </View>
-            ))}
-            {myAssignedHelp.map(req => {
-              const requester = members.find(m => m.id === req.fromMemberId);
+          <View style={{ paddingLeft: 24, borderLeftWidth: 2, borderLeftColor: colors.border, gap: 12 }}>
+            {todayEvents.map((ev, i) => {
+              const hasConflict = (ev as any).conflict;
+              const dotColor = hasConflict ? '#F59E0B' : ev.category === 'Medical' ? '#EF4444' : ev.category === 'Work' ? '#6C5CE7' : '#10B981';
               return (
-                <View key={req.id} style={[sv.dutyRow, { backgroundColor: isDark ? '#1E0D3D' : '#FAF5FF', borderColor: isDark ? '#4C1D95' : '#DDD6FE' }]}>
-                  <View style={{ flex: 1 }}>
-                    <View style={[sv.dutyBadge, { backgroundColor: isDark ? '#4C1D95' : '#EDE9FE', alignSelf: 'flex-start', marginBottom: 4 }]}>
-                      <Text style={[sv.dutyBadgeText, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>📚 Tutor / Care Duty</Text>
+                <View key={ev.id} style={{ position: 'relative' }}>
+                  <View style={{ position: 'absolute', left: -29, top: 12, width: 10, height: 10, borderRadius: 5, backgroundColor: dotColor, borderWidth: 3, borderColor: colors.background }} />
+                  <View style={[glassStyle(colors, hasConflict ? '#F59E0B40' : colors.border), { padding: 12, gap: 6,
+                    backgroundColor: hasConflict ? '#78350F15' : colors.card }]}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <View style={{ backgroundColor: dotColor + '22', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: dotColor, textTransform: 'uppercase', letterSpacing: 0.5 }}>{ev.category ?? 'Event'}</Text>
+                      </View>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>{fmtTime(ev.time)}</Text>
                     </View>
-                    <Text style={[sv.dutyTitle, { color: colors.textPrimary }]}>{req.detail}</Text>
-                    <Text style={[sv.dutySub, { color: colors.textSecondary }]}>Requester: {requester?.name ?? 'Member'}</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>{ev.title}</Text>
+                    {(ev as any).driver && (
+                      <Text style={{ fontSize: 11, color: colors.textSecondary }}>🚗 Driver: <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{(ev as any).driver}</Text></Text>
+                    )}
+                    {hasConflict && (
+                      <Pressable style={{ backgroundColor: '#F59E0B', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start' }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>Swap Driver</Text>
+                      </Pressable>
+                    )}
                   </View>
-                  <TouchableOpacity
-                    style={[sv.completeBtn, { backgroundColor: BRAND.purple }]}
-                    onPress={() => completeRequest(req.id, activeMember.id)}
-                  >
-                    <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>Complete Support</Text>
-                  </TouchableOpacity>
                 </View>
               );
             })}
           </View>
         )}
       </View>
+    </>
+  );
+}
 
-      {/* ── Grandparent Bonus Coin Dispenser ── */}
-      <View style={[sv.gpCard, { marginHorizontal: 14, marginBottom: 12 }]}>
-        <View style={[sv.cardHeader, { borderBottomColor: 'rgba(167,139,250,0.3)' }]}>
-          <Text style={sv.gpTitle}>🎁 Send Grandparent Bonus Coins to Grandkids</Text>
-          <View style={[sv.matchPill]}>
-            <Text style={sv.matchPillText}>100% Matching</Text>
-          </View>
-        </View>
+// ─── Kid View ─────────────────────────────────────────────────────────────────
+function KidView({ active, members, colors }: { active: FamilyMember; members: FamilyMember[]; colors: any }) {
+  const { quests, submitQuest } = useQuestStore();
+  const { events } = useEventStore();
 
-        <View style={{ gap: 10, marginTop: 10 }}>
-          {/* Kid selector */}
-          <Text style={sv.gpLabel}>Select Grandchild:</Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {kids.map(k => (
-              <TouchableOpacity
-                key={k.id}
-                style={[sv.kidChip, (tipTargetKid || kids[0]?.id) === k.id && sv.kidChipActive]}
-                onPress={() => setTipTargetKid(k.id)}
-              >
-                <Text style={{ fontSize: 12, fontWeight: '800', color: (tipTargetKid || kids[0]?.id) === k.id ? '#0F172A' : '#C4B5FD' }}>
-                  {k.emoji ?? '🧒'} {k.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+  const myQuests   = quests.filter(q => q.assignedToId === active.id);
+  const inProgress = myQuests.filter(q => q.status === 'todo' || q.status === 'claimed').length;
+  const inReview   = myQuests.filter(q => q.status === 'pending_approval').length;
+  const available  = quests.filter(q => !q.assignedToId && q.status === 'todo').length;
 
-          {/* Amount selector */}
-          <Text style={sv.gpLabel}>Bonus Amount:</Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {[15, 25, 50].map(amt => (
-              <TouchableOpacity
-                key={amt}
-                style={[sv.amtChip, tipCoins === amt && sv.amtChipActive]}
-                onPress={() => setTipCoins(amt)}
-              >
-                <Text style={{ fontSize: 11, fontWeight: '900', color: tipCoins === amt ? '#fff' : '#C4B5FD' }}>+{amt} 🪙</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+  const today = new Date().toISOString().slice(0, 10);
+  const todayEvents = events.filter(e => e.date === today).slice(0, 3);
 
-          {/* Note */}
-          <Text style={sv.gpLabel}>Encouragement Note:</Text>
-          <TextInput
-            style={sv.gpInput}
-            value={tipMessage}
-            onChangeText={setTipMessage}
-            placeholderTextColor="#7C3AED"
-          />
+  const mainCoins = active.mainCoins ?? active.coins ?? 0;
+  const gpCoins   = active.gpCoins ?? 0;
+  const streak    = active.streak ?? 0;
+  const COIN_VALUE = 0.10;
 
-          {/* Send button */}
-          <TouchableOpacity
-            style={[sv.sendTipBtn, { opacity: isSendingTip ? 0.6 : 1 }]}
-            onPress={doSendTip}
-            disabled={isSendingTip}
-          >
-            {isSendingTip
-              ? <><ActivityIndicator color="#0F172A" size="small" /><Text style={sv.sendTipText}>Tip Dispenser syncing...</Text></>
-              : <Text style={sv.sendTipText}>🪙 Send +{tipCoins} Bonus Coins to {targetKid?.name ?? 'Grandkid'}</Text>}
-          </TouchableOpacity>
+  const pad = { paddingHorizontal: 16 };
+
+  return (
+    <>
+      {/* Conflict warning */}
+      <View style={[pad, { marginBottom: 12 }]}>
+        <View style={{ backgroundColor: '#78350F22', borderRadius: 20, borderWidth: 1, borderColor: '#F59E0B50', padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Text style={{ fontSize: 16 }}>⚠️</Text>
+          <Text style={{ flex: 1, fontSize: 12, color: colors.textPrimary, fontWeight: '600' }}>
+            Mom & Dad both signed up for pickup at 3:30 PM — check schedule!
+          </Text>
         </View>
       </View>
 
-      {/* ── Senior Caregiver HQ Info ── */}
-      <View style={[sv.card, { backgroundColor: isDark ? '#1E0D3D' : '#FAF5FF', borderColor: isDark ? '#4C1D95' : '#DDD6FE' }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-          <Icon.Award c={isDark ? '#C4B5FD' : '#6D28D9'} />
-          <Text style={[sv.cardTitle, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>Senior Caregiver & Driver HQ</Text>
+      {/* Quick actions glass card */}
+      <View style={[pad, { marginBottom: 14 }]}>
+        <View style={[glassStyle(colors), { padding: 12 }]}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {[
+              { icon: '💬', label: 'Parent Chat',   color: '#6C5CE7', action: () => router.push('/(tabs)/chat') },
+              { icon: '🚗', label: 'Ask a Ride',    color: '#10B981', action: () => Alert.alert('Ride Request', 'Your parent will be notified!') },
+              { icon: '📚', label: 'Ask Tutor',     color: '#F59E0B', action: () => Alert.alert('Tutor Request', 'Scheduling...') },
+              { icon: '🎉', label: 'Cheer Sibling', color: '#EF4444', action: () => router.push('/(tabs)/quests') },
+            ].map(a => (
+              <Pressable key={a.label} onPress={a.action}
+                style={{ width: (W - 64) / 2, backgroundColor: a.color + '18', borderRadius: 18, paddingVertical: 12, alignItems: 'center', gap: 4, borderWidth: 1, borderColor: a.color + '30' }}>
+                <Text style={{ fontSize: 22 }}>{a.icon}</Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: a.color }}>{a.label}</Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
-        <Text style={{ fontSize: 12, color: isDark ? '#A78BFA' : '#7C3AED', lineHeight: 18 }}>
-          Grandparents have exclusive permissions to send Grandparent Bonus Tips into grandchildren's sub-wallets and assist with carpool schedules.
-        </Text>
+      </View>
+
+      {/* Status 3-box strip */}
+      <View style={[{ flexDirection: 'row', gap: 8, marginBottom: 14 }, pad]}>
+        {[
+          { n: inProgress, label: 'In Progress', color: '#6C5CE7', icon: '⚡' },
+          { n: inReview,   label: 'In Review',   color: '#F59E0B', icon: '⏳' },
+          { n: available,  label: 'Open Tasks',  color: '#10B981', icon: '🏆' },
+        ].map(b => (
+          <Pressable key={b.label} onPress={() => router.push('/(tabs)/quests')}
+            style={{ flex: 1, backgroundColor: b.color + '15', borderRadius: 20, borderWidth: 1, borderColor: b.color + '40', paddingVertical: 14, alignItems: 'center', gap: 3 }}>
+            <Text style={{ fontSize: 18 }}>{b.icon}</Text>
+            <Text style={{ fontSize: 22, fontWeight: '900', color: b.color }}>{b.n}</Text>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: b.color, textAlign: 'center' }}>{b.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {/* Dual sub-wallets */}
+      <View style={[{ flexDirection: 'row', gap: 8, marginBottom: 14 }, pad]}>
+        {/* Main store wallet — amber */}
+        <View style={{ flex: 1, backgroundColor: '#78350F22', borderRadius: 22, borderWidth: 1, borderColor: '#F59E0B40', padding: 14, gap: 3 }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: '#F59E0B' }}>🪙 Store Wallet</Text>
+          <Text style={{ fontSize: 26, fontWeight: '900', color: '#F59E0B' }}>{mainCoins}</Text>
+          <Text style={{ fontSize: 10, color: colors.textTertiary }}>${(mainCoins * COIN_VALUE).toFixed(2)} cash value</Text>
+          <Pressable onPress={() => router.push('/(tabs)/profile')}
+            style={{ backgroundColor: '#F59E0B', borderRadius: 10, paddingVertical: 7, alignItems: 'center', marginTop: 4 }}>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>Browse Perks</Text>
+          </Pressable>
+        </View>
+        {/* GP bonus wallet — purple */}
+        <View style={{ flex: 1, backgroundColor: '#4C1D9522', borderRadius: 22, borderWidth: 1, borderColor: '#9D4EDD40', padding: 14, gap: 3 }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: '#9D4EDD' }}>⭐ GP Bonus</Text>
+          <Text style={{ fontSize: 26, fontWeight: '900', color: '#9D4EDD' }}>{gpCoins}</Text>
+          <Text style={{ fontSize: 10, color: colors.textTertiary }}>from Grandma</Text>
+          <Pressable onPress={() => Alert.alert('GP Cash Out', 'Ask a parent to convert your GP coins!')}
+            style={{ backgroundColor: '#9D4EDD', borderRadius: 10, paddingVertical: 7, alignItems: 'center', marginTop: 4 }}>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#fff' }}>Cash Out</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      {/* Streak */}
+      {streak > 0 && (
+        <View style={[pad, { marginBottom: 12 }]}>
+          <View style={[glassStyle(colors), { flexDirection: 'row', padding: 12, alignItems: 'center', gap: 10 }]}>
+            <Text style={{ fontSize: 24 }}>🔥</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>{streak} Day Streak!</Text>
+              <Text style={{ fontSize: 12, color: colors.textSecondary }}>Keep completing quests daily</Text>
+            </View>
+            <Text style={{ fontSize: 22 }}>🏅</Text>
+          </View>
+        </View>
+      )}
+
+      {/* My quests checklist */}
+      <View style={pad}>
+        <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>My Quests</Text>
+        {myQuests.filter(q => q.status !== 'done').slice(0, 5).map(q => {
+          const isPending = q.status === 'pending_approval';
+          const isClaimed = q.status === 'claimed';
+          return (
+            <Pressable key={q.id} onPress={() => !isPending && submitQuest(q.id)}
+              style={[glassStyle(colors), { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10, marginBottom: 8 }]}>
+              <View style={{ width: 26, height: 26, borderRadius: 13, borderWidth: 2, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: isPending ? '#F59E0B20' : isClaimed ? '#10B98120' : colors.surface,
+                borderColor: isPending ? '#F59E0B' : isClaimed ? '#10B981' : colors.border }}>
+                {isPending ? <Ionicons name="time" size={13} color="#F59E0B" /> : isClaimed ? <Ionicons name="checkmark" size={13} color="#10B981" /> : null}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>{q.title}</Text>
+                <Text style={{ fontSize: 11, color: colors.textTertiary }}>
+                  {isPending ? '⏳ Waiting for approval' : isClaimed ? '✓ Submitted' : q.category ?? ''}
+                </Text>
+              </View>
+              <View style={{ backgroundColor: '#F59E0B20', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#F59E0B' }}>🪙{q.coins}</Text>
+              </View>
+            </Pressable>
+          );
+        })}
+        {myQuests.filter(q => q.status !== 'done').length === 0 && (
+          <View style={[glassStyle(colors), { padding: 20, alignItems: 'center', gap: 6 }]}>
+            <Text style={{ fontSize: 26 }}>🎉</Text>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textTertiary }}>All quests done! Amazing work!</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Today's schedule glance */}
+      {todayEvents.length > 0 && (
+        <View style={[pad, { marginTop: 14 }]}>
+          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Today's Schedule</Text>
+          <View style={[glassStyle(colors), { padding: 12, gap: 8 }]}>
+            {todayEvents.map(ev => (
+              <View key={ev.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#6C5CE7', marginTop: 1 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>{ev.title}</Text>
+                  {ev.location && <Text style={{ fontSize: 11, color: colors.textTertiary }}>{ev.location}</Text>}
+                </View>
+                <Text style={{ fontSize: 12, color: colors.textSecondary }}>{fmtTime(ev.time)}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+    </>
+  );
+}
+
+// ─── Senior / Grandparent View ────────────────────────────────────────────────
+function SeniorView({ active, members, colors }: { active: FamilyMember; members: FamilyMember[]; colors: any }) {
+  const kids = members.filter(m => m.role === 'kid');
+  const RECEIPTS = [
+    { kid: 'Leo',  amount: 2.50, date: 'Today',      reason: 'Bonus for A+ grade! 🌟' },
+    { kid: 'Maya', amount: 1.50, date: 'Yesterday',   reason: 'Helped with house chores' },
+    { kid: 'Sam',  amount: 1.00, date: '2 days ago',  reason: 'Reading 20 mins every day' },
+  ];
+
+  const pad = { paddingHorizontal: 16 };
+
+  return (
+    <>
+      {/* Purple info card */}
+      <View style={[pad, { marginBottom: 14 }]}>
+        <View style={{ backgroundColor: '#4C1D9522', borderRadius: 24, borderWidth: 1, borderColor: '#9D4EDD40', padding: 14, gap: 6 }}>
+          <Text style={{ fontSize: 11, fontWeight: '800', color: '#9D4EDD', textTransform: 'uppercase', letterSpacing: 0.8 }}>👵 Senior Caregiver & Driver HQ</Text>
+          <Text style={{ fontSize: 12, color: colors.textSecondary }}>Grandparents have exclusive rights to send bonus tips into the Grandparent Sub-Wallet.</Text>
+        </View>
+      </View>
+
+      {/* 2-button grid */}
+      <View style={[{ flexDirection: 'row', gap: 10, marginBottom: 20 }, pad]}>
+        <Pressable onPress={() => Alert.alert('Grandparent Tip', 'Choose a grandchild below')}
+          style={{ flex: 1, backgroundColor: colors.card, borderRadius: 24, borderWidth: 1, borderColor: '#9D4EDD40', padding: 16, gap: 6, alignItems: 'flex-start' }}>
+          <Text style={{ fontSize: 28 }}>🎁</Text>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: '#9D4EDD' }}>Grandparent Tip</Text>
+          <Text style={{ fontSize: 11, color: colors.textTertiary }}>Send bonus coins & love</Text>
+        </Pressable>
+        <Pressable onPress={() => router.push('/(tabs)/profile')}
+          style={{ flex: 1, backgroundColor: colors.card, borderRadius: 24, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 6, alignItems: 'flex-start' }}>
+          <Text style={{ fontSize: 28 }}>📜</Text>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }}>Payout Receipts</Text>
+          <Text style={{ fontSize: 11, color: colors.textTertiary }}>View confirmed receipts</Text>
+        </Pressable>
+      </View>
+
+      {/* Per-kid tip buttons */}
+      <View style={pad}>
+        <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Send Bonus To</Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+          {kids.map(kid => (
+            <Pressable key={kid.id} onPress={() => Alert.alert('Bonus!', `Sending bonus to ${kid.name}...`)}
+              style={{ backgroundColor: '#9D4EDD', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: 18 }}>{kid.emoji ?? '👤'}</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>{kid.name.split(' ')[0]}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {/* Receipts */}
+        <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Bonus Receipts</Text>
+        <View style={{ gap: 8 }}>
+          {RECEIPTS.map((r, i) => (
+            <View key={i} style={[glassStyle(colors), { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10 }]}>
+              <Text style={{ fontSize: 22 }}>🧾</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>${r.amount.toFixed(2)} → {r.kid}</Text>
+                <Text style={{ fontSize: 11, color: colors.textSecondary }}>{r.reason}</Text>
+              </View>
+              <Text style={{ fontSize: 12, color: colors.textTertiary }}>{r.date}</Text>
+            </View>
+          ))}
+        </View>
       </View>
     </>
   );
 }
 
-// ─── MAIN SCREEN ──────────────────────────────────────────────────────────────
-
+// ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function HubScreen() {
   const { colors, isDark } = useTheme();
-  const { members, activeMemberId, setActiveMember } = useFamilyStore();
-  const unreadCount = useKidRequestStore(s => s.getUnread().length);
-  const [helpModalVisible, setHelpModalVisible] = useState(false);
+  const { members, activeMemberId, setActiveMember, loaded, loadFromStorage } = useFamilyStore();
+  const { loadFromStorage: loadQuests } = useQuestStore();
+  const { loadFromStorage: loadEvents } = useEventStore();
+  const { loadFromStorage: loadRewards } = useRewardStore();
 
-  const activeMember = members.find(m => m.id === activeMemberId) ?? members.find(m => m.role === 'parent') ?? members[0];
-  const role = activeMember?.role ?? 'parent';
+  const [refreshing, setRefreshing]         = useState(false);
+  const [switcherVisible, setSwitcherVisible] = useState(false);
+  const [pinTarget, setPinTarget]             = useState<FamilyMember | null>(null);
+  const [clock, setClock]                     = useState(fmtClock());
+  const [enRouteVisible, setEnRouteVisible]   = useState(false);
+  const [transitBanner, setTransitBanner]     = useState<{ kid: string; eta: string } | null>(null);
 
-  const switchMember = () => {
-    const idx  = members.findIndex(m => m.id === activeMember?.id);
-    const next = members[(idx + 1) % members.length];
-    if (next) setActiveMember(next.id);
+  useEffect(() => {
+    if (!loaded) loadFromStorage();
+    loadQuests();
+    loadEvents();
+    loadRewards();
+  }, [loaded]);
+
+  useEffect(() => {
+    const id = setInterval(() => setClock(fmtClock()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([loadQuests(), loadEvents()]);
+    setRefreshing(false);
+  }, []);
+
+  const active   = members.find(m => m.id === activeMemberId) ?? members[0];
+  const isParent = active?.role === 'parent';
+  const isSenior = active?.role === 'senior';
+  const isKid    = !isParent && !isSenior;
+
+  const roleBadgeColor  = isParent ? '#10B981' : isSenior ? '#9D4EDD' : '#6C5CE7';
+  const roleBadgeLabel  = isParent ? 'Parent' : isSenior ? 'Senior' : 'Kid';
+
+  const handleMemberSelect = (m: FamilyMember) => {
+    if (m.pinEnabled && m.pin) { setPinTarget(m); return; }
+    setActiveMember(m.id);
   };
+
+  const handleDispatch = (kid: string, eta: string) => {
+    setTransitBanner({ kid, eta });
+  };
+
+  if (!active) return null;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <AppHeader
-        memberName={activeMember?.name}
-        memberRole={role === 'kid' ? 'kid' : role === 'senior' ? 'senior' : 'parent'}
-        notifCount={unreadCount}
-        onPersonaPress={switchMember}
-        onBellPress={() => {}}
-      />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: 12, paddingBottom: 40 }}>
+      {/* ── Header ── */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+        {/* Left: clock + CUBE OS pill */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>{clock}</Text>
+          </View>
+          <View style={{ backgroundColor: '#6C5CE7', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff', letterSpacing: 1.5 }}>CUBE OS</Text>
+          </View>
+        </View>
 
-        {role === 'parent' && (
-          <ParentView
-            activeMemberId={activeMember?.id ?? ''}
-            colors={colors}
-            isDark={isDark}
-            onHelpOpen={() => setHelpModalVisible(true)}
-          />
-        )}
+        {/* Right: nudge bell + profile button */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Pressable onPress={() => Alert.alert('Nudge Center', 'Dinner ready · Meds · Pickup · Chore check')}
+            style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#F59E0B18', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#F59E0B30' }}>
+            <Ionicons name="notifications-outline" size={17} color="#F59E0B" />
+          </Pressable>
+          <Pressable onPress={() => setSwitcherVisible(true)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.card, borderRadius: 20, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 10, paddingVertical: 6 }}>
+            <Text style={{ fontSize: 18 }}>{active.emoji ?? active.name[0]}</Text>
+            <View>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textPrimary }}>{active.name.split(' ')[0]}</Text>
+              <View style={{ backgroundColor: roleBadgeColor + '22', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 }}>
+                <Text style={{ fontSize: 9, fontWeight: '700', color: roleBadgeColor, textTransform: 'uppercase' }}>{roleBadgeLabel}</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-down" size={14} color={colors.textTertiary} />
+          </Pressable>
+        </View>
+      </View>
 
-        {role === 'kid' && (
-          <KidView
-            activeMember={activeMember}
-            colors={colors}
-            isDark={isDark}
-            onHelpOpen={() => setHelpModalVisible(true)}
-          />
-        )}
+      {/* ── Transit Banner (En Route) ── */}
+      {transitBanner && (
+        <View style={{ backgroundColor: '#065F46', paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Text style={{ fontSize: 16 }}>🚗</Text>
+          <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: '#6EE7B7' }}>
+            En Route to pick up {transitBanner.kid} · ETA {transitBanner.eta}
+          </Text>
+          <Pressable onPress={() => setTransitBanner(null)}
+            style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#10B98130', alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="close" size={14} color="#6EE7B7" />
+          </Pressable>
+        </View>
+      )}
 
-        {role === 'senior' && (
-          <SeniorView
-            activeMember={activeMember}
-            colors={colors}
-            isDark={isDark}
-            onHelpOpen={() => setHelpModalVisible(true)}
-          />
-        )}
+      {/* ── Scrollable body ── */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+        contentContainerStyle={{ paddingTop: 16, paddingBottom: 60 }}
+      >
+        {isParent && <ParentView active={active} members={members} colors={colors} onEnRoute={() => setEnRouteVisible(true)} />}
+        {isKid    && <KidView    active={active} members={members} colors={colors} />}
+        {isSenior && <SeniorView active={active} members={members} colors={colors} />}
       </ScrollView>
 
-      <RequestHelpModal
-        visible={helpModalVisible}
-        onClose={() => setHelpModalVisible(false)}
-        activeMemberId={activeMember?.id ?? ''}
+      {/* Modals */}
+      <ProfileSwitcherModal
+        visible={switcherVisible}
+        onClose={() => setSwitcherVisible(false)}
+        members={members}
+        activeId={activeMemberId}
+        onSelect={handleMemberSelect}
+      />
+      <EnRouteModal
+        visible={enRouteVisible}
+        onClose={() => setEnRouteVisible(false)}
+        kids={members.filter(m => m.role === 'kid')}
+        onDispatch={handleDispatch}
+      />
+      <PinEntryModal
+        visible={pinTarget !== null}
+        member={pinTarget}
+        onSuccess={() => { if (pinTarget) setActiveMember(pinTarget.id); setPinTarget(null); }}
+        onCancel={() => setPinTarget(null)}
       />
     </SafeAreaView>
   );
 }
-
-// ─── Parent styles ────────────────────────────────────────────────────────────
-
-const p = StyleSheet.create({
-  actionBar:       { flexDirection: 'row', gap: 6, borderRadius: 24, borderWidth: 1, padding: 10, marginHorizontal: 14, marginBottom: 12 },
-  actionBtn:       { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 8, borderRadius: 18 },
-  actionBtnText:   { fontSize: 10, fontWeight: '900', color: '#fff' },
-  card:            { borderRadius: 24, borderWidth: 1, padding: 14 },
-  cardHeaderRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, paddingBottom: 10, marginBottom: 4 },
-  sectionTitle:    { fontSize: 12, fontWeight: '700' },
-  sectionLabelUpper: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.8 },
-  statusPill:      { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
-  statusPillText:  { fontSize: 9, fontWeight: '700' },
-  carPoolRow:      { flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, padding: 10, gap: 10, marginTop: 8 },
-  carPoolTitle:    { fontSize: 12, fontWeight: '900' },
-  carPoolSub:      { fontSize: 10, fontWeight: '600', marginTop: 2 },
-  claimBtn:        { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
-  claimBtnText:    { color: '#fff', fontSize: 10, fontWeight: '900' },
-  walletRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderRadius: 16, borderWidth: 1, padding: 10 },
-  walletName:      { fontSize: 12, fontWeight: '700' },
-  walletMain:      { fontSize: 11, fontWeight: '900' },
-  walletGP:        { fontSize: 10, fontWeight: '700', marginTop: 1 },
-  navIconWrap:     { width: 40, height: 40, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  enRouteTitle:    { fontSize: 12, fontWeight: '900' },
-  enRouteSub:      { fontSize: 10, marginTop: 2 },
-  enRouteBtn:      { backgroundColor: '#059669', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 },
-  enRouteBtnText:  { color: '#fff', fontSize: 12, fontWeight: '900' },
-  choreRow:        { flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, padding: 10, gap: 10 },
-  photoThumb:      { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  choreSubmitter:  { fontSize: 10, fontWeight: '600' },
-  choreTitle:      { fontSize: 12, fontWeight: '900', marginTop: 2 },
-  choreCoin:       { fontSize: 10, fontWeight: '900', marginTop: 2 },
-  payBtn:          { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
-  payBtnText:      { color: '#fff', fontSize: 11, fontWeight: '700' },
-  tlRow:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 16, borderWidth: 1, padding: 10 },
-  tlTime:          { fontSize: 11, fontWeight: '700' },
-  tlTitle:         { fontSize: 12, fontWeight: '600' },
-  tlChip:          { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
-  tlChipText:      { fontSize: 10, fontWeight: '600' },
-  emptyTimeline:   { fontSize: 12, textAlign: 'center', padding: 10 },
-});
-
-// ─── Kid styles ───────────────────────────────────────────────────────────────
-
-const k = StyleSheet.create({
-  card:          { borderRadius: 24, borderWidth: 1, padding: 14 },
-  cardTitle:     { fontSize: 12, fontWeight: '700' },
-  alertTitle:    { fontSize: 12, fontWeight: '900' },
-  alertBody:     { fontSize: 12, fontWeight: '600', lineHeight: 18 },
-  statusPill:    { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
-  statusPillText:{ fontSize: 9, fontWeight: '700' },
-  launcherGrid:  { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  launcherBtn:   { width: '22%', flex: 1, borderRadius: 16, borderWidth: 1, padding: 10, alignItems: 'center', gap: 4 },
-  launcherLabel: { fontSize: 9, fontWeight: '700', textAlign: 'center' },
-  walletCard:    { borderRadius: 16, borderWidth: 1, padding: 14 },
-  walletLabel:   { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
-  walletAmount:  { fontSize: 18, fontWeight: '900', marginTop: 4 },
-  walletSub:     { fontSize: 10, marginTop: 2 },
-});
-
-// ─── Senior styles ────────────────────────────────────────────────────────────
-
-const sv = StyleSheet.create({
-  banner:        { flexDirection: 'row', alignItems: 'center', borderRadius: 24, borderWidth: 1, padding: 16, marginHorizontal: 14, marginBottom: 12 },
-  bannerName:    { fontSize: 18, fontWeight: '900', color: '#fff' },
-  bannerSub:     { fontSize: 11, color: '#A78BFA', fontWeight: '600', marginTop: 2 },
-  sosBtn:        { backgroundColor: '#DC2626', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
-  sosBtnText:    { color: '#fff', fontSize: 11, fontWeight: '900' },
-  sosAlert:      { backgroundColor: '#450A0A', borderWidth: 2, borderColor: '#EF4444', borderRadius: 24, padding: 16, gap: 10 },
-  sosAlertTitle: { color: '#FCA5A5', fontSize: 14, fontWeight: '900' },
-  sosAlertBody:  { color: '#FEE2E2', fontSize: 12, lineHeight: 18, fontWeight: '600' },
-  sosCancelBtn:  { backgroundColor: '#7F1D1D', borderRadius: 12, padding: 10, alignItems: 'center' },
-  card:          { borderRadius: 24, borderWidth: 1, padding: 14, marginHorizontal: 14, marginBottom: 12 },
-  cardHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, paddingBottom: 10 },
-  cardTitle:     { fontSize: 13, fontWeight: '900' },
-  countPill:     { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
-  countPillText: { fontSize: 10, fontWeight: '700' },
-  emptyAssignment: { padding: 24, alignItems: 'center' },
-  emptyText:     { fontSize: 12, textAlign: 'center' },
-  dutyRow:       { flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, padding: 12, gap: 10 },
-  dutyChips:     { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
-  dutyBadge:     { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
-  dutyBadgeText: { fontSize: 10, fontWeight: '900' },
-  dutyTime:      { fontSize: 11, fontWeight: '600' },
-  dutyTitle:     { fontSize: 13, fontWeight: '900' },
-  dutySub:       { fontSize: 11, marginTop: 2 },
-  completeBtn:   { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
-  gpCard:        { backgroundColor: '#1E0D3D', borderRadius: 24, borderWidth: 1, borderColor: '#4C1D95', padding: 14 },
-  gpTitle:       { fontSize: 12, fontWeight: '900', color: '#C4B5FD', flex: 1 },
-  matchPill:     { backgroundColor: BRAND.amber, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
-  matchPillText: { fontSize: 9, fontWeight: '900', color: '#0F172A' },
-  gpLabel:       { fontSize: 11, fontWeight: '700', color: '#A78BFA' },
-  kidChip:       { borderRadius: 16, borderWidth: 1, borderColor: '#4C1D95', backgroundColor: '#4C1D95', paddingHorizontal: 12, paddingVertical: 8 },
-  kidChipActive: { backgroundColor: BRAND.amber, borderColor: BRAND.amber },
-  amtChip:       { flex: 1, borderRadius: 16, borderWidth: 1, borderColor: '#4C1D95', backgroundColor: '#1E0D3D', padding: 10, alignItems: 'center' },
-  amtChipActive: { backgroundColor: '#059669', borderColor: '#059669' },
-  gpInput:       { backgroundColor: 'rgba(109,40,217,0.4)', borderRadius: 12, borderWidth: 1, borderColor: '#4C1D95', padding: 10, color: '#E9D5FF', fontSize: 12 },
-  sendTipBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, padding: 14, backgroundColor: BRAND.amber },
-  sendTipText:   { fontSize: 12, fontWeight: '900', color: '#0F172A' },
-});

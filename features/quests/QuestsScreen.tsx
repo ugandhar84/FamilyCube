@@ -27,7 +27,7 @@ import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/questStore';
-import type { QuestCategory } from '@/store/questStore';
+import type { QuestCategory, QuestDifficulty } from '@/store/questStore';
 import AppHeader from '@/components/AppHeader';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -379,6 +379,8 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
   const [isPool,       setIsPool]       = useState(false);
   const [photoReq,     setPhotoReq]     = useState(false);
   const [desc,         setDesc]         = useState('');
+  const [difficulty,   setDifficulty]   = useState<QuestDifficulty | ''>('');
+  const [bonusCoins,   setBonusCoins]   = useState('');
   const [saving,       setSaving]       = useState(false);
   const [titleFocused, setTitleFocused] = useState(false);
 
@@ -427,7 +429,8 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
   };
 
   const reset = () => {
-    setTitle(''); setDesc(''); setCoins('30'); setAssignIds([]); setIsPool(false);
+    setTitle(''); setDesc(''); setCoins('30'); setBonusCoins(''); setDifficulty('');
+    setAssignIds([]); setIsPool(false);
     setPhotoReq(false); setDueDate(defaultDue());
     setShowDatePick(false); setShowTimePick(false);
   };
@@ -435,8 +438,9 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
   const submit = async () => {
     if (!title.trim() || !desc.trim()) return;
     setSaving(true);
-    await addQuest({
-      title: title.trim(), description: desc.trim(), category, priority: 'medium', difficulty: 'easy',
+    const bonus = parseInt(bonusCoins) || 0;
+    const newQ = await addQuest({
+      title: title.trim(), description: desc.trim(), category, priority: 'medium', difficulty: difficulty || undefined,
       coins: parseInt(coins) || 30, xpReward: 20,
       assignedToId: isPool ? undefined : (assignIds[0] || undefined),
       isPool: isPool || assignIds.length === 0, isDaily: false, recurrence: 'once', status: 'todo',
@@ -445,6 +449,9 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
       photoRequired: photoReq,
       createdById: activeMemberId,
     });
+    if (bonus > 0 && newQ?.id) {
+      useQuestStore.getState().updateQuest(newQ.id, { bonusCoins: bonus });
+    }
     setSaving(false);
     reset();
     onClose();
@@ -550,6 +557,51 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                     {photoReq ? '📷 Photo Required' : '📷 Photo Optional'}
                   </Text>
                 </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Hardness + Bonus — same row */}
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14, alignItems: 'flex-start' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={[aq.label, { color: colors.textSecondary }]}>Hardness <Text style={{ fontWeight: '400', color: colors.textTertiary }}>optional</Text></Text>
+                <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap' }}>
+                  {([
+                    { key: 'easy',   label: '😊',  color: '#10B981' },
+                    { key: 'medium', label: '💪',  color: BRAND.amber },
+                    { key: 'hard',   label: '🔥',  color: '#EF4444' },
+                    { key: 'hero',   label: '⚡',  color: BRAND.purple },
+                  ] as { key: QuestDifficulty; label: string; color: string }[]).map(d => (
+                    <TouchableOpacity
+                      key={d.key}
+                      style={[aq.diffChip, {
+                        borderColor: difficulty === d.key ? d.color : pillBdr,
+                        backgroundColor: difficulty === d.key ? d.color + '22' : pillBg,
+                      }]}
+                      onPress={() => setDifficulty(prev => prev === d.key ? '' : d.key)}
+                    >
+                      <Text style={{ fontSize: TYPO.label }}>{d.label}</Text>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: difficulty === d.key ? d.color : colors.textTertiary, marginLeft: 2 }}>
+                        {d.key.charAt(0).toUpperCase() + d.key.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+              <View style={{ width: 90 }}>
+                <Text style={[aq.label, { color: colors.textSecondary }]}>Bonus 🎉</Text>
+                <TextInput
+                  style={[aq.input, { color: colors.textPrimary, borderColor: bonusCoins ? BRAND.amber : colors.border, backgroundColor: colors.surface, marginBottom: 0 }]}
+                  keyboardType="number-pad"
+                  placeholder="+coins"
+                  placeholderTextColor={colors.textTertiary}
+                  value={bonusCoins}
+                  onChangeText={t => setBonusCoins(t.replace(/[^0-9]/g, ''))}
+                />
+                {!!bonusCoins && parseInt(bonusCoins) > 0 && (
+                  <Text style={{ fontSize: TYPO.micro, color: BRAND.amber, fontWeight: '700', marginTop: 3 }}>
+                    Total: {(parseInt(coins)||0)+(parseInt(bonusCoins)||0)}🪙
+                  </Text>
+                )}
               </View>
             </View>
 
@@ -741,6 +793,7 @@ const aq = StyleSheet.create({
   pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 20 },
   pickerCard:    { borderRadius: 20, overflow: 'hidden', paddingBottom: 12 },
   suggPill:   { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, maxWidth: 200 },
+  diffChip:   { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 5 },
   descInput:  { minHeight: 72, marginBottom: 4 },
   submitBtn:  { borderRadius: 14, padding: 14, alignItems: 'center' },
 });

@@ -3,22 +3,29 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type EventType = 'event' | 'reminder' | 'appointment' | 'birthday';
 
+export type DriverStatus = 'pending' | 'confirmed' | 'rejected';
+
 export interface FamilyEvent {
   id: string;
   title: string;
-  date: string;       // YYYY-MM-DD
-  time?: string;      // HH:MM
+  date: string;           // YYYY-MM-DD
+  time?: string;          // HH:MM (24h)
   endTime?: string;
-  memberId?: string;  // whose event (undefined = whole family)
+  memberId?: string;      // whose event (undefined = whole family)
   type: EventType;
   color?: string;
   location?: string;
   notes?: string;
   allDay?: boolean;
-  category?: string;  // Medical | Work | Sports | School | Study
-  driver?: string;    // name of assigned driver/tutor
-  conflict?: boolean; // scheduling conflict flag
-  approvalPending?: boolean; // kid-requested, awaiting parent approval
+  category?: string;      // Medical | Work | Sports | School | Study | Event
+  driver?: string;        // display name of assigned driver/tutor
+  driverStatus?: DriverStatus;
+  declineReason?: string;
+  declinedBy?: string;
+  driverRequestedBy?: string; // who originally requested the ride (display name)
+  taskOwner?: string;         // display name of person who owns this task
+  conflict?: boolean;         // scheduling conflict flag
+  approvalPending?: boolean;  // kid-requested, awaiting parent approval
 }
 
 interface EventState {
@@ -38,16 +45,17 @@ const d = (offset: number) => {
 };
 
 const SEED: FamilyEvent[] = [
-  { id: 'e1', title: 'Dentist appointment', date: d(0), time: '10:00', memberId: 'kid-1',    type: 'appointment', color: '#EF4444', category: 'Medical',  location: 'Dr. Smith Clinic' },
-  { id: 'e2', title: 'Soccer practice',     date: d(0), time: '15:30', memberId: 'kid-1',    type: 'event',       color: '#10B981', category: 'Sports',   driver: 'Priya (Mom)', location: 'Riverside Park' },
-  { id: 'e3', title: 'Math tutoring',       date: d(0), time: '17:00', memberId: 'kid-2',    type: 'event',       color: '#6C5CE7', category: 'School',   driver: 'Alex (Dad)',  conflict: true },
-  { id: 'e4', title: 'Family game night',   date: d(0), time: '19:00',                        type: 'event',       color: '#6C5CE7', category: 'Event' },
-  { id: 'e5', title: 'Grocery run',         date: d(1), time: '11:00', memberId: 'parent-1', type: 'reminder',    color: '#3B82F6', category: 'Work' },
-  { id: 'e6', title: 'Soccer tournament',   date: d(1), time: '09:00', memberId: 'kid-1',    type: 'event',       color: '#10B981', category: 'Sports',   driver: 'Alex (Dad)',  location: 'City Stadium' },
-  { id: 'e7', title: "Leo's Birthday 🎂",   date: d(3), allDay: true,  memberId: 'kid-1',    type: 'birthday',    color: '#F59E0B', category: 'Event' },
-  { id: 'e8', title: 'Work presentation',   date: d(2), time: '09:30', memberId: 'parent-1', type: 'appointment', color: '#9D4EDD', category: 'Work',     location: 'Office HQ' },
-  { id: 'e9', title: "Maya's Piano lesson", date: d(2), time: '16:00', memberId: 'kid-2',    type: 'event',       color: '#F59E0B', category: 'School',   driver: 'Grandma Mary', location: 'Music Academy' },
-  { id: 'e10',title: 'Vaccine checkup',     date: d(4), time: '11:00', memberId: 'kid-3',    type: 'appointment', color: '#EF4444', category: 'Medical',  location: 'Pediatric Center' },
+  { id: 'e1',  title: 'Dentist appointment', date: d(0), time: '10:00', memberId: 'kid-1',    type: 'appointment', color: '#EF4444', category: 'Medical',  location: 'Dr. Smith Clinic' },
+  { id: 'e2',  title: 'Soccer practice',     date: d(0), time: '15:30', memberId: 'kid-1',    type: 'event',       color: '#10B981', category: 'Sports',   driver: 'Priya (Mom)', driverStatus: 'confirmed', location: 'Riverside Park' },
+  { id: 'e3',  title: 'Math tutoring',       date: d(0), time: '17:00', memberId: 'kid-2',    type: 'event',       color: '#6C5CE7', category: 'School',   driver: 'Alex (Dad)',  driverStatus: 'pending',   conflict: true, driverRequestedBy: 'Priya (Mom)', taskOwner: 'Priya (Mom)' },
+  { id: 'e4',  title: 'Family game night',   date: d(0), time: '19:00',                        type: 'event',       color: '#6C5CE7', category: 'Event' },
+  { id: 'e5',  title: 'Grocery run',         date: d(1), time: '11:00', memberId: 'parent-1', type: 'reminder',    color: '#3B82F6', category: 'Work' },
+  { id: 'e6',  title: 'Soccer tournament',   date: d(1), time: '09:00', memberId: 'kid-1',    type: 'event',       color: '#10B981', category: 'Sports',   driver: 'Alex (Dad)',  driverStatus: 'confirmed', location: 'City Stadium' },
+  { id: 'e7',  title: "Leo's Birthday 🎂",   date: d(3), allDay: true,  memberId: 'kid-1',    type: 'birthday',    color: '#F59E0B', category: 'Event' },
+  { id: 'e8',  title: 'Work presentation',   date: d(2), time: '09:30', memberId: 'parent-1', type: 'appointment', color: '#9D4EDD', category: 'Work',     location: 'Office HQ' },
+  { id: 'e9',  title: "Maya's Piano lesson", date: d(2), time: '16:00', memberId: 'kid-2',    type: 'event',       color: '#F59E0B', category: 'School',   driver: 'Grandma Mary', driverStatus: 'confirmed', location: 'Music Academy' },
+  { id: 'e10', title: 'Vaccine checkup',     date: d(4), time: '11:00', memberId: 'kid-3',    type: 'appointment', color: '#EF4444', category: 'Medical',  location: 'Pediatric Center' },
+  { id: 'e11', title: 'Ride to chess club',  date: d(0), time: '14:00', memberId: 'kid-1',    type: 'event',       color: '#F59E0B', category: 'School',   driver: 'Grandma Mary', driverStatus: 'rejected', declineReason: 'Vehicle unavailable today', declinedBy: 'Grandma Mary', driverRequestedBy: 'Priya (Mom)' },
 ];
 
 const save = (events: FamilyEvent[]) => AsyncStorage.setItem(KEY, JSON.stringify(events));

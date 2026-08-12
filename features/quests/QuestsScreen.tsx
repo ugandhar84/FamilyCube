@@ -1799,50 +1799,11 @@ export default function QuestsScreen() {
                   >
                     {/* ── Expanded body — NO title/coin repeat, header already shows them ── */}
 
-                      {/* Timeline row — parent context: when added, when claimed, when due */}
-                      {isParentOrSenior && (isTodoCard || isPoolCard) && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 0, marginBottom: 10, backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderRadius: 10, padding: 8, borderWidth: 1, borderColor: isDark ? '#1E293B' : '#E2E8F0' }}>
-                          {/* Added */}
-                          <View style={{ alignItems: 'center', flex: 1 }}>
-                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 1 }}>Added</Text>
-                            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>
-                              {(q as any).createdAt ? timeAgo((q as any).createdAt) : '—'}
-                            </Text>
-                            {(q as any).createdAt && (
-                              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
-                                {new Date((q as any).createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                              </Text>
-                            )}
-                          </View>
-                          <Text style={{ color: isDark ? '#334155' : '#CBD5E1', fontSize: 18, paddingHorizontal: 2 }}>›</Text>
-                          {/* Claimed */}
-                          <View style={{ alignItems: 'center', flex: 1 }}>
-                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 1 }}>Claimed</Text>
-                            {q.claimedAt ? (
-                              <>
-                                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: accentColor }}>{timeAgo(q.claimedAt)}</Text>
-                                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
-                                  {new Date(q.claimedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                  {' '}
-                                  {new Date(q.claimedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
-                                </Text>
-                              </>
-                            ) : (
-                              <Text style={{ fontSize: TYPO.label, color: isDark ? '#475569' : '#94A3B8' }}>Not yet</Text>
-                            )}
-                          </View>
-                          <Text style={{ color: isDark ? '#334155' : '#CBD5E1', fontSize: 18, paddingHorizontal: 2 }}>›</Text>
-                          {/* Due */}
-                          <View style={{ alignItems: 'center', flex: 1 }}>
-                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 1 }}>Due</Text>
-                            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>
-                              {q.dueDate ? fmtDateShort(q.dueDate) : 'Tonight'}
-                            </Text>
-                            {q.dueTime && (
-                              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>{q.dueTime}</Text>
-                            )}
-                          </View>
-                        </View>
+                      {/* Claimed time — only shown once a kid has actually claimed */}
+                      {isParentOrSenior && q.claimedAt && (
+                        <Text style={{ fontSize: TYPO.micro + 1, color: colors.textTertiary, marginBottom: 8 }}>
+                          🏃 Claimed {timeAgo(q.claimedAt)} · {new Date(q.claimedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} {new Date(q.claimedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                        </Text>
                       )}
 
                       {/* Description */}
@@ -1941,24 +1902,12 @@ export default function QuestsScreen() {
                         )}
                       </View>
 
-                      {/* ── Meta row — due date + modified-by notice (avatar already in header) ── */}
-                      <View style={[s.metaRow, { borderTopColor: isDark ? '#1E293B' : '#F0F4F8' }]}>
-                        <View style={{ flex: 1 }}>
-                          {q.lastModifiedById && (
-                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
-                              ✏️ edited by {members.find(m => m.id === q.lastModifiedById)?.name ?? 'parent'}
-                            </Text>
-                          )}
-                        </View>
-                        <View style={{ alignItems: 'flex-end' }}>
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>
-                            📅 {q.dueDate ? fmtDateShort(q.dueDate) : 'Tonight'}
-                          </Text>
-                          {q.dueTime && (
-                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>🕐 {q.dueTime}</Text>
-                          )}
-                        </View>
-                      </View>
+                      {/* edited-by notice — only when modified */}
+                      {q.lastModifiedById && (
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }}>
+                          ✏️ edited by {members.find(m => m.id === q.lastModifiedById)?.name ?? 'parent'}
+                        </Text>
+                      )}
 
                       {/* ── Decline reason ── */}
                       {isDeclined && q.declineReason && (

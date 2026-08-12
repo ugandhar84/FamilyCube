@@ -473,11 +473,13 @@ function FlashBonusBadge({ bonusCoins, expiresAt }: { bonusCoins: number; expire
       if (ms <= 0) { setRemaining(''); return; }
       const h = Math.floor(ms / 3600000);
       const m = Math.floor((ms % 3600000) / 60000);
-      setIsCritical(ms < 3600000); // under 1h = red critical mode
-      setRemaining(h > 0 ? `${h}h ${m}m` : `${m}m`);
+      const s = Math.floor((ms % 60000) / 1000);
+      setIsCritical(ms < 3600000);
+      const sPad = s.toString().padStart(2, '0');
+      setRemaining(h > 0 ? `${h}h ${m}m ${sPad}s` : m > 0 ? `${m}m ${sPad}s` : `${sPad}s`);
     };
     calc();
-    const id = setInterval(calc, 15000);
+    const id = setInterval(calc, 1000);
     return () => clearInterval(id);
   }, [expiresAt]);
 
@@ -510,9 +512,12 @@ function FlashBonusBadge({ bonusCoins, expiresAt }: { bonusCoins: number; expire
       shadowColor: shadow, shadowOpacity: 0.65, shadowRadius: 8, shadowOffset: { width: 0, height: 0 },
       elevation: 6,
     }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: bg, borderRadius: 9, paddingHorizontal: 7, paddingVertical: 4 }}>
-        <Text style={{ fontSize: 10 }}>🔥</Text>
-        <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff', letterSpacing: 0.2 }}>+{bonusCoins}🪙 · ENDS {remaining}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: bg, borderRadius: 11, paddingHorizontal: 10, paddingVertical: 6 }}>
+        <Text style={{ fontSize: 14 }}>🔥</Text>
+        <View>
+          <Text style={{ fontSize: 9, fontWeight: '900', color: 'rgba(255,255,255,0.8)', letterSpacing: 0.8, textTransform: 'uppercase' }}>Bonus ends in</Text>
+          <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff', letterSpacing: 0.3, fontVariant: ['tabular-nums'] }}>+{bonusCoins}🪙 · {remaining}</Text>
+        </View>
       </View>
     </Animated.View>
   );
@@ -1983,7 +1988,7 @@ export default function QuestsScreen() {
                                   : 'Not started';
 
                 const cardHeader = (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 54 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: hasBonus ? 72 : 54 }}>
                     {/* Overlapping avatar stack */}
                     {claimants.length > 0 && (
                       <View style={{ width: stackW, height: AVSIZE, flexShrink: 0 }}>

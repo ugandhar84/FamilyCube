@@ -832,15 +832,15 @@ export default function ChatScreen() {
 
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
   useEffect(() => { loadChannel(channelId); }, [channelId]);
-  // Snap to bottom instantly on channel switch or first load; never animate the initial scroll
+  // Inverted FlatList starts at bottom — no scroll-to-end needed.
+  // Only reset scroll position on channel switch.
   const prevChannelRef = useRef<string | null>(null);
   useEffect(() => {
-    const isChannelSwitch = prevChannelRef.current !== channelId;
-    prevChannelRef.current = channelId;
-    // Instant snap — no animated slide from top to bottom
-    flatRef.current?.scrollToEnd({ animated: false });
-    if (isChannelSwitch) return; // don't auto-scroll on new messages when user is reading
-  }, [channelId, channels[channelId]?.messages?.length]);
+    if (prevChannelRef.current !== channelId) {
+      prevChannelRef.current = channelId;
+      flatRef.current?.scrollToOffset({ offset: 0, animated: false });
+    }
+  }, [channelId]);
   useEffect(() => {
     Animated.timing(searchAnim, { toValue: searchOpen ? 1 : 0, duration: 200, useNativeDriver: false }).start();
     if (!searchOpen) setSearchQuery('');
@@ -874,6 +874,8 @@ export default function ChatScreen() {
     if (day !== lastDay) { items.push({ type: 'day', label: day }); lastDay = day; }
     items.push({ type: 'msg', msg: m });
   }
+  // Inverted FlatList renders index-0 at the visual bottom — newest first
+  const reversedItems = [...items].reverse();
 
   // ── @mention suggestions ───────────────────────────────────────────────────
 
@@ -1001,7 +1003,7 @@ export default function ChatScreen() {
   };
 
   const scrollToQuotedMsg = (replyToId: string) => {
-    const idx = items.findIndex(it => it.type === 'msg' && it.msg.id === replyToId);
+    const idx = reversedItems.findIndex(it => it.type === 'msg' && it.msg.id === replyToId);
     if (idx < 0) return;
     flatRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
     setHighlightedMsgId(replyToId);
@@ -1071,13 +1073,13 @@ export default function ChatScreen() {
               <Pressable onPress={() => {
                 const next = (searchMatchIdx - 1 + msgs.length) % msgs.length;
                 setSearchMatchIdx(next);
-                const idx = items.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
+                const idx = reversedItems.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
                 if (idx >= 0) flatRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
               }}><Ionicons name="chevron-up" size={18} color={colors.primary} /></Pressable>
               <Pressable onPress={() => {
                 const next = (searchMatchIdx + 1) % msgs.length;
                 setSearchMatchIdx(next);
-                const idx = items.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
+                const idx = reversedItems.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
                 if (idx >= 0) flatRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
               }}><Ionicons name="chevron-down" size={18} color={colors.primary} /></Pressable>
               <Pressable onPress={() => setSearchQuery('')}><Ionicons name="close-circle" size={16} color={colors.textTertiary} /></Pressable>
@@ -1097,24 +1099,26 @@ export default function ChatScreen() {
           </View>
         ) : (
           <>
-            {/* ── Messages ── */}
+            {/* ── Messages — inverted so newest is always at visual bottom ── */}
             <FlatList
               ref={flatRef}
-              data={items}
+              data={reversedItems}
+              inverted
               keyExtractor={(item, i) => item.type === 'day' ? `day-${i}` : item.msg.id}
-              contentContainerStyle={{ paddingVertical: 6, paddingBottom: 6 }}
+              contentContainerStyle={{ paddingVertical: 6 }}
               style={{ backgroundColor: isDark ? '#13131F' : '#EEF2FF' }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
-              onContentSizeChange={() => {
-                // Only auto-scroll to bottom if user is already near bottom
-                if (!showScrollBtn) flatRef.current?.scrollToEnd({ animated: false });
-              }}
-              onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
-                const distFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
-                setShowScrollBtn(distFromBottom > 200);
+              onScroll={({ nativeEvent: { contentOffset } }) => {
+                // In inverted list offset 0 = bottom; >200 means user scrolled up
+                setShowScrollBtn(contentOffset.y > 200);
               }}
               scrollEventThrottle={100}
+              onScrollToIndexFailed={({ index }) => {
+                // Item not yet rendered — scroll to approximate offset then retry
+                flatRef.current?.scrollToOffset({ offset: index * 80, animated: false });
+                setTimeout(() => flatRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 }), 200);
+              }}
               ListEmptyComponent={
                 <View style={{ alignItems: 'center', paddingVertical: 56 }}>
                   <Text style={{ fontSize: 36, marginBottom: 12 }}>💬</Text>
@@ -1136,13 +1140,15 @@ export default function ChatScreen() {
                 const msg    = item.msg;
                 const isMe   = msg.senderId === activeMemberId;
                 const sender = memberMap[msg.senderId];
-                // Group detection — look at neighbours in items array
-                const prevItem = index > 0 ? items[index - 1] : null;
-                const nextItem = index < items.length - 1 ? items[index + 1] : null;
-                const prevMsg  = prevItem?.type === 'msg' ? prevItem.msg : null;
-                const nextMsg  = nextItem?.type === 'msg' ? nextItem.msg : null;
-                const isGroupFirst = !prevMsg || prevMsg.senderId !== msg.senderId;
-                const isGroupLast  = !nextMsg || nextMsg.senderId !== msg.senderId;
+                // In reversed (inverted) list: index+1 = older (visually above), index-1 = newer (visually below)
+                const olderItem  = index < reversedItems.length - 1 ? reversedItems[index + 1] : null;
+                const newerItem  = index > 0 ? reversedItems[index - 1] : null;
+                const olderMsg   = olderItem?.type === 'msg' ? olderItem.msg : null;
+                const newerMsg   = newerItem?.type === 'msg' ? newerItem.msg : null;
+                // isGroupFirst = no older msg from same sender (top of visual group)
+                const isGroupFirst = !olderMsg || olderMsg.senderId !== msg.senderId;
+                // isGroupLast  = no newer msg from same sender (bottom of visual group — where avatar/tail goes)
+                const isGroupLast  = !newerMsg || newerMsg.senderId !== msg.senderId;
                 const canEdit      = isMe && (Date.now() - new Date(msg.timestamp).getTime()) < 60_000;
                 return (
                   <MessageBubble

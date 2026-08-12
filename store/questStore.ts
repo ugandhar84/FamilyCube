@@ -17,6 +17,29 @@ export interface QuestHistoryEntry {
   note?:   string;
 }
 
+// ─── Participant ──────────────────────────────────────────────────────────────
+// One row per (quest, member) pair. Tracks each kid's independent journey.
+export type ParticipantStatus = 'todo' | 'in_progress' | 'pending_approval' | 'approved' | 'declined' | 'cancelled';
+
+export interface QuestParticipant {
+  id:              string;
+  questId:         string;
+  memberId:        string;
+  status:          ParticipantStatus;
+  claimedAt?:      string;
+  submittedAt?:    string;
+  approvedAt?:     string;
+  declinedAt?:     string;
+  approvedById?:   string;
+  declineReason?:  string;
+  declineReasonCode?: string;
+  photoUrl?:       string;
+  photoUrls:       string[];
+  completionNote?: string;
+  coinsAwarded?:   number;
+  createdAt:       string;
+}
+
 export interface Quest {
   id:               string;
   title:            string;
@@ -34,7 +57,11 @@ export interface Quest {
   assignedToId?:    string;
   assignedToIds:    string[];
   isPool:           boolean;
+  isMultiAssign:    boolean;
+  maxClaimants?:    number;        // null = unlimited; 1 = first-come (default)
   preferredAssigneeId?: string;
+
+  participants:     QuestParticipant[];  // loaded alongside quest
 
   isDaily:          boolean;
   recurrence:       QuestRecurrence;
@@ -82,7 +109,7 @@ interface QuestState {
   loadFromStorage:  () => Promise<void>;
   syncFromDB:       () => Promise<void>;
 
-  addQuest:         (q: Omit<Quest, 'id' | 'createdAt' | 'history' | 'tags' | 'assignedToIds' | 'photoUrls' | 'linkedGroceryIds' | 'recurrenceDays' | 'bonusCoins' | 'difficulty'> & Partial<Pick<Quest, 'tags' | 'difficulty'>>) => Quest;
+  addQuest:         (q: Omit<Quest, 'id' | 'createdAt' | 'history' | 'tags' | 'assignedToIds' | 'photoUrls' | 'linkedGroceryIds' | 'recurrenceDays' | 'bonusCoins' | 'difficulty' | 'isMultiAssign' | 'maxClaimants' | 'participants'> & Partial<Pick<Quest, 'tags' | 'difficulty'>>) => Quest;
   updateQuest:      (id: string, updates: Partial<Omit<Quest, 'id' | 'history'>>, by?: string) => void;
   deleteQuest:      (id: string) => void;
 
@@ -92,6 +119,12 @@ interface QuestState {
   declineQuest:     (id: string, approverId: string, reason?: string, reasonCode?: string) => void;
   reassignQuest:    (id: string, memberId: string | undefined, by?: string) => void;
   reopenQuest:      (id: string, by?: string) => void;
+
+  // Per-participant actions (multi-assign + multi-claim pool)
+  approveParticipant: (questId: string, memberId: string, approverId: string) => void;
+  declineParticipant: (questId: string, memberId: string, approverId: string, reason?: string, reasonCode?: string) => void;
+  reopenParticipant:  (questId: string, memberId: string, by?: string) => void;
+  createParticipants: (questId: string, memberIds: string[]) => Promise<void>;
   cancelQuest:      (id: string, by?: string) => void;
   archiveDoneQuests: () => void;
 
@@ -152,14 +185,34 @@ export const useQuestStore = create<QuestState>((set, get) => ({
 
   syncFromDB: async () => {
     try {
-      const { data, error } = await supabase
-        .from('quests')
-        .select('*')
-        .is('deleted_at', null)
-        .not('status', 'eq', 'archived')
-        .order('created_at', { ascending: false });
-      if (error || !data) return;
-      const quests = data.map(fromRow);
+      const [questsRes, partRes] = await Promise.all([
+        supabase
+          .from('quests')
+          .select('*')
+          .is('deleted_at', null)
+          .not('status', 'eq', 'archived')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('quest_participants')
+          .select('*')
+          .order('created_at', { ascending: true }),
+      ]);
+      if (questsRes.error || !questsRes.data) return;
+
+      // Group participants by quest_id
+      const partsByQuest: Record<string, QuestParticipant[]> = {};
+      for (const row of (partRes.data ?? [])) {
+        const p = participantFromRow(row);
+        if (!partsByQuest[p.questId]) partsByQuest[p.questId] = [];
+        partsByQuest[p.questId].push(p);
+      }
+
+      const quests = questsRes.data.map(row => {
+        const q = fromRow(row);
+        q.participants = partsByQuest[q.id] ?? backfillParticipants(q);
+        return q;
+      });
+
       set({ quests, loaded: true });
       save(quests);
     } catch (e) {
@@ -178,6 +231,9 @@ export const useQuestStore = create<QuestState>((set, get) => ({
       linkedGroceryIds: [],
       recurrenceDays:   [],
       bonusCoins:       0,
+      isMultiAssign:    false,
+      maxClaimants:     1,
+      participants:     [],
       createdAt:        new Date().toISOString(),
       isPool:           q.isPool ?? !q.assignedToId,
       history:          [
@@ -418,6 +474,7 @@ export const useQuestStore = create<QuestState>((set, get) => ({
       ...src,
       id:              'q' + Date.now(),
       status:          'todo',
+      participants:    [],
       claimedAt:       undefined,
       submittedAt:     undefined,
       completedAt:     undefined,
@@ -441,9 +498,193 @@ export const useQuestStore = create<QuestState>((set, get) => ({
     supabase.from('quests').insert([toRow(duplicate)]).then(() => {});
     return duplicate;
   },
+
+  // ── Participant actions ────────────────────────────────────────────────────
+
+  approveParticipant: (questId, memberId, approverId) => {
+    const now = new Date().toISOString();
+    const quest = get().quests.find(q => q.id === questId);
+    if (!quest) return;
+    const participant = quest.participants.find(p => p.memberId === memberId);
+    if (!participant) return;
+
+    const patch: Partial<QuestParticipant> = {
+      status:       'approved',
+      approvedAt:   now,
+      approvedById: approverId,
+      coinsAwarded: quest.coins + quest.bonusCoins,
+    };
+    const next = updateQuestParticipant(get().quests, questId, memberId, patch);
+    set({ quests: next }); save(next);
+
+    dbUpdateParticipant(questId, memberId, {
+      status:          'approved',
+      approved_at:     now,
+      approved_by_id:  approverId,
+      coins_awarded:   quest.coins + quest.bonusCoins,
+    });
+    // Also update quest-level status in DB
+    const updated = next.find(q => q.id === questId);
+    if (updated) dbUpdate(questId, { status: updated.status, approved_at: now, approved_by_id: approverId });
+
+    awardMemberCoins(memberId, quest.coins + quest.bonusCoins, quest.xpReward);
+  },
+
+  declineParticipant: (questId, memberId, approverId, reason, reasonCode) => {
+    const now = new Date().toISOString();
+    const patch: Partial<QuestParticipant> = {
+      status:            'declined',
+      declinedAt:        now,
+      approvedById:      approverId,
+      declineReason:     reason,
+      declineReasonCode: reasonCode,
+    };
+    const next = updateQuestParticipant(get().quests, questId, memberId, patch);
+    set({ quests: next }); save(next);
+    dbUpdateParticipant(questId, memberId, {
+      status:              'declined',
+      declined_at:         now,
+      approved_by_id:      approverId,
+      decline_reason:      reason ?? null,
+      decline_reason_code: reasonCode ?? null,
+    });
+    const updated = next.find(q => q.id === questId);
+    if (updated) dbUpdate(questId, { status: updated.status });
+  },
+
+  reopenParticipant: (questId, memberId, by) => {
+    const patch: Partial<QuestParticipant> = {
+      status:        'in_progress',
+      declinedAt:    undefined,
+      declineReason: undefined,
+      submittedAt:   undefined,
+    };
+    const next = updateQuestParticipant(get().quests, questId, memberId, patch);
+    set({ quests: next }); save(next);
+    dbUpdateParticipant(questId, memberId, {
+      status:         'in_progress',
+      declined_at:    null,
+      decline_reason: null,
+      submitted_at:   null,
+    });
+    const updated = next.find(q => q.id === questId);
+    if (updated) dbUpdate(questId, { status: updated.status, last_modified_by_id: by ?? null });
+  },
+
+  createParticipants: async (questId, memberIds) => {
+    const now = new Date().toISOString();
+    const rows = memberIds.map(mid => ({
+      quest_id:   questId,
+      member_id:  mid,
+      status:     'todo',
+      created_at: now,
+    }));
+    const { error } = await supabase.from('quest_participants').insert(rows);
+    if (error) { console.warn('[questStore] createParticipants failed', error.message); return; }
+
+    // Update in-memory quest with the new participant stubs
+    const stubs: QuestParticipant[] = memberIds.map(mid => ({
+      id:         `${questId}_${mid}`,
+      questId,
+      memberId:   mid,
+      status:     'todo',
+      photoUrls:  [],
+      createdAt:  now,
+    }));
+    const next = get().quests.map(q =>
+      q.id === questId ? { ...q, participants: [...q.participants, ...stubs] } : q
+    );
+    set({ quests: next }); save(next);
+  },
 }));
 
 // ─── DB row → Quest ───────────────────────────────────────────────────────────
+
+// ─── Participant helpers ──────────────────────────────────────────────────────
+
+function participantFromRow(row: any): QuestParticipant {
+  return {
+    id:              String(row.id),
+    questId:         String(row.quest_id),
+    memberId:        String(row.member_id),
+    status:          (row.status as ParticipantStatus) ?? 'todo',
+    claimedAt:       row.claimed_at ?? undefined,
+    submittedAt:     row.submitted_at ?? undefined,
+    approvedAt:      row.approved_at ?? undefined,
+    declinedAt:      row.declined_at ?? undefined,
+    approvedById:    row.approved_by_id ?? undefined,
+    declineReason:   row.decline_reason ?? undefined,
+    declineReasonCode: row.decline_reason_code ?? undefined,
+    photoUrl:        row.photo_url ?? undefined,
+    photoUrls:       row.photo_urls ?? [],
+    completionNote:  row.completion_note ?? undefined,
+    coinsAwarded:    row.coins_awarded ?? undefined,
+    createdAt:       row.created_at,
+  };
+}
+
+// Legacy quests (pre-participants) — synthesise one participant row in memory
+// so the UI can treat all quests uniformly. Not written to DB.
+function backfillParticipants(q: Quest): QuestParticipant[] {
+  if (!q.assignedToId && !q.assignedToIds?.length) return [];
+  const memberIds = q.assignedToIds?.length ? q.assignedToIds : [q.assignedToId!];
+  return memberIds.map(mid => ({
+    id:           `synthetic_${q.id}_${mid}`,
+    questId:      q.id,
+    memberId:     mid,
+    status:       q.status === 'pending_approval' ? 'pending_approval'
+                : q.status === 'done'             ? 'approved'
+                : q.status === 'declined'         ? 'declined'
+                : q.status === 'claimed'          ? 'in_progress'
+                : 'todo' as ParticipantStatus,
+    claimedAt:    q.claimedAt,
+    submittedAt:  q.submittedAt,
+    approvedAt:   q.approvedAt,
+    declinedAt:   q.declinedAt,
+    approvedById: q.approvedById,
+    declineReason: q.declineReason,
+    photoUrl:     q.photoUrl,
+    photoUrls:    q.photoUrls ?? [],
+    completionNote: q.completionNote,
+    createdAt:    new Date().toISOString(),
+  }));
+}
+
+function dbUpdateParticipant(questId: string, memberId: string, patch: Record<string, unknown>) {
+  supabase
+    .from('quest_participants')
+    .update(patch)
+    .eq('quest_id', questId)
+    .eq('member_id', memberId)
+    .then(({ error }) => {
+      if (error) console.warn('[questStore] participant update failed', error.message);
+    });
+}
+
+function updateQuestParticipant(
+  quests: Quest[],
+  questId: string,
+  memberId: string,
+  patch: Partial<QuestParticipant>
+): Quest[] {
+  return quests.map(q => {
+    if (q.id !== questId) return q;
+    const parts = q.participants.map(p =>
+      p.memberId === memberId ? { ...p, ...patch } : p
+    );
+    // Derive quest-level status from participants
+    const statuses = parts.map(p => p.status);
+    const allDone      = statuses.every(s => s === 'approved');
+    const anyPending   = statuses.some(s => s === 'pending_approval');
+    const anyDeclined  = statuses.every(s => s === 'declined');
+    const questStatus: QuestStatus =
+      allDone    ? 'done'
+      : anyPending ? 'pending_approval'
+      : anyDeclined ? 'declined'
+      : q.status; // keep existing when mixed
+    return { ...q, participants: parts, status: questStatus };
+  });
+}
 
 function fromRow(row: any): Quest {
   return {
@@ -463,7 +704,10 @@ function fromRow(row: any): Quest {
     assignedToId:     row.assigned_to_id ? String(row.assigned_to_id) : undefined,
     assignedToIds:    row.assigned_to_ids ?? [],
     isPool:           Boolean(row.is_pool),
+    isMultiAssign:    Boolean(row.is_multi_assign),
+    maxClaimants:     row.max_claimants ?? 1,
     preferredAssigneeId: row.preferred_assignee_id ?? undefined,
+    participants:     [], // populated by syncFromDB after fetching quest_participants
 
     isDaily:          Boolean(row.is_daily),
     recurrence:       (row.recurrence as QuestRecurrence) ?? 'once',
@@ -523,6 +767,8 @@ function toRow(q: Quest & { createdAt?: string }) {
     assigned_to_id:     q.assignedToId ?? null,
     assigned_to_ids:    q.assignedToIds ?? [],
     is_pool:            q.isPool,
+    is_multi_assign:    q.isMultiAssign ?? false,
+    max_claimants:      q.maxClaimants ?? 1,
     preferred_assignee_id: q.preferredAssigneeId ?? null,
 
     is_daily:           q.isDaily,

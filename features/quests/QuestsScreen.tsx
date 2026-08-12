@@ -383,6 +383,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
   const [bonusCoins,   setBonusCoins]   = useState('');
   const [saving,       setSaving]       = useState(false);
   const [titleFocused, setTitleFocused] = useState(false);
+  const suggPressing = React.useRef(false);
 
   // Dynamic suggestions: when typing, fuzzy-match by word; when blank+focused, show top picks
   const suggestions = useMemo(() => {
@@ -398,6 +399,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
   }, [title]);
 
   const applySuggestion = (s: typeof QUEST_SUGGESTIONS[0]) => {
+    suggPressing.current = false;
     setTitle(s.title);
     setCategory(s.category);
     setCoins(String(s.coins));
@@ -487,7 +489,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
               value={title}
               onChangeText={setTitle}
               onFocus={() => setTitleFocused(true)}
-              onBlur={() => setTimeout(() => setTitleFocused(false), 180)}
+              onBlur={() => setTimeout(() => { if (!suggPressing.current) setTitleFocused(false); }, 250)}
               returnKeyType="next"
             />
             {/* Dynamic suggestion pills */}
@@ -505,6 +507,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                           backgroundColor: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple + '25' : colors.surface,
                           borderColor:     title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple : colors.border,
                         }]}
+                        onPressIn={() => { suggPressing.current = true; }}
                         onPress={() => applySuggestion(s)}
                       >
                         <Text style={{ fontSize: TYPO.micro + 1, color: colors.textSecondary, fontWeight: '600' }} numberOfLines={1}>

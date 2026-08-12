@@ -595,42 +595,44 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
               </TouchableOpacity>
             </View>
 
-            {/* Inline pickers — iOS spinner style */}
-            {showDatePick && (
-              <View style={[aq.pickerWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <DateTimePicker
-                  value={dueDate}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  minimumDate={new Date()}
-                  onChange={onDateChange}
-                  textColor={colors.textPrimary}
-                  style={{ height: 160 }}
-                />
-                {Platform.OS === 'ios' && (
-                  <TouchableOpacity style={aq.pickerDone} onPress={() => setShowDatePick(false)}>
-                    <Text style={{ color: BRAND.purple, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+            {/* Picker overlay — floats above form, no layout shift */}
+            {(showDatePick || showTimePick) && (
+              <Modal transparent animationType="fade" visible onRequestClose={() => { setShowDatePick(false); setShowTimePick(false); }}>
+                <TouchableOpacity style={aq.pickerOverlay} activeOpacity={1} onPress={() => { setShowDatePick(false); setShowTimePick(false); }}>
+                  <TouchableOpacity activeOpacity={1} style={[aq.pickerCard, { backgroundColor: colors.card }]}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                      <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>
+                        {showDatePick ? '📅 Pick a Date' : '🕐 Pick a Time'}
+                      </Text>
+                      <TouchableOpacity onPress={() => { setShowDatePick(false); setShowTimePick(false); }}>
+                        <Text style={{ color: BRAND.purple, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {showDatePick && (
+                      <DateTimePicker
+                        value={dueDate}
+                        mode="date"
+                        display="spinner"
+                        minimumDate={new Date()}
+                        onChange={onDateChange}
+                        textColor={colors.textPrimary}
+                        style={{ height: 180, width: '100%' }}
+                      />
+                    )}
+                    {showTimePick && (
+                      <DateTimePicker
+                        value={dueDate}
+                        mode="time"
+                        display="spinner"
+                        is24Hour={false}
+                        onChange={onTimeChange}
+                        textColor={colors.textPrimary}
+                        style={{ height: 180, width: '100%' }}
+                      />
+                    )}
                   </TouchableOpacity>
-                )}
-              </View>
-            )}
-            {showTimePick && (
-              <View style={[aq.pickerWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <DateTimePicker
-                  value={dueDate}
-                  mode="time"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  is24Hour={false}
-                  onChange={onTimeChange}
-                  textColor={colors.textPrimary}
-                  style={{ height: 160 }}
-                />
-                {Platform.OS === 'ios' && (
-                  <TouchableOpacity style={aq.pickerDone} onPress={() => setShowTimePick(false)}>
-                    <Text style={{ color: BRAND.purple, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
+                </TouchableOpacity>
+              </Modal>
             )}
 
             {/* Assign To */}
@@ -688,8 +690,8 @@ const aq = StyleSheet.create({
   kidChip:    { borderWidth: 1, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
   toggleRow:  { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' },
   datePill:   { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, flex: 1 },
-  pickerWrap: { borderWidth: 1, borderRadius: 14, overflow: 'hidden', marginBottom: 14, paddingBottom: 4 },
-  pickerDone: { alignItems: 'flex-end', paddingHorizontal: 16, paddingVertical: 8 },
+  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 20 },
+  pickerCard:    { borderRadius: 20, overflow: 'hidden', paddingBottom: 12 },
   suggPill:   { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, maxWidth: 200 },
   descInput:  { minHeight: 72, marginBottom: 4 },
   submitBtn:  { borderRadius: 14, padding: 14, alignItems: 'center' },

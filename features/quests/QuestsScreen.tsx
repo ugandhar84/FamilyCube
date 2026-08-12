@@ -222,7 +222,7 @@ const dm = StyleSheet.create({
 });
 
 // ─── Add Quest Modal ──────────────────────────────────────────────────────────
-const ALL_CATEGORIES: QuestCategory[] = ['Kitchen', 'Room', 'Yard', 'School', 'Pet', 'Living Room', 'Errand', 'Tech', 'Other'];
+const ALL_CATEGORIES: QuestCategory[] = ['Kitchen', 'Room', 'Yard', 'School', 'Pet', 'Living Room', 'Garage', 'Bathroom', 'Laundry', 'Errand', 'Tech', 'Finance', 'Health', 'Garden', 'Car', 'Shopping', 'Cooking', 'Social', 'Creative', 'Other'];
 
 function AddQuestModal({ visible, onClose, activeMemberId }: {
   visible: boolean; onClose: () => void; activeMemberId: string;
@@ -244,7 +244,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
     setSaving(true);
     await new Promise(r => setTimeout(r, 600));
     addQuest({
-      title: title.trim(), category, priority: 'medium',
+      title: title.trim(), category, priority: 'medium', difficulty: 'easy',
       coins: parseInt(coins) || 30, xpReward: 20,
       assignedToId: isPool ? undefined : (assignTo || undefined),
       isPool, isDaily: false, recurrence: 'once', status: 'todo',
@@ -627,7 +627,7 @@ export default function QuestsScreen() {
     setDeclineTarget(null);
     setIsDeclining(p => ({ ...p, [id]: true }));
     await new Promise(r => setTimeout(r, 600));
-    declineQuest(id, activeMember?.id ?? '', reason);
+    declineQuest(id, activeMember?.id ?? '', reason, 'custom');
     setIsDeclining(p => ({ ...p, [id]: false }));
   };
 

@@ -155,7 +155,7 @@ const SEED: Quest[] = [
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
-const KEY  = '@familycube_quests_v2';
+const KEY  = '@familycube_quests_v3';
 const save = (quests: Quest[]) => AsyncStorage.setItem(KEY, JSON.stringify(quests));
 
 // ─── Store ────────────────────────────────────────────────────────────────────

@@ -37,7 +37,7 @@ interface EventState {
   deleteEvent: (id: string) => void;
 }
 
-const KEY = '@familycube_events_v4';
+const KEY = '@familycube_events_v5';
 
 // Use local date components to avoid UTC-shift timezone bugs
 function localDateStr(offset: number): string {
@@ -64,6 +64,7 @@ function makeSeed(): FamilyEvent[] {
     { id: 'e9',  title: "Maya's Piano lesson", date: d(2), time: '16:00', memberId: 'kid-2',    type: 'event',       color: '#F59E0B', category: 'School',   driver: 'Grandma Mary', driverStatus: 'confirmed', location: 'Music Academy' },
     { id: 'e10', title: 'Vaccine checkup',     date: d(4), time: '11:00', memberId: 'kid-3',    type: 'appointment', color: '#EF4444', category: 'Medical',  location: 'Pediatric Center' },
     { id: 'e11', title: 'Ride to chess club',  date: d(0), time: '14:00', memberId: 'kid-1',    type: 'event',       color: '#F59E0B', category: 'School',   driver: 'Grandma Mary', driverStatus: 'rejected', declineReason: 'Vehicle unavailable today', declinedBy: 'Grandma Mary', driverRequestedBy: 'Priya (Mom)' },
+    { id: 'e12', title: 'Ride to art class',   date: d(0), time: '16:30', memberId: 'kid-2',    type: 'event',       color: '#EC4899', category: 'School',   approvalPending: true, driverRequestedBy: 'Maya (Kid)' , location: 'Arts Center', notes: 'Please pick me up after school' },
   ];
 }
 

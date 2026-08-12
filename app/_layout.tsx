@@ -793,6 +793,7 @@ function RootNavigator() {
         <Stack.Screen name="pet/card" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="playdate/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="event/[id]" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="hub/help-history" options={{ headerShown: false, animation: 'slide_from_right' }} />
       </Stack>
 
 

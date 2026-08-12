@@ -167,7 +167,7 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
     addRequest({
       requesterName:   requester?.name ?? '',
       requesterId:     requester?.id   ?? '',
-      onBehalfOf:      isAdult ? active?.name : undefined,
+      requesterRole:   (requester?.role === 'kid') ? 'kid' : 'adult',
       title:           typeText.trim(),
       description:     description.trim(),
       category,

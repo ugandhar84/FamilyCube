@@ -12,6 +12,7 @@ export interface FamilyMember {
   id: string;
   name: string;
   role: MemberRole;
+  subRole?: string;     // e.g. 'Dad', 'Mom', 'Grandpa' — display label, not a gate
   emoji?: string;       // stored as `avatar` in DB when it's an emoji
   avatarUrl?: string;   // stored as `avatar` when it's a URL
   coins: number;
@@ -43,13 +44,13 @@ interface FamilyState {
   syncFromDB: () => Promise<void>;
 }
 
-const STORAGE_KEY = '@familycube_members_v2';
+const STORAGE_KEY = '@familycube_members_v4';
 const ACTIVE_KEY  = '@familycube_active_member';
 
 // Seed data for demo / first launch (IDs match questStore seeds)
 const SEED_MEMBERS: FamilyMember[] = [
-  { id: 'parent-1', name: 'Priya (Mom)', role: 'parent', emoji: '👩', coins: 0,   mainCoins: 0,  gpCoins: 0,  xp: 0,   streak: 3, level: 2, questsCompleted: 5,  questsPending: 1 },
-  { id: 'parent-2', name: 'Alex (Dad)', role: 'parent', emoji: '👨', coins: 0,   mainCoins: 0,  gpCoins: 0,  xp: 0,   streak: 2, level: 2, questsCompleted: 3,  questsPending: 0 },
+  { id: 'parent-1', name: 'Alex (Dad)',  role: 'parent', emoji: '👨', coins: 0,   mainCoins: 0,  gpCoins: 0,  xp: 0,   streak: 3, level: 2, questsCompleted: 5,  questsPending: 1 },
+  { id: 'parent-2', name: 'Priya (Mom)', role: 'parent', emoji: '👩', coins: 0,  mainCoins: 0,  gpCoins: 0,  xp: 0,   streak: 2, level: 2, questsCompleted: 3,  questsPending: 0 },
   { id: 'kid-1',    name: 'Leo',         role: 'kid',    emoji: '🦁', coins: 108, mainCoins: 108, gpCoins: 45, xp: 320, streak: 4, level: 3, questsCompleted: 12, questsPending: 2 },
   { id: 'kid-2',    name: 'Maya',        role: 'kid',    emoji: '🌸', coins: 75,  mainCoins: 75,  gpCoins: 30, xp: 210, streak: 2, level: 2, questsCompleted: 8,  questsPending: 1 },
   { id: 'kid-3',    name: 'Sam',         role: 'kid',    emoji: '👶', coins: 40,  mainCoins: 40,  gpCoins: 20, xp: 90,  streak: 1, level: 1, questsCompleted: 4,  questsPending: 1 },
@@ -63,7 +64,8 @@ function fromRow(row: any): FamilyMember {
   return {
     id:              String(row.id),
     name:            row.name,
-    role:            row.role === 'child' ? 'kid' : row.role as MemberRole,
+    role:            row.role === 'child' ? 'kid' : row.role === 'grandparent' ? 'senior' : row.role as MemberRole,
+    subRole:         row.sub_role ?? undefined,
     emoji:           isUrl ? undefined : (row.avatar ?? undefined),
     avatarUrl:       isUrl ? row.avatar : undefined,
     coins,
@@ -82,9 +84,10 @@ function fromRow(row: any): FamilyMember {
 // FamilyMember → DB upsert payload (v2 `members` schema)
 function toRow(m: FamilyMember) {
   return {
-    id:    m.id,
-    name:  m.name,
-    role:  m.role === 'kid' ? 'child' : m.role,   // v2 uses 'child'
+    id:       m.id,
+    name:     m.name,
+    role:     m.role === 'kid' ? 'child' : m.role,   // DB: 'child', 'parent', 'grandparent'
+    sub_role: m.subRole ?? null,
     avatar: m.avatarUrl ?? m.emoji ?? '👤',
     coins: m.coins,
     main_coins: m.mainCoins,

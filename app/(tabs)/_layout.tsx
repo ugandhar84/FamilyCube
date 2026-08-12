@@ -13,6 +13,7 @@ import { useNotifStore } from '@/store/notifStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/questStore';
+import { useHelpStore } from '@/store/helpStore';
 
 // ── Tab icon name map ─────────────────────────────────────────────────────────
 const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
@@ -193,9 +194,10 @@ function CustomTabBar({ state, navigation }: any) {
 // ── Layout ────────────────────────────────────────────────────────────────────
 export default function TabLayout() {
   const { colors } = useTheme();
-  const { loaded: familyLoaded, loadFromStorage: loadFamily } = useFamilyStore();
+  const { loaded: familyLoaded, loadFromStorage: loadFamily, members } = useFamilyStore();
   const { loaded: eventsLoaded, loadFromStorage: loadEvents } = useEventStore();
   const { loaded: questsLoaded, loadFromStorage: loadQuests } = useQuestStore();
+  const { loaded: helpLoaded,   loadFromStorage: loadHelp   } = useHelpStore();
 
   // Boot all stores once when the tab shell mounts — before any screen renders
   useEffect(() => {
@@ -203,6 +205,13 @@ export default function TabLayout() {
     if (!eventsLoaded) loadEvents();
     if (!questsLoaded) loadQuests();
   }, []);
+
+  // Boot help store once family members are loaded — scope fetch to this family's IDs
+  useEffect(() => {
+    if (!helpLoaded && members.length > 0) {
+      loadHelp(members.map(m => m.id));
+    }
+  }, [members.length]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>

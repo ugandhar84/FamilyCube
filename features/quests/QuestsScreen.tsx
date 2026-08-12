@@ -1340,78 +1340,112 @@ export default function QuestsScreen() {
                 // Reopen: parent or senior, quest was declined
                 const canReopen  = isParentOrSenior && isDeclined;
 
+                // Accent colour by status
+                const accentColor =
+                  isPoolCard    ? BRAND.amber :
+                  isDeclined    ? '#EF4444' :
+                  isDoneCard    ? '#10B981' :
+                  isReview      ? BRAND.purple :
+                  q.priority === 'urgent' ? '#EF4444' : BRAND.purple;
+
+                const hasBonus = q.bonusCoins > 0 && (!q.bonusExpiresAt || new Date(q.bonusExpiresAt) > new Date());
+
                 return (
                   <View key={q.id} style={[s.questCard, { backgroundColor: cardBg, borderColor: cardBord }]}>
-                    {/* Title row */}
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-                      <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
-                        <View style={[s.catBadge, { backgroundColor: isDark ? '#2D1B69' : '#EEF2FF', borderColor: isDark ? '#4338CA50' : '#C7D2FE' }]}>
-                          <Text style={[s.catText, { color: isDark ? '#818CF8' : '#4338CA' }]}>{q.category}</Text>
+                    {/* Left accent bar */}
+                    <View style={[s.accentBar, { backgroundColor: accentColor }]} />
+
+                    <View style={{ flex: 1, padding: 14 }}>
+                      {/* ── Top: title + coin pill ── */}
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[s.questTitle, { color: colors.textPrimary }]} numberOfLines={2}>{q.title}</Text>
+                          {q.description ? (
+                            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 3, lineHeight: 18 }} numberOfLines={2}>
+                              {q.description}
+                            </Text>
+                          ) : null}
+                        </View>
+                        {/* Coin pill */}
+                        <View style={[s.coinPill, { backgroundColor: hasBonus ? '#FCD34D22' : (isDark ? '#1E293B' : '#F8FAFC'), borderColor: hasBonus ? '#FCD34D60' : colors.border }]}>
+                          <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: isDark ? '#FCD34D' : '#D97706' }}>
+                            +{q.coins + q.bonusCoins}
+                          </Text>
+                          <Text style={{ fontSize: TYPO.micro + 1, color: isDark ? '#FCD34D' : '#D97706', fontWeight: '700' }}>🪙</Text>
+                          {hasBonus && (
+                            <Text style={{ fontSize: TYPO.micro, color: '#FCD34D', fontWeight: '700', marginTop: 1 }}>+{q.bonusCoins} bonus</Text>
+                          )}
+                        </View>
+                      </View>
+
+                      {/* ── Badge strip ── */}
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
+                        <View style={[s.badge, { backgroundColor: isDark ? '#2D1B69' : '#EEF2FF', borderColor: isDark ? '#4338CA40' : '#C7D2FE' }]}>
+                          <Text style={[s.badgeText, { color: isDark ? '#818CF8' : '#4338CA' }]}>{q.category}</Text>
                         </View>
                         {q.priority === 'urgent' && (
-                          <View style={[s.catBadge, { backgroundColor: '#FEE2E2', borderColor: '#FECACA' }]}>
-                            <Text style={[s.catText, { color: '#DC2626' }]}>🔴 Urgent</Text>
+                          <View style={[s.badge, { backgroundColor: '#FEE2E2', borderColor: '#FECACA' }]}>
+                            <Text style={[s.badgeText, { color: '#DC2626' }]}>🔴 Urgent</Text>
                           </View>
                         )}
-                        {isPoolCard && (
-                          <View style={[s.catBadge, { backgroundColor: isDark ? '#1C1000' : '#FFFBEB', borderColor: BRAND.amber + '60' }]}>
-                            <Text style={[s.catText, { color: BRAND.amber }]}>⚡ Open Bounty</Text>
-                          </View>
-                        )}
-                        {q.photoRequired && (isTodoCard || isPoolCard) && (
-                          <View style={[s.catBadge, { backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderColor: '#FCD34D80' }]}>
-                            <Text style={[s.catText, { color: '#D97706' }]}>📷 Photo required</Text>
-                          </View>
-                        )}
-                        {/* Flash bonus badge — shown when bonusCoins > 0 and not expired */}
-                        {q.bonusCoins > 0 && (!q.bonusExpiresAt || new Date(q.bonusExpiresAt) > new Date()) && (
-                          <View style={[s.catBadge, { backgroundColor: '#FCD34D20', borderColor: '#FCD34D80' }]}>
-                            <Text style={[s.catText, { color: '#FCD34D', fontWeight: '900' }]}>
-                              🔥 +{q.bonusCoins}🪙 BONUS
-                              {q.bonusExpiresAt
-                                ? ` · ${Math.max(0, Math.round((new Date(q.bonusExpiresAt).getTime() - Date.now()) / 3600000))}h left`
-                                : ''}
+                        {q.difficulty && (
+                          <View style={[s.badge, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderColor: colors.border }]}>
+                            <Text style={[s.badgeText, { color: colors.textSecondary }]}>
+                              {q.difficulty === 'easy' ? '😊' : q.difficulty === 'medium' ? '💪' : q.difficulty === 'hard' ? '🔥' : '⚡'}{' '}
+                              {q.difficulty.charAt(0).toUpperCase() + q.difficulty.slice(1)}
                             </Text>
                           </View>
                         )}
-                        <Text style={[s.questTitle, { color: colors.textPrimary }]}>{q.title}</Text>
-                      </View>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={[s.coinAmt, { color: isDark ? '#FCD34D' : '#D97706' }]}>
-                          +{q.coins + q.bonusCoins}🪙
-                        </Text>
-                        {q.bonusCoins > 0 && (!q.bonusExpiresAt || new Date(q.bonusExpiresAt) > new Date()) && (
-                          <Text style={{ fontSize: TYPO.micro, color: '#FCD34D80' }}>incl. +{q.bonusCoins} bonus</Text>
+                        {isPoolCard && (
+                          <View style={[s.badge, { backgroundColor: isDark ? '#1C1000' : '#FFFBEB', borderColor: BRAND.amber + '60' }]}>
+                            <Text style={[s.badgeText, { color: BRAND.amber }]}>⚡ Open Bounty</Text>
+                          </View>
+                        )}
+                        {q.photoRequired && (isTodoCard || isPoolCard) && (
+                          <View style={[s.badge, { backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderColor: '#FCD34D60' }]}>
+                            <Text style={[s.badgeText, { color: '#D97706' }]}>📷 Photo proof</Text>
+                          </View>
+                        )}
+                        {hasBonus && (
+                          <View style={[s.badge, { backgroundColor: '#FCD34D18', borderColor: '#FCD34D60' }]}>
+                            <Text style={[s.badgeText, { color: '#F59E0B', fontWeight: '900' }]}>
+                              🔥 +{q.bonusCoins}🪙 BONUS{q.bonusExpiresAt ? ` · ${Math.max(0, Math.round((new Date(q.bonusExpiresAt).getTime() - Date.now()) / 3600000))}h left` : ''}
+                            </Text>
+                          </View>
                         )}
                       </View>
-                    </View>
 
-                    {/* Meta row */}
-                    <View style={[s.metaRow, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                      <Text style={[s.metaText, { color: colors.textTertiary }]}>
-                        Assignee:{' '}
-                        <Text style={[s.metaVal, { color: colors.textSecondary }]}>
-                          {isPoolCard ? 'Open for anyone' : (assignee?.name ?? 'Unassigned')}
-                        </Text>
-                      </Text>
-                      <Text style={[s.metaText, { color: colors.textTertiary }]}>
-                        Due:{' '}
-                        <Text style={[s.metaVal, { color: colors.textSecondary }]}>
-                          {q.dueDate ? fmtDateShort(q.dueDate) : 'Tonight'}
-                        </Text>
-                      </Text>
-                    </View>
-
-                    {/* Decline reason — visible to EVERYONE so kid knows why */}
-                    {isDeclined && q.declineReason && (
-                      <View style={[s.declineBox, { backgroundColor: isDark ? '#450A0A' : '#FEF2F2', borderColor: '#FCA5A5' }]}>
-                        <I.AlertCircle c="#EF4444" />
-                        <Text style={[s.declineText, { color: '#EF4444', flex: 1 }]}>{q.declineReason}</Text>
+                      {/* ── Meta row: avatar + name + due ── */}
+                      <View style={[s.metaRow, { borderTopColor: isDark ? '#1E293B' : '#F0F4F8' }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, flex: 1 }}>
+                          {isPoolCard
+                            ? <View style={[s.metaAvatar, { backgroundColor: BRAND.amber + '25' }]}><Text style={{ fontSize: 14 }}>⚡</Text></View>
+                            : assignee
+                              ? <FamilyAvatar name={assignee.name} emoji={assignee.emoji} avatarUrl={(assignee as any).avatarUrl} size={26} ringColor={BRAND.purple} ringWidth={1.5} />
+                              : <View style={[s.metaAvatar, { backgroundColor: colors.surface }]}><Text style={{ fontSize: 12 }}>👤</Text></View>
+                          }
+                          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontWeight: '600' }}>
+                            {isPoolCard ? 'Open for anyone' : (assignee?.name ?? 'Unassigned')}
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Text style={{ fontSize: TYPO.micro + 1, color: colors.textTertiary }}>📅</Text>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>
+                            {q.dueDate ? fmtDateShort(q.dueDate) : 'Tonight'}
+                          </Text>
+                        </View>
                       </View>
-                    )}
 
-                    {/* Action row */}
-                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8 }}>
+                      {/* ── Decline reason ── */}
+                      {isDeclined && q.declineReason && (
+                        <View style={[s.declineBox, { backgroundColor: isDark ? '#450A0A' : '#FEF2F2', borderColor: '#FCA5A5' }]}>
+                          <I.AlertCircle c="#EF4444" />
+                          <Text style={[s.declineText, { color: '#EF4444', flex: 1 }]}>{q.declineReason}</Text>
+                        </View>
+                      )}
+
+                    {/* Action strip — full width, separated by a rule */}
+                    <View style={[s.actionStrip, { borderTopColor: isDark ? '#1E293B' : '#F0F4F8' }]}>
 
                       {/* Kid: Claim open bounty */}
                       {canClaim && (
@@ -1526,6 +1560,7 @@ export default function QuestsScreen() {
                         </View>
                       )}
                     </View>
+                    </View>{/* flex:1 inner */}
                   </View>
                 );
               })}
@@ -1589,20 +1624,40 @@ const s = StyleSheet.create({
   cheerName:   { fontSize: TYPO.caption, fontWeight: '700', flex: 1 },
   highFiveBtn: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 7 },
 
-  questCard:   { borderRadius: 24, borderWidth: 1, padding: 14, gap: 10 },
-  catBadge:    { borderRadius: 20, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2 },
-  catText:     { fontSize: TYPO.micro, fontWeight: '700' },
-  questTitle:  { fontSize: TYPO.caption, fontWeight: '700' },
-  coinAmt:     { fontSize: TYPO.label, fontWeight: '900', textAlign: 'right', lineHeight: 16 },
-  metaRow:     { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, paddingTop: 8 },
-  metaText:    { fontSize: TYPO.micro + 1 },
-  metaVal:     { fontWeight: '700' },
-  declineBox:  { flexDirection: 'row', gap: 6, alignItems: 'flex-start', borderRadius: 12, borderWidth: 1, padding: 8 },
-  declineText: { fontSize: TYPO.label, fontWeight: '600', lineHeight: 15 },
-  actionBtn:   { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 14 },
-  actionBtnText: { fontSize: TYPO.label, fontWeight: '700', color: '#fff' },
-  paidBadge:   { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5 },
-  paidText:    { fontSize: TYPO.micro + 1, fontWeight: '700' },
+  // ── Quest card ──────────────────────────────────────────────────────────────
+  questCard:   {
+    borderRadius: 20, borderWidth: 1, overflow: 'hidden',
+    flexDirection: 'row',
+    marginBottom: 0,
+    // subtle shadow
+    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  accentBar:   { width: 4, borderRadius: 0 },
+  coinPill:    {
+    alignItems: 'center', justifyContent: 'center',
+    borderRadius: 16, borderWidth: 1,
+    paddingHorizontal: 10, paddingVertical: 8,
+    minWidth: 56,
+  },
+  badge:       { borderRadius: 20, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
+  badgeText:   { fontSize: TYPO.micro, fontWeight: '700' },
+  questTitle:  { fontSize: TYPO.subheading, fontWeight: '800', lineHeight: 22 },
+  metaRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, paddingTop: 10, marginTop: 4 },
+  metaAvatar:  { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  declineBox:  { flexDirection: 'row', gap: 6, alignItems: 'flex-start', borderRadius: 12, borderWidth: 1, padding: 8, marginTop: 6 },
+  declineText: { fontSize: TYPO.label, fontWeight: '600', lineHeight: 18 },
+  actionStrip: { flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, borderTopWidth: 1, paddingTop: 10, marginTop: 10 },
+  actionBtn:   { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20 },
+  actionBtnText: { fontSize: TYPO.label, fontWeight: '800', color: '#fff' },
+  paidBadge:   { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6 },
+  paidText:    { fontSize: TYPO.label, fontWeight: '700' },
   emptyBox:    { borderRadius: 16, borderWidth: 1, padding: 24, alignItems: 'center' },
   emptyText:   { fontSize: TYPO.caption, textAlign: 'center' },
+  // ── Cheer card ──────────────────────────────────────────────────────────────
+  catBadge:    { borderRadius: 20, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2 },
+  catText:     { fontSize: TYPO.micro, fontWeight: '700' },
+  coinAmt:     { fontSize: TYPO.label, fontWeight: '900', textAlign: 'right' },
+  metaText:    { fontSize: TYPO.micro + 1 },
+  metaVal:     { fontWeight: '700' },
 });

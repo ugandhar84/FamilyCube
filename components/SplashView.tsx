@@ -1,35 +1,36 @@
-import { View, StyleSheet, useColorScheme } from 'react-native';
-import Svg, { Ellipse, Circle, Polyline } from 'react-native-svg';
+/**
+ * SplashView — FamilyCube branded loading indicator.
+ * Used as the native-splash replacement while the JS bundle hydrates.
+ */
+import { View, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
-const LIGHT_BG  = '#6B2FD4';
-const DARK_BG   = '#1C0A3A';
-const AMBER     = '#FFB347';
+const TEAL   = '#00BBA4';
+const AMBER  = '#F5A623';
+const PINK   = '#F04E98';
+const PURPLE = '#9261C7';
+
+const COLORS = [TEAL, AMBER, PINK, PURPLE, TEAL];
 
 export default function SplashView() {
-  const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
-  const bg = isDark ? DARK_BG : LIGHT_BG;
-
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }]}>
-      <Svg width={220} height={220} viewBox="0 0 1024 1024">
-        {/* Toe pads */}
-        <Ellipse cx="0" cy="0" rx="9" ry="7"     transform="translate(154 327) rotate(-22) scale(8.6)" fill="white" />
-        <Ellipse cx="0" cy="0" rx="8.5" ry="6.5" transform="translate(309 241) rotate(-8) scale(8.6)"  fill="white" />
-        <Ellipse cx="0" cy="0" rx="8.5" ry="6.5" transform="translate(550 241) rotate(8) scale(8.6)"   fill="white" />
-        <Ellipse cx="0" cy="0" rx="9" ry="7"     transform="translate(705 327) rotate(22) scale(8.6)"  fill="white" />
-        {/* Main pad */}
-        <Circle cx="512" cy="580" r="189" fill="white" />
-        {/* Amber heartbeat */}
-        <Polyline
-          points="34,577 224,577 284,413 344,723 396,499 448,577 826,577"
-          fill="none"
-          stroke={AMBER}
-          strokeWidth="34"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </Svg>
-    </View>
+    <LinearGradient
+      colors={['#100A2E', '#0D1A52', '#07101E']}
+      start={{ x: 0.3, y: 0 }}
+      end={{ x: 0.7, y: 1 }}
+      style={s.root}
+    >
+      <View style={s.dots}>
+        {COLORS.map((color, i) => (
+          <View key={i} style={[s.dot, { backgroundColor: color, opacity: 0.7 + i * 0.06 }]} />
+        ))}
+      </View>
+    </LinearGradient>
   );
 }
+
+const s = StyleSheet.create({
+  root: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  dots: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  dot:  { width: 10, height: 10, borderRadius: 5 },
+});

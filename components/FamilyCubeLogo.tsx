@@ -77,93 +77,45 @@ function CubeMark({ size = 100 }: { size?: number }) {
       </Defs>
 
       <G>
-        {/* ── Top face — Amber — House icon ── */}
-        <Polygon
-          points={poly(['topC', 'midR', 'ctr', 'midL'])}
-          fill="url(#topGrad)"
-        />
-        {/* House roof */}
-        <Path
-          d="M100 36 L128 56 L72 56 Z"
-          fill={WHITE}
-          opacity={0.92}
-        />
-        {/* House body + window */}
-        <Path
-          d="M78 56 L78 72 L122 72 L122 56 Z"
-          fill={WHITE}
-          opacity={0.85}
-        />
-        <Path
-          d="M92 60 L92 68 L108 68 L108 60 Z"
-          fill={AMBER}
-          opacity={0.7}
-        />
+        {/* ── Top face — Amber — Home icon (Lucide style) ── */}
+        <Polygon points={poly(['topC', 'midR', 'ctr', 'midL'])} fill="url(#topGrad)" />
+        {/* Roof */}
+        <Path d="M100 34 L130 55 L70 55 Z"
+          fill="none" stroke={WHITE} strokeWidth={4} strokeLinejoin="round"
+          strokeLinecap="round" opacity={0.95} />
+        {/* Body */}
+        <Path d="M78 55 L78 73 L122 73 L122 55"
+          fill="none" stroke={WHITE} strokeWidth={4} strokeLinejoin="round"
+          strokeLinecap="round" opacity={0.95} />
+        {/* Door */}
+        <Path d="M93 73 L93 62 Q100 58 107 62 L107 73"
+          fill="none" stroke={WHITE} strokeWidth={3} strokeLinejoin="round"
+          strokeLinecap="round" opacity={0.88} />
 
-        {/* ── Left face — Teal — Family icon ── */}
-        <Polygon
-          points={poly(['midL', 'ctr', 'botC', 'botL'])}
-          fill="url(#leftGrad)"
-        />
-        {/* Parent 1 head */}
-        <Circle cx={75} cy={136} r={7} fill={WHITE} opacity={0.92} />
-        {/* Parent 2 head */}
-        <Circle cx={95} cy={130} r={7} fill={WHITE} opacity={0.92} />
-        {/* Kid head */}
-        <Circle cx={85} cy={153} r={5.5} fill={WHITE} opacity={0.92} />
-        {/* Arms / body gesture */}
-        <Path
-          d="M68 148 Q75 142 85 153 Q95 142 102 148"
-          fill="none"
-          stroke={WHITE}
-          strokeWidth={3}
-          strokeLinecap="round"
-          opacity={0.88}
-        />
+        {/* ── Left face — Teal — People icon (Lucide style) ── */}
+        <Polygon points={poly(['midL', 'ctr', 'botC', 'botL'])} fill="url(#leftGrad)" />
+        {/* Left person head */}
+        <Circle cx={72} cy={134} r={8} fill="none" stroke={WHITE} strokeWidth={3.5} opacity={0.95} />
+        {/* Left person body arc */}
+        <Path d="M55 163 Q72 148 89 163"
+          fill="none" stroke={WHITE} strokeWidth={3.5} strokeLinecap="round" opacity={0.88} />
+        {/* Right person head */}
+        <Circle cx={98} cy={128} r={8} fill="none" stroke={WHITE} strokeWidth={3.5} opacity={0.95} />
+        {/* Right person body arc */}
+        <Path d="M81 157 Q98 142 115 157"
+          fill="none" stroke={WHITE} strokeWidth={3.5} strokeLinecap="round" opacity={0.88} />
+
+        {/* ── Right face — Purple — Heart icon (Lucide style) ── */}
+        <Polygon points={poly(['midR', 'botR', 'botC', 'ctr'])} fill="url(#rightGrad)" />
         {/* Heart */}
-        <Path
-          d="M86 122 C84 119, 80 120, 80 124 C80 128, 86 132, 86 132 C86 132, 92 128, 92 124 C92 120, 88 119, 86 122 Z"
-          fill={WHITE}
-          opacity={0.9}
-        />
+        <Path d="M143 128 C143 128, 131 118, 127 127 C123 136, 131 145, 143 155 C155 145, 163 136, 159 127 C155 118, 143 128, 143 128 Z"
+          fill="none" stroke={WHITE} strokeWidth={3.5} strokeLinejoin="round"
+          strokeLinecap="round" opacity={0.95} />
 
-        {/* ── Right face — Purple — Hands + Heart icon ── */}
-        <Polygon
-          points={poly(['midR', 'botR', 'botC', 'ctr'])}
-          fill="url(#rightGrad)"
-        />
-        {/* Heart */}
-        <Path
-          d="M143 130 C141 127, 137 128, 137 132 C137 136, 143 140, 143 140 C143 140, 149 136, 149 132 C149 128, 145 127, 143 130 Z"
-          fill={WHITE}
-          opacity={0.92}
-        />
-        {/* Cupped hands — left */}
-        <Path
-          d="M130 148 C128 144, 126 148, 128 153 Q133 162, 143 163"
-          fill="none"
-          stroke={WHITE}
-          strokeWidth={3.5}
-          strokeLinecap="round"
-          opacity={0.88}
-        />
-        {/* Cupped hands — right */}
-        <Path
-          d="M156 148 C158 144, 160 148, 158 153 Q153 162, 143 163"
-          fill="none"
-          stroke={WHITE}
-          strokeWidth={3.5}
-          strokeLinecap="round"
-          opacity={0.88}
-        />
-
-        {/* Edge lines for depth */}
+        {/* Subtle edge lines for depth */}
         <Path
           d="M100 18 L15 68 M100 18 L185 68 M100 118 L15 68 M100 118 L185 68 M100 118 L100 218 M15 68 L15 168 L100 218 M185 68 L185 168 L100 218"
-          fill="none"
-          stroke={WHITE}
-          strokeWidth={1}
-          strokeOpacity={0.18}
+          fill="none" stroke={WHITE} strokeWidth={1} strokeOpacity={0.15}
         />
       </G>
     </Svg>
@@ -201,18 +153,19 @@ function Wordmark({ fontSize = 38, dark = false }: { fontSize?: number; dark?: b
 
 // ── Tagline ───────────────────────────────────────────────────────────────────
 
-function Tagline({ fontSize = 10, opacity = 1 }: { fontSize?: number; opacity?: number }) {
+function Tagline({ fontSize = 10, opacity = 1, dark = false }: {
+  fontSize?: number; opacity?: number; dark?: boolean;
+}) {
+  const sep = dark ? 'rgba(255,255,255,0.3)' : 'rgba(30,45,107,0.35)';
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 0, opacity }}>
-      <Text style={{ color: NAVY, opacity: 0.4, fontSize, marginRight: 4 }}>—</Text>
-      <Text style={{ color: TEAL,   fontSize, fontWeight: '700', letterSpacing: 0.8 }}>CONNECT</Text>
-      <Text style={{ color: NAVY, opacity: 0.4, fontSize, marginHorizontal: 2 }}>.</Text>
-      <Text style={{ color: AMBER,  fontSize, fontWeight: '700', letterSpacing: 0.8 }}>ORGANIZE</Text>
-      <Text style={{ color: NAVY, opacity: 0.4, fontSize, marginHorizontal: 2 }}>.</Text>
-      <Text style={{ color: PINK,   fontSize, fontWeight: '700', letterSpacing: 0.8 }}>CARE</Text>
-      <Text style={{ color: NAVY, opacity: 0.4, fontSize, marginHorizontal: 2 }}>.</Text>
-      <Text style={{ color: PURPLE, fontSize, fontWeight: '700', letterSpacing: 0.8 }}>GROW</Text>
-      <Text style={{ color: NAVY, opacity: 0.4, fontSize, marginLeft: 4 }}>—</Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, opacity }}>
+      <Text style={{ color: TEAL,   fontSize, fontWeight: '800', letterSpacing: 1 }}>CONNECT</Text>
+      <Text style={{ color: sep,    fontSize }}>·</Text>
+      <Text style={{ color: AMBER,  fontSize, fontWeight: '800', letterSpacing: 1 }}>ORGANIZE</Text>
+      <Text style={{ color: sep,    fontSize }}>·</Text>
+      <Text style={{ color: PINK,   fontSize, fontWeight: '800', letterSpacing: 1 }}>CARE</Text>
+      <Text style={{ color: sep,    fontSize }}>·</Text>
+      <Text style={{ color: PURPLE, fontSize, fontWeight: '800', letterSpacing: 1 }}>GROW</Text>
     </View>
   );
 }
@@ -244,7 +197,7 @@ export default function FamilyCubeLogo({
     <View style={{ alignItems: 'center', gap: 8 }}>
       <CubeMark size={cfg.cube} />
       <Wordmark fontSize={cfg.font} dark={dark} />
-      {showTagline && <Tagline fontSize={cfg.tag} opacity={dark ? 0.7 : 1} />}
+      {showTagline && <Tagline fontSize={cfg.tag} opacity={dark ? 0.8 : 1} dark={dark} />}
     </View>
   );
 }

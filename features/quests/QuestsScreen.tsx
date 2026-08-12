@@ -15,7 +15,7 @@
  *  - Decline reason shown inline on kid's declined card
  *  - Senior sees approve/decline but NOT AI engine or + Quest button
  */
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   TextInput, Modal, ActivityIndicator, Alert, Platform, Image, Animated,
@@ -128,57 +128,80 @@ function simulateAutoBalance(quests: any[], kids: any[]) {
 }
 
 // FOMO engine — references real quest IDs so Apply can write to DB
-function simulateFomo(quests: any[], kids: any[]) {
+// ── Real FOMO engine — no fake data, reads live quest state ──────────────────
+function buildFomoResult(quests: any[], kids: any[]) {
+  const now   = Date.now();
   const today = new Date().toISOString().split('T')[0];
-  // Overdue: due today or earlier, still todo
+
+  // Overdue assigned quests (not pool, still todo, due today or earlier)
   const overdue = quests.filter(q =>
-    q.status === 'todo' && q.dueDate && q.dueDate <= today && !q.isPool
+    q.status === 'todo' && !q.isPool && q.dueDate && q.dueDate <= today
   );
-  // Pool bounties that nobody claimed yet
-  const unclaimed = quests.filter(q => q.isPool && q.status === 'todo');
-  // Urgent or high priority todo
-  const urgentUndone = quests.filter(q =>
-    q.status === 'todo' && (q.priority === 'urgent' || q.priority === 'high') && !q.isPool
+  // Pool bounties nobody has claimed yet
+  const unclaimed = quests.filter(q => q.isPool && q.status === 'todo' && q.participants.length === 0);
+  // In-progress quests stuck for >4 hrs
+  const stuckInProgress = quests.filter(q =>
+    q.status === 'in_progress' && q.claimedAt &&
+    (now - new Date(q.claimedAt).getTime()) > 4 * 3600_000
   );
 
-  const twoHoursFromNow = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-  const fourHoursFromNow = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+  // Flash bonus targets — bonus = 25% of base coins (min 10, max 50), rounded to 5
+  const flashCandidates = [...overdue, ...unclaimed, ...stuckInProgress].slice(0, 4);
+  const urgentAlerts = flashCandidates.map((q, i) => {
+    const rawBonus  = Math.max(10, Math.min(50, Math.round((q.coins * 0.25) / 5) * 5));
+    const hoursLeft = i < 2 ? 2 : 4;   // first two get 2h urgency, rest 4h
+    const expiresAt = new Date(now + hoursLeft * 3600_000).toISOString();
+    const alreadyHasBonus = q.bonusCoins > 0 && q.bonusExpiresAt && new Date(q.bonusExpiresAt) > new Date();
+    const daysOverdue = q.dueDate
+      ? Math.max(0, Math.floor((now - new Date(q.dueDate).getTime()) / 86400_000))
+      : 0;
+    let fomoMessage = '';
+    if (q.isPool)           fomoMessage = `⚡ Nobody has claimed this yet — a +${rawBonus}🪙 flash bonus expires in ${hoursLeft}h!`;
+    else if (daysOverdue>1) fomoMessage = `🚨 ${daysOverdue}d overdue! Flash bonus to motivate ${q.assignedToId ? 'completion' : 'a claim'} in ${hoursLeft}h.`;
+    else if (daysOverdue>0) fomoMessage = `⏰ Due today and still not done — flash bonus expires in ${hoursLeft}h!`;
+    else                    fomoMessage = `🏃 In progress for ${Math.floor((now - new Date(q.claimedAt).getTime()) / 3600_000)}h — bonus to push it over the line!`;
+    return { questId: q.id, questTitle: q.title, bonusCoins: rawBonus, bonusExpiresAt: expiresAt, fomoMessage, alreadyHasBonus };
+  });
 
-  const flashTargets = [...overdue, ...unclaimed].slice(0, 3).map((q, i) => ({
-    questId:       q.id,
-    questTitle:    q.title,
-    bonusCoins:    i === 0 ? 20 : 15,
-    bonusExpiresAt: i === 0 ? twoHoursFromNow : fourHoursFromNow,
-    fomoMessage:   i === 0
-      ? `⏰ Flash bonus expires in 2h! Your siblings are eyeing this +${i === 0 ? 20 : 15}🪙 bonus!`
-      : `⚡ Bonus expires in 4h — grab it before someone else does!`,
-  }));
-
-  // Force-assign targets: urgent quests overdue with no one working on them
-  const forceTargets = urgentUndone.slice(0, 1).map(q => {
-    const leastBusy = kids.reduce((best: any, k: any) => {
-      const load = quests.filter(x => x.assignedToId === k.id && x.status !== 'done').length;
-      return (!best || load < best.load) ? { ...k, load } : best;
-    }, null);
+  // Penalty / force-assign targets — overdue urgent quests with no active work
+  const penaltyKids = [...kids].sort((a, b) => {
+    const loadA = quests.filter(x => x.assignedToId === a.id && x.status !== 'done' && x.status !== 'approved').length;
+    const loadB = quests.filter(x => x.assignedToId === b.id && x.status !== 'done' && x.status !== 'approved').length;
+    return loadA - loadB;
+  });
+  const penaltyCandidates = overdue.filter(q => q.priority === 'urgent' || q.priority === 'high').slice(0, 3);
+  const penaltiesAndForceAssigns = penaltyCandidates.map(q => {
+    const currentAssignee = kids.find((k: any) => k.id === q.assignedToId);
+    const reassignTarget  = currentAssignee
+      ? penaltyKids.find((k: any) => k.id !== currentAssignee.id) ?? penaltyKids[0]
+      : penaltyKids[0];
+    const daysOver = q.dueDate
+      ? Math.max(0, Math.floor((now - new Date(q.dueDate).getTime()) / 86400_000))
+      : 0;
     return {
-      questId:    q.id,
-      questTitle: q.title,
-      targetKidId:   leastBusy?.id,
-      targetKidName: leastBusy?.name ?? 'the least busy kid',
-      action: `Overdue — force-assigning to ${leastBusy?.name ?? 'least busy kid'} and sending push nudge`,
+      questId:       q.id,
+      questTitle:    q.title,
+      targetKidId:   reassignTarget?.id,
+      targetKidName: reassignTarget?.name ?? 'the least busy kid',
+      currentKidName: currentAssignee?.name,
+      daysOverdue:   daysOver,
+      action: currentAssignee
+        ? `${daysOver}d overdue — reassigning from ${currentAssignee.name} to ${reassignTarget?.name ?? 'least busy kid'}`
+        : `${daysOver}d overdue with no assignee — force-assigning to ${reassignTarget?.name ?? 'least busy kid'}`,
     };
   });
 
-  const overdueCount = overdue.length + unclaimed.length;
-  const summary = overdueCount > 0
-    ? `${overdueCount} quest${overdueCount > 1 ? 's are' : ' is'} overdue or unclaimed. Activating flash bonuses to drive completion before game night!`
-    : `All quests look timely! Add flash bonuses to pool bounties to drive faster claims.`;
+  const totalIssues = overdue.length + unclaimed.length + stuckInProgress.length;
+  const fomoNudgeSummary = totalIssues === 0
+    ? 'All quests are on track! You can still add flash bonuses to pool bounties to drive faster claims.'
+    : `${totalIssues} quest${totalIssues > 1 ? 's need' : ' needs'} attention — ${overdue.length} overdue, ${unclaimed.length} unclaimed, ${stuckInProgress.length} stuck.`;
 
-  return new Promise<any>(res => setTimeout(() => res({
-    fomoNudgeSummary: summary,
-    urgentAlerts:              flashTargets,
-    penaltiesAndForceAssigns:  forceTargets,
-  }), 1600));
+  return { fomoNudgeSummary, urgentAlerts, penaltiesAndForceAssigns };
+}
+
+function simulateFomo(quests: any[], kids: any[]) {
+  // No fake timeout — runs synchronously, returns real data instantly
+  return Promise.resolve(buildFomoResult(quests, kids));
 }
 
 function simulateAdvice(quests: any[], kids: any[]) {
@@ -1301,12 +1324,12 @@ function FomoCard({ result, onApply, appliedActions, onClose }: any) {
         return (
           <View key={idx} style={[ai.fomoRow]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-              <Text style={[ai.rowTitle, { color: '#FDE68A', flex: 1 }]}>{alert.title}</Text>
+              <Text style={[ai.rowTitle, { color: '#FDE68A', flex: 1 }]}>{alert.questTitle}</Text>
               <Text style={[ai.chipText, { color: '#FCD34D' }]}>+{alert.bonusCoins}🪙</Text>
             </View>
             <Text style={[ai.rowSub, { color: '#FCD34D80', marginBottom: 8 }]}>{alert.fomoMessage}</Text>
             <View style={{ alignItems: 'flex-end' }}>
-              {applied
+              {applied || alert.alreadyHasBonus
                 ? <View style={[ai.doneChip, { backgroundColor: BRAND.amber }]}><Text style={[ai.doneText, { color: '#0F172A' }]}>🔥 Flash Bonus Active!</Text></View>
                 : <TouchableOpacity style={[ai.applyBtn, { backgroundColor: BRAND.amber }]} onPress={() => onApply(`fomo_${idx}`, alert, 'fomo')}>
                     <Text style={[ai.applyText, { color: '#0F172A' }]}>🔥 Activate Flash Bonus</Text>
@@ -1324,8 +1347,8 @@ function FomoCard({ result, onApply, appliedActions, onClose }: any) {
             return (
               <View key={idx} style={[ai.fomoRow, { borderColor: '#EF444440', backgroundColor: '#450A0A' }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <Text style={[ai.rowTitle, { color: '#FCA5A5', flex: 1 }]}>{pen.questTitle} → {pen.targetKidName}</Text>
-                  <Text style={[ai.chipText, { color: '#F87171' }]}>⚠️ Force</Text>
+                  <Text style={[ai.rowTitle, { color: '#FCA5A5', flex: 1 }]}>{pen.questTitle}</Text>
+                  <Text style={[ai.chipText, { color: '#F87171' }]}>🔴 {pen.daysOverdue}d overdue</Text>
                 </View>
                 <Text style={[ai.rowSub, { color: '#FCA5A5', marginBottom: 8 }]}>{pen.action}</Text>
                 <View style={{ alignItems: 'flex-end' }}>
@@ -1434,6 +1457,28 @@ export default function QuestsScreen() {
   const [declineTarget,  setDeclineTarget]  = useState<{ id: string; title: string; memberId?: string } | null>(null);
   const [editTarget,     setEditTarget]     = useState<Quest | null>(null);
   const [showAddModal,   setShowAddModal]   = useState(false);
+
+  // Live clock — ticks every second so bonus countdowns update in real time
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Auto-expire: clear bonuses whose timer has run out (sweep every 30s)
+  useEffect(() => {
+    const sweep = () => {
+      const ts = Date.now();
+      quests.forEach(q => {
+        if (q.bonusCoins > 0 && q.bonusExpiresAt && new Date(q.bonusExpiresAt).getTime() <= ts) {
+          updateQuest(q.id, { bonusCoins: 0, bonusExpiresAt: undefined });
+        }
+      });
+    };
+    sweep(); // run immediately on mount / when quests change
+    const id = setInterval(sweep, 30_000);
+    return () => clearInterval(id);
+  }, [quests]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const switchMember = () => {
     const idx  = members.findIndex(m => m.id === activeMember?.id);
@@ -1784,7 +1829,7 @@ export default function QuestsScreen() {
                   isReview      ? BRAND.purple :
                   q.priority === 'urgent' ? '#EF4444' : BRAND.purple;
 
-                const hasBonus = q.bonusCoins > 0 && (!q.bonusExpiresAt || new Date(q.bonusExpiresAt) > new Date());
+                const hasBonus = q.bonusCoins > 0 && (!q.bonusExpiresAt || new Date(q.bonusExpiresAt).getTime() > now);
 
                 // ── Collapsed header ────────────────────────────────────────────
                 const claimantIds    = q.assignedToIds?.length ? q.assignedToIds : (q.assignedToId ? [q.assignedToId] : []);
@@ -1997,13 +2042,25 @@ export default function QuestsScreen() {
                             <Text style={[s.badgeText, { color: '#D97706' }]}>📷 Photo proof</Text>
                           </View>
                         )}
-                        {hasBonus && (
-                          <View style={[s.badge, { backgroundColor: '#FCD34D18', borderColor: '#FCD34D60' }]}>
-                            <Text style={[s.badgeText, { color: '#F59E0B', fontWeight: '900' }]}>
-                              🔥 +{q.bonusCoins}🪙 BONUS{q.bonusExpiresAt ? ` · ${Math.max(0, Math.round((new Date(q.bonusExpiresAt).getTime() - Date.now()) / 3600000))}h left` : ''}
-                            </Text>
-                          </View>
-                        )}
+                        {hasBonus && (() => {
+                          let countdownLabel = '';
+                          if (q.bonusExpiresAt) {
+                            const secsLeft = Math.max(0, Math.floor((new Date(q.bonusExpiresAt).getTime() - now) / 1000));
+                            const h = Math.floor(secsLeft / 3600);
+                            const m = Math.floor((secsLeft % 3600) / 60);
+                            const s = secsLeft % 60;
+                            if (h > 0) countdownLabel = ` · ${h}h ${m}m left`;
+                            else if (m > 0) countdownLabel = ` · ${m}m ${s}s left`;
+                            else countdownLabel = secsLeft > 0 ? ` · ${s}s left` : ' · expired';
+                          }
+                          return (
+                            <View style={[s.badge, { backgroundColor: '#FCD34D18', borderColor: '#FCD34D60' }]}>
+                              <Text style={[s.badgeText, { color: '#F59E0B', fontWeight: '900' }]}>
+                                🔥 +{q.bonusCoins}🪙 BONUS{countdownLabel}
+                              </Text>
+                            </View>
+                          );
+                        })()}
                       </View>
 
                       {/* edited-by notice — only when modified */}

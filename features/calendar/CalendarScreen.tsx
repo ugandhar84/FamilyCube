@@ -339,7 +339,7 @@ export default function CalendarScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={['top']}>
       {/* ── Shared App Header ── */}
-      <AppHeader onSwitchMember={() => {}} onNotifications={() => {}} />
+      <AppHeader onPersonaPress={() => {}} onBellPress={() => {}} />
 
       {/* ── Page title + action buttons ── */}
       <View style={[s.titleRow, { backgroundColor: isDark ? colors.card : '#FFFFFF',

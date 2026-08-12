@@ -191,7 +191,7 @@ export default function FamilyCubeSplashScreen() {
 
       {/* Cube mark */}
       <Animated.View style={[s.cubeWrap, cubeAStyle]}>
-        <CubeMark size={CUBE_SIZE} />
+        <CubeMark size={CUBE_SIZE} uid="splash" />
       </Animated.View>
 
       {/* Wordmark — "Family Cube" */}

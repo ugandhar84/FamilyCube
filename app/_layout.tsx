@@ -1,3 +1,4 @@
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { showAlert } from '@/components/AppAlert';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';
@@ -735,7 +736,7 @@ function RootNavigator() {
   }, []);
 
   return (
-    <>
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={colors.background} translucent={false} />
 
       {/* In-app notification banner — slides down when a push arrives while app is open */}
@@ -818,7 +819,7 @@ function RootNavigator() {
           <FamilyCubeSplashScreen />
         </Animated.View>
       </Modal>
-    </>
+    </GestureHandlerRootView>
   );
 }
 

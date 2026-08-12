@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, TextInput,
   Modal, KeyboardAvoidingView, Platform, Alert,
@@ -10,266 +10,248 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore, Quest, QuestStatus, QuestCategory } from '@/store/questStore';
 import type { FamilyMember } from '@/store/familyStore';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
 const CATEGORIES: QuestCategory[] = [
-  'Kitchen', 'Room', 'Yard', 'School', 'Pet', 'Living Room', 'Errand', 'Tech', 'Other',
+  'Kitchen','Room','Yard','School','Pet','Living Room','Errand','Tech','Other',
 ];
-
 const CAT_EMOJI: Record<QuestCategory, string> = {
-  Kitchen: '🍽️', Room: '🛏️', Yard: '🌿', School: '📚',
-  Pet: '🐾', 'Living Room': '🛋️', Errand: '🏃', Tech: '💻', Other: '✨',
+  Kitchen:'🍽️', Room:'🛏️', Yard:'🌿', School:'📚', Pet:'🐾',
+  'Living Room':'🛋️', Errand:'🏃', Tech:'💻', Other:'✨',
 };
-
-const STATUS_LABEL: Record<QuestStatus, string> = {
-  todo: 'To Do', claimed: 'In Progress', pending_approval: 'In Review',
-  approved: 'Approved', done: 'Paid ✓', declined: 'Declined',
-};
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(iso?: string) {
   if (!iso) return '';
   const d = new Date(iso);
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
-  if (diff === 0) return 'Today';
-  if (diff === 1) return 'Tomorrow';
-  if (diff === -1) return 'Yesterday';
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (diff === 0) return 'Today'; if (diff === 1) return 'Tomorrow';
+  return d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
 }
 
-// ─── QuestCard ────────────────────────────────────────────────────────────────
+// ─── Quest Card ───────────────────────────────────────────────────────────────
 
-function QuestCard({ quest, members, activeMember, isParent, onApprove, onDecline, onClaim, onSubmit, colors, isDark }: {
-  quest: Quest;
-  members: FamilyMember[];
-  activeMember?: FamilyMember;
-  isParent: boolean;
-  onApprove: (id: string) => void;
-  onDecline: (id: string) => void;
-  onClaim:   (id: string) => void;
-  onSubmit:  (id: string) => void;
-  colors: any;
-  isDark: boolean;
+function QuestCard({ quest, members, activeMemberId, isParent, colors,
+  onApprove, onDecline, onClaim, onSubmit }: {
+  quest: Quest; members: FamilyMember[]; activeMemberId: string | null;
+  isParent: boolean; colors: any;
+  onApprove:(id:string)=>void; onDecline:(id:string)=>void;
+  onClaim:(id:string)=>void; onSubmit:(id:string)=>void;
 }) {
   const assignee = members.find(m => m.id === quest.assignedToId);
   const isReview = quest.status === 'pending_approval';
   const isDone   = quest.status === 'done' || quest.status === 'approved';
   const isPool   = quest.status === 'todo' && !quest.assignedToId;
-  const inProg   = quest.status === 'claimed' || (quest.status === 'todo' && !!quest.assignedToId);
 
-  const borderColor = isReview ? colors.amber + '80' : isDone ? colors.teal + '60' : colors.border;
-  const cardBg      = isDark ? colors.card : '#FFFFFF';
+  const borderCol = isReview ? colors.amber + '80' : isDone ? colors.teal + '60' : colors.border;
 
   return (
-    <View style={[s.card, { backgroundColor: cardBg, borderColor }]}>
-      {/* Top row: category + coins */}
-      <View style={[s.row, { justifyContent: 'space-between', marginBottom: 8 }]}>
-        <View style={[s.catBadge, { backgroundColor: colors.primary + '18', borderColor: colors.primary + '40' }]}>
-          <Text style={{ fontSize: 11 }}>{CAT_EMOJI[quest.category]}</Text>
-          <Text style={[s.catText, { color: colors.primary }]}>{quest.category}</Text>
+    <View style={[s.card, { backgroundColor: colors.card, borderColor: borderCol }]}>
+      <View style={[s.row, { justifyContent:'space-between', marginBottom:8 }]}>
+        <View style={[s.catBadge, { backgroundColor: colors.primary + '20', borderColor: colors.primary + '40' }]}>
+          <Text style={{ fontSize:11 }}>{CAT_EMOJI[quest.category]}</Text>
+          <Text style={{ fontSize:9, fontWeight:'800', color: colors.primary, marginLeft:3 }}>{quest.category}</Text>
         </View>
-        <Text style={{ fontSize: 13, fontWeight: '800', color: colors.amber }}>
-          +{quest.coins} 🪙 (${(quest.coins * 0.1).toFixed(2)})
-        </Text>
+        <View style={[s.statusPill, {
+          backgroundColor: isReview ? colors.amber + '25' : isDone ? colors.teal + '25' :
+            isPool ? colors.primary + '20' : colors.surface,
+          borderColor: isReview ? colors.amber + '50' : isDone ? colors.teal + '50' :
+            isPool ? colors.primary + '40' : colors.border,
+        }]}>
+          <Text style={{ fontSize:9, fontWeight:'900',
+            color: isReview ? colors.amber : isDone ? colors.teal :
+              isPool ? colors.primary : colors.textTertiary }}>
+            {isReview ? '🔍 In Review' : isDone ? '✅ Done' :
+              isPool ? '🎯 Bounty Pool' : '▶ In Progress'}
+          </Text>
+        </View>
       </View>
 
-      {/* Title */}
-      <Text style={[s.questTitle, { color: colors.textPrimary }]}>{quest.title}</Text>
+      <Text style={{ fontSize:14, fontWeight:'800', color: colors.textPrimary, marginBottom:4 }}>{quest.title}</Text>
+      {quest.description ? (
+        <Text style={{ fontSize:11, color: colors.textTertiary, marginBottom:6 }} numberOfLines={2}>
+          {quest.description}
+        </Text>
+      ) : null}
 
-      {/* Due date */}
-      {quest.dueDate && (
-        <View style={[s.row, { marginTop: 4 }]}>
-          <Ionicons name="time-outline" size={12} color={colors.amber} />
-          <Text style={{ fontSize: 11, color: colors.amber, fontWeight: '700', marginLeft: 4 }}>
-            Due: {formatDate(quest.dueDate)}
-          </Text>
+      <View style={[s.row, { justifyContent:'space-between', marginBottom:8 }]}>
+        <Text style={{ fontSize:12, fontWeight:'900', color: colors.amber }}>+{quest.coins ?? 0} 🪙</Text>
+        {quest.dueDate ? (
+          <View style={[s.row]}>
+            <Ionicons name="calendar-outline" size={10} color={colors.textTertiary} />
+            <Text style={{ fontSize:10, color: colors.textTertiary, marginLeft:3 }}>
+              {formatDate(quest.dueDate)}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+
+      {assignee && (
+        <View style={[s.row, { marginBottom:8 }]}>
+          <Text style={{ fontSize:13, marginRight:4 }}>{assignee.emoji ?? '👤'}</Text>
+          <Text style={{ fontSize:10, fontWeight:'600', color: colors.textSecondary }}>{assignee.name.split(' ')[0]}</Text>
         </View>
       )}
 
-      {/* Assignee & actions */}
-      <View style={[s.row, { justifyContent: 'space-between', marginTop: 12, paddingTop: 10,
-        borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}>
-        <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-          {assignee
-            ? <Text>Assignee: <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{assignee.name.split(' ')[0]}</Text></Text>
-            : <Text style={{ fontWeight: '700', color: colors.amber }}>⚡ Open Bounty Pool</Text>}
-        </Text>
+      {isParent && isReview && (
+        <View style={[s.row, { gap:8 }]}>
+          <Pressable onPress={() => onApprove(quest.id)}
+            style={[s.actionBtn, { flex:1, backgroundColor: colors.teal }]}>
+            <Text style={{ fontSize:11, fontWeight:'800', color:'#fff' }}>✓ Approve & Pay</Text>
+          </Pressable>
+          <Pressable onPress={() => onDecline(quest.id)}
+            style={[s.actionBtn, { flex:1, backgroundColor: colors.danger + '25', borderWidth:1,
+              borderColor: colors.danger + '50' }]}>
+            <Text style={{ fontSize:11, fontWeight:'800', color: colors.danger }}>✕ Decline</Text>
+          </Pressable>
+        </View>
+      )}
 
-        {/* Action buttons by status */}
-        {isPool && (
-          <Pressable onPress={() => onClaim(quest.id)}
-            style={[s.actionBtn, { backgroundColor: colors.amber }]}>
-            <Text style={s.actionBtnText}>Claim Task</Text>
-          </Pressable>
-        )}
-        {isReview && (
-          <View style={s.row}>
-            <Pressable style={[s.actionBtn, { backgroundColor: colors.primary + '22',
-              borderWidth: 1, borderColor: colors.primary + '44' }]}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>Inspect Proof</Text>
-            </Pressable>
-            {isParent && (
-              <Pressable onPress={() => onApprove(quest.id)}
-                style={[s.actionBtn, { backgroundColor: colors.teal, marginLeft: 6 }]}>
-                <Text style={s.actionBtnText}>Approve</Text>
-              </Pressable>
-            )}
-          </View>
-        )}
-        {isDone && (
-          <View style={[s.doneTag, { backgroundColor: colors.teal + '20',
-            borderWidth: 1, borderColor: colors.teal + '50' }]}>
-            <Text style={{ fontSize: 11, fontWeight: '800', color: colors.teal }}>Paid ✓</Text>
-          </View>
-        )}
-        {inProg && !isReview && (
-          <Pressable onPress={() => onSubmit(quest.id)}
-            style={[s.actionBtn, { backgroundColor: colors.primary }]}>
-            <Text style={s.actionBtnText}>Submit Proof</Text>
-          </Pressable>
-        )}
-      </View>
+      {!isParent && !isReview && !isDone && isPool && (
+        <Pressable onPress={() => onClaim(quest.id)}
+          style={[s.actionBtn, { backgroundColor: colors.primary }]}>
+          <Text style={{ fontSize:11, fontWeight:'800', color:'#fff' }}>⚡ Claim Bounty</Text>
+        </Pressable>
+      )}
+
+      {!isParent && !isReview && !isDone && quest.assignedToId === activeMemberId && (
+        <Pressable onPress={() => onSubmit(quest.id)}
+          style={[s.actionBtn, { backgroundColor: colors.amber }]}>
+          <Text style={{ fontSize:11, fontWeight:'800', color:'#000' }}>📸 Submit for Review</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
 
-// ─── Sibling Cheer card ───────────────────────────────────────────────────────
+// ─── Cheer Card ───────────────────────────────────────────────────────────────
 
-function CheerCard({ colors, isDark }: { colors: any; isDark: boolean }) {
-  const [sent, setSent] = useState(false);
+function CheerCard({ colors }: { colors: any }) {
   return (
-    <View style={[s.card, { backgroundColor: isDark ? colors.card : '#FFFFFF',
-      borderColor: colors.primary + '40' }]}>
-      <View style={[s.row, { justifyContent: 'space-between', marginBottom: 6 }]}>
-        <Text style={{ fontSize: 12, fontWeight: '800', color: colors.amber }}>
-          👧 Maya completed "Read 20 Mins Science Book"
-        </Text>
-        <Text style={{ fontSize: 11, color: colors.textTertiary }}>2h ago</Text>
+    <View style={[s.card, { backgroundColor: colors.teal + '18', borderColor: colors.teal + '40' }]}>
+      <View style={[s.row, { marginBottom:8 }]}>
+        <Ionicons name="heart" size={14} color={colors.teal} />
+        <Text style={{ fontSize:12, fontWeight:'800', color: colors.teal, marginLeft:6 }}>Sibling Cheer Station</Text>
       </View>
-      <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 12 }}>
-        Maya earned +20 🪙 toward Roblox pass!
+      <Text style={{ fontSize:11, color: colors.textSecondary, marginBottom:12 }}>
+        Send encouragement to your brother or sister. Each cheer earns 5🪙 bonus for both of you!
       </Text>
-      <Pressable
-        onPress={() => { setSent(true); Alert.alert('High Five Sent! 🎉'); }}
-        style={[s.actionBtn, { backgroundColor: sent ? colors.teal : colors.primary + '22',
-          borderWidth: 1, borderColor: colors.primary + '44', alignSelf: 'flex-start' }]}
-      >
-        <Text style={{ fontSize: 12, fontWeight: '700', color: sent ? '#fff' : colors.primary }}>
-          {sent ? '✓ High Five Sent!' : '✋ Send High Five 🎉'}
-        </Text>
-      </Pressable>
+      <View style={[s.row, { gap:8 }]}>
+        {['🎉 You got this!','🔥 Keep going!','⭐ Almost done!'].map(msg => (
+          <Pressable key={msg} onPress={() => Alert.alert('Cheer Sent!', `"${msg}" delivered!`)}
+            style={[s.cheerBtn, { backgroundColor: colors.card, borderColor: colors.teal + '50' }]}>
+            <Text style={{ fontSize:10, fontWeight:'700', color: colors.teal }}>{msg}</Text>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 }
 
-// ─── New Quest Modal ──────────────────────────────────────────────────────────
+// ─── New Quest Modal ─────────────────────────────────────────────────────────
 
-function NewQuestModal({ visible, members, onClose, onCreate, colors, isDark }: {
-  visible: boolean; members: FamilyMember[];
-  onClose: () => void;
-  onCreate: (data: Partial<Quest>) => void;
-  colors: any; isDark: boolean;
+function NewQuestModal({ visible, members, colors, onClose, onSave }: {
+  visible:boolean; members:FamilyMember[]; colors:any; onClose:()=>void; onSave:(d:any)=>void;
 }) {
-  const [title, setTitle]       = useState('');
-  const [coins, setCoins]       = useState('20');
-  const [category, setCategory] = useState<QuestCategory>('Kitchen');
-  const [assignee, setAssignee] = useState<string>('pool');
+  const [title, setTitle] = useState('');
+  const [desc, setDesc] = useState('');
+  const [reward, setReward] = useState('25');
+  const [cat, setCat] = useState<QuestCategory>('Kitchen');
+  const [assignTo, setAssignTo] = useState<string|null>(null);
+  const [emoji, setEmoji] = useState(CAT_EMOJI['Kitchen']);
   const kids = members.filter(m => m.role === 'kid');
 
   const submit = () => {
     if (!title.trim()) return;
-    onCreate({ title: title.trim(), coins: parseInt(coins) || 20, category,
-      assignedToId: assignee === 'pool' ? undefined : assignee, status: 'todo' });
-    setTitle(''); setCoins('20'); setCategory('Kitchen'); setAssignee('pool');
-    onClose();
+    onSave({ title:title.trim(), description:desc.trim()||undefined,
+      coinReward:parseInt(reward)||25, category:cat, emoji,
+      assignedToId:assignTo||undefined, status:'todo' as QuestStatus,
+      createdAt: new Date().toISOString() });
+    onClose(); setTitle(''); setDesc(''); setReward('25');
   };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS==='ios'?'padding':'height'} style={{flex:1}}>
         <View style={s.overlay}>
-          <Pressable style={{ flex: 1 }} onPress={onClose} />
-          <View style={[s.sheet, { backgroundColor: isDark ? colors.card : '#fff', borderColor: colors.border }]}>
+          <Pressable style={{flex:1}} onPress={onClose} />
+          <View style={[s.sheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[s.handle, { backgroundColor: colors.border }]} />
-            <Text style={[s.sheetTitle, { color: colors.textPrimary }]}>New Quest</Text>
-
-            {/* Suggestions */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                {['Wash dishes', 'Make the bed', 'Feed the pet', 'Do laundry', 'Homework done', 'Water plants'].map(s => (
-                  <Pressable key={s} onPress={() => setTitle(s)}
-                    style={[{ borderRadius: 99, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5,
-                      backgroundColor: colors.primary + '15', borderColor: colors.primary + '40' }]}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>+ {s}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </ScrollView>
+            <View style={[s.row, { justifyContent:'space-between', marginBottom:12 }]}>
+              <Text style={{ fontSize:15, fontWeight:'800', color: colors.textPrimary }}>
+                Create New Quest
+              </Text>
+              <Pressable onPress={onClose}>
+                <Ionicons name="close" size={20} color={colors.textTertiary} />
+              </Pressable>
+            </View>
 
             <Text style={[s.label, { color: colors.textSecondary }]}>QUEST TITLE</Text>
-            <TextInput
-              value={title} onChangeText={setTitle} placeholder="e.g. Clean the bathroom"
-              placeholderTextColor={colors.placeholder}
-              style={[s.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]}
-            />
+            <TextInput value={title} onChangeText={setTitle} placeholder="e.g. Clean the Kitchen"
+              placeholderTextColor={colors.textTertiary}
+              style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
+                backgroundColor: colors.surface }]} />
 
-            <View style={[s.row, { gap: 12, marginBottom: 14 }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={[s.label, { color: colors.textSecondary }]}>COINS</Text>
-                <TextInput value={coins} onChangeText={setCoins} keyboardType="number-pad"
+            <View style={{ flexDirection:'row', gap:10, marginBottom:0 }}>
+              <View style={{flex:1}}>
+                <Text style={[s.label, { color: colors.textSecondary }]}>COIN REWARD</Text>
+                <TextInput value={reward} onChangeText={setReward} keyboardType="number-pad"
                   style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
-                    backgroundColor: colors.surface }]} />
-              </View>
-              <View style={{ flex: 2 }}>
-                <Text style={[s.label, { color: colors.textSecondary }]}>CATEGORY</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={[s.row, { gap: 6 }]}>
-                    {CATEGORIES.map(c => (
-                      <Pressable key={c} onPress={() => setCategory(c)}
-                        style={[{ borderRadius: 99, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4,
-                          backgroundColor: category === c ? colors.primary + '20' : colors.surface,
-                          borderColor: category === c ? colors.primary : colors.border }]}>
-                        <Text style={{ fontSize: 11, fontWeight: '700',
-                          color: category === c ? colors.primary : colors.textSecondary }}>
-                          {CAT_EMOJI[c]} {c}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </ScrollView>
+                    backgroundColor: colors.surface, marginBottom:0 }]} />
               </View>
             </View>
 
-            <Text style={[s.label, { color: colors.textSecondary }]}>ASSIGN TO</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-              <View style={[s.row, { gap: 8 }]}>
-                <Pressable onPress={() => setAssignee('pool')}
-                  style={[{ borderRadius: 99, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6,
-                    backgroundColor: assignee === 'pool' ? colors.amber + '20' : colors.surface,
-                    borderColor: assignee === 'pool' ? colors.amber : colors.border }]}>
-                  <Text style={{ fontSize: 12, fontWeight: '700',
-                    color: assignee === 'pool' ? colors.amber : colors.textSecondary }}>⚡ Bounty Pool</Text>
-                </Pressable>
-                {kids.map(k => (
-                  <Pressable key={k.id} onPress={() => setAssignee(k.id)}
-                    style={[{ borderRadius: 99, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6,
-                      backgroundColor: assignee === k.id ? colors.primary + '20' : colors.surface,
-                      borderColor: assignee === k.id ? colors.primary : colors.border }]}>
-                    <Text style={{ fontSize: 12, fontWeight: '700',
-                      color: assignee === k.id ? colors.primary : colors.textSecondary }}>
-                      {k.emoji ?? '👦'} {k.name.split(' ')[0]}
+            <Text style={[s.label, { color: colors.textSecondary, marginTop:10 }]}>DESCRIPTION (optional)</Text>
+            <TextInput value={desc} onChangeText={setDesc} placeholder="Brief description…"
+              placeholderTextColor={colors.textTertiary} multiline
+              style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
+                backgroundColor: colors.surface, minHeight:60 }]} />
+
+            <Text style={[s.label, { color: colors.textSecondary }]}>CATEGORY</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom:12}}>
+              <View style={{flexDirection:'row', gap:6}}>
+                {CATEGORIES.map(c => (
+                  <Pressable key={c} onPress={() => { setCat(c); setEmoji(CAT_EMOJI[c]); }}
+                    style={[s.catChip, { backgroundColor: cat===c ? colors.primary+'25' : colors.surface,
+                      borderColor: cat===c ? colors.primary : colors.border }]}>
+                    <Text style={{fontSize:10, fontWeight:'700', color: cat===c ? colors.primary : colors.textTertiary}}>
+                      {CAT_EMOJI[c]} {c}
                     </Text>
                   </Pressable>
                 ))}
               </View>
             </ScrollView>
 
+            {kids.length > 0 && (
+              <>
+                <Text style={[s.label, { color: colors.textSecondary }]}>ASSIGN TO (optional)</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom:14}}>
+                  <View style={{flexDirection:'row', gap:6}}>
+                    <Pressable onPress={() => setAssignTo(null)}
+                      style={[s.catChip, { backgroundColor: !assignTo ? colors.primary+'25' : colors.surface,
+                        borderColor: !assignTo ? colors.primary : colors.border }]}>
+                      <Text style={{fontSize:10, fontWeight:'700', color: !assignTo ? colors.primary : colors.textTertiary}}>
+                        🎯 Bounty Pool
+                      </Text>
+                    </Pressable>
+                    {kids.map(k => (
+                      <Pressable key={k.id} onPress={() => setAssignTo(k.id)}
+                        style={[s.catChip, { backgroundColor: assignTo===k.id ? colors.primary+'25' : colors.surface,
+                          borderColor: assignTo===k.id ? colors.primary : colors.border }]}>
+                        <Text style={{fontSize:10, fontWeight:'700',
+                          color: assignTo===k.id ? colors.primary : colors.textTertiary}}>
+                          {k.emoji} {k.name.split(' ')[0]}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </ScrollView>
+              </>
+            )}
+
             <Pressable onPress={submit}
               style={[s.submitBtn, { backgroundColor: title.trim() ? colors.teal : colors.border }]}>
-              <Ionicons name="add" size={18} color="#fff" />
-              <Text style={s.submitBtnText}>Create Quest</Text>
+              <Text style={{ color:'#fff', fontSize:14, fontWeight:'800' }}>
+                Publish Quest to Family Board
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -280,153 +262,142 @@ function NewQuestModal({ visible, members, onClose, onCreate, colors, isDark }: 
 
 // ─── QuestsScreen ─────────────────────────────────────────────────────────────
 
-type KidFilter = 'all' | 'my' | string; // string = member name
-type QuestFilter = 'all' | 'todo' | 'claimed' | 'pending_approval' | 'done';
+type FilterKey = 'all' | 'mine' | 'kid_0' | 'kid_1' | 'kid_2' | 'pool' | 'cheer';
+type StatusTab = 'all' | 'todo' | 'review' | 'done';
 
 export default function QuestsScreen() {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, loaded, loadFromStorage } = useFamilyStore();
-  const { quests, loadFromStorage: loadQuests, addQuest, updateQuest, claimQuest, approveQuest, declineQuest } = useQuestStore();
+  const { quests, loadFromStorage:loadQuests, addQuest, approveQuest, declineQuest, claimQuest } = useQuestStore();
 
-  const [kidFilter, setKidFilter]       = useState<KidFilter>('all');
-  const [statusFilter, setStatusFilter] = useState<QuestFilter>('all');
-  const [showNew, setShowNew]           = useState(false);
-
-  useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
-  useEffect(() => { loadQuests(); }, []);
+  const [filter, setFilter] = useState<FilterKey>('all');
+  const [statusTab, setStatusTab] = useState<StatusTab>('all');
+  const [showCreate, setShowCreate] = useState(false);
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
-  const isParent     = activeMember?.role === 'parent';
-  const isKid        = activeMember?.role === 'kid';
-  const isCheer      = kidFilter === 'cheer';
-
-  // Filter quests
-  let filtered = [...quests];
-  if (kidFilter === 'my') {
-    filtered = filtered.filter(q => q.assignedToId === activeMemberId);
-  } else if (kidFilter === 'pool') {
-    filtered = filtered.filter(q => !q.assignedToId || q.status === 'todo');
-  } else if (kidFilter !== 'all' && kidFilter !== 'cheer') {
-    // filter by member name
-    const targetMember = members.find(m => m.name.split(' ')[0] === kidFilter);
-    if (targetMember) filtered = filtered.filter(q => q.assignedToId === targetMember.id);
-  }
-
-  if (!isCheer && statusFilter !== 'all') {
-    const statusMap: Record<QuestFilter, QuestStatus[]> = {
-      all: [], todo: ['todo'], claimed: ['claimed'], pending_approval: ['pending_approval'], done: ['done', 'approved'],
-    };
-    const statuses = statusMap[statusFilter];
-    if (statuses.length) filtered = filtered.filter(q => statuses.includes(q.status));
-  }
-
+  const isParent = activeMember?.role === 'parent';
   const kids = members.filter(m => m.role === 'kid');
+  const bg = isDark ? '#0B0F1A' : colors.background;
 
-  const bg = isDark ? '#0B0F1A' : '#F3F4F8';
+  const filterChips: { key: FilterKey; label: string }[] = [
+    { key:'all', label:'All Family' },
+    { key:'mine', label:'My Quests' },
+    ...kids.slice(0, 3).map((k, i) => ({
+      key: `kid_${i}` as FilterKey, label: `${k.emoji} ${k.name.split(' ')[0]}`,
+    })),
+    { key:'pool', label:'🎯 Bounty Pool' },
+    { key:'cheer', label:'⭐ Sibling Cheer' },
+  ];
+
+  const statusTabs: { key: StatusTab; label: string }[] = [
+    { key:'all', label:'All' },
+    { key:'todo', label:'To Do' },
+    { key:'review', label:'In Review' },
+    { key:'done', label:'Paid' },
+  ];
+
+  const STATUS_MAP: Record<StatusTab, QuestStatus[]> = {
+    all:    ['todo','claimed','pending_approval','approved','done','declined'],
+    todo:   ['todo','claimed'],
+    review: ['pending_approval'],
+    done:   ['done','approved'],
+  };
+
+  const filtered = quests.filter(q => {
+    if (filter === 'mine')   return q.assignedToId === activeMemberId;
+    if (filter === 'pool')   return q.status === 'todo' && !q.assignedToId;
+    if (filter === 'cheer')  return false;
+    if (filter.startsWith('kid_')) {
+      const idx = parseInt(filter.split('_')[1]);
+      return q.assignedToId === kids[idx]?.id;
+    }
+    return true;
+  }).filter(q => STATUS_MAP[statusTab].includes(q.status as QuestStatus));
 
   return (
-    <SafeAreaView style={[s.safe, { backgroundColor: bg }]} edges={['top']}>
-
+    <SafeAreaView style={{ flex:1, backgroundColor: bg }} edges={['top']}>
       {/* ── Header ── */}
-      <View style={[s.header, { backgroundColor: isDark ? colors.card : '#fff', borderBottomColor: colors.border }]}>
-        <Text style={[s.headerTitle, { color: colors.textPrimary }]}>Household Quests</Text>
+      <View style={[s.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <Text style={{ fontSize:16, fontWeight:'800', color: colors.textPrimary }}>Family Quest Board</Text>
         {isParent && (
-          <Pressable onPress={() => setShowNew(true)}
-            style={[s.newBtn, { backgroundColor: colors.teal }]}>
-            <Ionicons name="add" size={16} color="#fff" />
-            <Text style={s.newBtnText}>New Quest</Text>
+          <Pressable onPress={() => setShowCreate(true)}
+            style={[s.createBtn, { backgroundColor: colors.teal }]}>
+            <Ionicons name="add" size={14} color="#fff" />
+            <Text style={{ fontSize:12, fontWeight:'700', color:'#fff', marginLeft:4 }}>New Quest</Text>
           </Pressable>
         )}
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-
-        {/* ── Kid filter strip ── */}
+      {/* ── Filter Chips ── */}
+      <View style={[s.filterBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10, gap: 8 }}>
-          {[
-            { id: 'all',   label: 'All Family' },
-            ...(isKid ? [{ id: 'my', label: '👤 My Quests' }] : []),
-            ...kids.map(k => ({ id: k.name.split(' ')[0], label: `${k.emoji ?? '👦'} ${k.name.split(' ')[0]}` })),
-            { id: 'pool',  label: '⚡ Bounty Pool' },
-            { id: 'cheer', label: '👥 Sibling Cheer' },
-          ].map(f => {
-            const active = kidFilter === f.id;
-            const bg2 = f.id === 'pool'  ? (active ? colors.amber : colors.surface)
-              : f.id === 'cheer' ? (active ? colors.primary : colors.surface)
-              : (active ? colors.primary : colors.surface);
-            return (
-              <Pressable key={f.id} onPress={() => setKidFilter(f.id)}
-                style={[s.filterChip, { backgroundColor: bg2,
-                  borderColor: active ? 'transparent' : colors.border }]}>
-                <Text style={{ fontSize: 12, fontWeight: '700',
-                  color: active ? '#fff' : colors.textSecondary }}>{f.label}</Text>
-              </Pressable>
-            );
-          })}
+          contentContainerStyle={{ paddingHorizontal:12, gap:6, paddingVertical:8 }}>
+          {filterChips.map(fc => (
+            <Pressable key={fc.key} onPress={() => setFilter(fc.key)}
+              style={[s.chip, {
+                backgroundColor: filter===fc.key ? colors.primary : colors.surface,
+                borderColor: filter===fc.key ? colors.primary : colors.border,
+              }]}>
+              <Text style={{ fontSize:11, fontWeight:filter===fc.key?'800':'600',
+                color: filter===fc.key ? '#fff' : colors.textSecondary }}>
+                {fc.label}
+              </Text>
+            </Pressable>
+          ))}
         </ScrollView>
+      </View>
 
-        {/* ── Cheer mode ── */}
-        {isCheer ? (
-          <View style={{ paddingHorizontal: 12, gap: 10 }}>
-            <CheerCard colors={colors} isDark={isDark} />
+      {filter === 'cheer' ? (
+        <ScrollView contentContainerStyle={{ padding:12 }}>
+          <CheerCard colors={colors} />
+        </ScrollView>
+      ) : (
+        <>
+          {/* ── Status Tabs ── */}
+          <View style={[s.tabBar, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+            {statusTabs.map(t => (
+              <Pressable key={t.key} onPress={() => setStatusTab(t.key)}
+                style={[s.tab, { borderBottomColor: statusTab===t.key ? colors.primary : 'transparent',
+                  borderBottomWidth: 2, paddingVertical:10, flex:1, alignItems:'center' }]}>
+                <Text style={{ fontSize:12, fontWeight:statusTab===t.key?'800':'500',
+                  color: statusTab===t.key ? colors.primary : colors.textTertiary }}>
+                  {t.label}
+                </Text>
+              </Pressable>
+            ))}
           </View>
-        ) : (
-          <>
-            {/* ── Status tab bar ── */}
-            <View style={[s.tabBar, { marginHorizontal: 12, backgroundColor: colors.surface,
-              borderColor: colors.border }]}>
-              {[
-                { id: 'all',              label: 'All' },
-                { id: 'todo',             label: 'To Do' },
-                { id: 'pending_approval', label: 'In Review' },
-                { id: 'done',             label: 'Paid' },
-              ].map(t => {
-                const active = statusFilter === t.id;
-                return (
-                  <Pressable key={t.id} onPress={() => setStatusFilter(t.id as QuestFilter)}
-                    style={[s.tabBtn, active && { backgroundColor: colors.card, borderRadius: 8 }]}>
-                    <Text style={[s.tabBtnText, {
-                      color: active ? colors.textPrimary : colors.textTertiary,
-                      fontWeight: active ? '700' : '500',
-                    }]}>{t.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
 
-            {/* ── Quest list ── */}
-            <View style={{ paddingHorizontal: 12, paddingTop: 10, gap: 10 }}>
-              {filtered.length === 0 ? (
-                <View style={[s.emptyBox, { backgroundColor: isDark ? colors.card : '#fff',
-                  borderColor: colors.border }]}>
-                  <Text style={{ fontSize: 28, marginBottom: 8 }}>📋</Text>
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>
-                    No quests match the selected filters
+          {/* ── Quest List ── */}
+          <ScrollView showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ padding:12, gap:10, paddingBottom:40 }}>
+            {filtered.length === 0 ? (
+              <View style={[s.emptyBox, { borderColor: colors.border }]}>
+                <Text style={{ fontSize:32, marginBottom:8 }}>🗺️</Text>
+                <Text style={{ fontSize:14, fontWeight:'700', color: colors.textTertiary }}>
+                  No quests here yet
+                </Text>
+                {isParent && (
+                  <Text style={{ fontSize:12, color: colors.textTertiary, marginTop:4, textAlign:'center' }}>
+                    Tap "New Quest" to add one for the family
                   </Text>
-                </View>
-              ) : filtered.map(q => (
-                <QuestCard
-                  key={q.id} quest={q} members={members}
-                  activeMember={activeMember} isParent={isParent}
-                  onApprove={(id) => approveQuest(id, activeMemberId ?? '')}
-                  onDecline={(id) => declineQuest(id, activeMemberId ?? '')}
-                  onClaim={(id)   => claimQuest(id, activeMemberId ?? '')}
-                  onSubmit={(id)  => updateQuest(id, { status: 'pending_approval' })}
-                  colors={colors} isDark={isDark}
-                />
-              ))}
-            </View>
-          </>
-        )}
-      </ScrollView>
+                )}
+              </View>
+            ) : filtered.map(q => (
+              <QuestCard key={q.id} quest={q} members={members} activeMemberId={activeMemberId}
+                isParent={isParent} colors={colors}
+                onApprove={id => approveQuest(id, activeMemberId ?? '')}
+                onDecline={id => declineQuest(id, activeMemberId ?? '')}
+                onClaim={id => claimQuest(id, activeMemberId ?? '')}
+                onSubmit={id => Alert.alert('Submitted', 'Quest sent for parent review!')}
+              />
+            ))}
+          </ScrollView>
+        </>
+      )}
 
-      <NewQuestModal
-        visible={showNew} members={members}
-        onClose={() => setShowNew(false)}
-        onCreate={(data) => addQuest(data as any)}
-        colors={colors} isDark={isDark}
-      />
+      <NewQuestModal visible={showCreate} members={members} colors={colors}
+        onClose={() => setShowCreate(false)}
+        onSave={data => addQuest(data)} />
     </SafeAreaView>
   );
 }
@@ -434,44 +405,28 @@ export default function QuestsScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  safe:       { flex: 1 },
-  header:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                paddingHorizontal: 16, paddingVertical: 12,
-                borderBottomWidth: StyleSheet.hairlineWidth },
-  headerTitle:{ fontSize: 18, fontWeight: '800' },
-  newBtn:     { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 99,
-                paddingVertical: 8, paddingHorizontal: 14 },
-  newBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-
-  filterChip: { borderRadius: 99, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 7 },
-
-  tabBar:     { flexDirection: 'row', borderRadius: 12, borderWidth: 1, padding: 3, marginBottom: 4 },
-  tabBtn:     { flex: 1, paddingVertical: 7, alignItems: 'center' },
-  tabBtnText: { fontSize: 13 },
-
-  card:       { borderRadius: 18, borderWidth: 1, padding: 14,
-                shadowColor: '#000', shadowOpacity: 0.04, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6,
-                elevation: 2 },
-  catBadge:   { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 99,
-                borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
-  catText:    { fontSize: 11, fontWeight: '700' },
-  questTitle: { fontSize: 15, fontWeight: '800', lineHeight: 21 },
-  doneTag:    { borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 },
-
-  row:        { flexDirection: 'row', alignItems: 'center' },
-  actionBtn:  { borderRadius: 12, paddingVertical: 7, paddingHorizontal: 12 },
-  actionBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
-
-  emptyBox:   { borderRadius: 18, borderWidth: 1, padding: 32, alignItems: 'center' },
-
-  overlay:    { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
-  sheet:      { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: 1,
-                padding: 20, paddingBottom: 40 },
-  handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  sheetTitle: { fontSize: 18, fontWeight: '800', marginBottom: 14 },
-  label:      { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6 },
-  input:      { borderWidth: 1.5, borderRadius: 12, padding: 10, fontSize: 15, marginBottom: 12 },
-  submitBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                gap: 6, borderRadius: 14, paddingVertical: 14 },
-  submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  header:    { flexDirection:'row', alignItems:'center', justifyContent:'space-between',
+               paddingHorizontal:16, paddingVertical:12,
+               borderBottomWidth: StyleSheet.hairlineWidth },
+  createBtn: { flexDirection:'row', alignItems:'center', borderRadius:12, paddingVertical:7, paddingHorizontal:12 },
+  filterBar: { borderBottomWidth: StyleSheet.hairlineWidth },
+  tabBar:    { flexDirection:'row', borderBottomWidth: StyleSheet.hairlineWidth },
+  tab:       {},
+  row:       { flexDirection:'row', alignItems:'center' },
+  card:      { borderRadius:20, borderWidth:1, padding:14 },
+  catBadge:  { flexDirection:'row', alignItems:'center', borderRadius:99, borderWidth:1,
+               paddingHorizontal:8, paddingVertical:3 },
+  statusPill:{ borderRadius:99, borderWidth:1, paddingHorizontal:8, paddingVertical:3 },
+  actionBtn: { borderRadius:12, paddingVertical:8, alignItems:'center', justifyContent:'center',
+               marginTop:6 },
+  cheerBtn:  { flex:1, borderRadius:12, borderWidth:1, paddingVertical:8, alignItems:'center' },
+  chip:      { borderRadius:20, borderWidth:1, paddingHorizontal:12, paddingVertical:6 },
+  catChip:   { borderRadius:20, borderWidth:1, paddingHorizontal:10, paddingVertical:6 },
+  emptyBox:  { borderRadius:20, borderWidth:1, padding:40, alignItems:'center' },
+  overlay:   { flex:1, justifyContent:'flex-end', backgroundColor:'rgba(0,0,0,0.8)' },
+  sheet:     { borderTopLeftRadius:28, borderTopRightRadius:28, borderTopWidth:1, padding:20, paddingBottom:40 },
+  handle:    { width:40, height:4, borderRadius:2, alignSelf:'center', marginBottom:16 },
+  label:     { fontSize:10, fontWeight:'700', letterSpacing:0.5, marginBottom:6, marginTop:10 },
+  input:     { borderWidth:1.5, borderRadius:12, padding:10, fontSize:13, marginBottom:10 },
+  submitBtn: { borderRadius:14, paddingVertical:13, alignItems:'center', marginTop:4 },
 });

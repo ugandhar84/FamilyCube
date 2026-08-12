@@ -810,41 +810,45 @@ export default function CalendarScreen() {
         </View>
       )}
 
-      {/* ── AI Results Panel (outside scroll, fixed below banner) ── */}
+      {/* ── AI Results Panel ── */}
       {showAiPanel && (
-        <View style={[sc.aiPanel, { backgroundColor: '#0F172A', borderColor: '#6D28D940', marginHorizontal: 12, marginTop: 10 }]}>
+        <View style={[sc.aiPanel, {
+          backgroundColor: isDark ? '#1E1B4B' : '#F5F0FF',
+          borderColor: isDark ? '#6D28D940' : 'rgba(146,97,199,0.25)',
+          marginHorizontal: 12, marginTop: 10,
+        }]}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <I.Bot c="#C4B5FD" size={15} />
-              <Text style={{ fontSize: 11, fontWeight: '900', color: '#C4B5FD' }}>AI Conflict & Driver Swap Recommendations</Text>
+              <I.Bot c={isDark ? '#C4B5FD' : BRAND.purple} size={15} />
+              <Text style={{ fontSize: 11, fontWeight: '900', color: isDark ? '#C4B5FD' : BRAND.purple }}>CubeAI Conflict & Driver Swap Recommendations</Text>
             </View>
             <TouchableOpacity onPress={() => setShowAiPanel(false)}>
-              <Text style={{ fontSize: 10, color: '#A78BFA' }}>✕ Close</Text>
+              <Text style={{ fontSize: 10, color: isDark ? '#A78BFA' : BRAND.purple }}>✕ Close</Text>
             </TouchableOpacity>
           </View>
 
           {isAnalyzing ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8 }}>
-              <ActivityIndicator color="#A78BFA" size="small" />
-              <Text style={{ fontSize: 11, color: '#A78BFA', fontWeight: '700' }}>
+              <ActivityIndicator color={BRAND.purple} size="small" />
+              <Text style={{ fontSize: 11, color: isDark ? '#A78BFA' : BRAND.purple, fontWeight: '700' }}>
                 Scanning for time overlaps, missing drivers, and travel conflicts...
               </Text>
             </View>
           ) : aiResult ? (
             <View style={{ gap: 8 }}>
-              <Text style={{ fontSize: 11, color: '#CBD5E1', lineHeight: 16 }}>{aiResult.summary}</Text>
+              <Text style={{ fontSize: 11, color: isDark ? '#CBD5E1' : '#374151', lineHeight: 16 }}>{aiResult.summary}</Text>
               {aiResult.conflictsFound ? (
                 <>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                    <I.Shield c="#FCD34D" size={13} />
-                    <Text style={{ fontSize: 10, fontWeight: '900', color: '#FCD34D' }}>
+                    <I.Shield c="#F59E0B" size={13} />
+                    <Text style={{ fontSize: 10, fontWeight: '900', color: '#D97706' }}>
                       {aiResult.conflicts.length} Logistics Conflict(s) Detected:
                     </Text>
                   </View>
                   {aiResult.conflicts.map((c, idx) => (
-                    <View key={idx} style={[sc.conflictCard]}>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#FDE68A', marginBottom: 3 }}>{c.description}</Text>
-                      <Text style={{ fontSize: 10, color: '#F59E0B80' }}>Affected: {c.eventsInvolved.join(' & ')}</Text>
+                    <View key={idx} style={[sc.conflictCard, { backgroundColor: isDark ? '#1C1000' : '#FFF7ED' }]}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#FDE68A' : '#92400E', marginBottom: 3 }}>{c.description}</Text>
+                      <Text style={{ fontSize: 10, color: isDark ? '#F59E0B80' : '#D97706' }}>Affected: {c.eventsInvolved.join(' & ')}</Text>
                       {c.suggestedFix && (
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, flexWrap: 'wrap', gap: 8 }}>
                           <Text style={{ fontSize: 10, color: '#6EE7B7', fontWeight: '700', flex: 1 }}>
@@ -868,7 +872,7 @@ export default function CalendarScreen() {
                   ))}
                 </>
               ) : (
-                <View style={[sc.allClearBox]}>
+                <View style={[sc.allClearBox, { backgroundColor: isDark ? '#064E3B40' : '#F0FDF4' }]}>
                   <Text style={sc.allClearText}>✅ No schedule conflicts! All drivers and events smoothly covered.</Text>
                 </View>
               )}
@@ -1209,9 +1213,9 @@ const sc = StyleSheet.create({
   activePill:   { backgroundColor: 'rgba(16,185,129,0.3)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: 'rgba(52,211,153,0.4)' },
   aiScanBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)' },
   aiPanel:      { borderRadius: 24, borderWidth: 1, padding: 14, marginBottom: 4 },
-  conflictCard: { borderRadius: 18, borderWidth: 1, borderColor: '#F59E0B40', backgroundColor: '#1C1000', padding: 10 },
-  allClearBox:  { borderRadius: 14, borderWidth: 1, borderColor: '#10B98160', backgroundColor: '#064E3B40', padding: 10 },
-  allClearText: { fontSize: 11, fontWeight: '700', color: '#10B981', textAlign: 'center' },
+  conflictCard: { borderRadius: 18, borderWidth: 1, borderColor: '#F59E0B40', padding: 10 },
+  allClearBox:  { borderRadius: 14, borderWidth: 1, borderColor: '#10B98160', padding: 10 },
+  allClearText: { fontSize: 11, fontWeight: '700', color: '#059669', textAlign: 'center' },
   swapBtn:      { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#10B981', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },
   swapBtnText:  { fontSize: 10, fontWeight: '900', color: '#0F172A' },
   swapApplied:  { backgroundColor: '#059669', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },

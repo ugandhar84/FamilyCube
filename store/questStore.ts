@@ -2,6 +2,27 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 
+// ─── Quest event notifier (fire-and-forget) ───────────────────────────────────
+// familyId is resolved from the quests table row so the edge function can
+// look up the right members and push tokens per family.
+async function notifyQuestEvent(questId: string, event: string, extra: Record<string, unknown> = {}) {
+  try {
+    // Resolve familyId from DB — single lightweight query
+    const { data } = await supabase
+      .from('quests')
+      .select('family_id')
+      .eq('id', questId)
+      .single();
+    const familyId = data?.family_id;
+    if (!familyId) return; // can't notify without family context
+    supabase.functions
+      .invoke('quest-event-notifier', { body: { event, questId, familyId, ...extra } })
+      .catch(e => console.warn('[questStore] notify invoke failed:', e?.message));
+  } catch (e: any) {
+    console.warn('[questStore] notify failed:', e?.message);
+  }
+}
+
 // ─── Domain types ────────────────────────────────────────────────────────────
 
 export type QuestStatus    = 'todo' | 'claimed' | 'in_progress' | 'pending_approval' | 'approved' | 'done' | 'declined' | 'archived' | 'cancelled';
@@ -245,11 +266,16 @@ export const useQuestStore = create<QuestState>((set, get) => ({
     set({ quests: next }); save(next);
     supabase.from('quests').insert([toRow(quest)]).then(({ error }) => {
       if (error) console.warn('[questStore] insert failed', error.message);
+      // Notify assignee if already assigned at creation
+      else if (quest.assignedToId) {
+        notifyQuestEvent(quest.id, 'quest_assigned', { questTitle: quest.title, assigneeId: quest.assignedToId, coins: quest.coins, triggeredById: quest.createdById });
+      }
     });
     return quest;
   },
 
   updateQuest: (id, updates, by) => {
+    const before = get().quests.find(q => q.id === id);
     const next = get().quests.map(q => {
       if (q.id !== id) return q;
       const hist = by ? [...q.history, histEntry('assigned', by)] : q.history;
@@ -259,6 +285,16 @@ export const useQuestStore = create<QuestState>((set, get) => ({
     const updated = next.find(q => q.id === id);
     if (updated) {
       dbUpdate(id, { ...toRow(updated), last_modified_by_id: by ?? null });
+      // Detect bonus activation — was 0, now >0
+      if ((!before?.bonusCoins || before.bonusCoins === 0) && (updates.bonusCoins ?? 0) > 0) {
+        notifyQuestEvent(id, 'bonus_activated', {
+          questTitle:      updated.title,
+          assigneeId:      updated.assignedToId,
+          bonusCoins:      updates.bonusCoins,
+          bonusExpiresAt:  updates.bonusExpiresAt,
+          triggeredById:   by,
+        });
+      }
     }
   },
 
@@ -292,6 +328,8 @@ export const useQuestStore = create<QuestState>((set, get) => ({
       claimed_at:     now,
       history:        (next.find(q => q.id === id)?.history ?? []),
     });
+    const claimedQ = next.find(q => q.id === id);
+    if (claimedQ) notifyQuestEvent(id, 'quest_claimed', { questTitle: claimedQ.title, assigneeId: memberId, coins: claimedQ.coins, triggeredById: memberId });
   },
 
   submitQuest: (id, opts = {}) => {
@@ -320,6 +358,7 @@ export const useQuestStore = create<QuestState>((set, get) => ({
       completion_note:  q.completionNote ?? null,
       history:          q.history,
     });
+    notifyQuestEvent(id, 'quest_submitted', { questTitle: q.title, assigneeId: q.assignedToId, triggeredById: q.assignedToId });
   },
 
   approveQuest: (id, approverId, note) => {
@@ -346,10 +385,11 @@ export const useQuestStore = create<QuestState>((set, get) => ({
       history:         updated.history,
     });
 
-    // Award coins + XP to the assignee
+    // Award coins + XP and notify assignee
     if (quest.assignedToId) {
       const totalCoins = quest.coins + quest.bonusCoins;
       awardMemberCoins(quest.assignedToId, totalCoins, quest.xpReward);
+      notifyQuestEvent(id, 'quest_approved', { questTitle: quest.title, assigneeId: quest.assignedToId, coins: quest.coins, bonusCoins: quest.bonusCoins, triggeredById: approverId });
     }
   },
 
@@ -378,6 +418,8 @@ export const useQuestStore = create<QuestState>((set, get) => ({
       approved_by_id:      approverId,
       history:             q.history,
     });
+    const declinedQ = get().quests.find(x => x.id === id);
+    if (declinedQ?.assignedToId) notifyQuestEvent(id, 'quest_declined', { questTitle: declinedQ.title, assigneeId: declinedQ.assignedToId, declineReason: reason, triggeredById: approverId });
   },
 
   reassignQuest: (id, memberId, by) => {
@@ -394,6 +436,7 @@ export const useQuestStore = create<QuestState>((set, get) => ({
       };
     });
     set({ quests: next }); save(next);
+    const prevQ = get().quests.find(q => q.id === id);
     dbUpdate(id, {
       assigned_to_id:    memberId ?? null,
       is_pool:           !memberId,
@@ -403,6 +446,7 @@ export const useQuestStore = create<QuestState>((set, get) => ({
       history:           (next.find(q => q.id === id)?.history ?? []),
       last_modified_by_id: by ?? null,
     });
+    if (prevQ) notifyQuestEvent(id, 'quest_reassigned', { questTitle: prevQ.title, assigneeId: prevQ.assignedToId, newAssigneeId: memberId, coins: prevQ.coins, triggeredById: by });
   },
 
   reopenQuest: (id, by) => {
@@ -420,15 +464,17 @@ export const useQuestStore = create<QuestState>((set, get) => ({
       };
     });
     set({ quests: next }); save(next);
+    const reopenedQ = next.find(q => q.id === id);
     dbUpdate(id, {
       status:              'claimed',
       submitted_at:        null,
       declined_at:         null,
       decline_reason:      null,
       decline_reason_code: null,
-      history:             (next.find(q => q.id === id)?.history ?? []),
+      history:             (reopenedQ?.history ?? []),
       last_modified_by_id: by ?? null,
     });
+    if (reopenedQ?.assignedToId) notifyQuestEvent(id, 'quest_reopened', { questTitle: reopenedQ.title, assigneeId: reopenedQ.assignedToId, coins: reopenedQ.coins, triggeredById: by });
   },
 
   cancelQuest: (id, by) => {

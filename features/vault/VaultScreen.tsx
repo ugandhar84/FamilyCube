@@ -9,6 +9,7 @@ import { router } from 'expo-router';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useAuthStore } from '@/store/authStore';
+import AppHeader from '@/components/AppHeader';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -390,18 +391,15 @@ export default function VaultScreen() {
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: bg }]} edges={['top']}>
 
-      {/* ── Header ── */}
-      <View style={[s.header, { backgroundColor: isDark ? colors.card : '#fff', borderBottomColor: colors.border }]}>
-        <Text style={[s.headerTitle, { color: colors.textPrimary }]}>Family Vault</Text>
-        <Pressable onPress={() => Alert.alert('Sign Out', 'Sign out of Family Cube?', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Sign Out', style: 'destructive', onPress: () => signOut() },
-        ])}>
-          <Ionicons name="log-out-outline" size={22} color={colors.textSecondary} />
-        </Pressable>
-      </View>
+      {/* ── App bar ── */}
+      <AppHeader
+        memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
+        memberRole={activeMember?.role as 'parent' | 'kid' | 'senior' ?? 'parent'}
+        onBellPress={() => {}}
+        onPersonaPress={() => {}}
+      />
 
-      {/* ── Sub-tab nav ── */}
+      {/* ── Sub-tab nav (stays fixed) ── */}
       <View style={[s.subTabBar, { backgroundColor: isDark ? colors.card : '#fff',
         borderBottomColor: colors.border }]}>
         <View style={[s.subTabInner, { backgroundColor: isDark ? colors.surface : '#F3F4F8',
@@ -414,13 +412,27 @@ export default function VaultScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 12, paddingBottom: 48, gap: 10 }}>
+        contentContainerStyle={{ paddingBottom: 48 }}>
+
+        {/* ── Page title row ── */}
+        <View style={[s.header, { backgroundColor: isDark ? colors.card : '#fff', borderBottomColor: colors.border }]}>
+          <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>Family Hearth</Text>
+          <Pressable onPress={() => Alert.alert('Sign Out', 'Sign out of Family Cube?', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Sign Out', style: 'destructive', onPress: () => signOut() },
+          ])}>
+            <Ionicons name="log-out-outline" size={22} color={colors.textSecondary} />
+          </Pressable>
+        </View>
+
+        <View style={{ padding: 12, gap: 10 }}>
 
         {activeTab === 'gps'      && <GpsTab members={members} colors={colors} isDark={isDark} />}
         {activeTab === 'health'   && <HealthTab colors={colors} isDark={isDark} />}
         {activeTab === 'aiDoc'    && <AiDocTab colors={colors} isDark={isDark} />}
         {activeTab === 'memories' && <MemoriesTab colors={colors} isDark={isDark} />}
         {activeTab === 'ledger'   && <LedgerTab members={members} colors={colors} isDark={isDark} />}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );

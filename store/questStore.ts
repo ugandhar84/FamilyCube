@@ -109,7 +109,7 @@ interface QuestState {
   loadFromStorage:  () => Promise<void>;
   syncFromDB:       () => Promise<void>;
 
-  addQuest:         (q: Omit<Quest, 'id' | 'createdAt' | 'history' | 'tags' | 'assignedToIds' | 'photoUrls' | 'linkedGroceryIds' | 'recurrenceDays' | 'bonusCoins' | 'difficulty' | 'isMultiAssign' | 'maxClaimants' | 'participants'> & Partial<Pick<Quest, 'tags' | 'difficulty'>>) => Quest;
+  addQuest:         (q: Omit<Quest, 'id' | 'createdAt' | 'history' | 'tags' | 'photoUrls' | 'linkedGroceryIds' | 'recurrenceDays' | 'bonusCoins' | 'difficulty' | 'isMultiAssign' | 'maxClaimants' | 'participants'> & Partial<Pick<Quest, 'tags' | 'difficulty'>>) => Quest;
   updateQuest:      (id: string, updates: Partial<Omit<Quest, 'id' | 'history'>>, by?: string) => void;
   deleteQuest:      (id: string) => void;
 

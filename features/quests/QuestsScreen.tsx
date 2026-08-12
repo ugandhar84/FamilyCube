@@ -420,7 +420,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
   visible: boolean; onClose: () => void; activeMemberId: string;
 }) {
   const { colors, isDark } = useTheme();
-  const { addQuest } = useQuestStore();
+  const { addQuest, createParticipants } = useQuestStore();
   const members = useFamilyStore(s => s.members);
   const kids    = members.filter(m => m.role === 'kid');
 
@@ -429,6 +429,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
   const [category,     setCategory]     = useState<QuestCategory>('Kitchen');
   const [assignIds,    setAssignIds]    = useState<string[]>([]);
   const [isPool,       setIsPool]       = useState(false);
+  const [maxClaimants, setMaxClaimants] = useState<number>(1); // pool: how many kids can claim
   const [photoReq,     setPhotoReq]     = useState(false);
   const [desc,         setDesc]         = useState('');
   const [difficulty,   setDifficulty]   = useState<QuestDifficulty | ''>('');
@@ -484,7 +485,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
 
   const reset = () => {
     setTitle(''); setDesc(''); setCoins('30'); setBonusCoins(''); setDifficulty('');
-    setAssignIds([]); setIsPool(false);
+    setAssignIds([]); setIsPool(false); setMaxClaimants(1);
     setPhotoReq(false); setDueDate(defaultDue());
     setShowDatePick(false); setShowTimePick(false);
   };
@@ -492,19 +493,29 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
   const submit = async () => {
     if (!title.trim() || !desc.trim()) return;
     setSaving(true);
-    const bonus = parseInt(bonusCoins) || 0;
+    const bonus       = parseInt(bonusCoins) || 0;
+    const isMulti     = !isPool && assignIds.length > 1;
     const newQ = await addQuest({
       title: title.trim(), description: desc.trim(), category, priority: 'medium', difficulty: difficulty || undefined,
       coins: parseInt(coins) || 30, xpReward: 20,
-      assignedToId: isPool ? undefined : (assignIds[0] || undefined),
+      assignedToId: isPool || isMulti ? undefined : (assignIds[0] || undefined),
+      assignedToIds: isMulti ? assignIds : [],
       isPool: isPool || assignIds.length === 0, isDaily: false, recurrence: 'once', status: 'todo',
       dueDate: dueDate.toISOString().split('T')[0],
       dueTime: fmtTimeLabel(dueDate),
       photoRequired: photoReq,
       createdById: activeMemberId,
     });
-    if (bonus > 0 && newQ?.id) {
-      useQuestStore.getState().updateQuest(newQ.id, { bonusCoins: bonus });
+    if (newQ?.id) {
+      if (bonus > 0) useQuestStore.getState().updateQuest(newQ.id, { bonusCoins: bonus });
+      // Create participant rows: multi-assign → one per kid; pool → none (kids create on claim)
+      if (isMulti && assignIds.length > 0) {
+        await createParticipants(newQ.id, assignIds);
+      }
+      // Store maxClaimants for pool quests
+      if (isPool) {
+        useQuestStore.getState().updateQuest(newQ.id, { maxClaimants });
+      }
     }
     setSaving(false);
     reset();
@@ -813,6 +824,45 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                   );
                 })}
             </ScrollView>
+
+            {/* Pool: max claimants picker */}
+            {isPool && (
+              <View style={{ marginBottom: 14 }}>
+                <Text style={[aq.label, { color: colors.textSecondary }]}>
+                  How many kids can claim?{'  '}
+                  <Text style={{ fontWeight: '400', color: colors.textTertiary }}>
+                    {maxClaimants === 0 ? 'unlimited' : maxClaimants === 1 ? 'first come, first served' : `up to ${maxClaimants} kids`}
+                  </Text>
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {[1, 2, 3, 0].map(n => (
+                    <TouchableOpacity
+                      key={n}
+                      style={{ flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center', borderWidth: 1.5,
+                        borderColor: maxClaimants === n ? BRAND.amber : isDark ? '#1E293B' : '#E2E8F0',
+                        backgroundColor: maxClaimants === n ? BRAND.amber + '20' : isDark ? '#0F172A' : '#F8FAFC' }}
+                      onPress={() => setMaxClaimants(n)}
+                    >
+                      <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: maxClaimants === n ? BRAND.amber : colors.textSecondary }}>
+                        {n === 0 ? '∞' : n}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Multi-assign notice */}
+            {!isPool && assignIds.length > 1 && (
+              <View style={{ marginBottom: 14, padding: 10, borderRadius: 12, backgroundColor: isDark ? '#0F172A' : '#F0FDF4', borderWidth: 1, borderColor: '#10B98130' }}>
+                <Text style={{ fontSize: TYPO.label, color: '#059669', fontWeight: '700' }}>
+                  ✅ {assignIds.length} kids assigned — each tracked independently
+                </Text>
+                <Text style={{ fontSize: TYPO.micro + 1, color: isDark ? '#6EE7B7' : '#047857', marginTop: 2 }}>
+                  Each earns +{coins || '30'}🪙 when their own submission is approved
+                </Text>
+              </View>
+            )}
 
             {/* Submit */}
             <TouchableOpacity
@@ -1262,7 +1312,7 @@ type AiTool   = 'none' | 'autobalance' | 'fomo' | 'advice';
 export default function QuestsScreen() {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, setActiveMember } = useFamilyStore();
-  const { quests, claimQuest, submitQuest, approveQuest, declineQuest, reopenQuest, updateQuest, deleteQuest } = useQuestStore();
+  const { quests, claimQuest, submitQuest, approveQuest, declineQuest, reopenQuest, updateQuest, deleteQuest, approveParticipant, declineParticipant, reopenParticipant } = useQuestStore();
 
   const activeMember = members.find(m => m.id === activeMemberId)
     ?? members.find(m => m.role === 'parent') ?? members[0];
@@ -1284,7 +1334,7 @@ export default function QuestsScreen() {
   const [isApproving,    setIsApproving]    = useState<Record<string, boolean>>({});
   const [isDeclining,    setIsDeclining]    = useState<Record<string, boolean>>({});
   const [isReopening,    setIsReopening]    = useState<Record<string, boolean>>({});
-  const [declineTarget,  setDeclineTarget]  = useState<{ id: string; title: string } | null>(null);
+  const [declineTarget,  setDeclineTarget]  = useState<{ id: string; title: string; memberId?: string } | null>(null);
   const [editTarget,     setEditTarget]     = useState<Quest | null>(null);
   const [showAddModal,   setShowAddModal]   = useState(false);
 
@@ -1327,7 +1377,7 @@ export default function QuestsScreen() {
       store.addQuest({
         title: item.title, category: 'Other', priority: 'medium',
         coins: item.coins ?? 20, xpReward: 15, isPool: true, isDaily: false,
-        recurrence: 'once', status: 'todo',
+        recurrence: 'once', status: 'todo', assignedToIds: [],
         dueDate: new Date().toISOString().split('T')[0], photoRequired: false,
         createdById: activeMember?.id,
       });
@@ -1380,11 +1430,16 @@ export default function QuestsScreen() {
 
   const handleDeclineConfirm = async (reason: string) => {
     if (!declineTarget) return;
-    const id = declineTarget.id;
+    const { id, memberId } = declineTarget;
     setDeclineTarget(null);
     setIsDeclining(p => ({ ...p, [id]: true }));
-    await new Promise(r => setTimeout(r, 600));
-    declineQuest(id, activeMember?.id ?? '', reason, 'custom');
+    await new Promise(r => setTimeout(r, 300));
+    if (memberId) {
+      // Per-participant decline
+      declineParticipant(id, memberId, activeMember?.id ?? '', reason, 'custom');
+    } else {
+      declineQuest(id, activeMember?.id ?? '', reason, 'custom');
+    }
     setIsDeclining(p => ({ ...p, [id]: false }));
   };
 
@@ -1915,7 +1970,84 @@ export default function QuestsScreen() {
 
                       </>{/* end badge strip */}
 
-                    {/* Action strip */}
+                    {/* ── Participant tracker ── */}
+                    {q.participants.length > 0 && (
+                      <View style={{ marginBottom: 4 }}>
+                        {q.participants.map(p => {
+                          const pm = members.find(m => m.id === p.memberId);
+                          if (!pm) return null;
+                          const pSiblings = members.map(m => m.name);
+                          const pIsMe = p.memberId === activeMember?.id;
+                          const pStatusColor =
+                            p.status === 'approved'          ? '#10B981'
+                            : p.status === 'pending_approval' ? BRAND.purple
+                            : p.status === 'declined'         ? '#EF4444'
+                            : p.status === 'in_progress'      ? BRAND.amber
+                            : colors.textTertiary;
+                          const pStatusLabel =
+                            p.status === 'approved'          ? `✅ Approved · +${p.coinsAwarded ?? q.coins}🪙`
+                            : p.status === 'pending_approval' ? `📬 Submitted${p.submittedAt ? ' · ' + new Date(p.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''}`
+                            : p.status === 'declined'         ? `❌ Declined${p.declineReason ? ' — ' + p.declineReason : ''}`
+                            : p.status === 'in_progress'      ? `🏃 In progress${p.claimedAt ? ' · ' + timeAgo(p.claimedAt) : ''}`
+                            : '○ Not started';
+                          return (
+                            <View key={p.id} style={{ borderTopWidth: 1, borderTopColor: isDark ? '#1E293B' : '#F0F4F8', paddingTop: 10, paddingBottom: 6 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                <FamilyAvatar name={pm.name} emoji={pm.emoji} avatarUrl={(pm as any).avatarUrl} siblings={pSiblings} size={30} ringColor={pStatusColor} ringWidth={1.5} />
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{pm.name}</Text>
+                                  <Text style={{ fontSize: TYPO.micro + 1, color: pStatusColor }}>{pStatusLabel}</Text>
+                                </View>
+                                {/* Per-kid actions for parent/senior */}
+                                {isParentOrSenior && p.status === 'pending_approval' && (
+                                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                                    <TouchableOpacity
+                                      style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF4444' }}
+                                      onPress={() => setDeclineTarget({ id: q.id, title: q.title, memberId: p.memberId })}
+                                    >
+                                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Decline</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                      style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: '#05906920', borderWidth: 1, borderColor: '#059669' }}
+                                      onPress={() => approveParticipant(q.id, p.memberId, activeMember?.id ?? '')}
+                                    >
+                                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#059669' }}>Approve ✓</Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                )}
+                                {isParentOrSenior && p.status === 'declined' && (
+                                  <TouchableOpacity
+                                    style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderWidth: 1, borderColor: colors.border }}
+                                    onPress={() => reopenParticipant(q.id, p.memberId, activeMember?.id)}
+                                  >
+                                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textSecondary }}>Reopen</Text>
+                                  </TouchableOpacity>
+                                )}
+                                {/* Kid's own submit button */}
+                                {pIsMe && (p.status === 'todo' || p.status === 'in_progress') && (
+                                  <TouchableOpacity
+                                    style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: BRAND.purple + '20', borderWidth: 1, borderColor: BRAND.purple }}
+                                    onPress={() => Alert.alert(
+                                      'Submit Quest',
+                                      `Submit "${q.title}" for review?`,
+                                      [{ text: 'Cancel', style: 'cancel' }, { text: 'Submit', onPress: () => submitQuest(q.id) }]
+                                    )}
+                                  >
+                                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.purple }}>Submit</Text>
+                                  </TouchableOpacity>
+                                )}
+                              </View>
+                              {/* Decline reason for that kid */}
+                              {p.status === 'declined' && p.declineReason && (
+                                <Text style={{ fontSize: TYPO.micro, color: '#EF4444', marginTop: 4, marginLeft: 40 }}>{p.declineReason}</Text>
+                              )}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+
+                    {/* Action strip — pool claim + single-kid fallback + edit hint */}
                     <View style={[s.actionStrip, { borderTopColor: isDark ? '#1E293B' : '#F0F4F8' }]}>
 
                       {/* Kid: Claim open bounty */}
@@ -1931,107 +2063,31 @@ export default function QuestsScreen() {
                         </TouchableOpacity>
                       )}
 
-                      {/* Parent/Senior view of open bounty — info only */}
+                      {/* Parent/Senior view of open bounty — show claimant count vs cap */}
                       {isPoolCard && isParentOrSenior && (
                         <View style={[s.paidBadge, { backgroundColor: isDark ? '#1C1000' : '#FFFBEB', borderColor: BRAND.amber + '50' }]}>
-                          <Text style={[s.paidText, { color: BRAND.amber }]}>Waiting for a kid to claim</Text>
-                        </View>
-                      )}
-
-                      {/* Kid: Submit proof — only for their OWN quest */}
-                      {canSubmit && (
-                        <TouchableOpacity
-                          style={[s.actionBtn, { backgroundColor: BRAND.purple }]}
-                          onPress={() => Alert.alert(
-                            q.photoRequired ? 'Submit with Photo' : 'Mark as Done',
-                            `Submit "${q.title}" for parent review?`,
-                            [
-                              { text: 'Cancel', style: 'cancel' },
-                              { text: 'Submit', onPress: () => submitQuest(q.id) },
-                            ]
-                          )}
-                        >
-                          <I.Camera c="#fff" />
-                          <Text style={s.actionBtnText}>Submit{q.photoRequired ? ' Photo' : ''} Proof</Text>
-                        </TouchableOpacity>
-                      )}
-
-                      {/* Kid viewing ANOTHER kid's in-progress quest — read only info */}
-                      {isTodoCard && isKid && q.assignedToId !== activeMember?.id && (
-                        <View style={[s.paidBadge, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderColor: cardBord }]}>
-                          <Text style={[s.paidText, { color: colors.textTertiary }]}>
-                            Assigned to {assignee?.name ?? '…'}
+                          <Text style={[s.paidText, { color: BRAND.amber }]}>
+                            {q.participants.length === 0
+                              ? 'Waiting for a kid to claim'
+                              : q.maxClaimants && q.participants.length >= q.maxClaimants
+                                ? `Full — ${q.participants.length}/${q.maxClaimants} claimed`
+                                : `${q.participants.length} claimed${q.maxClaimants ? ` · ${q.maxClaimants - q.participants.length} spots left` : ''}`}
                           </Text>
                         </View>
                       )}
 
-                      {/* Parent/Senior: Inspect + Decline + Approve & Pay */}
-                      {canApprove && (
-                        <View style={{ flexDirection: 'row', gap: 7, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                          <TouchableOpacity
-                            style={[s.actionBtn, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]}
-                            onPress={() => Alert.alert(
-                              'Photo Proof',
-                              q.photoUrl ? `Photo submitted for "${q.title}"` : `"${q.title}" was submitted without a photo.`
-                            )}
-                          >
-                            <Text style={[s.actionBtnText, { color: colors.textSecondary }]}>Inspect Photo</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[s.actionBtn, { backgroundColor: '#EF4444', opacity: isDeclining[q.id] ? 0.6 : 1 }]}
-                            onPress={() => setDeclineTarget({ id: q.id, title: q.title })}
-                            disabled={isDeclining[q.id]}
-                          >
-                            {isDeclining[q.id]
-                              ? <ActivityIndicator color="#fff" size="small" />
-                              : <Text style={s.actionBtnText}>Decline</Text>}
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[s.actionBtn, { backgroundColor: '#059669', opacity: isApproving[q.id] ? 0.6 : 1 }]}
-                            onPress={() => handleApproveQuest(q.id)}
-                            disabled={isApproving[q.id]}
-                          >
-                            {isApproving[q.id]
-                              ? <ActivityIndicator color="#fff" size="small" />
-                              : <Text style={s.actionBtnText}>Approve & Pay</Text>}
-                          </TouchableOpacity>
-                        </View>
-                      )}
-
-                      {/* Completed badge */}
+                      {/* Completed badge — only when ALL participants approved */}
                       {isDoneCard && (
                         <View style={[s.paidBadge, { backgroundColor: isDark ? '#064E3B' : '#D1FAE5', borderColor: isDark ? '#10B981' : '#6EE7B7' }]}>
                           <I.CheckCircle c="#10B981" />
-                          <Text style={[s.paidText, { color: '#10B981' }]}>Paid (+{q.coins}🪙)</Text>
+                          <Text style={[s.paidText, { color: '#10B981' }]}>
+                            All done · {q.participants.length > 1 ? `${q.participants.length} kids paid` : `+${q.coins}🪙 paid`}
+                          </Text>
                         </View>
                       )}
 
-                      {/* Declined + Reopen (parent/senior only) */}
-                      {isDeclined && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <View style={[s.paidBadge, { backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderColor: '#FCA5A5' }]}>
-                            <Text style={[s.paidText, { color: '#EF4444' }]}>Declined</Text>
-                          </View>
-                          {canReopen && (
-                            <TouchableOpacity
-                              style={[s.actionBtn, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', opacity: isReopening[q.id] ? 0.6 : 1 }]}
-                              onPress={() => handleReopen(q.id)}
-                              disabled={isReopening[q.id]}
-                            >
-                              {isReopening[q.id]
-                                ? <ActivityIndicator color={colors.textSecondary} size="small" />
-                                : (
-                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                                    <I.RotateCcw c={colors.textSecondary} />
-                                    <Text style={[s.actionBtnText, { color: colors.textSecondary }]}>Reopen</Text>
-                                  </View>
-                                )}
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      )}
-                      {/* Parent: double-tap card to edit — hint shown when no primary action buttons conflict */}
-                      {canEdit && !canClaim && !canSubmit && !canApprove && !isDeclined && !isDoneCard && (
+                      {/* Parent: double-tap to edit hint */}
+                      {canEdit && !canClaim && !isDoneCard && (
                         <View style={{ flex: 1, alignItems: 'flex-end' }}>
                           <Text style={{ fontSize: TYPO.micro, color: isDark ? '#475569' : '#94A3B8', fontStyle: 'italic' }}>double-tap to edit</Text>
                         </View>

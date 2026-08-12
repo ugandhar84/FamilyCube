@@ -778,19 +778,30 @@ export default function CalendarScreen() {
         </View>
       </View>
 
-      {/* ── AI Conflict Banner (parent only) — matches gemini-code dark card style ── */}
+      {/* ── AI Conflict Banner (parent only) — same gradient style as QuestsScreen AI Engine ── */}
       {isParent && (
         <View style={{ paddingHorizontal: 14, paddingVertical: 8, backgroundColor: isDark ? colors.card : '#fff', borderBottomWidth: 1, borderBottomColor: colors.border }}>
-          <View style={[sc.aiBannerCard]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-              <I.Bot c="#C4B5FD" size={16} />
-              <Text style={{ fontSize: 11, fontWeight: '700', color: '#DDD6FE' }}>AI Conflict & Driver Logistics Agent</Text>
+          <LinearGradient
+            colors={['#1E1B4B', '#1E3A5F', '#0F172A']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={sc.aiBannerCard}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+              <View style={sc.aiIconBox}><I.Bot c="#C4B5FD" size={16} /></View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '900', color: '#C4B5FD' }}>Claude AI Logistics Agent</Text>
+                  <View style={sc.activePill}><Text style={{ fontSize: 9, fontWeight: '700', color: '#6EE7B7' }}>Active</Text></View>
+                </View>
+                <Text style={{ fontSize: 10, color: 'rgba(196,181,253,0.8)', marginTop: 2 }}>
+                  Driver conflict detection, schedule gap analysis &amp; swap recommendations
+                </Text>
+              </View>
             </View>
-            <TouchableOpacity style={[sc.aiScanBtn]} onPress={runAiScan}>
-              <I.AlertTriangle c="#FCD34D" size={11} />
-              <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff' }}>Run AI Conflict Scan</Text>
+            <TouchableOpacity style={sc.aiScanBtn} onPress={runAiScan}>
+              <I.AlertTriangle c="#FCD34D" size={12} />
+              <Text style={{ fontSize: 11, fontWeight: '900', color: '#E0D9FF' }}>Run AI Conflict Scan</Text>
             </TouchableOpacity>
-          </View>
+          </LinearGradient>
         </View>
       )}
 
@@ -1188,8 +1199,10 @@ const sc = StyleSheet.create({
   headerBtn:    { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
   headerBtnOutline: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5 },
 
-  aiBannerCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#0F172A', borderRadius: 18, borderWidth: 1, borderColor: '#6D28D950', paddingHorizontal: 14, paddingVertical: 12 },
-  aiScanBtn:    { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, backgroundColor: BRAND.purple },
+  aiBannerCard: { borderRadius: 24, padding: 14, borderWidth: 1, borderColor: '#6D28D940' },
+  aiIconBox:    { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(139,92,246,0.3)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(167,139,250,0.3)' },
+  activePill:   { backgroundColor: 'rgba(16,185,129,0.3)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: 'rgba(52,211,153,0.4)' },
+  aiScanBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)' },
   aiPanel:      { borderRadius: 24, borderWidth: 1, padding: 14, marginBottom: 4 },
   conflictCard: { borderRadius: 18, borderWidth: 1, borderColor: '#F59E0B40', backgroundColor: '#1C1000', padding: 10 },
   allClearBox:  { borderRadius: 14, borderWidth: 1, borderColor: '#10B98160', backgroundColor: '#064E3B40', padding: 10 },

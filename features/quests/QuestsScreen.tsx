@@ -1613,19 +1613,54 @@ export default function QuestsScreen() {
 
                 const hasBonus = q.bonusCoins > 0 && (!q.bonusExpiresAt || new Date(q.bonusExpiresAt) > new Date());
 
-                // Collapsed header — built as variable to keep JSX clean
-                const claimantIds = q.assignedToIds?.length ? q.assignedToIds : (q.assignedToId ? [q.assignedToId] : []);
-                const claimants   = claimantIds.map(id => members.find(m => m.id === id)).filter((m): m is typeof members[0] => !!m);
+                // ── Collapsed header ────────────────────────────────────────────
+                const claimantIds    = q.assignedToIds?.length ? q.assignedToIds : (q.assignedToId ? [q.assignedToId] : []);
+                const claimants      = claimantIds.map(id => members.find(m => m.id === id)).filter((m): m is typeof members[0] => !!m);
                 const avatarSiblings = members.map(m => m.name);
-                const AVSIZE = 30;
-                const AVOVERLAP = 18;
-                const stackWidth = claimants.length > 0 ? AVSIZE + (claimants.length - 1) * AVOVERLAP : 0;
+                const AVSIZE    = 30;
+                const AVOVERLAP = 16;
+                const stackW    = claimants.length > 0 ? AVSIZE + (claimants.length - 1) * AVOVERLAP : 0;
+
+                // Due date chip — urgency coloring
+                const dueMsRaw    = q.dueDate ? new Date(q.dueDate).getTime() : null;
+                const todayEnd    = new Date(); todayEnd.setHours(23, 59, 59, 999);
+                const tomorrowEnd = new Date(todayEnd); tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
+                const isOverdue   = !!dueMsRaw && dueMsRaw < Date.now() && !isDoneCard && !isDeclined;
+                const isDueToday  = !!dueMsRaw && dueMsRaw <= todayEnd.getTime() && !isOverdue;
+                const isDueTomorrow = !!dueMsRaw && dueMsRaw <= tomorrowEnd.getTime() && !isDueToday && !isOverdue;
+                const dueBg    = isOverdue    ? (isDark ? '#450A0A' : '#FEE2E2')
+                               : isDueToday  ? (isDark ? '#1C1000' : '#FFF7ED')
+                               : isDark ? '#1E293B' : '#F1F5F9';
+                const dueColor = isOverdue ? '#DC2626' : isDueToday ? '#D97706' : colors.textSecondary;
+                const dueLabel = isOverdue    ? `⚠ ${q.dueDate ? fmtDateShort(q.dueDate) : 'Overdue'}`
+                               : isDueToday  ? '⚡ Today'
+                               : isDueTomorrow ? 'Tomorrow'
+                               : q.dueDate ? fmtDateShort(q.dueDate) : 'Tonight';
+
+                // Status line — concise, no "due" repetition (due is in chip on right)
+                const statusLine = isReview
+                  ? `Submitted ${q.submittedAt ? new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'for review'}`
+                  : isDoneCard
+                    ? 'Approved ✅'
+                    : isDeclined
+                      ? 'Declined ❌'
+                      : isPoolCard && claimants.length > 1
+                        ? `${claimants.length} kids racing for it`
+                        : isPoolCard && claimants.length === 1
+                          ? `${claimants[0].name} claimed it`
+                          : isPoolCard
+                            ? 'Open — waiting for a kid'
+                            : q.claimedAt
+                              ? `In progress · ${timeAgo(q.claimedAt)}`
+                              : (q as any).createdAt
+                                ? `Added ${timeAgo((q as any).createdAt)}`
+                                : 'Not started';
 
                 const cardHeader = (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 52 }}>
-                    {/* Overlapping avatar stack — shown when someone claimed */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 54 }}>
+                    {/* Overlapping avatar stack */}
                     {claimants.length > 0 && (
-                      <View style={{ width: stackWidth, height: AVSIZE, flexShrink: 0 }}>
+                      <View style={{ width: stackW, height: AVSIZE, flexShrink: 0 }}>
                         {claimants.slice(0, 4).map((m, i) => (
                           <View key={m.id} style={{ position: 'absolute', left: i * AVOVERLAP, zIndex: claimants.length - i }}>
                             <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={avatarSiblings} size={AVSIZE} ringColor={accentColor} ringWidth={1.5} />
@@ -1633,35 +1668,26 @@ export default function QuestsScreen() {
                         ))}
                       </View>
                     )}
-                    <View style={{ flex: 1, justifyContent: 'center' }}>
+
+                    {/* Title + status */}
+                    <View style={{ flex: 1 }}>
                       <Text style={[s.questTitle, { color: colors.textPrimary }]} numberOfLines={1}>{q.title}</Text>
-                      {/* Subtitle — textSecondary for legibility */}
-                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 3, lineHeight: 17 }} numberOfLines={2}>
-                        {isReview
-                          ? `📬 ${assignee?.name ?? '?'} submitted${q.submittedAt ? ' · ' + new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''}`
-                          : isPoolCard && claimants.length > 1
-                            ? `⚡ ${claimants.length} kids claimed · due ${q.dueDate ? fmtDateShort(q.dueDate) : 'tonight'}`
-                            : isPoolCard && claimants.length === 1
-                              ? `⚡ ${claimants[0].name} claimed · due ${q.dueDate ? fmtDateShort(q.dueDate) : 'tonight'}`
-                              : isPoolCard
-                                ? `⚡ Open bounty · due ${q.dueDate ? fmtDateShort(q.dueDate) : 'tonight'}`
-                                : isDoneCard
-                                  ? `✅ ${assignee?.name ?? '?'} · approved`
-                                  : isDeclined
-                                    ? `❌ Declined · ${assignee?.name ?? '?'}`
-                                    : q.claimedAt
-                                      ? `${assignee?.name ?? 'Unassigned'} · claimed ${timeAgo(q.claimedAt)} · due ${q.dueDate ? fmtDateShort(q.dueDate) : 'tonight'}`
-                                      : `${assignee?.name ?? 'Unassigned'} · added ${(q as any).createdAt ? timeAgo((q as any).createdAt) : ''} · due ${q.dueDate ? fmtDateShort(q.dueDate) : 'tonight'}`}
+                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 3 }} numberOfLines={1}>
+                        {statusLine}
                       </Text>
                     </View>
-                    {/* Coins — small and unobtrusive; bold/highlighted only when bonus active */}
-                    {hasBonus ? (
-                      <View style={{ paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10, backgroundColor: '#FCD34D22', borderWidth: 1, borderColor: '#FCD34D60' }}>
-                        <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '900', color: '#D97706' }}>+{q.coins + q.bonusCoins}🪙</Text>
-                      </View>
-                    ) : (
-                      <Text style={{ fontSize: TYPO.micro + 1, color: colors.textTertiary, fontWeight: '600' }}>+{q.coins}🪙</Text>
-                    )}
+
+                    {/* Right: due chip + coins */}
+                    <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                      {(isTodoCard || isPoolCard || isReview) && (
+                        <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: dueBg }}>
+                          <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '800', color: dueColor }}>{dueLabel}</Text>
+                        </View>
+                      )}
+                      <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontWeight: '600' }}>
+                        {hasBonus ? `+${q.coins + q.bonusCoins}🪙🔥` : `+${q.coins}🪙`}
+                      </Text>
+                    </View>
                   </View>
                 );
 

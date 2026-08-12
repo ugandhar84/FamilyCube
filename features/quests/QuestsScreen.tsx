@@ -29,6 +29,7 @@ import { useQuestStore } from '@/store/questStore';
 import type { QuestCategory } from '@/store/questStore';
 import AppHeader from '@/components/AppHeader';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import { TYPO } from '@/constants/theme';
 import { fmtDateShort } from '@/lib/dates';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -243,14 +244,14 @@ function DeclineModal({ visible, questTitle, onConfirm, onCancel, colors, isDark
 
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
             <TouchableOpacity style={[dm.btn, { flex: 1, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]} onPress={onCancel}>
-              <Text style={{ color: colors.textSecondary, fontWeight: '700', fontSize: 12 }}>Cancel</Text>
+              <Text style={{ color: colors.textSecondary, fontWeight: '700', fontSize: TYPO.caption }}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[dm.btn, { flex: 2, backgroundColor: finalReason ? '#EF4444' : colors.border }]}
               onPress={() => finalReason && onConfirm(finalReason)}
               disabled={!finalReason}
             >
-              <Text style={{ color: '#fff', fontWeight: '900', fontSize: 12 }}>Decline Quest</Text>
+              <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.caption }}>Decline Quest</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -262,13 +263,13 @@ const dm = StyleSheet.create({
   backdrop:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   sheet:       { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36 },
   handle:      { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  title:       { fontSize: 16, fontWeight: '900', marginBottom: 2 },
-  sub:         { fontSize: 11, marginBottom: 14 },
-  label:       { fontSize: 11, fontWeight: '700', marginBottom: 6 },
+  title:       { fontSize: TYPO.subheading, fontWeight: '900', marginBottom: 2 },
+  sub:         { fontSize: TYPO.label, marginBottom: 14 },
+  label:       { fontSize: TYPO.label, fontWeight: '700', marginBottom: 6 },
   preset:      { borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 7 },
-  presetText:  { fontSize: 12, fontWeight: '600' },
-  input:       { borderWidth: 1, borderRadius: 12, padding: 10, fontSize: 13, minHeight: 60, marginTop: 4 },
-  charCount:   { fontSize: 10, textAlign: 'right', marginTop: 2 },
+  presetText:  { fontSize: TYPO.caption, fontWeight: '600' },
+  input:       { borderWidth: 1, borderRadius: 12, padding: 10, fontSize: TYPO.caption, minHeight: 60, marginTop: 4 },
+  charCount:   { fontSize: TYPO.micro + 1, textAlign: 'right', marginTop: 2 },
   btn:         { borderRadius: 14, padding: 13, alignItems: 'center' },
 });
 
@@ -343,7 +344,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                       style={[aq.catChip, category === c && { backgroundColor: BRAND.purple, borderColor: BRAND.purple }]}
                       onPress={() => setCategory(c)}
                     >
-                      <Text style={{ fontSize: 10, fontWeight: '700', color: category === c ? '#fff' : colors.textSecondary }}>{c}</Text>
+                      <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '700', color: category === c ? '#fff' : colors.textSecondary }}>{c}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -357,7 +358,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
               style={[aq.kidChip, isPool && { backgroundColor: BRAND.amber + '30', borderColor: BRAND.amber }]}
               onPress={() => { setIsPool(true); setAssignTo(''); }}
             >
-              <Text style={{ fontSize: 11, fontWeight: '700', color: isPool ? BRAND.amber : colors.textSecondary }}>⚡ Open Bounty</Text>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isPool ? BRAND.amber : colors.textSecondary }}>⚡ Open Bounty</Text>
             </TouchableOpacity>
             {kids.map(k => (
               <TouchableOpacity
@@ -365,7 +366,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                 style={[aq.kidChip, assignTo === k.id && !isPool && { backgroundColor: BRAND.purple + '25', borderColor: BRAND.purple }]}
                 onPress={() => { setAssignTo(k.id); setIsPool(false); }}
               >
-                <Text style={{ fontSize: 11, fontWeight: '700', color: assignTo === k.id && !isPool ? BRAND.purple : colors.textSecondary }}>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: assignTo === k.id && !isPool ? BRAND.purple : colors.textSecondary }}>
                   {k.emoji ?? '🧒'} {k.name}
                 </Text>
               </TouchableOpacity>
@@ -377,7 +378,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
             onPress={submit} disabled={saving || !title.trim()}
           >
             {saving ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>Add Quest to Board</Text>}
+              : <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>Add Quest to Board</Text>}
           </TouchableOpacity>
         </View>
       </View>
@@ -388,9 +389,9 @@ const aq = StyleSheet.create({
   backdrop:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheet:     { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36 },
   handle:    { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  title:     { fontSize: 16, fontWeight: '900' },
-  label:     { fontSize: 11, fontWeight: '700', marginBottom: 5 },
-  input:     { borderWidth: 1, borderRadius: 12, padding: 10, fontSize: 13, marginBottom: 12 },
+  title:     { fontSize: TYPO.subheading, fontWeight: '900' },
+  label:     { fontSize: TYPO.label, fontWeight: '700', marginBottom: 5 },
+  input:     { borderWidth: 1, borderRadius: 12, padding: 10, fontSize: TYPO.caption, marginBottom: 12 },
   catChip:   { borderWidth: 1, borderColor: '#DDD', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
   kidChip:   { borderWidth: 1, borderColor: '#DDD', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
   submitBtn: { borderRadius: 14, padding: 14, alignItems: 'center' },
@@ -405,7 +406,7 @@ function AutoBalanceCard({ result, onApply, appliedActions, onClose }: any) {
           <I.Sparkles c="#FCD34D" />
           <Text style={[ai.headerText, { color: '#C4B5FD' }]}>AI Chore Auto-Balancer</Text>
         </View>
-        <TouchableOpacity onPress={onClose}><Text style={{ color: '#A78BFA', fontSize: 10 }}>✕ Close</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onClose}><Text style={{ color: '#A78BFA', fontSize: TYPO.micro + 1 }}>✕ Close</Text></TouchableOpacity>
       </View>
       <Text style={ai.summary}>{result.summary}</Text>
       <Text style={[ai.sectionLabel, { color: '#FCD34D' }]}>Recommended Assignments:</Text>
@@ -462,7 +463,7 @@ function FomoCard({ result, onApply, appliedActions, onClose }: any) {
           <I.Flame c="#FCD34D" />
           <Text style={[ai.headerText, { color: '#FCD34D' }]}>AI FOMO Bounties & Penalties</Text>
         </View>
-        <TouchableOpacity onPress={onClose}><Text style={{ color: '#FCD34D', fontSize: 10 }}>✕ Close</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onClose}><Text style={{ color: '#FCD34D', fontSize: TYPO.micro + 1 }}>✕ Close</Text></TouchableOpacity>
       </View>
       <View style={[ai.infoBox, { backgroundColor: '#FCD34D20', borderColor: '#FCD34D40' }]}>
         <Text style={[ai.summary, { color: '#FCD34D' }]}>{result.fomoNudgeSummary}</Text>
@@ -524,7 +525,7 @@ function AdviceCard({ result, appliedActions, onApply, onClose }: any) {
           <I.Award c="#818CF8" />
           <Text style={[ai.headerText, { color: '#818CF8' }]}>AI Parenting & Chore Advisor</Text>
         </View>
-        <TouchableOpacity onPress={onClose}><Text style={{ color: '#818CF8', fontSize: 10 }}>✕ Close</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onClose}><Text style={{ color: '#818CF8', fontSize: TYPO.micro + 1 }}>✕ Close</Text></TouchableOpacity>
       </View>
       <View style={[ai.infoBox, { backgroundColor: '#4338CA22', borderColor: '#4338CA40' }]}>
         <Text style={[ai.summary, { color: '#C7D2FE' }]}>💡 {result.familyCoachingTip}</Text>
@@ -557,20 +558,20 @@ function AdviceCard({ result, appliedActions, onApply, onClose }: any) {
 const ai = StyleSheet.create({
   card:       { borderRadius: 24, borderWidth: 1, backgroundColor: '#0F172A', padding: 14, marginHorizontal: 14, marginBottom: 12, gap: 8 },
   header:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, paddingBottom: 8 },
-  headerText: { fontSize: 11, fontWeight: '900', flex: 1 },
-  summary:    { fontSize: 11, fontWeight: '600', lineHeight: 16, color: '#CBD5E1' },
+  headerText: { fontSize: TYPO.label, fontWeight: '900', flex: 1 },
+  summary:    { fontSize: TYPO.label, fontWeight: '600', lineHeight: 16, color: '#CBD5E1' },
   infoBox:    { borderRadius: 14, borderWidth: 1, padding: 10 },
-  sectionLabel: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5, color: '#94A3B8' },
+  sectionLabel: { fontSize: TYPO.micro + 1, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5, color: '#94A3B8' },
   row:        { borderRadius: 14, backgroundColor: '#1E293B', padding: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
   fomoRow:    { borderRadius: 14, borderWidth: 1, padding: 10, backgroundColor: '#1C1000', borderColor: '#FCD34D40', marginBottom: 6 },
-  rowTitle:   { fontSize: 11, fontWeight: '700' },
-  rowSub:     { fontSize: 10, marginTop: 2 },
+  rowTitle:   { fontSize: TYPO.label, fontWeight: '700' },
+  rowSub:     { fontSize: TYPO.micro + 1, marginTop: 2 },
   chip:       { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
-  chipText:   { fontSize: 10, fontWeight: '900' },
+  chipText:   { fontSize: TYPO.micro + 1, fontWeight: '900' },
   doneChip:   { backgroundColor: '#059669', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },
-  doneText:   { color: '#fff', fontSize: 10, fontWeight: '900' },
+  doneText:   { color: '#fff', fontSize: TYPO.micro + 1, fontWeight: '900' },
   applyBtn:   { backgroundColor: '#059669', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 7 },
-  applyText:  { color: '#fff', fontSize: 10, fontWeight: '900' },
+  applyText:  { color: '#fff', fontSize: TYPO.micro + 1, fontWeight: '900' },
   divider:    { borderTopWidth: 1, marginVertical: 2 },
 });
 
@@ -727,22 +728,24 @@ export default function QuestsScreen() {
         onBellPress={() => {}}
       />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: 14, paddingBottom: 40 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
 
         {/* ── Title + Add Quest (parent ONLY) ── */}
-        <View style={[s.titleRow, { paddingHorizontal: 14 }]}>
+        <View style={[s.titleRow, { backgroundColor: isDark ? colors.card : '#fff', borderBottomColor: colors.border }]}>
           <View style={{ flex: 1 }}>
-            <Text style={[s.title, { color: colors.textPrimary }]}>Household Quests Engine</Text>
-            <Text style={[s.titleSub, { color: colors.textSecondary }]}>
+            <Text style={[s.title, { color: isDark ? colors.textPrimary : '#1E2D6B' }]}>
+              {isKid ? 'My Quests' : 'Household Quests'}
+            </Text>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple, marginTop: 1 }}>
               {isParent   ? 'Add quests, approve chores & distribute coins'
                : isSenior ? 'Review submissions and encourage the kids'
                            : 'Claim bounties, submit photo proof & earn coins'}
             </Text>
           </View>
           {isParent && (
-            <TouchableOpacity style={[s.addBtn, { backgroundColor: '#059669' }]} onPress={() => setShowAddModal(true)}>
+            <TouchableOpacity style={[s.headerBtn, { backgroundColor: '#059669' }]} onPress={() => setShowAddModal(true)}>
               <I.PlusCircle c="#fff" />
-              <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>+ Quest</Text>
+              <Text style={{ color: '#fff', fontSize: TYPO.label, fontWeight: '900' }}>+ Quest</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -884,7 +887,7 @@ export default function QuestsScreen() {
                   style={[s.highFiveBtn, { backgroundColor: '#4338CA' }]}
                   onPress={() => Alert.alert('🖐️ High Five Sent!', `You cheered for ${k.name}!`)}
                 >
-                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>🖐️ High Five!</Text>
+                  <Text style={{ color: '#fff', fontSize: TYPO.label, fontWeight: '700' }}>🖐️ High Five!</Text>
                 </TouchableOpacity>
               </View>
             ))}
@@ -974,7 +977,7 @@ export default function QuestsScreen() {
                           +{q.coins + q.bonusCoins}🪙
                         </Text>
                         {q.bonusCoins > 0 && (!q.bonusExpiresAt || new Date(q.bonusExpiresAt) > new Date()) && (
-                          <Text style={{ fontSize: 9, color: '#FCD34D80' }}>incl. +{q.bonusCoins} bonus</Text>
+                          <Text style={{ fontSize: TYPO.micro, color: '#FCD34D80' }}>incl. +{q.bonusCoins} bonus</Text>
                         )}
                       </View>
                     </View>
@@ -1147,56 +1150,55 @@ export default function QuestsScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  titleRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
-  title:       { fontSize: 16, fontWeight: '900', letterSpacing: -0.3 },
-  titleSub:    { fontSize: 10, marginTop: 2, lineHeight: 14 },
-  addBtn:      { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14 },
+  titleRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1 },
+  title:       { fontSize: TYPO.heading, fontWeight: '900' },
+  headerBtn:   { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
 
   aiBanner:    { borderRadius: 24, padding: 14, borderWidth: 1, borderColor: '#6D28D940' },
   aiIconBox:   { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(139,92,246,0.3)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(167,139,250,0.3)' },
-  aiBannerTitle: { fontSize: 11, fontWeight: '900', color: '#C4B5FD' },
+  aiBannerTitle: { fontSize: TYPO.label, fontWeight: '900', color: '#C4B5FD' },
   activePill:  { backgroundColor: 'rgba(16,185,129,0.3)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: 'rgba(52,211,153,0.4)' },
-  activePillText: { fontSize: 9, fontWeight: '700', color: '#6EE7B7' },
-  aiBannerSub: { fontSize: 10, color: 'rgba(196,181,253,0.8)', marginTop: 2 },
+  activePillText: { fontSize: TYPO.micro, fontWeight: '700', color: '#6EE7B7' },
+  aiBannerSub: { fontSize: TYPO.micro + 1, color: 'rgba(196,181,253,0.8)', marginTop: 2 },
   aiBtnBase:   { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 9, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)' },
   aiBtnActive: { backgroundColor: BRAND.purple, borderColor: '#C4B5FD' },
-  aiBtnText:   { fontSize: 9, fontWeight: '700', color: '#E0D9FF' },
+  aiBtnText:   { fontSize: TYPO.micro, fontWeight: '700', color: '#E0D9FF' },
 
   seniorBanner:     { borderRadius: 20, borderWidth: 1, borderColor: '#92400E60', backgroundColor: '#1C1000', padding: 12 },
-  seniorBannerText: { fontSize: 11, color: '#FCD34D', fontWeight: '600', lineHeight: 16 },
+  seniorBannerText: { fontSize: TYPO.label, color: '#FCD34D', fontWeight: '600', lineHeight: 16 },
 
   aiLoadingBox:  { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#0F172A', borderRadius: 20, borderWidth: 1, borderColor: '#6D28D940', padding: 14 },
-  aiLoadingText: { fontSize: 11, fontWeight: '700', color: '#A78BFA', flex: 1 },
+  aiLoadingText: { fontSize: TYPO.label, fontWeight: '700', color: '#A78BFA', flex: 1 },
 
   filterPill:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
-  filterText:  { fontSize: 11, fontWeight: '700' },
+  filterText:  { fontSize: TYPO.label, fontWeight: '700' },
 
   statusTabs:  { flexDirection: 'row', borderBottomWidth: 1, gap: 4 },
   tabItem:     { paddingBottom: 8, paddingHorizontal: 4, position: 'relative' },
-  tabText:     { fontSize: 12, fontWeight: '700' },
+  tabText:     { fontSize: TYPO.caption, fontWeight: '700' },
   tabLine:     { position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, borderRadius: 1 },
 
   card:        { borderRadius: 24, borderWidth: 1, padding: 14 },
-  cardTitle:   { fontSize: 12, fontWeight: '700' },
-  cardSub:     { fontSize: 11, lineHeight: 16 },
+  cardTitle:   { fontSize: TYPO.caption, fontWeight: '700' },
+  cardSub:     { fontSize: TYPO.label, lineHeight: 16 },
   cheerRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 16, borderWidth: 1, padding: 10, marginBottom: 8 },
-  cheerName:   { fontSize: 12, fontWeight: '700', flex: 1 },
+  cheerName:   { fontSize: TYPO.caption, fontWeight: '700', flex: 1 },
   highFiveBtn: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 7 },
 
   questCard:   { borderRadius: 24, borderWidth: 1, padding: 14, gap: 10 },
   catBadge:    { borderRadius: 20, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2 },
-  catText:     { fontSize: 9, fontWeight: '700' },
-  questTitle:  { fontSize: 12, fontWeight: '700' },
-  coinAmt:     { fontSize: 11, fontWeight: '900', textAlign: 'right', lineHeight: 16 },
+  catText:     { fontSize: TYPO.micro, fontWeight: '700' },
+  questTitle:  { fontSize: TYPO.caption, fontWeight: '700' },
+  coinAmt:     { fontSize: TYPO.label, fontWeight: '900', textAlign: 'right', lineHeight: 16 },
   metaRow:     { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, paddingTop: 8 },
-  metaText:    { fontSize: 10 },
+  metaText:    { fontSize: TYPO.micro + 1 },
   metaVal:     { fontWeight: '700' },
   declineBox:  { flexDirection: 'row', gap: 6, alignItems: 'flex-start', borderRadius: 12, borderWidth: 1, padding: 8 },
-  declineText: { fontSize: 11, fontWeight: '600', lineHeight: 15 },
+  declineText: { fontSize: TYPO.label, fontWeight: '600', lineHeight: 15 },
   actionBtn:   { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 14 },
-  actionBtnText: { fontSize: 11, fontWeight: '700', color: '#fff' },
+  actionBtnText: { fontSize: TYPO.label, fontWeight: '700', color: '#fff' },
   paidBadge:   { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5 },
-  paidText:    { fontSize: 10, fontWeight: '700' },
+  paidText:    { fontSize: TYPO.micro + 1, fontWeight: '700' },
   emptyBox:    { borderRadius: 16, borderWidth: 1, padding: 24, alignItems: 'center' },
-  emptyText:   { fontSize: 12, textAlign: 'center' },
+  emptyText:   { fontSize: TYPO.caption, textAlign: 'center' },
 });

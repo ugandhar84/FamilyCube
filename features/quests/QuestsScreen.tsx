@@ -1613,17 +1613,36 @@ export default function QuestsScreen() {
 
                 const hasBonus = q.bonusCoins > 0 && (!q.bonusExpiresAt || new Date(q.bonusExpiresAt) > new Date());
 
-                return (
-                  <CollapsibleQuestCard key={q.id} accentColor={accentColor} cardBg={cardBg} cardBord={cardBord}
-                    onDoubleTap={canEdit ? () => setEditTarget(q) : undefined}
-                    header={
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[s.questTitle, { color: colors.textPrimary }]} numberOfLines={1}>{q.title}</Text>
-                          {/* Crisp subtitle — role-relevant one-liner */}
-                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 3 }} numberOfLines={1}>
-                            {isReview
-                              ? `📬 ${assignee?.name ?? '?'} submitted${q.submittedAt ? ' · ' + new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''}`
+                // Collapsed header — built as variable to keep JSX clean
+                const claimantIds = q.assignedToIds?.length ? q.assignedToIds : (q.assignedToId ? [q.assignedToId] : []);
+                const claimants   = claimantIds.map(id => members.find(m => m.id === id)).filter((m): m is typeof members[0] => !!m);
+                const avatarSiblings = members.map(m => m.name);
+                const AVSIZE = 30;
+                const AVOVERLAP = 18;
+                const stackWidth = claimants.length > 0 ? AVSIZE + (claimants.length - 1) * AVOVERLAP : 0;
+
+                const cardHeader = (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 52 }}>
+                    {/* Overlapping avatar stack — shown when someone claimed */}
+                    {claimants.length > 0 && (
+                      <View style={{ width: stackWidth, height: AVSIZE, flexShrink: 0 }}>
+                        {claimants.slice(0, 4).map((m, i) => (
+                          <View key={m.id} style={{ position: 'absolute', left: i * AVOVERLAP, zIndex: claimants.length - i }}>
+                            <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={avatarSiblings} size={AVSIZE} ringColor={accentColor} ringWidth={1.5} />
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                    <View style={{ flex: 1, justifyContent: 'center' }}>
+                      <Text style={[s.questTitle, { color: colors.textPrimary }]} numberOfLines={1}>{q.title}</Text>
+                      {/* Subtitle — textSecondary for legibility */}
+                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 3, lineHeight: 17 }} numberOfLines={2}>
+                        {isReview
+                          ? `📬 ${assignee?.name ?? '?'} submitted${q.submittedAt ? ' · ' + new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''}`
+                          : isPoolCard && claimants.length > 1
+                            ? `⚡ ${claimants.length} kids claimed · due ${q.dueDate ? fmtDateShort(q.dueDate) : 'tonight'}`
+                            : isPoolCard && claimants.length === 1
+                              ? `⚡ ${claimants[0].name} claimed · due ${q.dueDate ? fmtDateShort(q.dueDate) : 'tonight'}`
                               : isPoolCard
                                 ? `⚡ Open bounty · due ${q.dueDate ? fmtDateShort(q.dueDate) : 'tonight'}`
                                 : isDoneCard
@@ -1631,16 +1650,25 @@ export default function QuestsScreen() {
                                   : isDeclined
                                     ? `❌ Declined · ${assignee?.name ?? '?'}`
                                     : q.claimedAt
-                                      ? `${assignee?.emoji ?? ''}${assignee?.name ?? 'Unassigned'} · claimed ${timeAgo(q.claimedAt)} · due ${q.dueDate ? fmtDateShort(q.dueDate) : 'tonight'}`
-                                      : `${assignee?.emoji ?? ''}${assignee?.name ?? 'Unassigned'} · added ${(q as any).createdAt ? timeAgo((q as any).createdAt) : ''} · due ${q.dueDate ? fmtDateShort(q.dueDate) : 'tonight'}`}
-                          </Text>
-                        </View>
-                        {/* Coin pill — compact in header */}
-                        <View style={[s.coinPillSm, { backgroundColor: hasBonus ? '#FCD34D18' : (isDark ? '#1E293B' : '#F8FAFC'), borderColor: hasBonus ? '#FCD34D50' : colors.border }]}>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: isDark ? '#FCD34D' : '#D97706' }}>+{q.coins + q.bonusCoins}🪙</Text>
-                        </View>
+                                      ? `${assignee?.name ?? 'Unassigned'} · claimed ${timeAgo(q.claimedAt)} · due ${q.dueDate ? fmtDateShort(q.dueDate) : 'tonight'}`
+                                      : `${assignee?.name ?? 'Unassigned'} · added ${(q as any).createdAt ? timeAgo((q as any).createdAt) : ''} · due ${q.dueDate ? fmtDateShort(q.dueDate) : 'tonight'}`}
+                      </Text>
+                    </View>
+                    {/* Coins — small and unobtrusive; bold/highlighted only when bonus active */}
+                    {hasBonus ? (
+                      <View style={{ paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10, backgroundColor: '#FCD34D22', borderWidth: 1, borderColor: '#FCD34D60' }}>
+                        <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '900', color: '#D97706' }}>+{q.coins + q.bonusCoins}🪙</Text>
                       </View>
-                    }
+                    ) : (
+                      <Text style={{ fontSize: TYPO.micro + 1, color: colors.textTertiary, fontWeight: '600' }}>+{q.coins}🪙</Text>
+                    )}
+                  </View>
+                );
+
+                return (
+                  <CollapsibleQuestCard key={q.id} accentColor={accentColor} cardBg={cardBg} cardBord={cardBord}
+                    onDoubleTap={canEdit ? () => setEditTarget(q) : undefined}
+                    header={cardHeader}
                   >
                     {/* ── Expanded body — NO title/coin repeat, header already shows them ── */}
 

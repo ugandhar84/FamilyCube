@@ -822,8 +822,11 @@ export default function CalendarScreen() {
               <I.Bot c={isDark ? '#C4B5FD' : BRAND.purple} size={15} />
               <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: isDark ? '#C4B5FD' : BRAND.purple }}>CubeAI Conflict & Driver Swap Recommendations</Text>
             </View>
-            <TouchableOpacity onPress={() => setShowAiPanel(false)}>
-              <Text style={{ fontSize: TYPO.label, color: isDark ? '#A78BFA' : BRAND.purple }}>✕ Close</Text>
+            <TouchableOpacity
+              onPress={() => setShowAiPanel(false)}
+              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+              style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(146,97,199,0.1)' }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#A78BFA' : BRAND.purple }}>✕ Close</Text>
             </TouchableOpacity>
           </View>
 

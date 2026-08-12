@@ -14,6 +14,7 @@ import {
   View, Text, Modal, Pressable, ScrollView, TextInput,
   StyleSheet, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
@@ -24,18 +25,18 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 
 // ─── Suggestion pills ─────────────────────────────────────────────────────────
 const SUGGESTIONS: { label: string; icon: string; category: HelpCategory }[] = [
-  { label: 'Ride to school',      icon: '🚌', category: 'Ride'      },
-  { label: 'Pick up from sports', icon: '⚽', category: 'Ride'      },
-  { label: 'Doctor visit',        icon: '🏥', category: 'Ride'      },
-  { label: 'Airport drop-off',    icon: '✈️', category: 'Ride'      },
-  { label: 'Grocery run',         icon: '🛒', category: 'Errand'    },
-  { label: 'Pharmacy pickup',     icon: '💊', category: 'Errand'    },
-  { label: 'Math homework',       icon: '🔢', category: 'Homework'  },
-  { label: 'Science project',     icon: '🔬', category: 'Homework'  },
-  { label: 'Watch the kids',      icon: '👶', category: 'Childcare' },
-  { label: 'House chores',        icon: '🧹', category: 'Chore'     },
-  { label: 'Tech / iPad help',    icon: '💻', category: 'Advice'    },
-  { label: 'Emotional support',   icon: '💖', category: 'Advice'    },
+  { label: 'School pickup',        icon: '🚌', category: 'Ride'      },
+  { label: 'After-school dropoff', icon: '🚗', category: 'Ride'      },
+  { label: 'Doctor / clinic',      icon: '🏥', category: 'Ride'      },
+  { label: 'Airport run',          icon: '✈️', category: 'Ride'      },
+  { label: 'Grocery run',          icon: '🛒', category: 'Errand'    },
+  { label: 'Pharmacy pickup',      icon: '💊', category: 'Errand'    },
+  { label: 'Algebra / math help',  icon: '🔢', category: 'Homework'  },
+  { label: 'Essay review',         icon: '📝', category: 'Homework'  },
+  { label: 'Cover childcare',      icon: '🧒', category: 'Childcare' },
+  { label: 'House chores',         icon: '🧹', category: 'Chore'     },
+  { label: 'Tech support',         icon: '💻', category: 'Advice'    },
+  { label: 'Emotional support',    icon: '💖', category: 'Advice'    },
 ];
 
 const DURATIONS = ['30 min', '1 hr', '1.5 hr', '2 hr', '3 hr'];
@@ -114,6 +115,7 @@ interface Props {
 
 export default function HelpRequestModal({ visible, onClose }: Props) {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const { members, activeMemberId } = useFamilyStore();
   const addRequest = useHelpStore(s => s.addRequest);
 
@@ -190,9 +192,11 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={resetAndClose}>
-      <Pressable style={s.backdrop} onPress={resetAndClose} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 0 }}>
+    <Modal visible={visible} transparent animationType="slide" presentationStyle="overFullScreen" onRequestClose={resetAndClose}>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        {/* Backdrop — absolute so it covers the full modal window including tab bar area */}
+        <Pressable style={StyleSheet.absoluteFill} onPress={resetAndClose} />
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={[s.sheet, { backgroundColor: isDark ? '#111827' : '#FFFFFF', borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
           <View style={[s.handle, { backgroundColor: isDark ? '#334155' : '#CBD5E1' }]} />
 
@@ -203,10 +207,10 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[s.title, { color: colors.textPrimary }]}>
-                {isAdult ? 'Dispatch Help for a Kid' : 'Ask Family for Help'}
+                {isAdult ? 'Request Family Help' : 'Ask Family for Help'}
               </Text>
               <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                {isAdult ? 'Assign tutoring, ride, or support for a child' : 'Parents, siblings, or grandparents can help'}
+                {isAdult ? 'Assign a task or errand to any family member' : 'Parents, siblings, or grandparents can help'}
               </Text>
             </View>
             <Pressable onPress={resetAndClose}
@@ -397,28 +401,31 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
                 style={[s.submitBtn, { backgroundColor: canSubmit ? BRAND.purple : colors.border, flex: 2 }]}>
                 <Ionicons name="send" size={15} color={canSubmit ? '#fff' : colors.textTertiary} />
                 <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: canSubmit ? '#fff' : colors.textTertiary }}>
-                  {isAdult ? 'Dispatch for Kid →' : 'Submit to Family →'}
+                  {isAdult ? 'Send Request →' : 'Submit to Family →'}
                 </Text>
               </Pressable>
             </View>
 
           </ScrollView>
         </View>
-      </KeyboardAvoidingView>
+        {/* Filler — covers the gap between sheet and screen bottom (tab bar area) */}
+        <View style={{ backgroundColor: isDark ? '#111827' : '#FFFFFF', height: insets.bottom + 4 }} />
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  backdrop:  { flex: 1, backgroundColor: 'rgba(2,6,23,0.72)' },
+  backdrop:  { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,6,23,0.72)' },
   sheet:     { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, maxHeight: '92%' },
   handle:    { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 12 },
   hdr:       { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 20, paddingBottom: 14 },
   hdrIcon:   { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   title:     { fontSize: TYPO.caption, fontWeight: '900' },
   closeBtn:  { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  body:      { paddingHorizontal: 20, paddingBottom: 40 },
+  body:      { paddingHorizontal: 20, paddingBottom: 24 },
   input:     { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: TYPO.body, marginBottom: 14 },
   multi:     { minHeight: 88, paddingTop: 12 },
   pill:      { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 20, borderWidth: 1, marginRight: 8 },

@@ -1,23 +1,22 @@
 /**
- * HelpQueueSection — live help-request queue shown on the Hub.
+ * HelpQueueSection — Family Support & Help Queue
  *
- * RBAC:
- *   Parent/Senior:
- *     pending  → Self-assign | Assign-to-other (with optional note) | Decline (with reason)
- *     assigned → Reassign (with note) | Mark Completed
- *   Kid:
- *     pending  → "Waiting for approval" + Withdraw button
- *     declined → "❌ Declined: [reason]" — Awaiting your response + Resubmit button
- *     assigned → "In progress — [helper]"
- *     completed→ ✓ row
+ * Matches the gemini-code HelpDispatchQueue pattern with FamilyCube BRAND colors.
+ * Clean card-per-request layout: no clutter, status-based tinting.
  *
- * Decline always requires a reason (preset chips or custom text).
- * Reassign shows dynamic note input only when a different helper is selected.
- * Decline → status='declined', requester sees reason and can resubmit (opens modal).
+ * Parent/Senior:
+ *   pending  → Self-Assign | assign-to dropdown | ❌ Decline
+ *   assigned → "Helper: X" + Mark Completed | Reassign dropdown
+ *
+ * Kid:
+ *   pending  → "Waiting..." + Withdraw
+ *   declined → reason + "Resubmit" CTA
+ *   assigned → "In progress — [helper]" + helper note
+ *   completed→ compact ✓ row
  */
 import React, { useState } from 'react';
 import {
-  View, Text, Pressable, StyleSheet, TextInput, ScrollView,
+  View, Text, Pressable, TextInput, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
@@ -25,39 +24,64 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useHelpStore, HelpRequest } from '@/store/helpStore';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import FamilyAvatar from '@/components/FamilyAvatar';
 
-const DECLINE_PRESETS = [
-  'Ask again after homework',
-  'Try asking someone else first',
-  'Parents busy right now',
-  'Do your chores first',
-  'Not appropriate right now',
-];
+// ─── Category badge ───────────────────────────────────────────────────────────
 
-// ─── Section header ───────────────────────────────────────────────────────────
-function SLabel({ text, colors }: { text: string; colors: any }) {
+const CAT_COLOR: Record<string, string> = {
+  Ride: BRAND.teal, Homework: BRAND.purple, Childcare: BRAND.pink,
+  Errand: BRAND.amber, Chore: '#10B981', Advice: '#3B82F6', General: '#64748B',
+};
+
+function CatBadge({ cat }: { cat: string }) {
+  const c = CAT_COLOR[cat] ?? '#64748B';
   return (
-    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase', color: colors.textTertiary, marginBottom: 8, marginTop: 4 }}>
-      {text}
-    </Text>
-  );
-}
-
-// ─── Category color dot ───────────────────────────────────────────────────────
-function CatBadge({ cat, colors }: { cat: string; colors: any }) {
-  const BG: Record<string, string> = {
-    Ride: BRAND.teal, Homework: BRAND.purple, Childcare: BRAND.pink,
-    Errand: BRAND.amber, Chore: '#10B981', Advice: '#3B82F6', General: '#64748B',
-  };
-  const bg = BG[cat] ?? '#64748B';
-  return (
-    <View style={{ backgroundColor: bg + '20', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: bg + '40' }}>
-      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: bg }}>{cat}</Text>
+    <View style={{ backgroundColor: c + '22', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: c + '45' }}>
+      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: c }}>{cat}</Text>
     </View>
   );
 }
 
-// ─── Pending card (parent/senior view) ───────────────────────────────────────
+// ─── Status badge ─────────────────────────────────────────────────────────────
+
+function StatusBadge({ label, color }: { label: string; color: string }) {
+  return (
+    <View style={{ backgroundColor: color + '22', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color }}>{label}</Text>
+    </View>
+  );
+}
+
+// ─── Assign picker (horizontal scroll of adult name chips) ────────────────────
+
+function AssignPicker({ adults, selected, onSelect }: {
+  adults: string[]; selected: string; onSelect: (name: string) => void;
+}) {
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
+      <View style={{ flexDirection: 'row', gap: 6 }}>
+        {adults.map(name => {
+          const sel = selected === name;
+          return (
+            <Pressable key={name} onPress={() => onSelect(sel ? '' : name)}
+              style={{
+                paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, borderWidth: 1,
+                backgroundColor: sel ? BRAND.purple : 'transparent',
+                borderColor: sel ? BRAND.purple : BRAND.purple + '50',
+              }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: sel ? '#fff' : BRAND.purple }}>
+                {name.split(' ')[0]}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </ScrollView>
+  );
+}
+
+// ─── Pending card (parent/senior) ─────────────────────────────────────────────
+
 function PendingCard({ req, activeName, adults, colors, isDark, onDecline, onAssign, onSelfAssign }: {
   req: HelpRequest; activeName: string; adults: string[];
   colors: any; isDark: boolean;
@@ -65,220 +89,187 @@ function PendingCard({ req, activeName, adults, colors, isDark, onDecline, onAss
   onAssign: (id: string, helper: string, note?: string) => void;
   onSelfAssign: (id: string) => void;
 }) {
-  const [showDecline, setShowDecline]   = useState(false);
-  const [declineReason, setDeclineR]    = useState('');
-  const [selectedHelper, setSelHelper]  = useState('');
-  const [assignNote, setAssignNote]     = useState('');
+  const [showDecline, setShowDecline] = useState(false);
+  const [declineText, setDeclineText] = useState('');
+  const [assignTo, setAssignTo]       = useState('');
 
-  const isHighUrgency = req.urgency === 'High';
-  const borderCol = isHighUrgency ? '#EF4444' : BRAND.amber;
+  const isHigh = req.urgency === 'High';
+  const accent = isHigh ? '#EF4444' : BRAND.amber;
+  const cardBg = isDark
+    ? (isHigh ? '#2A0A0A' : '#1A1200')
+    : (isHigh ? '#FFF5F5' : '#FFFBEB');
 
   return (
-    <View style={[c.card, { backgroundColor: isDark ? '#1A1000' : '#FFFBEB', borderColor: borderCol + '50' }]}>
-      {/* Top row */}
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
-        <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: BRAND.amber }}>
-              🙋 {req.onBehalfOf ? `${req.onBehalfOf} → ${req.requesterName}` : req.requesterName} needs help:
-            </Text>
-            <CatBadge cat={req.category} colors={colors} />
-            {isHighUrgency && (
-              <View style={{ backgroundColor: '#EF444420', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
-                <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#EF4444' }}>🔴 URGENT</Text>
-              </View>
-            )}
-          </View>
-          <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary, marginTop: 4 }}>
-            "{req.title}"
-          </Text>
-          {req.description ? (
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 3 }} numberOfLines={2}>
-              {req.description}
-            </Text>
-          ) : null}
-          {req.date ? (
-            <Text style={{ fontSize: TYPO.label, color: BRAND.teal, fontWeight: '700', marginTop: 4 }}>
-              📅 {req.date}{req.time ? ` at ${req.time}` : ''}
-            </Text>
-          ) : null}
-        </View>
-        {req.rewardCoins ? (
-          <View style={{ backgroundColor: BRAND.amber + '20', borderRadius: 12, padding: 8, alignItems: 'center' }}>
-            <Text style={{ fontSize: TYPO.body }}>🪙</Text>
-            <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: BRAND.amber }}>+{req.rewardCoins}</Text>
-          </View>
-        ) : null}
-      </View>
+    <View style={{
+      borderRadius: 16, borderWidth: 1, borderColor: accent + '40',
+      backgroundColor: cardBg, overflow: 'hidden',
+    }}>
+      {/* Left accent bar */}
+      <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: accent }} />
 
-      {/* Decline panel */}
-      {showDecline && (
-        <View style={[c.declineBox, { backgroundColor: isDark ? '#3F0000' : '#FFF5F5', borderColor: '#EF444440' }]}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444', marginBottom: 8 }}>
-            Select or type a reason for declining:
+      <View style={{ padding: 14, paddingLeft: 17, gap: 8 }}>
+        {/* Header row */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: accent }}>
+            {req.requesterName.split(' ')[0]} needs help:
           </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-            {DECLINE_PRESETS.map(p => (
-              <Pressable key={p} onPress={() => setDeclineR(p)}
-                style={[c.chip, {
-                  backgroundColor: declineReason === p ? '#EF444430' : colors.surface,
-                  borderColor: declineReason === p ? '#EF4444' : colors.border,
-                }]}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: declineReason === p ? '#EF4444' : colors.textSecondary }}>{p}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-          <TextInput
-            value={declineReason}
-            onChangeText={t => setDeclineR(t.slice(0, 150))}
-            placeholder="Custom reason (max 150 chars)..."
-            placeholderTextColor={colors.textTertiary}
-            style={[c.noteInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
-          />
-          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, textAlign: 'right', marginTop: 3 }}>{declineReason.length}/150</Text>
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-            <Pressable onPress={() => setShowDecline(false)}
-              style={[c.smBtn, { flex: 1, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-            </Pressable>
-            <Pressable onPress={() => { if (declineReason.trim()) { onDecline(req.id, declineReason.trim()); setShowDecline(false); } }}
-              style={[c.smBtn, { flex: 2, backgroundColor: declineReason.trim() ? '#EF4444' : colors.border }]}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Confirm Decline</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
-
-      {/* Assign actions */}
-      {!showDecline && (
-        <View style={{ borderTopWidth: 1, borderTopColor: BRAND.amber + '30', paddingTop: 10, gap: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.amber }}>⚡ Assign helper or decline:</Text>
-            <Pressable onPress={() => { setShowDecline(true); setDeclineR(''); }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>❌ Decline</Text>
-            </Pressable>
-          </View>
-          {/* Self-assign */}
-          <Pressable onPress={() => onSelfAssign(req.id)}
-            style={[c.smBtn, { backgroundColor: '#10B981', paddingHorizontal: 16 }]}>
-            <Ionicons name="flash" size={13} color="#fff" />
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>
-              ⚡ I'll do it ({activeName.split(' ')[0]})
-            </Text>
-          </Pressable>
-          {/* Assign-to-other picker + note */}
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
-              {adults.filter(n => n !== activeName).map(n => (
-                <Pressable key={n} onPress={() => setSelHelper(n === selectedHelper ? '' : n)}
-                  style={[c.chip, {
-                    backgroundColor: selectedHelper === n ? BRAND.purple + '20' : colors.surface,
-                    borderColor: selectedHelper === n ? BRAND.purple : colors.border,
-                  }]}>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: selectedHelper === n ? BRAND.purple : colors.textSecondary }}>
-                    👤 {n.split(' ')[0]}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            {selectedHelper ? (
-              <Pressable onPress={() => { onAssign(req.id, selectedHelper, assignNote); setSelHelper(''); setAssignNote(''); }}
-                style={[c.smBtn, { backgroundColor: BRAND.purple, paddingHorizontal: 16 }]}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Assign</Text>
-              </Pressable>
-            ) : null}
-          </View>
-          {/* Dynamic note for assigning someone else */}
-          {selectedHelper && selectedHelper !== activeName && (
-            <View>
-              <TextInput
-                value={assignNote}
-                onChangeText={t => setAssignNote(t.slice(0, 150))}
-                placeholder={`Note for ${selectedHelper.split(' ')[0]} (optional)...`}
-                placeholderTextColor={colors.textTertiary}
-                style={[c.noteInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: BRAND.purple + '60' }]}
-              />
-              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, textAlign: 'right', marginTop: 2 }}>{assignNote.length}/150</Text>
+          <CatBadge cat={req.category} />
+          {req.rewardCoins && (
+            <View style={{ backgroundColor: BRAND.amber + '20', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: BRAND.amber + '40' }}>
+              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.amber }}>+{req.rewardCoins}🪙</Text>
             </View>
           )}
         </View>
-      )}
+
+        {/* Description */}
+        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic', lineHeight: 18 }}>
+          "{req.description}"
+        </Text>
+
+        {/* Scheduling info */}
+        {(req.date || req.time) && (
+          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
+            📅 {req.date ?? ''}{req.time ? ` · ${req.time}` : ''}
+            {req.fromLoc ? ` · From: ${req.fromLoc}` : ''}
+            {req.toLoc ? ` → ${req.toLoc}` : ''}
+          </Text>
+        )}
+
+        {/* Decline panel */}
+        {showDecline ? (
+          <View style={{ gap: 8 }}>
+            <TextInput
+              value={declineText}
+              onChangeText={setDeclineText}
+              placeholder="Reason for declining..."
+              placeholderTextColor={colors.textTertiary}
+              style={{
+                fontSize: TYPO.label, color: colors.textPrimary, borderRadius: 10,
+                borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
+                paddingHorizontal: 12, paddingVertical: 8,
+              }}
+            />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Pressable onPress={() => setShowDecline(false)}
+                style={{ flex: 1, paddingVertical: 9, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center' }}>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => { if (declineText.trim()) { onDecline(req.id, declineText.trim()); setShowDecline(false); } }}
+                style={{ flex: 1, paddingVertical: 9, borderRadius: 12, backgroundColor: '#EF4444', alignItems: 'center', opacity: declineText.trim() ? 1 : 0.4 }}>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Confirm Decline</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          <>
+            {/* Assign / decline label row */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: accent, opacity: 0.8 }}>
+                Assign Tutor / Helper or Decline:
+              </Text>
+              <Pressable onPress={() => setShowDecline(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ fontSize: TYPO.label, color: '#EF4444', fontWeight: '700' }}>❌ Decline Request</Text>
+              </Pressable>
+            </View>
+
+            {/* Single row: Self-Assign | chip picker | Assign button */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Pressable onPress={() => onSelfAssign(req.id)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#10B981', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 }}>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>⚡ Self-Assign ({activeName.split(' ')[0]})</Text>
+              </Pressable>
+              {adults.filter(a => a !== activeName).length > 0 && (
+                <>
+                  <View style={{ flex: 1 }}>
+                    <AssignPicker
+                      adults={adults.filter(a => a !== activeName)}
+                      selected={assignTo}
+                      onSelect={setAssignTo}
+                    />
+                  </View>
+                  <Pressable
+                    onPress={() => { if (assignTo) { onAssign(req.id, assignTo); setAssignTo(''); } }}
+                    style={{ backgroundColor: assignTo ? BRAND.purple : BRAND.purple + '40', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Assign</Text>
+                  </Pressable>
+                </>
+              )}
+            </View>
+          </>
+        )}
+      </View>
     </View>
   );
 }
 
-// ─── Assigned card (parent/senior view) ──────────────────────────────────────
-function AssignedCard({ req, adults, colors, isDark, onReassign, onComplete }: {
-  req: HelpRequest; adults: string[];
+// ─── Assigned card (parent/senior) ────────────────────────────────────────────
+
+function AssignedCard({ req, activeName, adults, colors, isDark, onComplete, onReassign }: {
+  req: HelpRequest; activeName: string; adults: string[];
   colors: any; isDark: boolean;
-  onReassign: (id: string, helper: string, note?: string) => void;
   onComplete: (id: string) => void;
+  onReassign: (id: string, helper: string, note?: string) => void;
 }) {
-  const [selHelper, setSelHelper] = useState('');
-  const [note, setNote]           = useState('');
+  const [reassignTo, setReassignTo] = useState('');
+  const cardBg = isDark ? '#160D22' : '#F5F3FF';
 
   return (
-    <View style={[c.card, { backgroundColor: isDark ? '#0F0A2A' : '#F5F3FF', borderColor: BRAND.purple + '40' }]}>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
-        <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: BRAND.purple }}>🤝 {req.requesterName}'s request</Text>
-            <CatBadge cat={req.category} colors={colors} />
-            <View style={{ backgroundColor: BRAND.purple + '20', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
-              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.purple }}>In Progress</Text>
-            </View>
-          </View>
-          <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary, marginTop: 3 }}>"{req.title}"</Text>
-          {req.helperNote ? (
-            <View style={{ backgroundColor: BRAND.purple + '15', borderRadius: 10, padding: 8, marginTop: 6 }}>
-              <Text style={{ fontSize: TYPO.label, color: BRAND.purple, fontStyle: 'italic' }}>📝 "{req.helperNote}"</Text>
-            </View>
-          ) : null}
+    <View style={{
+      borderRadius: 16, borderWidth: 1, borderColor: BRAND.purple + '40',
+      backgroundColor: cardBg, overflow: 'hidden',
+    }}>
+      {/* Left accent bar */}
+      <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: BRAND.purple }} />
+
+      <View style={{ padding: 14, paddingLeft: 17, gap: 8 }}>
+        {/* Header */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.purple }}>
+            {req.requesterName.split(' ')[0]}'s Request
+          </Text>
+          <CatBadge cat={req.category} />
+          <StatusBadge label="In Progress" color={BRAND.purple} />
         </View>
-      </View>
-      <View style={{ borderTopWidth: 1, borderTopColor: BRAND.purple + '30', paddingTop: 10, gap: 8 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#10B981' }}>
-            👤 Helper: <Text style={{ fontWeight: '900', color: BRAND.purple }}>{req.assignedHelper ?? '—'}</Text>
+
+        {/* Description */}
+        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic', lineHeight: 18 }}>
+          "{req.description}"
+        </Text>
+
+        {/* Assigned helper + complete button */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Ionicons name="person" size={13} color={BRAND.purple} />
+          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple, flex: 1 }}>
+            Assigned Tutor/Helper: <Text style={{ fontWeight: '900' }}>{req.assignedHelper}</Text>
           </Text>
           <Pressable onPress={() => onComplete(req.id)}
-            style={[c.smBtn, { backgroundColor: BRAND.purple, paddingHorizontal: 14 }]}>
-            <Ionicons name="checkmark-circle" size={13} color="#fff" />
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Done ✓</Text>
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: BRAND.purple, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 }}>
+            <Ionicons name="checkmark-circle-outline" size={14} color="#fff" />
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Mark Completed</Text>
           </Pressable>
         </View>
-        {/* Reassign */}
-        <View style={{ gap: 6 }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>Reassign to:</Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
-              {adults.filter(n => n !== req.assignedHelper).map(n => (
-                <Pressable key={n} onPress={() => setSelHelper(n === selHelper ? '' : n)}
-                  style={[c.chip, { backgroundColor: selHelper === n ? BRAND.purple + '20' : colors.surface, borderColor: selHelper === n ? BRAND.purple : colors.border }]}>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: selHelper === n ? BRAND.purple : colors.textSecondary }}>
-                    👤 {n.split(' ')[0]}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            {selHelper ? (
-              <Pressable onPress={() => { onReassign(req.id, selHelper, note); setSelHelper(''); setNote(''); }}
-                style={[c.smBtn, { backgroundColor: BRAND.purple, paddingHorizontal: 14 }]}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Reassign</Text>
-              </Pressable>
-            ) : null}
+
+        {/* Reassign row */}
+        {req.helperNote ? (
+          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, fontStyle: 'italic' }}>
+            Note: {req.helperNote}
+          </Text>
+        ) : null}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>Reassign Tutor:</Text>
+          <View style={{ flex: 1 }}>
+            <AssignPicker
+              adults={adults.filter(a => a !== req.assignedHelper)}
+              selected={reassignTo}
+              onSelect={setReassignTo}
+            />
           </View>
-          {selHelper && selHelper !== req.assignedHelper && (
-            <View>
-              <TextInput
-                value={note}
-                onChangeText={t => setNote(t.slice(0, 150))}
-                placeholder={`Note for ${selHelper.split(' ')[0]} (optional)...`}
-                placeholderTextColor={colors.textTertiary}
-                style={[c.noteInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: BRAND.purple + '60' }]}
-              />
-              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, textAlign: 'right', marginTop: 2 }}>{note.length}/150</Text>
-            </View>
+          {reassignTo.length > 0 && (
+            <Pressable onPress={() => { onReassign(req.id, reassignTo); setReassignTo(''); }}
+              style={{ backgroundColor: BRAND.purple + '20', borderWidth: 1, borderColor: BRAND.purple + '60', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>Reassign</Text>
+            </Pressable>
           )}
         </View>
       </View>
@@ -286,245 +277,178 @@ function AssignedCard({ req, adults, colors, isDark, onReassign, onComplete }: {
   );
 }
 
-// ─── Kid / requester view cards ───────────────────────────────────────────────
-function MyRequestCard({ req, currentId, colors, isDark, onWithdraw, onResubmit }: {
-  req: HelpRequest; currentId: string;
+// ─── Completed row (compact) ──────────────────────────────────────────────────
+
+function CompletedRow({ req, colors, isDark }: { req: HelpRequest; colors: any; isDark: boolean }) {
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      borderRadius: 14, borderWidth: 1, borderColor: BRAND.teal + '35',
+      backgroundColor: isDark ? '#001A18' : '#F0FDFC',
+      padding: 12, paddingLeft: 15,
+    }}>
+      <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: BRAND.teal, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 }} />
+      <Ionicons name="checkmark-circle" size={14} color={BRAND.teal} />
+      <Text style={{ flex: 1, fontSize: TYPO.label, color: colors.textSecondary, flexShrink: 1 }} numberOfLines={1}>
+        <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{req.requesterName.split(' ')[0]}: </Text>
+        "{req.description}"
+      </Text>
+      {req.assignedHelper && (
+        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.teal }}>
+          ✓ {req.assignedHelper.split(' ')[0]}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+// ─── Kid's view of their own request ─────────────────────────────────────────
+
+function KidRequestCard({ req, requesterId, colors, isDark, onWithdraw, onResubmit }: {
+  req: HelpRequest; requesterId: string;
   colors: any; isDark: boolean;
   onWithdraw: (id: string) => void;
   onResubmit: () => void;
 }) {
-  const isPending   = req.status === 'pending';
-  const isDeclined  = req.status === 'declined';
-  const isAssigned  = req.status === 'assigned';
-  const isCompleted = req.status === 'completed';
-
-  const borderCol = isDeclined ? '#EF4444' : isAssigned ? BRAND.purple : isCompleted ? '#10B981' : BRAND.amber;
-  const bgCol     = isDark
-    ? (isDeclined ? '#2D0000' : isAssigned ? '#0F0A2A' : isCompleted ? '#001F12' : '#1A1000')
-    : (isDeclined ? '#FFF5F5' : isAssigned ? '#F5F3FF' : isCompleted ? '#F0FDF4' : '#FFFBEB');
-
-  return (
-    <View style={[c.card, { backgroundColor: bgCol, borderColor: borderCol + '50' }]}>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-        <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
-            <CatBadge cat={req.category} colors={colors} />
-            {req.urgency === 'High' && (
-              <View style={{ backgroundColor: '#EF444418', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
-                <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#EF4444' }}>🔴 URGENT</Text>
-              </View>
-            )}
-          </View>
-          <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>"{req.title}"</Text>
-          {req.description ? (
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>{req.description}</Text>
-          ) : null}
+  if (req.status === 'pending') {
+    return (
+      <View style={{ borderRadius: 14, borderWidth: 1, borderColor: BRAND.amber + '40', backgroundColor: isDark ? '#1A1200' : '#FFFBEB', padding: 12, gap: 6 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <CatBadge cat={req.category} />
+          <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>{req.title}</Text>
         </View>
+        <Text style={{ fontSize: TYPO.label, color: BRAND.amber, fontWeight: '600' }}>⏳ Waiting for approval...</Text>
+        <Pressable onPress={() => onWithdraw(req.id)} style={{ alignSelf: 'flex-start' }}>
+          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, fontWeight: '600' }}>Withdraw request</Text>
+        </Pressable>
       </View>
+    );
+  }
 
-      <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: borderCol + '30' }}>
-        {isPending && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Ionicons name="time-outline" size={14} color={BRAND.amber} />
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.amber }}>Waiting for approval...</Text>
-            </View>
-            {req.requesterId === currentId && (
-              <Pressable onPress={() => onWithdraw(req.id)}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>Withdraw 🗑️</Text>
-              </Pressable>
-            )}
-          </View>
+  if (req.status === 'declined') {
+    return (
+      <View style={{ borderRadius: 14, borderWidth: 1, borderColor: '#EF444440', backgroundColor: isDark ? '#2A0A0A' : '#FFF5F5', padding: 12, gap: 6 }}>
+        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#EF4444' }}>❌ Declined: {req.title}</Text>
+        {req.declineReason && (
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{req.declineReason}"</Text>
         )}
-        {isDeclined && (
-          <View style={{ gap: 8 }}>
-            <View style={{ backgroundColor: '#EF444415', borderRadius: 10, padding: 10 }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>❌ Declined</Text>
-              {req.declineReason ? (
-                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 4, fontStyle: 'italic' }}>
-                  Reason: "{req.declineReason}"
-                </Text>
-              ) : null}
-            </View>
-            <View style={{ backgroundColor: BRAND.amber + '15', borderRadius: 10, padding: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.amber }}>Awaiting your response →</Text>
-              <Pressable onPress={onResubmit}
-                style={[c.smBtn, { backgroundColor: BRAND.purple, paddingHorizontal: 14 }]}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Resubmit</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
-        {isAssigned && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Ionicons name="person-circle" size={16} color={BRAND.purple} />
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>
-              In progress — {req.assignedHelper ?? 'Family member'}
-            </Text>
-            {req.helperNote ? (
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic', flex: 1 }} numberOfLines={1}>
-                · "{req.helperNote}"
-              </Text>
-            ) : null}
-          </View>
-        )}
-        {isCompleted && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#10B981' }}>
-              Completed by {req.assignedHelper ?? 'family'}
-            </Text>
-            {req.rewardCoins ? (
-              <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: BRAND.amber }}>+{req.rewardCoins}🪙 earned!</Text>
-            ) : null}
-          </View>
+        <Pressable onPress={onResubmit}
+          style={{ backgroundColor: BRAND.amber, borderRadius: 12, paddingVertical: 9, alignItems: 'center', marginTop: 4 }}>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>↩ Resubmit Request</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (req.status === 'assigned') {
+    return (
+      <View style={{ borderRadius: 14, borderWidth: 1, borderColor: BRAND.purple + '40', backgroundColor: isDark ? '#160D22' : '#F5F3FF', padding: 12, gap: 4 }}>
+        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>{req.title}</Text>
+        <Text style={{ fontSize: TYPO.label, color: BRAND.purple, fontWeight: '700' }}>
+          In progress — {req.assignedHelper}
+        </Text>
+        {req.helperNote && (
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{req.helperNote}"</Text>
         )}
       </View>
+    );
+  }
+
+  // completed
+  return (
+    <View style={{ borderRadius: 14, borderWidth: 1, borderColor: BRAND.teal + '40', backgroundColor: isDark ? '#001A18' : '#F0FDFC', padding: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <Ionicons name="checkmark-circle" size={16} color={BRAND.teal} />
+      <Text style={{ flex: 1, fontSize: TYPO.label, color: colors.textSecondary, fontWeight: '600' }} numberOfLines={1}>{req.title}</Text>
+      {req.rewardCoins && <Text style={{ fontSize: TYPO.label, color: BRAND.amber, fontWeight: '800' }}>+{req.rewardCoins}🪙</Text>}
     </View>
   );
 }
 
-// ─── Main section ─────────────────────────────────────────────────────────────
+// ─── Main export ──────────────────────────────────────────────────────────────
+
 interface Props {
   onRequestHelp: () => void;
+  hideAskButton?: boolean;
 }
 
-export default function HelpQueueSection({ onRequestHelp }: Props) {
-  const hideAskButton = false;
+export default function HelpQueueSection({ onRequestHelp, hideAskButton = false }: Props) {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId } = useFamilyStore();
   const { requests, assignRequest, declineRequest, reassignRequest, completeRequest, withdrawRequest } = useHelpStore();
 
   const active  = members.find(m => m.id === activeMemberId) ?? members[0];
-  const isAdult = active?.role === 'parent' || active?.role === 'senior';
-  const adults  = members.filter(m => m.role === 'parent' || m.role === 'senior').map(m => m.name);
+  if (!active) return null;
 
-  // Visible requests: non-withdrawn, non-completed (recent completed shown briefly)
-  const active_reqs = requests.filter(r => r.status !== 'withdrawn');
+  const isAdult = active.role === 'parent' || active.role === 'senior';
+  const allNames = members.map(m => m.name);
+  const adults   = members.filter(m => m.role !== 'kid').map(m => m.name);
 
-  // Adult sees all pending + assigned; their own completed (last 3)
-  const pending    = active_reqs.filter(r => r.status === 'pending');
-  const assigned   = active_reqs.filter(r => r.status === 'assigned');
-  const completed  = active_reqs.filter(r => r.status === 'completed').slice(0, 3);
+  // Adults see all active requests; kids see only their own
+  const activeReqs = isAdult
+    ? requests.filter(r => r.status === 'pending' || r.status === 'assigned')
+    : requests.filter(r => r.requesterId === active.id && r.status !== 'withdrawn');
 
-  // Kid sees only their own requests
-  const myRequests = active_reqs.filter(r =>
-    r.requesterId === active?.id || r.onBehalfOf === active?.name
-  );
+  const recentCompleted = isAdult
+    ? requests.filter(r => r.status === 'completed').slice(0, 3)
+    : [];
 
-  const isEmpty = isAdult
-    ? (pending.length + assigned.length + completed.length) === 0
-    : myRequests.length === 0;
+  const hasSomething = activeReqs.length > 0 || recentCompleted.length > 0;
 
   return (
-    <View style={[c.section, { backgroundColor: isDark ? '#0D1117' : '#FFFFFF', borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
-      {/* Header */}
-      <View style={c.sectionHdr}>
-        <View style={[c.hdrIcon, { backgroundColor: BRAND.amber + '20' }]}>
-          <Ionicons name="help-circle" size={18} color={BRAND.amber} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[c.hdrTitle, { color: colors.textPrimary }]}>Family Help Queue</Text>
-          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-            {isAdult ? 'Approve & assign help requests' : 'Ask anyone in the family for help'}
-          </Text>
-        </View>
-        {!hideAskButton && (
-          <Pressable onPress={onRequestHelp}
-            style={[c.askBtn, { backgroundColor: BRAND.purple }]}>
-            <Ionicons name="add" size={14} color="#fff" />
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Ask for Help</Text>
-          </Pressable>
-        )}
-      </View>
+    <View style={{ gap: 8 }}>
+      {/* Ask for Help button — hidden when parent SectionCard owns the action */}
+      {!hideAskButton && (
+        <Pressable onPress={onRequestHelp}
+          style={{
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+            backgroundColor: BRAND.purple, borderRadius: 14, paddingVertical: 12,
+          }}>
+          <Ionicons name="add" size={16} color="#fff" />
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Ask for Help</Text>
+        </Pressable>
+      )}
 
-      {isEmpty && (
-        <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={{ fontSize: TYPO.body }}>🤝</Text>
-          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 6 }}>
-            {isAdult ? 'No help requests right now.' : 'Need help with anything? Tap "Ask for Help"!'}
-          </Text>
+      {!hasSomething && (
+        <View style={{ alignItems: 'center', paddingVertical: 16 }}>
+          <Text style={{ fontSize: 24 }}>✨</Text>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textTertiary, marginTop: 4 }}>All caught up — no open requests</Text>
         </View>
       )}
 
-      {/* ── Adult view ── */}
-      {isAdult && !isEmpty && (
+      {/* Active requests */}
+      {isAdult ? (
         <>
-          {pending.length > 0 && (
-            <>
-              <SLabel text={`Pending (${pending.length})`} colors={colors} />
-              {pending.map(r => (
-                <PendingCard
-                  key={r.id} req={r} activeName={active?.name ?? ''} adults={adults}
-                  colors={colors} isDark={isDark}
-                  onDecline={(id, reason) => declineRequest(id, reason, active?.name ?? '')}
-                  onAssign={(id, helper, note) => assignRequest(id, helper, note)}
-                  onSelfAssign={id => assignRequest(id, active?.name ?? '')}
-                />
-              ))}
-            </>
-          )}
-          {assigned.length > 0 && (
-            <>
-              <SLabel text={`In Progress (${assigned.length})`} colors={colors} />
-              {assigned.map(r => (
-                <AssignedCard
-                  key={r.id} req={r} adults={adults}
-                  colors={colors} isDark={isDark}
-                  onReassign={(id, helper, note) => reassignRequest(id, helper, note)}
-                  onComplete={id => completeRequest(id)}
-                />
-              ))}
-            </>
-          )}
-          {completed.length > 0 && (
-            <>
-              <SLabel text="Recently Completed" colors={colors} />
-              {completed.map(r => (
-                <View key={r.id} style={[c.completedRow, { backgroundColor: isDark ? '#001F12' : '#F0FDF4', borderColor: '#10B981' + '40' }]}>
-                  <Ionicons name="checkmark-circle" size={15} color="#10B981" />
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>
-                    <Text style={{ fontWeight: '800', color: colors.textPrimary }}>{r.requesterName}:</Text> {r.title}
-                  </Text>
-                  {r.assignedHelper ? (
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#10B981' }}>✓ {r.assignedHelper.split(' ')[0]}</Text>
-                  ) : null}
-                </View>
-              ))}
-            </>
-          )}
-        </>
-      )}
-
-      {/* ── Kid / non-approver view ── */}
-      {!isAdult && myRequests.length > 0 && (
-        <>
-          <SLabel text="My Requests" colors={colors} />
-          {myRequests.map(r => (
-            <MyRequestCard
-              key={r.id} req={r} currentId={active?.id ?? ''}
+          {activeReqs.filter(r => r.status === 'pending').map(req => (
+            <PendingCard
+              key={req.id} req={req} activeName={active.name} adults={adults}
               colors={colors} isDark={isDark}
-              onWithdraw={id => withdrawRequest(id, active?.id ?? '')}
-              onResubmit={onRequestHelp}
+              onDecline={(id, reason) => declineRequest(id, reason, active.name)}
+              onAssign={(id, helper, note) => assignRequest(id, helper, note)}
+              onSelfAssign={(id) => assignRequest(id, active.name)}
             />
           ))}
+          {activeReqs.filter(r => r.status === 'assigned').map(req => (
+            <AssignedCard
+              key={req.id} req={req} activeName={active.name} adults={adults}
+              colors={colors} isDark={isDark}
+              onComplete={(id) => completeRequest(id)}
+              onReassign={(id, helper, note) => reassignRequest(id, helper, note)}
+            />
+          ))}
+          {recentCompleted.map(req => (
+            <CompletedRow key={req.id} req={req} colors={colors} isDark={isDark} />
+          ))}
         </>
+      ) : (
+        activeReqs.map(req => (
+          <KidRequestCard
+            key={req.id} req={req} requesterId={active.id}
+            colors={colors} isDark={isDark}
+            onWithdraw={(id) => withdrawRequest(id, active.id)}
+            onResubmit={onRequestHelp}
+          />
+        ))
       )}
     </View>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-const c = StyleSheet.create({
-  section:     { borderRadius: 24, borderWidth: 1, marginBottom: 16, overflow: 'hidden' },
-  sectionHdr:  { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, paddingBottom: 12 },
-  hdrIcon:     { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
-  hdrTitle:    { fontSize: TYPO.caption, fontWeight: '900' },
-  askBtn:      { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 },
-  card:        { borderRadius: 18, borderWidth: 1, padding: 14, marginHorizontal: 16, marginBottom: 10 },
-  chip:        { paddingHorizontal: 11, paddingVertical: 6, borderRadius: 16, borderWidth: 1, marginRight: 7 },
-  smBtn:       { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12 },
-  noteInput:   { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, fontSize: TYPO.label, marginTop: 4 },
-  declineBox:  { borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 8 },
-  completedRow:{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1, padding: 10, marginHorizontal: 16, marginBottom: 8 },
-});

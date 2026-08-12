@@ -14,8 +14,8 @@ import Animated, {
   withTiming, withSpring, withDelay, withRepeat,
   Easing,
 } from 'react-native-reanimated';
-import Svg, { Path, G, Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
-import { Tagline } from './FamilyCubeLogo';
+import Svg, { Path } from 'react-native-svg';
+import { Tagline, IconCubeMark } from './FamilyCubeLogo';
 
 // ── Brand palette ─────────────────────────────────────────────────────────────
 const TEAL      = '#00BBA4';
@@ -23,70 +23,13 @@ const AMBER     = '#F5A623';
 const DARK_AMBER= '#D4870A';
 const PINK      = '#F04E98';
 const PURPLE    = '#9261C7';
-const TEAL2     = '#2DD4BF';
-const AMBER2    = '#FFB830';
-const PURPLE2   = '#B98EDB';
 const NAVY      = '#1E2D6B';
 
 const CUBE_SIZE  = 130;
 const CIRCLE_SZ  = Dimensions.get('window').width * 0.88;
 
-// ── Isometric cube face paths ─────────────────────────────────────────────────
-const TOP_FACE   = 'M112,25 L173,61 Q185,68 173,75 L112,111 Q100,118 88,111 L27,75 Q15,68 27,61 L88,25 Q100,18 112,25 Z';
-const LEFT_FACE  = 'M27,75 L88,111 Q100,118 100,132 L100,204 Q100,218 88,211 L27,175 Q15,168 15,154 L15,82 Q15,68 27,75 Z';
-const RIGHT_FACE = 'M185,82 L185,154 Q185,168 173,175 L112,211 Q100,218 100,204 L100,132 Q100,118 112,111 L173,75 Q185,68 185,82 Z';
-
-// ── Lucide icon paths ─────────────────────────────────────────────────────────
-const HOME_PATHS  = ["M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z", "M9 22V12h6v10"];
-const USERS_PATHS = ["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2", "M23 21v-2a4 4 0 0 0-3-3.87", "M16 3.13a4 4 0 0 1 0 7.75"];
-const HEART_PATH  = "M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z";
-
-const TOP_MATRIX   = 'matrix(2.83,0,0,1.67,66,48)';
-const LEFT_MATRIX  = 'matrix(1.42,0.83,0,1.67,40,113)';
-const RIGHT_MATRIX = 'matrix(-1.42,0.83,0,1.67,160,113)';
-
-// ── Cube ──────────────────────────────────────────────────────────────────────
-function SplashCubeMark({ size = 130 }: { size?: number }) {
-  const h = size * 1.18;
-  return (
-    <Svg width={size} height={h} viewBox="0 0 200 236">
-      <Defs>
-        <SvgGradient id="sp_top" x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0%" stopColor={AMBER2} /><Stop offset="100%" stopColor={AMBER} />
-        </SvgGradient>
-        <SvgGradient id="sp_left" x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0%" stopColor={TEAL2} /><Stop offset="100%" stopColor={TEAL} />
-        </SvgGradient>
-        <SvgGradient id="sp_right" x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0%" stopColor={PURPLE2} /><Stop offset="100%" stopColor={PURPLE} />
-        </SvgGradient>
-      </Defs>
-      <Path d={TOP_FACE} fill="url(#sp_top)" />
-      <G transform={TOP_MATRIX}>
-        <G stroke="rgba(255,255,255,0.92)" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-          {HOME_PATHS.map((d, i) => <Path key={i} d={d} />)}
-        </G>
-      </G>
-      <Path d={LEFT_FACE} fill="url(#sp_left)" />
-      <G transform={LEFT_MATRIX}>
-        <G stroke="rgba(255,255,255,0.92)" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-          {USERS_PATHS.map((d, i) => <Path key={i} d={d} />)}
-          <Circle cx={9} cy={7} r={4} />
-        </G>
-      </G>
-      <Path d={RIGHT_FACE} fill="url(#sp_right)" />
-      <G transform={RIGHT_MATRIX}>
-        <G stroke="rgba(255,255,255,0.92)" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-          <Path d={HEART_PATH} />
-        </G>
-      </G>
-      <Path
-        d="M100,18 L15,68 M100,18 L185,68 M100,118 L15,68 M100,118 L185,68 M100,118 L100,218 M15,68 L15,168 L100,218 M185,68 L185,168 L100,218"
-        fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth={1.5}
-      />
-    </Svg>
-  );
-}
+// ── Cube (shared IconCubeMark) ────────────────────────────────────────────────
+// SplashCubeMark is now IconCubeMark from FamilyCubeLogo (shared component)
 
 // ── Wordmark: "Family" unchanged; heart drops onto the "i" dot ───────────────
 //
@@ -209,7 +152,7 @@ export default function FamilyCubeSplashScreen() {
 
         {/* Cube — centered in upper portion of circle */}
         <Animated.View style={[s.cubeWrap, cubeAStyle]}>
-          <SplashCubeMark size={CUBE_SIZE} />
+          <IconCubeMark size={CUBE_SIZE} />
         </Animated.View>
 
         {/* Wordmark */}

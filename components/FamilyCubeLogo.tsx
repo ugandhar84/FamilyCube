@@ -131,6 +131,63 @@ export function CubeMark({ size = 100, uid = 'a' }: { size?: number; uid?: strin
   );
 }
 
+// ── IconCubeMark — same cube with Lucide-style icons (Home / Users / Heart) ───
+// Used on splash screen AND app header. Exported so both can share one source.
+
+const ICON_TOP_FACE   = 'M112,25 L173,61 Q185,68 173,75 L112,111 Q100,118 88,111 L27,75 Q15,68 27,61 L88,25 Q100,18 112,25 Z';
+const ICON_LEFT_FACE  = 'M27,75 L88,111 Q100,118 100,132 L100,204 Q100,218 88,211 L27,175 Q15,168 15,154 L15,82 Q15,68 27,75 Z';
+const ICON_RIGHT_FACE = 'M185,82 L185,154 Q185,168 173,175 L112,211 Q100,218 100,204 L100,132 Q100,118 112,111 L173,75 Q185,68 185,82 Z';
+
+// Isometric matrix transforms mapping 24×24 Lucide icon onto each face at 40%
+const ICON_TOP_MTX   = 'matrix(2.83,0,0,1.67,66,48)';
+const ICON_LEFT_MTX  = 'matrix(1.42,0.83,0,1.67,40,113)';
+const ICON_RIGHT_MTX = 'matrix(-1.42,0.83,0,1.67,160,113)';
+
+const LUCIDE_HOME  = ["M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z", "M9 22V12h6v10"];
+const LUCIDE_USERS = ["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2", "M23 21v-2a4 4 0 0 0-3-3.87", "M16 3.13a4 4 0 0 1 0 7.75"];
+const LUCIDE_HEART = "M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z";
+
+export function IconCubeMark({ size = 100 }: { size?: number }) {
+  const h = size * 1.18;
+  return (
+    <Svg width={size} height={h} viewBox="0 0 200 236">
+      <Defs>
+        <LinearGradient id="ic_top" x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0%" stopColor={BRAND.amber2} /><Stop offset="100%" stopColor={BRAND.amber} />
+        </LinearGradient>
+        <LinearGradient id="ic_left" x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0%" stopColor={BRAND.teal2} /><Stop offset="100%" stopColor={BRAND.teal} />
+        </LinearGradient>
+        <LinearGradient id="ic_right" x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0%" stopColor={BRAND.purple2} /><Stop offset="100%" stopColor={BRAND.purple} />
+        </LinearGradient>
+      </Defs>
+
+      {/* Top — amber — Home */}
+      <Path d={ICON_TOP_FACE} fill="url(#ic_top)" />
+      <Path transform={ICON_TOP_MTX} d={LUCIDE_HOME[0]} stroke="rgba(255,255,255,0.92)" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <Path transform={ICON_TOP_MTX} d={LUCIDE_HOME[1]} stroke="rgba(255,255,255,0.92)" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+
+      {/* Left — teal — Users */}
+      <Path d={ICON_LEFT_FACE} fill="url(#ic_left)" />
+      {LUCIDE_USERS.map((d, i) => (
+        <Path key={i} transform={ICON_LEFT_MTX} d={d} stroke="rgba(255,255,255,0.92)" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      ))}
+      <Circle transform={ICON_LEFT_MTX} cx={9} cy={7} r={4} stroke="rgba(255,255,255,0.92)" strokeWidth="2.2" fill="none" />
+
+      {/* Right — purple — Heart */}
+      <Path d={ICON_RIGHT_FACE} fill="url(#ic_right)" />
+      <Path transform={ICON_RIGHT_MTX} d={LUCIDE_HEART} stroke="rgba(255,255,255,0.92)" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+
+      {/* Edge highlights */}
+      <Path
+        d="M100,18 L15,68 M100,18 L185,68 M100,118 L15,68 M100,118 L185,68 M100,118 L100,218 M15,68 L15,168 L100,218 M185,68 L185,168 L100,218"
+        fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth={1.5}
+      />
+    </Svg>
+  );
+}
+
 // ── Wordmark ──────────────────────────────────────────────────────────────────
 // "Family" bold + small ♥ above the "i" + "Cube" multicolor
 

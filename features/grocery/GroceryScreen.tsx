@@ -14,8 +14,9 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, TextInput,
   Modal, KeyboardAvoidingView, Platform, Alert, Animated,
-  FlatList, ActivityIndicator, SectionList, Switch,
+  FlatList, ActivityIndicator, Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -240,10 +241,38 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
   colors: any; isDark: boolean;
 }) {
   const { checkRunItem, uncheckRunItem, addItemToRun, removeItemFromRun, startRun, completeRun, loadRunDetail } = useGroceryStore();
-  const [runItems,  setRunItems]  = useState<GroceryRunItem[]>([]);
-  const [adding,    setAdding]    = useState(false);
-  const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [tab,       setTab]       = useState<'items' | 'add'>('items');
+  const [runItems,         setRunItems]         = useState<GroceryRunItem[]>([]);
+  const [adding,           setAdding]           = useState(false);
+  const [loadingId,        setLoadingId]        = useState<string | null>(null);
+  const [tab,              setTab]              = useState<'items' | 'add' | 'receipt'>('items');
+  const [receiptUri,       setReceiptUri]       = useState<string | null>(null);
+  const [receiptAnalysis,  setReceiptAnalysis]  = useState<any | null>(null);
+  const [analyzingReceipt, setAnalyzingReceipt] = useState(false);
+
+  const pickReceipt = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission needed'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] as any, base64: true, quality: 0.8 });
+    if (!result.canceled && result.assets[0]) {
+      setReceiptUri(result.assets[0].uri);
+      await analyzeReceipt(result.assets[0].base64 ?? '');
+    }
+  };
+
+  const analyzeReceipt = async (base64: string) => {
+    if (!base64) return;
+    setAnalyzingReceipt(true); setReceiptAnalysis(null);
+    try {
+      const runItems_ = runItems.map(ri => ri.item?.name ?? ri.itemId);
+      const { data, error } = await supabase.functions.invoke('family-ai', {
+        body: { action: 'analyze_receipt', imageBase64: base64, runItems: runItems_ },
+      });
+      if (error) throw error;
+      setReceiptAnalysis(data);
+    } catch (e: any) {
+      Alert.alert('Receipt error', e?.message ?? 'Could not analyze receipt.');
+    } finally { setAnalyzingReceipt(false); }
+  };
 
   // Realtime subscription for run items
   const runItemSubRef = useRef<any>(null);
@@ -364,10 +393,10 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
           {/* Sub-tabs */}
           {!isDone && (
             <View style={[rd.tabRow, { borderColor: border, backgroundColor: isDark ? '#252540' : '#F3F4F6' }]}>
-              {(['items', 'add'] as const).map(t => (
+              {(['items', 'add', 'receipt'] as const).map(t => (
                 <Pressable key={t} onPress={() => setTab(t)} style={[rd.tabBtn, tab === t && { backgroundColor: colors.primary }]}>
                   <Text style={[rd.tabText, { color: tab === t ? '#FFF' : colors.textSecondary }]}>
-                    {t === 'items' ? `List (${runItems.length})` : '+ Add Items'}
+                    {t === 'items' ? `List (${runItems.length})` : t === 'add' ? '+ Add' : '🧾 Receipt'}
                   </Text>
                 </Pressable>
               ))}
@@ -445,6 +474,52 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
             </ScrollView>
           )}
 
+          {/* Receipt tab */}
+          {tab === 'receipt' && (
+            <ScrollView style={{ flex: 1, marginTop: 8 }} showsVerticalScrollIndicator={false}>
+              {!receiptUri ? (
+                <Pressable onPress={pickReceipt}
+                  style={{ borderWidth: 2, borderColor: colors.border, borderStyle: 'dashed', borderRadius: 14, padding: 32,
+                    alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                  <Text style={{ fontSize: 36 }}>🧾</Text>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>Upload Receipt</Text>
+                  <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>Tap to pick from your photo library. AI will analyze it.</Text>
+                </Pressable>
+              ) : (
+                <View style={{ gap: 12 }}>
+                  <Image source={{ uri: receiptUri }} style={{ width: '100%', height: 180, borderRadius: 12 }} resizeMode="cover" />
+                  {analyzingReceipt && (
+                    <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+                      <ActivityIndicator color={colors.primary} size="large" />
+                      <Text style={{ color: colors.textSecondary, marginTop: 10 }}>Analyzing receipt…</Text>
+                    </View>
+                  )}
+                  {receiptAnalysis && !analyzingReceipt && (
+                    <View style={{ backgroundColor: isDark ? '#1a1035' : '#f5f3ff', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colors.border }}>
+                      {receiptAnalysis.total && (
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary, marginBottom: 10 }}>
+                          Total: ${receiptAnalysis.total}
+                        </Text>
+                      )}
+                      {(receiptAnalysis.items ?? []).map((ri: any, idx: number) => (
+                        <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6,
+                          borderBottomWidth: idx < receiptAnalysis.items.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border }}>
+                          <Text style={{ fontSize: 13, color: colors.textPrimary, flex: 1 }}>{ri.name}</Text>
+                          {ri.price && <Text style={{ fontSize: 13, color: colors.textSecondary, fontWeight: '600' }}>${ri.price}</Text>}
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                  <Pressable onPress={() => { setReceiptUri(null); setReceiptAnalysis(null); }}
+                    style={{ borderWidth: 1.5, borderColor: colors.border, borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
+                    <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Upload different receipt</Text>
+                  </Pressable>
+                </View>
+              )}
+              <View style={{ height: 20 }} />
+            </ScrollView>
+          )}
+
           {/* Actions */}
           {!isDone && (
             <View style={{ gap: 8, marginTop: 12 }}>
@@ -471,36 +546,56 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
 
 // ─── Item Card ────────────────────────────────────────────────────────────────
 
-function ItemCard({ item, memberId, onBuy, onRemove, colors, isDark }: {
-  item: GroceryItem; memberId: string;
-  onBuy: () => void; onRemove: () => void;
+function fmtProvenance(item: GroceryItem, members: any[]) {
+  const time = new Date(item.createdAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const dateStr = fmtDate(item.createdAt);
+  if (item.aiGenerated) return `Added by ✨ AI · ${dateStr} ${time}`;
+  const member = members.find(m => m.id === item.addedBy);
+  const name   = member?.name?.split(' ')[0] ?? 'Someone';
+  return `Added by ${name} · ${dateStr}`;
+}
+
+function ItemCard({ item, members, selected, selecting, onBuy, onLongPress, onToggleSelect, colors, isDark }: {
+  item: GroceryItem; members: any[];
+  selected: boolean; selecting: boolean;
+  onBuy: () => void; onLongPress: () => void; onToggleSelect: () => void;
   colors: any; isDark: boolean;
 }) {
-  const cardBg  = isDark ? '#1F1F38' : '#FFFFFF';
-  const border  = isDark ? '#2D2D4E' : '#E5E7EB';
+  const cardBg = isDark ? '#1F1F38' : '#FFFFFF';
+  const border = selected ? colors.primary : (isDark ? '#2D2D4E' : '#E5E7EB');
 
   return (
-    <View style={[ic.card, { backgroundColor: cardBg, borderColor: border }]}>
+    <Pressable
+      onPress={selecting ? onToggleSelect : undefined}
+      onLongPress={onLongPress}
+      delayLongPress={400}
+      style={[ic.card, { backgroundColor: cardBg, borderColor: border, borderWidth: selected ? 2 : StyleSheet.hairlineWidth }]}
+    >
+      {/* Multi-select checkbox */}
+      {selecting && (
+        <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2,
+          borderColor: selected ? colors.primary : colors.border,
+          backgroundColor: selected ? colors.primary : 'transparent',
+          alignItems: 'center', justifyContent: 'center', marginRight: 4 }}>
+          {selected && <Ionicons name="checkmark" size={13} color="#fff" />}
+        </View>
+      )}
       <View style={{ flex: 1 }}>
         <Text style={[ic.name, { color: colors.textPrimary }]}>{item.name}</Text>
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
           {item.quantity && <Text style={[ic.tag, { color: colors.textSecondary }]}>📦 {item.quantity}</Text>}
           {item.category && <Text style={[ic.tag, { color: colors.textSecondary }]}>{CAT_EMOJI[item.category] ?? '•'} {item.category}</Text>}
           {item.storePreference && <Text style={[ic.tag, { color: colors.textSecondary }]}>🏪 {item.storePreference}</Text>}
-          {item.aiGenerated && <View style={[ic.aiBadge, { backgroundColor: isDark ? '#312E81' : '#EEF2FF' }]}><Text style={{ fontSize: 10, color: colors.primary }}>✨ AI</Text></View>}
         </View>
         {item.notes && <Text style={[ic.notes, { color: colors.textMuted ?? '#9CA3AF' }]} numberOfLines={1}>{item.notes}</Text>}
-        <Text style={[ic.ago, { color: colors.textMuted ?? '#9CA3AF' }]}>{fmtDate(item.createdAt)}</Text>
+        <Text style={[ic.ago, { color: colors.textMuted ?? '#9CA3AF' }]}>{fmtProvenance(item, members)}</Text>
       </View>
-      <View style={{ gap: 6 }}>
+      {!selecting && (
         <Pressable onPress={onBuy} style={[ic.buyBtn, { backgroundColor: colors.primary }]}>
           <Ionicons name="checkmark" size={14} color="#FFF" />
         </Pressable>
-        <Pressable onPress={onRemove} style={[ic.delBtn, { borderColor: isDark ? '#4B5563' : '#E5E7EB' }]}>
-          <Ionicons name="trash-outline" size={14} color="#EF4444" />
-        </Pressable>
-      </View>
-    </View>
+      )}
+    </Pressable>
   );
 }
 
@@ -554,207 +649,192 @@ interface AiSuggestedItem {
   isDuplicate?: boolean;
 }
 
-const AI_QUICK_PROMPTS = [
-  '🍝 Pasta night for 4',
-  '🥗 Healthy week meals',
-  '🎉 Weekend BBQ party',
-  '🥞 Weekend breakfast',
-  '🧁 Baking supplies',
-];
+const AI_QUICK_PROMPTS = ['Weekly staples', 'Healthy breakfast', 'School lunch', 'Weekend BBQ', 'Party for 12', 'Sunday cooking'];
 
-function AiGrocerySheet({ visible, onClose, existingItems, familyId, memberId, colors, isDark }: {
-  visible: boolean; onClose: () => void;
-  existingItems: GroceryItem[];
-  familyId: string; memberId: string;
-  colors: any; isDark: boolean;
+// Inline AI panel — shown inside the List tab ScrollView (CubeAI-style banner)
+function AiPanel({ familyId, memberId, existingItems, colors, isDark, onClose, onAdded }: {
+  familyId: string; memberId: string; existingItems: GroceryItem[];
+  colors: any; isDark: boolean; onClose: () => void; onAdded: () => void;
 }) {
   const { addItem } = useGroceryStore();
-  const [prompt, setPrompt]         = useState('');
-  const [loading, setLoading]       = useState(false);
-  const [suggestions, setSuggestions] = useState<AiSuggestedItem[]>([]);
-  const [selected, setSelected]     = useState<Set<number>>(new Set());
-  const [summary, setSummary]       = useState('');
-  const [adding, setAdding]         = useState(false);
+  const [aiPrompt, setAiPrompt]         = useState('');
+  const [aiLoading, setAiLoading]       = useState(false);
+  const [aiSuggested, setAiSuggested]   = useState<AiSuggestedItem[]>([]);
+  const [aiSelected, setAiSelected]     = useState<Set<number>>(new Set());
+  const [aiSummary, setAiSummary]       = useState('');
+  const [aiEditingIdx, setAiEditingIdx] = useState<number | null>(null);
+  const [aiEditName, setAiEditName]     = useState('');
+  const [aiEditQty, setAiEditQty]       = useState('');
+  const [adding, setAdding]             = useState(false);
 
-  const existingNames = useMemo(
-    () => new Set(existingItems.map(i => i.name.toLowerCase().trim())),
-    [existingItems],
-  );
+  const existingNames = useMemo(() => new Set(existingItems.map(i => i.name.toLowerCase().trim())), [existingItems]);
+  const P      = colors.primary;
+  const panelBg = isDark ? '#1a1035' : '#f5f3ff';
+  const chipBg  = isDark ? '#2d1a5e' : '#ede9fe';
+  const border  = isDark ? '#4C1D95' : '#DDD6FE';
 
-  const reset = () => {
-    setPrompt(''); setSuggestions([]); setSelected(new Set()); setSummary(''); setLoading(false);
-  };
-
-  const handleClose = () => { reset(); onClose(); };
-
-  const runAi = async (text: string) => {
+  const runAiGenerate = async (text: string) => {
     if (!text.trim()) return;
-    setLoading(true);
-    setSuggestions([]);
-    setSummary('');
+    setAiLoading(true); setAiSuggested([]); setAiSummary('');
     try {
       const { data, error } = await supabase.functions.invoke('family-ai', {
-        body: {
-          action: 'grocery_ai',
-          prompt: text.trim(),
+        body: { action: 'grocery_suggest', prompt: text.trim(),
           existingItems: existingItems.map(i => i.name),
-        },
+          localeHint: Intl.DateTimeFormat().resolvedOptions().locale },
       });
       if (error) throw error;
       const items: AiSuggestedItem[] = (data?.items ?? []).map((item: AiSuggestedItem) => ({
-        ...item,
-        isDuplicate: existingNames.has(item.name.toLowerCase().trim()),
+        ...item, isDuplicate: existingNames.has(item.name.toLowerCase().trim()),
       }));
-      setSuggestions(items);
-      setSummary(data?.summary ?? '');
-      // Pre-select all non-duplicates
+      setAiSuggested(items);
+      setAiSummary(data?.summary ?? '');
       const presel = new Set<number>();
       items.forEach((item, i) => { if (!item.isDuplicate) presel.add(i); });
-      setSelected(presel);
+      setAiSelected(presel);
     } catch (e: any) {
       Alert.alert('AI Error', e?.message ?? 'Something went wrong. Try again.');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setAiLoading(false); }
   };
 
-  const toggleItem = (i: number) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      next.has(i) ? next.delete(i) : next.add(i);
-      return next;
-    });
-  };
+  const toggleAi = (i: number) => setAiSelected(prev => {
+    const next = new Set(prev);
+    next.has(i) ? next.delete(i) : next.add(i);
+    return next;
+  });
 
   const handleAdd = async () => {
-    const toAdd = suggestions.filter((_, i) => selected.has(i));
+    const toAdd = aiSuggested.filter((_, i) => aiSelected.has(i));
     if (!toAdd.length) return;
     setAdding(true);
     try {
       await Promise.all(toAdd.map(item => addItem({
-        familyId, name: item.name,
-        quantity: item.quantity,
-        category: item.category,
-        storePreference: item.storePreference,
-        notes: item.notes,
-        addedBy: memberId,
-        aiGenerated: true,
+        familyId, name: item.name, quantity: item.quantity,
+        category: item.category, storePreference: item.storePreference,
+        notes: item.notes, addedBy: memberId, aiGenerated: true,
       })));
-      handleClose();
-    } finally {
-      setAdding(false);
-    }
+      setAiSuggested([]); setAiSelected(new Set()); setAiPrompt(''); setAiSummary('');
+      onAdded();
+    } finally { setAdding(false); }
   };
 
-  const bg     = isDark ? '#0f0a1e' : '#f5f3ff';
-  const border = isDark ? '#4C1D95' : '#DDD6FE';
-  const P      = colors.primary;
-
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end' }}>
-        <Pressable style={{ flex: 1 }} onPress={handleClose} />
-        <View style={[sh.sheet, { backgroundColor: isDark ? '#1a1035' : '#fff', borderColor: border, maxHeight: '88%' }]}>
-          <View style={sh.handle} />
-          <Text style={[sh.title, { color: colors.textPrimary }]}>✨ AI Grocery List</Text>
-
-          {/* Quick prompts */}
-          {!suggestions.length && !loading && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-              <View style={{ flexDirection: 'row', gap: 8, paddingRight: 8 }}>
-                {AI_QUICK_PROMPTS.map(p => (
-                  <Pressable key={p} onPress={() => { setPrompt(p); runAi(p); }}
-                    style={{ backgroundColor: bg, borderColor: border, borderWidth: 1.5, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 }}>
-                    <Text style={{ fontSize: 13, color: P, fontWeight: '600' }}>{p}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </ScrollView>
-          )}
-
-          {/* Text input */}
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
-            <TextInput
-              value={prompt} onChangeText={setPrompt}
-              placeholder="Describe what you need…"
-              placeholderTextColor={colors.placeholder}
-              style={[sh.input, { flex: 1, color: colors.textPrimary, borderColor: border, backgroundColor: bg, marginBottom: 0 }]}
-              returnKeyType="go"
-              onSubmitEditing={() => runAi(prompt)}
-            />
-            <Pressable
-              onPress={() => runAi(prompt)}
-              disabled={!prompt.trim() || loading}
-              style={{ backgroundColor: prompt.trim() ? P : colors.border, borderRadius: 12, paddingHorizontal: 14, justifyContent: 'center' }}
-            >
-              {loading
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <Ionicons name="sparkles" size={18} color="#fff" />
-              }
-            </Pressable>
-          </View>
-
-          {/* Loading state */}
-          {loading && (
-            <View style={{ alignItems: 'center', paddingVertical: 32 }}>
-              <ActivityIndicator color={P} size="large" />
-              <Text style={{ color: colors.textSecondary, marginTop: 12, fontSize: 14 }}>Thinking…</Text>
+    <View style={{ backgroundColor: panelBg, borderRadius: 16, borderWidth: 1.5, borderColor: border, padding: 14, marginBottom: 16 }}>
+      {/* Banner header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: P + '22', alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontSize: 18 }}>🤖</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>CubeAI</Text>
+            <View style={{ backgroundColor: P, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+              <Text style={{ fontSize: 9, color: '#fff', fontWeight: '700' }}>ACTIVE</Text>
             </View>
-          )}
+          </View>
+          <Text style={{ fontSize: 11, color: colors.textSecondary }}>Suggest items for your list</Text>
+        </View>
+        <Pressable onPress={onClose} style={{ padding: 6 }}>
+          <Ionicons name="close" size={18} color={colors.textSecondary} />
+        </Pressable>
+      </View>
 
-          {/* Results */}
-          {!loading && suggestions.length > 0 && (
-            <>
-              {!!summary && (
-                <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 12, lineHeight: 18 }}>{summary}</Text>
-              )}
-              <Text style={{ color: colors.textTertiary, fontSize: 11, fontWeight: '700', letterSpacing: 0.6, marginBottom: 8 }}>
-                {selected.size} OF {suggestions.length} SELECTED
-              </Text>
-              <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
-                {suggestions.map((item, i) => (
-                  <Pressable key={i} onPress={() => !item.isDuplicate && toggleItem(i)}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10,
-                      borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border,
-                      opacity: item.isDuplicate ? 0.5 : 1 }}>
-                    <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2,
-                      borderColor: item.isDuplicate ? colors.border : (selected.has(i) ? P : colors.border),
-                      backgroundColor: selected.has(i) && !item.isDuplicate ? P : 'transparent',
-                      alignItems: 'center', justifyContent: 'center' }}>
-                      {selected.has(i) && !item.isDuplicate && <Ionicons name="checkmark" size={13} color="#fff" />}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>{item.name}</Text>
-                        {item.isDuplicate && (
-                          <View style={{ backgroundColor: isDark ? '#1e293b' : '#F1F5F9', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
-                            <Text style={{ fontSize: 10, color: colors.textTertiary, fontWeight: '700' }}>HAVE</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-                        {[item.quantity, item.category, item.storePreference].filter(Boolean).join(' · ')}
-                      </Text>
-                    </View>
-                  </Pressable>
-                ))}
-              </ScrollView>
-
-              <Pressable
-                onPress={handleAdd}
-                disabled={!selected.size || adding}
-                style={[sh.btn, { backgroundColor: selected.size ? P : colors.border, marginTop: 16 }]}
-              >
-                {adding
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={sh.btnText}>Add {selected.size} item{selected.size !== 1 ? 's' : ''} to list</Text>
-                }
+      {/* Quick prompts */}
+      {!aiSuggested.length && !aiLoading && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+          <View style={{ flexDirection: 'row', gap: 6, paddingRight: 4 }}>
+            {AI_QUICK_PROMPTS.map(p => (
+              <Pressable key={p} onPress={() => { setAiPrompt(p); runAiGenerate(p); }}
+                style={{ backgroundColor: chipBg, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 }}>
+                <Text style={{ fontSize: 12, color: P, fontWeight: '600' }}>{p}</Text>
               </Pressable>
-            </>
+            ))}
+          </View>
+        </ScrollView>
+      )}
+
+      {/* Input row */}
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+        <TextInput
+          value={aiPrompt} onChangeText={setAiPrompt}
+          placeholder="Describe what you need…"
+          placeholderTextColor={colors.placeholder}
+          style={{ flex: 1, backgroundColor: isDark ? '#2d1a5e' : '#fff', borderRadius: 10, borderWidth: 1, borderColor: border,
+            paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: colors.textPrimary }}
+          returnKeyType="go" onSubmitEditing={() => runAiGenerate(aiPrompt)}
+        />
+        <Pressable onPress={() => runAiGenerate(aiPrompt)} disabled={!aiPrompt.trim() || aiLoading}
+          style={{ backgroundColor: aiPrompt.trim() && !aiLoading ? P : colors.border, borderRadius: 10, paddingHorizontal: 14, justifyContent: 'center' }}>
+          {aiLoading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Go</Text>}
+        </Pressable>
+      </View>
+
+      {/* Suggestions */}
+      {aiSuggested.map((item, i) => (
+        <View key={i}>
+          {aiEditingIdx === i ? (
+            <View style={{ backgroundColor: isDark ? '#2d1a5e' : '#fff', borderRadius: 10, borderWidth: 1, borderColor: border, padding: 10, marginBottom: 6 }}>
+              <TextInput value={aiEditName} onChangeText={setAiEditName}
+                style={{ fontSize: 14, color: colors.textPrimary, borderBottomWidth: 1, borderBottomColor: border, paddingBottom: 4, marginBottom: 8 }} />
+              <TextInput value={aiEditQty} onChangeText={setAiEditQty} placeholder="Qty"
+                placeholderTextColor={colors.placeholder}
+                style={{ fontSize: 13, color: colors.textSecondary }} />
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                <Pressable onPress={() => {
+                  const updated = [...aiSuggested];
+                  updated[i] = { ...updated[i], name: aiEditName.trim() || updated[i].name, quantity: aiEditQty.trim() || updated[i].quantity };
+                  setAiSuggested(updated); setAiEditingIdx(null);
+                }} style={{ flex: 1, backgroundColor: P, borderRadius: 8, paddingVertical: 7, alignItems: 'center' }}>
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Save</Text>
+                </Pressable>
+                <Pressable onPress={() => setAiEditingIdx(null)}
+                  style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 7, alignItems: 'center', borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={{ color: colors.textSecondary, fontWeight: '600', fontSize: 13 }}>Cancel</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <Pressable onPress={() => !item.isDuplicate && toggleAi(i)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9,
+                borderBottomWidth: i < aiSuggested.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: border,
+                opacity: item.isDuplicate ? 0.5 : 1 }}>
+              <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2,
+                borderColor: item.isDuplicate ? colors.border : (aiSelected.has(i) ? P : colors.border),
+                backgroundColor: aiSelected.has(i) && !item.isDuplicate ? P : 'transparent',
+                alignItems: 'center', justifyContent: 'center' }}>
+                {aiSelected.has(i) && !item.isDuplicate && <Ionicons name="checkmark" size={13} color="#fff" />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>{item.name}</Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary }}>{[item.quantity, item.category].filter(Boolean).join(' · ')}</Text>
+              </View>
+              {!item.isDuplicate && (
+                <>
+                  <Pressable onPress={() => { setAiEditingIdx(i); setAiEditName(item.name); setAiEditQty(item.quantity ?? ''); }}
+                    style={{ padding: 6 }}>
+                    <Ionicons name="pencil-outline" size={15} color={colors.textSecondary} />
+                  </Pressable>
+                  <Pressable onPress={() => { setAiSuggested(prev => prev.filter((_, j) => j !== i)); setAiSelected(prev => { const n = new Set(prev); n.delete(i); return n; }); }}
+                    style={{ padding: 6 }}>
+                    <Ionicons name="trash-outline" size={15} color="#ef4444" />
+                  </Pressable>
+                </>
+              )}
+            </Pressable>
           )}
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      ))}
+
+      {/* Add button */}
+      {aiSuggested.length > 0 && (
+        <Pressable onPress={handleAdd} disabled={!aiSelected.size || adding}
+          style={{ backgroundColor: aiSelected.size ? '#10b981' : colors.border, borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 10 }}>
+          {adding
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Add {aiSelected.size} item{aiSelected.size !== 1 ? 's' : ''} to list</Text>
+          }
+        </Pressable>
+      )}
+    </View>
   );
 }
 
@@ -766,11 +846,13 @@ export default function GroceryScreen() {
   const { members, activeMemberId } = useFamilyStore();
   const { items, runs, loading, load, addItem, buyItem, removeItem, deleteRun } = useGroceryStore();
 
-  const [tab, setTab]             = useState<'list' | 'runs'>('list');
+  const [tab, setTab]                   = useState<'list' | 'runs'>('list');
   const [showAddItem, setShowAddItem]   = useState(false);
   const [showNewRun,  setShowNewRun]    = useState(false);
-  const [showAi,      setShowAi]        = useState(false);
+  const [showAiPanel, setShowAiPanel]   = useState(false);
   const [selectedRun, setSelectedRun]  = useState<GroceryRun | null>(null);
+  const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set());
+  const isSelecting = selectedIds.size > 0;
 
   const activeMember = members.find(m => m.id === activeMemberId);
   const familyId = members[0]?.id ? 'family-1' : 'family-1'; // TODO: real family id from store
@@ -825,7 +907,7 @@ export default function GroceryScreen() {
               <Text style={s.countText}>{items.length}</Text>
             </View>
           )}
-          <Pressable onPress={() => setShowAi(true)} style={[s.headerBtn, { borderColor: border }]}>
+          <Pressable onPress={() => setShowAiPanel(v => !v)} style={[s.headerBtn, { borderColor: showAiPanel ? P : border, backgroundColor: showAiPanel ? P + '15' : 'transparent' }]}>
             <Text style={{ fontSize: 14 }}>✨</Text>
             <Text style={[s.headerBtnText, { color: P }]}>AI</Text>
           </Pressable>
@@ -865,12 +947,23 @@ export default function GroceryScreen() {
       {loading ? (
         <ActivityIndicator style={{ marginTop: 60 }} color={P} />
       ) : tab === 'list' ? (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+        <>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+          {/* Inline AI panel */}
+          {showAiPanel && (
+            <AiPanel
+              familyId={familyId} memberId={activeMemberId ?? ''}
+              existingItems={items} colors={colors} isDark={isDark}
+              onClose={() => setShowAiPanel(false)}
+              onAdded={() => setShowAiPanel(false)}
+            />
+          )}
+
           {items.length === 0 ? (
             <View style={s.empty}>
               <Text style={s.emptyEmoji}>🛒</Text>
               <Text style={[s.emptyTitle, { color: colors.textPrimary }]}>Nothing on the list</Text>
-              <Text style={[s.emptyDesc, { color: colors.textSecondary }]}>Tap + to add items. Anyone in the family can add when they think of something.</Text>
+              <Text style={[s.emptyDesc, { color: colors.textSecondary }]}>Tap + to add items or use ✨ AI to suggest.</Text>
             </View>
           ) : (
             groupedItems.map(([store, storeItems]) => (
@@ -882,9 +975,16 @@ export default function GroceryScreen() {
                   <ItemCard
                     key={item.id}
                     item={item}
-                    memberId={activeMemberId ?? ''}
+                    members={members}
+                    selected={selectedIds.has(item.id)}
+                    selecting={isSelecting}
                     onBuy={() => handleBuyItem(item)}
-                    onRemove={() => removeItem(item.id)}
+                    onLongPress={() => setSelectedIds(prev => { const n = new Set(prev); n.add(item.id); return n; })}
+                    onToggleSelect={() => setSelectedIds(prev => {
+                      const n = new Set(prev);
+                      n.has(item.id) ? n.delete(item.id) : n.add(item.id);
+                      return n;
+                    })}
                     colors={colors}
                     isDark={isDark}
                   />
@@ -893,6 +993,32 @@ export default function GroceryScreen() {
             ))
           )}
         </ScrollView>
+
+        {/* Bulk-delete toolbar */}
+        {isSelecting && (
+          <View style={{ position: 'absolute', bottom: 90, left: 16, right: 16, flexDirection: 'row', alignItems: 'center',
+            backgroundColor: isDark ? '#1F1F38' : '#fff', borderRadius: 14, borderWidth: 1, borderColor: colors.border,
+            padding: 12, gap: 12, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 10, elevation: 6 }}>
+            <Text style={{ flex: 1, fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>
+              {selectedIds.size} item{selectedIds.size !== 1 ? 's' : ''} selected
+            </Text>
+            <Pressable onPress={() => setSelectedIds(new Set())}
+              style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: colors.border }}>
+              <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancel</Text>
+            </Pressable>
+            <Pressable onPress={() => Alert.alert('Delete items?', `Remove ${selectedIds.size} item${selectedIds.size !== 1 ? 's' : ''} from the list?`, [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Delete', style: 'destructive', onPress: () => {
+                selectedIds.forEach(id => removeItem(id));
+                setSelectedIds(new Set());
+              }},
+            ])}
+              style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: '#ef4444' }}>
+              <Text style={{ color: '#fff', fontWeight: '700' }}>Delete</Text>
+            </Pressable>
+          </View>
+        )}
+        </>
       ) : (
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
           {runs.length === 0 ? (
@@ -964,15 +1090,6 @@ export default function GroceryScreen() {
         onClose={() => setSelectedRun(null)}
         memberId={activeMemberId ?? ''}
         pendingItems={items}
-        colors={colors}
-        isDark={isDark}
-      />
-      <AiGrocerySheet
-        visible={showAi}
-        onClose={() => setShowAi(false)}
-        existingItems={items}
-        familyId={familyId}
-        memberId={activeMemberId ?? ''}
         colors={colors}
         isDark={isDark}
       />

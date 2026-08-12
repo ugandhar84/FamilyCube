@@ -330,70 +330,73 @@ export default function StoreScreen() {
         onPersonaPress={() => setSwitcherOpen(true)}
       />
 
-      {/* ── Sub-header ── */}
-      <View style={[s.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary }}>
-          Family Perks Store
-        </Text>
-        {isKid ? (
-          <View style={[s.coinBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textSecondary }}>
-              Balance: <Text style={{ color: '#F5A623', fontWeight: '900' }}>{myCoins} 🪙</Text>
-            </Text>
-          </View>
-        ) : isParent ? (
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Pressable onPress={() => setShowAiPanel(v => !v)}
-              style={[s.createBtn, { backgroundColor: showAiPanel ? '#5B21B6' : '#7C3AED' }]}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>✨ AI Perks</Text>
-            </Pressable>
-            <Pressable onPress={() => { setEditing(null); setShowCreate(true); }}
-              style={[s.createBtn, { backgroundColor: colors.teal }]}>
-              <Ionicons name="add" size={14} color="#fff" />
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff', marginLeft: 3 }}>Add Perk</Text>
-            </Pressable>
-          </View>
-        ) : null}
-      </View>
-
-      {/* ── AI Panel ── */}
-      {isParent && showAiPanel && (
-        <AiPerksPanel
-          onAdd={handleAddAiSuggestion}
-          onClose={() => setShowAiPanel(false)}
-          colors={colors}
-          isDark={isDark}
-        />
-      )}
-
       <ScrollView showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 12, paddingBottom: 40 }}>
-        <Text style={{ fontSize: 10, color: colors.textTertiary, marginBottom: 12, lineHeight: 16 }}>
-          Perks are redeemed from your Main Wallet. Grandparent Bonus coins are cashed out via parents.
-        </Text>
+        contentContainerStyle={{ paddingBottom: 40 }}>
 
-        {rewards.length === 0 ? (
-          <View style={[s.emptyBox, { borderColor: colors.border, backgroundColor: colors.card }]}>
-            <Text style={{ fontSize: 32, marginBottom: 8 }}>🎁</Text>
-            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textTertiary }}>No perks yet</Text>
-            {isParent && (
-              <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 4, textAlign: 'center' }}>
-                Tap "+ Add Perk" or try "✨ AI Perks" for suggestions
+        {/* ── Page title row ── */}
+        <View style={[s.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+          <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>
+            Family Perks Store
+          </Text>
+          {isKid ? (
+            <View style={[s.coinBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textSecondary }}>
+                Balance: <Text style={{ color: '#F5A623', fontWeight: '900' }}>{myCoins} 🪙</Text>
               </Text>
-            )}
-          </View>
-        ) : (
-          <View style={s.grid}>
-            {rewards.map(r => (
-              <PerkCard key={r.id} reward={r} myCoins={myCoins}
-                isKid={isKid} isParent={isParent} colors={colors} isDark={isDark}
-                onRedeem={handleRedeem}
-                onEdit={r => { setEditing(r); setShowCreate(true); }}
-                onDelete={handleDelete}
-              />
-            ))}
-          </View>
+            </View>
+          ) : isParent ? (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Pressable onPress={() => setShowAiPanel(v => !v)}
+                style={[s.createBtn, { backgroundColor: showAiPanel ? '#5B21B6' : '#7C3AED' }]}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>✨ AI Perks</Text>
+              </Pressable>
+              <Pressable onPress={() => { setEditing(null); setShowCreate(true); }}
+                style={[s.createBtn, { backgroundColor: colors.teal }]}>
+                <Ionicons name="add" size={14} color="#fff" />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff', marginLeft: 3 }}>Add Perk</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+
+        {/* ── AI Panel ── */}
+        {isParent && showAiPanel && (
+          <AiPerksPanel
+            onAdd={handleAddAiSuggestion}
+            onClose={() => setShowAiPanel(false)}
+            colors={colors}
+            isDark={isDark}
+          />
         )}
+
+        <View style={{ padding: 12 }}>
+          <Text style={{ fontSize: 10, color: colors.textTertiary, marginBottom: 12, lineHeight: 16 }}>
+            Perks are redeemed from your Main Wallet. Grandparent Bonus coins are cashed out via parents.
+          </Text>
+
+          {rewards.length === 0 ? (
+            <View style={[s.emptyBox, { borderColor: colors.border, backgroundColor: colors.card }]}>
+              <Text style={{ fontSize: 32, marginBottom: 8 }}>🎁</Text>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textTertiary }}>No perks yet</Text>
+              {isParent && (
+                <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 4, textAlign: 'center' }}>
+                  Tap "+ Add Perk" or try "✨ AI Perks" for suggestions
+                </Text>
+              )}
+            </View>
+          ) : (
+            <View style={s.grid}>
+              {rewards.map(r => (
+                <PerkCard key={r.id} reward={r} myCoins={myCoins}
+                  isKid={isKid} isParent={isParent} colors={colors} isDark={isDark}
+                  onRedeem={handleRedeem}
+                  onEdit={r => { setEditing(r); setShowCreate(true); }}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </View>
+          )}
+        </View>
       </ScrollView>
 
       <PerkModal

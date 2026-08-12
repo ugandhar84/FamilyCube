@@ -421,6 +421,7 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
     }
   }, [highlighted]);
   const highlightBorder = highlightAnim.interpolate({ inputRange: [0, 1], outputRange: ['transparent', '#F5A623'] });
+  const highlightWidth  = highlightAnim.interpolate({ inputRange: [0, 0.05, 1], outputRange: [0, 2, 2] });
 
   // WhatsApp style — tail on the last bubble of each group (sender side, bottom corner)
   const btlr = BUBBLE_R;
@@ -464,7 +465,7 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
         )}
 
         <Animated.View style={{ maxWidth: '78%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 1,
-          borderRadius: BUBBLE_R, borderWidth: highlighted ? 2 : 0, borderColor: highlightBorder }}>
+          borderRadius: BUBBLE_R, borderWidth: highlightWidth, borderColor: highlightBorder }}>
           {/* Sender name — others, first bubble only */}
           {!isMe && isGroupFirst && (
             <Text style={{ fontSize: 12, fontWeight: '700', color: senderColor, marginLeft: 2, marginBottom: 1 }}>

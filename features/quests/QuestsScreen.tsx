@@ -492,8 +492,8 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
               onBlur={() => setTimeout(() => { if (!suggPressing.current) setTitleFocused(false); }, 250)}
               returnKeyType="next"
             />
-            {/* Dynamic suggestion pills */}
-            {(titleFocused || title.length > 0) && suggestions.length > 0 && (
+            {/* Dynamic suggestion pills — always visible */}
+            {suggestions.length > 0 && (
               <View style={{ marginTop: -6, marginBottom: 12 }}>
                 <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 5, fontWeight: '600' }}>
                   {title.trim() ? 'Matching suggestions' : 'Quick picks — tap to fill'}

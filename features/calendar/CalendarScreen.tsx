@@ -1140,10 +1140,10 @@ export default function CalendarScreen() {
                 </View>
               );
             })}
-            </View>{/* end cards column */}
-          </View>{/* end timeline flex row */}
+            </View>
+          </View>
         )}
-        </View>{/* end timeline View */}
+        </View>
       </ScrollView>
 
       {/* Modals */}

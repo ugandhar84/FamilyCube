@@ -133,68 +133,85 @@ function buildFomoResult(quests: any[], kids: any[]) {
   const now   = Date.now();
   const today = new Date().toISOString().split('T')[0];
 
-  // Overdue assigned quests (not pool, still todo, due today or earlier)
-  const overdue = quests.filter(q =>
-    q.status === 'todo' && !q.isPool && q.dueDate && q.dueDate <= today
+  // ── BONUS targets: need positive motivation (no one has acted yet) ──────────
+  // Pool bounties with zero claimants — incentivise first grab
+  const unclaimedPool = quests.filter(q =>
+    q.isPool && q.status === 'todo' && q.participants.length === 0
   );
-  // Pool bounties nobody has claimed yet
-  const unclaimed = quests.filter(q => q.isPool && q.status === 'todo' && q.participants.length === 0);
-  // In-progress quests stuck for >4 hrs
-  const stuckInProgress = quests.filter(q =>
-    q.status === 'in_progress' && q.claimedAt &&
+  // Assigned quests not yet started (status=todo) that are overdue
+  const assignedNotStarted = quests.filter(q =>
+    !q.isPool && q.status === 'todo' && q.dueDate && q.dueDate <= today
+  );
+
+  // ── PENALTY targets: someone dropped the ball after claiming ────────────────
+  // Kid claimed the quest (blocked others), then ghosted it → overdue
+  const claimedAndGhosted = quests.filter(q =>
+    !q.isPool && q.status === 'claimed' && q.dueDate && q.dueDate <= today
+  );
+  // Kid started (in_progress) but stuck >4h AND already overdue — won't finish
+  const stuckOverdue = quests.filter(q =>
+    q.status === 'in_progress' && q.claimedAt && q.dueDate && q.dueDate <= today &&
     (now - new Date(q.claimedAt).getTime()) > 4 * 3600_000
   );
 
-  // Flash bonus targets — bonus = 25% of base coins (min 10, max 50), rounded to 5
-  const flashCandidates = [...overdue, ...unclaimed, ...stuckInProgress].slice(0, 4);
+  // Flash bonus candidates — only true "no-one-acted" cases, up to 4
+  const flashCandidates = [...unclaimedPool, ...assignedNotStarted].slice(0, 4);
   const urgentAlerts = flashCandidates.map((q, i) => {
-    const rawBonus  = Math.max(10, Math.min(50, Math.round((q.coins * 0.25) / 5) * 5));
-    const hoursLeft = i < 2 ? 2 : 4;   // first two get 2h urgency, rest 4h
-    const expiresAt = new Date(now + hoursLeft * 3600_000).toISOString();
+    const rawBonus    = Math.max(10, Math.min(50, Math.round((q.coins * 0.25) / 5) * 5));
+    const hoursLeft   = i < 2 ? 2 : 4;
+    const expiresAt   = new Date(now + hoursLeft * 3600_000).toISOString();
     const alreadyHasBonus = q.bonusCoins > 0 && q.bonusExpiresAt && new Date(q.bonusExpiresAt) > new Date();
     const daysOverdue = q.dueDate
       ? Math.max(0, Math.floor((now - new Date(q.dueDate).getTime()) / 86400_000))
       : 0;
-    let fomoMessage = '';
-    if (q.isPool)           fomoMessage = `⚡ Nobody has claimed this yet — a +${rawBonus}🪙 flash bonus expires in ${hoursLeft}h!`;
-    else if (daysOverdue>1) fomoMessage = `🚨 ${daysOverdue}d overdue! Flash bonus to motivate ${q.assignedToId ? 'completion' : 'a claim'} in ${hoursLeft}h.`;
-    else if (daysOverdue>0) fomoMessage = `⏰ Due today and still not done — flash bonus expires in ${hoursLeft}h!`;
-    else                    fomoMessage = `🏃 In progress for ${Math.floor((now - new Date(q.claimedAt).getTime()) / 3600_000)}h — bonus to push it over the line!`;
+    const fomoMessage = q.isPool
+      ? `⚡ Nobody has claimed this yet — +${rawBonus}🪙 flash bonus expires in ${hoursLeft}h!`
+      : daysOverdue > 1
+        ? `🚨 ${daysOverdue}d overdue and not even started — flash bonus to motivate action in ${hoursLeft}h.`
+        : `⏰ Due today and not started — flash bonus expires in ${hoursLeft}h!`;
     return { questId: q.id, questTitle: q.title, bonusCoins: rawBonus, bonusExpiresAt: expiresAt, fomoMessage, alreadyHasBonus };
   });
 
-  // Penalty / force-assign targets — overdue urgent quests with no active work
+  // Penalty candidates — ghosted-after-claiming + stuck-overdue, priority-sorted
+  const priorityRank = (p: string) => p === 'urgent' ? 3 : p === 'high' ? 2 : p === 'medium' ? 1 : 0;
+  const penaltyCandidates = [...claimedAndGhosted, ...stuckOverdue]
+    .sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority))
+    .slice(0, 3);
+
   const penaltyKids = [...kids].sort((a, b) => {
-    const loadA = quests.filter(x => x.assignedToId === a.id && x.status !== 'done' && x.status !== 'approved').length;
-    const loadB = quests.filter(x => x.assignedToId === b.id && x.status !== 'done' && x.status !== 'approved').length;
-    return loadA - loadB;
+    const load = (k: any) => quests.filter(x => x.assignedToId === k.id && x.status !== 'done' && x.status !== 'approved').length;
+    return load(a) - load(b);
   });
-  const penaltyCandidates = overdue.filter(q => q.priority === 'urgent' || q.priority === 'high').slice(0, 3);
+
   const penaltiesAndForceAssigns = penaltyCandidates.map(q => {
     const currentAssignee = kids.find((k: any) => k.id === q.assignedToId);
-    const reassignTarget  = currentAssignee
-      ? penaltyKids.find((k: any) => k.id !== currentAssignee.id) ?? penaltyKids[0]
-      : penaltyKids[0];
+    const reassignTarget  = penaltyKids.find((k: any) => k.id !== currentAssignee?.id) ?? penaltyKids[0];
     const daysOver = q.dueDate
       ? Math.max(0, Math.floor((now - new Date(q.dueDate).getTime()) / 86400_000))
       : 0;
+    const isGhosted = q.status === 'claimed';
     return {
-      questId:       q.id,
-      questTitle:    q.title,
-      targetKidId:   reassignTarget?.id,
-      targetKidName: reassignTarget?.name ?? 'the least busy kid',
+      questId:        q.id,
+      questTitle:     q.title,
+      targetKidId:    reassignTarget?.id,
+      targetKidName:  reassignTarget?.name ?? 'the least busy kid',
       currentKidName: currentAssignee?.name,
-      daysOverdue:   daysOver,
+      daysOverdue:    daysOver,
+      penaltyReason:  isGhosted
+        ? `${currentAssignee?.name ?? 'A kid'} claimed this quest ${daysOver}d ago then did nothing — blocking others from grabbing it.`
+        : `${currentAssignee?.name ?? 'A kid'} started this ${daysOver}d ago and hasn't submitted — now overdue.`,
       action: currentAssignee
-        ? `${daysOver}d overdue — reassigning from ${currentAssignee.name} to ${reassignTarget?.name ?? 'least busy kid'}`
-        : `${daysOver}d overdue with no assignee — force-assigning to ${reassignTarget?.name ?? 'least busy kid'}`,
+        ? `${isGhosted ? 'Ghosted' : 'Stuck'} ${daysOver}d — reassign from ${currentAssignee.name} to ${reassignTarget?.name ?? 'least busy kid'}`
+        : `${daysOver}d overdue, no assignee — force-assign to ${reassignTarget?.name ?? 'least busy kid'}`,
     };
   });
 
-  const totalIssues = overdue.length + unclaimed.length + stuckInProgress.length;
+  const totalBonus    = flashCandidates.length;
+  const totalPenalty  = penaltyCandidates.length;
+  const totalIssues   = totalBonus + totalPenalty;
   const fomoNudgeSummary = totalIssues === 0
     ? 'All quests are on track! You can still add flash bonuses to pool bounties to drive faster claims.'
-    : `${totalIssues} quest${totalIssues > 1 ? 's need' : ' needs'} attention — ${overdue.length} overdue, ${unclaimed.length} unclaimed, ${stuckInProgress.length} stuck.`;
+    : `${totalIssues} quest${totalIssues > 1 ? 's need' : ' needs'} attention — ${totalBonus} need a bonus nudge, ${totalPenalty} need a penalty action.`;
 
   return { fomoNudgeSummary, urgentAlerts, penaltiesAndForceAssigns };
 }
@@ -205,21 +222,48 @@ function simulateFomo(quests: any[], kids: any[]) {
 }
 
 function simulateAdvice(quests: any[], kids: any[]) {
-  const topKid = kids.reduce((best: any, k: any) => {
-    const done = quests.filter(q => q.assignedToId === k.id && q.status === 'done').length;
-    return (!best || done > best.done) ? { ...k, done } : best;
-  }, null);
+  const today = new Date().toISOString().split('T')[0];
+
+  // Per-kid stats — real data, not mock
+  const kidStats = kids.map((k: any) => {
+    const assigned  = quests.filter(q => q.assignedToId === k.id);
+    const done      = assigned.filter(q => q.status === 'done' || q.status === 'approved').length;
+    const overdue   = assigned.filter(q => q.dueDate && q.dueDate <= today && q.status !== 'done' && q.status !== 'approved').length;
+    // Cheat signal: claimed but never submitted (ghosted) quests
+    const ghosted   = assigned.filter(q => q.status === 'claimed' && q.dueDate && q.dueDate <= today).length;
+    const inProgress = assigned.filter(q => q.status === 'in_progress').length;
+    return { ...k, done, overdue, ghosted, inProgress, total: assigned.length };
+  });
+
+  const topKid    = kidStats.reduce((best: any, k: any) => (!best || k.done > best.done) ? k : best, null);
+  const cheaters  = kidStats.filter((k: any) => k.ghosted > 0);
+  const strugglers = kidStats.filter((k: any) => k.overdue > 1 && k.ghosted === 0);
+
+  const coachingTip = cheaters.length > 0
+    ? `⚠️ ${cheaters.map((k: any) => k.name).join(', ')} ${cheaters.length > 1 ? 'have' : 'has'} claimed quest${cheaters.length > 1 ? 's' : ''} without completing them. Consider a family rule: uncompleted claimed quests lose 10🪙 after 24h — this closes the "claim and ignore" loophole.`
+    : strugglers.length > 0
+      ? `${strugglers[0].name} has ${strugglers[0].overdue} overdue quests. Try breaking them into smaller 10-minute tasks — big chores feel overwhelming and cause avoidance.`
+      : 'Try a "Power Hour" on Saturdays — everyone does chores together with upbeat music. Kids complete 3× more and actually enjoy it when parents participate!';
+
+  const kidEncouragementNotes = Object.fromEntries(kidStats.map((k: any) => {
+    let note = '';
+    if (k.ghosted > 0) {
+      note = `⚠️ ${k.name} claimed ${k.ghosted} quest${k.ghosted > 1 ? 's' : ''} but never finished ${k.ghosted > 1 ? 'them' : 'it'}. Have a chat — this blocks other kids from grabbing those bounties and earns no coins.`;
+    } else if (k.done === 0 && k.overdue > 0) {
+      note = `😟 ${k.name} has ${k.overdue} overdue quest${k.overdue > 1 ? 's' : ''} and hasn't completed any yet. Try sitting together for the first one to break the barrier.`;
+    } else if (k.done > 2) {
+      note = `⭐ Amazing work, ${k.name}! You've completed ${k.done} quest${k.done > 1 ? 's' : ''} — you're leading the family leaderboard. Keep that streak!`;
+    } else {
+      note = `💪 Great effort ${k.name}! ${k.inProgress > 0 ? `You have ${k.inProgress} in progress — finish strong!` : 'Just 2 more quests and you can unlock a reward from the store!'}`;
+    }
+    return [k.name, note];
+  }));
 
   return new Promise<any>(res => setTimeout(() => res({
-    familyCoachingTip: 'Try a "Power Hour" on Saturdays — everyone does chores together with upbeat music. Kids complete 3× more and actually enjoy it when parents participate!',
-    topPerformer: topKid?.name ?? kids[0]?.name ?? 'Leo',
-    kidEncouragementNotes: Object.fromEntries(kids.map((k: any, i: number) => [
-      k.name,
-      i === 0
-        ? `⭐ Amazing work, ${k.name}! You're leading the family leaderboard. Keep that streak!`
-        : `💪 Great effort ${k.name}! Just 2 more quests and you can unlock a reward from the store!`,
-    ])),
-  }), 1400));
+    familyCoachingTip: coachingTip,
+    topPerformer: topKid?.name ?? kids[0]?.name ?? '—',
+    kidEncouragementNotes,
+  }), 800));
 }
 
 // ─── DECLINE PRESETS ──────────────────────────────────────────────────────────
@@ -1453,7 +1497,12 @@ function FomoCard({ result, onApply, appliedActions, onClose, isDark, colors }: 
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, flex: 1 }}>{pen.questTitle}</Text>
                   <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '900', color: '#EF4444' }}>🔴 {pen.daysOverdue}d overdue</Text>
                 </View>
-                <Text style={{ fontSize: TYPO.micro + 1, color: '#EF4444', marginBottom: 8 }}>{pen.action}</Text>
+                {pen.penaltyReason && (
+                  <View style={{ backgroundColor: '#EF444415', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, marginBottom: 6 }}>
+                    <Text style={{ fontSize: TYPO.micro + 1, color: '#EF4444', fontWeight: '600', lineHeight: 16 }}>{pen.penaltyReason}</Text>
+                  </View>
+                )}
+                <Text style={{ fontSize: TYPO.micro + 1, color: isDark ? '#94A3B8' : '#64748B', marginBottom: 8 }}>{pen.action}</Text>
                 <View style={{ alignItems: 'flex-end' }}>
                   {applied
                     ? <View style={{ backgroundColor: '#EF4444', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 }}><Text style={{ color: '#fff', fontSize: TYPO.micro + 1, fontWeight: '900' }}>⚠️ Force Assigned</Text></View>

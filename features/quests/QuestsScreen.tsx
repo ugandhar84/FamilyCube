@@ -102,42 +102,93 @@ const I = {
 };
 
 // ─── AI Simulation helpers ────────────────────────────────────────────────────
+
 function simulateAutoBalance(quests: any[], kids: any[]) {
   return new Promise<any>(res => setTimeout(() => res({
     summary: `Analyzed ${quests.length} household quests for ${kids.length} kids. ${kids[0]?.name ?? 'Leo'} has the heaviest load — redistributing 2 tasks for better age-appropriate balance.`,
-    assignments: quests.filter(q => q.status === 'todo').slice(0, 3).map((q, i) => ({
+    assignments: quests.filter(q => q.status === 'todo' && q.assignedToId).slice(0, 3).map((q, i) => ({
+      questId: q.id,
       questTitle: q.title,
+      currentKidId: q.assignedToId,
+      recommendedKidId: kids[i % kids.length]?.id,
       recommendedKid: kids[i % kids.length]?.name ?? 'Leo',
       reason: `Age-appropriate for ${kids[i % kids.length]?.name ?? 'Leo'} based on current workload`,
     })),
     newSuggestedQuests: [
-      { title: 'Organize bookshelf', coins: 20, assignee: kids[1]?.name ?? 'Maya', reason: 'Great for age 7 — builds organization skills' },
-      { title: 'Feed the pet', coins: 15, assignee: kids[0]?.name ?? 'Leo', reason: 'Daily responsibility training' },
+      { title: 'Organize bookshelf', coins: 20, reason: 'Great for building organization skills' },
+      { title: 'Wipe down counters', coins: 15, reason: 'Quick daily responsibility, 5 minutes max' },
     ],
   }), 1800));
 }
-function simulateFomo(quests: any[]) {
+
+// FOMO engine — references real quest IDs so Apply can write to DB
+function simulateFomo(quests: any[], kids: any[]) {
+  const today = new Date().toISOString().split('T')[0];
+  // Overdue: due today or earlier, still todo
+  const overdue = quests.filter(q =>
+    q.status === 'todo' && q.dueDate && q.dueDate <= today && !q.isPool
+  );
+  // Pool bounties that nobody claimed yet
+  const unclaimed = quests.filter(q => q.isPool && q.status === 'todo');
+  // Urgent or high priority todo
+  const urgentUndone = quests.filter(q =>
+    q.status === 'todo' && (q.priority === 'urgent' || q.priority === 'high') && !q.isPool
+  );
+
+  const twoHoursFromNow = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+  const fourHoursFromNow = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+
+  const flashTargets = [...overdue, ...unclaimed].slice(0, 3).map((q, i) => ({
+    questId:       q.id,
+    questTitle:    q.title,
+    bonusCoins:    i === 0 ? 20 : 15,
+    bonusExpiresAt: i === 0 ? twoHoursFromNow : fourHoursFromNow,
+    fomoMessage:   i === 0
+      ? `⏰ Flash bonus expires in 2h! Your siblings are eyeing this +${i === 0 ? 20 : 15}🪙 bonus!`
+      : `⚡ Bonus expires in 4h — grab it before someone else does!`,
+  }));
+
+  // Force-assign targets: urgent quests overdue with no one working on them
+  const forceTargets = urgentUndone.slice(0, 1).map(q => {
+    const leastBusy = kids.reduce((best: any, k: any) => {
+      const load = quests.filter(x => x.assignedToId === k.id && x.status !== 'done').length;
+      return (!best || load < best.load) ? { ...k, load } : best;
+    }, null);
+    return {
+      questId:    q.id,
+      questTitle: q.title,
+      targetKidId:   leastBusy?.id,
+      targetKidName: leastBusy?.name ?? 'the least busy kid',
+      action: `Overdue — force-assigning to ${leastBusy?.name ?? 'least busy kid'} and sending push nudge`,
+    };
+  });
+
+  const overdueCount = overdue.length + unclaimed.length;
+  const summary = overdueCount > 0
+    ? `${overdueCount} quest${overdueCount > 1 ? 's are' : ' is'} overdue or unclaimed. Activating flash bonuses to drive completion before game night!`
+    : `All quests look timely! Add flash bonuses to pool bounties to drive faster claims.`;
+
   return new Promise<any>(res => setTimeout(() => res({
-    fomoNudgeSummary: `3 chores are overdue by more than 24 hours! Activating FOMO flash bonuses to encourage quick completion before Friday family game night.`,
-    urgentAlerts: quests.filter(q => q.status === 'todo').slice(0, 2).map(q => ({
-      title: q.title, bonusCoins: 15,
-      fomoMessage: `⏰ Flash bonus expires in 2 hours! Other kids are eyeing this +15 bonus. Don't miss out!`,
-    })),
-    penaltiesAndForceAssigns: quests.filter(q => q.status === 'todo' && q.priority === 'urgent').slice(0, 1).map(q => ({
-      title: q.title, targetKid: 'Leo', penaltyCoins: 10,
-      action: 'Overdue 36 hours — auto-assigning and sending nudge to Leo\'s phone',
-    })),
+    fomoNudgeSummary: summary,
+    urgentAlerts:              flashTargets,
+    penaltiesAndForceAssigns:  forceTargets,
   }), 1600));
 }
+
 function simulateAdvice(quests: any[], kids: any[]) {
+  const topKid = kids.reduce((best: any, k: any) => {
+    const done = quests.filter(q => q.assignedToId === k.id && q.status === 'done').length;
+    return (!best || done > best.done) ? { ...k, done } : best;
+  }, null);
+
   return new Promise<any>(res => setTimeout(() => res({
-    familyCoachingTip: 'Try a "Power Hour" on Saturdays where everyone does chores together with music. Kids complete 3× more tasks and enjoy it when parents participate!',
-    topPerformer: kids[0]?.name ?? 'Leo',
-    kidEncouragementNotes: Object.fromEntries(kids.map((k, i) => [
+    familyCoachingTip: 'Try a "Power Hour" on Saturdays — everyone does chores together with upbeat music. Kids complete 3× more and actually enjoy it when parents participate!',
+    topPerformer: topKid?.name ?? kids[0]?.name ?? 'Leo',
+    kidEncouragementNotes: Object.fromEntries(kids.map((k: any, i: number) => [
       k.name,
       i === 0
         ? `⭐ Amazing work, ${k.name}! You're leading the family leaderboard. Keep that streak!`
-        : `💪 Great effort ${k.name}! Just 2 more chores and you'll unlock the Friday movie perk!`,
+        : `💪 Great effort ${k.name}! Just 2 more quests and you can unlock a reward from the store!`,
     ])),
   }), 1400));
 }
@@ -372,7 +423,7 @@ function AutoBalanceCard({ result, onApply, appliedActions, onClose }: any) {
               </View>
               {applied
                 ? <View style={ai.doneChip}><Text style={ai.doneText}>✓ Assigned</Text></View>
-                : <TouchableOpacity style={ai.applyBtn} onPress={() => onApply(`bal_${idx}`, item)}>
+                : <TouchableOpacity style={ai.applyBtn} onPress={() => onApply(`bal_${idx}`, item, 'reassign')}>
                     <Text style={ai.applyText}>⚡ Apply</Text>
                   </TouchableOpacity>}
             </View>
@@ -429,7 +480,7 @@ function FomoCard({ result, onApply, appliedActions, onClose }: any) {
             <View style={{ alignItems: 'flex-end' }}>
               {applied
                 ? <View style={[ai.doneChip, { backgroundColor: BRAND.amber }]}><Text style={[ai.doneText, { color: '#0F172A' }]}>🔥 Flash Bonus Active!</Text></View>
-                : <TouchableOpacity style={[ai.applyBtn, { backgroundColor: BRAND.amber }]} onPress={() => onApply(`fomo_${idx}`, alert)}>
+                : <TouchableOpacity style={[ai.applyBtn, { backgroundColor: BRAND.amber }]} onPress={() => onApply(`fomo_${idx}`, alert, 'fomo')}>
                     <Text style={[ai.applyText, { color: '#0F172A' }]}>🔥 Activate Flash Bonus</Text>
                   </TouchableOpacity>}
             </View>
@@ -445,8 +496,8 @@ function FomoCard({ result, onApply, appliedActions, onClose }: any) {
             return (
               <View key={idx} style={[ai.fomoRow, { borderColor: '#EF444440', backgroundColor: '#450A0A' }]}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <Text style={[ai.rowTitle, { color: '#FCA5A5', flex: 1 }]}>{pen.title} → {pen.targetKid}</Text>
-                  <Text style={[ai.chipText, { color: '#F87171' }]}>-{pen.penaltyCoins}🪙</Text>
+                  <Text style={[ai.rowTitle, { color: '#FCA5A5', flex: 1 }]}>{pen.questTitle} → {pen.targetKidName}</Text>
+                  <Text style={[ai.chipText, { color: '#F87171' }]}>⚠️ Force</Text>
                 </View>
                 <Text style={[ai.rowSub, { color: '#FCA5A5', marginBottom: 8 }]}>{pen.action}</Text>
                 <View style={{ alignItems: 'flex-end' }}>
@@ -566,21 +617,45 @@ export default function QuestsScreen() {
     setIsAiLoading(true);
     setShowAiTool(tool);
     if (tool === 'autobalance') { const r = await simulateAutoBalance(quests, kids); setAutoBalResult(r); }
-    else if (tool === 'fomo')   { const r = await simulateFomo(quests); setFomoResult(r); }
+    else if (tool === 'fomo')   { const r = await simulateFomo(quests, kids); setFomoResult(r); }
     else if (tool === 'advice') { const r = await simulateAdvice(quests, kids); setAdviceResult(r); }
     setIsAiLoading(false);
   };
 
   const handleApply = (key: string, item: any, type = 'assign') => {
     setAppliedActions(p => ({ ...p, [key]: true }));
-    if (type === 'bounty') {
-      useQuestStore.getState().addQuest({
+    const store = useQuestStore.getState();
+
+    if (type === 'fomo') {
+      // Flash bonus: update the real quest with bonusCoins + expiry
+      if (item.questId) {
+        store.updateQuest(
+          item.questId,
+          { bonusCoins: item.bonusCoins, bonusExpiresAt: item.bonusExpiresAt },
+          activeMember?.id,
+        );
+      }
+    } else if (type === 'penalty') {
+      // Force-assign: reassign the quest to the target kid
+      if (item.questId && item.targetKidId) {
+        store.reassignQuest(item.questId, item.targetKidId, activeMember?.id);
+      }
+    } else if (type === 'bounty') {
+      // AI suggested a new pool bounty — add it
+      store.addQuest({
         title: item.title, category: 'Other', priority: 'medium',
-        coins: item.coins, xpReward: 15, isPool: true, isDaily: false,
+        coins: item.coins ?? 20, xpReward: 15, isPool: true, isDaily: false,
         recurrence: 'once', status: 'todo',
         dueDate: new Date().toISOString().split('T')[0], photoRequired: false,
+        createdById: activeMember?.id,
       });
+    } else if (type === 'reassign') {
+      // Auto-balance: reassign existing quest to recommended kid
+      if (item.questId && item.recommendedKidId) {
+        store.reassignQuest(item.questId, item.recommendedKidId, activeMember?.id);
+      }
     }
+    // 'assign' and other types: just mark applied (future use)
   };
 
   // ── Quest filtering ───────────────────────────────────────────────────────────
@@ -881,11 +956,27 @@ export default function QuestsScreen() {
                             <Text style={[s.catText, { color: '#D97706' }]}>📷 Photo required</Text>
                           </View>
                         )}
+                        {/* Flash bonus badge — shown when bonusCoins > 0 and not expired */}
+                        {q.bonusCoins > 0 && (!q.bonusExpiresAt || new Date(q.bonusExpiresAt) > new Date()) && (
+                          <View style={[s.catBadge, { backgroundColor: '#FCD34D20', borderColor: '#FCD34D80' }]}>
+                            <Text style={[s.catText, { color: '#FCD34D', fontWeight: '900' }]}>
+                              🔥 +{q.bonusCoins}🪙 BONUS
+                              {q.bonusExpiresAt
+                                ? ` · ${Math.max(0, Math.round((new Date(q.bonusExpiresAt).getTime() - Date.now()) / 3600000))}h left`
+                                : ''}
+                            </Text>
+                          </View>
+                        )}
                         <Text style={[s.questTitle, { color: colors.textPrimary }]}>{q.title}</Text>
                       </View>
-                      <Text style={[s.coinAmt, { color: isDark ? '#FCD34D' : '#D97706' }]}>
-                        +{q.coins}🪙{'\n'}(${(q.coins * 0.1).toFixed(2)})
-                      </Text>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={[s.coinAmt, { color: isDark ? '#FCD34D' : '#D97706' }]}>
+                          +{q.coins + q.bonusCoins}🪙
+                        </Text>
+                        {q.bonusCoins > 0 && (!q.bonusExpiresAt || new Date(q.bonusExpiresAt) > new Date()) && (
+                          <Text style={{ fontSize: 9, color: '#FCD34D80' }}>incl. +{q.bonusCoins} bonus</Text>
+                        )}
+                      </View>
                     </View>
 
                     {/* Meta row */}

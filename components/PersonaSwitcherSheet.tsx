@@ -120,8 +120,8 @@ function MemberRow({ member, isActive, onPress, isDark, siblingNames }: {
 
   return (
     <Pressable
-      onPressIn={() => { scale.value = withSpring(0.97, { damping: 18 }); }}
-      onPressOut={() => { scale.value = withSpring(1, { damping: 14 }); }}
+      onPressIn={() => { scale.value = withTiming(0.97, { duration: 80 }); }}
+      onPressOut={() => { scale.value = withTiming(1, { duration: 80 }); }}
       onPress={onPress}>
       <Animated.View style={[mr.row, aStyle, { backgroundColor: rowBg, borderColor: rowBord }]}>
         {/* Avatar */}
@@ -189,8 +189,8 @@ function Sheet({ visible, onClose, children, colors, isDark }: {
 
   useEffect(() => {
     ty.value = visible
-      ? withSpring(0, { damping: 22, stiffness: 280 })
-      : withTiming(400, { duration: 260 });
+      ? withTiming(0, { duration: 200 })
+      : withTiming(400, { duration: 180 });
   }, [visible]);
 
   const aStyle = useAnimatedStyle(() => ({ transform: [{ translateY: ty.value }] }));

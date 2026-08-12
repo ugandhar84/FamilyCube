@@ -27,6 +27,8 @@ import type { FamilyMember } from '@/store/familyStore';
 import PinEntryModal from '@/components/PinEntryModal';
 import AppHeader from '@/components/AppHeader';
 import FamilyAvatar from '@/components/FamilyAvatar';
+import HelpQueueSection from '@/components/HelpQueueSection';
+import HelpRequestModal from '@/components/HelpRequestModal';
 import { BRAND } from '@/components/FamilyCubeLogo';
 
 const { width: W } = Dimensions.get('window');
@@ -937,6 +939,7 @@ export default function HubScreen() {
   const [refreshing, setRefreshing]       = useState(false);
   const [pinTarget, setPinTarget]         = useState<FamilyMember | null>(null);
   const [clock, setClock]                 = useState(fmtClock());
+  const [helpModalVisible, setHelpModal]  = useState(false);
   const [enRouteVisible, setEnRouteVisible] = useState(false);
   const [transitBanner, setTransitBanner] = useState<{ kid: string; eta: string } | null>(null);
 
@@ -1012,7 +1015,26 @@ export default function HubScreen() {
             colors={colors} isDark={isDark}
           />
         )}
+
+        {/* Help Queue — shown for all personas, below their main content.
+            "Ask for Help" button is suppressed when the active member
+            is the only adult (no one to delegate to). */}
+        <View style={{ paddingHorizontal: 16 }}>
+          <HelpQueueSection
+            onRequestHelp={() => setHelpModal(true)}
+            hideAskButton={
+              (isParent || isSenior) &&
+              members.filter(m => m.role === 'parent' || m.role === 'senior').length <= 1
+            }
+          />
+        </View>
+
       </ScrollView>
+
+      <HelpRequestModal
+        visible={helpModalVisible}
+        onClose={() => setHelpModal(false)}
+      />
 
       <EnRouteModal
         visible={enRouteVisible}

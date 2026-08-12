@@ -101,7 +101,8 @@ function toRow(m: FamilyMember) {
 function applyActive(members: FamilyMember[], cached: string | null, current: string | null) {
   if (current && members.some(m => m.id === current)) return current;
   if (cached  && members.some(m => m.id === cached))  return cached;
-  return members[0]?.id ?? null;
+  // Prefer first parent over first member (DB order may vary)
+  return (members.find(m => m.role === 'parent') ?? members[0])?.id ?? null;
 }
 
 export const useFamilyStore = create<FamilyState>((set, get) => ({

@@ -32,7 +32,7 @@ import { RADIUS } from '@/constants/theme';
 
 function formatTime(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 function formatDay(iso: string) {
   const d     = new Date(iso);
@@ -40,7 +40,7 @@ function formatDay(iso: string) {
   const yest  = new Date(); yest.setDate(today.getDate() - 1);
   if (d.toDateString() === today.toDateString()) return 'Today';
   if (d.toDateString() === yest.toDateString())  return 'Yesterday';
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function formatDuration(sec: number) {

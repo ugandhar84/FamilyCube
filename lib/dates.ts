@@ -45,6 +45,89 @@ export function safeFmt(ts: string | null | undefined, fmt: string, fallback = '
   }
 }
 
+// ── App-wide display format constants ─────────────────────────────────────────
+//
+// All user-facing dates use "Jan 1, 2026" and times use 12-hour AM/PM.
+// Internal storage stays YYYY-MM-DD and HH:MM (24h) for DB compatibility.
+
+/**
+ * Format a YYYY-MM-DD string for display: "Jan 1, 2026".
+ * Safe for local date strings (no UTC-shift risk since there's no time component).
+ */
+export function fmtDate(dateStr: string | null | undefined, fallback = '—'): string {
+  if (!dateStr) return fallback;
+  // Parse as local midnight by splitting components (avoids UTC-shift)
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return fallback;
+  const date = new Date(y, m - 1, d);
+  if (isNaN(date.getTime())) return fallback;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/**
+ * Format a YYYY-MM-DD string for compact display without year: "Jan 1".
+ */
+export function fmtDateShort(dateStr: string | null | undefined, fallback = '—'): string {
+  if (!dateStr) return fallback;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return fallback;
+  const date = new Date(y, m - 1, d);
+  if (isNaN(date.getTime())) return fallback;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+/**
+ * Format a 24h "HH:MM" time string for display: "3:30 PM".
+ * Returns fallback for missing/invalid values.
+ */
+export function fmtTime(timeStr: string | null | undefined, fallback = '—'): string {
+  if (!timeStr) return fallback;
+  const [h, m] = timeStr.split(':').map(Number);
+  if (isNaN(h) || isNaN(m)) return fallback;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12  = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+/**
+ * Format a 24h "HH:MM" time string as separate parts for layouts that
+ * render the time and AM/PM label at different sizes.
+ * Returns { time: "3:30", ampm: "PM" }.
+ */
+export function fmtTimeParts(timeStr: string | null | undefined): { time: string; ampm: string } {
+  if (!timeStr) return { time: '--', ampm: '' };
+  const [h, m] = timeStr.split(':').map(Number);
+  if (isNaN(h) || isNaN(m)) return { time: '--', ampm: '' };
+  return {
+    time: `${h % 12 || 12}:${String(m).padStart(2, '0')}`,
+    ampm: h >= 12 ? 'PM' : 'AM',
+  };
+}
+
+/**
+ * Parse a "HH:MM" display string entered as "3:30 PM" or "15:30" → "15:30" (24h) for storage.
+ * Returns null for unparseable input.
+ */
+export function parseTimeInput(raw: string): string | null {
+  const clean = raw.trim().toUpperCase();
+  const ampmMatch = clean.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+  if (ampmMatch) {
+    let h = parseInt(ampmMatch[1], 10);
+    const min = ampmMatch[2];
+    if (ampmMatch[3] === 'PM' && h !== 12) h += 12;
+    if (ampmMatch[3] === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${min}`;
+  }
+  const plain = clean.match(/^(\d{1,2}):(\d{2})$/);
+  if (plain) {
+    const h = parseInt(plain[1], 10);
+    const min = plain[2];
+    if (h < 0 || h > 23) return null;
+    return `${String(h).padStart(2, '0')}:${min}`;
+  }
+  return null;
+}
+
 /**
  * Format a UTC DB timestamp for display in the given IANA timezone.
  * Falls back to the device's local timezone when tz is null/undefined/invalid.

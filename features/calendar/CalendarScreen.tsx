@@ -31,6 +31,7 @@ import { useEventStore, FamilyEvent, EventType } from '@/store/eventStore';
 import AppHeader from '@/components/AppHeader';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
+import { fmtDate, fmtDateShort, fmtTimeParts } from '@/lib/dates';
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function toDateStr(d: Date) {
@@ -39,11 +40,6 @@ function toDateStr(d: Date) {
 function parseDate(s: string) {
   const [y, m, d] = s.split('-').map(Number);
   return new Date(y, m - 1, d);
-}
-function timeParts(t?: string) {
-  if (!t) return { time: '--', ampm: '' };
-  const [h, m] = t.split(':').map(Number);
-  return { time: `${h % 12 || 12}:${String(m).padStart(2,'0')}`, ampm: h >= 12 ? 'PM' : 'AM' };
 }
 function get15Days(center: string): string[] {
   const base = parseDate(center);
@@ -508,9 +504,9 @@ function AddEventModal({ visible, selectedDate, colors, isDark, onClose, onSave 
                   value={date} onChangeText={setDate} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[ae.label, { color: colors.textSecondary }]}>TIME (HH:MM)</Text>
+                <Text style={[ae.label, { color: colors.textSecondary }]}>TIME (e.g. 3:30 PM)</Text>
                 <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F9F8FD', marginBottom: 0 }]}
-                  placeholder="15:30" placeholderTextColor={colors.textTertiary} value={time} onChangeText={setTime} keyboardType="numbers-and-punctuation" />
+                  placeholder="3:30 PM" placeholderTextColor={colors.textTertiary} value={time} onChangeText={setTime} keyboardType="numbers-and-punctuation" />
               </View>
             </View>
 
@@ -603,9 +599,9 @@ function AskHelpModal({ visible, selectedDate, activeMemberId, colors, isDark, o
             <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: what.trim() ? colors.border : '#F59E0B80', backgroundColor: isDark ? colors.surface : '#FFFBEB' }]}
               placeholder="e.g. Ride to soccer practice" placeholderTextColor={colors.textTertiary} value={what} onChangeText={setWhat} />
 
-            <Text style={[ae.label, { color: colors.textSecondary }]}>TIME (HH:MM)</Text>
+            <Text style={[ae.label, { color: colors.textSecondary }]}>TIME (e.g. 3:30 PM)</Text>
             <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F9F8FD' }]}
-              placeholder="15:30" placeholderTextColor={colors.textTertiary} value={time} onChangeText={setTime} keyboardType="numbers-and-punctuation" />
+              placeholder="3:30 PM" placeholderTextColor={colors.textTertiary} value={time} onChangeText={setTime} keyboardType="numbers-and-punctuation" />
 
             <Text style={[ae.label, { color: colors.textSecondary }]}>LOCATION (optional)</Text>
             <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F9F8FD' }]}
@@ -718,9 +714,7 @@ export default function CalendarScreen() {
       .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
   }, [events, selectedDate, filterMember, rangeStart, rangeEnd]);
 
-  const selectedDateLabel = parseDate(selectedDate).toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  });
+  const selectedDateLabel = fmtDate(selectedDate);
 
   const cardBg   = isDark ? '#131927' : '#FFFFFF';
   const cardBord = isDark ? '#1E293B' : '#E2E8F0';
@@ -951,7 +945,7 @@ export default function CalendarScreen() {
             {/* Event cards column */}
             <View style={{ flex: 1, gap: 16, paddingBottom: 8 }}>
             {dayEvents.map((ev, i) => {
-              const { time, ampm } = timeParts(ev.time);
+              const { time, ampm } = fmtTimeParts(ev.time);
               const cs     = catStyle(ev.category, isDark);
               const isConf = ev.conflict;
               const assignee = members.find(m => m.id === ev.memberId);

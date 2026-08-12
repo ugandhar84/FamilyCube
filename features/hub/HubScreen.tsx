@@ -298,29 +298,19 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
 
   return (
     <>
-      {/* ── 1. Quick Action Tiles ── */}
-      <View style={pad}>
-        <SectionCard icon="⚡" title="Quick Actions" colors={colors} isDark={isDark}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {[
-              { icon: '📋', label: 'Scan Flyer', color: BRAND.purple, action: onScanFlyer },
-              { icon: '➕', label: '+ Quest',    color: '#10B981',    action: () => router.push('/(tabs)/quests') },
-              { icon: '📅', label: '+ Event',    color: BRAND.amber,  action: () => router.push('/(tabs)/calendar') },
-              {
-                icon: '🛒',
-                label: groceryItems.length > 0 ? `${groceryItems.length} items` : 'Grocery',
-                color: '#0ea5e9',
-                action: () => router.push('/(tabs)/grocery' as any),
-              },
-            ].map(a => (
-              <Pressable key={a.label} onPress={a.action}
-                style={{ flex: 1, borderRadius: 16, paddingVertical: 14, alignItems: 'center', gap: 4, backgroundColor: a.color }}>
-                <Text style={{ fontSize: 20 }}>{a.icon}</Text>
-                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#fff' }}>{a.label}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </SectionCard>
+      {/* ── 1. Quick Action Tiles — bare colored tiles, no wrapper ── */}
+      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginBottom: 12 }}>
+        {[
+          { icon: '📋', label: 'Scan Flyer', color: BRAND.purple,  action: onScanFlyer },
+          { icon: '➕', label: '+ Quest',    color: '#10B981',      action: () => router.push('/(tabs)/quests') },
+          { icon: '📅', label: '+ Event',    color: BRAND.amber,    action: () => router.push('/(tabs)/calendar') },
+        ].map(a => (
+          <Pressable key={a.label} onPress={a.action}
+            style={{ flex: 1, borderRadius: 18, paddingVertical: 18, alignItems: 'center', gap: 6, backgroundColor: a.color }}>
+            <Text style={{ fontSize: 22 }}>{a.icon}</Text>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>{a.label}</Text>
+          </Pressable>
+        ))}
       </View>
 
       {/* ── 2. Conflict Detection Alerts ── */}
@@ -435,114 +425,126 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
         </View>
       )}
 
-      {/* ── 3. Family Help Queue ── */}
+      {/* ── 3. Family Support & Help Queue ── */}
       <View style={pad}>
-        <SectionCard icon="🆘" title="Family Help Queue"
-          subtitle="Kids ask for help · parents assign or self-assign"
-          actionBtn={{ label: '+ Ask', onPress: onHelpRequest }}
-          colors={colors} isDark={isDark}>
+        <View style={{
+          backgroundColor: isDark ? colors.card : '#fff',
+          borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
+          padding: 16, marginBottom: 12,
+        }}>
+          {/* Header row */}
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 18 }}>?</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary, lineHeight: 20 }}>
+                Family Support &{'\n'}Help Queue
+              </Text>
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+                Kids ask for assistance &{'\n'}parents approve/self-assign
+              </Text>
+            </View>
+            <Pressable onPress={onHelpRequest}
+              style={{ backgroundColor: BRAND.purple, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: 16, color: '#fff' }}>+</Text>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Ask for Help</Text>
+            </Pressable>
+          </View>
+
+          {/* Queue items */}
           <HelpQueueSection onRequestHelp={onHelpRequest} hideAskButton />
-        </SectionCard>
+        </View>
       </View>
 
-      {/* ── 4. Dispatch En Route ── */}
+      {/* ── 4. Dispatch En Route — standalone teal card ── */}
       <View style={pad}>
-        <SectionCard icon="🚗" title="Dispatch En Route" colors={colors} isDark={isDark}>
-          <Pressable onPress={onEnRoute}>
-            <SubCard accent="#10B981" colors={colors} isDark={isDark}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#10B98125', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 22 }}>🚗</Text>
+        <Pressable onPress={onEnRoute} style={{
+          backgroundColor: isDark ? '#0D2B1F' : '#E8FBF4',
+          borderRadius: 20, borderWidth: 1, borderColor: isDark ? '#10B98140' : '#A7F3D0',
+          padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 12,
+        }}>
+          <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#10B98125', alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 26 }}>🚗</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#059669' }}>Dispatch En Route</Text>
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>Notify kids you're on your way home</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#10B981" />
+        </Pressable>
+      </View>
+
+      {/* ── 5. Today's Timeline ── */}
+      <View style={pad}>
+        <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10 }}>
+          Today's Timeline
+        </Text>
+
+        {todayEvents.length === 0 ? (
+          <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderRadius: 16, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', alignItems: 'center', paddingVertical: 28 }}>
+            <Text style={{ fontSize: 28, marginBottom: 6 }}>📅</Text>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textTertiary }}>All clear — no events today</Text>
+          </View>
+        ) : todayEvents.map(ev => {
+          const chipColor = catColor(ev.category);
+          return (
+            <View key={ev.id} style={{
+              backgroundColor: isDark ? colors.card : '#fff',
+              borderRadius: 16, borderWidth: 1,
+              borderColor: ev.conflict ? BRAND.amber + '60' : isDark ? colors.border : '#E8E8F0',
+              padding: 14, marginBottom: 10,
+            }}>
+              {/* Category chip + time */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <View style={{ backgroundColor: chipColor + '22', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4 }}>
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: chipColor, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                    {ev.category ?? 'Event'}
+                  </Text>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#10B981' }}>Broadcast your ETA</Text>
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Notify kids you're on the way</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#10B981" />
+                {ev.time && (
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+                    {fmtTime(ev.time)}
+                  </Text>
+                )}
               </View>
-            </SubCard>
-          </Pressable>
-        </SectionCard>
-      </View>
 
-      {/* ── 5. Today's Family Schedule ── */}
-      <View style={pad}>
-        <SectionCard icon="📅" title="Today's Family Schedule"
-          badge={todayEvents.length || undefined}
-          seeAll={() => router.push('/(tabs)/calendar')} seeAllLabel="Calendar →"
-          colors={colors} isDark={isDark}>
-          {todayEvents.length === 0 ? (
-            <SubCard colors={colors} isDark={isDark} style={{ alignItems: 'center', paddingVertical: 24 }}>
-              <Text style={{ fontSize: 28, marginBottom: 6 }}>📅</Text>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textTertiary }}>All clear — no events today</Text>
-            </SubCard>
-          ) : todayEvents.map(ev => {
-            const dot = ev.conflict ? BRAND.amber : catColor(ev.category);
-            const member = members.find(m => m.id === ev.memberId);
-            return (
-              <CollapsibleCard key={ev.id} accent={ev.conflict ? BRAND.amber : undefined}
-                colors={colors} isDark={isDark}
-                summary={
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot }} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
-                        {ev.title}
-                      </Text>
-                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                        {fmtTime(ev.time)}{ev.category ? ` · ${ev.category}` : ''}
-                        {member ? ` · ${member.name.split(' ')[0]}` : ''}
-                      </Text>
-                    </View>
-                    {/* Driver status chip */}
-                    {ev.driver && ev.driverStatus === 'confirmed' && (
-                      <View style={{ backgroundColor: '#10B98120', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>✓ Driver</Text>
-                      </View>
-                    )}
-                    {ev.driverStatus === 'rejected' && (
-                      <View style={{ backgroundColor: '#EF444420', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>No Driver</Text>
-                      </View>
-                    )}
-                    {ev.conflict && (
-                      <View style={{ backgroundColor: BRAND.amber + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.amber }}>Conflict</Text>
-                      </View>
-                    )}
-                  </View>
-                }>
-                {/* Expanded: driver status + location + actions */}
-                {ev.location && (
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>📍 {ev.location}</Text>
-                )}
-                {ev.driver && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>🚗</Text>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{ev.driver}</Text>
-                    {ev.driverStatus === 'confirmed' && <Text style={{ fontSize: TYPO.label, color: '#10B981' }}>✓ Confirmed</Text>}
-                    {ev.driverStatus === 'pending' && <Text style={{ fontSize: TYPO.label, color: BRAND.amber }}>⏳ Pending</Text>}
-                  </View>
-                )}
-                {!ev.driver && (ev.category === 'Sports' || ev.category === 'School' || ev.category === 'Medical') && ev.location && (
-                  <Text style={{ fontSize: TYPO.label, color: '#EF4444', fontWeight: '700' }}>⚠ No driver assigned</Text>
-                )}
-                {ev.conflict && (
-                  <Pressable onPress={() => router.push('/(tabs)/calendar')}
-                    style={{ backgroundColor: BRAND.amber, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start' }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>Resolve Conflict</Text>
-                  </Pressable>
-                )}
-                {ev.driverStatus === 'rejected' && (
-                  <Pressable onPress={() => router.push('/(tabs)/calendar')}
-                    style={{ backgroundColor: '#EF4444', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start' }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>Reassign Driver</Text>
-                  </Pressable>
-                )}
-              </CollapsibleCard>
-            );
-          })}
-        </SectionCard>
+              {/* Event title */}
+              <Text style={{ fontSize: TYPO.subheading, fontWeight: '800', color: colors.textPrimary, marginBottom: 4 }} numberOfLines={1}>
+                {ev.title}
+              </Text>
+
+              {/* Driver / location row */}
+              {ev.driver ? (
+                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                  🚗 <Text style={{ fontWeight: '700', color: colors.textPrimary }}>Driver: {ev.driver}</Text>
+                  {ev.driverStatus === 'confirmed' && <Text style={{ color: '#10B981' }}> ✓</Text>}
+                  {ev.driverStatus === 'pending'   && <Text style={{ color: BRAND.amber }}> ⏳</Text>}
+                  {ev.driverStatus === 'rejected'  && <Text style={{ color: '#EF4444' }}> ✕</Text>}
+                </Text>
+              ) : ev.location ? (
+                <Text style={{ fontSize: TYPO.label, color: '#EF4444', fontWeight: '700' }}>⚠ No driver assigned</Text>
+              ) : null}
+
+              {ev.location && (
+                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>📍 {ev.location}</Text>
+              )}
+
+              {ev.conflict && (
+                <Pressable onPress={() => router.push('/(tabs)/calendar')}
+                  style={{ marginTop: 8, backgroundColor: BRAND.amber, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7, alignSelf: 'flex-start' }}>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>Resolve Conflict</Text>
+                </Pressable>
+              )}
+              {ev.driverStatus === 'rejected' && (
+                <Pressable onPress={() => router.push('/(tabs)/calendar')}
+                  style={{ marginTop: 8, backgroundColor: '#EF4444', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7, alignSelf: 'flex-start' }}>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>Reassign Driver</Text>
+                </Pressable>
+              )}
+            </View>
+          );
+        })}
       </View>
     </>
   );

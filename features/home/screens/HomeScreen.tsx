@@ -275,9 +275,9 @@ export default function HomeScreen() {
         const isToday = d.toDateString() === now.toDateString();
         const isTomorrow = d.toDateString() === new Date(now.getTime() + 86400000).toDateString();
         const timeLabel = isToday
-          ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+          ? d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
           : isTomorrow ? 'Tomorrow'
-          : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+          : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         map[petId] = { label: next.title, timeLabel, type: 'appointment' };
       }
     }

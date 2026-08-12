@@ -195,7 +195,7 @@ export const PetHeroCarousel = React.memo(function PetHeroCarousel({
               <View>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: 1 }}>Daily Overview</Text>
                 <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: '#fff', letterSpacing: -0.4, marginTop: 2 }}>
-                  {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
                 </Text>
               </View>
               <View style={{ alignItems: 'center' }}>
@@ -409,8 +409,8 @@ export const PetHeroCarousel = React.memo(function PetHeroCarousel({
                     const isToday = d.toDateString() === new Date().toDateString();
                     const datePart = isToday
                       ? 'Today'
-                      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                    const timePart = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                    const timePart = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
                     return `${datePart}\n${timePart}`;
                   })() : null;
 

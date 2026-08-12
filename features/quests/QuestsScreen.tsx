@@ -29,6 +29,7 @@ import { useQuestStore } from '@/store/questStore';
 import type { QuestCategory } from '@/store/questStore';
 import AppHeader from '@/components/AppHeader';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import { fmtDateShort } from '@/lib/dates';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 const I = {
@@ -898,7 +899,7 @@ export default function QuestsScreen() {
                       <Text style={[s.metaText, { color: colors.textTertiary }]}>
                         Due:{' '}
                         <Text style={[s.metaVal, { color: colors.textSecondary }]}>
-                          {q.dueDate ? new Date(q.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Tonight'}
+                          {q.dueDate ? fmtDateShort(q.dueDate) : 'Tonight'}
                         </Text>
                       </Text>
                     </View>

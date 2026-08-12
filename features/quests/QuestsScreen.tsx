@@ -683,7 +683,7 @@ export default function QuestsScreen() {
                 <View style={s.aiIconBox}><I.Bot c="#C4B5FD" /></View>
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={s.aiBannerTitle}>Claude AI Chores Engine</Text>
+                    <Text style={s.aiBannerTitle}>CubeAI Chores Engine</Text>
                     <View style={s.activePill}><Text style={s.activePillText}>Active</Text></View>
                   </View>
                   <Text style={s.aiBannerSub}>Auto-balancing, FOMO bounties, penalties & age-based coaching</Text>
@@ -720,7 +720,7 @@ export default function QuestsScreen() {
         {isAiLoading && (
           <View style={[s.aiLoadingBox, { marginHorizontal: 14, marginBottom: 12 }]}>
             <ActivityIndicator color="#A78BFA" size="small" />
-            <Text style={s.aiLoadingText}>Claude AI is calculating optimal chore distribution...</Text>
+            <Text style={s.aiLoadingText}>CubeAI is calculating optimal chore distribution...</Text>
           </View>
         )}
 

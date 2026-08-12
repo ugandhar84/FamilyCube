@@ -782,24 +782,29 @@ export default function CalendarScreen() {
       {isParent && (
         <View style={{ paddingHorizontal: 14, paddingVertical: 8, backgroundColor: isDark ? colors.card : '#fff', borderBottomWidth: 1, borderBottomColor: colors.border }}>
           <LinearGradient
-            colors={['#1E1B4B', '#1E3A5F', '#0F172A']}
+            colors={isDark ? ['#2D1B69', '#1E2D6B', '#1A2540'] : ['#F5F0FF', '#EDE9FE', '#E8F4FF']}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             style={sc.aiBannerCard}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-              <View style={sc.aiIconBox}><I.Bot c="#C4B5FD" size={16} /></View>
+              <View style={[sc.aiIconBox, { backgroundColor: isDark ? 'rgba(139,92,246,0.3)' : 'rgba(146,97,199,0.15)', borderColor: isDark ? 'rgba(167,139,250,0.3)' : 'rgba(146,97,199,0.35)' }]}>
+                <I.Bot c={isDark ? '#C4B5FD' : BRAND.purple} size={16} />
+              </View>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '900', color: '#C4B5FD' }}>Claude AI Logistics Agent</Text>
-                  <View style={sc.activePill}><Text style={{ fontSize: 9, fontWeight: '700', color: '#6EE7B7' }}>Active</Text></View>
+                  <Text style={{ fontSize: 11, fontWeight: '900', color: isDark ? '#C4B5FD' : BRAND.purple }}>CubeAI Logistics Agent</Text>
+                  <View style={[sc.activePill, { backgroundColor: isDark ? 'rgba(16,185,129,0.3)' : 'rgba(0,187,164,0.15)', borderColor: isDark ? 'rgba(52,211,153,0.4)' : 'rgba(0,187,164,0.5)' }]}>
+                    <Text style={{ fontSize: 9, fontWeight: '700', color: isDark ? '#6EE7B7' : BRAND.teal }}>Active</Text>
+                  </View>
                 </View>
-                <Text style={{ fontSize: 10, color: 'rgba(196,181,253,0.8)', marginTop: 2 }}>
+                <Text style={{ fontSize: 10, color: isDark ? 'rgba(196,181,253,0.8)' : 'rgba(146,97,199,0.75)', marginTop: 2 }}>
                   Driver conflict detection, schedule gap analysis &amp; swap recommendations
                 </Text>
               </View>
             </View>
-            <TouchableOpacity style={sc.aiScanBtn} onPress={runAiScan}>
-              <I.AlertTriangle c="#FCD34D" size={12} />
-              <Text style={{ fontSize: 11, fontWeight: '900', color: '#E0D9FF' }}>Run AI Conflict Scan</Text>
+            <TouchableOpacity style={[sc.aiScanBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : BRAND.purple, borderColor: isDark ? 'rgba(139,92,246,0.3)' : BRAND.purple }]}
+              onPress={runAiScan}>
+              <I.AlertTriangle c={isDark ? '#FCD34D' : '#FCD34D'} size={12} />
+              <Text style={{ fontSize: 11, fontWeight: '900', color: '#fff' }}>Run AI Conflict Scan</Text>
             </TouchableOpacity>
           </LinearGradient>
         </View>

@@ -463,38 +463,58 @@ interface StepperProps {
 // ─── Flash Bonus Badge ────────────────────────────────────────────────────────
 function FlashBonusBadge({ bonusCoins, expiresAt }: { bonusCoins: number; expiresAt: string }) {
   const [remaining, setRemaining] = useState('');
-  const pulse = useRef(new Animated.Value(1)).current;
+  const [isCritical, setIsCritical] = useState(false);
+  const scale   = useRef(new Animated.Value(1)).current;
+  const opacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     const calc = () => {
       const ms = new Date(expiresAt).getTime() - Date.now();
-      if (ms <= 0) { setRemaining('Expired'); return; }
+      if (ms <= 0) { setRemaining(''); return; }
       const h = Math.floor(ms / 3600000);
       const m = Math.floor((ms % 3600000) / 60000);
+      setIsCritical(ms < 3600000); // under 1h = red critical mode
       setRemaining(h > 0 ? `${h}h ${m}m` : `${m}m`);
     };
     calc();
-    const id = setInterval(calc, 30000);
+    const id = setInterval(calc, 15000);
     return () => clearInterval(id);
   }, [expiresAt]);
 
   useEffect(() => {
+    const speed = isCritical ? 600 : 1100;
     const anim = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 0.55, duration: 900, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1,    duration: 900, useNativeDriver: true }),
+        Animated.parallel([
+          Animated.timing(scale,   { toValue: 1.07, duration: speed, useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 0.75, duration: speed, useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(scale,   { toValue: 1.00, duration: speed, useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 1.00, duration: speed, useNativeDriver: true }),
+        ]),
       ])
     );
     anim.start();
     return () => anim.stop();
-  }, []);
+  }, [isCritical]);
+
+  if (!remaining) return null;
+
+  const bg     = isCritical ? '#EF4444' : '#F59E0B';
+  const shadow = isCritical ? '#EF4444' : '#F59E0B';
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#FCD34D20', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 3, borderWidth: 1, borderColor: '#FCD34D60' }}>
-      <Animated.Text style={{ fontSize: 10, opacity: pulse }}>🔥</Animated.Text>
-      <Text style={{ fontSize: 10, fontWeight: '800', color: '#D97706' }}>+{bonusCoins}🪙</Text>
-      <Text style={{ fontSize: 9, color: '#92400E', fontWeight: '600' }}>· {remaining}</Text>
-    </View>
+    <Animated.View style={{
+      transform: [{ scale }], opacity,
+      shadowColor: shadow, shadowOpacity: 0.65, shadowRadius: 8, shadowOffset: { width: 0, height: 0 },
+      elevation: 6,
+    }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: bg, borderRadius: 9, paddingHorizontal: 7, paddingVertical: 4 }}>
+        <Text style={{ fontSize: 10 }}>🔥</Text>
+        <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff', letterSpacing: 0.2 }}>+{bonusCoins}🪙 · ENDS {remaining}</Text>
+      </View>
+    </Animated.View>
   );
 }
 
@@ -1937,6 +1957,11 @@ export default function QuestsScreen() {
                                : q.dueDate ? fmtDateShort(q.dueDate) : 'Tonight';
 
                 // Status line — concise, no "due" repetition (due is in chip on right)
+                const bonusMs = hasBonus && q.bonusExpiresAt ? new Date(q.bonusExpiresAt).getTime() - Date.now() : 0;
+                const bonusStatusSuffix = hasBonus && bonusMs > 0
+                  ? ` · ⚡ Grab it before bonus ends!`
+                  : '';
+
                 const statusLine = isReview
                   ? `Submitted ${q.submittedAt ? new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'for review'}`
                   : isDoneCard
@@ -1944,16 +1969,18 @@ export default function QuestsScreen() {
                     : isDeclined
                       ? 'Declined ❌'
                       : isPoolCard && claimants.length > 1
-                        ? `${claimants.length} kids racing for it`
+                        ? `${claimants.length} kids racing for it${bonusStatusSuffix}`
                         : isPoolCard && claimants.length === 1
                           ? `${claimants[0].name} claimed it`
                           : isPoolCard
-                            ? 'Open — waiting for a kid'
+                            ? `Open — claim it now${bonusStatusSuffix}`
                             : q.claimedAt
                               ? `In progress · ${timeAgo(q.claimedAt)}`
-                              : (q as any).createdAt
-                                ? `Added ${timeAgo((q as any).createdAt)}`
-                                : 'Not started';
+                              : hasBonus
+                                ? `Not started${bonusStatusSuffix}`
+                                : (q as any).createdAt
+                                  ? `Added ${timeAgo((q as any).createdAt)}`
+                                  : 'Not started';
 
                 const cardHeader = (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 54 }}>

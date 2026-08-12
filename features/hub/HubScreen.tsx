@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet,
   Animated, Image, RefreshControl,
@@ -10,6 +10,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useNotifStore } from '@/store/notifStore';
+import { useGroceryStore } from '@/store/groceryStore';
 import PinEntryModal from '@/components/PinEntryModal';
 import type { FamilyMember } from '@/store/familyStore';
 
@@ -59,6 +60,8 @@ function MemberRow({ members, activeMemberId, onSelect }: {
 // ─── Parent hub ───────────────────────────────────────────────────────────────
 
 function ParentHub({ active, members, colors }: { active: FamilyMember; members: FamilyMember[]; colors: any }) {
+  const { items: groceryItems, load: loadGrocery } = useGroceryStore();
+  useEffect(() => { loadGrocery('family-1'); }, []);
   // Derive pending approvals from kids' questsPending
   const pendingApprovals = members.filter(m => m.role === 'kid').reduce((s, m) => s + m.questsPending, 0);
   const kidsCount = members.filter(m => m.role === 'kid').length;
@@ -134,6 +137,25 @@ function ParentHub({ active, members, colors }: { active: FamilyMember; members:
           ))}
         </View>
       </View>
+
+      {/* ── Grocery tile ── */}
+      <Pressable
+        onPress={() => router.push('/(tabs)/grocery' as any)}
+        style={{ marginHorizontal: 20, marginBottom: 16 }}
+      >
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 16 }]}>
+          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary + '18', alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 22 }}>🛒</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>Grocery List</Text>
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+              {groceryItems.filter(i => !i.isBought).length} items to buy
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+        </View>
+      </Pressable>
 
       {/* ── Active tasks in review ── */}
       {inReview.length > 0 && (

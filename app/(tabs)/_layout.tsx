@@ -213,6 +213,7 @@ export default function TabLayout() {
         <Tabs.Screen name="gps"      />
         <Tabs.Screen name="store"    />
         <Tabs.Screen name="profile"  />
+        <Tabs.Screen name="grocery" options={{ href: null }} />
         {/* Hidden — old Petkoinia screens kept as routes but removed from tab bar */}
         <Tabs.Screen name="notifications"        options={{ href: null }} />
         <Tabs.Screen name="care"                 options={{ href: null }} />

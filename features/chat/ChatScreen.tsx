@@ -7,7 +7,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
-import { useChatStore, ChatMessage } from '@/store/chatStore';
+import { useChatStore } from '@/store/chatStore';
+import type { ChatMessage } from '@/store/chatStore';
 import { TYPO, RADIUS } from '@/constants/theme';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -118,13 +119,16 @@ function ReactionPicker({ visible, onPick, onClose }: {
 export default function ChatScreen() {
   const { colors } = useTheme();
   const { members, activeMemberId, loaded, loadFromStorage } = useFamilyStore();
-  const { messages, loadFromStorage: loadChat, sendMessage, addReaction, deleteMessage } = useChatStore();
+  const CHANNEL = 'family';
+  const channelData = useChatStore(s => s.channels[CHANNEL]);
+  const messages = channelData?.messages ?? [];
+  const { loadChannel, sendMessage, addReaction, deleteMessage } = useChatStore();
   const [text, setText]       = useState('');
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
-  useEffect(() => { loadChat(); }, []);
+  useEffect(() => { loadChannel(CHANNEL); }, []);
   useEffect(() => { setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200); }, [messages.length]);
 
   const activeMember = members.find(m => m.id === activeMemberId);
@@ -132,7 +136,7 @@ export default function ChatScreen() {
 
   const handleSend = () => {
     if (!text.trim() || !activeMemberId) return;
-    sendMessage(activeMemberId, text.trim());
+    sendMessage(CHANNEL, activeMemberId, text.trim());
     setText('');
   };
 
@@ -187,7 +191,7 @@ export default function ChatScreen() {
                   sender={memberMap[msg.senderId]}
                   activeMemberId={activeMemberId ?? ''}
                   onLongPress={() => setPickerFor(msg.id)}
-                  onReact={(emoji) => addReaction(msg.id, emoji, activeMemberId ?? '')}
+                  onReact={(emoji) => addReaction(CHANNEL, msg.id, emoji, activeMemberId ?? '')}
                 />
               ))}
             </View>
@@ -220,7 +224,7 @@ export default function ChatScreen() {
 
       <ReactionPicker
         visible={!!pickerFor}
-        onPick={(emoji) => { if (pickerFor && activeMemberId) addReaction(pickerFor, emoji, activeMemberId); }}
+        onPick={(emoji) => { if (pickerFor && activeMemberId) addReaction(CHANNEL, pickerFor, emoji, activeMemberId); }}
         onClose={() => setPickerFor(null)}
       />
     </SafeAreaView>

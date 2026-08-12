@@ -380,7 +380,7 @@ function RootNavigator() {
           router.replace('/(tabs)');
         }
       } else if (event === 'SIGNED_OUT') {
-        unsubscribeFromSubChanges();
+        // unsubscribeFromSubChanges();  // subscription not active in this version
         // Wipe all user-specific data from stores immediately so the next user
         // (or the same user logging in to a different account) never sees stale data.
         usePetStore.getState().reset();

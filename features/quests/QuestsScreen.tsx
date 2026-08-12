@@ -11,9 +11,9 @@ import { useQuestStore, Quest, QuestStatus, QuestCategory } from '@/store/questS
 import { TYPO, RADIUS } from '@/constants/theme';
 import type { FamilyMember } from '@/store/familyStore';
 
-const CATEGORIES: QuestCategory[] = ['Kitchen', 'Room', 'Yard', 'School', 'Pet', 'Living Room', 'Other'];
+const CATEGORIES: QuestCategory[] = ['Kitchen', 'Room', 'Yard', 'School', 'Pet', 'Living Room', 'Errand', 'Tech', 'Other'];
 const CAT_EMOJI: Record<QuestCategory, string> = {
-  Kitchen: '🍽️', Room: '🛏️', Yard: '🌿', School: '📚', Pet: '🐾', 'Living Room': '🛋️', Other: '✨',
+  Kitchen: '🍽️', Room: '🛏️', Yard: '🌿', School: '📚', Pet: '🐾', 'Living Room': '🛋️', Errand: '🏃', Tech: '💻', Other: '✨',
 };
 
 const SUGGESTIONS = [
@@ -501,8 +501,8 @@ export default function QuestsScreen() {
           parentFiltered.map(q => (
             <ParentQuestCard
               key={q.id} quest={q} members={members} activeMemberId={activeMemberId ?? ''}
-              onApprove={() => approveQuest(q.id)}
-              onDecline={() => declineQuest(q.id)}
+              onApprove={() => approveQuest(q.id, activeMemberId ?? '')}
+              onDecline={() => declineQuest(q.id, activeMemberId ?? '')}
               onDelete={() => Alert.alert('Delete Quest', 'Remove this quest?', [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Delete', style: 'destructive', onPress: () => deleteQuest(q.id) },

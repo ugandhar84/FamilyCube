@@ -30,6 +30,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, FamilyEvent, EventType } from '@/store/eventStore';
 import AppHeader from '@/components/AppHeader';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import { TYPO } from '@/constants/theme';
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function toDateStr(d: Date) {
@@ -257,11 +258,11 @@ function DayStrip({ selected, events, colors, isDark, onSelect }: {
                 borderColor: isSel ? BRAND.purple : isDark ? colors.border : 'rgba(146,97,199,0.12)',
                 borderWidth: isSel ? 2 : 1.5,
               }]}>
-              <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 0.5,
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', letterSpacing: 0.5,
                 color: isSel ? '#fff' : isToday ? BRAND.purple : colors.textTertiary }}>
                 {DAY_SHORT[(date.getDay() + 6) % 7]}
               </Text>
-              <Text style={{ fontSize: 20, fontWeight: '900',
+              <Text style={{ fontSize: TYPO.heading, fontWeight: '900',
                 color: isSel ? '#fff' : isToday ? BRAND.purple : colors.textPrimary }}>
                 {date.getDate()}
               </Text>
@@ -309,23 +310,23 @@ function PendingDriverFlow({ ev, activeMemberName, isParent, isSenior, colors, i
   return (
     <View style={[pf.box, { backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderColor: '#F59E0B60' }]}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-        <Text style={{ fontSize: 10, fontWeight: '800', color: '#D97706' }}>
+        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#D97706' }}>
           Awaiting confirmation from {ev.driver}
         </Text>
-        <Text style={{ fontSize: 9, color: '#D97706', opacity: 0.7 }}>
+        <Text style={{ fontSize: TYPO.micro, color: '#D97706', opacity: 0.7 }}>
           Owner: {ev.taskOwner ?? ev.driverRequestedBy ?? 'Parent'}
         </Text>
       </View>
 
       {showDecInput ? (
         <View style={[pf.decBox, { backgroundColor: isDark ? '#450A0A' : '#FEF2F2', borderColor: '#FCA5A5' }]}>
-          <Text style={{ fontSize: 10, fontWeight: '700', color: '#EF4444', marginBottom: 6 }}>Select or type decline reason:</Text>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444', marginBottom: 6 }}>Select or type decline reason:</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
             {RIDE_DECLINE_PRESETS.map(p => (
               <TouchableOpacity key={p}
                 style={[pf.presetChip, { backgroundColor: decReason === p ? '#EF4444' : isDark ? '#1E293B' : '#fff', borderColor: decReason === p ? '#EF4444' : '#FCA5A5' }]}
                 onPress={() => setDecReason(p)}>
-                <Text style={{ fontSize: 10, fontWeight: '700', color: decReason === p ? '#fff' : '#EF4444' }}>{p}</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: decReason === p ? '#fff' : '#EF4444' }}>{p}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -339,11 +340,11 @@ function PendingDriverFlow({ ev, activeMemberName, isParent, isSenior, colors, i
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
             <TouchableOpacity style={[pf.btn, { flex: 1, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}
               onPress={() => setShowDecInput(false)}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[pf.btn, { flex: 2, backgroundColor: decReason ? '#EF4444' : colors.border }]}
               onPress={() => decReason && onDecline(decReason)} disabled={!decReason}>
-              <Text style={{ fontSize: 11, fontWeight: '900', color: '#fff' }}>Confirm Decline</Text>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Confirm Decline</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -362,14 +363,14 @@ function PendingDriverFlow({ ev, activeMemberName, isParent, isSenior, colors, i
               <TouchableOpacity style={[pf.btn, { flex: 2, backgroundColor: '#059669' }]}
                 onPress={() => onAccept(note)}>
                 <I.Check c="#fff" size={13} />
-                <Text style={{ fontSize: 11, fontWeight: '900', color: '#fff' }}>Accept Ride</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Accept Ride</Text>
               </TouchableOpacity>
             )}
             {/* Decline — assigned driver or parent/senior */}
             {(isAssignedDriver || isParent || isSenior) && (
               <TouchableOpacity style={[pf.btn, { backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderWidth: 1, borderColor: '#FCA5A5' }]}
                 onPress={() => setShowDecInput(true)}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: '#EF4444' }}>Decline</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444' }}>Decline</Text>
               </TouchableOpacity>
             )}
             {/* Reassign — parent only */}
@@ -377,13 +378,13 @@ function PendingDriverFlow({ ev, activeMemberName, isParent, isSenior, colors, i
               <TouchableOpacity style={[pf.btn, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]}
                 onPress={onReassign}>
                 <I.Arrows c={colors.textSecondary} size={12} />
-                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>Reassign</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Reassign</Text>
               </TouchableOpacity>
             )}
             {/* Withdraw — only the requestor */}
             {isRequestor && (
               <TouchableOpacity style={[pf.btn, { paddingHorizontal: 8 }]} onPress={onWithdraw}>
-                <Text style={{ fontSize: 10, fontWeight: '700', color: '#EF4444' }}>🗑️ Withdraw</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444' }}>🗑️ Withdraw</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -420,13 +421,13 @@ function ReassignModal({ visible, ev, members, onAssign, onClose, colors, isDark
               onPress={() => onAssign(m.name)}>
               <Text style={{ fontSize: 13 }}>{m.emoji ?? '👤'}</Text>
               <Text style={[rm.optionText, { color: colors.textPrimary }]}>{m.name}</Text>
-              <Text style={{ fontSize: 10, color: colors.textTertiary, marginLeft: 'auto' as any }}>
+              <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginLeft: 'auto' as any }}>
                 {m.role === 'senior' ? '👵 Senior' : '👨‍👩 Parent'}
               </Text>
             </TouchableOpacity>
           ))}
           <TouchableOpacity style={[rm.cancel, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={onClose}>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -439,9 +440,9 @@ const rm = StyleSheet.create({
   handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
   title:      { fontSize: 16, fontWeight: '900', marginBottom: 2 },
   sub:        { fontSize: 11, marginBottom: 14 },
-  label:      { fontSize: 11, fontWeight: '700', marginBottom: 8 },
+  label:      { fontSize: TYPO.label, fontWeight: '700', marginBottom: 8 },
   option:     { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 8 },
-  optionText: { fontSize: 13, fontWeight: '700' },
+  optionText: { fontSize: TYPO.caption, fontWeight: '700' },
   cancel:     { borderRadius: 14, borderWidth: 1, padding: 12, alignItems: 'center', marginTop: 4 },
 });
 
@@ -519,7 +520,7 @@ function AddEventModal({ visible, selectedDate, colors, isDark, onClose, onSave 
                   return (
                     <TouchableOpacity key={c} onPress={() => setCategory(c)}
                       style={[ae.catChip, { backgroundColor: category === c ? cs.badge : isDark ? colors.surface : '#F5F4FA', borderColor: category === c ? cs.dot : isDark ? colors.border : '#E2E8F0' }]}>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: category === c ? cs.text : colors.textTertiary }}>{c}</Text>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: category === c ? cs.text : colors.textTertiary }}>{c}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -537,7 +538,7 @@ function AddEventModal({ visible, selectedDate, colors, isDark, onClose, onSave 
             <TouchableOpacity style={[ae.submitBtn, { backgroundColor: title.trim() ? BRAND.purple : colors.border, opacity: saving ? 0.7 : 1 }]}
               onPress={submit} disabled={saving || !title.trim()}>
               {saving ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>Add to Family Schedule</Text>}
+                : <Text style={{ color: '#fff', fontSize: TYPO.caption, fontWeight: '900' }}>Add to Family Schedule</Text>}
             </TouchableOpacity>
           </View>
         </View>
@@ -550,7 +551,7 @@ const ae = StyleSheet.create({
   sheet:     { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, padding: 20, paddingBottom: 44 },
   handle:    { width: 44, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 18 },
   title:     { fontSize: 16, fontWeight: '900' },
-  label:     { fontSize: 10, fontWeight: '700', letterSpacing: 0.6, marginBottom: 6, marginTop: 8 },
+  label:     { fontSize: TYPO.label, fontWeight: '700', letterSpacing: 0.6, marginBottom: 6, marginTop: 8 },
   input:     { borderWidth: 1.5, borderRadius: 14, padding: 11, fontSize: 13, marginBottom: 10 },
   catChip:   { borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 6 },
   submitBtn: { borderRadius: 16, paddingVertical: 14, alignItems: 'center', marginTop: 8, flexDirection: 'row', justifyContent: 'center', gap: 8 },
@@ -592,7 +593,7 @@ function AskHelpModal({ visible, selectedDate, activeMemberId, colors, isDark, o
               <Text style={[ae.title, { color: colors.textPrimary }]}>🚗 Ask for Help / Ride</Text>
               <TouchableOpacity onPress={onClose}><I.X c={colors.textSecondary} /></TouchableOpacity>
             </View>
-            <Text style={{ fontSize: 11, color: colors.textSecondary, marginBottom: 14 }}>
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginBottom: 14 }}>
               Tell a parent what you need — they'll get a notification to approve and assign a driver.
             </Text>
 
@@ -611,7 +612,7 @@ function AskHelpModal({ visible, selectedDate, activeMemberId, colors, isDark, o
             <TouchableOpacity style={[ae.submitBtn, { backgroundColor: what.trim() ? BRAND.amber : colors.border, opacity: saving ? 0.7 : 1 }]}
               onPress={submit} disabled={saving || !what.trim()}>
               {saving ? <ActivityIndicator color="#0F172A" size="small" />
-                : <Text style={{ color: '#0F172A', fontSize: 14, fontWeight: '900' }}>Send Request to Parent</Text>}
+                : <Text style={{ color: '#0F172A', fontSize: TYPO.caption, fontWeight: '900' }}>Send Request to Parent</Text>}
             </TouchableOpacity>
           </View>
         </View>
@@ -741,36 +742,36 @@ export default function CalendarScreen() {
           {(rangeStart || rangeEnd) ? (
             <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}
               onPress={() => { setRangeStart(''); setRangeEnd(''); }}>
-              <Text style={{ fontSize: 10, fontWeight: '800', color: BRAND.purple }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>
                 📅 {rangeStart || '…'} → {rangeEnd || '…'}
               </Text>
               <View style={{ backgroundColor: '#EDE9FE', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1 }}>
-                <Text style={{ fontSize: 9, fontWeight: '900', color: BRAND.purple }}>✕ clear</Text>
+                <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: BRAND.purple }}>✕ clear</Text>
               </View>
             </TouchableOpacity>
           ) : (
-            <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.purple, marginTop: 1 }}>{selectedDateLabel}</Text>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple, marginTop: 1 }}>{selectedDateLabel}</Text>
           )}
         </View>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           {isKid ? (
             <TouchableOpacity style={[sc.headerBtn, { backgroundColor: BRAND.amber }]} onPress={() => setShowAskHelp(true)}>
               <I.HelpCircle c="#0F172A" size={14} />
-              <Text style={{ fontSize: 11, fontWeight: '900', color: '#0F172A' }}>+ Ask Help / Ride</Text>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>+ Ask Help / Ride</Text>
             </TouchableOpacity>
           ) : (
             <>
               <TouchableOpacity style={[sc.headerBtnOutline, { borderColor: rangeStart || rangeEnd ? BRAND.purple : colors.border, backgroundColor: rangeStart || rangeEnd ? '#EDE9FE' : isDark ? colors.surface : '#F5F4FA' }]}
                 onPress={() => setShowRange(true)}>
                 <I.Calendar c={BRAND.purple} size={14} />
-                <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.purple }}>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>
                   {rangeStart || rangeEnd ? `${rangeStart || '…'}→${rangeEnd || '…'}` : 'Range'}
                 </Text>
               </TouchableOpacity>
               {isParent && (
                 <TouchableOpacity style={[sc.headerBtn, { backgroundColor: BRAND.purple }]} onPress={() => setShowAdd(true)}>
                   <I.Plus c="#fff" size={14} />
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#fff' }}>Event</Text>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Event</Text>
                 </TouchableOpacity>
               )}
             </>
@@ -782,29 +783,28 @@ export default function CalendarScreen() {
       {isParent && (
         <View style={{ paddingHorizontal: 14, paddingVertical: 8, backgroundColor: isDark ? colors.card : '#fff', borderBottomWidth: 1, borderBottomColor: colors.border }}>
           <LinearGradient
-            colors={isDark ? ['#2D1B69', '#1E2D6B', '#1A2540'] : ['#F5F0FF', '#EDE9FE', '#E8F4FF']}
+            colors={['#1E1B4B', '#1E3A5F', '#0F172A']}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             style={sc.aiBannerCard}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-              <View style={[sc.aiIconBox, { backgroundColor: isDark ? 'rgba(139,92,246,0.3)' : 'rgba(146,97,199,0.15)', borderColor: isDark ? 'rgba(167,139,250,0.3)' : 'rgba(146,97,199,0.35)' }]}>
-                <I.Bot c={isDark ? '#C4B5FD' : BRAND.purple} size={16} />
+              <View style={sc.aiIconBox}>
+                <I.Bot c="#E9D5FF" size={16} />
               </View>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '900', color: isDark ? '#C4B5FD' : BRAND.purple }}>CubeAI Logistics Agent</Text>
-                  <View style={[sc.activePill, { backgroundColor: isDark ? 'rgba(16,185,129,0.3)' : 'rgba(0,187,164,0.15)', borderColor: isDark ? 'rgba(52,211,153,0.4)' : 'rgba(0,187,164,0.5)' }]}>
-                    <Text style={{ fontSize: 9, fontWeight: '700', color: isDark ? '#6EE7B7' : BRAND.teal }}>Active</Text>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#F3E8FF' }}>CubeAI Logistics Agent</Text>
+                  <View style={sc.activePill}>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#6EE7B7' }}>Active</Text>
                   </View>
                 </View>
-                <Text style={{ fontSize: 10, color: isDark ? 'rgba(196,181,253,0.8)' : 'rgba(146,97,199,0.75)', marginTop: 2 }}>
-                  Driver conflict detection, schedule gap analysis &amp; swap recommendations
+                <Text style={{ fontSize: TYPO.micro, color: 'rgba(243,232,255,0.75)', marginTop: 2 }}>
+                  Driver conflict detection, schedule gaps &amp; swap recommendations
                 </Text>
               </View>
             </View>
-            <TouchableOpacity style={[sc.aiScanBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : BRAND.purple, borderColor: isDark ? 'rgba(139,92,246,0.3)' : BRAND.purple }]}
-              onPress={runAiScan}>
-              <I.AlertTriangle c={isDark ? '#FCD34D' : '#FCD34D'} size={12} />
-              <Text style={{ fontSize: 11, fontWeight: '900', color: '#fff' }}>Run AI Conflict Scan</Text>
+            <TouchableOpacity style={sc.aiScanBtn} onPress={runAiScan}>
+              <I.AlertTriangle c="#FCD34D" size={12} />
+              <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Run AI Conflict Scan</Text>
             </TouchableOpacity>
           </LinearGradient>
         </View>
@@ -820,38 +820,38 @@ export default function CalendarScreen() {
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <I.Bot c={isDark ? '#C4B5FD' : BRAND.purple} size={15} />
-              <Text style={{ fontSize: 11, fontWeight: '900', color: isDark ? '#C4B5FD' : BRAND.purple }}>CubeAI Conflict & Driver Swap Recommendations</Text>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: isDark ? '#C4B5FD' : BRAND.purple }}>CubeAI Conflict & Driver Swap Recommendations</Text>
             </View>
             <TouchableOpacity onPress={() => setShowAiPanel(false)}>
-              <Text style={{ fontSize: 10, color: isDark ? '#A78BFA' : BRAND.purple }}>✕ Close</Text>
+              <Text style={{ fontSize: TYPO.label, color: isDark ? '#A78BFA' : BRAND.purple }}>✕ Close</Text>
             </TouchableOpacity>
           </View>
 
           {isAnalyzing ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8 }}>
               <ActivityIndicator color={BRAND.purple} size="small" />
-              <Text style={{ fontSize: 11, color: isDark ? '#A78BFA' : BRAND.purple, fontWeight: '700' }}>
+              <Text style={{ fontSize: TYPO.label, color: isDark ? '#A78BFA' : BRAND.purple, fontWeight: '700' }}>
                 Scanning for time overlaps, missing drivers, and travel conflicts...
               </Text>
             </View>
           ) : aiResult ? (
             <View style={{ gap: 8 }}>
-              <Text style={{ fontSize: 11, color: isDark ? '#CBD5E1' : '#374151', lineHeight: 16 }}>{aiResult.summary}</Text>
+              <Text style={{ fontSize: TYPO.label, color: isDark ? '#CBD5E1' : '#374151', lineHeight: 16 }}>{aiResult.summary}</Text>
               {aiResult.conflictsFound ? (
                 <>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                     <I.Shield c="#F59E0B" size={13} />
-                    <Text style={{ fontSize: 10, fontWeight: '900', color: '#D97706' }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#D97706' }}>
                       {aiResult.conflicts.length} Logistics Conflict(s) Detected:
                     </Text>
                   </View>
                   {aiResult.conflicts.map((c, idx) => (
                     <View key={idx} style={[sc.conflictCard, { backgroundColor: isDark ? '#1C1000' : '#FFF7ED' }]}>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#FDE68A' : '#92400E', marginBottom: 3 }}>{c.description}</Text>
-                      <Text style={{ fontSize: 10, color: isDark ? '#F59E0B80' : '#D97706' }}>Affected: {c.eventsInvolved.join(' & ')}</Text>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#FDE68A' : '#92400E', marginBottom: 3 }}>{c.description}</Text>
+                      <Text style={{ fontSize: TYPO.label, color: isDark ? '#F59E0B80' : '#D97706' }}>Affected: {c.eventsInvolved.join(' & ')}</Text>
                       {c.suggestedFix && (
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, flexWrap: 'wrap', gap: 8 }}>
-                          <Text style={{ fontSize: 10, color: '#6EE7B7', fontWeight: '700', flex: 1 }}>
+                          <Text style={{ fontSize: TYPO.label, color: '#6EE7B7', fontWeight: '700', flex: 1 }}>
                             💡 {c.suggestedFix}
                           </Text>
                           {c.recommendedDriverSwap && (
@@ -913,10 +913,10 @@ export default function CalendarScreen() {
         {dayEvents.length === 0 ? (
           <View style={[sc.emptyBox, { backgroundColor: cardBg, borderColor: cardBord }]}>
             <Text style={{ fontSize: 32, marginBottom: 8 }}>📅</Text>
-            <Text style={{ fontSize: 15, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B', marginBottom: 4 }}>
+            <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B', marginBottom: 4 }}>
               No events scheduled
             </Text>
-            <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center' }}>
+            <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center' }}>
               {isKid ? 'Tap "+ Ask Help / Ride" above to request parent assistance.'
                      : 'Tap "+ Event" to add one for the family.'}
             </Text>
@@ -939,8 +939,8 @@ export default function CalendarScreen() {
                 <View key={ev.id} style={{ position: 'relative' }}>
                   {/* Time label */}
                   <View style={sc.timeLabel}>
-                    <Text style={{ fontSize: 13, fontWeight: '900', color: BRAND.purple, lineHeight: 15 }}>{time}</Text>
-                    <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textTertiary }}>{ampm}</Text>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: BRAND.purple, lineHeight: 15 }}>{time}</Text>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary }}>{ampm}</Text>
                   </View>
 
                   {/* Timeline dot */}
@@ -958,7 +958,7 @@ export default function CalendarScreen() {
                       <View style={[sc.catBadge, { backgroundColor: cs.badge, borderColor: cs.dot + '60' }]}>
                         <Text style={[sc.catText, { color: cs.text }]}>{(ev.category ?? ev.type).toUpperCase()}</Text>
                       </View>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>
                         {time} {ampm}
                       </Text>
                     </View>
@@ -967,24 +967,24 @@ export default function CalendarScreen() {
                     {isConf && (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
                         <I.AlertTriangle c="#F59E0B" size={12} />
-                        <Text style={{ fontSize: 10, fontWeight: '800', color: '#F59E0B' }}>Scheduling Conflict Detected</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#F59E0B' }}>Scheduling Conflict Detected</Text>
                       </View>
                     )}
 
                     {/* Title */}
-                    <Text style={{ fontSize: 15, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B', marginBottom: 5 }}>
+                    <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B', marginBottom: 5 }}>
                       {ev.title}
                     </Text>
 
                     {/* For + location row */}
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
                         For: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{memberLabel}</Text>
                       </Text>
                       {ev.location && (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                           <I.MapPin c={colors.textTertiary} size={11} />
-                          <Text style={{ fontSize: 10, color: colors.textTertiary }}>{ev.location}</Text>
+                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>{ev.location}</Text>
                         </View>
                       )}
                     </View>
@@ -992,13 +992,13 @@ export default function CalendarScreen() {
                     {/* Parent: Assign member to event */}
                     {isParent && (
                       <View style={[sc.assignRow, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                        <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textSecondary }}>Assign to:</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Assign to:</Text>
                         <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap' }}>
                           {members.filter(m => m.role === 'kid').map(k => (
                             <TouchableOpacity key={k.id}
                               style={[sc.assignChip, { backgroundColor: ev.memberId === k.id ? BRAND.purple : isDark ? '#1E293B' : '#F1F5F9', borderColor: ev.memberId === k.id ? BRAND.purple : isDark ? '#334155' : '#E2E8F0' }]}
                               onPress={() => updateEvent(ev.id, { memberId: k.id })}>
-                              <Text style={{ fontSize: 10, fontWeight: '700', color: ev.memberId === k.id ? '#fff' : colors.textSecondary }}>
+                              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: ev.memberId === k.id ? '#fff' : colors.textSecondary }}>
                                 {k.emoji ?? ''} {k.name.split(' ')[0]}
                               </Text>
                             </TouchableOpacity>
@@ -1012,12 +1012,12 @@ export default function CalendarScreen() {
                       <View style={[sc.approvalRow, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                           <I.AlertTriangle c="#F59E0B" size={12} />
-                          <Text style={{ fontSize: 10, fontWeight: '800', color: '#F59E0B' }}>Kid Request Pending</Text>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#F59E0B' }}>Kid Request Pending</Text>
                         </View>
                         <TouchableOpacity style={[sc.approveBtn]}
                           onPress={() => updateEvent(ev.id, { approvalPending: false, driverStatus: 'pending' })}>
                           <I.Check c="#fff" size={13} />
-                          <Text style={{ fontSize: 11, fontWeight: '900', color: '#fff' }}>Approve & Claim</Text>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Approve & Claim</Text>
                         </TouchableOpacity>
                       </View>
                     )}
@@ -1026,7 +1026,7 @@ export default function CalendarScreen() {
                     {isKid && ev.approvalPending && (
                       <View style={[sc.approvalRow, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9', justifyContent: 'flex-start', gap: 6 }]}>
                         <I.AlertTriangle c="#F59E0B" size={12} />
-                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#F59E0B' }}>Awaiting parent approval…</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#F59E0B' }}>Awaiting parent approval…</Text>
                       </View>
                     )}
 
@@ -1036,7 +1036,7 @@ export default function CalendarScreen() {
                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                             <I.Car c={colors.textTertiary} size={13} />
-                            <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
                               Driver: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.driver}</Text>
                             </Text>
                           </View>
@@ -1077,16 +1077,16 @@ export default function CalendarScreen() {
                         {/* Rejected driver info */}
                         {hasRejectedDriver && (
                           <View style={[sc.rejectedBox, { backgroundColor: isDark ? '#450A0A' : '#FEF2F2', borderColor: '#FCA5A5' }]}>
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: '#EF4444', marginBottom: 4 }}>
+                            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444', marginBottom: 4 }}>
                               ❌ Declined by {ev.declinedBy ?? ev.driver}:
                             </Text>
-                            <Text style={{ fontSize: 11, color: '#EF4444', fontStyle: 'italic' }}>
+                            <Text style={{ fontSize: TYPO.label, color: '#EF4444', fontStyle: 'italic' }}>
                               "{ev.declineReason ?? 'No reason provided'}"
                             </Text>
                             {isParentOrSenior && (
                               <TouchableOpacity style={[sc.reassignBtn, { marginTop: 8 }]} onPress={() => openReassign(ev)}>
                                 <I.Arrows c="#0F172A" size={12} />
-                                <Text style={{ fontSize: 11, fontWeight: '900', color: '#0F172A' }}>Reassign Driver Now</Text>
+                                <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>Reassign Driver Now</Text>
                               </TouchableOpacity>
                             )}
                           </View>
@@ -1096,7 +1096,7 @@ export default function CalendarScreen() {
                         {isConf && isParent && ev.driverStatus !== 'pending' && (
                           <TouchableOpacity style={[sc.reassignBtn, { marginTop: 8 }]} onPress={() => openReassign(ev)}>
                             <I.Arrows c="#0F172A" size={12} />
-                            <Text style={{ fontSize: 11, fontWeight: '900', color: '#0F172A' }}>Assign New Driver / Swap</Text>
+                            <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>Assign New Driver / Swap</Text>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -1147,7 +1147,7 @@ export default function CalendarScreen() {
                 <Text style={[ae.title, { color: colors.textPrimary }]}>📅 Filter Date Range</Text>
                 <TouchableOpacity onPress={() => setShowRange(false)}><I.X c={colors.textSecondary} /></TouchableOpacity>
               </View>
-              <Text style={{ fontSize: 11, color: colors.textSecondary, marginBottom: 14 }}>
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginBottom: 14 }}>
                 Filter events in the timeline between two dates. Leave blank to show all.
               </Text>
 
@@ -1163,7 +1163,7 @@ export default function CalendarScreen() {
                   <TouchableOpacity key={p.label}
                     style={[ae.catChip, { backgroundColor: rangeStart === p.start && rangeEnd === p.end ? BRAND.purple : isDark ? colors.surface : '#F5F4FA', borderColor: rangeStart === p.start && rangeEnd === p.end ? BRAND.purple : isDark ? colors.border : '#E2E8F0' }]}
                     onPress={() => { setRangeStart(p.start); setRangeEnd(p.end); }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: rangeStart === p.start && rangeEnd === p.end ? '#fff' : colors.textSecondary }}>{p.label}</Text>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: rangeStart === p.start && rangeEnd === p.end ? '#fff' : colors.textSecondary }}>{p.label}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1186,11 +1186,11 @@ export default function CalendarScreen() {
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <TouchableOpacity style={[ae.submitBtn, { flex: 1, backgroundColor: isDark ? colors.surface : '#F1F5F9', borderWidth: 1, borderColor: colors.border }]}
                   onPress={() => { setRangeStart(''); setRangeEnd(''); setShowRange(false); }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary }}>Clear Filter</Text>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Clear Filter</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[ae.submitBtn, { flex: 2, backgroundColor: BRAND.purple }]}
                   onPress={() => setShowRange(false)}>
-                  <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>Apply Range</Text>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Apply Range</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1204,7 +1204,7 @@ export default function CalendarScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const sc = StyleSheet.create({
   titleRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1 },
-  title:        { fontSize: 20, fontWeight: '900' },
+  title:        { fontSize: TYPO.heading, fontWeight: '900' },
   headerBtn:    { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
   headerBtnOutline: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5 },
 
@@ -1215,21 +1215,21 @@ const sc = StyleSheet.create({
   aiPanel:      { borderRadius: 24, borderWidth: 1, padding: 14, marginBottom: 4 },
   conflictCard: { borderRadius: 18, borderWidth: 1, borderColor: '#F59E0B40', padding: 10 },
   allClearBox:  { borderRadius: 14, borderWidth: 1, borderColor: '#10B98160', padding: 10 },
-  allClearText: { fontSize: 11, fontWeight: '700', color: '#059669', textAlign: 'center' },
+  allClearText: { fontSize: TYPO.label, fontWeight: '700', color: '#059669', textAlign: 'center' },
   swapBtn:      { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#10B981', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },
-  swapBtnText:  { fontSize: 10, fontWeight: '900', color: '#0F172A' },
+  swapBtnText:  { fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' },
   swapApplied:  { backgroundColor: '#059669', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },
-  swapAppliedText: { fontSize: 10, fontWeight: '900', color: '#fff' },
+  swapAppliedText: { fontSize: TYPO.label, fontWeight: '900', color: '#fff' },
 
   pill:         { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 22, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 7 },
-  pillText:     { fontSize: 12, fontWeight: '700' },
+  pillText:     { fontSize: TYPO.caption, fontWeight: '700' },
 
   timeLabel:    { position: 'absolute', left: -30, top: 14, alignItems: 'flex-end', width: 26 },
   timelineDot:  { position: 'absolute', left: -6, top: 18, width: 12, height: 12, borderRadius: 6, borderWidth: 3 },
 
   evCard:       { borderRadius: 24, borderWidth: 1, padding: 14, gap: 8 },
   catBadge:     { borderRadius: 20, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
-  catText:      { fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+  catText:      { fontSize: TYPO.micro, fontWeight: '900', letterSpacing: 0.5 },
 
   assignRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, borderTopWidth: 1, paddingTop: 8, flexWrap: 'wrap' },
   assignChip:   { borderRadius: 12, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4 },
@@ -1239,7 +1239,7 @@ const sc = StyleSheet.create({
 
   driverSection:{ borderTopWidth: 1, paddingTop: 8, gap: 6 },
   statusBadge:  { borderRadius: 20, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
-  statusText:   { fontSize: 10, fontWeight: '800' },
+  statusText:   { fontSize: TYPO.label, fontWeight: '800' },
   rejectedBox:  { borderRadius: 14, borderWidth: 1, padding: 10 },
   reassignBtn:  { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: BRAND.amber, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7, alignSelf: 'flex-end' as any },
 

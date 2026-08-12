@@ -10,6 +10,9 @@ import { useTheme } from '@/lib/ThemeContext';
 import { tabBarAnim, showTabBar } from '@/lib/tabBarVisibility';
 import TravelBanner from '@/components/TravelBanner';
 import { useNotifStore } from '@/store/notifStore';
+import { useFamilyStore } from '@/store/familyStore';
+import { useEventStore } from '@/store/eventStore';
+import { useQuestStore } from '@/store/questStore';
 
 // ── Tab icon name map ─────────────────────────────────────────────────────────
 const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
@@ -190,6 +193,16 @@ function CustomTabBar({ state, navigation }: any) {
 // ── Layout ────────────────────────────────────────────────────────────────────
 export default function TabLayout() {
   const { colors } = useTheme();
+  const { loaded: familyLoaded, loadFromStorage: loadFamily } = useFamilyStore();
+  const { loaded: eventsLoaded, loadFromStorage: loadEvents } = useEventStore();
+  const { loaded: questsLoaded, loadFromStorage: loadQuests } = useQuestStore();
+
+  // Boot all stores once when the tab shell mounts — before any screen renders
+  useEffect(() => {
+    if (!familyLoaded) loadFamily();
+    if (!eventsLoaded) loadEvents();
+    if (!questsLoaded) loadQuests();
+  }, []);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>

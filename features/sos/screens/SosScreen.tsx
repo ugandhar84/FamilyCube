@@ -491,7 +491,7 @@ export default function SOSScreen() {
           <View style={s.quickRow}>
             {[
               { icon: 'share-social-outline', label: 'Share Alert',
-                onPress: () => pet && Share.share({ message: `🚨 MISSING: ${pet.emoji ?? '🐾'} ${pet.name} (${pet.species}${pet.breed ? ` · ${pet.breed}` : ''})\n📍 Last seen: ${locationText ?? 'unknown'}\n\nPosted via PawBond` }) },
+                onPress: () => pet && Share.share({ message: `🚨 MISSING: ${pet.emoji ?? '🐾'} ${pet.name} (${pet.species}${pet.breed ? ` · ${pet.breed}` : ''})\n📍 Last seen: ${locationText ?? 'unknown'}\n\nPosted via Family Cube` }) },
               { icon: 'card-outline',         label: 'ID Card',
                 onPress: () => pet && router.push(`/pet/card?id=${pet.id}` as any) },
               { icon: 'location-outline',     label: 'Refresh',

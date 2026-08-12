@@ -755,7 +755,7 @@ function RootNavigator() {
               <Image source={require('../assets/icon.png')} style={inAppToastStyles.icon} />
               <View style={inAppToastStyles.textCol}>
                 <View style={inAppToastStyles.titleRow}>
-                  <Text style={inAppToastStyles.appName}>PAWBOND</Text>
+                  <Text style={inAppToastStyles.appName}>FAMILY CUBE</Text>
                   <Text style={inAppToastStyles.time}>now</Text>
                 </View>
                 <Text style={inAppToastStyles.title} numberOfLines={1}>{inAppNotif.title}</Text>

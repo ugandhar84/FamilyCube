@@ -89,7 +89,7 @@ export const ClosingSlide = React.memo(function ClosingSlide({ pet, t }: { pet: 
         Here's to {YEAR + 1} and all the memories still to come.
       </Text>
       <View style={[ss.closingBadge, { borderColor: `${t.accent}60` }]}>
-        <Text style={[ss.closingBadgeText, { color: t.accent }]}>PETKOINIA  ✦  {t.name.toUpperCase()}</Text>
+        <Text style={[ss.closingBadgeText, { color: t.accent }]}>FAMILY CUBE  ✦  {t.name.toUpperCase()}</Text>
       </View>
     </LinearGradient>
   );

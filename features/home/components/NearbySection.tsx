@@ -91,7 +91,7 @@ export const NearbySection = React.memo(function NearbySection({
         <View style={s.discoverEmpty}>
           <Text style={s.discoverEmptyEmoji}>📍</Text>
           <Text style={s.discoverEmptyText}>Enable location to see nearby places</Text>
-          <Text style={s.discoverEmptySub}>Go to Settings → Privacy → Location → PawBond</Text>
+          <Text style={s.discoverEmptySub}>Go to Settings → Privacy → Location → Family Cube</Text>
         </View>
       ) : displayPartners.length === 0 ? (
         <View style={s.discoverEmpty}>

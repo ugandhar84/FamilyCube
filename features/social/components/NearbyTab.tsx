@@ -418,7 +418,7 @@ export const NearbyTab = React.memo(function NearbyTab({
       </Text>
       <Text style={[nb.bigSub, { color: colors.textSecondary }]}>
         {moduleAvailable
-          ? 'PawBond uses your location to show nearby pets.'
+          ? 'Family Cube uses your location to show nearby pets.'
           : "GPS isn't available in Expo Go. Run npx expo run:ios for full support."}
       </Text>
     </View>

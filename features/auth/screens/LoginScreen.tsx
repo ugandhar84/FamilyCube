@@ -276,7 +276,7 @@ export default function LoginScreen() {
           {/* Logo */}
           <View style={s.logoWrap}>
             <PawBondLogo size={100} animated isDark={isDark} />
-            <Text style={s.logoText}>PawBond</Text>
+            <Text style={s.logoText}>Family Cube</Text>
             <Text style={s.logoSub}>Every day with them, remembered forever.</Text>
           </View>
 

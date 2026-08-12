@@ -31,7 +31,7 @@ export default function LockScreen() {
     if (inFlight.current) return; // guard against auto-trigger + tap race
     inFlight.current = true;
     setBusy(true);
-    const { success, error } = await authenticateWithBiometricsDetailed('Unlock PawBond');
+    const { success, error } = await authenticateWithBiometricsDetailed('Unlock Family Cube');
     if (!success) {
       setBusy(false);
       inFlight.current = false;

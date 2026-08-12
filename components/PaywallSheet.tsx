@@ -150,7 +150,7 @@ export default function PaywallSheet({
         'Welcome! 🎉',
         `You are now on ${result.tier === 'ultimate' ? 'Ultimate' : 'Pro'}! Tap Reload to activate all features now.`,
         [
-          { text: 'Restart', onPress: () => Alert.alert('Restart PawBond', 'Please close and reopen the app to activate all features.') },
+          { text: 'Restart', onPress: () => Alert.alert('Restart Family Cube', 'Please close and reopen the app to activate all features.') },
           { text: 'Later' },
         ],
       );
@@ -178,7 +178,7 @@ export default function PaywallSheet({
         'Restored! 🎉',
         `Your ${result.tier === 'ultimate' ? 'Ultimate' : 'Pro'} subscription is active. Tap Reload to activate all features now.`,
         [
-          { text: 'Restart', onPress: () => Alert.alert('Restart PawBond', 'Please close and reopen the app to activate all features.') },
+          { text: 'Restart', onPress: () => Alert.alert('Restart Family Cube', 'Please close and reopen the app to activate all features.') },
           { text: 'Later' },
         ],
       ), 400);
@@ -206,7 +206,7 @@ export default function PaywallSheet({
     ? `${annualPawPkg.product.currencyCode ?? '$'}${(annualPawPkg.product.price / 12).toFixed(2)}/mo`
     : null;
 
-  const sheetTitle    = currentTier === 'pro' ? 'PawBond Ultimate' : 'PawBond Pro';
+  const sheetTitle    = currentTier === 'pro' ? 'Family Cube Ultimate' : 'Family Cube Pro';
   const sheetSubtitle = currentTier === 'pro' ? 'Unlock the full Ultimate experience' : 'Unlock the full experience';
 
   return (
@@ -214,7 +214,7 @@ export default function PaywallSheet({
       visible={visible}
       onClose={onClose}
       onDismiss={handleDismiss}
-      title={currentTier === 'pro' ? 'Upgrade to Ultimate' : 'PawBond Pro & Ultimate'}
+      title={currentTier === 'pro' ? 'Upgrade to Ultimate' : 'Family Cube Pro & Ultimate'}
       titleIcon={<Text style={{ fontSize: 22 }}>🩺</Text>}
       subtitle={copy.trial_subtitle}
     >

@@ -352,7 +352,7 @@ export default function PlaydateChatScreen() {
     if (status !== 'granted') { showAlert('Permission needed', 'Please allow calendar access in Settings.'); return; }
     const eventDetails = {
       title: `🐾 Playdate with ${petName}`, startDate: start, endDate: end,
-      location: chat.agreed_location ?? undefined, notes: 'Playdate arranged via PawBond 🐾',
+      location: chat.agreed_location ?? undefined, notes: 'Playdate arranged via Family Cube',
       alarms: [{ relativeOffset: -60 }] as any[],
     };
     try {

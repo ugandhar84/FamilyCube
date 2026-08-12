@@ -181,14 +181,14 @@ export default function AcceptInviteScreen() {
           <Text style={s.errorTitle}>Invitation not found</Text>
           <Text style={s.errorText}>{error ?? 'Something went wrong.'}</Text>
           <TouchableOpacity style={s.homeBtn} onPress={() => router.replace('/(tabs)')}>
-            <Text style={s.homeBtnText}>Go to PawBond</Text>
+            <Text style={s.homeBtnText}>Go to Family Cube</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  const inviterName = (invite as any).profiles?.handle ? `@${(invite as any).profiles.handle}` : 'A PawBond user';
+  const inviterName = (invite as any).profiles?.handle ? `@${(invite as any).profiles.handle}` : 'A Family Cube user';
 
   return (
     <SafeAreaView style={s.safe}>

@@ -92,7 +92,7 @@ export const DocumentPreview = React.memo(function DocumentPreview({ entries, pe
 
       {/* Footer */}
       <View style={[dp.footerBar, { borderTopColor: th.lineColor }]}>
-        <Text style={[dp.footerBrand, { color: th.purple }]}>PawBond</Text>
+        <Text style={[dp.footerBrand]}>Family Cube</Text>
       </View>
     </View>
   );

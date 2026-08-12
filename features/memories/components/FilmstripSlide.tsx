@@ -50,7 +50,7 @@ export const FilmstripSlide = React.memo(function FilmstripSlide({ photos }: Pro
         ))}
       </View>
       <Text style={{ color: '#555', fontSize: TYPO.body, fontWeight: '700', textAlign: 'center', letterSpacing: 3, marginTop: 18 }}>
-        {YEAR} ◆ PETKOINIA
+        {YEAR} ◆ FAMILY CUBE
       </Text>
     </View>
   );

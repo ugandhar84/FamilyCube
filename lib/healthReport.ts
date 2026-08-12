@@ -951,7 +951,7 @@ function buildHTML(pet: Pet, ownerName: string | null, sections: ReportSection[]
     <div class="cover-footer">
       <span>Report generated <strong>${format(new Date(), 'MMMM d, yyyy')}</strong></span>
       <span>For veterinary reference only — not a substitute for clinical diagnosis</span>
-      <span><strong>PETKOINIA</strong></span>
+      <span><strong>FAMILY CUBE</strong></span>
     </div>
   </div>
 

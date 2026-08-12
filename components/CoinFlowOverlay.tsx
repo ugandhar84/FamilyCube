@@ -194,7 +194,7 @@ export default function CoinFlowOverlay({
             <View style={s.iconWrap} ref={fromRef} onLayout={measurePositions}>
               <Text style={s.iconEmoji}>🐾</Text>
             </View>
-            <Text style={s.cardLabel}>PawBond</Text>
+            <Text style={s.cardLabel}>Family Cube</Text>
             <Text style={[s.balance, s.balanceFrom]}>🪙 {fromDisplay}</Text>
             <View style={s.quotaWrap}>
               <View style={s.quotaRow}>

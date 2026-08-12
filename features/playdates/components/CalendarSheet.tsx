@@ -38,13 +38,13 @@ export const CalendarSheet = React.memo(function CalendarSheet({ entry, myPetNam
       const dtStart = buildIcsDt(entry.agreed_date, entry.agreed_time);
       const dtEnd   = buildIcsDt(entry.agreed_date, entry.agreed_time, 1);
       const ics = [
-        'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//PawBond//EN',
+        'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//FamilyCube//EN',
         'BEGIN:VEVENT',
         `DTSTART:${dtStart}`,
         `DTEND:${dtEnd}`,
         `SUMMARY:${title}`,
-        'DESCRIPTION:Scheduled via PawBond 🐾',
-        `UID:playdate-${entry.id}@pawbond`,
+        'DESCRIPTION:Scheduled via Family Cube',
+        `UID:playdate-${entry.id}@familycube`,
         'END:VEVENT', 'END:VCALENDAR',
       ].join('\r\n');
       const path = `${FileSystem.cacheDirectory}playdate.ics`;
@@ -62,7 +62,7 @@ export const CalendarSheet = React.memo(function CalendarSheet({ entry, myPetNam
     const dtStart = buildIcsDt(entry.agreed_date, entry.agreed_time);
     const dtEnd   = buildIcsDt(entry.agreed_date, entry.agreed_time, 1);
     const dates = `${dtStart}/${dtEnd}`;
-    const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${dates}&details=${encodeURIComponent('Scheduled via PawBond 🐾')}`;
+    const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${dates}&details=${encodeURIComponent('Scheduled via Family Cube')}`;
     Linking.openURL(url);
     showAlert('Opening Google Calendar 🐾', 'Complete the event in Google Calendar to save your playdate.');
     onClose();

@@ -10,9 +10,9 @@ import BackButton from '@/components/BackButton';
 import { useAuthStore } from '@/store/authStore';
 import { TYPO } from '@/constants/theme';
 
-const TERMS_CONTENT = `PETKOINIA — TERMS OF SERVICE, PRIVACY POLICY & AI DISCLOSURE
+const TERMS_CONTENT = `FAMILY CUBE — TERMS OF SERVICE, PRIVACY POLICY & AI DISCLOSURE
 
-Last updated: July 2026 | Version 2.0
+Last updated: August 2026 | Version 1.0
 
 THESE TERMS GOVERN YOUR ENTIRE LEGAL RELATIONSHIP WITH PEOPLEONTECH LLC. THEY INCLUDE MANDATORY ARBITRATION (§15), CLASS ACTION WAIVER (§15.4), AND FULL RELEASES OF LIABILITY (§§4–6, 12). READ EVERY SECTION BEFORE USING THIS APP.
 
@@ -21,7 +21,7 @@ BY TAPPING "ACCEPT & CONTINUE", CREATING AN ACCOUNT, OR ACCESSING ANY PART OF TH
 
 1. PARTIES, ACCEPTANCE & ELIGIBILITY
 
-1.1 Agreement. These Terms of Service ("Terms") are a binding legal contract between you ("User", "you") and PeopleOnTech LLC, a Delaware limited liability company ("Company", "we", "us"). "Petkoinia" is our brand name for the Service.
+1.1 Agreement. These Terms of Service ("Terms") are a binding legal contract between you ("User", "you") and PeopleOnTech LLC, a Delaware limited liability company ("Company", "we", "us"). "Family Cube" is our brand name for the Service.
 
 1.2 Electronic acceptance. Tapping "Accept & Continue," creating an account, or using any part of the Service constitutes full, unconditional acceptance of these Terms. Electronic acceptance carries the same legal force as a handwritten signature.
 
@@ -143,7 +143,7 @@ Health records, logs, reminders, schedules, and tracking data within the App are
 
 9. SUBSCRIPTIONS, BILLING, REFUNDS
 
-9.1 Subscription plans. Petkoinia offers three tiers: Free (no charge), Pro, and Ultimate. Pro and Ultimate are paid subscriptions billed through the Apple App Store or Google Play Store. All purchases are governed by those platforms' own terms and refund policies. Plan features, usage limits, and pricing are described in the App and may change at any time per §9.4 and §9.5.
+9.1 Subscription plans. Family Cube offers three tiers: Free (no charge), Pro, and Ultimate. Pro and Ultimate are paid subscriptions billed through the Apple App Store or Google Play Store. All purchases are governed by those platforms' own terms and refund policies. Plan features, usage limits, and pricing are described in the App and may change at any time per §9.4 and §9.5.
 
 9.2 Platform billing. All paid subscriptions are billed and managed exclusively through the Apple App Store or Google Play Store.
 
@@ -231,7 +231,7 @@ You agree to indemnify, defend (with counsel pre-approved by us), and hold harml
 16.10 Feedback. Any feedback, suggestions, or ideas you submit to us may be used by PeopleOnTech LLC without restriction, compensation, or attribution, and you assign to us all rights in such submissions.
 
 
-© 2026 PeopleOnTech LLC. All rights reserved. PawBond is a registered trademark of PeopleOnTech LLC. Unauthorised use is strictly prohibited.`;
+© 2026 PeopleOnTech LLC. All rights reserved. Family Cube is a trademark of PeopleOnTech LLC. Unauthorised use is strictly prohibited.`;
 
 export default function TermsScreen() {
   const { colors, isDark } = useTheme();

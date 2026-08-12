@@ -458,7 +458,7 @@ export default function ProfileScreen() {
           </TouchableOpacity>
 
           <Text style={{ fontSize: TYPO.body, color: colors.textSecondary, textAlign: 'center', marginTop: 20 }}>
-            PawBond v1.0.0 · Made with 💚 for pet lovers
+            Family Cube v1.0.0 · Made with 💚 for pet lovers
           </Text>
         </ScrollView>
       </SafeAreaView>

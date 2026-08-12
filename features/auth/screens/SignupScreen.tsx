@@ -215,7 +215,7 @@ export default function SignupScreen() {
           <View style={s.header}>
             <PawBondLogo size={80} animated isDark={isDark} />
             <Text style={s.title}>Create your account</Text>
-            <Text style={s.sub}>Start your PawBond journey today</Text>
+            <Text style={s.sub}>Start your Family Cube journey today</Text>
           </View>
 
           {/* Apple sign-up */}

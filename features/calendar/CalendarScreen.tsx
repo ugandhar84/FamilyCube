@@ -735,173 +735,173 @@ export default function CalendarScreen() {
         onBellPress={() => {}}
       />
 
-      {/* ── Title row ── */}
-      <View style={[sc.titleRow, { backgroundColor: isDark ? colors.card : '#fff', borderBottomColor: colors.border }]}>
+      {/* ── Main Scroll: title + AI + member filter + timeline ── */}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 48 }}
+        stickyHeaderIndices={[1]}>
+
+        {/* [0] Scrollable: Title row + AI banner + AI panel */}
         <View>
-          <Text style={[sc.title, { color: isDark ? colors.textPrimary : '#1E2D6B' }]}>
-            {isKid ? 'My Schedule' : 'Family Schedule'}
-          </Text>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple, marginTop: 1 }}>
-            {rangeStart || rangeEnd ? `${rangeStart || '…'} → ${rangeEnd || '…'}` : selectedDateLabel}
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-          {isKid ? (
-            <TouchableOpacity style={[sc.headerBtn, { backgroundColor: BRAND.amber }]} onPress={() => setShowAskHelp(true)}>
-              <I.HelpCircle c="#0F172A" size={14} />
-              <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>+ Ask Help</Text>
-            </TouchableOpacity>
-          ) : (
-            <>
-              {/* Range filter chip */}
-              {rangeStart || rangeEnd ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 0,
-                  backgroundColor: BRAND.purple + '18', borderRadius: 14, borderWidth: 1.5, borderColor: BRAND.purple + '55', overflow: 'hidden' }}>
-                  <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6 }}
-                    onPress={() => setShowRange(true)}>
-                    <I.Calendar c={BRAND.purple} size={12} />
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.purple }}>
-                      {rangeStart || '…'} → {rangeEnd || '…'}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={{ paddingHorizontal: 8, paddingVertical: 6,
-                    borderLeftWidth: 1, borderLeftColor: BRAND.purple + '40' }}
-                    onPress={() => { setRangeStart(''); setRangeEnd(''); }}>
-                    <I.X c={BRAND.purple} size={12} />
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity style={[sc.headerBtnOutline, { borderColor: colors.border }]}
-                  onPress={() => setShowRange(true)}>
-                  <I.Calendar c={BRAND.purple} size={14} />
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>Range</Text>
-                </TouchableOpacity>
-              )}
-              {isParent && (
-                <TouchableOpacity style={[sc.headerBtn, { backgroundColor: BRAND.purple }]} onPress={() => setShowAdd(true)}>
-                  <I.Plus c="#fff" size={14} />
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Event</Text>
-                </TouchableOpacity>
-              )}
-            </>
-          )}
-        </View>
-      </View>
-
-      {/* ── AI Conflict Banner (parent only) ── */}
-      {isParent && (
-        <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 6 }}>
-          <LinearGradient
-            colors={[BRAND.purple, BRAND.teal]}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-            style={[sc.aiBannerCard, { borderRadius: 20 }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <View style={[sc.aiIconBox, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
-                <I.Bot c="#fff" size={17} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>CubeAI Schedule Agent</Text>
-                  <View style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }}>● Active</Text>
-                  </View>
-                </View>
-                <Text style={{ fontSize: TYPO.micro, color: 'rgba(255,255,255,0.8)', marginTop: 2 }}>
-                  Conflict detection, driver gaps &amp; swap suggestions
-                </Text>
-              </View>
-              <TouchableOpacity style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 14,
-                paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}
-                onPress={runAiScan}>
-                {isAnalyzing
-                  ? <ActivityIndicator size={12} color="#fff" />
-                  : <I.AlertTriangle c="#fff" size={12} />}
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Scan</Text>
-              </TouchableOpacity>
-            </View>
-          </LinearGradient>
-        </View>
-      )}
-
-      {/* ── AI Results Panel ── */}
-      {showAiPanel && (
-        <View style={[sc.aiPanel, {
-          backgroundColor: isDark ? '#1E1B4B' : '#F5F0FF',
-          borderColor: isDark ? '#6D28D940' : 'rgba(146,97,199,0.25)',
-          marginHorizontal: 12, marginTop: 10,
-        }]}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <I.Bot c={isDark ? '#C4B5FD' : BRAND.purple} size={15} />
-              <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: isDark ? '#C4B5FD' : BRAND.purple }}>CubeAI Conflict & Driver Swap Recommendations</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => setShowAiPanel(false)}
-              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-              style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(146,97,199,0.1)' }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#A78BFA' : BRAND.purple }}>✕ Close</Text>
-            </TouchableOpacity>
-          </View>
-
-          {isAnalyzing ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8 }}>
-              <ActivityIndicator color={BRAND.purple} size="small" />
-              <Text style={{ fontSize: TYPO.label, color: isDark ? '#A78BFA' : BRAND.purple, fontWeight: '700' }}>
-                Scanning for time overlaps, missing drivers, and travel conflicts...
+          <View style={[sc.titleRow, { backgroundColor: isDark ? colors.card : '#fff', borderBottomColor: colors.border }]}>
+            <View>
+              <Text style={[sc.title, { color: isDark ? colors.textPrimary : '#1E2D6B' }]}>
+                {isKid ? 'My Schedule' : 'Family Schedule'}
+              </Text>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple, marginTop: 1 }}>
+                {rangeStart || rangeEnd ? `${rangeStart || '…'} → ${rangeEnd || '…'}` : selectedDateLabel}
               </Text>
             </View>
-          ) : aiResult ? (
-            <View style={{ gap: 8 }}>
-              <Text style={{ fontSize: TYPO.label, color: isDark ? '#CBD5E1' : '#374151', lineHeight: 16 }}>{aiResult.summary}</Text>
-              {aiResult.conflictsFound ? (
-                <>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                    <I.Shield c="#F59E0B" size={13} />
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#D97706' }}>
-                      {aiResult.conflicts.length} Logistics Conflict(s) Detected:
-                    </Text>
-                  </View>
-                  {aiResult.conflicts.map((c, idx) => (
-                    <View key={idx} style={[sc.conflictCard, { backgroundColor: isDark ? '#1C1000' : '#FFF7ED' }]}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#FDE68A' : '#92400E', marginBottom: 3 }}>{c.description}</Text>
-                      <Text style={{ fontSize: TYPO.label, color: isDark ? '#F59E0B80' : '#D97706' }}>Affected: {c.eventsInvolved.join(' & ')}</Text>
-                      {c.suggestedFix && (
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, flexWrap: 'wrap', gap: 8 }}>
-                          <Text style={{ fontSize: TYPO.label, color: '#6EE7B7', fontWeight: '700', flex: 1 }}>
-                            💡 {c.suggestedFix}
-                          </Text>
-                          {c.recommendedDriverSwap && (
-                            appliedSwaps[`swap_${idx}`] ? (
-                              <View style={sc.swapApplied}>
-                                <Text style={sc.swapAppliedText}>✓ Swapped to {c.recommendedDriverSwap}</Text>
-                              </View>
-                            ) : (
-                              <TouchableOpacity style={sc.swapBtn} onPress={() => handleApplySwap(idx, c)}>
-                                <I.Arrows c="#0F172A" size={11} />
-                                <Text style={sc.swapBtnText}>⚡ Apply Swap to {c.recommendedDriverSwap}</Text>
-                              </TouchableOpacity>
-                            )
-                          )}
-                        </View>
-                      )}
-                    </View>
-                  ))}
-                </>
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              {isKid ? (
+                <TouchableOpacity style={[sc.headerBtn, { backgroundColor: BRAND.amber }]} onPress={() => setShowAskHelp(true)}>
+                  <I.HelpCircle c="#0F172A" size={14} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>+ Ask Help</Text>
+                </TouchableOpacity>
               ) : (
-                <View style={[sc.allClearBox, { backgroundColor: isDark ? '#064E3B40' : '#F0FDF4' }]}>
-                  <Text style={sc.allClearText}>✅ No schedule conflicts! All drivers and events smoothly covered.</Text>
-                </View>
+                <>
+                  {rangeStart || rangeEnd ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 0,
+                      backgroundColor: BRAND.purple + '18', borderRadius: 14, borderWidth: 1.5, borderColor: BRAND.purple + '55', overflow: 'hidden' }}>
+                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6 }}
+                        onPress={() => setShowRange(true)}>
+                        <I.Calendar c={BRAND.purple} size={12} />
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.purple }}>
+                          {rangeStart || '…'} → {rangeEnd || '…'}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={{ paddingHorizontal: 8, paddingVertical: 6,
+                        borderLeftWidth: 1, borderLeftColor: BRAND.purple + '40' }}
+                        onPress={() => { setRangeStart(''); setRangeEnd(''); }}>
+                        <I.X c={BRAND.purple} size={12} />
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity style={[sc.headerBtnOutline, { borderColor: colors.border }]}
+                      onPress={() => setShowRange(true)}>
+                      <I.Calendar c={BRAND.purple} size={14} />
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>Range</Text>
+                    </TouchableOpacity>
+                  )}
+                  {isParent && (
+                    <TouchableOpacity style={[sc.headerBtn, { backgroundColor: BRAND.purple }]} onPress={() => setShowAdd(true)}>
+                      <I.Plus c="#fff" size={14} />
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Event</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
               )}
             </View>
-          ) : null}
+          </View>
+
+          {/* AI Conflict Banner (parent only) */}
+          {isParent && (
+            <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 6 }}>
+              <LinearGradient
+                colors={[BRAND.purple, BRAND.teal]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={[sc.aiBannerCard, { borderRadius: 20 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={[sc.aiIconBox, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
+                    <I.Bot c="#fff" size={17} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>CubeAI Schedule Agent</Text>
+                      <View style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }}>● Active</Text>
+                      </View>
+                    </View>
+                    <Text style={{ fontSize: TYPO.micro, color: 'rgba(255,255,255,0.8)', marginTop: 2 }}>
+                      Conflict detection, driver gaps &amp; swap suggestions
+                    </Text>
+                  </View>
+                  <TouchableOpacity style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 14,
+                    paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}
+                    onPress={runAiScan}>
+                    {isAnalyzing
+                      ? <ActivityIndicator size={12} color="#fff" />
+                      : <I.AlertTriangle c="#fff" size={12} />}
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Scan</Text>
+                  </TouchableOpacity>
+                </View>
+              </LinearGradient>
+            </View>
+          )}
+
+          {/* AI Results Panel */}
+          {showAiPanel && (
+            <View style={[sc.aiPanel, {
+              backgroundColor: isDark ? '#1E1B4B' : '#F5F0FF',
+              borderColor: isDark ? '#6D28D940' : 'rgba(146,97,199,0.25)',
+              marginHorizontal: 12, marginTop: 10,
+            }]}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <I.Bot c={isDark ? '#C4B5FD' : BRAND.purple} size={15} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: isDark ? '#C4B5FD' : BRAND.purple }}>CubeAI Conflict & Driver Swap Recommendations</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setShowAiPanel(false)}
+                  hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                  style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(146,97,199,0.1)' }}>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#A78BFA' : BRAND.purple }}>✕ Close</Text>
+                </TouchableOpacity>
+              </View>
+              {isAnalyzing ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8 }}>
+                  <ActivityIndicator color={BRAND.purple} size="small" />
+                  <Text style={{ fontSize: TYPO.label, color: isDark ? '#A78BFA' : BRAND.purple, fontWeight: '700' }}>
+                    Scanning for time overlaps, missing drivers, and travel conflicts...
+                  </Text>
+                </View>
+              ) : aiResult ? (
+                <View style={{ gap: 8 }}>
+                  <Text style={{ fontSize: TYPO.label, color: isDark ? '#CBD5E1' : '#374151', lineHeight: 16 }}>{aiResult.summary}</Text>
+                  {aiResult.conflictsFound ? (
+                    <>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                        <I.Shield c="#F59E0B" size={13} />
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#D97706' }}>
+                          {aiResult.conflicts.length} Logistics Conflict(s) Detected:
+                        </Text>
+                      </View>
+                      {aiResult.conflicts.map((c, idx) => (
+                        <View key={idx} style={[sc.conflictCard, { backgroundColor: isDark ? '#1C1000' : '#FFF7ED' }]}>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#FDE68A' : '#92400E', marginBottom: 3 }}>{c.description}</Text>
+                          <Text style={{ fontSize: TYPO.label, color: isDark ? '#F59E0B80' : '#D97706' }}>Affected: {c.eventsInvolved.join(' & ')}</Text>
+                          {c.suggestedFix && (
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, flexWrap: 'wrap', gap: 8 }}>
+                              <Text style={{ fontSize: TYPO.label, color: '#6EE7B7', fontWeight: '700', flex: 1 }}>
+                                💡 {c.suggestedFix}
+                              </Text>
+                              {c.recommendedDriverSwap && (
+                                appliedSwaps[`swap_${idx}`] ? (
+                                  <View style={sc.swapApplied}>
+                                    <Text style={sc.swapAppliedText}>✓ Swapped to {c.recommendedDriverSwap}</Text>
+                                  </View>
+                                ) : (
+                                  <TouchableOpacity style={sc.swapBtn} onPress={() => handleApplySwap(idx, c)}>
+                                    <I.Arrows c="#0F172A" size={11} />
+                                    <Text style={sc.swapBtnText}>⚡ Apply Swap to {c.recommendedDriverSwap}</Text>
+                                  </TouchableOpacity>
+                                )
+                              )}
+                            </View>
+                          )}
+                        </View>
+                      ))}
+                    </>
+                  ) : (
+                    <View style={[sc.allClearBox, { backgroundColor: isDark ? '#064E3B40' : '#F0FDF4' }]}>
+                      <Text style={sc.allClearText}>✅ No schedule conflicts! All drivers and events smoothly covered.</Text>
+                    </View>
+                  )}
+                </View>
+              ) : null}
+            </View>
+          )}
         </View>
-      )}
 
-      {/* ── Main Scroll (member filter + day strip + timeline all inside) ── */}
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 48 }}
-        stickyHeaderIndices={[0]}>
-
-        {/* Sticky: Member filter */}
+        {/* [1] Sticky: Member filter */}
         <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderBottomWidth: 1, borderBottomColor: colors.border }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ paddingHorizontal: 14, gap: 8, paddingVertical: 10 }}>

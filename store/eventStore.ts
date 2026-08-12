@@ -37,26 +37,35 @@ interface EventState {
   deleteEvent: (id: string) => void;
 }
 
-const KEY = '@familycube_events_v3';
+const KEY = '@familycube_events_v4';
 
-const d = (offset: number) => {
-  const dt = new Date(); dt.setDate(dt.getDate() + offset);
-  return dt.toISOString().split('T')[0];
-};
+// Use local date components to avoid UTC-shift timezone bugs
+function localDateStr(offset: number): string {
+  const dt = new Date();
+  dt.setDate(dt.getDate() + offset);
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const d = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 
-const SEED: FamilyEvent[] = [
-  { id: 'e1',  title: 'Dentist appointment', date: d(0), time: '10:00', memberId: 'kid-1',    type: 'appointment', color: '#EF4444', category: 'Medical',  location: 'Dr. Smith Clinic' },
-  { id: 'e2',  title: 'Soccer practice',     date: d(0), time: '15:30', memberId: 'kid-1',    type: 'event',       color: '#10B981', category: 'Sports',   driver: 'Priya (Mom)', driverStatus: 'confirmed', location: 'Riverside Park' },
-  { id: 'e3',  title: 'Math tutoring',       date: d(0), time: '17:00', memberId: 'kid-2',    type: 'event',       color: '#6C5CE7', category: 'School',   driver: 'Alex (Dad)',  driverStatus: 'pending',   conflict: true, driverRequestedBy: 'Priya (Mom)', taskOwner: 'Priya (Mom)' },
-  { id: 'e4',  title: 'Family game night',   date: d(0), time: '19:00',                        type: 'event',       color: '#6C5CE7', category: 'Event' },
-  { id: 'e5',  title: 'Grocery run',         date: d(1), time: '11:00', memberId: 'parent-1', type: 'reminder',    color: '#3B82F6', category: 'Work' },
-  { id: 'e6',  title: 'Soccer tournament',   date: d(1), time: '09:00', memberId: 'kid-1',    type: 'event',       color: '#10B981', category: 'Sports',   driver: 'Alex (Dad)',  driverStatus: 'confirmed', location: 'City Stadium' },
-  { id: 'e7',  title: "Leo's Birthday 🎂",   date: d(3), allDay: true,  memberId: 'kid-1',    type: 'birthday',    color: '#F59E0B', category: 'Event' },
-  { id: 'e8',  title: 'Work presentation',   date: d(2), time: '09:30', memberId: 'parent-1', type: 'appointment', color: '#9D4EDD', category: 'Work',     location: 'Office HQ' },
-  { id: 'e9',  title: "Maya's Piano lesson", date: d(2), time: '16:00', memberId: 'kid-2',    type: 'event',       color: '#F59E0B', category: 'School',   driver: 'Grandma Mary', driverStatus: 'confirmed', location: 'Music Academy' },
-  { id: 'e10', title: 'Vaccine checkup',     date: d(4), time: '11:00', memberId: 'kid-3',    type: 'appointment', color: '#EF4444', category: 'Medical',  location: 'Pediatric Center' },
-  { id: 'e11', title: 'Ride to chess club',  date: d(0), time: '14:00', memberId: 'kid-1',    type: 'event',       color: '#F59E0B', category: 'School',   driver: 'Grandma Mary', driverStatus: 'rejected', declineReason: 'Vehicle unavailable today', declinedBy: 'Grandma Mary', driverRequestedBy: 'Priya (Mom)' },
-];
+// Called fresh each time so dates are always relative to "now", never stale
+function makeSeed(): FamilyEvent[] {
+  const d = localDateStr;
+  return [
+    { id: 'e1',  title: 'Dentist appointment', date: d(0), time: '10:00', memberId: 'kid-1',    type: 'appointment', color: '#EF4444', category: 'Medical',  location: 'Dr. Smith Clinic' },
+    { id: 'e2',  title: 'Soccer practice',     date: d(0), time: '15:30', memberId: 'kid-1',    type: 'event',       color: '#10B981', category: 'Sports',   driver: 'Priya (Mom)', driverStatus: 'confirmed', location: 'Riverside Park' },
+    { id: 'e3',  title: 'Math tutoring',       date: d(0), time: '17:00', memberId: 'kid-2',    type: 'event',       color: '#6C5CE7', category: 'School',   driver: 'Alex (Dad)',  driverStatus: 'pending',   conflict: true, driverRequestedBy: 'Priya (Mom)', taskOwner: 'Priya (Mom)' },
+    { id: 'e4',  title: 'Family game night',   date: d(0), time: '19:00',                        type: 'event',       color: '#6C5CE7', category: 'Event' },
+    { id: 'e5',  title: 'Grocery run',         date: d(1), time: '11:00', memberId: 'parent-1', type: 'reminder',    color: '#3B82F6', category: 'Work' },
+    { id: 'e6',  title: 'Soccer tournament',   date: d(1), time: '09:00', memberId: 'kid-1',    type: 'event',       color: '#10B981', category: 'Sports',   driver: 'Alex (Dad)',  driverStatus: 'confirmed', location: 'City Stadium' },
+    { id: 'e7',  title: "Leo's Birthday 🎂",   date: d(3), allDay: true,  memberId: 'kid-1',    type: 'birthday',    color: '#F59E0B', category: 'Event' },
+    { id: 'e8',  title: 'Work presentation',   date: d(2), time: '09:30', memberId: 'parent-1', type: 'appointment', color: '#9D4EDD', category: 'Work',     location: 'Office HQ' },
+    { id: 'e9',  title: "Maya's Piano lesson", date: d(2), time: '16:00', memberId: 'kid-2',    type: 'event',       color: '#F59E0B', category: 'School',   driver: 'Grandma Mary', driverStatus: 'confirmed', location: 'Music Academy' },
+    { id: 'e10', title: 'Vaccine checkup',     date: d(4), time: '11:00', memberId: 'kid-3',    type: 'appointment', color: '#EF4444', category: 'Medical',  location: 'Pediatric Center' },
+    { id: 'e11', title: 'Ride to chess club',  date: d(0), time: '14:00', memberId: 'kid-1',    type: 'event',       color: '#F59E0B', category: 'School',   driver: 'Grandma Mary', driverStatus: 'rejected', declineReason: 'Vehicle unavailable today', declinedBy: 'Grandma Mary', driverRequestedBy: 'Priya (Mom)' },
+  ];
+}
 
 const save = (events: FamilyEvent[]) => AsyncStorage.setItem(KEY, JSON.stringify(events));
 
@@ -67,10 +76,11 @@ export const useEventStore = create<EventState>((set, get) => ({
   loadFromStorage: async () => {
     try {
       const raw = await AsyncStorage.getItem(KEY);
-      const events = raw ? JSON.parse(raw) as FamilyEvent[] : SEED;
-      if (!raw) save(SEED);
+      const seed = makeSeed();
+      const events = raw ? JSON.parse(raw) as FamilyEvent[] : seed;
+      if (!raw) save(seed);
       set({ events, loaded: true });
-    } catch { set({ events: SEED, loaded: true }); }
+    } catch { set({ events: makeSeed(), loaded: true }); }
   },
 
   addEvent: (e) => {

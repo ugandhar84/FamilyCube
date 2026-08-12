@@ -13,7 +13,8 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { useTheme } from '@/lib/ThemeContext';
-import { CubeMark, BRAND } from './FamilyCubeLogo';
+import { IconCubeMark, BRAND } from './FamilyCubeLogo';
+import PersonaSwitcherSheet from './PersonaSwitcherSheet';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -54,18 +55,23 @@ function AnimatedCubeMark({ size = 30 }: { size?: number }) {
   const op     = useSharedValue(0);
 
   useEffect(() => {
-    // Fade + grow in
-    op.value    = withTiming(1, { duration: 200 });
-    // Roll from -360° and spring to 0 with slight overshoot
-    rotate.value = withTiming(0, { duration: 500, easing: Easing.out(Easing.cubic) });
-    // Scale: snap in, settle, then loop a soft pulse
+    op.value = withTiming(1, { duration: 200 });
+    // Roll → pause 8s → snap back → roll again, forever
+    rotate.value = withRepeat(
+      withSequence(
+        withTiming(0,    { duration: 500, easing: Easing.out(Easing.cubic) }),
+        withDelay(8000, withTiming(-360, { duration: 1 })),
+      ),
+      -1, false,
+    );
+    // Scale: spring in, then soft pulse loop
     scale.value = withSequence(
-      withSpring(1,    { damping: 8, stiffness: 180 }),
+      withSpring(1, { damping: 8, stiffness: 180 }),
       withDelay(200, withRepeat(
         withSequence(
           withTiming(1.08, { duration: 600, easing: Easing.inOut(Easing.sin) }),
           withTiming(1,    { duration: 600, easing: Easing.inOut(Easing.sin) }),
-          withDelay(1800, withTiming(1, { duration: 1 })), // pause between pulses
+          withDelay(1800, withTiming(1, { duration: 1 })),
         ),
         -1, false,
       )),
@@ -79,7 +85,7 @@ function AnimatedCubeMark({ size = 30 }: { size?: number }) {
 
   return (
     <Animated.View style={aStyle}>
-      <CubeMark size={size} uid="hdr" />
+      <IconCubeMark size={size} />
     </Animated.View>
   );
 }
@@ -159,8 +165,16 @@ export default function AppHeader({
 }: AppHeaderProps) {
   const { colors, isDark } = useTheme();
   const role = ROLE_CONFIG[memberRole] ?? ROLE_CONFIG.parent;
+  const [showSwitcher, setShowSwitcher] = React.useState(false);
+
+  const handlePersonaPress = () => {
+    setShowSwitcher(true);
+    onPersonaPress?.();
+  };
 
   return (
+    <>
+    <PersonaSwitcherSheet visible={showSwitcher} onClose={() => setShowSwitcher(false)} />
     <View style={[s.bar, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
 
       {/* LEFT: dice cube + animated brand name */}
@@ -174,7 +188,7 @@ export default function AppHeader({
 
         <TouchableOpacity
           style={[s.pill, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={onPersonaPress}
+          onPress={handlePersonaPress}
           activeOpacity={0.75}
         >
           <View style={[s.avatarRing, { borderColor: role.color }]}>
@@ -200,6 +214,7 @@ export default function AppHeader({
 
       </View>
     </View>
+    </>
   );
 }
 

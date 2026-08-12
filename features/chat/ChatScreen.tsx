@@ -101,43 +101,79 @@ function MentionText({ text, memberMap, myId, searchQuery, textStyle }: {
 
 // ─── Voice note bubble ────────────────────────────────────────────────────────
 
-// ─── Waveform bars (static mock — animates while playing/recording) ───────────
+// ─── Waveform helpers ─────────────────────────────────────────────────────────
 
-const BAR_COUNT = 24;
-function WaveformBars({ progress, active, color, trackColor }: {
-  progress: number; active: boolean; color: string; trackColor: string;
+const WF_BARS = 36;
+const WF_H    = 36; // container height px
+
+/** Deterministic "fingerprint" waveform from a seed string (uri / msgId). */
+function seedWaveform(seed: string): number[] {
+  let h = 5381;
+  for (let i = 0; i < seed.length; i++) h = ((h << 5) + h + seed.charCodeAt(i)) & 0x7fffffff;
+  return Array.from({ length: WF_BARS }, (_, i) => {
+    const x   = i / WF_BARS;
+    const ph  = ((h >>> (i % 20)) & 0xff) / 255;
+    const raw = 0.08
+      + 0.42 * Math.abs(Math.sin(x * Math.PI * 5  + ph * Math.PI * 2))
+      + 0.28 * Math.abs(Math.sin(x * Math.PI * 9  + ph * Math.PI * 3.7))
+      + 0.14 * Math.abs(Math.sin(x * Math.PI * 14 + ph * Math.PI * 1.3));
+    return Math.min(1, raw);
+  });
+}
+
+// ─── Live waveform (recording / playing) — sine-physics at ~30fps ────────────
+
+function LiveWaveform({ active, color, trackColor, progress = 0 }: {
+  active: boolean; color: string; trackColor: string; progress?: number;
 }) {
-  const anims = useRef(Array.from({ length: BAR_COUNT }, () => new Animated.Value(0.3))).current;
-  const loopRef = useRef<ReturnType<typeof Animated.loop> | null>(null);
+  const frameRef   = useRef(0);
+  const timerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [bars, setBars] = useState<number[]>(() =>
+    Array.from({ length: WF_BARS }, (_, i) => {
+      const x = i / WF_BARS;
+      return 0.08 + 0.18 * Math.abs(Math.sin(x * Math.PI * 4));
+    })
+  );
 
   useEffect(() => {
-    if (active) {
-      const waves = anims.map((a, i) =>
-        Animated.loop(Animated.sequence([
-          Animated.timing(a, { toValue: 0.3 + Math.random() * 0.7, duration: 200 + i * 20, useNativeDriver: true }),
-          Animated.timing(a, { toValue: 0.15 + Math.random() * 0.4, duration: 200 + i * 20, useNativeDriver: true }),
-        ]))
-      );
-      loopRef.current = Animated.loop(Animated.stagger(30, waves));
-      loopRef.current.start();
-    } else {
-      loopRef.current?.stop();
-      anims.forEach((a, i) => a.setValue(0.15 + (i / BAR_COUNT) * 0.7));
+    if (!active) {
+      timerRef.current && clearInterval(timerRef.current);
+      // settle to quiet resting state
+      setBars(Array.from({ length: WF_BARS }, (_, i) => {
+        const x = i / WF_BARS;
+        return 0.08 + 0.14 * Math.abs(Math.sin(x * Math.PI * 5 + 0.4));
+      }));
+      return;
     }
-    return () => loopRef.current?.stop();
+    timerRef.current = setInterval(() => {
+      frameRef.current += 1;
+      const t = frameRef.current * 0.10;
+      setBars(Array.from({ length: WF_BARS }, (_, i) => {
+        const x   = i / WF_BARS;
+        const ph  = x * Math.PI * 2;
+        // Three overlapping sines → organic, non-repetitive wave
+        const raw = 0.10
+          + 0.38 * Math.abs(Math.sin(t * 1.9 + ph))
+          + 0.26 * Math.abs(Math.sin(t * 3.1 + ph * 1.6 + 0.9))
+          + 0.18 * Math.abs(Math.sin(t * 4.7 + ph * 0.7 + 1.8));
+        return Math.min(1, raw);
+      }));
+    }, 33); // ~30 fps
+    return () => { timerRef.current && clearInterval(timerRef.current); };
   }, [active]);
 
-  const filledBars = Math.round(progress * BAR_COUNT);
+  const filledBars = Math.round(progress * WF_BARS);
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, height: 28, flex: 1 }}>
-      {anims.map((anim, i) => (
-        <Animated.View
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, height: WF_H, flex: 1 }}>
+      {bars.map((h, i) => (
+        <View
           key={i}
           style={{
-            width: 3, borderRadius: 2,
+            width: 3,
+            height: Math.max(3, h * WF_H),
+            borderRadius: 2,
             backgroundColor: i < filledBars ? color : trackColor,
-            transform: [{ scaleY: anim }],
           }}
         />
       ))}
@@ -145,8 +181,50 @@ function WaveformBars({ progress, active, color, trackColor }: {
   );
 }
 
-function VoiceNoteBubble({ uri, duration, isMine, colors }: {
-  uri: string; duration: number; isMine: boolean; colors: any;
+// ─── Static fingerprint waveform (playback) ───────────────────────────────────
+
+function FingerprintWaveform({ seed, progress, color, trackColor }: {
+  seed: string; progress: number; color: string; trackColor: string;
+}) {
+  const wf          = useRef(seedWaveform(seed)).current;
+  const filledBars  = Math.round(progress * WF_BARS);
+  // The bar at the playhead pulses slightly
+  const pulseAnim   = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (progress > 0 && progress < 1) {
+      Animated.loop(Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.25, duration: 280, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1,    duration: 280, useNativeDriver: true }),
+      ])).start();
+    } else {
+      pulseAnim.stopAnimation(() => pulseAnim.setValue(1));
+    }
+  }, [progress > 0 && progress < 1]);
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, height: WF_H, flex: 1 }}>
+      {wf.map((h, i) => {
+        const isHead = i === filledBars;
+        const barH   = Math.max(3, h * WF_H);
+        if (isHead) {
+          return (
+            <Animated.View key={i} style={{ width: 3, height: barH, borderRadius: 2,
+              backgroundColor: color, transform: [{ scaleY: pulseAnim }] }} />
+          );
+        }
+        return (
+          <View key={i} style={{ width: 3, height: barH, borderRadius: 2,
+            backgroundColor: i < filledBars ? color : trackColor }} />
+        );
+      })}
+    </View>
+  );
+}
+
+// ─── Voice note bubble (in chat) ─────────────────────────────────────────────
+
+function VoiceNoteBubble({ uri, msgId, duration, isMine, colors }: {
+  uri: string; msgId: string; duration: number; isMine: boolean; colors: any;
 }) {
   const [playing, setPlaying]   = useState(false);
   const [progress, setProgress] = useState(0);
@@ -160,7 +238,6 @@ function VoiceNoteBubble({ uri, duration, isMine, colors }: {
       setPlaying(false);
       return;
     }
-    // Always create fresh player so replay works
     playerRef.current?.remove();
     playerRef.current = createAudioPlayer({ uri });
     playerRef.current.play();
@@ -173,7 +250,7 @@ function VoiceNoteBubble({ uri, duration, isMine, colors }: {
         if (tickRef.current) clearInterval(tickRef.current);
         setPlaying(false); setProgress(0);
       }
-    }, 100);
+    }, 80);
   }, [playing, uri, duration]);
 
   useEffect(() => () => {
@@ -182,20 +259,33 @@ function VoiceNoteBubble({ uri, duration, isMine, colors }: {
   }, []);
 
   const color      = isMine ? '#fff' : VOICE_COLOR;
-  const trackColor = isMine ? 'rgba(255,255,255,0.3)' : VOICE_COLOR + '33';
+  const trackColor = isMine ? 'rgba(255,255,255,0.28)' : VOICE_COLOR + '30';
+  const elapsed    = playing ? progress * duration : duration;
 
   return (
-    <Pressable onPress={toggle} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingVertical: 2, minWidth: 180 }}>
-      <Ionicons name={playing ? 'pause-circle' : 'play-circle'} size={28} color={color} />
-      <WaveformBars progress={progress} active={playing} color={color} trackColor={trackColor} />
-      <Text style={{ fontSize: 11, color: isMine ? 'rgba(255,255,255,0.85)' : colors.textSecondary, minWidth: 32, textAlign: 'right' }}>
-        {formatDuration(playing ? progress * duration : duration)}
+    <Pressable onPress={toggle}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 2, paddingVertical: 4, minWidth: 200 }}>
+      {/* Play / pause button */}
+      <View style={{ width: 36, height: 36, borderRadius: 18,
+        backgroundColor: isMine ? 'rgba(255,255,255,0.18)' : VOICE_COLOR + '22',
+        alignItems: 'center', justifyContent: 'center' }}>
+        <Ionicons name={playing ? 'pause' : 'play'} size={18} color={color} />
+      </View>
+      {/* Waveform — live while playing, static fingerprint otherwise */}
+      {playing
+        ? <LiveWaveform active color={color} trackColor={trackColor} progress={progress} />
+        : <FingerprintWaveform seed={msgId || uri} progress={progress} color={color} trackColor={trackColor} />
+      }
+      {/* Duration */}
+      <Text style={{ fontSize: 11, color: isMine ? 'rgba(255,255,255,0.8)' : colors.textSecondary,
+        minWidth: 34, textAlign: 'right', fontVariant: ['tabular-nums'] }}>
+        {formatDuration(elapsed)}
       </Text>
     </Pressable>
   );
 }
 
-// ─── Voice review bar ─────────────────────────────────────────────────────────
+// ─── Voice review bar (after recording, before sending) ───────────────────────
 
 function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
   uri: string; duration: number; isDark: boolean; onSend: () => void; onDiscard: () => void;
@@ -226,7 +316,7 @@ function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
         if (tickRef.current) clearInterval(tickRef.current);
         setPlaying(false); setProgress(0);
       }
-    }, 100);
+    }, 80);
   }, [playing, uri, duration]);
 
   useEffect(() => () => {
@@ -235,17 +325,31 @@ function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
   }, []);
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10,
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12,
       backgroundColor: bg, borderTopWidth: 1, borderTopColor: border, gap: 10 }}>
-      <Pressable onPress={onDiscard} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#EF444422', alignItems: 'center', justifyContent: 'center' }}>
-        <Ionicons name="trash-outline" size={20} color="#EF4444" />
+      {/* Discard */}
+      <Pressable onPress={onDiscard} style={{ width: 36, height: 36, borderRadius: 18,
+        backgroundColor: '#EF444420', alignItems: 'center', justifyContent: 'center' }}>
+        <Ionicons name="trash-outline" size={19} color="#EF4444" />
       </Pressable>
-      <Pressable onPress={toggle} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: VOICE_COLOR + '22', alignItems: 'center', justifyContent: 'center' }}>
+      {/* Play/pause */}
+      <Pressable onPress={toggle} style={{ width: 36, height: 36, borderRadius: 18,
+        backgroundColor: VOICE_COLOR + '22', alignItems: 'center', justifyContent: 'center' }}>
         <Ionicons name={playing ? 'pause' : 'play'} size={18} color={VOICE_COLOR} />
       </Pressable>
-      <WaveformBars progress={progress} active={playing} color={VOICE_COLOR} trackColor={isDark ? '#4C1D95' : '#DDD6FE'} />
-      <Text style={{ fontSize: 11, color: VOICE_COLOR, minWidth: 32 }}>{formatDuration(playing ? progress * duration : duration)}</Text>
-      <Pressable onPress={onSend} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: VOICE_COLOR, alignItems: 'center', justifyContent: 'center' }}>
+      {/* Waveform */}
+      {playing
+        ? <LiveWaveform active color={VOICE_COLOR} trackColor={isDark ? '#4C1D9055' : '#DDD6FE'} progress={progress} />
+        : <FingerprintWaveform seed={uri} progress={progress} color={VOICE_COLOR} trackColor={isDark ? '#4C1D9055' : '#DDD6FE'} />
+      }
+      {/* Time */}
+      <Text style={{ fontSize: 12, fontWeight: '600', color: VOICE_COLOR, minWidth: 34, fontVariant: ['tabular-nums'] }}>
+        {formatDuration(playing ? progress * duration : duration)}
+      </Text>
+      {/* Send */}
+      <Pressable onPress={onSend} style={{ width: 40, height: 40, borderRadius: 20,
+        backgroundColor: VOICE_COLOR, alignItems: 'center', justifyContent: 'center',
+        shadowColor: VOICE_COLOR, shadowOpacity: 0.4, shadowRadius: 8, elevation: 4 }}>
         <Ionicons name="send" size={16} color="#fff" />
       </Pressable>
     </View>
@@ -259,43 +363,44 @@ function RecordingBar({ elapsed, isDark, onStop }: {
 }) {
   const bg     = isDark ? '#0f0a1e' : '#fff0f0';
   const border = isDark ? '#7f1d1d' : '#fecaca';
-  const barAnims = useRef(Array.from({ length: BAR_COUNT }, () => new Animated.Value(0.2))).current;
-  const loopRef  = useRef<ReturnType<typeof Animated.loop> | null>(null);
-
+  const MAX    = 10;
+  // Blink the red dot
+  const blinkAnim = useRef(new Animated.Value(1)).current;
   useEffect(() => {
-    const waves = barAnims.map((a, i) =>
-      Animated.loop(Animated.sequence([
-        Animated.timing(a, { toValue: 0.25 + Math.random() * 0.75, duration: 150 + i * 15, useNativeDriver: true }),
-        Animated.timing(a, { toValue: 0.1  + Math.random() * 0.4,  duration: 150 + i * 15, useNativeDriver: true }),
-      ]))
-    );
-    loopRef.current = Animated.loop(Animated.stagger(20, waves));
-    loopRef.current.start();
-    return () => loopRef.current?.stop();
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(blinkAnim, { toValue: 0.2, duration: 500, useNativeDriver: true }),
+      Animated.timing(blinkAnim, { toValue: 1,   duration: 500, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
   }, []);
 
-  const MAX = 10;
-  const pct  = elapsed / MAX;
+  const remaining = MAX - elapsed;
+  const showCountdown = remaining <= 3;
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10,
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12,
       backgroundColor: bg, borderTopWidth: 1, borderTopColor: border, gap: 10 }}>
-      {/* Pulsing red dot */}
-      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#EF4444', opacity: elapsed % 1 < 0.5 ? 1 : 0.4 }} />
-      <Text style={{ fontSize: 13, fontWeight: '700', color: '#EF4444', minWidth: 36 }}>{formatDuration(elapsed)}</Text>
-      {/* Waveform */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, height: 28, flex: 1 }}>
-        {barAnims.map((anim, i) => (
-          <Animated.View key={i} style={{ width: 3, borderRadius: 2,
-            backgroundColor: i / BAR_COUNT < pct ? '#EF4444' : (isDark ? '#7f1d1d' : '#fca5a5'),
-            transform: [{ scaleY: anim }] }} />
-        ))}
-      </View>
-      <Text style={{ fontSize: 11, color: isDark ? '#fca5a5' : '#b91c1c' }}>
-        {MAX - elapsed < 3 ? `${Math.ceil(MAX - elapsed)}s` : ''}
+      {/* Blinking REC dot */}
+      <Animated.View style={{ width: 10, height: 10, borderRadius: 5,
+        backgroundColor: '#EF4444', opacity: blinkAnim }} />
+      {/* Elapsed */}
+      <Text style={{ fontSize: 13, fontWeight: '800', color: '#EF4444', minWidth: 38, fontVariant: ['tabular-nums'] }}>
+        {formatDuration(elapsed)}
       </Text>
+      {/* Live sine waveform — red */}
+      <LiveWaveform active color='#EF4444' trackColor={isDark ? '#7f1d1d55' : '#fca5a555'} />
+      {/* Countdown warning */}
+      {showCountdown && (
+        <Text style={{ fontSize: 12, fontWeight: '700', color: '#b91c1c', minWidth: 24 }}>
+          -{Math.ceil(remaining)}s
+        </Text>
+      )}
       {/* Stop button */}
-      <Pressable onPress={onStop} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center' }}>
+      <Pressable onPress={onStop}
+        style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#EF4444',
+          alignItems: 'center', justifyContent: 'center',
+          shadowColor: '#EF4444', shadowOpacity: 0.5, shadowRadius: 8, elevation: 4 }}>
         <Ionicons name="stop" size={16} color="#fff" />
       </Pressable>
     </View>
@@ -520,7 +625,7 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
 
             {/* Voice note */}
             {isVoice && msg.voiceUri ? (
-              <VoiceNoteBubble uri={msg.voiceUri} duration={msg.voiceDuration ?? 0} isMine={isMe} colors={colors} />
+              <VoiceNoteBubble uri={msg.voiceUri} msgId={msg.id} duration={msg.voiceDuration ?? 0} isMine={isMe} colors={colors} />
             ) : isVoice ? (
               <Text style={{ fontSize: 14, color: isMe ? bubbleMeTxt : bubbleOtherTxt }}>
                 🎙️ Voice note ({Math.round(msg.voiceDuration ?? 0)}s)

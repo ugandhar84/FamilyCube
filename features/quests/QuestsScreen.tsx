@@ -18,7 +18,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  TextInput, Modal, ActivityIndicator, Alert, Platform,
+  TextInput, Modal, ActivityIndicator, Alert, Platform, Image,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Pressable } from 'react-native';
@@ -29,7 +29,7 @@ import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/questStore';
-import type { QuestCategory, QuestDifficulty } from '@/store/questStore';
+import type { Quest, QuestCategory, QuestDifficulty } from '@/store/questStore';
 import AppHeader from '@/components/AppHeader';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -282,23 +282,34 @@ const ALL_CATEGORIES: QuestCategory[] = ['Kitchen', 'Room', 'Yard', 'School', 'P
 
 // ─── Collapsible quest card — header always visible, body expands on tap ─────
 function CollapsibleQuestCard({
-  accentColor, cardBg, cardBord, header, children,
+  accentColor, cardBg, cardBord, header, children, onDoubleTap,
 }: {
   accentColor: string; cardBg: string; cardBord: string;
   header: React.ReactNode; children: React.ReactNode;
+  onDoubleTap?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const lastTap = React.useRef(0);
+  const handlePress = () => {
+    const now = Date.now();
+    if (onDoubleTap && now - lastTap.current < 320) {
+      onDoubleTap();
+    } else {
+      setExpanded(e => !e);
+    }
+    lastTap.current = now;
+  };
   return (
     <View style={[s.questCard, { backgroundColor: cardBg, borderColor: cardBord }]}>
       <View style={[s.accentBar, { backgroundColor: accentColor }]} />
       <View style={{ flex: 1 }}>
-        <Pressable onPress={() => setExpanded(e => !e)}
+        <Pressable onPress={handlePress}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 14, paddingBottom: expanded ? 0 : 14 }}>
           <View style={{ flex: 1 }}>{header}</View>
           <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={accentColor} />
         </Pressable>
         {expanded && (
-          <View style={{ padding: 14, paddingTop: 12 }}>
+          <View style={{ padding: 14, paddingTop: 10 }}>
             {children}
           </View>
         )}
@@ -391,6 +402,17 @@ function fmtDateLabel(d: Date): string {
 // Format a Date as "3:30 PM"
 function fmtTimeLabel(d: Date): string {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+// "2h ago", "3d ago", "just now"
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 2)  return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)  return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
 }
 
 function AddQuestModal({ visible, onClose, activeMemberId }: {
@@ -828,7 +850,214 @@ const aq = StyleSheet.create({
   diffChip:   { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 5 },
   descInput:  { minHeight: 72, marginBottom: 4 },
   submitBtn:  { borderRadius: 14, padding: 14, alignItems: 'center' },
+  avatar:     { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
 });
+
+// ─── Edit Quest Modal (parent, unclaimed quests only) ────────────────────────
+function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete }: {
+  quest: Quest;
+  activeMemberId: string;
+  onClose: () => void;
+  onSave: (id: string, patch: Partial<Quest>) => void;
+  onDelete?: (id: string) => void;
+}) {
+  const { colors, isDark } = useTheme();
+  const members = useFamilyStore(s => s.members);
+  const kids    = members.filter(m => m.role === 'kid');
+
+  const [title,      setTitle]      = useState(quest.title);
+  const [desc,       setDesc]       = useState(quest.description ?? '');
+  const [coins,      setCoins]      = useState(String(quest.coins));
+  const [bonusCoins, setBonusCoins] = useState(quest.bonusCoins > 0 ? String(quest.bonusCoins) : '');
+  const [category,   setCategory]   = useState<QuestCategory>(quest.category);
+  const [difficulty, setDifficulty] = useState<QuestDifficulty | ''>(quest.difficulty ?? '');
+  const [forceId,    setForceId]    = useState<string>(quest.assignedToId ?? '');
+  const [saving,     setSaving]     = useState(false);
+
+  const isForceAssign = !!forceId;
+  const pillBg  = isDark ? colors.surface : '#F1F5F9';
+  const pillBdr = isDark ? colors.border  : '#E2E8F0';
+
+  const save = async () => {
+    if (!title.trim()) return;
+    setSaving(true);
+    const patch: Partial<Quest> = {
+      title: title.trim(),
+      description: desc.trim() || undefined,
+      coins: parseInt(coins) || quest.coins,
+      bonusCoins: parseInt(bonusCoins) || 0,
+      category,
+      difficulty: difficulty || undefined,
+      assignedToId: forceId || undefined,
+      isPool: !forceId,
+      // Force-assign badge: tag in history via lastModifiedById (done by updateQuest)
+    };
+    onSave(quest.id, patch);
+    setSaving(false);
+  };
+
+  const siblings = members.map(m => m.name);
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <View style={aq.backdrop}>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ justifyContent: 'flex-end', flexGrow: 1 }}>
+          <View style={[aq.sheet, { backgroundColor: colors.card }]}>
+            <View style={[aq.handle, { backgroundColor: colors.border }]} />
+
+            {/* Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <View>
+                <Text style={[aq.title, { color: colors.textPrimary }]}>Edit Quest</Text>
+                <Text style={{ fontSize: TYPO.label, color: BRAND.purple, fontWeight: '700', marginTop: 1 }}>
+                  {isForceAssign ? '🔒 Force assigned — modified by you' : 'Editing unclaimed quest'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={onClose}><I.X c={colors.textSecondary} /></TouchableOpacity>
+            </View>
+
+            {/* Title */}
+            <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
+            <TextInput
+              style={[aq.input, { color: colors.textPrimary, borderColor: title.trim() ? colors.border : '#EF444480', backgroundColor: colors.surface }]}
+              value={title} onChangeText={setTitle} returnKeyType="next"
+            />
+
+            {/* Description */}
+            <Text style={[aq.label, { color: colors.textSecondary }]}>Description
+              <Text style={{ fontWeight: '400', color: colors.textTertiary }}> (what needs to be done)</Text>
+            </Text>
+            <TextInput
+              style={[aq.input, aq.descInput, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]}
+              value={desc} onChangeText={t => setDesc(t.slice(0, 150))}
+              multiline numberOfLines={3} textAlignVertical="top"
+            />
+            <Text style={{ fontSize: TYPO.micro, color: desc.length > 130 ? '#EF4444' : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 12 }}>
+              {desc.length}/150
+            </Text>
+
+            {/* Coins + Bonus row */}
+            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 14 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={[aq.label, { color: colors.textSecondary }]}>Coins 🪙</Text>
+                <TextInput
+                  style={[aq.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface, marginBottom: 0 }]}
+                  keyboardType="number-pad" value={coins} onChangeText={setCoins}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[aq.label, { color: colors.textSecondary }]}>Bonus 🎉 <Text style={{ fontWeight: '400', color: colors.textTertiary }}>optional</Text></Text>
+                <TextInput
+                  style={[aq.input, { color: colors.textPrimary, borderColor: bonusCoins ? BRAND.amber : colors.border, backgroundColor: colors.surface, marginBottom: 0 }]}
+                  keyboardType="number-pad" placeholder="+coins" placeholderTextColor={colors.textTertiary}
+                  value={bonusCoins} onChangeText={t => setBonusCoins(t.replace(/[^0-9]/g, ''))}
+                />
+              </View>
+            </View>
+
+            {/* Hardness */}
+            <Text style={[aq.label, { color: colors.textSecondary }]}>Hardness <Text style={{ fontWeight: '400', color: colors.textTertiary }}>optional</Text></Text>
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+              {([
+                { key: 'easy', label: '😊 Easy', color: '#10B981' },
+                { key: 'medium', label: '💪 Medium', color: BRAND.amber },
+                { key: 'hard', label: '🔥 Hard', color: '#EF4444' },
+                { key: 'hero', label: '⚡ Hero', color: BRAND.purple },
+              ] as { key: QuestDifficulty; label: string; color: string }[]).map(d => (
+                <TouchableOpacity
+                  key={d.key}
+                  style={[aq.diffChip, { borderColor: difficulty === d.key ? d.color : pillBdr, backgroundColor: difficulty === d.key ? d.color + '22' : pillBg }]}
+                  onPress={() => setDifficulty(p => p === d.key ? '' : d.key)}
+                >
+                  <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '800', color: difficulty === d.key ? d.color : colors.textTertiary }}>{d.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Force Assign — avatar row */}
+            <Text style={[aq.label, { color: colors.textSecondary }]}>
+              Force Assign{' '}
+              <Text style={{ fontWeight: '400', color: colors.textTertiary }}>
+                {forceId ? '🔒 will badge as Force Assigned' : 'optional — leave blank to keep as open bounty'}
+              </Text>
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }} contentContainerStyle={{ flexDirection: 'row', gap: 12 }}>
+              {/* Clear / Open Bounty */}
+              <TouchableOpacity style={{ alignItems: 'center', gap: 4 }} onPress={() => setForceId('')}>
+                <View style={[aq.avatar, { backgroundColor: !forceId ? BRAND.amber + '30' : pillBg, borderColor: !forceId ? BRAND.amber : pillBdr, borderWidth: !forceId ? 2.5 : 1.5 }]}>
+                  <Text style={{ fontSize: 18 }}>⚡</Text>
+                  {!forceId && <View style={[aq.avatarCheck, { backgroundColor: BRAND.amber }]}><Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text></View>}
+                </View>
+                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: !forceId ? BRAND.amber : colors.textTertiary }}>Bounty</Text>
+              </TouchableOpacity>
+
+              {kids.map(k => {
+                const sel = forceId === k.id;
+                return (
+                  <TouchableOpacity key={k.id} style={{ alignItems: 'center', gap: 4 }} onPress={() => setForceId(sel ? '' : k.id)}>
+                    <View style={{ position: 'relative' }}>
+                      <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={(k as any).avatarUrl} siblings={siblings} size={40} ringColor="#EF4444" ringWidth={sel ? 2.5 : 1} bgColor={sel ? '#EF444425' : pillBg} />
+                      {sel && <View style={[aq.avatarCheck, { backgroundColor: '#EF4444' }]}><Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text></View>}
+                    </View>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: sel ? '#EF4444' : colors.textTertiary }} numberOfLines={1}>{k.name.split(' ')[0]}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* Modified by notice */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16, paddingHorizontal: 4 }}>
+              <Text style={{ fontSize: TYPO.micro + 1, color: colors.textTertiary }}>
+                ✏️ Modified by{' '}
+                <Text style={{ fontWeight: '700', color: BRAND.purple }}>
+                  {members.find(m => m.id === activeMemberId)?.name ?? 'you'}
+                </Text>
+                {' '}· saved automatically
+              </Text>
+            </View>
+
+            {/* Actions row — Save + Delete */}
+            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'stretch' }}>
+              {onDelete && (
+                <TouchableOpacity
+                  style={{ paddingHorizontal: 18, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#FCA5A560', backgroundColor: isDark ? '#2D1515' : '#FEF2F2' }}
+                  onPress={() => Alert.alert(
+                    'Delete Quest',
+                    `Remove "${quest.title}"? This cannot be undone.`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Delete', style: 'destructive', onPress: () => { onDelete(quest.id); onClose(); } },
+                    ]
+                  )}
+                >
+                  <I.X c="#EF4444" />
+                  <Text style={{ color: '#EF4444', fontSize: TYPO.micro, fontWeight: '700', marginTop: 2 }}>Delete</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[aq.submitBtn, { flex: 1, backgroundColor: title.trim() ? (isForceAssign ? '#EF4444' : '#059669') : colors.border, opacity: saving ? 0.6 : 1 }]}
+                onPress={save} disabled={saving || !title.trim()}
+              >
+                {saving
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <>
+                      <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>
+                        {isForceAssign ? '🔒 Save & Force Assign' : '💾 Save Changes'}
+                      </Text>
+                      {isForceAssign && (
+                        <Text style={{ color: '#FECACA', fontSize: TYPO.label, marginTop: 2 }}>
+                          A "Force Assigned" badge will appear on the card
+                        </Text>
+                      )}
+                    </>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
 
 // ─── AI Result Cards ──────────────────────────────────────────────────────────
 function AutoBalanceCard({ result, onApply, appliedActions, onClose }: any) {
@@ -1015,7 +1244,7 @@ type AiTool   = 'none' | 'autobalance' | 'fomo' | 'advice';
 export default function QuestsScreen() {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, setActiveMember } = useFamilyStore();
-  const { quests, claimQuest, submitQuest, approveQuest, declineQuest, reopenQuest } = useQuestStore();
+  const { quests, claimQuest, submitQuest, approveQuest, declineQuest, reopenQuest, updateQuest, deleteQuest } = useQuestStore();
 
   const activeMember = members.find(m => m.id === activeMemberId)
     ?? members.find(m => m.role === 'parent') ?? members[0];
@@ -1038,6 +1267,7 @@ export default function QuestsScreen() {
   const [isDeclining,    setIsDeclining]    = useState<Record<string, boolean>>({});
   const [isReopening,    setIsReopening]    = useState<Record<string, boolean>>({});
   const [declineTarget,  setDeclineTarget]  = useState<{ id: string; title: string } | null>(null);
+  const [editTarget,     setEditTarget]     = useState<Quest | null>(null);
   const [showAddModal,   setShowAddModal]   = useState(false);
 
   const switchMember = () => {
@@ -1368,6 +1598,10 @@ export default function QuestsScreen() {
                 const canApprove = isParentOrSenior && isReview;
                 // Reopen: parent or senior, quest was declined
                 const canReopen  = isParentOrSenior && isDeclined;
+                // Edit: parent only, quest not yet claimed/in-progress
+                const canEdit    = isParent && (isPoolCard || q.status === 'todo');
+                // Delete: parent only, quest unclaimed (pool or unassigned todo)
+                const canDelete  = isParent && (isPoolCard || (q.status === 'todo' && !q.assignedToId));
 
                 // Accent colour by status
                 const accentColor =
@@ -1381,42 +1615,138 @@ export default function QuestsScreen() {
 
                 return (
                   <CollapsibleQuestCard key={q.id} accentColor={accentColor} cardBg={cardBg} cardBord={cardBord}
+                    onDoubleTap={canEdit ? () => setEditTarget(q) : undefined}
                     header={
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                         <View style={{ flex: 1 }}>
                           <Text style={[s.questTitle, { color: colors.textPrimary }]} numberOfLines={1}>{q.title}</Text>
-                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 2 }}>
-                            {isPoolCard ? '⚡ Bounty' : assignee?.name ?? 'Unassigned'} · {q.dueDate ? fmtDateShort(q.dueDate) : 'Tonight'}
+                          {/* Crisp subtitle — role-relevant one-liner */}
+                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 3 }} numberOfLines={1}>
+                            {isReview
+                              ? `📬 ${assignee?.name ?? '?'} submitted${q.submittedAt ? ' · ' + new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''}`
+                              : isPoolCard
+                                ? `⚡ Open bounty · due ${q.dueDate ? fmtDateShort(q.dueDate) : 'tonight'}`
+                                : isDoneCard
+                                  ? `✅ ${assignee?.name ?? '?'} · approved`
+                                  : isDeclined
+                                    ? `❌ Declined · ${assignee?.name ?? '?'}`
+                                    : q.claimedAt
+                                      ? `${assignee?.emoji ?? ''}${assignee?.name ?? 'Unassigned'} · claimed ${timeAgo(q.claimedAt)} · due ${q.dueDate ? fmtDateShort(q.dueDate) : 'tonight'}`
+                                      : `${assignee?.emoji ?? ''}${assignee?.name ?? 'Unassigned'} · added ${(q as any).createdAt ? timeAgo((q as any).createdAt) : ''} · due ${q.dueDate ? fmtDateShort(q.dueDate) : 'tonight'}`}
                           </Text>
                         </View>
-                        <View style={[s.coinPill, { backgroundColor: hasBonus ? '#FCD34D22' : (isDark ? '#1E293B' : '#F8FAFC'), borderColor: hasBonus ? '#FCD34D60' : colors.border }]}>
-                          <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: isDark ? '#FCD34D' : '#D97706' }}>+{q.coins + q.bonusCoins}🪙</Text>
+                        {/* Coin pill — compact in header */}
+                        <View style={[s.coinPillSm, { backgroundColor: hasBonus ? '#FCD34D18' : (isDark ? '#1E293B' : '#F8FAFC'), borderColor: hasBonus ? '#FCD34D50' : colors.border }]}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: isDark ? '#FCD34D' : '#D97706' }}>+{q.coins + q.bonusCoins}🪙</Text>
                         </View>
                       </View>
                     }
                   >
-                    {/* ── Expanded body ── */}
-                    {/* ── Top: title + description ── */}
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[s.questTitle, { color: colors.textPrimary }]} numberOfLines={3}>{q.title}</Text>
-                          {q.description ? (
-                            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 3, lineHeight: 18 }}>
-                              {q.description}
+                    {/* ── Expanded body — NO title/coin repeat, header already shows them ── */}
+
+                      {/* Timeline row — parent context: when added, when claimed, when due */}
+                      {isParentOrSenior && (isTodoCard || isPoolCard) && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 0, marginBottom: 10, backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderRadius: 10, padding: 8, borderWidth: 1, borderColor: isDark ? '#1E293B' : '#E2E8F0' }}>
+                          {/* Added */}
+                          <View style={{ alignItems: 'center', flex: 1 }}>
+                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 1 }}>Added</Text>
+                            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>
+                              {(q as any).createdAt ? timeAgo((q as any).createdAt) : '—'}
                             </Text>
+                            {(q as any).createdAt && (
+                              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
+                                {new Date((q as any).createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              </Text>
+                            )}
+                          </View>
+                          <Text style={{ color: isDark ? '#334155' : '#CBD5E1', fontSize: 18, paddingHorizontal: 2 }}>›</Text>
+                          {/* Claimed */}
+                          <View style={{ alignItems: 'center', flex: 1 }}>
+                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 1 }}>Claimed</Text>
+                            {q.claimedAt ? (
+                              <>
+                                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: accentColor }}>{timeAgo(q.claimedAt)}</Text>
+                                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
+                                  {new Date(q.claimedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                  {' '}
+                                  {new Date(q.claimedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                                </Text>
+                              </>
+                            ) : (
+                              <Text style={{ fontSize: TYPO.label, color: isDark ? '#475569' : '#94A3B8' }}>Not yet</Text>
+                            )}
+                          </View>
+                          <Text style={{ color: isDark ? '#334155' : '#CBD5E1', fontSize: 18, paddingHorizontal: 2 }}>›</Text>
+                          {/* Due */}
+                          <View style={{ alignItems: 'center', flex: 1 }}>
+                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 1 }}>Due</Text>
+                            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>
+                              {q.dueDate ? fmtDateShort(q.dueDate) : 'Tonight'}
+                            </Text>
+                            {q.dueTime && (
+                              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>{q.dueTime}</Text>
+                            )}
+                          </View>
+                        </View>
+                      )}
+
+                      {/* Description */}
+                      {q.description ? (
+                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, lineHeight: 20, marginBottom: 10 }}>
+                          {q.description}
+                        </Text>
+                      ) : null}
+
+                      {/* Submitted time + photo proof — for In Review */}
+                      {isReview && q.submittedAt && (
+                        <View style={{ marginBottom: 12, borderRadius: 12, borderWidth: 1, borderColor: isDark ? BRAND.purple + '40' : '#C7D2FE', overflow: 'hidden', backgroundColor: isDark ? BRAND.purple + '12' : '#EEF2FF' }}>
+                          {/* Submitted banner */}
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10 }}>
+                            <Text style={{ fontSize: TYPO.micro + 1 }}>📬</Text>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#A78BFA' : '#4338CA' }}>
+                                {assignee?.name ?? 'Kid'} submitted for review
+                              </Text>
+                              <Text style={{ fontSize: TYPO.micro + 1, color: isDark ? '#818CF8' : '#6366F1' }}>
+                                {new Date(q.submittedAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                {' · '}
+                                {new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                              </Text>
+                            </View>
+                            {q.photoRequired && !q.photoUrl && (
+                              <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#FCD34D' }}>
+                                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#D97706' }}>No photo</Text>
+                              </View>
+                            )}
+                          </View>
+                          {/* Photo thumbnail */}
+                          {q.photoUrl ? (
+                            <TouchableOpacity onPress={() => Alert.alert('Photo Proof', `"${q.title}" was submitted with photo proof.`)}>
+                              <Image
+                                source={{ uri: q.photoUrl }}
+                                style={{ width: '100%', height: 160, backgroundColor: isDark ? '#1E293B' : '#E2E8F0' }}
+                                resizeMode="cover"
+                              />
+                              <View style={{ position: 'absolute', bottom: 8, right: 8, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.6)' }}>
+                                <Text style={{ fontSize: TYPO.micro, color: '#fff', fontWeight: '700' }}>Tap to enlarge</Text>
+                              </View>
+                            </TouchableOpacity>
+                          ) : q.photoRequired ? (
+                            <View style={{ height: 80, alignItems: 'center', justifyContent: 'center', gap: 4, backgroundColor: isDark ? '#1C1200' : '#FFF7ED' }}>
+                              <Text style={{ fontSize: 24 }}>📷</Text>
+                              <Text style={{ fontSize: TYPO.label, color: '#D97706', fontWeight: '600' }}>Photo proof missing</Text>
+                            </View>
+                          ) : null}
+                          {/* Completion note */}
+                          {q.completionNote ? (
+                            <View style={{ padding: 10, paddingTop: 4 }}>
+                              <Text style={{ fontSize: TYPO.label, color: isDark ? '#A78BFA' : '#4338CA', fontStyle: 'italic' }}>
+                                "{q.completionNote}"
+                              </Text>
+                            </View>
                           ) : null}
                         </View>
-                        {/* Coin pill */}
-                        <View style={[s.coinPill, { backgroundColor: hasBonus ? '#FCD34D22' : (isDark ? '#1E293B' : '#F8FAFC'), borderColor: hasBonus ? '#FCD34D60' : colors.border }]}>
-                          <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: isDark ? '#FCD34D' : '#D97706' }}>
-                            +{q.coins + q.bonusCoins}
-                          </Text>
-                          <Text style={{ fontSize: TYPO.micro + 1, color: isDark ? '#FCD34D' : '#D97706', fontWeight: '700' }}>🪙</Text>
-                          {hasBonus && (
-                            <Text style={{ fontSize: TYPO.micro, color: '#FCD34D', fontWeight: '700', marginTop: 1 }}>+{q.bonusCoins} bonus</Text>
-                          )}
-                        </View>
-                      </View>
+                      )}
 
                       {/* ── Badge strip ── */}
                       <>
@@ -1456,24 +1786,30 @@ export default function QuestsScreen() {
                         )}
                       </View>
 
-                      {/* ── Meta row: avatar + name + due ── */}
+                      {/* ── Meta row — only show extra context not in header ── */}
                       <View style={[s.metaRow, { borderTopColor: isDark ? '#1E293B' : '#F0F4F8' }]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, flex: 1 }}>
-                          {isPoolCard
-                            ? <View style={[s.metaAvatar, { backgroundColor: BRAND.amber + '25' }]}><Text style={{ fontSize: 14 }}>⚡</Text></View>
-                            : assignee
-                              ? <FamilyAvatar name={assignee.name} emoji={assignee.emoji} avatarUrl={(assignee as any).avatarUrl} size={26} ringColor={BRAND.purple} ringWidth={1.5} />
-                              : <View style={[s.metaAvatar, { backgroundColor: colors.surface }]}><Text style={{ fontSize: 12 }}>👤</Text></View>
-                          }
-                          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontWeight: '600' }}>
-                            {isPoolCard ? 'Open for anyone' : (assignee?.name ?? 'Unassigned')}
-                          </Text>
+                          {assignee
+                            ? <FamilyAvatar name={assignee.name} emoji={assignee.emoji} avatarUrl={(assignee as any).avatarUrl} size={26} ringColor={accentColor} ringWidth={1.5} />
+                            : <View style={[s.metaAvatar, { backgroundColor: BRAND.amber + '25' }]}><Text style={{ fontSize: 14 }}>⚡</Text></View>}
+                          <View>
+                            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontWeight: '700' }}>
+                              {isPoolCard ? 'Open for anyone' : (assignee?.name ?? 'Unassigned')}
+                            </Text>
+                            {q.lastModifiedById && (
+                              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
+                                ✏️ edited by {members.find(m => m.id === q.lastModifiedById)?.name ?? 'parent'}
+                              </Text>
+                            )}
+                          </View>
                         </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <Text style={{ fontSize: TYPO.micro + 1, color: colors.textTertiary }}>📅</Text>
+                        <View style={{ alignItems: 'flex-end' }}>
                           <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>
-                            {q.dueDate ? fmtDateShort(q.dueDate) : 'Tonight'}
+                            📅 {q.dueDate ? fmtDateShort(q.dueDate) : 'Tonight'}
                           </Text>
+                          {q.dueTime && (
+                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>🕐 {q.dueTime}</Text>
+                          )}
                         </View>
                       </View>
 
@@ -1602,6 +1938,12 @@ export default function QuestsScreen() {
                           )}
                         </View>
                       )}
+                      {/* Parent: double-tap card to edit — hint shown when no primary action buttons conflict */}
+                      {canEdit && !canClaim && !canSubmit && !canApprove && !isDeclined && !isDoneCard && (
+                        <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                          <Text style={{ fontSize: TYPO.micro, color: isDark ? '#475569' : '#94A3B8', fontStyle: 'italic' }}>double-tap to edit</Text>
+                        </View>
+                      )}
                     </View>{/* action strip */}
                   </CollapsibleQuestCard>
                 );
@@ -1614,6 +1956,17 @@ export default function QuestsScreen() {
       {/* Parent-only: Add Quest modal */}
       {isParent && (
         <AddQuestModal visible={showAddModal} onClose={() => setShowAddModal(false)} activeMemberId={activeMember?.id ?? ''} />
+      )}
+
+      {/* Parent-only: Edit unclaimed quest modal */}
+      {isParent && editTarget && (
+        <EditQuestModal
+          quest={editTarget}
+          activeMemberId={activeMember?.id ?? ''}
+          onClose={() => setEditTarget(null)}
+          onSave={(id, patch) => { updateQuest(id, patch, activeMember?.id); setEditTarget(null); }}
+          onDelete={editTarget && (editTarget.isPool || (editTarget.status === 'todo' && !editTarget.assignedToId)) ? (id) => deleteQuest(id) : undefined}
+        />
       )}
 
       {/* Decline modal — appears when parent/senior taps Decline */}
@@ -1681,6 +2034,11 @@ const s = StyleSheet.create({
     borderRadius: 16, borderWidth: 1,
     paddingHorizontal: 10, paddingVertical: 8,
     minWidth: 56,
+  },
+  coinPillSm:  {
+    alignItems: 'center', justifyContent: 'center',
+    borderRadius: 12, borderWidth: 1,
+    paddingHorizontal: 8, paddingVertical: 5,
   },
   badge:       { borderRadius: 20, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
   badgeText:   { fontSize: TYPO.micro, fontWeight: '700' },

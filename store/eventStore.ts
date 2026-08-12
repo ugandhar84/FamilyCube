@@ -37,7 +37,7 @@ interface EventState {
   deleteEvent: (id: string) => void;
 }
 
-const KEY = '@familycube_events_v2';
+const KEY = '@familycube_events_v3';
 
 const d = (offset: number) => {
   const dt = new Date(); dt.setDate(dt.getDate() + offset);

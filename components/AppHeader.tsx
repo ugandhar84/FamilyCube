@@ -107,7 +107,7 @@ function HeaderWordmark({ textColor }: { textColor: string }) {
         >
           <Path
             d="M10,16 C7,13 0,9 0,5 C0,0 5,-1 10,6 C15,-1 20,0 20,5 C20,9 13,13 10,16 Z"
-            fill={BRAND.purple}
+            fill="#D4870A"
           />
         </Svg>
         <Text style={[s.wFamily, { color: textColor, fontSize: FONT }]}>Family </Text>

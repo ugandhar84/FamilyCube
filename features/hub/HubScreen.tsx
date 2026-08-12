@@ -29,6 +29,7 @@ import AppHeader from '@/components/AppHeader';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import HelpQueueSection from '@/components/HelpQueueSection';
 import HelpRequestModal from '@/components/HelpRequestModal';
+import FlyerScannerModal from '@/components/FlyerScannerModal';
 import { BRAND } from '@/components/FamilyCubeLogo';
 
 const { width: W } = Dimensions.get('window');
@@ -190,9 +191,9 @@ function EnRouteModal({ visible, onClose, kids, onDispatch }: {
  * 6. Today's full family timeline with driver status + conflict markers
  * 7. Grocery count badge on Grocery action button
  */
-function ParentView({ active, members, colors, isDark, onEnRoute }: {
+function ParentView({ active, members, colors, isDark, onScanFlyer }: {
   active: FamilyMember; members: FamilyMember[];
-  colors: any; isDark: boolean; onEnRoute: () => void;
+  colors: any; isDark: boolean; onScanFlyer: () => void;
 }) {
   const { quests, approveQuest } = useQuestStore();
   const { events, updateEvent } = useEventStore();
@@ -223,7 +224,6 @@ function ParentView({ active, members, colors, isDark, onEnRoute }: {
   // Quests submitted by kids awaiting parent pay-out
   const awaitingApproval = quests.filter(q => q.status === 'pending_approval');
 
-  const COIN_VAL = 0.10;
   const pad = { paddingHorizontal: 16 };
 
   return (
@@ -231,7 +231,7 @@ function ParentView({ active, members, colors, isDark, onEnRoute }: {
       {/* ── 1. Quick action bar ── */}
       <View style={[{ flexDirection: 'row', gap: 8, marginBottom: 16 }, pad]}>
         {[
-          { icon: '📋', label: 'Scan Flyer', color: BRAND.purple, action: () => Alert.alert('Scan Flyer', 'Open camera to scan an activity flyer') },
+          { icon: '📋', label: 'Scan Flyer', color: BRAND.purple, action: onScanFlyer },
           { icon: '➕', label: '+ Quest',    color: '#10B981',    action: () => router.push('/(tabs)/quests') },
           { icon: '📅', label: '+ Event',    color: BRAND.amber,  action: () => router.push('/(tabs)/calendar') },
           {
@@ -347,59 +347,7 @@ function ParentView({ active, members, colors, isDark, onEnRoute }: {
         </View>
       )}
 
-      {/* ── 5. Kids' Dual-Wallets ── */}
-      <View style={[pad, { marginBottom: 14 }]}>
-        <Card colors={colors} isDark={isDark}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>💰 Kids' Wallets</Text>
-            <Pressable onPress={() => router.push('/(tabs)/profile')}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.primary }}>Full Ledger →</Text>
-            </Pressable>
-          </View>
-          {kids.length === 0 ? (
-            <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>No kids added yet.</Text>
-          ) : (
-            kids.map((k, i) => (
-              <View key={k.id} style={[
-                { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-                i < kids.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
-              ]}>
-                <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl}
-                  siblings={allNames} size={36} ringColor={BRAND.amber} />
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary, flex: 1 }}>
-                  {k.name.split(' ')[0]}
-                </Text>
-                <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.amber }}>
-                    {k.mainCoins}🪙{'  '}
-                    <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>(${(k.mainCoins * COIN_VAL).toFixed(2)})</Text>
-                  </Text>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>
-                    GP {k.gpCoins}⭐{'  '}
-                    <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>(${(k.gpCoins * COIN_VAL).toFixed(2)})</Text>
-                  </Text>
-                </View>
-              </View>
-            ))
-          )}
-        </Card>
-      </View>
-
-      {/* ── 6. En Route launcher ── */}
-      <Pressable onPress={onEnRoute} style={[pad, { marginBottom: 14 }]}>
-        <View style={{ backgroundColor: isDark ? '#052E1C' : '#ECFDF5', borderRadius: 20, borderWidth: 1, borderColor: '#10B98145', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#10B98125', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 22 }}>🚗</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#10B981' }}>Dispatch En Route</Text>
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Broadcast your ETA to family chat</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#10B981" />
-        </View>
-      </Pressable>
-
-      {/* ── 7. Today's Family Timeline ── */}
+      {/* ── 5. Today's Family Timeline ── */}
       <View style={pad}>
         <SectionLabel label="Today's Family Timeline" />
         {todayEvents.length === 0 ? (
@@ -939,7 +887,8 @@ export default function HubScreen() {
   const [refreshing, setRefreshing]       = useState(false);
   const [pinTarget, setPinTarget]         = useState<FamilyMember | null>(null);
   const [clock, setClock]                 = useState(fmtClock());
-  const [helpModalVisible, setHelpModal]  = useState(false);
+  const [helpModalVisible, setHelpModal]   = useState(false);
+  const [flyerVisible, setFlyerVisible]    = useState(false);
   const [enRouteVisible, setEnRouteVisible] = useState(false);
   const [transitBanner, setTransitBanner] = useState<{ kid: string; eta: string } | null>(null);
 
@@ -997,43 +946,45 @@ export default function HubScreen() {
         contentContainerStyle={{ paddingTop: 16, paddingBottom: 60 }}
       >
         {isParent && (
-          <ParentView
-            active={active} members={members}
-            colors={colors} isDark={isDark}
-            onEnRoute={() => setEnRouteVisible(true)}
-          />
+          <ParentView active={active} members={members} colors={colors} isDark={isDark} onScanFlyer={() => setFlyerVisible(true)} />
         )}
         {isKid && (
-          <KidView
-            active={active} members={members}
-            colors={colors} isDark={isDark}
-          />
+          <KidView active={active} members={members} colors={colors} isDark={isDark} />
         )}
         {isSenior && (
-          <SeniorView
-            active={active} members={members}
-            colors={colors} isDark={isDark}
-          />
+          <SeniorView active={active} members={members} colors={colors} isDark={isDark} />
         )}
 
-        {/* Help Queue — shown for all personas, below their main content.
-            "Ask for Help" button is suppressed when the active member
-            is the only adult (no one to delegate to). */}
+        {/* ── Family Help Queue ── all personas; above En Route */}
         <View style={{ paddingHorizontal: 16 }}>
-          <HelpQueueSection
-            onRequestHelp={() => setHelpModal(true)}
-            hideAskButton={
-              (isParent || isSenior) &&
-              members.filter(m => m.role === 'parent' || m.role === 'senior').length <= 1
-            }
-          />
+          <HelpQueueSection onRequestHelp={() => setHelpModal(true)} />
         </View>
+
+        {/* ── En Route — parent/senior only ── */}
+        {(isParent || isSenior) && (
+          <Pressable onPress={() => setEnRouteVisible(true)} style={{ paddingHorizontal: 16, marginBottom: 14 }}>
+            <View style={{ backgroundColor: isDark ? '#052E1C' : '#ECFDF5', borderRadius: 20, borderWidth: 1, borderColor: '#10B98145', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#10B98125', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 22 }}>🚗</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#10B981' }}>Dispatch En Route</Text>
+                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Broadcast your ETA to family chat</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#10B981" />
+            </View>
+          </Pressable>
+        )}
 
       </ScrollView>
 
       <HelpRequestModal
         visible={helpModalVisible}
         onClose={() => setHelpModal(false)}
+      />
+      <FlyerScannerModal
+        visible={flyerVisible}
+        onClose={() => setFlyerVisible(false)}
       />
 
       <EnRouteModal

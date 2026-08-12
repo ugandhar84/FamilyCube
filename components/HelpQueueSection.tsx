@@ -387,11 +387,10 @@ function MyRequestCard({ req, currentId, colors, isDark, onWithdraw, onResubmit 
 // ─── Main section ─────────────────────────────────────────────────────────────
 interface Props {
   onRequestHelp: () => void;
-  /** Hide "Ask for Help" button when the active adult is the only adult in the family */
-  hideAskButton?: boolean;
 }
 
-export default function HelpQueueSection({ onRequestHelp, hideAskButton = false }: Props) {
+export default function HelpQueueSection({ onRequestHelp }: Props) {
+  const hideAskButton = false;
   const { colors, isDark } = useTheme();
   const { members, activeMemberId } = useFamilyStore();
   const { requests, assignRequest, declineRequest, reassignRequest, completeRequest, withdrawRequest } = useHelpStore();

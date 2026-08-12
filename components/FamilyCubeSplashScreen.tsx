@@ -98,7 +98,7 @@ function SplashWordmark({ textColor }: { textColor: string }) {
   const HEART_SZ = 13;
   // At 44px bold: "Fam" ≈ 90px; "i" center ≈ 97px from left of "Famıly "
   // dot sits ~8px from top of the text's line box
-  const HEART_LEFT = 81;
+  const HEART_LEFT = 80;
   const HEART_TOP  = 4;
 
   return (

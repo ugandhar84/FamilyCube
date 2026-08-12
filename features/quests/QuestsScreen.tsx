@@ -1248,114 +1248,161 @@ function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete, edit
 }
 
 // ─── AI Result Cards ──────────────────────────────────────────────────────────
-function AutoBalanceCard({ result, onApply, appliedActions, onClose }: any) {
+function AiCard({ children, accentColor, isDark, colors, onClose }: any) {
+  const bg     = isDark ? colors.surface  : colors.background;
+  const border = accentColor + '55';
+  const divBg  = accentColor + '22';
   return (
-    <View style={[ai.card, { borderColor: '#6D28D966' }]}>
-      <View style={[ai.header, { borderBottomColor: '#4C1D9580' }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-          <I.Sparkles c="#FCD34D" />
-          <Text style={[ai.headerText, { color: '#C4B5FD' }]}>AI Chore Auto-Balancer</Text>
-        </View>
-        <TouchableOpacity onPress={onClose}><Text style={{ color: '#A78BFA', fontSize: TYPO.micro + 1 }}>✕ Close</Text></TouchableOpacity>
-      </View>
-      <Text style={ai.summary}>{result.summary}</Text>
-      <Text style={[ai.sectionLabel, { color: '#FCD34D' }]}>Recommended Assignments:</Text>
-      {result.assignments.map((item: any, idx: number) => {
-        const applied = appliedActions[`bal_${idx}`];
-        return (
-          <View key={idx} style={ai.row}>
-            <View style={{ flex: 1 }}>
-              <Text style={[ai.rowTitle, { color: '#F1F5F9' }]}>{item.questTitle}</Text>
-              <Text style={[ai.rowSub, { color: '#A78BFA' }]}>{item.reason}</Text>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={[ai.chip, { backgroundColor: '#FCD34D22' }]}>
-                <Text style={[ai.chipText, { color: '#FCD34D' }]}>👉 {item.recommendedKid}</Text>
-              </View>
-              {applied
-                ? <View style={ai.doneChip}><Text style={ai.doneText}>✓ Assigned</Text></View>
-                : <TouchableOpacity style={ai.applyBtn} onPress={() => onApply(`bal_${idx}`, item, 'reassign')}>
-                    <Text style={ai.applyText}>⚡ Apply</Text>
-                  </TouchableOpacity>}
-            </View>
-          </View>
-        );
-      })}
-      <Text style={[ai.sectionLabel, { color: '#6EE7B7', marginTop: 8 }]}>New Suggested Bounties:</Text>
-      {result.newSuggestedQuests.map((q: any, idx: number) => {
-        const applied = appliedActions[`bounty_${idx}`];
-        return (
-          <View key={idx} style={ai.row}>
-            <View style={{ flex: 1 }}>
-              <Text style={[ai.rowTitle, { color: '#6EE7B7' }]}>{q.title}</Text>
-              <Text style={[ai.rowSub, { color: '#34D399' }]}>{q.reason}</Text>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={[ai.chipText, { color: BRAND.amber }]}>+{q.coins}🪙</Text>
-              {applied
-                ? <View style={ai.doneChip}><Text style={ai.doneText}>✓ Added</Text></View>
-                : <TouchableOpacity style={[ai.applyBtn, { backgroundColor: BRAND.amber }]} onPress={() => onApply(`bounty_${idx}`, q, 'bounty')}>
-                    <Text style={[ai.applyText, { color: '#0F172A' }]}>➕ Add</Text>
-                  </TouchableOpacity>}
-            </View>
-          </View>
-        );
-      })}
+    <View style={{ borderRadius: 20, borderWidth: 1, backgroundColor: bg, borderColor: border, padding: 14, marginHorizontal: 14, marginBottom: 12, gap: 8 }}>
+      {children}
     </View>
   );
 }
 
-function FomoCard({ result, onApply, appliedActions, onClose }: any) {
+function AiCardHeader({ icon, title, accentColor, onClose }: any) {
   return (
-    <View style={[ai.card, { borderColor: '#D9770666' }]}>
-      <View style={[ai.header, { borderBottomColor: '#92400E80' }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-          <I.Flame c="#FCD34D" />
-          <Text style={[ai.headerText, { color: '#FCD34D' }]}>AI FOMO Bounties & Penalties</Text>
-        </View>
-        <TouchableOpacity onPress={onClose}><Text style={{ color: '#FCD34D', fontSize: TYPO.micro + 1 }}>✕ Close</Text></TouchableOpacity>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: accentColor + '40', paddingBottom: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+        {icon}
+        <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: accentColor, flex: 1 }}>{title}</Text>
       </View>
-      <View style={[ai.infoBox, { backgroundColor: '#FCD34D20', borderColor: '#FCD34D40' }]}>
-        <Text style={[ai.summary, { color: '#FCD34D' }]}>{result.fomoNudgeSummary}</Text>
-      </View>
-      <Text style={[ai.sectionLabel, { color: '#FCD34D' }]}>⚡ Flash Coin Bonuses:</Text>
-      {result.urgentAlerts.map((alert: any, idx: number) => {
-        const applied = appliedActions[`fomo_${idx}`];
+      <TouchableOpacity onPress={onClose}><Text style={{ color: accentColor, fontSize: TYPO.micro + 1 }}>✕ Close</Text></TouchableOpacity>
+    </View>
+  );
+}
+
+function AiRow({ isDark, colors, children }: any) {
+  return (
+    <View style={{ borderRadius: 12, backgroundColor: isDark ? colors.surface : colors.background, borderWidth: 1, borderColor: colors.border, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      {children}
+    </View>
+  );
+}
+
+function AutoBalanceCard({ result, onApply, appliedActions, onClose, isDark, colors }: any) {
+  const accent = BRAND.purple;
+  return (
+    <AiCard accentColor={accent} isDark={isDark} colors={colors} onClose={onClose}>
+      <AiCardHeader icon={<I.Sparkles c={accent} />} title="AI Chore Auto-Balancer" accentColor={accent} onClose={onClose} />
+      <Text style={{ fontSize: TYPO.label, fontWeight: '600', color: colors.textSecondary, lineHeight: 18 }}>{result.summary}</Text>
+      <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5, color: BRAND.amber }}>Recommended Assignments:</Text>
+      {result.assignments.map((item: any, idx: number) => {
+        const applied = appliedActions[`bal_${idx}`];
         return (
-          <View key={idx} style={[ai.fomoRow]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-              <Text style={[ai.rowTitle, { color: '#FDE68A', flex: 1 }]}>{alert.questTitle}</Text>
-              <Text style={[ai.chipText, { color: '#FCD34D' }]}>+{alert.bonusCoins}🪙</Text>
+          <AiRow key={idx} isDark={isDark} colors={colors}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{item.questTitle}</Text>
+              <Text style={{ fontSize: TYPO.micro + 1, color: accent, marginTop: 2 }}>{item.reason}</Text>
             </View>
-            <Text style={[ai.rowSub, { color: '#FCD34D80', marginBottom: 8 }]}>{alert.fomoMessage}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={{ borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: BRAND.amber + '22' }}>
+                <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '900', color: BRAND.amber }}>👉 {item.recommendedKid}</Text>
+              </View>
+              {applied
+                ? <View style={{ backgroundColor: '#059669', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 }}><Text style={{ color: '#fff', fontSize: TYPO.micro + 1, fontWeight: '900' }}>✓ Assigned</Text></View>
+                : <TouchableOpacity style={{ backgroundColor: accent, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => onApply(`bal_${idx}`, item, 'reassign')}>
+                    <Text style={{ color: '#fff', fontSize: TYPO.micro + 1, fontWeight: '900' }}>⚡ Apply</Text>
+                  </TouchableOpacity>}
+            </View>
+          </AiRow>
+        );
+      })}
+      <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5, color: '#10B981', marginTop: 4 }}>New Suggested Bounties:</Text>
+      {result.newSuggestedQuests.map((q: any, idx: number) => {
+        const applied = appliedActions[`bounty_${idx}`];
+        return (
+          <AiRow key={idx} isDark={isDark} colors={colors}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#10B981' }}>{q.title}</Text>
+              <Text style={{ fontSize: TYPO.micro + 1, color: '#34D399', marginTop: 2 }}>{q.reason}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '900', color: BRAND.amber }}>+{q.coins}🪙</Text>
+              {applied
+                ? <View style={{ backgroundColor: '#059669', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 }}><Text style={{ color: '#fff', fontSize: TYPO.micro + 1, fontWeight: '900' }}>✓ Added</Text></View>
+                : <TouchableOpacity style={{ backgroundColor: BRAND.amber, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => onApply(`bounty_${idx}`, q, 'bounty')}>
+                    <Text style={{ color: '#0F172A', fontSize: TYPO.micro + 1, fontWeight: '900' }}>➕ Add</Text>
+                  </TouchableOpacity>}
+            </View>
+          </AiRow>
+        );
+      })}
+    </AiCard>
+  );
+}
+
+function FomoCard({ result, onApply, appliedActions, onClose, isDark, colors }: any) {
+  const allActive = result.urgentAlerts.length > 0 && result.urgentAlerts.every((a: any) => a.alreadyHasBonus || appliedActions[`fomo_${result.urgentAlerts.indexOf(a)}`]);
+  return (
+    <AiCard accentColor={BRAND.amber} isDark={isDark} colors={colors} onClose={onClose}>
+      <AiCardHeader icon={<I.Flame c={BRAND.amber} />} title="FOMO Bounties & Penalties" accentColor={BRAND.amber} onClose={onClose} />
+      {/* Summary */}
+      <View style={{ borderRadius: 12, borderWidth: 1, padding: 10, backgroundColor: BRAND.amber + '15', borderColor: BRAND.amber + '40' }}>
+        <Text style={{ fontSize: TYPO.label, fontWeight: '600', color: isDark ? BRAND.amber : '#92400E', lineHeight: 18 }}>{result.fomoNudgeSummary}</Text>
+        {allActive && (
+          <Text style={{ fontSize: TYPO.micro + 1, color: '#10B981', fontWeight: '700', marginTop: 4 }}>
+            ✅ All flash bonuses already active — kids cannot game the system by ignoring quests.
+          </Text>
+        )}
+      </View>
+      {/* Flash bonuses */}
+      {result.urgentAlerts.length > 0 && (
+        <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5, color: BRAND.amber }}>⚡ Flash Coin Bonuses:</Text>
+      )}
+      {result.urgentAlerts.map((alert: any, idx: number) => {
+        const isActive = alert.alreadyHasBonus || appliedActions[`fomo_${idx}`];
+        return (
+          <View key={idx} style={{ borderRadius: 12, borderWidth: 1, padding: 10, backgroundColor: isDark ? colors.surface : '#FFFBEB', borderColor: BRAND.amber + (isActive ? '80' : '40'), marginBottom: 4 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, flex: 1 }}>{alert.questTitle}</Text>
+              <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '900', color: BRAND.amber }}>+{alert.bonusCoins}🪙</Text>
+            </View>
+            <Text style={{ fontSize: TYPO.micro + 1, color: colors.textSecondary, marginBottom: 8 }}>{alert.fomoMessage}</Text>
             <View style={{ alignItems: 'flex-end' }}>
-              {applied || alert.alreadyHasBonus
-                ? <View style={[ai.doneChip, { backgroundColor: BRAND.amber }]}><Text style={[ai.doneText, { color: '#0F172A' }]}>🔥 Flash Bonus Active!</Text></View>
-                : <TouchableOpacity style={[ai.applyBtn, { backgroundColor: BRAND.amber }]} onPress={() => onApply(`fomo_${idx}`, alert, 'fomo')}>
-                    <Text style={[ai.applyText, { color: '#0F172A' }]}>🔥 Activate Flash Bonus</Text>
+              {isActive
+                ? <View style={{ backgroundColor: BRAND.amber + '25', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: BRAND.amber }}>
+                    <Text style={{ color: BRAND.amber, fontSize: TYPO.micro + 1, fontWeight: '900' }}>🔥 Flash Bonus Active!</Text>
+                  </View>
+                : <TouchableOpacity
+                    style={{ backgroundColor: BRAND.amber, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 7 }}
+                    onPress={() => Alert.alert(
+                      '🔥 Activate Flash Bonus?',
+                      `Add +${alert.bonusCoins}🪙 flash bonus to "${alert.questTitle}"?\n\nThis motivates kids to act now. Once activated, it cannot be reversed through the app.`,
+                      [{ text: 'Cancel', style: 'cancel' }, { text: 'Activate', onPress: () => onApply(`fomo_${idx}`, alert, 'fomo') }]
+                    )}
+                  >
+                    <Text style={{ color: '#0F172A', fontSize: TYPO.micro + 1, fontWeight: '900' }}>🔥 Activate Flash Bonus</Text>
                   </TouchableOpacity>}
             </View>
           </View>
         );
       })}
+      {/* Force assigns */}
       {result.penaltiesAndForceAssigns.length > 0 && (
         <>
-          <View style={[ai.divider, { borderColor: '#92400E60' }]} />
-          <Text style={[ai.sectionLabel, { color: '#F87171' }]}>⚠️ Overdue Force Assigns:</Text>
+          <View style={{ borderTopWidth: 1, borderTopColor: colors.border, marginVertical: 2 }} />
+          <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5, color: '#EF4444' }}>⚠️ Overdue — Force Assign:</Text>
           {result.penaltiesAndForceAssigns.map((pen: any, idx: number) => {
             const applied = appliedActions[`pen_${idx}`];
             return (
-              <View key={idx} style={[ai.fomoRow, { borderColor: '#EF444440', backgroundColor: '#450A0A' }]}>
+              <View key={idx} style={{ borderRadius: 12, borderWidth: 1, padding: 10, backgroundColor: isDark ? '#200808' : '#FEF2F2', borderColor: '#EF4444' + '50', marginBottom: 4 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <Text style={[ai.rowTitle, { color: '#FCA5A5', flex: 1 }]}>{pen.questTitle}</Text>
-                  <Text style={[ai.chipText, { color: '#F87171' }]}>🔴 {pen.daysOverdue}d overdue</Text>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, flex: 1 }}>{pen.questTitle}</Text>
+                  <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '900', color: '#EF4444' }}>🔴 {pen.daysOverdue}d overdue</Text>
                 </View>
-                <Text style={[ai.rowSub, { color: '#FCA5A5', marginBottom: 8 }]}>{pen.action}</Text>
+                <Text style={{ fontSize: TYPO.micro + 1, color: '#EF4444', marginBottom: 8 }}>{pen.action}</Text>
                 <View style={{ alignItems: 'flex-end' }}>
                   {applied
-                    ? <View style={[ai.doneChip, { backgroundColor: '#EF4444' }]}><Text style={ai.doneText}>⚠️ Force Assigned</Text></View>
-                    : <TouchableOpacity style={[ai.applyBtn, { backgroundColor: '#EF4444' }]} onPress={() => onApply(`pen_${idx}`, pen, 'penalty')}>
-                        <Text style={ai.applyText}>⚠️ 1-Click Force Assign</Text>
+                    ? <View style={{ backgroundColor: '#EF4444', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 }}><Text style={{ color: '#fff', fontSize: TYPO.micro + 1, fontWeight: '900' }}>⚠️ Force Assigned</Text></View>
+                    : <TouchableOpacity
+                        style={{ backgroundColor: '#EF4444', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 7 }}
+                        onPress={() => Alert.alert(
+                          '⚠️ Force Assign?',
+                          `Force-assign "${pen.questTitle}" to ${pen.targetKidName ?? 'another kid'}?\n\nThis overrides the current assignment. Use only when a kid has been ignoring the task.`,
+                          [{ text: 'Cancel', style: 'cancel' }, { text: 'Force Assign', style: 'destructive', onPress: () => onApply(`pen_${idx}`, pen, 'penalty') }]
+                        )}
+                      >
+                        <Text style={{ color: '#fff', fontSize: TYPO.micro + 1, fontWeight: '900' }}>⚠️ Force Assign</Text>
                       </TouchableOpacity>}
                 </View>
               </View>
@@ -1363,35 +1410,30 @@ function FomoCard({ result, onApply, appliedActions, onClose }: any) {
           })}
         </>
       )}
-    </View>
+    </AiCard>
   );
 }
 
-function AdviceCard({ result, appliedActions, onApply, onClose }: any) {
+function AdviceCard({ result, appliedActions, onApply, onClose, isDark, colors }: any) {
+  const accent = BRAND.purple;
   return (
-    <View style={[ai.card, { borderColor: '#4338CA66' }]}>
-      <View style={[ai.header, { borderBottomColor: '#312E8180' }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-          <I.Award c="#818CF8" />
-          <Text style={[ai.headerText, { color: '#818CF8' }]}>AI Parenting & Chore Advisor</Text>
-        </View>
-        <TouchableOpacity onPress={onClose}><Text style={{ color: '#818CF8', fontSize: TYPO.micro + 1 }}>✕ Close</Text></TouchableOpacity>
+    <AiCard accentColor={accent} isDark={isDark} colors={colors} onClose={onClose}>
+      <AiCardHeader icon={<I.Award c={accent} />} title="AI Parenting & Chore Advisor" accentColor={accent} onClose={onClose} />
+      <View style={{ borderRadius: 12, borderWidth: 1, padding: 10, backgroundColor: accent + '15', borderColor: accent + '40' }}>
+        <Text style={{ fontSize: TYPO.label, fontWeight: '600', color: colors.textSecondary, lineHeight: 18 }}>💡 {result.familyCoachingTip}</Text>
       </View>
-      <View style={[ai.infoBox, { backgroundColor: '#4338CA22', borderColor: '#4338CA40' }]}>
-        <Text style={[ai.summary, { color: '#C7D2FE' }]}>💡 {result.familyCoachingTip}</Text>
+      <View style={{ borderRadius: 12, borderWidth: 1, padding: 10, backgroundColor: BRAND.amber + '15', borderColor: BRAND.amber + '40', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>⭐ Top Performer:</Text>
+        <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: BRAND.amber }}>{result.topPerformer}</Text>
       </View>
-      <View style={[ai.infoBox, { backgroundColor: '#FCD34D22', borderColor: '#FCD34D40', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
-        <Text style={[ai.rowTitle, { color: '#FDE68A' }]}>⭐ Top Performer:</Text>
-        <Text style={[ai.rowTitle, { color: '#FCD34D', fontWeight: '900' }]}>{result.topPerformer}</Text>
-      </View>
-      <Text style={[ai.sectionLabel, { color: '#818CF8' }]}>Kid Encouragement Notes:</Text>
+      <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5, color: accent }}>Kid Encouragement Notes:</Text>
       {Object.entries(result.kidEncouragementNotes).map(([kid, note]: [string, any]) => (
-        <View key={kid} style={ai.row}>
+        <AiRow key={kid} isDark={isDark} colors={colors}>
           <View style={{ flex: 1 }}>
-            <Text style={[ai.rowTitle, { color: '#818CF8' }]}>{kid}</Text>
-            <Text style={[ai.rowSub, { color: '#CBD5E1' }]}>{note}</Text>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: accent }}>{kid}</Text>
+            <Text style={{ fontSize: TYPO.micro + 1, color: colors.textSecondary, marginTop: 2 }}>{note}</Text>
           </View>
-        </View>
+        </AiRow>
       ))}
       <View style={[ai.divider, { borderColor: '#31448860' }]} />
       <View style={{ alignItems: 'flex-end' }}>
@@ -1401,7 +1443,7 @@ function AdviceCard({ result, appliedActions, onApply, onClose }: any) {
               <Text style={ai.applyText}>📢 Send Coaching to Family Chat</Text>
             </TouchableOpacity>}
       </View>
-    </View>
+    </AiCard>
   );
 }
 
@@ -1488,6 +1530,9 @@ export default function QuestsScreen() {
 
   // ── AI Handlers ──────────────────────────────────────────────────────────────
   const runAI = async (tool: AiTool) => {
+    // Toggle off if already showing; block re-run while loading
+    if (isAiLoading) return;
+    if (showAiTool === tool) { setShowAiTool('none'); return; }
     setIsAiLoading(true);
     setShowAiTool(tool);
     if (tool === 'autobalance') { const r = await simulateAutoBalance(quests, kids); setAutoBalResult(r); }
@@ -1614,11 +1659,11 @@ export default function QuestsScreen() {
             <Text style={[s.title, { color: isDark ? colors.textPrimary : '#1E2D6B' }]}>
               {isKid ? 'My Quests' : 'Household Quests'}
             </Text>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple, marginTop: 1 }}>
-              {isParent   ? 'Add quests, approve chores & distribute coins'
-               : isSenior ? 'Review submissions and encourage the kids'
-                           : 'Claim bounties, submit photo proof & earn coins'}
-            </Text>
+            {isParent && (
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple, marginTop: 1 }}>
+                Add quests, approve chores & distribute coins
+              </Text>
+            )}
           </View>
           {isParent && (
             <TouchableOpacity style={[s.headerBtn, { backgroundColor: '#059669' }]} onPress={() => setShowAddModal(true)}>
@@ -1673,23 +1718,21 @@ export default function QuestsScreen() {
           </View>
         )}
 
-        {/* ── AI Loading ── */}
-        {isAiLoading && (
-          <View style={[s.aiLoadingBox, { marginHorizontal: 14, marginBottom: 12 }]}>
-            <ActivityIndicator color="#A78BFA" size="small" />
-            <Text style={s.aiLoadingText}>CubeAI is calculating optimal chore distribution...</Text>
+        {/* ── AI Loading + Results (parent ONLY) ── */}
+        {isParent && isAiLoading && (
+          <View style={[s.aiLoadingBox, { marginHorizontal: 14, marginBottom: 12, backgroundColor: isDark ? '#1E1B4B' : '#EEF2FF', borderColor: isDark ? '#6D28D940' : '#C7D2FE' }]}>
+            <ActivityIndicator color={BRAND.purple} size="small" />
+            <Text style={[s.aiLoadingText, { color: isDark ? '#A78BFA' : '#4338CA' }]}>CubeAI is analysing your household quests...</Text>
           </View>
         )}
-
-        {/* ── AI Result Cards ── */}
-        {!isAiLoading && showAiTool === 'autobalance' && autoBalResult && (
-          <AutoBalanceCard result={autoBalResult} onApply={handleApply} appliedActions={appliedActions} onClose={() => setShowAiTool('none')} />
+        {isParent && !isAiLoading && showAiTool === 'autobalance' && autoBalResult && (
+          <AutoBalanceCard result={autoBalResult} onApply={handleApply} appliedActions={appliedActions} onClose={() => setShowAiTool('none')} isDark={isDark} colors={colors} />
         )}
-        {!isAiLoading && showAiTool === 'fomo' && fomoResult && (
-          <FomoCard result={fomoResult} onApply={handleApply} appliedActions={appliedActions} onClose={() => setShowAiTool('none')} />
+        {isParent && !isAiLoading && showAiTool === 'fomo' && fomoResult && (
+          <FomoCard result={fomoResult} onApply={handleApply} appliedActions={appliedActions} onClose={() => setShowAiTool('none')} isDark={isDark} colors={colors} />
         )}
-        {!isAiLoading && showAiTool === 'advice' && adviceResult && (
-          <AdviceCard result={adviceResult} appliedActions={appliedActions} onApply={handleApply} onClose={() => setShowAiTool('none')} />
+        {isParent && !isAiLoading && showAiTool === 'advice' && adviceResult && (
+          <AdviceCard result={adviceResult} appliedActions={appliedActions} onApply={handleApply} onClose={() => setShowAiTool('none')} isDark={isDark} colors={colors} />
         )}
 
         {/* ── Member / Filter Pills ── */}

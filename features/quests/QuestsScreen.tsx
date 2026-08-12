@@ -15,11 +15,12 @@
  *  - Decline reason shown inline on kid's declined card
  *  - Senior sees approve/decline but NOT AI engine or + Quest button
  */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  TextInput, Modal, ActivityIndicator, Alert, Platform, Image,
+  TextInput, Modal, ActivityIndicator, Alert, Platform, Image, Animated,
 } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -854,12 +855,13 @@ const aq = StyleSheet.create({
 });
 
 // ─── Edit Quest Modal (parent, unclaimed quests only) ────────────────────────
-function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete }: {
+function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete, editMode = 'full' }: {
   quest: Quest;
   activeMemberId: string;
   onClose: () => void;
   onSave: (id: string, patch: Partial<Quest>) => void;
   onDelete?: (id: string) => void;
+  editMode?: 'full' | 'restricted'; // restricted = assigned todo — only coins + reassign editable
 }) {
   const { colors, isDark } = useTheme();
   const members = useFamilyStore(s => s.members);
@@ -907,34 +909,50 @@ function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete }: {
 
             {/* Header */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <View>
-                <Text style={[aq.title, { color: colors.textPrimary }]}>Edit Quest</Text>
-                <Text style={{ fontSize: TYPO.label, color: BRAND.purple, fontWeight: '700', marginTop: 1 }}>
-                  {isForceAssign ? '🔒 Force assigned — modified by you' : 'Editing unclaimed quest'}
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={[aq.title, { color: colors.textPrimary }]}>
+                  {editMode === 'restricted' ? 'Adjust Quest' : 'Edit Quest'}
+                </Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 1, color:
+                  editMode === 'restricted' ? '#D97706' : isForceAssign ? '#EF4444' : BRAND.purple }}>
+                  {editMode === 'restricted'
+                    ? '📋 Assigned quest — only coins & reassign editable'
+                    : isForceAssign ? '🔒 Force assigned — modified by you' : 'Editing open bounty'}
                 </Text>
               </View>
               <TouchableOpacity onPress={onClose}><I.X c={colors.textSecondary} /></TouchableOpacity>
             </View>
 
-            {/* Title */}
-            <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
-            <TextInput
-              style={[aq.input, { color: colors.textPrimary, borderColor: title.trim() ? colors.border : '#EF444480', backgroundColor: colors.surface }]}
-              value={title} onChangeText={setTitle} returnKeyType="next"
-            />
-
-            {/* Description */}
-            <Text style={[aq.label, { color: colors.textSecondary }]}>Description
-              <Text style={{ fontWeight: '400', color: colors.textTertiary }}> (what needs to be done)</Text>
-            </Text>
-            <TextInput
-              style={[aq.input, aq.descInput, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]}
-              value={desc} onChangeText={t => setDesc(t.slice(0, 150))}
-              multiline numberOfLines={3} textAlignVertical="top"
-            />
-            <Text style={{ fontSize: TYPO.micro, color: desc.length > 130 ? '#EF4444' : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 12 }}>
-              {desc.length}/150
-            </Text>
+            {/* Title — locked when assigned */}
+            {editMode === 'restricted' ? (
+              <View style={{ marginBottom: 14 }}>
+                <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title <Text style={{ color: colors.textTertiary, fontWeight: '400' }}>— locked once assigned</Text></Text>
+                <View style={{ padding: 12, borderRadius: 12, borderWidth: 1, borderColor: isDark ? '#1E293B' : '#E2E8F0', backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }}>
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{quest.title}</Text>
+                  {quest.description ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 4 }}>{quest.description}</Text> : null}
+                </View>
+              </View>
+            ) : (
+              <>
+                <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
+                <TextInput
+                  style={[aq.input, { color: colors.textPrimary, borderColor: title.trim() ? colors.border : '#EF444480', backgroundColor: colors.surface }]}
+                  value={title} onChangeText={setTitle} returnKeyType="next"
+                />
+                {/* Description */}
+                <Text style={[aq.label, { color: colors.textSecondary }]}>Description
+                  <Text style={{ fontWeight: '400', color: colors.textTertiary }}> (what needs to be done)</Text>
+                </Text>
+                <TextInput
+                  style={[aq.input, aq.descInput, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]}
+                  value={desc} onChangeText={t => setDesc(t.slice(0, 150))}
+                  multiline numberOfLines={3} textAlignVertical="top"
+                />
+                <Text style={{ fontSize: TYPO.micro, color: desc.length > 130 ? '#EF4444' : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 12 }}>
+                  {desc.length}/150
+                </Text>
+              </>
+            )}
 
             {/* Coins + Bonus row */}
             <View style={{ flexDirection: 'row', gap: 12, marginBottom: 14 }}>
@@ -1598,10 +1616,13 @@ export default function QuestsScreen() {
                 const canApprove = isParentOrSenior && isReview;
                 // Reopen: parent or senior, quest was declined
                 const canReopen  = isParentOrSenior && isDeclined;
-                // Edit: parent only, quest not yet claimed/in-progress
-                const canEdit    = isParent && (isPoolCard || q.status === 'todo');
-                // Delete: parent only, quest unclaimed (pool or unassigned todo)
-                const canDelete  = isParent && (isPoolCard || (q.status === 'todo' && !q.assignedToId));
+                // Full edit: pool quest only — all fields (title, desc, coins, category, difficulty, assign)
+                const canEditFull       = isParent && isPoolCard;
+                // Restricted edit: assigned todo not yet submitted — coins + reassign ONLY, title/desc locked
+                const canEditRestricted = isParent && q.status === 'todo' && !!q.assignedToId;
+                const canEdit           = canEditFull || canEditRestricted;
+                // Delete: parent only, quest not yet submitted (pool, or assigned/unassigned todo)
+                const canDelete  = isParent && (isPoolCard || q.status === 'todo');
 
                 // Accent colour by status
                 const accentColor =
@@ -1691,8 +1712,33 @@ export default function QuestsScreen() {
                   </View>
                 );
 
+                const swipeDeleteAction = (_prog: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
+                  const scale = dragX.interpolate({ inputRange: [-80, 0], outputRange: [1, 0], extrapolate: 'clamp' });
+                  return (
+                    <TouchableOpacity
+                      style={{ width: 72, justifyContent: 'center', alignItems: 'center', backgroundColor: '#EF4444', borderRadius: 18, marginLeft: 8, marginBottom: 10 }}
+                      onPress={() => Alert.alert(
+                        'Delete Quest',
+                        `Remove "${q.title}"? This cannot be undone.`,
+                        [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => deleteQuest(q.id) }]
+                      )}
+                    >
+                      <Animated.View style={{ alignItems: 'center', transform: [{ scale }] }}>
+                        <Text style={{ fontSize: 20 }}>🗑</Text>
+                        <Text style={{ color: '#fff', fontSize: TYPO.micro, fontWeight: '800', marginTop: 2 }}>Delete</Text>
+                      </Animated.View>
+                    </TouchableOpacity>
+                  );
+                };
+
                 return (
-                  <CollapsibleQuestCard key={q.id} accentColor={accentColor} cardBg={cardBg} cardBord={cardBord}
+                  <Swipeable
+                    key={q.id}
+                    renderRightActions={canDelete ? swipeDeleteAction : undefined}
+                    overshootRight={false}
+                    friction={2}
+                  >
+                  <CollapsibleQuestCard accentColor={accentColor} cardBg={cardBg} cardBord={cardBord}
                     onDoubleTap={canEdit ? () => setEditTarget(q) : undefined}
                     header={cardHeader}
                   >
@@ -2000,6 +2046,7 @@ export default function QuestsScreen() {
                       )}
                     </View>{/* action strip */}
                   </CollapsibleQuestCard>
+                  </Swipeable>
                 );
               })}
             </View>
@@ -2017,9 +2064,10 @@ export default function QuestsScreen() {
         <EditQuestModal
           quest={editTarget}
           activeMemberId={activeMember?.id ?? ''}
+          editMode={editTarget?.isPool ? 'full' : 'restricted'}
           onClose={() => setEditTarget(null)}
           onSave={(id, patch) => { updateQuest(id, patch, activeMember?.id); setEditTarget(null); }}
-          onDelete={editTarget && (editTarget.isPool || (editTarget.status === 'todo' && !editTarget.assignedToId)) ? (id) => deleteQuest(id) : undefined}
+          onDelete={(id) => { deleteQuest(id); setEditTarget(null); }}
         />
       )}
 

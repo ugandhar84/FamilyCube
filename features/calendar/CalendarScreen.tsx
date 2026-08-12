@@ -1,361 +1,451 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, Modal,
-  TextInput, KeyboardAvoidingView, Platform,
+  TextInput, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, FamilyEvent, EventType } from '@/store/eventStore';
-import { TYPO, RADIUS } from '@/constants/theme';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getDayStrip(centerDate: Date, count = 7) {
-  return Array.from({ length: count }, (_, i) => {
-    const d = new Date(centerDate);
-    d.setDate(centerDate.getDate() - 3 + i);
-    return d;
-  });
+function toDateStr(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
 }
 
-function isSameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
+function parseDate(s: string) {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
 }
 
 function formatTime(t?: string) {
   if (!t) return '';
   const [h, m] = t.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
+  const ap = h >= 12 ? 'PM' : 'AM';
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ap}`;
 }
 
-function toLocalDateStr(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+function formatHeaderDate(s: string) {
+  return parseDate(s).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-const TYPE_ICONS: Record<EventType, string> = {
-  event: 'calendar', reminder: 'alarm', appointment: 'medical', birthday: 'gift',
+function get15Days(center: string): string[] {
+  const base = parseDate(center);
+  return Array.from({ length: 15 }, (_, i) => {
+    const d = new Date(base);
+    d.setDate(base.getDate() - 7 + i);
+    return toDateStr(d);
+  });
+}
+
+const DAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+
+const CAT_COLOR: Record<string, string> = {
+  Work: '#8B5CF6', Medical: '#EF4444', Sports: '#F59E0B',
+  School: '#3B82F6', Study: '#3B82F6', Birthday: '#EC4899',
+  Event: '#10B981', Other: '#6B7280',
 };
 
-// ─── Day strip ────────────────────────────────────────────────────────────────
+const CAT_ICON: Record<string, string> = {
+  Work: '💼', Medical: '🏥', Sports: '⚽', School: '🎒',
+  Study: '📖', Birthday: '🎂', Event: '📅', Other: '📌',
+};
 
-function DayStrip({ selected, onSelect }: { selected: Date; onSelect: (d: Date) => void }) {
-  const { colors } = useTheme();
-  const days = getDayStrip(selected);
-  const DAY = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+// ─── 15-Day strip ─────────────────────────────────────────────────────────────
+
+function DayStrip({ selected, events, onSelect, colors }: {
+  selected: string;
+  events: FamilyEvent[];
+  onSelect: (s: string) => void;
+  colors: any;
+}) {
+  const days = get15Days(selected);
+  const today = toDateStr(new Date());
 
   return (
-    <View style={[styles.dayStrip, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-      {days.map((d, i) => {
-        const isToday  = isSameDay(d, new Date());
-        const isSel    = isSameDay(d, selected);
+    <ScrollView horizontal showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ paddingHorizontal: 8, paddingVertical: 8, gap: 6 }}>
+      {days.map(dateStr => {
+        const d        = parseDate(dateStr);
+        const dayName  = DAY_NAMES[d.getDay()];
+        const dayNum   = d.getDate();
+        const isToday  = dateStr === today;
+        const isSel    = dateStr === selected;
+        const dayEvts  = events.filter(e => e.date === dateStr);
+        const hasWork  = dayEvts.some(e => e.type === 'event' && (e.title.toLowerCase().includes('work') || e.location?.toLowerCase().includes('work')));
+        const hasMed   = dayEvts.some(e => e.type === 'appointment');
+        const hasBday  = dayEvts.some(e => e.type === 'birthday');
+
         return (
-          <Pressable key={i} onPress={() => onSelect(d)} style={styles.dayCell}>
-            <Text style={[styles.dayLabel, { color: isSel ? colors.primary : colors.textTertiary }]}>
-              {DAY[d.getDay()]}
-            </Text>
-            <View style={[styles.dayNum, {
-              backgroundColor: isSel ? colors.primary : isToday ? colors.primaryLight : 'transparent',
+          <Pressable key={dateStr} onPress={() => onSelect(dateStr)}
+            style={[s.dayCell, {
+              backgroundColor: isSel ? colors.primary : isToday ? colors.primary + '18' : colors.card,
+              borderColor: isSel ? colors.primary : isToday ? colors.primary + '50' : colors.border,
             }]}>
-              <Text style={[styles.dayNumText, {
-                color: isSel ? '#fff' : isToday ? colors.primary : colors.textPrimary,
-                fontWeight: isSel || isToday ? '800' : '500',
-              }]}>{d.getDate()}</Text>
+            <Text style={{ fontSize: 9, fontWeight: '800', letterSpacing: 0.3,
+              color: isSel ? colors.primary + '99' : colors.textTertiary }}>{dayName}</Text>
+            <Text style={{ fontSize: 17, fontWeight: '900',
+              color: isSel ? '#fff' : isToday ? colors.primary : colors.textPrimary }}>{dayNum}</Text>
+            <View style={{ flexDirection: 'row', gap: 2, marginTop: 2 }}>
+              {hasMed   && <View style={[s.dot, { backgroundColor: '#EF4444' }]} />}
+              {hasWork  && <View style={[s.dot, { backgroundColor: '#8B5CF6' }]} />}
+              {hasBday  && <View style={[s.dot, { backgroundColor: '#EC4899' }]} />}
+              {!hasMed && !hasWork && !hasBday && dayEvts.length > 0 &&
+                <View style={[s.dot, { backgroundColor: '#10B981' }]} />}
             </View>
           </Pressable>
         );
       })}
-    </View>
+    </ScrollView>
   );
 }
 
-// ─── Event row ────────────────────────────────────────────────────────────────
+// ─── EventCard ────────────────────────────────────────────────────────────────
 
-function EventRow({ event, memberEmoji, onPress }: {
-  event: FamilyEvent; memberEmoji?: string; onPress: () => void;
+function EventCard({ event, isParent, onApprove, colors, isDark }: {
+  event: FamilyEvent; isParent: boolean;
+  onApprove?: (id: string) => void;
+  colors: any; isDark: boolean;
 }) {
-  const { colors } = useTheme();
-  const color = event.color ?? colors.primary;
+  const catKey   = event.type === 'appointment' ? 'Medical' : 'Event';
+  const catColor = CAT_COLOR[catKey] ?? '#6B7280';
+  const catIcon  = CAT_ICON[catKey] ?? '📅';
+  const isConflict = (event as any).conflict;
+  const cardBg   = isDark ? colors.card : '#FFFFFF';
+  const bdrColor = isConflict ? '#F59E0B80' : colors.border;
+
   return (
-    <Pressable onPress={onPress} style={[styles.eventRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={[styles.eventColorBar, { backgroundColor: color }]} />
-      <View style={{ flex: 1, gap: 3 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Ionicons name={TYPE_ICONS[event.type] as any} size={13} color={color} />
-          <Text style={[styles.eventTitle, { color: colors.textPrimary }]} numberOfLines={1}>{event.title}</Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {event.allDay ? (
-            <Text style={[styles.eventTime, { color: colors.textTertiary }]}>All day</Text>
-          ) : event.time ? (
-            <Text style={[styles.eventTime, { color: colors.textTertiary }]}>{formatTime(event.time)}{event.endTime ? ` – ${formatTime(event.endTime)}` : ''}</Text>
-          ) : null}
-          {event.location ? (
-            <Text style={[styles.eventTime, { color: colors.textTertiary }]}>📍 {event.location}</Text>
-          ) : null}
-        </View>
+    <View style={{ flexDirection: 'row', marginBottom: 16 }}>
+      {/* Timeline dot & time */}
+      <View style={{ width: 52, alignItems: 'flex-end', paddingRight: 10, paddingTop: 4 }}>
+        <Text style={{ fontSize: 11, fontWeight: '800', color: colors.primary, lineHeight: 13 }}>
+          {event.time ? formatTime(event.time).split(' ')[0] : '—'}
+        </Text>
+        <Text style={{ fontSize: 9, color: colors.textTertiary, fontWeight: '600' }}>
+          {event.time ? formatTime(event.time).split(' ')[1] : ''}
+        </Text>
       </View>
-      {memberEmoji ? <Text style={{ fontSize: 20 }}>{memberEmoji}</Text> : null}
-    </Pressable>
+
+      {/* Dot */}
+      <View style={{ width: 12, alignItems: 'center', paddingTop: 5 }}>
+        <View style={[s.timelineDot, {
+          backgroundColor: isConflict ? '#F59E0B' : catColor,
+        }]} />
+        <View style={[s.timelineLine, { backgroundColor: colors.border }]} />
+      </View>
+
+      {/* Card */}
+      <View style={[s.eventCard, { flex: 1, backgroundColor: cardBg,
+        borderColor: bdrColor,
+        ...(isConflict ? { backgroundColor: isDark ? '#78350F15' : '#FFFBEB' } : {}) }]}>
+        <View style={[s.row, { justifyContent: 'space-between', marginBottom: 6 }]}>
+          <View style={[s.catTag, {
+            backgroundColor: catColor + '20', borderColor: catColor + '50',
+          }]}>
+            <Text style={{ fontSize: 10, fontWeight: '800', color: catColor }}>
+              {catIcon} {catKey.toUpperCase()}
+            </Text>
+          </View>
+          {event.time && (
+            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>
+              {formatTime(event.time)}
+            </Text>
+          )}
+        </View>
+
+        <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary, marginBottom: 4 }}>
+          {event.title}
+        </Text>
+
+        <View style={[s.row, { justifyContent: 'space-between' }]}>
+          <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+            For: <Text style={{ fontWeight: '700', color: colors.textPrimary }}>
+              {(event as any).memberName ?? 'Family'}
+            </Text>
+          </Text>
+          {event.location ? (
+            <Text style={{ fontSize: 11, color: colors.textTertiary }}>📍 {event.location}</Text>
+          ) : null}
+        </View>
+
+        {/* Conflict/approval row */}
+        {isConflict && isParent && onApprove && (
+          <View style={[s.row, { justifyContent: 'space-between', marginTop: 8, paddingTop: 8,
+            borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#F59E0B40' }]}>
+            <Text style={{ fontSize: 11, fontWeight: '700', color: '#F59E0B' }}>⚠️ Kid Request Pending</Text>
+            <Pressable onPress={() => onApprove(event.id)}
+              style={[s.approveBtn, { backgroundColor: '#10B981' }]}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>✓ Approve</Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
+    </View>
   );
 }
 
 // ─── Add Event Modal ──────────────────────────────────────────────────────────
 
-function AddEventModal({ visible, defaultDate, members, onClose, onAdd }: {
-  visible: boolean; defaultDate: string; members: any[]; onClose: () => void; onAdd: (e: any) => void;
+function AddEventModal({ visible, members, selectedDate, onClose, onCreate, colors, isDark }: {
+  visible: boolean; members: any[]; selectedDate: string;
+  onClose: () => void; onCreate: (data: Partial<FamilyEvent>) => void;
+  colors: any; isDark: boolean;
 }) {
-  const { colors } = useTheme();
   const [title, setTitle]     = useState('');
-  const [time, setTime]       = useState('');
   const [type, setType]       = useState<EventType>('event');
-  const [memberId, setMember] = useState<string | undefined>(undefined);
-  const [color, setColor]     = useState('#9261C7');
+  const [time, setTime]       = useState('09:00');
+  const [location, setLoc]    = useState('');
+  const [member, setMember]   = useState(members[0]?.id ?? '');
+  const types: EventType[]    = ['event', 'reminder', 'appointment', 'birthday'];
 
-  const COLORS = ['#9261C7','#00BBA4','#F5A623','#F04E98','#EF4444','#3B82F6'];
-  const TYPES: EventType[] = ['event','reminder','appointment','birthday'];
-
-  const reset = () => { setTitle(''); setTime(''); setType('event'); setMember(undefined); setColor('#9261C7'); };
-
-  const handleAdd = () => {
+  const submit = () => {
     if (!title.trim()) return;
-    onAdd({ title: title.trim(), date: defaultDate, time: time || undefined, type, memberId, color });
-    reset(); onClose();
+    onCreate({ title: title.trim(), type, date: selectedDate, time: time,
+      location: location.trim() || undefined, memberId: member });
+    setTitle(''); setType('event'); setTime('09:00'); setLoc('');
+    onClose();
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={[styles.modalSheet, { backgroundColor: colors.background }]}>
-          <View style={styles.modalHeader}>
-            <Pressable onPress={() => { reset(); onClose(); }}>
-              <Text style={[{ color: colors.textSecondary, fontSize: 16 }]}>Cancel</Text>
-            </Pressable>
-            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>New Event</Text>
-            <Pressable onPress={handleAdd} disabled={!title.trim()}>
-              <Text style={[{ fontSize: 16, fontWeight: '700', color: title.trim() ? colors.primary : colors.textTertiary }]}>Add</Text>
-            </Pressable>
-          </View>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={s.overlay}>
+          <Pressable style={{ flex: 1 }} onPress={onClose} />
+          <View style={[s.sheet, { backgroundColor: isDark ? colors.card : '#fff', borderColor: colors.border }]}>
+            <View style={[s.handle, { backgroundColor: colors.border }]} />
+            <Text style={[s.sheetTitle, { color: colors.textPrimary }]}>Add Event</Text>
 
-          <ScrollView contentContainerStyle={{ padding: 20, gap: 18 }} keyboardShouldPersistTaps="handled">
-            {/* Title */}
-            <TextInput
-              value={title} onChangeText={setTitle} placeholder="Event title"
-              placeholderTextColor={colors.placeholder}
-              style={[styles.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
-            />
-            {/* Time */}
-            <TextInput
-              value={time} onChangeText={setTime} placeholder="Time (e.g. 14:30)"
-              placeholderTextColor={colors.placeholder} keyboardType="numbers-and-punctuation"
-              style={[styles.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
-            />
-            {/* Type */}
-            <View style={{ gap: 8 }}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Type</Text>
-              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-                {TYPES.map(t => (
+            <Text style={[s.label, { color: colors.textSecondary }]}>TYPE</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {types.map(t => (
                   <Pressable key={t} onPress={() => setType(t)}
-                    style={[styles.typeChip, {
-                      backgroundColor: type === t ? colors.primary + '20' : colors.surface,
-                      borderColor: type === t ? colors.primary : colors.border,
-                    }]}>
-                    <Ionicons name={TYPE_ICONS[t] as any} size={14} color={type === t ? colors.primary : colors.textTertiary} />
-                    <Text style={[{ fontSize: 12, fontWeight: '600', color: type === t ? colors.primary : colors.textSecondary, textTransform: 'capitalize' }]}>{t}</Text>
+                    style={[s.chip, { backgroundColor: type === t ? colors.primary + '20' : colors.surface,
+                      borderColor: type === t ? colors.primary : colors.border }]}>
+                    <Text style={{ fontSize: 12, fontWeight: '700',
+                      color: type === t ? colors.primary : colors.textSecondary }}>
+                      {CAT_ICON[t === 'appointment' ? 'Medical' : 'Event']} {t.charAt(0).toUpperCase() + t.slice(1)}
+                    </Text>
                   </Pressable>
                 ))}
               </View>
-            </View>
-            {/* Color */}
-            <View style={{ gap: 8 }}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Color</Text>
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                {COLORS.map(c => (
-                  <Pressable key={c} onPress={() => setColor(c)}
-                    style={[styles.colorDot, { backgroundColor: c, borderWidth: color === c ? 3 : 0, borderColor: '#fff', shadowColor: c, shadowOpacity: color === c ? 0.5 : 0, shadowRadius: 4, elevation: color === c ? 4 : 0 }]} />
-                ))}
+            </ScrollView>
+
+            <Text style={[s.label, { color: colors.textSecondary }]}>TITLE</Text>
+            <TextInput value={title} onChangeText={setTitle} placeholder="Event name…"
+              placeholderTextColor={colors.placeholder}
+              style={[s.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]} />
+
+            <View style={[s.row, { gap: 12, marginBottom: 12 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.label, { color: colors.textSecondary }]}>TIME</Text>
+                <TextInput value={time} onChangeText={setTime} placeholder="09:00"
+                  placeholderTextColor={colors.placeholder}
+                  style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
+                    backgroundColor: colors.surface, marginBottom: 0 }]} />
+              </View>
+              <View style={{ flex: 2 }}>
+                <Text style={[s.label, { color: colors.textSecondary }]}>LOCATION (optional)</Text>
+                <TextInput value={location} onChangeText={setLoc} placeholder="Address…"
+                  placeholderTextColor={colors.placeholder}
+                  style={[s.input, { color: colors.textPrimary, borderColor: colors.border,
+                    backgroundColor: colors.surface, marginBottom: 0 }]} />
               </View>
             </View>
-            {/* Assign */}
-            <View style={{ gap: 8 }}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>For</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                <Pressable onPress={() => setMember(undefined)}
-                  style={[styles.typeChip, {
-                    backgroundColor: !memberId ? colors.primary + '20' : colors.surface,
-                    borderColor: !memberId ? colors.primary : colors.border,
-                  }]}>
-                  <Text style={[{ fontSize: 12, fontWeight: '600', color: !memberId ? colors.primary : colors.textSecondary }]}>Everyone</Text>
-                </Pressable>
+
+            <Text style={[s.label, { color: colors.textSecondary, marginTop: 4 }]}>FOR</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
                 {members.map(m => (
                   <Pressable key={m.id} onPress={() => setMember(m.id)}
-                    style={[styles.typeChip, {
-                      backgroundColor: memberId === m.id ? colors.primary + '20' : colors.surface,
-                      borderColor: memberId === m.id ? colors.primary : colors.border,
-                    }]}>
-                    <Text>{m.emoji}</Text>
-                    <Text style={[{ fontSize: 12, fontWeight: '600', color: memberId === m.id ? colors.primary : colors.textSecondary }]}>{m.name.split(' ')[0]}</Text>
+                    style={[s.chip, { backgroundColor: member === m.id ? colors.primary + '20' : colors.surface,
+                      borderColor: member === m.id ? colors.primary : colors.border }]}>
+                    <Text style={{ fontSize: 12, fontWeight: '700',
+                      color: member === m.id ? colors.primary : colors.textSecondary }}>
+                      {m.emoji ?? m.name[0]} {m.name.split(' ')[0]}
+                    </Text>
                   </Pressable>
                 ))}
-              </ScrollView>
-            </View>
-          </ScrollView>
+              </View>
+            </ScrollView>
+
+            <Pressable onPress={submit}
+              style={[s.submitBtn, { backgroundColor: title.trim() ? colors.primary : colors.border }]}>
+              <Ionicons name="calendar" size={16} color="#fff" />
+              <Text style={s.submitBtnText}>Add Event</Text>
+            </Pressable>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </Modal>
   );
 }
 
-// ─── Calendar Screen ──────────────────────────────────────────────────────────
+// ─── CalendarScreen ───────────────────────────────────────────────────────────
 
 export default function CalendarScreen() {
-  const { colors } = useTheme();
-  const { members, loaded, loadFromStorage } = useFamilyStore();
-  const { events, loadFromStorage: loadEvents, addEvent, deleteEvent } = useEventStore();
-  const [selected, setSelected] = useState(new Date());
-  const [showAdd, setShowAdd]   = useState(false);
+  const { colors, isDark } = useTheme();
+  const { members, activeMemberId, loaded, loadFromStorage } = useFamilyStore();
+  const { events, loadFromStorage: loadEvents, addEvent, updateEvent } = useEventStore();
+
+  const today      = toDateStr(new Date());
+  const [selected, setSelected]       = useState(today);
+  const [memberFilter, setMemberFilter] = useState('all');
+  const [showAdd, setShowAdd]         = useState(false);
 
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
   useEffect(() => { loadEvents(); }, []);
 
-  const dateStr = toLocalDateStr(selected);
-  const dayEvents = events
-    .filter(e => e.date === dateStr)
-    .sort((a, b) => (a.time ?? '00:00').localeCompare(b.time ?? '00:00'));
+  const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
+  const isParent     = activeMember?.role === 'parent';
+  const isKid        = activeMember?.role === 'kid';
 
-  const upcoming = events
-    .filter(e => e.date > dateStr)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, 5);
+  // Day events filtered by selected date + member filter
+  let dayEvents = events.filter(e => e.date === selected);
+  if (memberFilter !== 'all') {
+    dayEvents = dayEvents.filter(e => e.memberId === memberFilter || (e as any).memberName?.includes(memberFilter));
+  }
 
-  const monthLabel = selected.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const bg = isDark ? '#0B0F1A' : '#F3F4F8';
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+    <SafeAreaView style={[s.safe, { backgroundColor: bg }]} edges={['top']}>
+
+      {/* ── Header ── */}
+      <View style={[s.header, { backgroundColor: isDark ? colors.card : '#fff', borderBottomColor: colors.border }]}>
         <View>
-          <Text style={[styles.screenTitle, { color: colors.textPrimary }]}>Schedule</Text>
-          <Text style={[styles.screenSub, { color: colors.textSecondary }]}>{monthLabel}</Text>
+          <Text style={[s.headerTitle, { color: colors.textPrimary }]}>Family Schedule</Text>
+          <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '700' }}>
+            {formatHeaderDate(selected)}
+          </Text>
         </View>
-        <Pressable onPress={() => setShowAdd(true)} style={[styles.newBtn, { backgroundColor: colors.primary }]}>
-          <Ionicons name="add" size={20} color="#fff" />
-          <Text style={styles.newBtnText}>Event</Text>
-        </Pressable>
-      </View>
-
-      {/* Day strip */}
-      <DayStrip selected={selected} onSelect={setSelected} />
-
-      {/* Navigation arrows */}
-      <View style={[styles.weekNav, { borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => { const d = new Date(selected); d.setDate(d.getDate()-7); setSelected(d); }}
-          style={[styles.navBtn, { borderColor: colors.border }]}>
-          <Ionicons name="chevron-back" size={16} color={colors.textSecondary} />
-        </Pressable>
-        <Pressable onPress={() => setSelected(new Date())}
-          style={[styles.todayBtn, { borderColor: colors.primary }]}>
-          <Text style={[{ color: colors.primary, fontWeight: '700', fontSize: 13 }]}>Today</Text>
-        </Pressable>
-        <Pressable onPress={() => { const d = new Date(selected); d.setDate(d.getDate()+7); setSelected(d); }}
-          style={[styles.navBtn, { borderColor: colors.border }]}>
-          <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
-        </Pressable>
-      </View>
-
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120, gap: 12 }}>
-        {/* Selected day events */}
-        <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
-          {isSameDay(selected, new Date()) ? 'Today' : selected.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-          {' '}· {dayEvents.length} event{dayEvents.length !== 1 ? 's' : ''}
-        </Text>
-
-        {dayEvents.length === 0 ? (
-          <View style={[styles.emptyDay, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={{ fontSize: 36 }}>📅</Text>
-            <Text style={[{ color: colors.textSecondary, fontSize: 14, marginTop: 8 }]}>Nothing scheduled</Text>
-            <Pressable onPress={() => setShowAdd(true)} style={[styles.emptyAddBtn, { borderColor: colors.primary }]}>
-              <Text style={[{ color: colors.primary, fontWeight: '600', fontSize: 13 }]}>+ Add event</Text>
-            </Pressable>
-          </View>
+        {isKid ? (
+          <Pressable onPress={() => Alert.alert('Ask Help / Ride', 'Request coming soon')}
+            style={[s.addBtn, { backgroundColor: colors.amber }]}>
+            <Text style={{ color: '#000', fontSize: 13, fontWeight: '800' }}>+ Ask Help / Ride</Text>
+          </Pressable>
         ) : (
-          dayEvents.map(e => (
-            <EventRow
-              key={e.id} event={e}
-              memberEmoji={members.find(m => m.id === e.memberId)?.emoji}
-              onPress={() => {}}
-            />
-          ))
+          <Pressable onPress={() => setShowAdd(true)}
+            style={[s.addBtn, { backgroundColor: colors.primary }]}>
+            <Ionicons name="add" size={16} color="#fff" />
+            <Text style={s.addBtnText}>Event</Text>
+          </Pressable>
         )}
+      </View>
 
-        {/* Upcoming */}
-        {upcoming.length > 0 && (
-          <>
-            <Text style={[styles.sectionTitle, { color: colors.textPrimary, marginTop: 8 }]}>Coming Up</Text>
-            {upcoming.map(e => {
-              const d = new Date(e.date);
-              const diff = Math.round((d.getTime() - new Date().setHours(0,0,0,0)) / 86400000);
-              const dayLabel = diff === 1 ? 'Tomorrow' : diff === 2 ? 'In 2 days' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-              return (
-                <View key={e.id}>
-                  <Text style={[styles.upcomingDate, { color: colors.textTertiary }]}>{dayLabel}</Text>
-                  <EventRow
-                    event={e}
-                    memberEmoji={members.find(m => m.id === e.memberId)?.emoji}
-                    onPress={() => {}}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+
+        {/* ── Member filter chips ── */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 10, gap: 8 }}>
+          {[{ id: 'all', label: 'All Members' }, ...members.map(m => ({
+            id: m.id, label: `${m.emoji ?? m.name[0]} ${m.name.split(' ')[0]}`,
+          }))].map(f => {
+            const active = memberFilter === f.id;
+            return (
+              <Pressable key={f.id} onPress={() => setMemberFilter(f.id)}
+                style={[s.filterChip, {
+                  backgroundColor: active ? colors.primary : colors.card,
+                  borderColor: active ? 'transparent' : colors.border,
+                }]}>
+                <Text style={{ fontSize: 12, fontWeight: '700',
+                  color: active ? '#fff' : colors.textSecondary }}>{f.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {/* ── 15-day horizontal strip ── */}
+        <View style={{ backgroundColor: isDark ? colors.card : '#fff',
+          borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+          <DayStrip selected={selected} events={events} onSelect={setSelected} colors={colors} />
+        </View>
+
+        {/* ── Timeline for selected day ── */}
+        <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
+          {dayEvents.length === 0 ? (
+            <View style={[s.emptyBox, { backgroundColor: isDark ? colors.card : '#fff',
+              borderColor: colors.border }]}>
+              <Text style={{ fontSize: 28, marginBottom: 8 }}>📅</Text>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>
+                No events on {formatHeaderDate(selected)}
+              </Text>
+              {isKid && (
+                <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 4, textAlign: 'center' }}>
+                  Tap "+ Ask Help / Ride" to request parent assistance
+                </Text>
+              )}
+            </View>
+          ) : (
+            <View style={{ position: 'relative' }}>
+              {dayEvents
+                .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''))
+                .map(ev => (
+                  <EventCard
+                    key={ev.id} event={ev} isParent={isParent}
+                    onApprove={(id) => updateEvent(id, { approvalPending: false })}
+                    colors={colors} isDark={isDark}
                   />
-                </View>
-              );
-            })}
-          </>
-        )}
+                ))}
+            </View>
+          )}
+        </View>
       </ScrollView>
 
       <AddEventModal
-        visible={showAdd} defaultDate={dateStr} members={members}
-        onClose={() => setShowAdd(false)} onAdd={addEvent}
+        visible={showAdd} members={members} selectedDate={selected}
+        onClose={() => setShowAdd(false)}
+        onCreate={(data) => addEvent(data as any)}
+        colors={colors} isDark={isDark}
       />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  header:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
-  screenTitle:  { fontSize: TYPO.heading, fontWeight: '800' },
-  screenSub:    { fontSize: TYPO.caption, marginTop: 2 },
-  newBtn:       { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
-  newBtnText:   { color: '#fff', fontWeight: '700', fontSize: 14 },
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
-  dayStrip:     { flexDirection: 'row', paddingVertical: 12, paddingHorizontal: 8, borderBottomWidth: 1 },
-  dayCell:      { flex: 1, alignItems: 'center', gap: 4 },
-  dayLabel:     { fontSize: 11, fontWeight: '600' },
-  dayNum:       { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  dayNumText:   { fontSize: 15 },
+const s = StyleSheet.create({
+  safe:         { flex: 1 },
+  header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingHorizontal: 16, paddingVertical: 12,
+                  borderBottomWidth: StyleSheet.hairlineWidth },
+  headerTitle:  { fontSize: 18, fontWeight: '800', marginBottom: 2 },
+  addBtn:       { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 99,
+                  paddingVertical: 8, paddingHorizontal: 14 },
+  addBtnText:   { color: '#fff', fontSize: 13, fontWeight: '700' },
 
-  weekNav:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 8, borderBottomWidth: 1 },
-  navBtn:       { width: 32, height: 32, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  todayBtn:     { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16, borderWidth: 1 },
+  filterChip:   { borderRadius: 99, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 7 },
 
-  sectionTitle: { fontSize: TYPO.body, fontWeight: '700' },
-  upcomingDate: { fontSize: 11, fontWeight: '600', marginBottom: 4, marginTop: 4 },
+  dayCell:      { width: 46, borderRadius: 14, borderWidth: 1, paddingVertical: 8,
+                  alignItems: 'center', gap: 2 },
+  dot:          { width: 5, height: 5, borderRadius: 3 },
 
-  eventRow:     { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: RADIUS.lg, borderWidth: 1 },
-  eventColorBar:{ width: 4, height: '100%', borderRadius: 2, minHeight: 40 },
-  eventTitle:   { fontSize: TYPO.body, fontWeight: '600' },
-  eventTime:    { fontSize: 12 },
+  row:          { flexDirection: 'row', alignItems: 'center' },
+  timelineDot:  { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
+  timelineLine: { width: 1, flex: 1, marginTop: 2 },
 
-  emptyDay:     { alignItems: 'center', padding: 32, borderRadius: RADIUS.xl, borderWidth: 1, borderStyle: 'dashed' },
-  emptyAddBtn:  { marginTop: 12, paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
+  eventCard:    { borderRadius: 16, borderWidth: 1, padding: 12, marginLeft: 10,
+                  shadowColor: '#000', shadowOpacity: 0.04, shadowOffset: { width: 0, height: 2 },
+                  shadowRadius: 6, elevation: 2 },
+  catTag:       { borderRadius: 99, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
+  approveBtn:   { borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12 },
 
-  modalSheet:   { flex: 1 },
-  modalHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.08)' },
-  modalTitle:   { fontSize: 17, fontWeight: '700' },
-  label:        { fontSize: 13, fontWeight: '600' },
-  input:        { borderWidth: 1, borderRadius: RADIUS.md, padding: 12, fontSize: TYPO.body },
-  typeChip:     { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1.5 },
-  colorDot:     { width: 28, height: 28, borderRadius: 14 },
+  emptyBox:     { borderRadius: 18, borderWidth: 1, padding: 36, alignItems: 'center' },
+
+  overlay:      { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheet:        { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: 1,
+                  padding: 20, paddingBottom: 40 },
+  handle:       { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  sheetTitle:   { fontSize: 18, fontWeight: '800', marginBottom: 14 },
+  label:        { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6 },
+  input:        { borderWidth: 1.5, borderRadius: 12, padding: 10, fontSize: 15, marginBottom: 12 },
+  chip:         { borderRadius: 99, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6 },
+  submitBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                  gap: 6, borderRadius: 14, paddingVertical: 14 },
+  submitBtnText:{ color: '#fff', fontSize: 16, fontWeight: '700' },
 });

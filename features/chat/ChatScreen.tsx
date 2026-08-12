@@ -23,8 +23,15 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CHANNEL        = 'family';
 const REVIEW_COLOR   = '#7C3AED';
+
+const CHANNELS = [
+  { id: 'family',  label: '#all-family', short: '#all' },
+  { id: 'parents', label: '🔒 #parents', short: '🔒 Parents' },
+  { id: 'seniors', label: '👵 #seniors', short: '👵 Seniors' },
+] as const;
+
+type ChannelId = typeof CHANNELS[number]['id'] | string; // string for DMs like 'dm_Leo'
 const QUICK_REACTIONS = ['❤️', '😂', '👍', '🎉', '🔥', '😍'];
 
 const GROCERY_CATEGORIES: GroceryCategory[] = [
@@ -386,7 +393,8 @@ function GroceryModal({ visible, onClose, activeMemberId, colors, isDark }: {
 export default function ChatScreen() {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, loaded, loadFromStorage } = useFamilyStore();
-  const channelData = useChatStore(s => s.channels[CHANNEL]);
+  const [activeChannel, setActiveChannel] = useState<ChannelId>('family');
+  const channelData = useChatStore(s => s.channels[activeChannel]);
   const messages    = channelData?.messages ?? [];
   const { loadChannel, sendMessage, addReaction, deleteMessage } = useChatStore();
 
@@ -405,7 +413,7 @@ export default function ChatScreen() {
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
-  useEffect(() => { loadChannel(CHANNEL); }, []);
+  useEffect(() => { loadChannel(activeChannel); }, [activeChannel]);
   useEffect(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200);
   }, [messages.length]);
@@ -417,7 +425,7 @@ export default function ChatScreen() {
 
   const handleSend = () => {
     if (!text.trim() || !activeMemberId) return;
-    sendMessage(CHANNEL, activeMemberId, text.trim());
+    sendMessage(activeChannel, activeMemberId, text.trim());
     setText('');
   };
 
@@ -463,7 +471,7 @@ export default function ChatScreen() {
     setReviewDur(0);
 
     // Optimistic send with local URI, no text
-    await sendMessage(CHANNEL, activeMemberId, '', undefined, undefined, undefined, dur, undefined, localUri);
+    await sendMessage(activeChannel, activeMemberId, '', undefined, undefined, undefined, dur, undefined, localUri);
 
     // Background upload to Supabase Storage and patch voice_url
     try {
@@ -482,7 +490,7 @@ export default function ChatScreen() {
       await supabase
         .from('chat_messages')
         .update({ voice_url: urlData.publicUrl })
-        .eq('channel_id', CHANNEL)
+        .eq('channel_id', activeChannel)
         .eq('sender_id', activeMemberId)
         .gte('created_at', since)
         .is('voice_url', null);
@@ -506,7 +514,7 @@ export default function ChatScreen() {
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <View style={[styles.groupIcon, { backgroundColor: colors.primaryLight }]}>
+          <View style={[styles.groupIcon, { backgroundColor: colors.primaryLight ?? colors.primary + '20' }]}>
             <Text style={{ fontSize: 22 }}>🏠</Text>
           </View>
           <View>
@@ -523,6 +531,40 @@ export default function ChatScreen() {
           <Ionicons name="call-outline" size={22} color={colors.textSecondary} />
         </View>
       </View>
+
+      {/* Channel tabs */}
+      <ScrollView
+        horizontal showsHorizontalScrollIndicator={false}
+        style={{ backgroundColor: isDark ? colors.card : '#fff',
+          borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}
+        contentContainerStyle={{ paddingHorizontal: 10, paddingVertical: 6, gap: 6 }}
+      >
+        {[
+          ...CHANNELS,
+          ...members.filter(m => m.role === 'kid').map(m => ({
+            id: `dm_${m.name.split(' ')[0]}`,
+            label: `💬 ${m.name.split(' ')[0]}`,
+            short: `💬 ${m.name.split(' ')[0]}`,
+          })),
+        ].map(ch => {
+          const active = activeChannel === ch.id;
+          return (
+            <Pressable
+              key={ch.id}
+              onPress={() => setActiveChannel(ch.id)}
+              style={{
+                borderRadius: 99, paddingHorizontal: 12, paddingVertical: 6,
+                backgroundColor: active ? colors.primary : (isDark ? colors.surface : '#F3F4F8'),
+              }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '700',
+                color: active ? '#fff' : colors.textSecondary }}>
+                {ch.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -551,7 +593,7 @@ export default function ChatScreen() {
                   activeMemberId={activeMemberId ?? ''}
                   colors={colors}
                   onLongPress={() => setPickerFor(msg.id)}
-                  onReact={(emoji) => addReaction(CHANNEL, msg.id, emoji, activeMemberId ?? '')}
+                  onReact={(emoji) => addReaction(activeChannel, msg.id, emoji, activeMemberId ?? '')}
                 />
               ))}
             </View>
@@ -610,7 +652,7 @@ export default function ChatScreen() {
       <ReactionPicker
         visible={!!pickerFor}
         colors={colors}
-        onPick={(emoji) => { if (pickerFor && activeMemberId) addReaction(CHANNEL, pickerFor, emoji, activeMemberId); }}
+        onPick={(emoji) => { if (pickerFor && activeMemberId) addReaction(activeChannel, pickerFor, emoji, activeMemberId); }}
         onClose={() => setPickerFor(null)}
       />
 

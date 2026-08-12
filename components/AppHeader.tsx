@@ -1,10 +1,18 @@
 /**
  * AppHeader
  * Used on every screen: brand logo+name | persona switcher pill | notification bell
+ *
+ * Logo: cube rolls like a dice on mount then settles.
+ * Wordmark: "Family" bold with a small purple ♥ above the dot of the "i", "Cube" multicolor.
  */
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
+import Animated, {
+  useSharedValue, useAnimatedStyle,
+  withDelay, withSpring, withTiming, withSequence,
+  Easing,
+} from 'react-native-reanimated';
 import { useTheme } from '@/lib/ThemeContext';
 import { CubeMark, BRAND } from './FamilyCubeLogo';
 
@@ -39,13 +47,74 @@ function PersonIcon({ color }: { color: string }) {
   );
 }
 
-// ── Header wordmark (horizontal, compact) ────────────────────────────────────
+// ── Animated cube (dice-roll settle on mount) ─────────────────────────────────
+
+function AnimatedCubeMark({ size = 30 }: { size?: number }) {
+  const rotate  = useSharedValue(-420);  // start tumbled
+  const scale   = useSharedValue(0.3);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    // fade + scale in
+    opacity.value = withTiming(1, { duration: 220 });
+    scale.value   = withSpring(1, { damping: 10, stiffness: 160 });
+    // spin fast then spring to 0 with a slight overshoot bounce
+    rotate.value  = withSequence(
+      withTiming(0, { duration: 520, easing: Easing.out(Easing.cubic) }),
+      withSpring(0, { damping: 6, stiffness: 80, velocity: -20 }),
+    );
+  }, []);
+
+  const aStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [
+      { scale: scale.value },
+      { rotate: `${rotate.value}deg` },
+    ],
+  }));
+
+  return (
+    <Animated.View style={aStyle}>
+      <CubeMark size={size} uid="hdr" />
+    </Animated.View>
+  );
+}
+
+// ── Header wordmark — heart above the "i" in Family ──────────────────────────
 
 function HeaderWordmark({ textColor }: { textColor: string }) {
+  const FONT = 17;
+  const HEART_SZ = 9;
+  // Approximate left offset of the dot of "i" in "Family" at fontSize 17 bold
+  // "Fam" takes ~65% of "Family" width; at 17px bold "Family" ≈ 53px → "i" dot at ~35px
+  const HEART_LEFT = 35;
+
   return (
     <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-      <Text style={[s.wFamily, { color: textColor }]}>Family </Text>
-      <Text style={s.wCube}>
+      {/* "Family" with heart above the i */}
+      <View style={{ position: 'relative' }}>
+        {/* Purple heart floats above the "i" */}
+        <Svg
+          width={HEART_SZ}
+          height={HEART_SZ}
+          viewBox="0 0 20 18"
+          style={{
+            position: 'absolute',
+            left: HEART_LEFT,
+            top: -(HEART_SZ + 1),
+            zIndex: 1,
+          }}
+        >
+          <Path
+            d="M10,16 C7,13 0,9 0,5 C0,0 5,-1 10,6 C15,-1 20,0 20,5 C20,9 13,13 10,16 Z"
+            fill={BRAND.purple}
+          />
+        </Svg>
+        <Text style={[s.wFamily, { color: textColor, fontSize: FONT }]}>Family </Text>
+      </View>
+
+      {/* "Cube" multicolor */}
+      <Text style={[s.wCube, { fontSize: FONT }]}>
         <Text style={{ color: BRAND.teal   }}>C</Text>
         <Text style={{ color: BRAND.amber  }}>u</Text>
         <Text style={{ color: BRAND.pink   }}>b</Text>
@@ -66,11 +135,11 @@ const ROLE_CONFIG = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 interface AppHeaderProps {
-  memberName?:   string;
-  memberRole?:   'parent' | 'kid' | 'senior';
-  notifCount?:   number;
+  memberName?:     string;
+  memberRole?:     'parent' | 'kid' | 'senior';
+  notifCount?:     number;
   onPersonaPress?: () => void;
-  onBellPress?:  () => void;
+  onBellPress?:    () => void;
 }
 
 export default function AppHeader({
@@ -86,38 +155,32 @@ export default function AppHeader({
   return (
     <View style={[s.bar, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
 
-      {/* LEFT: cube mark + wordmark */}
+      {/* LEFT: animated cube + wordmark */}
       <View style={s.left}>
-        <CubeMark size={30} uid="hdr" />
+        <AnimatedCubeMark size={30} />
         <HeaderWordmark textColor={colors.textPrimary} />
       </View>
 
       {/* RIGHT: persona pill + bell */}
       <View style={s.right}>
 
-        {/* Persona switcher */}
         <TouchableOpacity
           style={[s.pill, { backgroundColor: colors.card, borderColor: colors.border }]}
           onPress={onPersonaPress}
           activeOpacity={0.75}
         >
-          {/* Avatar ring */}
           <View style={[s.avatarRing, { borderColor: role.color }]}>
             <PersonIcon color={colors.textSecondary} />
           </View>
-
-          {/* Name + role */}
           <View>
             <Text style={[s.pillName, { color: colors.textPrimary }]} numberOfLines={1}>
               {memberName}
             </Text>
             <Text style={[s.pillRole, { color: role.color }]}>{role.label}</Text>
           </View>
-
           <ChevronDown color={colors.textSecondary} />
         </TouchableOpacity>
 
-        {/* Notification bell */}
         <TouchableOpacity
           style={[s.bell, { backgroundColor: isDark ? 'rgba(245,166,35,0.22)' : '#FEF0D3' }]}
           onPress={onBellPress}
@@ -149,12 +212,10 @@ const s = StyleSheet.create({
     gap: 8,
   },
   wFamily: {
-    fontSize: 17,
     fontWeight: '800',
     letterSpacing: -0.3,
   },
   wCube: {
-    fontSize: 17,
     fontWeight: '800',
     letterSpacing: -0.3,
   },

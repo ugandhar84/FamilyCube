@@ -330,7 +330,7 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
             {noDriverEvents.map(ev => {
               const kid = members.find(m => m.id === ev.memberId);
               return (
-                <CollapsibleCard key={ev.id} accent="#EF4444" colors={colors} isDark={isDark} defaultExpanded
+                <CollapsibleCard key={ev.id} accent="#EF4444" colors={colors} isDark={isDark} defaultExpanded={false}
                   summary={
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Text style={{ fontSize: 16 }}>🚨</Text>
@@ -362,7 +362,7 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
             {pendingRequests.map(ev => {
               const requester = ev.driverRequestedBy ?? members.find(m => m.id === ev.memberId)?.name ?? 'Kid';
               return (
-                <CollapsibleCard key={ev.id} accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded
+                <CollapsibleCard key={ev.id} accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={false}
                   summary={
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Text style={{ fontSize: 16 }}>🙋</Text>
@@ -641,7 +641,7 @@ function KidView({ active, members, colors, isDark, onHelpRequest }: {
             badgeColor={myDeclinedRides.length > 0 ? '#EF4444' : BRAND.amber}
             colors={colors} isDark={isDark}>
             {parentWorkConflict && (
-              <CollapsibleCard accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded
+              <CollapsibleCard accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={false}
                 summary={
                   <View>
                     <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.amber }}>⚠️ Parent busy during your activities</Text>
@@ -650,7 +650,7 @@ function KidView({ active, members, colors, isDark, onHelpRequest }: {
                 } />
             )}
             {myDeclinedRides.map(ev => (
-              <CollapsibleCard key={ev.id} accent="#EF4444" colors={colors} isDark={isDark} defaultExpanded
+              <CollapsibleCard key={ev.id} accent="#EF4444" colors={colors} isDark={isDark} defaultExpanded={false}
                 summary={
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Text style={{ fontSize: 16 }}>❌</Text>
@@ -671,7 +671,7 @@ function KidView({ active, members, colors, isDark, onHelpRequest }: {
               </CollapsibleCard>
             ))}
             {myPendingRides.map(ev => (
-              <CollapsibleCard key={ev.id} accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded
+              <CollapsibleCard key={ev.id} accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={false}
                 summary={
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Text style={{ fontSize: 16 }}>⏳</Text>
@@ -914,7 +914,7 @@ function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute 
           {myDrivingToday.map(ev => {
             const kid = members.find(m => m.id === ev.memberId);
             return (
-              <CollapsibleCard key={ev.id} accent="#10B981" colors={colors} isDark={isDark} defaultExpanded
+              <CollapsibleCard key={ev.id} accent="#10B981" colors={colors} isDark={isDark} defaultExpanded={false}
                 summary={
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Text style={{ fontSize: 16 }}>🚗</Text>
@@ -947,7 +947,7 @@ function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute 
           {openRequests.map(ev => {
             const kid = members.find(m => m.id === ev.memberId);
             return (
-              <CollapsibleCard key={ev.id} accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded
+              <CollapsibleCard key={ev.id} accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={false}
                 summary={
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Text style={{ fontSize: 16 }}>🙋</Text>

@@ -21,8 +21,10 @@ import {
   TextInput, Modal, ActivityIndicator, Alert, Platform,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
@@ -277,6 +279,33 @@ const dm = StyleSheet.create({
 
 // ─── Add Quest Modal ──────────────────────────────────────────────────────────
 const ALL_CATEGORIES: QuestCategory[] = ['Kitchen', 'Room', 'Yard', 'School', 'Pet', 'Living Room', 'Garage', 'Bathroom', 'Laundry', 'Errand', 'Tech', 'Finance', 'Health', 'Garden', 'Car', 'Shopping', 'Cooking', 'Social', 'Creative', 'Other'];
+
+// ─── Collapsible quest card — header always visible, body expands on tap ─────
+function CollapsibleQuestCard({
+  accentColor, cardBg, cardBord, header, children,
+}: {
+  accentColor: string; cardBg: string; cardBord: string;
+  header: React.ReactNode; children: React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <View style={[s.questCard, { backgroundColor: cardBg, borderColor: cardBord }]}>
+      <View style={[s.accentBar, { backgroundColor: accentColor }]} />
+      <View style={{ flex: 1 }}>
+        <Pressable onPress={() => setExpanded(e => !e)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 14, paddingBottom: expanded ? 0 : 14 }}>
+          <View style={{ flex: 1 }}>{header}</View>
+          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={accentColor} />
+        </Pressable>
+        {expanded && (
+          <View style={{ padding: 14, paddingTop: 12 }}>
+            {children}
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
 
 // ─── Quest title suggestion bank (category-tagged for auto-select) ────────────
 const QUEST_SUGGESTIONS: { title: string; category: QuestCategory; coins: number }[] = [
@@ -1351,17 +1380,28 @@ export default function QuestsScreen() {
                 const hasBonus = q.bonusCoins > 0 && (!q.bonusExpiresAt || new Date(q.bonusExpiresAt) > new Date());
 
                 return (
-                  <View key={q.id} style={[s.questCard, { backgroundColor: cardBg, borderColor: cardBord }]}>
-                    {/* Left accent bar */}
-                    <View style={[s.accentBar, { backgroundColor: accentColor }]} />
-
-                    <View style={{ flex: 1, padding: 14 }}>
-                      {/* ── Top: title + coin pill ── */}
-                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
+                  <CollapsibleQuestCard key={q.id} accentColor={accentColor} cardBg={cardBg} cardBord={cardBord}
+                    header={
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                         <View style={{ flex: 1 }}>
-                          <Text style={[s.questTitle, { color: colors.textPrimary }]} numberOfLines={2}>{q.title}</Text>
+                          <Text style={[s.questTitle, { color: colors.textPrimary }]} numberOfLines={1}>{q.title}</Text>
+                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 2 }}>
+                            {isPoolCard ? '⚡ Bounty' : assignee?.name ?? 'Unassigned'} · {q.dueDate ? fmtDateShort(q.dueDate) : 'Tonight'}
+                          </Text>
+                        </View>
+                        <View style={[s.coinPill, { backgroundColor: hasBonus ? '#FCD34D22' : (isDark ? '#1E293B' : '#F8FAFC'), borderColor: hasBonus ? '#FCD34D60' : colors.border }]}>
+                          <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: isDark ? '#FCD34D' : '#D97706' }}>+{q.coins + q.bonusCoins}🪙</Text>
+                        </View>
+                      </View>
+                    }
+                  >
+                    {/* ── Expanded body ── */}
+                    {/* ── Top: title + description ── */}
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[s.questTitle, { color: colors.textPrimary }]} numberOfLines={3}>{q.title}</Text>
                           {q.description ? (
-                            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 3, lineHeight: 18 }} numberOfLines={2}>
+                            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 3, lineHeight: 18 }}>
                               {q.description}
                             </Text>
                           ) : null}
@@ -1379,6 +1419,7 @@ export default function QuestsScreen() {
                       </View>
 
                       {/* ── Badge strip ── */}
+                      <>
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
                         <View style={[s.badge, { backgroundColor: isDark ? '#2D1B69' : '#EEF2FF', borderColor: isDark ? '#4338CA40' : '#C7D2FE' }]}>
                           <Text style={[s.badgeText, { color: isDark ? '#818CF8' : '#4338CA' }]}>{q.category}</Text>
@@ -1444,7 +1485,9 @@ export default function QuestsScreen() {
                         </View>
                       )}
 
-                    {/* Action strip — full width, separated by a rule */}
+                      </>{/* end badge strip */}
+
+                    {/* Action strip */}
                     <View style={[s.actionStrip, { borderTopColor: isDark ? '#1E293B' : '#F0F4F8' }]}>
 
                       {/* Kid: Claim open bounty */}
@@ -1559,9 +1602,8 @@ export default function QuestsScreen() {
                           )}
                         </View>
                       )}
-                    </View>
-                    </View>{/* flex:1 inner */}
-                  </View>
+                    </View>{/* action strip */}
+                  </CollapsibleQuestCard>
                 );
               })}
             </View>

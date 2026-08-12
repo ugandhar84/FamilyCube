@@ -374,7 +374,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
   const [title,        setTitle]        = useState('');
   const [coins,        setCoins]        = useState('30');
   const [category,     setCategory]     = useState<QuestCategory>('Kitchen');
-  const [assignTo,     setAssignTo]     = useState('');
+  const [assignIds,    setAssignIds]    = useState<string[]>([]);
   const [isPool,       setIsPool]       = useState(false);
   const [photoReq,     setPhotoReq]     = useState(false);
   const [desc,         setDesc]         = useState('');
@@ -426,7 +426,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
   };
 
   const reset = () => {
-    setTitle(''); setDesc(''); setCoins('30'); setAssignTo(''); setIsPool(false);
+    setTitle(''); setDesc(''); setCoins('30'); setAssignIds([]); setIsPool(false);
     setPhotoReq(false); setDueDate(defaultDue());
     setShowDatePick(false); setShowTimePick(false);
   };
@@ -437,8 +437,8 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
     await addQuest({
       title: title.trim(), description: desc.trim(), category, priority: 'medium', difficulty: 'easy',
       coins: parseInt(coins) || 30, xpReward: 20,
-      assignedToId: isPool ? undefined : (assignTo || undefined),
-      isPool, isDaily: false, recurrence: 'once', status: 'todo',
+      assignedToId: isPool ? undefined : (assignIds[0] || undefined),
+      isPool: isPool || assignIds.length === 0, isDaily: false, recurrence: 'once', status: 'todo',
       dueDate: dueDate.toISOString().split('T')[0],
       dueTime: fmtTimeLabel(dueDate),
       photoRequired: photoReq,
@@ -635,28 +635,67 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
               </Modal>
             )}
 
-            {/* Assign To */}
-            <Text style={[aq.label, { color: colors.textSecondary }]}>Assign To</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
+            {/* Assign To — avatar circles, multi-select */}
+            <Text style={[aq.label, { color: colors.textSecondary }]}>
+              Assign To{'  '}
+              <Text style={{ fontWeight: '400', color: colors.textTertiary }}>
+                {isPool ? 'open to anyone' : assignIds.length === 0 ? 'tap to select' : assignIds.length > 1 ? `${assignIds.length} selected` : '1 selected'}
+              </Text>
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 14, marginBottom: 18, alignItems: 'flex-start' }}>
+              {/* Open Bounty avatar */}
               <TouchableOpacity
-                style={[aq.kidChip, { borderColor: pillBdr, backgroundColor: pillBg },
-                  isPool && { backgroundColor: BRAND.amber + '30', borderColor: BRAND.amber }]}
-                onPress={() => { setIsPool(true); setAssignTo(''); }}
+                style={{ alignItems: 'center', gap: 5 }}
+                onPress={() => { setIsPool(true); setAssignIds([]); }}
               >
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isPool ? BRAND.amber : colors.textSecondary }}>⚡ Open Bounty</Text>
+                <View style={[aq.avatar, {
+                  backgroundColor: isPool ? BRAND.amber + '30' : pillBg,
+                  borderColor: isPool ? BRAND.amber : pillBdr,
+                  borderWidth: isPool ? 2.5 : 1.5,
+                }]}>
+                  <Text style={{ fontSize: 22 }}>⚡</Text>
+                  {isPool && (
+                    <View style={aq.avatarCheck}>
+                      <Text style={{ fontSize: 9, color: '#fff', fontWeight: '900' }}>✓</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: isPool ? BRAND.amber : colors.textTertiary }}>Bounty</Text>
               </TouchableOpacity>
-              {kids.map(k => (
-                <TouchableOpacity
-                  key={k.id}
-                  style={[aq.kidChip, { borderColor: pillBdr, backgroundColor: pillBg },
-                    assignTo === k.id && !isPool && { backgroundColor: BRAND.purple + '25', borderColor: BRAND.purple }]}
-                  onPress={() => { setAssignTo(k.id); setIsPool(false); }}
-                >
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: assignTo === k.id && !isPool ? BRAND.purple : colors.textSecondary }}>
-                    {k.emoji ?? '🧒'} {k.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+
+              {/* Family member avatars */}
+              {members.filter(m => m.role === 'kid' || m.role === 'parent' || m.role === 'senior').map(m => {
+                const sel = assignIds.includes(m.id) && !isPool;
+                const roleColor = m.role === 'parent' ? BRAND.purple : m.role === 'senior' ? '#0EA5E9' : '#10B981';
+                return (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={{ alignItems: 'center', gap: 5 }}
+                    onPress={() => {
+                      setIsPool(false);
+                      setAssignIds(prev =>
+                        prev.includes(m.id) ? prev.filter(id => id !== m.id) : [...prev, m.id]
+                      );
+                    }}
+                  >
+                    <View style={[aq.avatar, {
+                      backgroundColor: sel ? roleColor + '25' : pillBg,
+                      borderColor: sel ? roleColor : pillBdr,
+                      borderWidth: sel ? 2.5 : 1.5,
+                    }]}>
+                      <Text style={{ fontSize: 22 }}>{m.emoji ?? (m.role === 'kid' ? '🧒' : m.role === 'senior' ? '👴' : '👤')}</Text>
+                      {sel && (
+                        <View style={[aq.avatarCheck, { backgroundColor: roleColor }]}>
+                          <Text style={{ fontSize: 9, color: '#fff', fontWeight: '900' }}>✓</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: sel ? roleColor : colors.textTertiary }} numberOfLines={1}>
+                      {m.name.split(' ')[0]}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             {/* Submit */}
@@ -687,8 +726,9 @@ const aq = StyleSheet.create({
   label:      { fontSize: TYPO.label, fontWeight: '700', marginBottom: 5 },
   input:      { borderWidth: 1, borderRadius: 12, padding: 10, fontSize: TYPO.caption, marginBottom: 12 },
   catChip:    { borderWidth: 1, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
-  kidChip:    { borderWidth: 1, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
   toggleRow:  { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' },
+  avatar:     { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+  avatarCheck:{ position: 'absolute', bottom: 0, right: 0, width: 16, height: 16, borderRadius: 8, backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#fff' },
   datePill:   { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, flex: 1 },
   pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 20 },
   pickerCard:    { borderRadius: 20, overflow: 'hidden', paddingBottom: 12 },

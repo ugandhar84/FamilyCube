@@ -277,6 +277,83 @@ const dm = StyleSheet.create({
 // ─── Add Quest Modal ──────────────────────────────────────────────────────────
 const ALL_CATEGORIES: QuestCategory[] = ['Kitchen', 'Room', 'Yard', 'School', 'Pet', 'Living Room', 'Garage', 'Bathroom', 'Laundry', 'Errand', 'Tech', 'Finance', 'Health', 'Garden', 'Car', 'Shopping', 'Cooking', 'Social', 'Creative', 'Other'];
 
+// ─── Quest title suggestion bank (category-tagged for auto-select) ────────────
+const QUEST_SUGGESTIONS: { title: string; category: QuestCategory; coins: number }[] = [
+  // Kitchen
+  { title: 'Wash the dishes',          category: 'Kitchen',     coins: 20 },
+  { title: 'Load the dishwasher',      category: 'Kitchen',     coins: 15 },
+  { title: 'Unload the dishwasher',    category: 'Kitchen',     coins: 15 },
+  { title: 'Wipe down the counters',   category: 'Kitchen',     coins: 15 },
+  { title: 'Clean the stovetop',       category: 'Kitchen',     coins: 25 },
+  { title: 'Empty the trash',          category: 'Kitchen',     coins: 10 },
+  { title: 'Take out recycling',       category: 'Kitchen',     coins: 10 },
+  { title: 'Mop the kitchen floor',    category: 'Kitchen',     coins: 30 },
+  { title: 'Clean the microwave',      category: 'Kitchen',     coins: 20 },
+  { title: 'Refill the water filter',  category: 'Kitchen',     coins: 10 },
+  // Room / Bedroom
+  { title: 'Make your bed',            category: 'Room',        coins: 10 },
+  { title: 'Tidy your room',           category: 'Room',        coins: 20 },
+  { title: 'Vacuum your bedroom',      category: 'Room',        coins: 25 },
+  { title: 'Organize your closet',     category: 'Room',        coins: 30 },
+  { title: 'Put away clean clothes',   category: 'Room',        coins: 15 },
+  // Living Room
+  { title: 'Vacuum the living room',   category: 'Living Room', coins: 25 },
+  { title: 'Dust the shelves',         category: 'Living Room', coins: 20 },
+  { title: 'Tidy the couch cushions',  category: 'Living Room', coins: 10 },
+  { title: 'Wipe down the TV stand',   category: 'Living Room', coins: 15 },
+  // Bathroom
+  { title: 'Clean the toilet',         category: 'Bathroom',    coins: 30 },
+  { title: 'Scrub the bathtub',        category: 'Bathroom',    coins: 35 },
+  { title: 'Wipe the bathroom mirror', category: 'Bathroom',    coins: 15 },
+  { title: 'Replace toilet paper',     category: 'Bathroom',    coins: 5  },
+  { title: 'Empty bathroom trash',     category: 'Bathroom',    coins: 10 },
+  // Laundry
+  { title: 'Do a load of laundry',     category: 'Laundry',     coins: 25 },
+  { title: 'Move laundry to dryer',    category: 'Laundry',     coins: 10 },
+  { title: 'Fold the laundry',         category: 'Laundry',     coins: 20 },
+  { title: 'Iron the clothes',         category: 'Laundry',     coins: 30 },
+  // Yard / Garden
+  { title: 'Mow the lawn',             category: 'Yard',        coins: 50 },
+  { title: 'Rake the leaves',          category: 'Yard',        coins: 40 },
+  { title: 'Water the plants',         category: 'Garden',      coins: 15 },
+  { title: 'Pull out weeds',           category: 'Garden',      coins: 35 },
+  { title: 'Sweep the porch',          category: 'Yard',        coins: 20 },
+  { title: 'Take out the garbage bins',category: 'Yard',        coins: 15 },
+  // Pet
+  { title: 'Feed the dog',             category: 'Pet',         coins: 15 },
+  { title: 'Walk the dog',             category: 'Pet',         coins: 25 },
+  { title: 'Clean the litter box',     category: 'Pet',         coins: 20 },
+  { title: 'Bathe the dog',            category: 'Pet',         coins: 40 },
+  { title: 'Refill pet water bowl',    category: 'Pet',         coins: 10 },
+  // School
+  { title: 'Finish homework',          category: 'School',      coins: 30 },
+  { title: 'Read for 20 minutes',      category: 'School',      coins: 20 },
+  { title: 'Study for the test',       category: 'School',      coins: 35 },
+  { title: 'Organize school bag',      category: 'School',      coins: 10 },
+  // Errands / Shopping
+  { title: 'Grocery run',              category: 'Shopping',    coins: 40 },
+  { title: 'Pick up dry cleaning',     category: 'Errand',      coins: 20 },
+  { title: 'Drop off package',         category: 'Errand',      coins: 15 },
+  { title: 'Return library books',     category: 'Errand',      coins: 15 },
+  // Cooking
+  { title: 'Cook dinner tonight',      category: 'Cooking',     coins: 50 },
+  { title: 'Make breakfast',           category: 'Cooking',     coins: 25 },
+  { title: 'Pack school lunches',      category: 'Cooking',     coins: 20 },
+  { title: 'Bake something special',   category: 'Cooking',     coins: 40 },
+  // Car / Garage
+  { title: 'Wash the car',             category: 'Car',         coins: 40 },
+  { title: 'Vacuum the car interior',  category: 'Car',         coins: 30 },
+  { title: 'Organize the garage',      category: 'Garage',      coins: 50 },
+  // Tech / Finance / Health
+  { title: 'Charge all devices',       category: 'Tech',        coins: 10 },
+  { title: 'Back up family photos',    category: 'Tech',        coins: 20 },
+  { title: 'Pay a bill online',        category: 'Finance',     coins: 15 },
+  { title: 'Go for a 30-min walk',     category: 'Health',      coins: 25 },
+  // Social / Creative
+  { title: 'Write a thank-you card',   category: 'Social',      coins: 20 },
+  { title: 'Draw or paint something',  category: 'Creative',    coins: 20 },
+];
+
 // Format a Date as "June 25, 2026"
 function fmtDateLabel(d: Date): string {
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -300,7 +377,29 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
   const [assignTo,     setAssignTo]     = useState('');
   const [isPool,       setIsPool]       = useState(false);
   const [photoReq,     setPhotoReq]     = useState(false);
+  const [desc,         setDesc]         = useState('');
   const [saving,       setSaving]       = useState(false);
+  const [titleFocused, setTitleFocused] = useState(false);
+
+  // Dynamic suggestions: when typing, fuzzy-match by word; when blank+focused, show top picks
+  const suggestions = useMemo(() => {
+    const q = title.trim().toLowerCase();
+    if (!q) {
+      // Show a curated shortlist when field is empty but focused
+      return QUEST_SUGGESTIONS.slice(0, 8);
+    }
+    const words = q.split(/\s+/);
+    return QUEST_SUGGESTIONS
+      .filter(s => words.every(w => s.title.toLowerCase().includes(w)))
+      .slice(0, 8);
+  }, [title]);
+
+  const applySuggestion = (s: typeof QUEST_SUGGESTIONS[0]) => {
+    setTitle(s.title);
+    setCategory(s.category);
+    setCoins(String(s.coins));
+    setTitleFocused(false);
+  };
 
   // Due date/time — default to tomorrow 6 PM
   const defaultDue = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(18, 0, 0, 0); return d; };
@@ -327,16 +426,16 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
   };
 
   const reset = () => {
-    setTitle(''); setCoins('30'); setAssignTo(''); setIsPool(false);
+    setTitle(''); setDesc(''); setCoins('30'); setAssignTo(''); setIsPool(false);
     setPhotoReq(false); setDueDate(defaultDue());
     setShowDatePick(false); setShowTimePick(false);
   };
 
   const submit = async () => {
-    if (!title.trim()) return;
+    if (!title.trim() || !desc.trim()) return;
     setSaving(true);
     await addQuest({
-      title: title.trim(), category, priority: 'medium', difficulty: 'easy',
+      title: title.trim(), description: desc.trim(), category, priority: 'medium', difficulty: 'easy',
       coins: parseInt(coins) || 30, xpReward: 20,
       assignedToId: isPool ? undefined : (assignTo || undefined),
       isPool, isDaily: false, recurrence: 'once', status: 'todo',
@@ -377,8 +476,60 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
               style={[aq.input, { color: colors.textPrimary, borderColor: title.trim() ? colors.border : '#EF444480', backgroundColor: colors.surface }]}
               placeholder="e.g. Wash the dishes, Take out trash…"
               placeholderTextColor={colors.textTertiary}
-              value={title} onChangeText={setTitle}
+              value={title}
+              onChangeText={setTitle}
+              onFocus={() => setTitleFocused(true)}
+              onBlur={() => setTimeout(() => setTitleFocused(false), 180)}
+              returnKeyType="next"
             />
+            {/* Dynamic suggestion pills */}
+            {(titleFocused || title.length > 0) && suggestions.length > 0 && (
+              <View style={{ marginTop: -6, marginBottom: 12 }}>
+                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 5, fontWeight: '600' }}>
+                  {title.trim() ? 'Matching suggestions' : 'Quick picks — tap to fill'}
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={{ flexDirection: 'row', gap: 7 }}>
+                    {suggestions.map((s, i) => (
+                      <TouchableOpacity
+                        key={i}
+                        style={[aq.suggPill, {
+                          backgroundColor: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple + '25' : colors.surface,
+                          borderColor:     title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple : colors.border,
+                        }]}
+                        onPress={() => applySuggestion(s)}
+                      >
+                        <Text style={{ fontSize: TYPO.micro + 1, color: colors.textSecondary, fontWeight: '600' }} numberOfLines={1}>
+                          {s.title}
+                        </Text>
+                        <Text style={{ fontSize: TYPO.micro, color: BRAND.amber, fontWeight: '700', marginLeft: 5 }}>
+                          +{s.coins}🪙
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Description — mandatory, max 150 chars */}
+            <Text style={[aq.label, { color: colors.textSecondary }]}>
+              Description *{'  '}
+              <Text style={{ fontWeight: '400', color: colors.textTertiary }}>what needs to be done</Text>
+            </Text>
+            <TextInput
+              style={[aq.input, aq.descInput, { color: colors.textPrimary, borderColor: desc.trim() ? colors.border : '#EF444480', backgroundColor: colors.surface }]}
+              placeholder="Describe exactly what's expected so there's no confusion…"
+              placeholderTextColor={colors.textTertiary}
+              value={desc}
+              onChangeText={t => setDesc(t.slice(0, 150))}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+            <Text style={{ fontSize: TYPO.micro, color: desc.length > 130 ? '#EF4444' : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 12 }}>
+              {desc.length}/150
+            </Text>
 
             {/* Coins + Photo proof row */}
             <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
@@ -508,8 +659,8 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
 
             {/* Submit */}
             <TouchableOpacity
-              style={[aq.submitBtn, { backgroundColor: title.trim() ? '#059669' : colors.border, opacity: saving ? 0.6 : 1 }]}
-              onPress={submit} disabled={saving || !title.trim()}
+              style={[aq.submitBtn, { backgroundColor: title.trim() && desc.trim() ? '#059669' : colors.border, opacity: saving ? 0.6 : 1 }]}
+              onPress={submit} disabled={saving || !title.trim() || !desc.trim()}
             >
               {saving
                 ? <ActivityIndicator color="#fff" size="small" />
@@ -539,6 +690,8 @@ const aq = StyleSheet.create({
   datePill:   { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, flex: 1 },
   pickerWrap: { borderWidth: 1, borderRadius: 14, overflow: 'hidden', marginBottom: 14, paddingBottom: 4 },
   pickerDone: { alignItems: 'flex-end', paddingHorizontal: 16, paddingVertical: 8 },
+  suggPill:   { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, maxWidth: 200 },
+  descInput:  { minHeight: 72, marginBottom: 4 },
   submitBtn:  { borderRadius: 14, padding: 14, alignItems: 'center' },
 });
 

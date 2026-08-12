@@ -18,8 +18,9 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  TextInput, Modal, ActivityIndicator, Alert,
+  TextInput, Modal, ActivityIndicator, Alert, Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
@@ -276,125 +277,269 @@ const dm = StyleSheet.create({
 // ─── Add Quest Modal ──────────────────────────────────────────────────────────
 const ALL_CATEGORIES: QuestCategory[] = ['Kitchen', 'Room', 'Yard', 'School', 'Pet', 'Living Room', 'Garage', 'Bathroom', 'Laundry', 'Errand', 'Tech', 'Finance', 'Health', 'Garden', 'Car', 'Shopping', 'Cooking', 'Social', 'Creative', 'Other'];
 
+// Format a Date as "June 25, 2026"
+function fmtDateLabel(d: Date): string {
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+// Format a Date as "3:30 PM"
+function fmtTimeLabel(d: Date): string {
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
 function AddQuestModal({ visible, onClose, activeMemberId }: {
   visible: boolean; onClose: () => void; activeMemberId: string;
 }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { addQuest } = useQuestStore();
   const members = useFamilyStore(s => s.members);
   const kids    = members.filter(m => m.role === 'kid');
 
-  const [title,    setTitle]    = useState('');
-  const [coins,    setCoins]    = useState('30');
-  const [category, setCategory] = useState<QuestCategory>('Kitchen');
-  const [assignTo, setAssignTo] = useState('');
-  const [isPool,   setIsPool]   = useState(false);
-  const [saving,   setSaving]   = useState(false);
+  const [title,        setTitle]        = useState('');
+  const [coins,        setCoins]        = useState('30');
+  const [category,     setCategory]     = useState<QuestCategory>('Kitchen');
+  const [assignTo,     setAssignTo]     = useState('');
+  const [isPool,       setIsPool]       = useState(false);
+  const [photoReq,     setPhotoReq]     = useState(false);
+  const [saving,       setSaving]       = useState(false);
+
+  // Due date/time — default to tomorrow 6 PM
+  const defaultDue = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(18, 0, 0, 0); return d; };
+  const [dueDate,      setDueDate]      = useState<Date>(defaultDue);
+  const [showDatePick, setShowDatePick] = useState(false);
+  const [showTimePick, setShowTimePick] = useState(false);
+
+  const onDateChange = (_: any, selected?: Date) => {
+    setShowDatePick(Platform.OS === 'ios'); // keep open on iOS (inline), close on Android
+    if (selected) {
+      const merged = new Date(selected);
+      merged.setHours(dueDate.getHours(), dueDate.getMinutes(), 0, 0);
+      setDueDate(merged);
+    }
+  };
+
+  const onTimeChange = (_: any, selected?: Date) => {
+    setShowTimePick(Platform.OS === 'ios');
+    if (selected) {
+      const merged = new Date(dueDate);
+      merged.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+      setDueDate(merged);
+    }
+  };
+
+  const reset = () => {
+    setTitle(''); setCoins('30'); setAssignTo(''); setIsPool(false);
+    setPhotoReq(false); setDueDate(defaultDue());
+    setShowDatePick(false); setShowTimePick(false);
+  };
 
   const submit = async () => {
     if (!title.trim()) return;
     setSaving(true);
-    await new Promise(r => setTimeout(r, 600));
-    addQuest({
+    await addQuest({
       title: title.trim(), category, priority: 'medium', difficulty: 'easy',
       coins: parseInt(coins) || 30, xpReward: 20,
       assignedToId: isPool ? undefined : (assignTo || undefined),
       isPool, isDaily: false, recurrence: 'once', status: 'todo',
-      dueDate: new Date().toISOString().split('T')[0],
-      photoRequired: false, createdById: activeMemberId,
+      dueDate: dueDate.toISOString().split('T')[0],
+      dueTime: fmtTimeLabel(dueDate),
+      photoRequired: photoReq,
+      createdById: activeMemberId,
     });
     setSaving(false);
-    setTitle(''); setCoins('30'); setAssignTo(''); setIsPool(false);
+    reset();
     onClose();
   };
 
+  const pillBg  = isDark ? colors.surface : '#F1F5F9';
+  const pillBdr = isDark ? colors.border  : '#E2E8F0';
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={() => { reset(); onClose(); }}>
       <View style={aq.backdrop}>
-        <View style={[aq.sheet, { backgroundColor: colors.card }]}>
-          <View style={[aq.handle, { backgroundColor: colors.border }]} />
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <Text style={[aq.title, { color: colors.textPrimary }]}>+ Add Quest</Text>
-            <TouchableOpacity onPress={onClose}><I.X c={colors.textSecondary} /></TouchableOpacity>
-          </View>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ justifyContent: 'flex-end', flexGrow: 1 }}>
+          <View style={[aq.sheet, { backgroundColor: colors.card }]}>
+            <View style={[aq.handle, { backgroundColor: colors.border }]} />
 
-          <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
-          <TextInput
-            style={[aq.input, { color: colors.textPrimary, borderColor: title.trim() ? colors.border : '#EF444480', backgroundColor: colors.surface }]}
-            placeholder="e.g. Wash the dishes"
-            placeholderTextColor={colors.textTertiary}
-            value={title} onChangeText={setTitle}
-          />
-
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <View style={{ width: 90 }}>
-              <Text style={[aq.label, { color: colors.textSecondary }]}>Coins 🪙</Text>
-              <TextInput
-                style={[aq.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]}
-                keyboardType="number-pad" value={coins} onChangeText={setCoins}
-              />
+            {/* Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <View>
+                <Text style={[aq.title, { color: colors.textPrimary }]}>New Quest</Text>
+                <Text style={{ fontSize: TYPO.label, color: BRAND.purple, fontWeight: '700', marginTop: 1 }}>Assign a chore, bounty, or task</Text>
+              </View>
+              <TouchableOpacity onPress={() => { reset(); onClose(); }}>
+                <I.X c={colors.textSecondary} />
+              </TouchableOpacity>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[aq.label, { color: colors.textSecondary }]}>Category</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  {ALL_CATEGORIES.map(c => (
-                    <TouchableOpacity
-                      key={c}
-                      style={[aq.catChip, category === c && { backgroundColor: BRAND.purple, borderColor: BRAND.purple }]}
-                      onPress={() => setCategory(c)}
-                    >
-                      <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '700', color: category === c ? '#fff' : colors.textSecondary }}>{c}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
-          </View>
 
-          <Text style={[aq.label, { color: colors.textSecondary, marginTop: 10 }]}>Assign To</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <TouchableOpacity
-              style={[aq.kidChip, isPool && { backgroundColor: BRAND.amber + '30', borderColor: BRAND.amber }]}
-              onPress={() => { setIsPool(true); setAssignTo(''); }}
-            >
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isPool ? BRAND.amber : colors.textSecondary }}>⚡ Open Bounty</Text>
-            </TouchableOpacity>
-            {kids.map(k => (
+            {/* Title */}
+            <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
+            <TextInput
+              style={[aq.input, { color: colors.textPrimary, borderColor: title.trim() ? colors.border : '#EF444480', backgroundColor: colors.surface }]}
+              placeholder="e.g. Wash the dishes, Take out trash…"
+              placeholderTextColor={colors.textTertiary}
+              value={title} onChangeText={setTitle}
+            />
+
+            {/* Coins + Photo proof row */}
+            <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
+              <View style={{ width: 90 }}>
+                <Text style={[aq.label, { color: colors.textSecondary }]}>Coins 🪙</Text>
+                <TextInput
+                  style={[aq.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]}
+                  keyboardType="number-pad" value={coins} onChangeText={setCoins}
+                />
+              </View>
+              <View style={{ flex: 1, paddingTop: 22 }}>
+                <TouchableOpacity
+                  style={[aq.toggleRow, { borderColor: photoReq ? BRAND.purple : pillBdr, backgroundColor: photoReq ? BRAND.purple + '18' : pillBg }]}
+                  onPress={() => setPhotoReq(p => !p)}
+                >
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: photoReq ? BRAND.purple : colors.textSecondary }}>
+                    {photoReq ? '📷 Photo Required' : '📷 Photo Optional'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Category */}
+            <Text style={[aq.label, { color: colors.textSecondary }]}>Category</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {ALL_CATEGORIES.map(c => (
+                  <TouchableOpacity
+                    key={c}
+                    style={[aq.catChip, { borderColor: pillBdr, backgroundColor: pillBg },
+                      category === c && { backgroundColor: BRAND.purple, borderColor: BRAND.purple }]}
+                    onPress={() => setCategory(c)}
+                  >
+                    <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '700', color: category === c ? '#fff' : colors.textSecondary }}>{c}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            {/* Due Date + Time */}
+            <Text style={[aq.label, { color: colors.textSecondary }]}>Due Date & Time</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+              {/* Date pill */}
               <TouchableOpacity
-                key={k.id}
-                style={[aq.kidChip, assignTo === k.id && !isPool && { backgroundColor: BRAND.purple + '25', borderColor: BRAND.purple }]}
-                onPress={() => { setAssignTo(k.id); setIsPool(false); }}
+                style={[aq.datePill, { backgroundColor: showDatePick ? BRAND.purple + '20' : pillBg, borderColor: showDatePick ? BRAND.purple : pillBdr }]}
+                onPress={() => { setShowDatePick(p => !p); setShowTimePick(false); }}
               >
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: assignTo === k.id && !isPool ? BRAND.purple : colors.textSecondary }}>
-                  {k.emoji ?? '🧒'} {k.name}
+                <Text style={{ fontSize: TYPO.label, marginRight: 4 }}>📅</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showDatePick ? BRAND.purple : colors.textPrimary }}>
+                  {fmtDateLabel(dueDate)}
                 </Text>
               </TouchableOpacity>
-            ))}
-          </View>
 
-          <TouchableOpacity
-            style={[aq.submitBtn, { backgroundColor: title.trim() ? '#059669' : colors.border, opacity: saving ? 0.6 : 1, marginTop: 16 }]}
-            onPress={submit} disabled={saving || !title.trim()}
-          >
-            {saving ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>Add Quest to Board</Text>}
-          </TouchableOpacity>
-        </View>
+              {/* Time pill */}
+              <TouchableOpacity
+                style={[aq.datePill, { backgroundColor: showTimePick ? BRAND.purple + '20' : pillBg, borderColor: showTimePick ? BRAND.purple : pillBdr }]}
+                onPress={() => { setShowTimePick(p => !p); setShowDatePick(false); }}
+              >
+                <Text style={{ fontSize: TYPO.label, marginRight: 4 }}>🕐</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showTimePick ? BRAND.purple : colors.textPrimary }}>
+                  {fmtTimeLabel(dueDate)}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Inline pickers — iOS spinner style */}
+            {showDatePick && (
+              <View style={[aq.pickerWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <DateTimePicker
+                  value={dueDate}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  minimumDate={new Date()}
+                  onChange={onDateChange}
+                  textColor={colors.textPrimary}
+                  style={{ height: 160 }}
+                />
+                {Platform.OS === 'ios' && (
+                  <TouchableOpacity style={aq.pickerDone} onPress={() => setShowDatePick(false)}>
+                    <Text style={{ color: BRAND.purple, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+            {showTimePick && (
+              <View style={[aq.pickerWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <DateTimePicker
+                  value={dueDate}
+                  mode="time"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  is24Hour={false}
+                  onChange={onTimeChange}
+                  textColor={colors.textPrimary}
+                  style={{ height: 160 }}
+                />
+                {Platform.OS === 'ios' && (
+                  <TouchableOpacity style={aq.pickerDone} onPress={() => setShowTimePick(false)}>
+                    <Text style={{ color: BRAND.purple, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* Assign To */}
+            <Text style={[aq.label, { color: colors.textSecondary }]}>Assign To</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
+              <TouchableOpacity
+                style={[aq.kidChip, { borderColor: pillBdr, backgroundColor: pillBg },
+                  isPool && { backgroundColor: BRAND.amber + '30', borderColor: BRAND.amber }]}
+                onPress={() => { setIsPool(true); setAssignTo(''); }}
+              >
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isPool ? BRAND.amber : colors.textSecondary }}>⚡ Open Bounty</Text>
+              </TouchableOpacity>
+              {kids.map(k => (
+                <TouchableOpacity
+                  key={k.id}
+                  style={[aq.kidChip, { borderColor: pillBdr, backgroundColor: pillBg },
+                    assignTo === k.id && !isPool && { backgroundColor: BRAND.purple + '25', borderColor: BRAND.purple }]}
+                  onPress={() => { setAssignTo(k.id); setIsPool(false); }}
+                >
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: assignTo === k.id && !isPool ? BRAND.purple : colors.textSecondary }}>
+                    {k.emoji ?? '🧒'} {k.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Submit */}
+            <TouchableOpacity
+              style={[aq.submitBtn, { backgroundColor: title.trim() ? '#059669' : colors.border, opacity: saving ? 0.6 : 1 }]}
+              onPress={submit} disabled={saving || !title.trim()}
+            >
+              {saving
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <>
+                    <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>Add Quest to Board</Text>
+                    <Text style={{ color: '#A7F3D0', fontSize: TYPO.label, marginTop: 2 }}>
+                      Due {fmtDateLabel(dueDate)} at {fmtTimeLabel(dueDate)}
+                    </Text>
+                  </>}
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </View>
     </Modal>
   );
 }
 const aq = StyleSheet.create({
-  backdrop:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet:     { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36 },
-  handle:    { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  title:     { fontSize: TYPO.subheading, fontWeight: '900' },
-  label:     { fontSize: TYPO.label, fontWeight: '700', marginBottom: 5 },
-  input:     { borderWidth: 1, borderRadius: 12, padding: 10, fontSize: TYPO.caption, marginBottom: 12 },
-  catChip:   { borderWidth: 1, borderColor: '#DDD', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
-  kidChip:   { borderWidth: 1, borderColor: '#DDD', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
-  submitBtn: { borderRadius: 14, padding: 14, alignItems: 'center' },
+  backdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
+  sheet:      { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
+  handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  title:      { fontSize: TYPO.subheading, fontWeight: '900' },
+  label:      { fontSize: TYPO.label, fontWeight: '700', marginBottom: 5 },
+  input:      { borderWidth: 1, borderRadius: 12, padding: 10, fontSize: TYPO.caption, marginBottom: 12 },
+  catChip:    { borderWidth: 1, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
+  kidChip:    { borderWidth: 1, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
+  toggleRow:  { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' },
+  datePill:   { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, flex: 1 },
+  pickerWrap: { borderWidth: 1, borderRadius: 14, overflow: 'hidden', marginBottom: 14, paddingBottom: 4 },
+  pickerDone: { alignItems: 'flex-end', paddingHorizontal: 16, paddingVertical: 8 },
+  submitBtn:  { borderRadius: 14, padding: 14, alignItems: 'center' },
 });
 
 // ─── AI Result Cards ──────────────────────────────────────────────────────────

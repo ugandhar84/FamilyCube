@@ -19,7 +19,12 @@ import {
   RefreshControl, Alert, Dimensions, Modal, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import {
+  Sparkles, PlusCircle, Calendar, ShoppingCart, Navigation,
+  ChevronDown, ChevronUp, ChevronRight, X, Pencil,
+  MessageSquare, Car, BookOpen, ThumbsUp,
+  AlertTriangle, HelpCircle, Clock, Zap,
+} from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
@@ -192,7 +197,7 @@ function AlertBanner({ conflictEvents, rejectedEvents, members, colors, isDark, 
               )}
               <Pressable onPress={() => setOpenId(isOpen ? null : ev.id)}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#EF444415', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: '#EF444430' }}>
-                <Ionicons name={isOpen ? 'chevron-up' : 'person-add-outline'} size={14} color="#EF4444" />
+                {isOpen ? <ChevronUp size={14} color="#EF4444" /> : <ChevronRight size={14} color="#EF4444" />}
                 <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>
                   {isOpen ? 'Cancel' : 'Reassign Driver Now'}
                 </Text>
@@ -229,7 +234,7 @@ function AlertBanner({ conflictEvents, rejectedEvents, members, colors, isDark, 
             </Text>
             <Pressable onPress={() => router.push('/(tabs)/calendar')}
               style={{ backgroundColor: BRAND.amber, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Ionicons name="calendar-outline" size={13} color="#fff" />
+              <Calendar size={13} color="#fff" />
               <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Open Schedule →</Text>
             </Pressable>
           </View>
@@ -289,7 +294,7 @@ function InlineReassignPanel({ ev, members, colors, isDark, onDone }: {
         <>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: isDark ? colors.card : '#F1F5F9',
             borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: colors.border }}>
-            <Ionicons name="pencil-outline" size={13} color={colors.textTertiary} />
+            <Pencil size={13} color={colors.textTertiary} />
             <TextInput value={note} onChangeText={setNote} placeholder="Add a note (optional)…"
               placeholderTextColor={colors.placeholder}
               style={{ flex: 1, fontSize: TYPO.label, color: colors.textPrimary }} maxLength={100} />
@@ -326,8 +331,9 @@ function CollapsibleCard({
         onPress={() => children && setExpanded(e => !e)}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 }}>
         <View style={{ flex: 1 }}>{summary}</View>
-        {children && (
-          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={accent ?? colors.textTertiary} />
+        {children && (expanded
+          ? <ChevronUp size={14} color={accent ?? colors.textTertiary} />
+          : <ChevronDown size={14} color={accent ?? colors.textTertiary} />
         )}
       </Pressable>
       {expanded && children && (
@@ -506,7 +512,7 @@ function TimelineCard({ ev, members, allNames, colors, isDark, updateEvent }: {
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
                   backgroundColor: '#EF444412', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4,
                   borderWidth: 1, borderColor: '#EF444435' }}>
-                <Ionicons name="person-add-outline" size={12} color="#EF4444" />
+                <ChevronRight size={12} color="#EF4444" />
                 <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>
                   {fixOpen ? 'Cancel' : 'Assign helper'}
                 </Text>
@@ -719,24 +725,52 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
       )}
 
       {/* ── 3. Quick Action Tiles ── */}
-      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginBottom: 12 }}>
-        {[
-          { icon: '📋', label: 'Scan Flyer', color: BRAND.purple,  action: onScanFlyer },
-          { icon: '➕', label: '+ Quest',    color: '#10B981',      action: () => router.push('/(tabs)/quests') },
-          { icon: '📅', label: '+ Event',    color: BRAND.amber,    action: () => router.push('/(tabs)/calendar') },
-          {
-            icon: '🛒',
-            label: groceryItems.length > 0 ? `${groceryItems.length} items` : 'Grocery',
-            color: '#0ea5e9',
-            action: () => router.push('/(tabs)/grocery' as any),
-          },
-        ].map(a => (
-          <Pressable key={a.label} onPress={a.action}
-            style={{ flex: 1, borderRadius: 18, paddingVertical: 18, alignItems: 'center', gap: 6, backgroundColor: a.color }}>
-            <Text style={{ fontSize: 22 }}>{a.icon}</Text>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>{a.label}</Text>
-          </Pressable>
-        ))}
+      <View style={{
+        flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 12,
+        backgroundColor: isDark ? colors.card : '#FFFFFF',
+        borderRadius: 24, padding: 10,
+        borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
+      }}>
+        {/* Scan Flyer — primary filled */}
+        <Pressable onPress={onScanFlyer} style={{
+          flex: 1, backgroundColor: BRAND.purple, borderRadius: 18,
+          paddingVertical: 12, alignItems: 'center', gap: 5,
+        }}>
+          <Sparkles size={18} color="#fff" />
+          <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff' }}>Scan Flyer</Text>
+        </Pressable>
+
+        {/* + Quest — neutral tile */}
+        <Pressable onPress={() => router.push('/(tabs)/quests')} style={{
+          flex: 1, backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 18,
+          paddingVertical: 12, alignItems: 'center', gap: 5,
+          borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0',
+        }}>
+          <PlusCircle size={18} color="#10B981" />
+          <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? colors.textPrimary : '#334155' }}>+ Quest</Text>
+        </Pressable>
+
+        {/* + Event — neutral tile */}
+        <Pressable onPress={() => router.push('/(tabs)/calendar')} style={{
+          flex: 1, backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 18,
+          paddingVertical: 12, alignItems: 'center', gap: 5,
+          borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0',
+        }}>
+          <Calendar size={18} color={BRAND.purple} />
+          <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? colors.textPrimary : '#334155' }}>+ Event</Text>
+        </Pressable>
+
+        {/* Grocery — neutral tile */}
+        <Pressable onPress={() => router.push('/(tabs)/grocery' as any)} style={{
+          flex: 1, backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 18,
+          paddingVertical: 12, alignItems: 'center', gap: 5,
+          borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0',
+        }}>
+          <ShoppingCart size={18} color="#0ea5e9" />
+          <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? colors.textPrimary : '#334155' }} numberOfLines={1}>
+            {groceryItems.length > 0 ? `${groceryItems.length} items` : 'Grocery'}
+          </Text>
+        </Pressable>
       </View>
 
       {/* ── 4. Action Needed — quest approvals + ride requests from kids ── */}
@@ -828,20 +862,25 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
 
       {/* ── 5. Dispatch En Route — standalone teal card ── */}
       <View style={pad}>
-        <Pressable onPress={onEnRoute} style={{
-          backgroundColor: isDark ? '#0D2B1F' : '#E8FBF4',
-          borderRadius: 20, borderWidth: 1, borderColor: isDark ? '#10B98140' : '#A7F3D0',
+        <View style={{
+          backgroundColor: isDark ? '#0D2B1F' : '#ECFDF5',
+          borderRadius: 24, borderWidth: 1, borderColor: isDark ? '#10B98140' : '#A7F3D0',
           padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 12,
         }}>
-          <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#10B98125', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 26 }}>🚗</Text>
+          <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? '#10B98130' : '#D1FAE5', alignItems: 'center', justifyContent: 'center' }}>
+            <Navigation size={22} color="#059669" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#059669' }}>Dispatch En Route</Text>
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>Notify kids you're on your way home</Text>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: isDark ? '#34D399' : '#065F46' }}>Start Pickup / Trip</Text>
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>Broadcast "En Route" with ETA to family chat</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#10B981" />
-        </Pressable>
+          <Pressable onPress={onEnRoute} style={{
+            backgroundColor: '#10B981', borderRadius: 14,
+            paddingHorizontal: 14, paddingVertical: 9,
+          }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>En Route</Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* ── 6. Family Support — collapsed by default ── */}
@@ -864,7 +903,7 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
                 Kids ask for assistance · parents approve
               </Text>
             </View>
-            <Ionicons name={supportExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textTertiary} />
+            {supportExpanded ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
           </Pressable>
 
           {supportExpanded && (
@@ -916,30 +955,41 @@ function KidView({ active, members, colors, isDark, onHelpRequest }: {
 
   const pad = { paddingHorizontal: 16 };
 
-  const ACTIONS = [
-    { icon: '💬', label: 'Parent Chat',   color: BRAND.purple, action: () => router.push('/(tabs)/chat') },
-    { icon: '🚗', label: 'Ask a Ride',    color: '#10B981',    action: () => Alert.alert('Ride Request', 'Your parent will be notified to confirm.') },
-    { icon: '📚', label: 'Ask Tutor',     color: BRAND.amber,  action: () => Alert.alert('Tutor Request', 'Requesting tutor — a parent will schedule.') },
-    { icon: '🎉', label: 'Cheer Sibling', color: BRAND.pink,   action: () => router.push('/(tabs)/quests') },
+  const ACTIONS: { Icon: any; label: string; color: string; action: () => void }[] = [
+    { Icon: MessageSquare, label: 'Parent Chat',   color: BRAND.purple, action: () => router.push('/(tabs)/chat') },
+    { Icon: Car,           label: 'Ask a Ride',    color: '#10B981',    action: () => Alert.alert('Ride Request', 'Your parent will be notified to confirm.') },
+    { Icon: BookOpen,      label: 'Ask Tutor',     color: BRAND.amber,  action: () => Alert.alert('Tutor Request', 'Requesting tutor — a parent will schedule.') },
+    { Icon: ThumbsUp,      label: 'Cheer Sibling', color: '#6366F1',    action: () => router.push('/(tabs)/quests') },
   ];
 
   const rideAlerts = myDeclinedRides.length + myPendingRides.length;
 
   return (
     <>
-      {/* ── Quick Actions 2×2 ── */}
+      {/* ── Quick Actions 4-col ── */}
       <View style={pad}>
-        <SectionCard icon="⚡" title="Quick Actions" colors={colors} isDark={isDark}>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        <View style={{
+          backgroundColor: isDark ? colors.card : '#FFFFFF',
+          borderRadius: 24, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
+          padding: 12, marginBottom: 12, gap: 8,
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+            <Zap size={14} color={BRAND.amber} />
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>Quick Actions</Text>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
             {ACTIONS.map(a => (
-              <Pressable key={a.label} onPress={a.action}
-                style={{ width: (W - 68) / 2, backgroundColor: a.color + '18', borderRadius: 16, paddingVertical: 14, alignItems: 'center', gap: 5, borderWidth: 1, borderColor: a.color + '35' }}>
-                <Text style={{ fontSize: 26 }}>{a.icon}</Text>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: a.color }}>{a.label}</Text>
+              <Pressable key={a.label} onPress={a.action} style={{
+                flex: 1, backgroundColor: isDark ? colors.surface : '#F8FAFC',
+                borderRadius: 16, paddingVertical: 12, alignItems: 'center', gap: 5,
+                borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0',
+              }}>
+                <a.Icon size={20} color={a.color} />
+                <Text style={{ fontSize: 9, fontWeight: '700', color: isDark ? colors.textPrimary : '#334155', textAlign: 'center' }}>{a.label}</Text>
               </Pressable>
             ))}
           </View>
-        </SectionCard>
+        </View>
       </View>
 
       {/* ── Ride & Conflict Alerts ── */}
@@ -1084,8 +1134,8 @@ function KidView({ active, members, colors, isDark, onHelpRequest }: {
                     <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 2, alignItems: 'center', justifyContent: 'center',
                       backgroundColor: isPending ? BRAND.amber + '20' : isClaimed ? '#10B98120' : colors.background,
                       borderColor: isPending ? BRAND.amber : isClaimed ? '#10B981' : colors.border }}>
-                      {isPending && <Ionicons name="time" size={12} color={BRAND.amber} />}
-                      {isClaimed && <Ionicons name="checkmark" size={12} color="#10B981" />}
+                      {isPending && <Clock size={12} color={BRAND.amber} />}
+                      {isClaimed && <Zap size={12} color="#10B981" />}
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{q.title}</Text>
@@ -1315,7 +1365,7 @@ function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute 
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#10B981' }}>Broadcast your ETA</Text>
                   <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Notify kids you're on the way</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#10B981" />
+                <ChevronRight size={18} color="#10B981" />
               </View>
             </SubCard>
           </Pressable>
@@ -1453,7 +1503,7 @@ export default function HubScreen() {
           </Text>
           <Pressable onPress={() => setTransitBanner(null)}
             style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#10B98130', alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="close" size={15} color="#6EE7B7" />
+            <X size={15} color="#6EE7B7" />
           </Pressable>
         </View>
       )}

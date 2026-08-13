@@ -1,11 +1,13 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  TextInput, Modal, ScrollView, KeyboardAvoidingView, Platform,
+  TextInput, Modal, ScrollView, KeyboardAvoidingView, Platform, Switch,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   Pill, Syringe, Trash2, Check, Clock, ChevronDown, ChevronUp,
-  User, Calendar, AlertCircle, X, RefreshCw, Stethoscope, Send, MessageSquare,
+  User, Calendar, AlertCircle, X, RefreshCw, Stethoscope, Send,
+  MessageSquare, SlidersHorizontal, Share2, FileText, Download,
 } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
@@ -83,25 +85,84 @@ const BLANK_MED: MedForm = {
   escalation_enabled: false, escalation_after_min: '60',
 };
 
+// Quick pick suggestions by medication category
+const MED_SUGGESTIONS: Record<string, { name: string; hint: string }[]> = {
+  prescription: [
+    { name: 'Lisinopril',    hint: 'Blood pressure' },
+    { name: 'Metformin',     hint: 'Diabetes' },
+    { name: 'Atorvastatin',  hint: 'Cholesterol' },
+    { name: 'Levothyroxine', hint: 'Thyroid' },
+    { name: 'Amlodipine',    hint: 'Blood pressure' },
+    { name: 'Metoprolol',    hint: 'Heart rate' },
+  ],
+  otc: [
+    { name: 'Tylenol',    hint: 'Pain / fever' },
+    { name: 'Ibuprofen',  hint: 'Anti-inflammatory' },
+    { name: 'Benadryl',   hint: 'Allergy' },
+    { name: 'Claritin',   hint: 'Allergy' },
+    { name: 'Robitussin', hint: 'Cough' },
+    { name: 'Pepto-Bismol', hint: 'Stomach' },
+  ],
+  vitamin: [
+    { name: 'Vitamin D3',  hint: '1000–5000 IU' },
+    { name: 'Vitamin C',   hint: 'Immune support' },
+    { name: 'Vitamin B12', hint: 'Energy' },
+    { name: 'Folate',      hint: 'Prenatal / nerve' },
+    { name: 'Iron',        hint: 'Blood health' },
+  ],
+  supplement: [
+    { name: 'Fish Oil',   hint: 'Omega-3' },
+    { name: 'Magnesium',  hint: 'Sleep / muscle' },
+    { name: 'Probiotics', hint: 'Gut health' },
+    { name: 'Zinc',       hint: 'Immune support' },
+    { name: 'Melatonin',  hint: 'Sleep' },
+  ],
+  other: [],
+};
+
+function fmtDate(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function fmtDateDisplay(d: Date) {
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 function AddMedModal({ visible, onClose, onSave, members, colors, isDark }: {
   visible: boolean; onClose: () => void;
   onSave: (memberId: string, form: MedForm) => Promise<void>;
   members: any[]; colors: any; isDark: boolean;
 }) {
-  const [form, setForm] = useState<MedForm>(BLANK_MED);
+  const [form, setForm]               = useState<MedForm>(BLANK_MED);
   const [selectedMember, setSelectedMember] = useState(members[0]?.id ?? '');
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving]           = useState(false);
+  const [showRefillPicker, setShowRefillPicker] = useState(false);
+  const [refillDate, setRefillDate]   = useState<Date | null>(null);
+  const [nameFocused, setNameFocused] = useState(false);
 
   const set = (k: keyof MedForm, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const reset = () => {
+    setForm(BLANK_MED); setRefillDate(null);
+    setShowRefillPicker(false); setNameFocused(false);
+  };
+
+  const handleClose = () => { reset(); onClose(); };
 
   const handleSave = async () => {
     if (!form.name.trim() || !form.dosage.trim()) return;
     setSaving(true);
-    await onSave(selectedMember, form);
+    await onSave(selectedMember, { ...form, refill_date: refillDate ? fmtDate(refillDate) : '' });
     setSaving(false);
-    setForm(BLANK_MED);
+    reset();
     onClose();
   };
+
+  const catColor = CAT_COLORS[form.category] ?? BRAND.purple;
+  const suggestions = useMemo(() => {
+    const pool = MED_SUGGESTIONS[form.category] ?? [];
+    if (!form.name.trim()) return pool.slice(0, 6);
+    return pool.filter(s => s.name.toLowerCase().includes(form.name.toLowerCase())).slice(0, 6);
+  }, [form.category, form.name]);
 
   const inp = [
     aStyles.inp,
@@ -109,199 +170,303 @@ function AddMedModal({ visible, onClose, onSave, members, colors, isDark }: {
   ];
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={[aStyles.modal, { backgroundColor: isDark ? colors.background : '#FAF8FF' }]}>
-          {/* Header */}
-          <View style={aStyles.modalHeader}>
-            <Text style={[aStyles.modalTitle, { color: colors.textPrimary }]}>Add Medication</Text>
-            <TouchableOpacity onPress={onClose} style={aStyles.closeBtn}>
-              <X size={18} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={aStyles.backdrop}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
+          <View style={[aStyles.sheet, { backgroundColor: colors.card }]}>
+            <View style={[aStyles.handle, { backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }]} />
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 14 }}
-            showsVerticalScrollIndicator={false}>
-
-            {/* Member selector */}
-            <View>
-              <Text style={[aStyles.label, { color: colors.textSecondary }]}>For Member</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 4 }}>
-                  {members.map(m => (
-                    <TouchableOpacity key={m.id} onPress={() => setSelectedMember(m.id)}
-                      style={[aStyles.memberChip, {
-                        borderColor: selectedMember === m.id ? BRAND.purple : colors.border,
-                        backgroundColor: selectedMember === m.id ? BRAND.purple + '15' : 'transparent',
-                      }]}>
-                      <MemberAvatar name={m.name} color={selectedMember === m.id ? BRAND.purple : colors.textSecondary} size={28} />
-                      <Text style={{ fontSize: 12, fontWeight: '700',
-                        color: selectedMember === m.id ? BRAND.purple : colors.textSecondary }}>
-                        {m.name.split(' ')[0]}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
-
-            {/* Name */}
-            <View>
-              <Text style={[aStyles.label, { color: colors.textSecondary }]}>Medication Name *</Text>
-              <TextInput value={form.name} onChangeText={v => set('name', v)}
-                placeholder="e.g. Lisinopril" placeholderTextColor={colors.textTertiary}
-                style={inp} />
-            </View>
-
-            {/* Dosage row */}
-            <View style={{ flexDirection: 'row', gap: 10 }}>
+            {/* Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
               <View style={{ flex: 1 }}>
-                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Dosage *</Text>
-                <TextInput value={form.dosage} onChangeText={v => set('dosage', v)}
-                  placeholder="e.g. 10mg" placeholderTextColor={colors.textTertiary}
-                  style={inp} />
+                <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>Add Medication</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', marginTop: 2, color: catColor, textTransform: 'capitalize' }}>
+                  {form.category} · {form.frequency.replace('_', ' ')}
+                </Text>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Unit</Text>
-                {(['tablet', 'capsule', 'ml', 'mg', 'drop', 'puff'] as const).map((u, i, arr) =>
-                  i === 0 ? (
-                    <ScrollView key={u} horizontal showsHorizontalScrollIndicator={false}>
-                      <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'nowrap' }}>
-                        {arr.map(unit => (
-                          <TouchableOpacity key={unit} onPress={() => set('dosage_unit', unit)}
-                            style={[aStyles.chipSmall, {
-                              borderColor: form.dosage_unit === unit ? BRAND.purple : colors.border,
-                              backgroundColor: form.dosage_unit === unit ? BRAND.purple + '15' : 'transparent',
+              <TouchableOpacity onPress={handleClose} style={aStyles.closeBtn}>
+                <X size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 48, gap: 18 }}>
+
+              {/* ── Category chips (horizontal scroll) ── */}
+              <View>
+                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Category</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={{ flexDirection: 'row', gap: 8, paddingBottom: 4 }}>
+                    {Object.entries(CAT_COLORS).map(([cat, color]) => {
+                      const active = form.category === cat;
+                      return (
+                        <TouchableOpacity key={cat} onPress={() => { set('category', cat); set('name', ''); }}
+                          style={{
+                            borderRadius: 16, borderWidth: 2, paddingHorizontal: 14, paddingVertical: 9,
+                            backgroundColor: active ? color + '18' : (isDark ? colors.surface : '#F5F4FA'),
+                            borderColor: active ? color : (isDark ? colors.border : '#E2E8F0'),
+                          }}>
+                          <Text style={{ fontSize: 13, fontWeight: '800', textTransform: 'capitalize',
+                            color: active ? color : colors.textSecondary }}>{cat}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+              </View>
+
+              {/* ── Medication name + suggestions ── */}
+              <View>
+                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Medication Name *</Text>
+                <TextInput value={form.name} onChangeText={v => set('name', v)}
+                  onFocus={() => setNameFocused(true)} onBlur={() => setNameFocused(false)}
+                  placeholder={MED_SUGGESTIONS[form.category]?.[0]?.name ?? 'e.g. Aspirin'}
+                  placeholderTextColor={colors.textTertiary}
+                  style={[inp, { borderColor: form.name ? colors.border : catColor + '60' }]} />
+                {suggestions.length > 0 && (
+                  <View style={{ marginTop: 6 }}>
+                    <Text style={{ fontSize: 11, color: colors.textTertiary, marginBottom: 5, fontWeight: '600' }}>
+                      {form.name.trim() ? 'Matching — tap to fill' : 'Quick picks'}
+                    </Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
+                      <View style={{ flexDirection: 'row', gap: 7 }}>
+                        {suggestions.map((s, i) => (
+                          <TouchableOpacity key={i} onPress={() => { set('name', s.name); setNameFocused(false); }}
+                            style={[aStyles.suggPill, {
+                              backgroundColor: form.name === s.name ? catColor + '20' : (isDark ? colors.surface : '#F5F4FA'),
+                              borderColor: form.name === s.name ? catColor : (isDark ? colors.border : '#E2E8F0'),
                             }]}>
-                            <Text style={{ fontSize: 11, fontWeight: '700',
-                              color: form.dosage_unit === unit ? BRAND.purple : colors.textSecondary }}>
-                              {unit}
-                            </Text>
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>{s.name}</Text>
+                            <Text style={{ fontSize: 11, color: colors.textTertiary, marginLeft: 4 }}>{s.hint}</Text>
                           </TouchableOpacity>
                         ))}
                       </View>
                     </ScrollView>
-                  ) : null
+                  </View>
                 )}
               </View>
-            </View>
 
-            {/* Frequency */}
-            <View>
-              <Text style={[aStyles.label, { color: colors.textSecondary }]}>Frequency</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {Object.entries(FREQ_LABELS).map(([k, v]) => (
-                  <TouchableOpacity key={k} onPress={() => set('frequency', k)}
-                    style={[aStyles.chipSmall, {
-                      borderColor: form.frequency === k ? BRAND.teal : colors.border,
-                      backgroundColor: form.frequency === k ? BRAND.teal + '15' : 'transparent',
-                    }]}>
-                    <Text style={{ fontSize: 12, fontWeight: '700',
-                      color: form.frequency === k ? BRAND.teal : colors.textSecondary }}>{v}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Category */}
-            <View>
-              <Text style={[aStyles.label, { color: colors.textSecondary }]}>Category</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {Object.keys(CAT_COLORS).map(cat => (
-                  <TouchableOpacity key={cat} onPress={() => set('category', cat)}
-                    style={[aStyles.chipSmall, {
-                      borderColor: form.category === cat ? CAT_COLORS[cat] : colors.border,
-                      backgroundColor: form.category === cat ? CAT_COLORS[cat] + '15' : 'transparent',
-                    }]}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', textTransform: 'capitalize',
-                      color: form.category === cat ? CAT_COLORS[cat] : colors.textSecondary }}>{cat}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Doctor & Pharmacy */}
-            <View>
-              <Text style={[aStyles.label, { color: colors.textSecondary }]}>Prescribing Doctor</Text>
-              <TextInput value={form.prescribing_doctor} onChangeText={v => set('prescribing_doctor', v)}
-                placeholder="Dr. Smith" placeholderTextColor={colors.textTertiary} style={inp} />
-            </View>
-            <View>
-              <Text style={[aStyles.label, { color: colors.textSecondary }]}>Pharmacy</Text>
-              <TextInput value={form.pharmacy} onChangeText={v => set('pharmacy', v)}
-                placeholder="CVS, Walgreens, …" placeholderTextColor={colors.textTertiary} style={inp} />
-            </View>
-
-            {/* Refill & Count */}
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Refill Date</Text>
-                <TextInput value={form.refill_date} onChangeText={v => set('refill_date', v)}
-                  placeholder="YYYY-MM-DD" placeholderTextColor={colors.textTertiary} style={inp} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Pills Remaining</Text>
-                <TextInput value={form.pills_remaining} onChangeText={v => set('pills_remaining', v)}
-                  placeholder="e.g. 30" keyboardType="numeric" placeholderTextColor={colors.textTertiary} style={inp} />
-              </View>
-            </View>
-
-            {/* Instructions */}
-            <View>
-              <Text style={[aStyles.label, { color: colors.textSecondary }]}>Special Instructions</Text>
-              <TextInput value={form.instructions} onChangeText={v => set('instructions', v)}
-                placeholder="Take with food, avoid alcohol…" placeholderTextColor={colors.textTertiary}
-                style={[inp, { height: 72 }]} multiline textAlignVertical="top" />
-            </View>
-
-            {/* Escalation */}
-            <View style={[aStyles.escBox, {
-              borderColor: form.escalation_enabled ? BRAND.amber + '60' : colors.border,
-              backgroundColor: form.escalation_enabled ? BRAND.amber + '08' : 'transparent',
-            }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }}>
-                    Alert if not taken
-                  </Text>
-                  <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>
-                    Notifies parents/assigners when missed (grandparents, kids)
-                  </Text>
+              {/* ── Dosage + Unit ── */}
+              <View>
+                <Text style={[aStyles.sectionLabel, { color: catColor }]}>Dosage & Schedule</Text>
+                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Dosage *</Text>
+                    <TextInput value={form.dosage} onChangeText={v => set('dosage', v)}
+                      placeholder="10" keyboardType="decimal-pad"
+                      placeholderTextColor={colors.textTertiary} style={inp} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Unit</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        {['mg', 'ml', 'tablet', 'capsule', 'drop', 'puff'].map(unit => (
+                          <TouchableOpacity key={unit} onPress={() => set('dosage_unit', unit)}
+                            style={[aStyles.chipSmall, {
+                              borderColor: form.dosage_unit === unit ? catColor : colors.border,
+                              backgroundColor: form.dosage_unit === unit ? catColor + '15' : 'transparent',
+                            }]}>
+                            <Text style={{ fontSize: 11, fontWeight: '700',
+                              color: form.dosage_unit === unit ? catColor : colors.textSecondary }}>{unit}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </ScrollView>
+                  </View>
                 </View>
-                <TouchableOpacity
-                  onPress={() => setForm(f => ({ ...f, escalation_enabled: !f.escalation_enabled }))}
-                  style={[aStyles.toggle, {
-                    backgroundColor: form.escalation_enabled ? BRAND.amber : colors.border,
-                  }]}>
-                  <View style={[aStyles.toggleThumb, {
-                    transform: [{ translateX: form.escalation_enabled ? 18 : 2 }],
-                  }]} />
-                </TouchableOpacity>
+
+                {/* Frequency chips */}
+                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Frequency</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {Object.entries(FREQ_LABELS).map(([k, v]) => (
+                    <TouchableOpacity key={k} onPress={() => set('frequency', k)}
+                      style={[aStyles.chipSmall, {
+                        borderColor: form.frequency === k ? catColor : colors.border,
+                        backgroundColor: form.frequency === k ? catColor + '15' : 'transparent',
+                      }]}>
+                      <Text style={{ fontSize: 12, fontWeight: '700',
+                        color: form.frequency === k ? catColor : colors.textSecondary }}>{v}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
 
-              {form.escalation_enabled && (
-                <View style={{ marginTop: 10 }}>
-                  <Text style={[aStyles.label, { color: colors.textSecondary }]}>Alert after (minutes)</Text>
-                  <TextInput value={form.escalation_after_min}
-                    onChangeText={v => set('escalation_after_min', v)}
-                    keyboardType="numeric" placeholder="60"
-                    placeholderTextColor={colors.textTertiary}
-                    style={[inp, { backgroundColor: isDark ? colors.card : '#FFFBEB', borderColor: BRAND.amber + '50' }]} />
+              {/* ── Prescriber details ── */}
+              <View>
+                <Text style={[aStyles.sectionLabel, { color: catColor }]}>Prescriber & Pharmacy</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Doctor</Text>
+                    <TextInput value={form.prescribing_doctor} onChangeText={v => set('prescribing_doctor', v)}
+                      placeholder="Dr. Smith" placeholderTextColor={colors.textTertiary} style={inp} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Pharmacy</Text>
+                    <TextInput value={form.pharmacy} onChangeText={v => set('pharmacy', v)}
+                      placeholder="CVS / Walgreens" placeholderTextColor={colors.textTertiary} style={inp} />
+                  </View>
                 </View>
-              )}
-            </View>
-          </ScrollView>
+              </View>
 
-          <View style={[aStyles.saveRow, { borderColor: colors.border }]}>
-            <TouchableOpacity onPress={onClose} style={[aStyles.cancelBtn, { borderColor: colors.border }]}>
-              <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleSave}
-              style={[aStyles.saveBtn, { backgroundColor: BRAND.purple }]} disabled={saving}>
-              {saving
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save Medication</Text>}
-            </TouchableOpacity>
+              {/* ── Refill & count ── */}
+              <View>
+                <Text style={[aStyles.sectionLabel, { color: catColor }]}>Supply</Text>
+                <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+                  <View style={{ flex: 1.5 }}>
+                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Refill Date</Text>
+                    <TouchableOpacity
+                      onPress={() => setShowRefillPicker(p => !p)}
+                      style={[aStyles.dateBtn, {
+                        backgroundColor: showRefillPicker ? catColor + '20' : (isDark ? colors.card : '#F5F3FF'),
+                        borderColor: showRefillPicker ? catColor : colors.border,
+                      }]}>
+                      <Calendar size={14} color={showRefillPicker ? catColor : colors.textTertiary} />
+                      <Text style={{ fontSize: 13, fontWeight: '700',
+                        color: refillDate ? (showRefillPicker ? catColor : colors.textPrimary) : colors.textTertiary }}>
+                        {refillDate ? fmtDateDisplay(refillDate) : 'Pick date'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Pills left</Text>
+                    <TextInput value={form.pills_remaining} onChangeText={v => set('pills_remaining', v)}
+                      placeholder="30" keyboardType="numeric"
+                      placeholderTextColor={colors.textTertiary} style={inp} />
+                  </View>
+                </View>
+
+                {showRefillPicker && (
+                  <Modal transparent animationType="fade" visible onRequestClose={() => setShowRefillPicker(false)}>
+                    <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1}
+                      onPress={() => setShowRefillPicker(false)}>
+                      <TouchableOpacity activeOpacity={1} style={[aStyles.pickerCard, { backgroundColor: colors.card }]}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                          paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                          <Text style={{ fontSize: 15, fontWeight: '900', color: colors.textPrimary }}>Refill Date</Text>
+                          <TouchableOpacity onPress={() => setShowRefillPicker(false)}>
+                            <Text style={{ color: catColor, fontWeight: '900', fontSize: 15 }}>Done</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <DateTimePicker
+                          value={refillDate ?? new Date()} mode="date" display="spinner"
+                          onChange={(_, d) => { if (d) setRefillDate(d); }}
+                          textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
+                        />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  </Modal>
+                )}
+              </View>
+
+              {/* ── Instructions ── */}
+              <View>
+                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Special Instructions</Text>
+                <TextInput value={form.instructions} onChangeText={v => set('instructions', v)}
+                  placeholder="Take with food, avoid grapefruit…"
+                  placeholderTextColor={colors.textTertiary}
+                  style={[inp, { height: 72, textAlignVertical: 'top' }]} multiline />
+              </View>
+
+              {/* ── Member picker (avatar row) ── */}
+              <View>
+                <Text style={[aStyles.sectionLabel, { color: catColor }]}>Assigned To</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ flexDirection: 'row', gap: 14, paddingBottom: 4 }}>
+                  {members.map(m => {
+                    const sel = selectedMember === m.id;
+                    const mc = m.role === 'parent' ? BRAND.purple : m.role === 'senior' ? BRAND.blue : BRAND.emerald;
+                    return (
+                      <TouchableOpacity key={m.id} style={{ alignItems: 'center', gap: 5 }}
+                        onPress={() => setSelectedMember(m.id)}>
+                        <View style={{
+                          width: 52, height: 52, borderRadius: 26,
+                          backgroundColor: sel ? mc + '20' : (isDark ? colors.surface : '#F1F5F9'),
+                          borderWidth: sel ? 2.5 : 0, borderColor: mc,
+                          alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          <Text style={{ fontSize: 20, fontWeight: '900', color: sel ? mc : colors.textSecondary }}>
+                            {m.name.charAt(0).toUpperCase()}
+                          </Text>
+                          {sel && (
+                            <View style={{ position: 'absolute', bottom: -2, right: -2,
+                              width: 16, height: 16, borderRadius: 8,
+                              backgroundColor: mc, alignItems: 'center', justifyContent: 'center' }}>
+                              <Check size={9} color="#fff" />
+                            </View>
+                          )}
+                        </View>
+                        <Text style={{ fontSize: 11, fontWeight: '700',
+                          color: sel ? mc : colors.textTertiary }} numberOfLines={1}>
+                          {m.name.split(' ')[0]}
+                        </Text>
+                        <Text style={{ fontSize: 10, color: colors.textTertiary, textTransform: 'capitalize' }}>
+                          {m.role}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+
+              {/* ── Escalation alert ── */}
+              <View style={[aStyles.escBox, {
+                borderColor: form.escalation_enabled ? BRAND.amber + '60' : colors.border,
+                backgroundColor: form.escalation_enabled ? BRAND.amber + '06' : 'transparent',
+              }]}>
+                <Text style={[aStyles.sectionLabel, { color: BRAND.amber, marginBottom: 10 }]}>
+                  Missed-Dose Alert
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }}>
+                      Alert if not taken
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>
+                      Notifies assigner when dose is missed (for seniors & kids)
+                    </Text>
+                  </View>
+                  <Switch
+                    value={form.escalation_enabled}
+                    onValueChange={v => setForm(f => ({ ...f, escalation_enabled: v }))}
+                    trackColor={{ false: colors.border, true: BRAND.amber + '80' }}
+                    thumbColor={form.escalation_enabled ? BRAND.amber : colors.textTertiary}
+                  />
+                </View>
+                {form.escalation_enabled && (
+                  <View style={{ marginTop: 12 }}>
+                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Alert after (minutes)</Text>
+                    <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                      {[30, 60, 90, 120].map(m => (
+                        <TouchableOpacity key={m} onPress={() => set('escalation_after_min', String(m))}
+                          style={[aStyles.chipSmall, {
+                            borderColor: form.escalation_after_min === String(m) ? BRAND.amber : colors.border,
+                            backgroundColor: form.escalation_after_min === String(m) ? BRAND.amber + '20' : 'transparent',
+                          }]}>
+                          <Text style={{ fontSize: 12, fontWeight: '700',
+                            color: form.escalation_after_min === String(m) ? BRAND.amber : colors.textSecondary }}>
+                            {m} min
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                )}
+              </View>
+            </ScrollView>
+
+            {/* Footer */}
+            <View style={[aStyles.saveRow, { borderColor: colors.border }]}>
+              <TouchableOpacity onPress={handleClose} style={[aStyles.cancelBtn, { borderColor: colors.border }]}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleSave}
+                style={[aStyles.saveBtn, { backgroundColor: catColor }]} disabled={saving}>
+                {saving
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save Medication</Text>}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -310,6 +475,21 @@ function AddMedModal({ visible, onClose, onSave, members, colors, isDark }: {
 }
 
 // ─── Add-Vaccine Modal ─────────────────────────────────────────────────────────
+
+const VAX_TYPES = ['flu', 'covid', 'tdap', 'mmr', 'varicella', 'hpv', 'hepatitis-a', 'hepatitis-b', 'pneumonia', 'meningitis', 'shingles', 'polio'];
+const VAX_SUGGESTIONS: { name: string; hint: string }[] = [
+  { name: 'Flu Shot',         hint: 'Annual' },
+  { name: 'COVID-19 Booster', hint: 'mRNA / bivalent' },
+  { name: 'Tdap',             hint: 'Tetanus / pertussis' },
+  { name: 'MMR',              hint: 'Measles / mumps / rubella' },
+  { name: 'Varicella',        hint: 'Chicken pox' },
+  { name: 'HPV',              hint: 'Gardasil 9' },
+  { name: 'Hepatitis A',      hint: 'Travel / routine' },
+  { name: 'Hepatitis B',      hint: 'HBV series' },
+  { name: 'Pneumonia',        hint: 'Prevnar / Pneumovax' },
+  { name: 'Meningitis',       hint: 'MenACWY' },
+  { name: 'Shingles',         hint: 'Shingrix (50+)' },
+];
 
 interface VaxForm {
   title: string; vaccine_type: string; date: string;
@@ -327,128 +507,302 @@ function AddVaxModal({ visible, onClose, onSave, members, colors, isDark }: {
   onSave: (memberId: string, form: VaxForm) => Promise<void>;
   members: any[]; colors: any; isDark: boolean;
 }) {
-  const [form, setForm] = useState<VaxForm>(BLANK_VAX);
+  const [form, setForm]               = useState<VaxForm>(BLANK_VAX);
   const [selectedMember, setSelectedMember] = useState(members[0]?.id ?? '');
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving]           = useState(false);
+  const [adminDate, setAdminDate]     = useState<Date>(new Date());
+  const [nextDate, setNextDate]       = useState<Date | null>(null);
+  const [showAdminPick, setShowAdminPick]   = useState(false);
+  const [showNextPick, setShowNextPick]     = useState(false);
+  const [nameFocused, setNameFocused] = useState(false);
 
   const set = (k: keyof VaxForm, v: string) => setForm(f => ({ ...f, [k]: v }));
 
+  const reset = () => {
+    setForm(BLANK_VAX); setAdminDate(new Date()); setNextDate(null);
+    setShowAdminPick(false); setShowNextPick(false); setNameFocused(false);
+  };
+
+  const handleClose = () => { reset(); onClose(); };
+
   const handleSave = async () => {
-    if (!form.title.trim() || !form.date.trim()) return;
+    if (!form.title.trim()) return;
     setSaving(true);
-    await onSave(selectedMember, form);
+    await onSave(selectedMember, {
+      ...form,
+      date: fmtDate(adminDate),
+      next_due_date: nextDate ? fmtDate(nextDate) : '',
+    });
     setSaving(false);
-    setForm(BLANK_VAX);
+    reset();
     onClose();
   };
 
+  const suggestions = useMemo(() => {
+    if (!form.title.trim()) return VAX_SUGGESTIONS.slice(0, 6);
+    return VAX_SUGGESTIONS.filter(s => s.name.toLowerCase().includes(form.title.toLowerCase())).slice(0, 6);
+  }, [form.title]);
+
   const inp = [
     aStyles.inp,
-    { backgroundColor: isDark ? colors.card : '#F5F3FF', borderColor: colors.border, color: colors.textPrimary },
+    { backgroundColor: isDark ? colors.card : '#F0FDFA', borderColor: colors.border, color: colors.textPrimary },
   ];
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={[aStyles.modal, { backgroundColor: isDark ? colors.background : '#FAF8FF' }]}>
-          <View style={aStyles.modalHeader}>
-            <Text style={[aStyles.modalTitle, { color: colors.textPrimary }]}>Log Vaccine</Text>
-            <TouchableOpacity onPress={onClose} style={aStyles.closeBtn}>
-              <X size={18} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={aStyles.backdrop}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
+          <View style={[aStyles.sheet, { backgroundColor: colors.card }]}>
+            <View style={[aStyles.handle, { backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }]} />
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 14 }}
-            showsVerticalScrollIndicator={false}>
+            {/* Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>Log Vaccine</Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', marginTop: 2, color: BRAND.teal }}>
+                  Immunization record · {form.vaccine_type || 'all types'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={handleClose} style={aStyles.closeBtn}>
+                <X size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
 
-            {/* Member */}
-            <View>
-              <Text style={[aStyles.label, { color: colors.textSecondary }]}>For Member</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 4 }}>
-                  {members.map(m => (
-                    <TouchableOpacity key={m.id} onPress={() => setSelectedMember(m.id)}
-                      style={[aStyles.memberChip, {
-                        borderColor: selectedMember === m.id ? BRAND.teal : colors.border,
-                        backgroundColor: selectedMember === m.id ? BRAND.teal + '15' : 'transparent',
+            <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 48, gap: 18 }}>
+
+              {/* ── Vaccine name + suggestions ── */}
+              <View>
+                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Vaccine Name *</Text>
+                <TextInput value={form.title} onChangeText={v => set('title', v)}
+                  onFocus={() => setNameFocused(true)} onBlur={() => setNameFocused(false)}
+                  placeholder="e.g. Flu Shot 2025" placeholderTextColor={colors.textTertiary}
+                  style={[inp, { borderColor: form.title ? colors.border : BRAND.teal + '60' }]} />
+                {suggestions.length > 0 && (
+                  <View style={{ marginTop: 6 }}>
+                    <Text style={{ fontSize: 11, color: colors.textTertiary, marginBottom: 5, fontWeight: '600' }}>
+                      {form.title.trim() ? 'Matching — tap to fill' : 'Quick picks'}
+                    </Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
+                      <View style={{ flexDirection: 'row', gap: 7 }}>
+                        {suggestions.map((s, i) => (
+                          <TouchableOpacity key={i} onPress={() => { set('title', s.name); setNameFocused(false); }}
+                            style={[aStyles.suggPill, {
+                              backgroundColor: form.title === s.name ? BRAND.teal + '20' : (isDark ? colors.surface : '#F0FDFA'),
+                              borderColor: form.title === s.name ? BRAND.teal : (isDark ? colors.border : '#99F6E4'),
+                            }]}>
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>{s.name}</Text>
+                            <Text style={{ fontSize: 11, color: colors.textTertiary, marginLeft: 4 }}>{s.hint}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+
+              {/* ── Vaccine type chips ── */}
+              <View>
+                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Vaccine Type</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={{ flexDirection: 'row', gap: 8, paddingBottom: 2 }}>
+                    {VAX_TYPES.map(t => {
+                      const sel = form.vaccine_type === t;
+                      return (
+                        <TouchableOpacity key={t} onPress={() => set('vaccine_type', sel ? '' : t)}
+                          style={{
+                            borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 6,
+                            backgroundColor: sel ? BRAND.teal + '18' : 'transparent',
+                            borderColor: sel ? BRAND.teal : colors.border,
+                          }}>
+                          <Text style={{ fontSize: 12, fontWeight: '700', textTransform: 'uppercase',
+                            color: sel ? BRAND.teal : colors.textSecondary }}>{t}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+              </View>
+
+              {/* ── Dates ── */}
+              <View>
+                <Text style={[aStyles.sectionLabel, { color: BRAND.teal }]}>Administration Dates</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Date Administered *</Text>
+                    <TouchableOpacity onPress={() => { setShowAdminPick(p => !p); setShowNextPick(false); }}
+                      style={[aStyles.dateBtn, {
+                        backgroundColor: showAdminPick ? BRAND.teal + '20' : (isDark ? colors.card : '#F0FDFA'),
+                        borderColor: showAdminPick ? BRAND.teal : colors.border,
                       }]}>
-                      <MemberAvatar name={m.name} color={selectedMember === m.id ? BRAND.teal : colors.textSecondary} size={28} />
-                      <Text style={{ fontSize: 12, fontWeight: '700',
-                        color: selectedMember === m.id ? BRAND.teal : colors.textSecondary }}>
-                        {m.name.split(' ')[0]}
+                      <Calendar size={14} color={showAdminPick ? BRAND.teal : colors.textTertiary} />
+                      <Text style={{ fontSize: 13, fontWeight: '700',
+                        color: showAdminPick ? BRAND.teal : colors.textPrimary }}>
+                        {fmtDateDisplay(adminDate)}
                       </Text>
                     </TouchableOpacity>
-                  ))}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Next Due (optional)</Text>
+                    <TouchableOpacity onPress={() => { setShowNextPick(p => !p); setShowAdminPick(false); }}
+                      style={[aStyles.dateBtn, {
+                        backgroundColor: showNextPick ? BRAND.amber + '20' : (isDark ? colors.card : '#FFFBEB'),
+                        borderColor: showNextPick ? BRAND.amber : (nextDate ? BRAND.amber + '80' : colors.border),
+                      }]}>
+                      <Calendar size={14} color={nextDate ? BRAND.amber : colors.textTertiary} />
+                      <Text style={{ fontSize: 13, fontWeight: '700',
+                        color: nextDate ? (showNextPick ? BRAND.amber : colors.textPrimary) : colors.textTertiary }}>
+                        {nextDate ? fmtDateDisplay(nextDate) : 'Pick date'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </ScrollView>
-            </View>
 
-            <View>
-              <Text style={[aStyles.label, { color: colors.textSecondary }]}>Vaccine Name *</Text>
-              <TextInput value={form.title} onChangeText={v => set('title', v)}
-                placeholder="e.g. Flu Shot 2025" placeholderTextColor={colors.textTertiary} style={inp} />
-            </View>
-
-            <View>
-              <Text style={[aStyles.label, { color: colors.textSecondary }]}>Vaccine Type</Text>
-              <TextInput value={form.vaccine_type} onChangeText={v => set('vaccine_type', v)}
-                placeholder="flu, covid, tdap, mmr…" placeholderTextColor={colors.textTertiary} style={inp} />
-            </View>
-
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Date Administered *</Text>
-                <TextInput value={form.date} onChangeText={v => set('date', v)}
-                  placeholder="YYYY-MM-DD" placeholderTextColor={colors.textTertiary} style={inp} />
+                {(showAdminPick || showNextPick) && (
+                  <Modal transparent animationType="fade" visible onRequestClose={() => { setShowAdminPick(false); setShowNextPick(false); }}>
+                    <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1}
+                      onPress={() => { setShowAdminPick(false); setShowNextPick(false); }}>
+                      <TouchableOpacity activeOpacity={1} style={[aStyles.pickerCard, { backgroundColor: colors.card }]}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                          paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                          <Text style={{ fontSize: 15, fontWeight: '900', color: colors.textPrimary }}>
+                            {showAdminPick ? 'Date Administered' : 'Next Due Date'}
+                          </Text>
+                          <TouchableOpacity onPress={() => { setShowAdminPick(false); setShowNextPick(false); }}>
+                            <Text style={{ color: BRAND.teal, fontWeight: '900', fontSize: 15 }}>Done</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <DateTimePicker
+                          value={showAdminPick ? adminDate : (nextDate ?? new Date())}
+                          mode="date" display="spinner"
+                          onChange={(_, d) => {
+                            if (d) { showAdminPick ? setAdminDate(d) : setNextDate(d); }
+                          }}
+                          textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
+                        />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  </Modal>
+                )}
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Next Due Date</Text>
-                <TextInput value={form.next_due_date} onChangeText={v => set('next_due_date', v)}
-                  placeholder="YYYY-MM-DD" placeholderTextColor={colors.textTertiary} style={inp} />
-              </View>
-            </View>
 
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Dose # (current)</Text>
-                <TextInput value={form.series_current} onChangeText={v => set('series_current', v)}
-                  keyboardType="numeric" placeholder="1" placeholderTextColor={colors.textTertiary} style={inp} />
+              {/* ── Series ── */}
+              <View>
+                <Text style={[aStyles.sectionLabel, { color: BRAND.teal }]}>Dose Series</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Current Dose #</Text>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      {['1', '2', '3', '4'].map(n => (
+                        <TouchableOpacity key={n} onPress={() => set('series_current', n)}
+                          style={[aStyles.chipSmall, {
+                            flex: 1, alignItems: 'center',
+                            borderColor: form.series_current === n ? BRAND.teal : colors.border,
+                            backgroundColor: form.series_current === n ? BRAND.teal + '15' : 'transparent',
+                          }]}>
+                          <Text style={{ fontSize: 13, fontWeight: '800',
+                            color: form.series_current === n ? BRAND.teal : colors.textSecondary }}>{n}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Total Doses</Text>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      {['1', '2', '3', '4'].map(n => (
+                        <TouchableOpacity key={n} onPress={() => set('series_total', n)}
+                          style={[aStyles.chipSmall, {
+                            flex: 1, alignItems: 'center',
+                            borderColor: form.series_total === n ? BRAND.blue : colors.border,
+                            backgroundColor: form.series_total === n ? BRAND.blue + '15' : 'transparent',
+                          }]}>
+                          <Text style={{ fontSize: 13, fontWeight: '800',
+                            color: form.series_total === n ? BRAND.blue : colors.textSecondary }}>{n}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Total Doses</Text>
-                <TextInput value={form.series_total} onChangeText={v => set('series_total', v)}
-                  keyboardType="numeric" placeholder="2" placeholderTextColor={colors.textTertiary} style={inp} />
+
+              {/* ── Administered by / location ── */}
+              <View>
+                <Text style={[aStyles.sectionLabel, { color: BRAND.teal }]}>Provider & Location</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Administered By</Text>
+                    <TextInput value={form.administered_by} onChangeText={v => set('administered_by', v)}
+                      placeholder="Dr. Name / CVS" placeholderTextColor={colors.textTertiary} style={inp} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Location</Text>
+                    <TextInput value={form.location} onChangeText={v => set('location', v)}
+                      placeholder="Clinic / School" placeholderTextColor={colors.textTertiary} style={inp} />
+                  </View>
+                </View>
               </View>
-            </View>
 
-            <View>
-              <Text style={[aStyles.label, { color: colors.textSecondary }]}>Administered By</Text>
-              <TextInput value={form.administered_by} onChangeText={v => set('administered_by', v)}
-                placeholder="Dr. Name / CVS Pharmacy" placeholderTextColor={colors.textTertiary} style={inp} />
-            </View>
-            <View>
-              <Text style={[aStyles.label, { color: colors.textSecondary }]}>Location</Text>
-              <TextInput value={form.location} onChangeText={v => set('location', v)}
-                placeholder="Clinic, School, Pharmacy…" placeholderTextColor={colors.textTertiary} style={inp} />
-            </View>
-            <View>
-              <Text style={[aStyles.label, { color: colors.textSecondary }]}>Notes</Text>
-              <TextInput value={form.notes} onChangeText={v => set('notes', v)}
-                placeholder="Any reactions, lot number…" placeholderTextColor={colors.textTertiary}
-                style={[inp, { height: 68 }]} multiline textAlignVertical="top" />
-            </View>
-          </ScrollView>
+              {/* ── Member avatar picker ── */}
+              <View>
+                <Text style={[aStyles.sectionLabel, { color: BRAND.teal }]}>For Member</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ flexDirection: 'row', gap: 14, paddingBottom: 4 }}>
+                  {members.map(m => {
+                    const sel = selectedMember === m.id;
+                    const mc = m.role === 'parent' ? BRAND.purple : m.role === 'senior' ? BRAND.blue : BRAND.emerald;
+                    return (
+                      <TouchableOpacity key={m.id} style={{ alignItems: 'center', gap: 5 }}
+                        onPress={() => setSelectedMember(m.id)}>
+                        <View style={{
+                          width: 52, height: 52, borderRadius: 26,
+                          backgroundColor: sel ? mc + '20' : (isDark ? colors.surface : '#F1F5F9'),
+                          borderWidth: sel ? 2.5 : 0, borderColor: mc,
+                          alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          <Text style={{ fontSize: 20, fontWeight: '900', color: sel ? mc : colors.textSecondary }}>
+                            {m.name.charAt(0).toUpperCase()}
+                          </Text>
+                          {sel && (
+                            <View style={{ position: 'absolute', bottom: -2, right: -2,
+                              width: 16, height: 16, borderRadius: 8,
+                              backgroundColor: mc, alignItems: 'center', justifyContent: 'center' }}>
+                              <Check size={9} color="#fff" />
+                            </View>
+                          )}
+                        </View>
+                        <Text style={{ fontSize: 11, fontWeight: '700',
+                          color: sel ? mc : colors.textTertiary }} numberOfLines={1}>
+                          {m.name.split(' ')[0]}
+                        </Text>
+                        <Text style={{ fontSize: 10, color: colors.textTertiary, textTransform: 'capitalize' }}>{m.role}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
 
-          <View style={[aStyles.saveRow, { borderColor: colors.border }]}>
-            <TouchableOpacity onPress={onClose} style={[aStyles.cancelBtn, { borderColor: colors.border }]}>
-              <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleSave}
-              style={[aStyles.saveBtn, { backgroundColor: BRAND.teal }]} disabled={saving}>
-              {saving
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save Vaccine</Text>}
-            </TouchableOpacity>
+              {/* Notes */}
+              <View>
+                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Notes / Lot Number</Text>
+                <TextInput value={form.notes} onChangeText={v => set('notes', v)}
+                  placeholder="Reactions, lot number, clinic notes…"
+                  placeholderTextColor={colors.textTertiary}
+                  style={[inp, { height: 68, textAlignVertical: 'top' }]} multiline />
+              </View>
+            </ScrollView>
+
+            <View style={[aStyles.saveRow, { borderColor: colors.border }]}>
+              <TouchableOpacity onPress={handleClose} style={[aStyles.cancelBtn, { borderColor: colors.border }]}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleSave}
+                style={[aStyles.saveBtn, { backgroundColor: BRAND.teal }]} disabled={saving}>
+                {saving
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save Vaccine</Text>}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -477,17 +831,41 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
   const [showVaxModal, setShowVaxModal] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [healthTab, setHealthTab] = useState<'meds' | 'vax'>('meds');
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
 
-  // Filters — medications
+  // ── Medication filters (default: active = ongoing, all members) ──────────────
   const [medSearch, setMedSearch]         = useState('');
-  const [medMemberFilter, setMedMemberFilter] = useState('all');
-  const [medCatFilter, setMedCatFilter]   = useState('all');
-  const [medStatusFilter, setMedStatusFilter] = useState<'all' | 'taken' | 'pending' | 'overdue'>('all');
+  const [medMemberFilter, setMedMemberFilter] = useState<string[]>([]);      // [] = all
+  const [medCatFilter, setMedCatFilter]   = useState<string[]>([]);           // [] = all
+  const [medStatusFilter, setMedStatusFilter] = useState<'active' | 'taken' | 'pending' | 'overdue' | 'all'>('active');
+  const [medOngoingOnly, setMedOngoingOnly] = useState(true);
+  const [medFreqFilter, setMedFreqFilter] = useState<string[]>([]);
+  const [medRefillSoon, setMedRefillSoon] = useState(false);
+  const [medEscalationOnly, setMedEscalationOnly] = useState(false);
 
-  // Filters — vaccines
+  // ── Vaccine filters (default: all, all members) ───────────────────────────────
   const [vaxSearch, setVaxSearch]         = useState('');
-  const [vaxMemberFilter, setVaxMemberFilter] = useState('all');
-  const [vaxStatusFilter, setVaxStatusFilter] = useState<'all' | 'done' | 'pending' | 'due_soon'>('all');
+  const [vaxMemberFilter, setVaxMemberFilter] = useState<string[]>([]);       // [] = all
+  const [vaxStatusFilter, setVaxStatusFilter] = useState<'all' | 'done' | 'pending' | 'due_soon'>('pending');
+  const [vaxDueSoonDays, setVaxDueSoonDays] = useState(30);
+
+  // Draft filters shown inside bottom sheet before Apply
+  type MedFilters = {
+    search: string; members: string[]; categories: string[];
+    status: typeof medStatusFilter; ongoing: boolean;
+    frequencies: string[]; refillSoon: boolean; escalationOnly: boolean;
+  };
+  type VaxFilters = {
+    search: string; members: string[];
+    status: typeof vaxStatusFilter; dueSoonDays: number;
+  };
+  const [draftMed, setDraftMed] = useState<MedFilters>({
+    search: '', members: [], categories: [], status: 'active',
+    ongoing: true, frequencies: [], refillSoon: false, escalationOnly: false,
+  });
+  const [draftVax, setDraftVax] = useState<VaxFilters>({
+    search: '', members: [], status: 'pending', dueSoonDays: 30,
+  });
 
   // AI state
   const [aiQuery, setAiQuery]   = useState('');
@@ -635,42 +1013,111 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
     setAiShared(true);
   };
 
+  const openFilterSheet = () => {
+    // Seed draft from current applied filters
+    setDraftMed({ search: medSearch, members: medMemberFilter, categories: medCatFilter,
+      status: medStatusFilter, ongoing: medOngoingOnly, frequencies: medFreqFilter,
+      refillSoon: medRefillSoon, escalationOnly: medEscalationOnly });
+    setDraftVax({ search: vaxSearch, members: vaxMemberFilter,
+      status: vaxStatusFilter, dueSoonDays: vaxDueSoonDays });
+    setShowFilterSheet(true);
+  };
+
+  const applyFilters = () => {
+    setMedSearch(draftMed.search);
+    setMedMemberFilter(draftMed.members);
+    setMedCatFilter(draftMed.categories);
+    setMedStatusFilter(draftMed.status);
+    setMedOngoingOnly(draftMed.ongoing);
+    setMedFreqFilter(draftMed.frequencies);
+    setMedRefillSoon(draftMed.refillSoon);
+    setMedEscalationOnly(draftMed.escalationOnly);
+    setVaxSearch(draftVax.search);
+    setVaxMemberFilter(draftVax.members);
+    setVaxStatusFilter(draftVax.status);
+    setVaxDueSoonDays(draftVax.dueSoonDays);
+    setShowFilterSheet(false);
+  };
+
+  const resetFilters = () => {
+    if (healthTab === 'meds') {
+      setDraftMed({ search: '', members: [], categories: [], status: 'active',
+        ongoing: true, frequencies: [], refillSoon: false, escalationOnly: false });
+    } else {
+      setDraftVax({ search: '', members: [], status: 'all', dueSoonDays: 30 });
+    }
+  };
+
   const memberName  = (id: string) => members.find(m => m.id === id)?.name ?? id;
   const memberColor = (id: string) => {
     const m = members.find(mb => mb.id === id);
     return m?.role === 'parent' ? BRAND.purple : m?.role === 'senior' ? BRAND.blue : BRAND.emerald;
   };
 
+  // ── Active filter count for badge ────────────────────────────────────────────
+  const medActiveFilterCount = useMemo(() => {
+    let n = 0;
+    if (medStatusFilter !== 'active') n++;
+    if (medMemberFilter.length) n++;
+    if (medCatFilter.length) n++;
+    if (medFreqFilter.length) n++;
+    if (!medOngoingOnly) n++;
+    if (medRefillSoon) n++;
+    if (medEscalationOnly) n++;
+    if (medSearch) n++;
+    return n;
+  }, [medStatusFilter, medMemberFilter, medCatFilter, medFreqFilter,
+      medOngoingOnly, medRefillSoon, medEscalationOnly, medSearch]);
+
+  const vaxActiveFilterCount = useMemo(() => {
+    let n = 0;
+    if (vaxStatusFilter !== 'all') n++;
+    if (vaxMemberFilter.length) n++;
+    if (vaxSearch) n++;
+    return n;
+  }, [vaxStatusFilter, vaxMemberFilter, vaxSearch]);
+
   // Filtered meds
   const filteredMeds = useMemo(() => {
     const todayStr = today();
+    const now = new Date();
     return meds.filter(med => {
-      if (medMemberFilter !== 'all' && med.member_id !== medMemberFilter) return false;
-      if (medCatFilter !== 'all' && med.category !== medCatFilter) return false;
+      if (medMemberFilter.length && !medMemberFilter.includes(med.member_id)) return false;
+      if (medCatFilter.length && !medCatFilter.includes(med.category)) return false;
+      if (medFreqFilter.length && !medFreqFilter.includes(med.frequency)) return false;
+      if (medOngoingOnly && !med.is_ongoing) return false;
+      if (medEscalationOnly && !med.escalation_enabled) return false;
+      if (medRefillSoon) {
+        if (!med.refill_date) return false;
+        const diff = new Date(med.refill_date).getTime() - now.getTime();
+        if (diff < 0 || diff > 7 * 24 * 3600_000) return false;
+      }
       if (medSearch && !med.name.toLowerCase().includes(medSearch.toLowerCase())) return false;
-      if (medStatusFilter === 'taken') return med.taken_date === todayStr;
+      if (medStatusFilter === 'active')  return med.is_ongoing;
+      if (medStatusFilter === 'taken')   return med.taken_date === todayStr;
       if (medStatusFilter === 'pending') return med.taken_date !== todayStr && !isOverdue(med);
       if (medStatusFilter === 'overdue') return isOverdue(med);
       return true;
     });
-  }, [meds, medMemberFilter, medCatFilter, medSearch, medStatusFilter]);
+  }, [meds, medMemberFilter, medCatFilter, medFreqFilter, medOngoingOnly,
+      medEscalationOnly, medRefillSoon, medSearch, medStatusFilter]);
 
   // Filtered vaxes
   const filteredVaxes = useMemo(() => {
     const now = new Date();
     return vaxes.filter(vax => {
-      if (vaxMemberFilter !== 'all' && vax.member_id !== vaxMemberFilter) return false;
+      if (vaxMemberFilter.length && !vaxMemberFilter.includes(vax.member_id)) return false;
       if (vaxSearch && !vax.title.toLowerCase().includes(vaxSearch.toLowerCase())) return false;
-      if (vaxStatusFilter === 'done') return vax.done;
+      if (vaxStatusFilter === 'done')    return vax.done;
       if (vaxStatusFilter === 'pending') return !vax.done;
       if (vaxStatusFilter === 'due_soon') {
         if (!vax.next_due_date) return false;
         const due = new Date(vax.next_due_date);
-        return !vax.done && (due.getTime() - now.getTime()) < 30 * 24 * 3600_000; // within 30 days
+        return !vax.done && (due.getTime() - now.getTime()) < vaxDueSoonDays * 24 * 3600_000;
       }
       return true;
     });
-  }, [vaxes, vaxMemberFilter, vaxSearch, vaxStatusFilter]);
+  }, [vaxes, vaxMemberFilter, vaxSearch, vaxStatusFilter, vaxDueSoonDays]);
 
   if (loading) return (
     <SCard colors={colors} isDark={isDark}>
@@ -759,103 +1206,152 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
 
       {/* ── Medications + Immunizations (unified) ───── */}
       <SCard colors={colors} isDark={isDark}>
-        {/* Card header + refresh */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        {/* ── Card header row ── */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <CardHeader
             Icon={healthTab === 'meds' ? Pill : Syringe}
             iconColor={healthTab === 'meds' ? BRAND.purple : BRAND.teal}
             title="Health Records"
-            badge={healthTab === 'meds' ? `${filteredMeds.length}/${meds.length}` : `${filteredVaxes.length}/${vaxes.length}`}
-            badgeColor={healthTab === 'meds' ? BRAND.purple : BRAND.teal}
             colors={colors}
           />
-          <TouchableOpacity onPress={load}><RefreshCw size={14} color={colors.textTertiary} /></TouchableOpacity>
+          <TouchableOpacity onPress={load} style={{ padding: 4 }}>
+            <RefreshCw size={13} color={colors.textTertiary} />
+          </TouchableOpacity>
         </View>
 
-        {/* Inner tab switcher */}
+        {/* ── Inner tab switcher ── */}
         <View style={[hf.innerTabRow, { backgroundColor: isDark ? colors.card : '#F5F3FF', borderColor: colors.border }]}>
-          {([{ id: 'meds', label: 'Medications', Icon: Pill, color: BRAND.purple },
-             { id: 'vax',  label: 'Immunizations', Icon: Syringe, color: BRAND.teal }] as const).map(t => (
+          {([
+            { id: 'meds', label: 'Medications',   Icon: Pill,    color: BRAND.purple, count: meds.length },
+            { id: 'vax',  label: 'Immunizations', Icon: Syringe, color: BRAND.teal,   count: vaxes.length },
+          ] as const).map(t => (
             <TouchableOpacity key={t.id} onPress={() => setHealthTab(t.id)}
-              style={[hf.innerTab, {
-                backgroundColor: healthTab === t.id ? t.color : 'transparent',
-                borderRadius: 10,
-              }]}>
+              style={[hf.innerTab, { backgroundColor: healthTab === t.id ? t.color : 'transparent', borderRadius: 10 }]}>
               <t.Icon size={13} color={healthTab === t.id ? '#fff' : colors.textSecondary} />
-              <Text style={{ fontSize: 12, fontWeight: '800',
-                color: healthTab === t.id ? '#fff' : colors.textSecondary }}>{t.label}</Text>
-              <View style={[hf.tabBadge, {
-                backgroundColor: healthTab === t.id ? 'rgba(255,255,255,0.3)' : colors.border,
-              }]}>
-                <Text style={{ fontSize: 10, fontWeight: '900',
-                  color: healthTab === t.id ? '#fff' : colors.textTertiary }}>
-                  {t.id === 'meds' ? meds.length : vaxes.length}
+              <Text style={{ fontSize: 12, fontWeight: '800', color: healthTab === t.id ? '#fff' : colors.textSecondary }}>
+                {t.label}
+              </Text>
+              <View style={[hf.tabBadge, { backgroundColor: healthTab === t.id ? 'rgba(255,255,255,0.3)' : colors.border }]}>
+                <Text style={{ fontSize: 10, fontWeight: '900', color: healthTab === t.id ? '#fff' : colors.textTertiary }}>
+                  {t.count}
                 </Text>
               </View>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* ─── MEDICATIONS SUB-TAB ─────────────────────── */}
-        {healthTab === 'meds' && (
-          <>
-            {/* Search + Filters */}
-            <View style={[hf.searchRow, { borderColor: colors.border, backgroundColor: isDark ? colors.card : '#F5F3FF' }]}>
-              <TextInput
-                value={medSearch} onChangeText={setMedSearch}
-                placeholder="Search medications…" placeholderTextColor={colors.textTertiary}
-                style={[hf.searchInput, { color: colors.textPrimary }]}
-              />
-            </View>
-
-            {/* Member filter chips */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {[{ id: 'all', label: 'All Members' }, ...members.map(m => ({ id: m.id, label: m.name.split(' ')[0] }))].map(opt => {
-                  const sel = medMemberFilter === opt.id;
-                  return (
-                    <TouchableOpacity key={opt.id} onPress={() => setMedMemberFilter(opt.id)}
-                      style={[hf.filterChip, {
-                        backgroundColor: sel ? BRAND.purple : 'transparent',
-                        borderColor: sel ? BRAND.purple : colors.border,
-                      }]}>
-                      <Text style={{ fontSize: 11, fontWeight: '700',
-                        color: sel ? '#fff' : colors.textSecondary }}>{opt.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+        {/* ── Search bar + filter icon ── */}
+        {(() => {
+          const activeCount = healthTab === 'meds' ? medActiveFilterCount : vaxActiveFilterCount;
+          const accentColor = healthTab === 'meds' ? BRAND.purple : BRAND.teal;
+          const placeholder = healthTab === 'meds' ? 'Search medications…' : 'Search vaccines…';
+          const currentSearch = healthTab === 'meds' ? medSearch : vaxSearch;
+          const setSearch = healthTab === 'meds'
+            ? (v: string) => setMedSearch(v)
+            : (v: string) => setVaxSearch(v);
+          return (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 }}>
+              <View style={[hf.searchRow, { flex: 1, borderColor: colors.border,
+                backgroundColor: isDark ? colors.card : (healthTab === 'meds' ? '#F5F3FF' : '#F0FDFA') }]}>
+                <TextInput
+                  value={currentSearch} onChangeText={setSearch}
+                  placeholder={placeholder} placeholderTextColor={colors.textTertiary}
+                  style={[hf.searchInput, { color: colors.textPrimary }]}
+                />
+                {currentSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearch('')}>
+                    <X size={14} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                )}
               </View>
-            </ScrollView>
 
-            {/* Status + Category filters */}
-            <View style={{ flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-              {(['all', 'taken', 'pending', 'overdue'] as const).map(st => (
-                <TouchableOpacity key={st} onPress={() => setMedStatusFilter(st)}
-                  style={[hf.filterChip, {
-                    backgroundColor: medStatusFilter === st ?
-                      (st === 'overdue' ? BRAND.rose : st === 'taken' ? BRAND.emerald : BRAND.purple) : 'transparent',
-                    borderColor: medStatusFilter === st ?
-                      (st === 'overdue' ? BRAND.rose : st === 'taken' ? BRAND.emerald : BRAND.purple) : colors.border,
-                  }]}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', textTransform: 'capitalize',
-                    color: medStatusFilter === st ? '#fff' : colors.textSecondary }}>{st}</Text>
-                </TouchableOpacity>
-              ))}
-              {(['all', ...Object.keys(CAT_COLORS)] as const).map(cat => (
-                <TouchableOpacity key={cat} onPress={() => setMedCatFilter(cat)}
-                  style={[hf.filterChip, {
-                    backgroundColor: medCatFilter === cat ? (CAT_COLORS[cat] ?? BRAND.purple) : 'transparent',
-                    borderColor: medCatFilter === cat ? (CAT_COLORS[cat] ?? BRAND.purple) : colors.border,
-                  }]}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', textTransform: 'capitalize',
-                    color: medCatFilter === cat ? '#fff' : colors.textSecondary }}>
-                    {cat === 'all' ? 'All Categories' : cat}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {/* Filter icon button with active-count badge */}
+              <TouchableOpacity onPress={openFilterSheet}
+                style={[hf.filterIconBtn, {
+                  borderColor: activeCount ? accentColor : colors.border,
+                  backgroundColor: activeCount ? accentColor + '15' : 'transparent',
+                }]}>
+                <SlidersHorizontal size={17} color={activeCount ? accentColor : colors.textSecondary} />
+                {activeCount > 0 && (
+                  <View style={[hf.filterBadge, { backgroundColor: accentColor }]}>
+                    <Text style={{ fontSize: 9, fontWeight: '900', color: '#fff' }}>{activeCount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
             </View>
-          </>
+          );
+        })()}
+
+        {/* ── Active-filter pill summary (compact, dismissable) ── */}
+        {healthTab === 'meds' && medActiveFilterCount > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+            <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+              {medStatusFilter !== 'active' && (
+                <View style={[hf.activePill, { borderColor: BRAND.purple + '60', backgroundColor: BRAND.purple + '12' }]}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.purple, textTransform: 'capitalize' }}>{medStatusFilter}</Text>
+                </View>
+              )}
+              {medMemberFilter.map(id => (
+                <View key={id} style={[hf.activePill, { borderColor: BRAND.blue + '60', backgroundColor: BRAND.blue + '12' }]}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.blue }}>{memberName(id)}</Text>
+                </View>
+              ))}
+              {medCatFilter.map(cat => (
+                <View key={cat} style={[hf.activePill, { borderColor: (CAT_COLORS[cat] ?? BRAND.purple) + '60', backgroundColor: (CAT_COLORS[cat] ?? BRAND.purple) + '12' }]}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: CAT_COLORS[cat] ?? BRAND.purple, textTransform: 'capitalize' }}>{cat}</Text>
+                </View>
+              ))}
+              {medRefillSoon && (
+                <View style={[hf.activePill, { borderColor: BRAND.amber + '60', backgroundColor: BRAND.amber + '12' }]}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.amber }}>Refill Soon</Text>
+                </View>
+              )}
+              {medEscalationOnly && (
+                <View style={[hf.activePill, { borderColor: BRAND.rose + '60', backgroundColor: BRAND.rose + '12' }]}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.rose }}>Escalation</Text>
+                </View>
+              )}
+              <TouchableOpacity onPress={() => {
+                setMedSearch(''); setMedMemberFilter([]); setMedCatFilter([]);
+                setMedStatusFilter('active'); setMedOngoingOnly(true);
+                setMedFreqFilter([]); setMedRefillSoon(false); setMedEscalationOnly(false);
+              }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.rose }}>Clear all</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
         )}
+
+        {healthTab === 'vax' && vaxActiveFilterCount > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+            <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+              {vaxStatusFilter !== 'all' && (
+                <View style={[hf.activePill, { borderColor: BRAND.teal + '60', backgroundColor: BRAND.teal + '12' }]}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.teal, textTransform: 'capitalize' }}>
+                    {vaxStatusFilter === 'due_soon' ? `Due ≤${vaxDueSoonDays}d` : vaxStatusFilter}
+                  </Text>
+                </View>
+              )}
+              {vaxMemberFilter.map(id => (
+                <View key={id} style={[hf.activePill, { borderColor: BRAND.blue + '60', backgroundColor: BRAND.blue + '12' }]}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.blue }}>{memberName(id)}</Text>
+                </View>
+              ))}
+              <TouchableOpacity onPress={() => {
+                setVaxSearch(''); setVaxMemberFilter([]); setVaxStatusFilter('pending'); setVaxDueSoonDays(30);
+              }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.rose }}>Clear all</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        )}
+
+        {/* ── Result count line ── */}
+        <Text style={{ fontSize: 11, color: colors.textTertiary, fontWeight: '700', marginTop: 10 }}>
+          {healthTab === 'meds'
+            ? `${filteredMeds.length} of ${meds.length} medications`
+            : `${filteredVaxes.length} of ${vaxes.length} immunizations`}
+        </Text>
 
         {/* Med list */}
         {healthTab === 'meds' && (filteredMeds.length === 0
@@ -960,60 +1456,6 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
 
         {healthTab === 'meds' && <AddBtn label="Add Medication" onPress={() => setShowMedModal(true)} color={BRAND.purple} />}
 
-        {/* ─── VACCINES SUB-TAB ─────────────────────── */}
-        {healthTab === 'vax' && (
-          <>
-            {/* Search */}
-            <View style={[hf.searchRow, { borderColor: colors.border, backgroundColor: isDark ? colors.card : '#F0FDFA' }]}>
-              <TextInput
-                value={vaxSearch} onChangeText={setVaxSearch}
-                placeholder="Search vaccines…" placeholderTextColor={colors.textTertiary}
-                style={[hf.searchInput, { color: colors.textPrimary }]}
-              />
-            </View>
-
-            {/* Member filter */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {[{ id: 'all', label: 'All Members' }, ...members.map(m => ({ id: m.id, label: m.name.split(' ')[0] }))].map(opt => {
-                  const sel = vaxMemberFilter === opt.id;
-                  return (
-                    <TouchableOpacity key={opt.id} onPress={() => setVaxMemberFilter(opt.id)}
-                      style={[hf.filterChip, {
-                        backgroundColor: sel ? BRAND.teal : 'transparent',
-                        borderColor: sel ? BRAND.teal : colors.border,
-                      }]}>
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: sel ? '#fff' : colors.textSecondary }}>
-                        {opt.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </ScrollView>
-
-            {/* Status filter */}
-            <View style={{ flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-              {([
-                { id: 'all', label: 'All', color: BRAND.teal },
-                { id: 'done', label: 'Done', color: BRAND.emerald },
-                { id: 'pending', label: 'Pending', color: BRAND.amber },
-                { id: 'due_soon', label: 'Due Soon', color: BRAND.rose },
-              ] as const).map(opt => (
-                <TouchableOpacity key={opt.id} onPress={() => setVaxStatusFilter(opt.id)}
-                  style={[hf.filterChip, {
-                    backgroundColor: vaxStatusFilter === opt.id ? opt.color : 'transparent',
-                    borderColor: vaxStatusFilter === opt.id ? opt.color : colors.border,
-                  }]}>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: vaxStatusFilter === opt.id ? '#fff' : colors.textSecondary }}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </>
-        )}
-
         {healthTab === 'vax' && (filteredVaxes.length === 0
           ? <EmptyState Icon={Syringe} label={vaxes.length === 0 ? 'No vaccine records yet' : 'No results — adjust filters'} colors={colors} />
           : filteredVaxes.map(vax => {
@@ -1089,6 +1531,363 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
         onSave={addMed} members={members} colors={colors} isDark={isDark} />
       <AddVaxModal visible={showVaxModal} onClose={() => setShowVaxModal(false)}
         onSave={addVax} members={members} colors={colors} isDark={isDark} />
+
+      {/* ── Filter Bottom Sheet ─────────────────────── */}
+      <Modal visible={showFilterSheet} animationType="slide" transparent onRequestClose={() => setShowFilterSheet(false)}>
+        <TouchableOpacity style={hf.sheetOverlay} activeOpacity={1} onPress={() => setShowFilterSheet(false)} />
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}>
+          <View style={[hf.sheet, {
+            backgroundColor: isDark ? colors.background : '#FAFAFA',
+            borderColor: colors.border,
+          }]}>
+            {/* Handle */}
+            <View style={hf.sheetHandle} />
+
+            {/* Header */}
+            <View style={hf.sheetHeader}>
+              <Text style={{ fontSize: 17, fontWeight: '900', color: colors.textPrimary }}>
+                {healthTab === 'meds' ? 'Medication Filters' : 'Vaccine Filters'}
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity onPress={resetFilters}
+                  style={[hf.sheetHeaderBtn, { borderColor: BRAND.rose + '50', backgroundColor: BRAND.rose + '10' }]}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: BRAND.rose }}>Reset</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={applyFilters}
+                  style={[hf.sheetHeaderBtn, {
+                    backgroundColor: healthTab === 'meds' ? BRAND.purple : BRAND.teal,
+                    borderColor: 'transparent',
+                  }]}>
+                  <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>Apply</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, gap: 20, paddingBottom: 40 }}>
+              {healthTab === 'meds' ? (
+                <>
+                  {/* Search */}
+                  <View style={hf.fsSection}>
+                    <Text style={[hf.fsSectionTitle, { color: colors.textSecondary }]}>Search</Text>
+                    <View style={[hf.searchRow, { borderColor: colors.border, backgroundColor: isDark ? colors.card : '#F5F3FF' }]}>
+                      <TextInput value={draftMed.search} onChangeText={v => setDraftMed(d => ({ ...d, search: v }))}
+                        placeholder="Medication name…" placeholderTextColor={colors.textTertiary}
+                        style={[hf.searchInput, { color: colors.textPrimary }]} />
+                      {draftMed.search.length > 0 && (
+                        <TouchableOpacity onPress={() => setDraftMed(d => ({ ...d, search: '' }))}>
+                          <X size={14} color={colors.textTertiary} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Status */}
+                  <View style={hf.fsSection}>
+                    <Text style={[hf.fsSectionTitle, { color: colors.textSecondary }]}>Status</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {([
+                        { id: 'active',  label: 'Active',   color: BRAND.purple },
+                        { id: 'taken',   label: 'Taken Today', color: BRAND.emerald },
+                        { id: 'pending', label: 'Pending',  color: BRAND.amber },
+                        { id: 'overdue', label: 'Overdue',  color: BRAND.rose },
+                        { id: 'all',     label: 'All',      color: BRAND.blue },
+                      ] as const).map(opt => {
+                        const sel = draftMed.status === opt.id;
+                        return (
+                          <TouchableOpacity key={opt.id}
+                            onPress={() => setDraftMed(d => ({ ...d, status: opt.id }))}
+                            style={[hf.fsPill, { backgroundColor: sel ? opt.color : 'transparent', borderColor: sel ? opt.color : colors.border }]}>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? '#fff' : colors.textSecondary }}>
+                              {opt.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  {/* Members */}
+                  <View style={hf.fsSection}>
+                    <Text style={[hf.fsSectionTitle, { color: colors.textSecondary }]}>
+                      Members {draftMed.members.length > 0 ? `(${draftMed.members.length} selected)` : '(all)'}
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {members.map(m => {
+                        const mc = m.role === 'parent' ? BRAND.purple : m.role === 'senior' ? BRAND.blue : BRAND.emerald;
+                        const sel = draftMed.members.includes(m.id);
+                        return (
+                          <TouchableOpacity key={m.id}
+                            onPress={() => setDraftMed(d => ({
+                              ...d,
+                              members: sel ? d.members.filter(x => x !== m.id) : [...d.members, m.id],
+                            }))}
+                            style={[hf.fsMemberChip, { backgroundColor: sel ? mc + '20' : 'transparent', borderColor: sel ? mc : colors.border }]}>
+                            <MemberAvatar name={m.name} color={sel ? mc : colors.textTertiary} size={28} />
+                            <View>
+                              <Text style={{ fontSize: 13, fontWeight: '800', color: sel ? mc : colors.textPrimary }}>
+                                {m.name.split(' ')[0]}
+                              </Text>
+                              <Text style={{ fontSize: 10, color: colors.textTertiary, textTransform: 'capitalize' }}>{m.role}</Text>
+                            </View>
+                            {sel && <Check size={13} color={mc} style={{ marginLeft: 'auto' as any }} />}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  {/* Category */}
+                  <View style={hf.fsSection}>
+                    <Text style={[hf.fsSectionTitle, { color: colors.textSecondary }]}>Category</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {Object.entries(CAT_COLORS).map(([cat, color]) => {
+                        const sel = draftMed.categories.includes(cat);
+                        return (
+                          <TouchableOpacity key={cat}
+                            onPress={() => setDraftMed(d => ({
+                              ...d,
+                              categories: sel ? d.categories.filter(x => x !== cat) : [...d.categories, cat],
+                            }))}
+                            style={[hf.fsPill, { backgroundColor: sel ? color : 'transparent', borderColor: sel ? color : colors.border }]}>
+                            <Text style={{ fontSize: 13, fontWeight: '700', textTransform: 'capitalize',
+                              color: sel ? '#fff' : colors.textSecondary }}>{cat}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  {/* Frequency */}
+                  <View style={hf.fsSection}>
+                    <Text style={[hf.fsSectionTitle, { color: colors.textSecondary }]}>Frequency</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {Object.entries(FREQ_LABELS).map(([k, v]) => {
+                        const sel = draftMed.frequencies.includes(k);
+                        return (
+                          <TouchableOpacity key={k}
+                            onPress={() => setDraftMed(d => ({
+                              ...d,
+                              frequencies: sel ? d.frequencies.filter(x => x !== k) : [...d.frequencies, k],
+                            }))}
+                            style={[hf.fsPill, { backgroundColor: sel ? BRAND.teal : 'transparent', borderColor: sel ? BRAND.teal : colors.border }]}>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? '#fff' : colors.textSecondary }}>{v}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  {/* Toggles */}
+                  <View style={hf.fsSection}>
+                    <Text style={[hf.fsSectionTitle, { color: colors.textSecondary }]}>Options</Text>
+                    {[
+                      { key: 'ongoing',       label: 'Active / Ongoing only',          desc: 'Hide discontinued medications' },
+                      { key: 'refillSoon',    label: 'Refill due within 7 days',       desc: 'Show only meds needing refill soon' },
+                      { key: 'escalationOnly', label: 'Escalation alert enabled',      desc: 'Only meds with missed-dose alerts' },
+                    ].map(opt => {
+                      const val = draftMed[opt.key as keyof typeof draftMed] as boolean;
+                      return (
+                        <TouchableOpacity key={opt.key}
+                          onPress={() => setDraftMed(d => ({ ...d, [opt.key]: !val }))}
+                          style={[hf.fsToggleRow, { borderColor: val ? BRAND.purple + '40' : colors.border,
+                            backgroundColor: val ? BRAND.purple + '08' : 'transparent' }]}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }}>{opt.label}</Text>
+                            <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>{opt.desc}</Text>
+                          </View>
+                          <View style={[hf.toggle, { backgroundColor: val ? BRAND.purple : colors.border }]}>
+                            <View style={[hf.toggleThumb, { transform: [{ translateX: val ? 18 : 2 }] }]} />
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </>
+              ) : (
+                <>
+                  {/* Vax Search */}
+                  <View style={hf.fsSection}>
+                    <Text style={[hf.fsSectionTitle, { color: colors.textSecondary }]}>Search</Text>
+                    <View style={[hf.searchRow, { borderColor: colors.border, backgroundColor: isDark ? colors.card : '#F0FDFA' }]}>
+                      <TextInput value={draftVax.search} onChangeText={v => setDraftVax(d => ({ ...d, search: v }))}
+                        placeholder="Vaccine name…" placeholderTextColor={colors.textTertiary}
+                        style={[hf.searchInput, { color: colors.textPrimary }]} />
+                    </View>
+                  </View>
+
+                  {/* Vax Status */}
+                  <View style={hf.fsSection}>
+                    <Text style={[hf.fsSectionTitle, { color: colors.textSecondary }]}>Status</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {([
+                        { id: 'pending',  label: 'Pending',  color: BRAND.amber },
+                        { id: 'done',     label: 'Done',     color: BRAND.emerald },
+                        { id: 'due_soon', label: 'Due Soon', color: BRAND.rose },
+                        { id: 'all',      label: 'All',      color: BRAND.teal },
+                      ] as const).map(opt => {
+                        const sel = draftVax.status === opt.id;
+                        return (
+                          <TouchableOpacity key={opt.id}
+                            onPress={() => setDraftVax(d => ({ ...d, status: opt.id }))}
+                            style={[hf.fsPill, { backgroundColor: sel ? opt.color : 'transparent', borderColor: sel ? opt.color : colors.border }]}>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? '#fff' : colors.textSecondary }}>
+                              {opt.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+
+                    {draftVax.status === 'due_soon' && (
+                      <View style={{ marginTop: 10 }}>
+                        <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: '700', marginBottom: 6 }}>
+                          Due within: {draftVax.dueSoonDays} days
+                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          {[7, 14, 30, 60, 90].map(d => {
+                            const sel = draftVax.dueSoonDays === d;
+                            return (
+                              <TouchableOpacity key={d} onPress={() => setDraftVax(v => ({ ...v, dueSoonDays: d }))}
+                                style={[hf.fsPill, { backgroundColor: sel ? BRAND.teal : 'transparent', borderColor: sel ? BRAND.teal : colors.border }]}>
+                                <Text style={{ fontSize: 12, fontWeight: '700', color: sel ? '#fff' : colors.textSecondary }}>{d}d</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Vax Members */}
+                  <View style={hf.fsSection}>
+                    <Text style={[hf.fsSectionTitle, { color: colors.textSecondary }]}>
+                      Members {draftVax.members.length > 0 ? `(${draftVax.members.length} selected)` : '(all)'}
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {members.map(m => {
+                        const mc = m.role === 'parent' ? BRAND.purple : m.role === 'senior' ? BRAND.blue : BRAND.emerald;
+                        const sel = draftVax.members.includes(m.id);
+                        return (
+                          <TouchableOpacity key={m.id}
+                            onPress={() => setDraftVax(d => ({
+                              ...d,
+                              members: sel ? d.members.filter(x => x !== m.id) : [...d.members, m.id],
+                            }))}
+                            style={[hf.fsMemberChip, { backgroundColor: sel ? mc + '20' : 'transparent', borderColor: sel ? mc : colors.border }]}>
+                            <MemberAvatar name={m.name} color={sel ? mc : colors.textTertiary} size={28} />
+                            <View>
+                              <Text style={{ fontSize: 13, fontWeight: '800', color: sel ? mc : colors.textPrimary }}>
+                                {m.name.split(' ')[0]}
+                              </Text>
+                              <Text style={{ fontSize: 10, color: colors.textTertiary, textTransform: 'capitalize' }}>{m.role}</Text>
+                            </View>
+                            {sel && <Check size={13} color={mc} style={{ marginLeft: 'auto' as any }} />}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                </>
+              )}
+
+              {/* ── Export Section (inside filter sheet) ───── */}
+              <View style={[hf.fsSection, { borderTopWidth: 1, borderColor: colors.border, paddingTop: 20 }]}>
+                <Text style={[hf.fsSectionTitle, { color: colors.textSecondary }]}>Export Health Records</Text>
+                <Text style={{ fontSize: 12, color: colors.textTertiary, marginBottom: 12 }}>
+                  Generate a summary for the current filter selection and share it.
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowFilterSheet(false);
+                      // Build text report for current filtered data
+                      const targetMeds = healthTab === 'meds' ? filteredMeds : meds;
+                      const targetVaxes = healthTab === 'vax' ? filteredVaxes : vaxes;
+                      const selectedMemberIds = healthTab === 'meds'
+                        ? (draftMed.members.length ? draftMed.members : members.map(m => m.id))
+                        : (draftVax.members.length ? draftVax.members : members.map(m => m.id));
+
+                      const selectedMembers = members.filter(m => selectedMemberIds.includes(m.id));
+
+                      let report = `📋 FAMILY HEALTH RECORDS\nGenerated: ${new Date().toLocaleDateString()}\n`;
+                      report += `Members: ${selectedMembers.map(m => m.name).join(', ')}\n\n`;
+
+                      if (healthTab !== 'vax') {
+                        report += `━━━ MEDICATIONS (${targetMeds.length}) ━━━\n\n`;
+                        selectedMemberIds.forEach(mid => {
+                          const mName = memberName(mid);
+                          const mMeds = targetMeds.filter(m => m.member_id === mid);
+                          if (!mMeds.length) return;
+                          report += `👤 ${mName}\n`;
+                          mMeds.forEach(m => {
+                            report += `  • ${m.name} — ${m.dosage} ${m.dosage_unit}, ${FREQ_LABELS[m.frequency] ?? m.frequency}\n`;
+                            if (m.prescribing_doctor) report += `    Dr. ${m.prescribing_doctor}\n`;
+                            if (m.refill_date) report += `    Refill: ${m.refill_date}\n`;
+                            if (m.instructions) report += `    Note: ${m.instructions}\n`;
+                          });
+                          report += '\n';
+                        });
+                      }
+
+                      if (healthTab !== 'meds') {
+                        report += `━━━ IMMUNIZATIONS (${targetVaxes.length}) ━━━\n\n`;
+                        selectedMemberIds.forEach(mid => {
+                          const mName = memberName(mid);
+                          const mVax = targetVaxes.filter(v => v.member_id === mid);
+                          if (!mVax.length) return;
+                          report += `👤 ${mName}\n`;
+                          mVax.forEach(v => {
+                            const status = v.done ? '✓' : '○';
+                            report += `  ${status} ${v.title}${v.vaccine_type ? ` (${v.vaccine_type})` : ''} — ${v.date}\n`;
+                            if (v.next_due_date) report += `    Next due: ${v.next_due_date}\n`;
+                            if (v.series_total > 1) report += `    Dose ${v.series_current}/${v.series_total}\n`;
+                            if (v.administered_by) report += `    By: ${v.administered_by}\n`;
+                          });
+                          report += '\n';
+                        });
+                      }
+
+                      report += '⚠️ This report is for personal reference only. Always consult a healthcare provider.';
+                      useChatStore.getState().sendMessage('all', activeMember?.id ?? '', `📤 *Health Records Export*\n\n\`\`\`\n${report}\n\`\`\``);
+                    }}
+                    style={[hf.exportBtn, { borderColor: BRAND.purple + '60', backgroundColor: BRAND.purple + '10', flex: 1 }]}>
+                    <MessageSquare size={15} color={BRAND.purple} />
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: BRAND.purple }}>Share to Chat</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={async () => {
+                      // Build plain text and use Share API
+                      const { Share } = await import('react-native');
+                      const selectedMemberIds = healthTab === 'meds'
+                        ? (draftMed.members.length ? draftMed.members : members.map(m => m.id))
+                        : (draftVax.members.length ? draftVax.members : members.map(m => m.id));
+                      const selectedMembers = members.filter(m => selectedMemberIds.includes(m.id));
+                      let report = `FAMILY HEALTH RECORDS\nGenerated: ${new Date().toLocaleDateString()}\nMembers: ${selectedMembers.map(m => m.name).join(', ')}\n\n`;
+                      const targetMeds = filteredMeds.filter(m => selectedMemberIds.includes(m.member_id));
+                      const targetVaxes = filteredVaxes.filter(v => selectedMemberIds.includes(v.member_id));
+                      if (targetMeds.length) {
+                        report += `MEDICATIONS (${targetMeds.length})\n`;
+                        targetMeds.forEach(m => { report += `- ${m.name}: ${m.dosage} ${m.dosage_unit}, ${FREQ_LABELS[m.frequency] ?? m.frequency}\n`; });
+                        report += '\n';
+                      }
+                      if (targetVaxes.length) {
+                        report += `IMMUNIZATIONS (${targetVaxes.length})\n`;
+                        targetVaxes.forEach(v => { report += `- ${v.done ? '✓' : '○'} ${v.title} (${v.date})${v.next_due_date ? ` | Next: ${v.next_due_date}` : ''}\n`; });
+                      }
+                      report += '\n⚠️ For personal reference only.';
+                      Share.share({ message: report, title: 'Family Health Records' });
+                      setShowFilterSheet(false);
+                    }}
+                    style={[hf.exportBtn, { borderColor: BRAND.teal + '60', backgroundColor: BRAND.teal + '10', flex: 1 }]}>
+                    <Share2 size={15} color={BRAND.teal} />
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: BRAND.teal }}>Export / Share</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </>
   );
 }
@@ -1104,6 +1903,39 @@ const hf = StyleSheet.create({
                  paddingHorizontal: 12, paddingVertical: 9, marginTop: 12, gap: 8 },
   searchInput: { flex: 1, fontSize: 14, fontWeight: '600' },
   filterChip:  { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 10, paddingVertical: 5 },
+
+  // Filter sheet
+  sheetOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheet:        { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: 1,
+                  maxHeight: '88%', overflow: 'hidden' },
+  sheetHandle:  { width: 40, height: 4, borderRadius: 2, backgroundColor: '#CBD5E1',
+                  alignSelf: 'center', marginTop: 10 },
+  sheetHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 },
+  sheetHeaderBtn: { borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 7 },
+
+  // Filter sheet sections
+  fsSection:      { gap: 10 },
+  fsSectionTitle: { fontSize: 11, fontWeight: '900', letterSpacing: 0.8, textTransform: 'uppercase' },
+  fsPill:         { borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 7 },
+  fsMemberChip:   { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, borderWidth: 1.5,
+                    paddingHorizontal: 10, paddingVertical: 8 },
+  fsToggleRow:    { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14,
+                    borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12 },
+  toggle:         { width: 40, height: 22, borderRadius: 11, justifyContent: 'center' },
+  toggleThumb:    { width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
+                    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, elevation: 2 },
+
+  // Export button
+  exportBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+               borderRadius: 14, borderWidth: 1.5, paddingVertical: 11 },
+
+  // Active filter pill summary
+  filterIconBtn: { width: 44, height: 44, borderRadius: 14, borderWidth: 1.5,
+                   alignItems: 'center', justifyContent: 'center' },
+  filterBadge:   { position: 'absolute', top: -4, right: -4, width: 16, height: 16,
+                   borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  activePill:    { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 9, paddingVertical: 4 },
 });
 
 const h = StyleSheet.create({
@@ -1126,24 +1958,45 @@ const h = StyleSheet.create({
 });
 
 const aStyles = StyleSheet.create({
-  modal:       { flex: 1 },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                 paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12,
-                 borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#E5E7EB' },
-  modalTitle:  { fontSize: 18, fontWeight: '900' },
-  closeBtn:    { padding: 6 },
-  label:       { fontSize: 12, fontWeight: '700', marginBottom: 5 },
-  inp:         { borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 13, paddingVertical: 10,
-                 fontSize: 14, fontWeight: '600' },
-  memberChip:  { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 14, borderWidth: 1.5,
-                 paddingHorizontal: 10, paddingVertical: 6 },
-  chipSmall:   { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 10, paddingVertical: 5 },
-  saveRow:     { flexDirection: 'row', gap: 10, padding: 20, borderTopWidth: StyleSheet.hairlineWidth },
-  cancelBtn:   { flex: 1, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, alignItems: 'center' },
-  saveBtn:     { flex: 2, borderRadius: 14, paddingVertical: 13, alignItems: 'center' },
-  escBox:      { borderRadius: 14, borderWidth: 1.5, padding: 14 },
-  toggle:      { width: 40, height: 22, borderRadius: 11, justifyContent: 'center' },
-  toggleThumb: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
-                 shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, elevation: 2 },
+  // Bottom-sheet layout (matches EventFormModal)
+  backdrop:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheet:         { borderTopLeftRadius: 28, borderTopRightRadius: 28,
+                   paddingHorizontal: 20, paddingTop: 6, paddingBottom: 0,
+                   maxHeight: '92%' },
+  handle:        { width: 40, height: 4, borderRadius: 2, backgroundColor: '#CBD5E1' },
+  closeBtn:      { padding: 8, borderRadius: 20, backgroundColor: 'rgba(100,116,139,0.12)' },
+
+  // Form atoms
+  label:         { fontSize: 12, fontWeight: '700', marginBottom: 5 },
+  sectionLabel:  { fontSize: 11, fontWeight: '900', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 8 },
+  inp:           { borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 13, paddingVertical: 10,
+                   fontSize: 14, fontWeight: '600' },
+  chipSmall:     { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 10, paddingVertical: 5 },
+  suggPill:      { flexDirection: 'row', alignItems: 'center', borderRadius: 20, borderWidth: 1.5,
+                   paddingHorizontal: 12, paddingVertical: 6 },
+
+  // Date button (matches EventFormModal f.dateBtn)
+  dateBtn:       { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1.5,
+                   paddingHorizontal: 12, paddingVertical: 10 },
+
+  // Date picker modal (nested floating picker)
+  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  pickerCard:    { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 24 },
+
+  // Escalation box
+  escBox:        { borderRadius: 14, borderWidth: 1.5, padding: 14 },
+
+  // Footer
+  saveRow:       { flexDirection: 'row', gap: 10, paddingHorizontal: 0,
+                   paddingVertical: 16, borderTopWidth: StyleSheet.hairlineWidth },
+  cancelBtn:     { flex: 1, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, alignItems: 'center' },
+  saveBtn:       { flex: 2, borderRadius: 14, paddingVertical: 13, alignItems: 'center' },
+
+  // Kept for legacy (filter toggles in sheet use hf.toggle)
+  memberChip:    { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 14, borderWidth: 1.5,
+                   paddingHorizontal: 10, paddingVertical: 6 },
+  toggle:        { width: 40, height: 22, borderRadius: 11, justifyContent: 'center' },
+  toggleThumb:   { width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
+                   shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, elevation: 2 },
 });
 

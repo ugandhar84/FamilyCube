@@ -19,8 +19,9 @@ import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   Modal, KeyboardAvoidingView, Platform, StyleSheet, Alert,
-  Switch, ActivityIndicator,
+  Switch, ActivityIndicator, Pressable,
 } from 'react-native';
+import { supabase } from '@/lib/supabase';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
@@ -266,6 +267,13 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   const [customSuggestions,  setCustomSuggestions]  = useState<{ title: string; hint: string }[]>([]);
   const [customCategories,   setCustomCategories]   = useState<CustomCategory[]>([]);
 
+  // Grocery run attachment (Errand category)
+  const [linkGroceries,      setLinkGroceries]      = useState(false);
+  const [groceryItems,       setGroceryItems]        = useState<{ id: string; name: string; quantity?: string; category?: string; storePreference?: string }[]>([]);
+  const [selectedItemIds,    setSelectedItemIds]    = useState<Set<string>>(new Set());
+  const [loadingGroceries,   setLoadingGroceries]   = useState(false);
+  const [newGroceryLines,    setNewGroceryLines]    = useState<{ name: string; store: string }[]>([]);
+
   const familyId = activeMember?.familyId ?? '';
 
   useEffect(() => {
@@ -277,6 +285,24 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
     if (!familyId || category !== 'Other') return;
     fetchCustomSuggestions(familyId, 'event', 'Other').then(setCustomSuggestions);
   }, [familyId, category]);
+
+  useEffect(() => {
+    if (!linkGroceries || !familyId) return;
+    setLoadingGroceries(true);
+    supabase
+      .from('grocery_items')
+      .select('id, name, quantity, category, store_preference')
+      .eq('family_id', familyId)
+      .eq('is_bought', false)
+      .order('category')
+      .then(({ data }) => {
+        setGroceryItems((data ?? []).map((r: any) => ({
+          id: r.id, name: r.name, quantity: r.quantity ?? undefined,
+          category: r.category ?? undefined, storePreference: r.store_preference ?? undefined,
+        })));
+        setLoadingGroceries(false);
+      });
+  }, [linkGroceries, familyId]);
 
   // Merge system + family custom categories (after state is declared)
   const allCategories = [
@@ -340,6 +366,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
     setWorkType(''); setWorkLocation(''); setGeneralLocation('');
     setShowDatePick(false); setShowTimePick(false);
     setShowReturnDatePick(false); setShowReturnTimePick(false);
+    setLinkGroceries(false); setGroceryItems([]); setSelectedItemIds(new Set()); setNewGroceryLines([]);
   };
 
   // ── Validation ─────────────────────────────────────────────────────────────
@@ -394,6 +421,66 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
     // Persist custom title so it appears in future suggestions for this family
     if (category === 'Other' && finalTitle && familyId) {
       recordCustomSuggestion(familyId, 'event', 'Other', finalTitle);
+    }
+
+    // Create grocery run(s) when items are selected or new items typed
+    if (category === 'Errand' && linkGroceries && familyId) {
+      const hasExisting = selectedItemIds.size > 0;
+      const validNewLines = newGroceryLines.filter(l => l.name.trim());
+      if (hasExisting || validNewLines.length > 0) {
+        try {
+          // Insert new items to grocery_items first, collect their IDs
+          const newItemsByStore: Record<string, string[]> = {};
+          for (const line of validNewLines) {
+            const store = line.store.trim() || 'Any store';
+            const { data: inserted } = await supabase
+              .from('grocery_items')
+              .insert({ family_id: familyId, name: line.name.trim(), store_preference: line.store.trim() || null, added_by: activeMemberId ?? '', is_bought: false, ai_generated: false })
+              .select('id')
+              .single();
+            if (inserted?.id) {
+              if (!newItemsByStore[store]) newItemsByStore[store] = [];
+              newItemsByStore[store].push(inserted.id);
+            }
+          }
+
+          // Group existing selected items by store
+          const existingByStore: Record<string, string[]> = {};
+          for (const id of selectedItemIds) {
+            const item = groceryItems.find(i => i.id === id);
+            const store = item?.storePreference || 'Any store';
+            if (!existingByStore[store]) existingByStore[store] = [];
+            existingByStore[store].push(id);
+          }
+
+          // Merge all stores
+          const allStores = new Set([...Object.keys(existingByStore), ...Object.keys(newItemsByStore)]);
+
+          // Create one run per store
+          for (const store of allStores) {
+            const itemIds = [...(existingByStore[store] ?? []), ...(newItemsByStore[store] ?? [])];
+            if (itemIds.length === 0) continue;
+            const { data: runRow, error: runErr } = await supabase
+              .from('grocery_runs')
+              .insert({
+                family_id:  familyId,
+                name:       finalTitle,
+                store:      store === 'Any store' ? (generalLocation.trim() || 'Store') : store,
+                status:     'draft',
+                created_by: activeMemberId ?? '',
+                planned_at: localDateStr(eventDate),
+              })
+              .select('id')
+              .single();
+            if (!runErr && runRow?.id) {
+              const rows = itemIds.map(itemId => ({ run_id: runRow.id, item_id: itemId, checked_in_run: false }));
+              await supabase.from('grocery_run_items').insert(rows);
+            }
+          }
+        } catch (e: any) {
+          console.warn('[EventFormModal] grocery run creation failed', e?.message);
+        }
+      }
     }
 
     setSaving(false);
@@ -901,6 +988,150 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                     </Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* ── Link grocery list ── */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <Text style={[f.label, { color: colors.textSecondary, marginBottom: 0 }]}>🛍️ Attach grocery list</Text>
+                  <Switch
+                    value={linkGroceries}
+                    onValueChange={setLinkGroceries}
+                    trackColor={{ false: colors.border, true: catColor + '80' }}
+                    thumbColor={linkGroceries ? catColor : colors.textTertiary}
+                  />
+                </View>
+
+                {linkGroceries && (
+                  <>
+                    {/* ── Existing pending items ── */}
+                    {loadingGroceries ? (
+                      <ActivityIndicator color={catColor} style={{ marginVertical: 8 }} />
+                    ) : groceryItems.length > 0 ? (
+                      <>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                            From your list
+                          </Text>
+                          <Pressable onPress={() => {
+                            if (selectedItemIds.size === groceryItems.length) setSelectedItemIds(new Set());
+                            else setSelectedItemIds(new Set(groceryItems.map(i => i.id)));
+                          }}>
+                            <Text style={{ fontSize: 12, color: catColor, fontWeight: '700' }}>
+                              {selectedItemIds.size === groceryItems.length ? 'Deselect all' : 'Select all'}
+                            </Text>
+                          </Pressable>
+                        </View>
+                        {(() => {
+                          const groups: Record<string, typeof groceryItems> = {};
+                          for (const item of groceryItems) {
+                            const key = item.storePreference || 'Any store';
+                            if (!groups[key]) groups[key] = [];
+                            groups[key].push(item);
+                          }
+                          return Object.entries(groups)
+                            .sort(([a], [b]) => a === 'Any store' ? 1 : b === 'Any store' ? -1 : a.localeCompare(b))
+                            .map(([store, items]) => {
+                              const storeSelected = items.every(i => selectedItemIds.has(i.id));
+                              const storePartial  = !storeSelected && items.some(i => selectedItemIds.has(i.id));
+                              return (
+                                <View key={store} style={{ marginBottom: 10 }}>
+                                  <Pressable
+                                    onPress={() => {
+                                      const next = new Set(selectedItemIds);
+                                      if (storeSelected) items.forEach(i => next.delete(i.id));
+                                      else items.forEach(i => next.add(i.id));
+                                      setSelectedItemIds(next);
+                                    }}
+                                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+                                      backgroundColor: storeSelected ? catColor + '15' : (storePartial ? catColor + '08' : isDark ? '#252540' : '#F3F4F6'),
+                                      borderRadius: 10, paddingVertical: 7, paddingHorizontal: 12, marginBottom: 3,
+                                      borderWidth: 1, borderColor: storeSelected ? catColor + '60' : (storePartial ? catColor + '30' : colors.border) }}
+                                  >
+                                    <Text style={{ fontSize: 14 }}>🏪</Text>
+                                    <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: storeSelected ? catColor : colors.textPrimary }}>{store}</Text>
+                                    <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                                      {items.filter(i => selectedItemIds.has(i.id)).length}/{items.length}
+                                    </Text>
+                                    <View style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 2,
+                                      borderColor: (storeSelected || storePartial) ? catColor : colors.border,
+                                      backgroundColor: storeSelected ? catColor : 'transparent',
+                                      alignItems: 'center', justifyContent: 'center' }}>
+                                      {storeSelected && <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '900' }}>✓</Text>}
+                                      {storePartial && <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: catColor }} />}
+                                    </View>
+                                  </Pressable>
+                                  {items.map(item => {
+                                    const selected = selectedItemIds.has(item.id);
+                                    return (
+                                      <Pressable
+                                        key={item.id}
+                                        onPress={() => {
+                                          const next = new Set(selectedItemIds);
+                                          selected ? next.delete(item.id) : next.add(item.id);
+                                          setSelectedItemIds(next);
+                                        }}
+                                        style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: 12,
+                                          paddingLeft: 26, backgroundColor: selected ? catColor + '10' : colors.surface,
+                                          borderRadius: 8, marginBottom: 2,
+                                          borderWidth: 1, borderColor: selected ? catColor + '40' : colors.border }}
+                                      >
+                                        <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: 2,
+                                          borderColor: selected ? catColor : colors.border,
+                                          backgroundColor: selected ? catColor : 'transparent',
+                                          alignItems: 'center', justifyContent: 'center', marginRight: 9 }}>
+                                          {selected && <Text style={{ color: '#FFF', fontSize: 9, fontWeight: '900' }}>✓</Text>}
+                                        </View>
+                                        <Text style={{ flex: 1, fontSize: 13, color: colors.textPrimary, fontWeight: selected ? '600' : '400' }}>{item.name}</Text>
+                                        {item.quantity ? <Text style={{ fontSize: 11, color: colors.textSecondary }}>{item.quantity}</Text> : null}
+                                      </Pressable>
+                                    );
+                                  })}
+                                </View>
+                              );
+                            });
+                        })()}
+                      </>
+                    ) : null}
+
+                    {/* ── New items typed inline ── */}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: groceryItems.length > 0 ? 10 : 0, marginBottom: 6 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                        Add new items
+                      </Text>
+                      <Pressable onPress={() => setNewGroceryLines(prev => [...prev, { name: '', store: generalLocation.trim() || '' }])}
+                        style={{ backgroundColor: catColor, borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10 }}>
+                        <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '700' }}>+ Add item</Text>
+                      </Pressable>
+                    </View>
+                    {newGroceryLines.length === 0 ? (
+                      <Pressable onPress={() => setNewGroceryLines([{ name: '', store: generalLocation.trim() || '' }])}
+                        style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: catColor + '60', borderRadius: 10,
+                          paddingVertical: 12, alignItems: 'center' }}>
+                        <Text style={{ color: catColor, fontSize: 13 }}>+ Tap to add grocery items</Text>
+                      </Pressable>
+                    ) : (
+                      newGroceryLines.map((line, idx) => (
+                        <View key={idx} style={{ flexDirection: 'row', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                          <TextInput
+                            style={[f.input, { flex: 2, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border, marginBottom: 0 }]}
+                            placeholder="Item name" placeholderTextColor={colors.textTertiary}
+                            value={line.name}
+                            onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, name: v } : l))}
+                          />
+                          <TextInput
+                            style={[f.input, { flex: 1.2, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border, marginBottom: 0 }]}
+                            placeholder="Store" placeholderTextColor={colors.textTertiary}
+                            value={line.store}
+                            onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, store: v } : l))}
+                          />
+                          <Pressable onPress={() => setNewGroceryLines(prev => prev.filter((_, i) => i !== idx))}
+                            style={{ padding: 6 }}>
+                            <X c={colors.textTertiary} size={16} />
+                          </Pressable>
+                        </View>
+                      ))
+                    )}
+                  </>
+                )}
               </>
             )}
 

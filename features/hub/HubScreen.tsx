@@ -56,6 +56,14 @@ function fmtTime(t?: string) {
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 
+function hoursUntilEvent(dateStr: string, timeStr?: string): number {
+  if (!timeStr) return 999;
+  const [h, m] = timeStr.split(':').map(Number);
+  const ev = new Date(dateStr);
+  ev.setHours(h, m, 0, 0);
+  return (ev.getTime() - Date.now()) / 3600000;
+}
+
 const CAT_COLOR: Record<string, string> = {
   Medical: '#EF4444', Work: BRAND.purple, Sports: '#10B981',
   School: BRAND.amber, Study: '#3B82F6', Event: BRAND.teal,
@@ -148,8 +156,8 @@ function AlertBanner({ conflictEvents, rejectedEvents, members, colors, isDark, 
 
   return (
     <View style={{ marginHorizontal: 16, marginBottom: 12, gap: 8 }}>
-      {/* Declined driver cards */}
-      {rejectedEvents.map(ev => {
+      {/* Declined driver cards — only when event is within 4 hours */}
+      {rejectedEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) < 4).map(ev => {
         const kid = members.find(m => m.id === ev.memberId);
         const isOpen = openId === ev.id;
         return (
@@ -342,6 +350,138 @@ function SubCard({ children, accent, colors, isDark, style }: {
   );
 }
 
+function UrgencyBadge({ hours, hasIssue }: { hours: number; hasIssue: boolean }) {
+  if (!hasIssue) return null;
+  if (hours > 24) return (
+    <View style={{ backgroundColor: '#6B728020', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+      <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#6B7280' }}>Sort later</Text>
+    </View>
+  );
+  if (hours >= 4) return (
+    <View style={{ backgroundColor: BRAND.amber + '25', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.amber }}>⚠ Today</Text>
+    </View>
+  );
+  if (hours >= 0) return (
+    <View style={{ backgroundColor: '#EF444425', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>🔴 Now</Text>
+    </View>
+  );
+  return null;
+}
+
+/**
+ * TimelineCard — a single event row in the hero timeline.
+ * Shows urgency badge, kid avatar, Fix → / Remind inline actions.
+ */
+function TimelineCard({ ev, members, allNames, colors, isDark, updateEvent }: {
+  ev: FamilyEvent; members: FamilyMember[]; allNames: string[];
+  colors: any; isDark: boolean;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+}) {
+  const [fixOpen, setFixOpen] = useState(false);
+  const kid = members.find(m => m.id === ev.memberId);
+  const hours = hoursUntilEvent(ev.date, ev.time);
+  const isPast = hours < 0;
+
+  const hasDriver = !!ev.driver;
+  const hasLocation = !!ev.location;
+  const driverMissing = !hasDriver && hasLocation;
+  const driverRejected = ev.driverStatus === 'rejected';
+  const hasIssue = driverMissing || driverRejected;
+  const showFixBtn = hasIssue && hours < 24 && hours >= 0;
+  const showRemind = hasDriver && ev.driverStatus === 'pending';
+  const isConfirmed = hasDriver && ev.driverStatus === 'confirmed';
+  const chipColor = catColor(ev.category);
+
+  // Red left border for imminent issues
+  const leftBorderColor = (hasIssue && hours < 4 && hours >= 0) ? '#EF4444' : 'transparent';
+
+  return (
+    <View style={{
+      backgroundColor: isDark ? colors.card : '#FFFFFF',
+      borderRadius: 16, borderWidth: 1,
+      borderColor: isPast ? colors.border : (hasIssue && hours < 4 && hours >= 0) ? '#EF444445' : (isDark ? colors.border : '#E8E8F0'),
+      borderLeftWidth: 4, borderLeftColor: leftBorderColor,
+      overflow: 'hidden', opacity: isPast ? 0.5 : 1,
+      marginBottom: 10,
+    }}>
+      {/* Summary row */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 }}>
+        {/* Time */}
+        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isPast ? colors.textTertiary : colors.textPrimary, minWidth: 52 }}>
+          {ev.time ? fmtTime(ev.time) : '—'}
+        </Text>
+
+        {/* Kid avatar */}
+        {kid && (
+          <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl}
+            siblings={allNames} size={28} ringColor={chipColor} ringWidth={1.5} />
+        )}
+
+        {/* Content */}
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: isPast ? colors.textTertiary : colors.textPrimary }} numberOfLines={1}>
+            {isPast ? '✓ ' : ''}{ev.title}
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+            {kid && <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>{kid.name.split(' ')[0]}</Text>}
+            {ev.location && <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }} numberOfLines={1}>📍 {ev.location}</Text>}
+          </View>
+        </View>
+
+        {/* Right side: urgency badge OR driver status */}
+        {isPast ? (
+          <View style={{ backgroundColor: '#10B98120', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#10B981' }}>Done</Text>
+          </View>
+        ) : isConfirmed ? (
+          <View style={{ backgroundColor: '#10B98120', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+            <Ionicons name="checkmark-circle" size={12} color="#10B981" />
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#10B981' }}>Driver set</Text>
+          </View>
+        ) : showRemind ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ backgroundColor: BRAND.amber + '25', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+              <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: BRAND.amber }}>⏳ Awaiting</Text>
+            </View>
+            <Pressable style={{ backgroundColor: BRAND.amber + '20', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: BRAND.amber + '40' }}>
+              <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: BRAND.amber }}>Remind</Text>
+            </Pressable>
+          </View>
+        ) : hasIssue ? (
+          <UrgencyBadge hours={hours} hasIssue={true} />
+        ) : null}
+      </View>
+
+      {/* Fix → action row (only when issue + < 24h) */}
+      {showFixBtn && (
+        <View style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
+          <Pressable onPress={() => setFixOpen(o => !o)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+              backgroundColor: '#EF444412', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7,
+              borderWidth: 1, borderColor: '#EF444430', alignSelf: 'flex-start' }}>
+            <Ionicons name={fixOpen ? 'chevron-up' : 'person-add-outline'} size={13} color="#EF4444" />
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>
+              {fixOpen ? 'Cancel' : 'Fix →'}
+            </Text>
+          </Pressable>
+
+          {fixOpen && (
+            <View style={{ marginTop: 10 }}>
+              <InlineReassignPanel ev={ev} members={members} colors={colors} isDark={isDark}
+                onDone={(name, note) => {
+                  updateEvent(ev.id, { driver: name, driverStatus: 'pending', notes: note || undefined });
+                  setFixOpen(false);
+                }} />
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
 const sc = StyleSheet.create({
   sectionLabel: {
     fontSize: TYPO.label, fontWeight: '700', textTransform: 'uppercase',
@@ -411,12 +551,13 @@ function EnRouteModal({ visible, onClose, kids, onDispatch }: {
 
 // ─── PARENT VIEW ──────────────────────────────────────────────────────────────
 /**
- * 5-section layout:
- *  1. Quick Action Tiles
- *  2. Conflict Detection Alerts   ← CollapsibleCards for each alert/request/quest
- *  3. Family Help Queue
- *  4. Dispatch En Route
- *  5. Today's Family Schedule     ← CollapsibleCards for each event
+ * Redesigned layout:
+ *  1. Today's Timeline (hero) — urgency-gated cards with inline Fix/Remind
+ *  2. Alert Banner — ONLY fires when hoursUntil < 4 AND driver missing/rejected
+ *  3. Quick Action Tiles
+ *  4. Action Needed — quest approvals + ride requests (no no-driver alerts)
+ *  5. Dispatch En Route
+ *  6. Family Support (collapsible)
  */
 function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpRequest, onEnRoute }: {
   active: FamilyMember; members: FamilyMember[];
@@ -428,6 +569,7 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
   const { quests, approveQuest } = useQuestStore();
   const { events, updateEvent } = useEventStore();
   const { items: groceryItems, load: loadGrocery } = useGroceryStore();
+  const [supportExpanded, setSupportExpanded] = useState(false);
 
   useEffect(() => { loadGrocery('family-1'); }, []);
 
@@ -438,29 +580,52 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
     .filter(e => e.date === today)
     .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
 
+  // Ride requests from kids awaiting parent approval
   const pendingRequests = events.filter(e => e.approvalPending);
-
-  const noDriverEvents = todayEvents.filter(e =>
-    e.memberId &&
-    members.find(m => m.id === e.memberId)?.role === 'kid' &&
-    (e.category === 'Sports' || e.category === 'School' || e.category === 'Medical') &&
-    e.location && !e.driver
-  );
 
   const awaitingApproval = quests.filter(q => q.status === 'pending_approval');
 
   const rejectedDriverEvents = todayEvents.filter(e => e.driverStatus === 'rejected');
   const conflictEvents       = todayEvents.filter(e => e.conflict);
-  const alertCount = noDriverEvents.length + pendingRequests.length + awaitingApproval.length + rejectedDriverEvents.length;
+
+  // Action Needed: quest approvals + ride requests only (no-driver alerts live on timeline)
+  const actionCount = pendingRequests.length + awaitingApproval.length;
+
+  // Banner fires only when hoursUntil < 4 AND driver missing/rejected
+  const urgentRejected = rejectedDriverEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) < 4);
+  const showBanner = conflictEvents.length > 0 || urgentRejected.length > 0;
+
   const pad = { paddingHorizontal: 16 };
 
   return (
     <>
-      {/* ── 0. FIRE BANNER — conflicts / rejected drivers that need action NOW ── */}
-      {(conflictEvents.length > 0 || rejectedDriverEvents.length > 0) && (
+      {/* ── 1. Today's Timeline — HERO ── */}
+      <View style={pad}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+            Today's Timeline
+          </Text>
+          <Pressable onPress={() => router.push('/(tabs)/calendar')}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>Full →</Text>
+          </Pressable>
+        </View>
+
+        {todayEvents.length === 0 ? (
+          <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderRadius: 16, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', alignItems: 'center', paddingVertical: 28, marginBottom: 12 }}>
+            <Text style={{ fontSize: 28, marginBottom: 6 }}>📅</Text>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textTertiary }}>All clear — no events today</Text>
+          </View>
+        ) : todayEvents.map(ev => (
+          <TimelineCard key={ev.id} ev={ev} members={members} allNames={allNames}
+            colors={colors} isDark={isDark} updateEvent={updateEvent} />
+        ))}
+      </View>
+
+      {/* ── 2. Alert Banner — only when imminent (< 4h) AND driver issue ── */}
+      {showBanner && (
         <AlertBanner
           conflictEvents={conflictEvents}
-          rejectedEvents={rejectedDriverEvents}
+          rejectedEvents={urgentRejected}
           members={members}
           colors={colors}
           isDark={isDark}
@@ -468,7 +633,7 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
         />
       )}
 
-      {/* ── 1. Quick Action Tiles — bare colored tiles, no wrapper ── */}
+      {/* ── 3. Quick Action Tiles ── */}
       <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginBottom: 12 }}>
         {[
           { icon: '📋', label: 'Scan Flyer', color: BRAND.purple,  action: onScanFlyer },
@@ -489,39 +654,12 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
         ))}
       </View>
 
-      {/* ── 2. Needs Attention — no driver + ride requests + quest approvals ── */}
-      {alertCount > 0 && (
+      {/* ── 4. Action Needed — quest approvals + ride requests from kids ── */}
+      {actionCount > 0 && (
         <View style={pad}>
           <SectionCard icon="⚡" title="Action Needed"
-            badge={alertCount} badgeColor="#EF4444"
+            badge={actionCount} badgeColor="#EF4444"
             colors={colors} isDark={isDark}>
-
-            {/* No driver assigned for kid events today */}
-            {noDriverEvents.map(ev => {
-              const kid = members.find(m => m.id === ev.memberId);
-              return (
-                <CollapsibleCard key={ev.id} accent="#EF4444" colors={colors} isDark={isDark} defaultExpanded={true}
-                  summary={
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: 16 }}>🚗</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#EF4444' }} numberOfLines={1}>
-                          No driver — {ev.title}
-                        </Text>
-                        <Text style={{ fontSize: TYPO.label, color: '#EF4444', opacity: 0.8 }}>
-                          {kid?.name.split(' ')[0] ?? 'Kid'} · {fmtTime(ev.time)}{ev.location ? ` · ${ev.location}` : ''}
-                        </Text>
-                      </View>
-                      <View style={{ backgroundColor: '#EF444430', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>🔴 Urgent</Text>
-                      </View>
-                    </View>
-                  }>
-                  <InlineReassignPanel ev={ev} members={members} colors={colors} isDark={isDark}
-                    onDone={(name, note) => updateEvent(ev.id, { driver: name, driverStatus: 'pending', notes: note || undefined })} />
-                </CollapsibleCard>
-              );
-            })}
 
             {/* Pending ride requests from kids */}
             {pendingRequests.map(ev => {
@@ -603,39 +741,7 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
         </View>
       )}
 
-      {/* ── 3. Family Support & Help Queue ── */}
-      <View style={pad}>
-        <View style={{
-          backgroundColor: isDark ? colors.card : '#fff',
-          borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
-          padding: 16, marginBottom: 12,
-        }}>
-          {/* Header row */}
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 18 }}>?</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary, lineHeight: 20 }}>
-                Family Support &{'\n'}Help Queue
-              </Text>
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-                Kids ask for assistance &{'\n'}parents approve/self-assign
-              </Text>
-            </View>
-            <Pressable onPress={onHelpRequest}
-              style={{ backgroundColor: BRAND.purple, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ fontSize: 16, color: '#fff' }}>+</Text>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Ask for Help</Text>
-            </Pressable>
-          </View>
-
-          {/* Queue items */}
-          <HelpQueueSection onRequestHelp={onHelpRequest} hideAskButton />
-        </View>
-      </View>
-
-      {/* ── 4. Dispatch En Route — standalone teal card ── */}
+      {/* ── 5. Dispatch En Route — standalone teal card ── */}
       <View style={pad}>
         <Pressable onPress={onEnRoute} style={{
           backgroundColor: isDark ? '#0D2B1F' : '#E8FBF4',
@@ -653,94 +759,40 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
         </Pressable>
       </View>
 
-      {/* ── 5. Today's Timeline ── */}
+      {/* ── 6. Family Support — collapsed by default ── */}
       <View style={pad}>
-        <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10 }}>
-          Today's Timeline
-        </Text>
-
-        {todayEvents.length === 0 ? (
-          <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderRadius: 16, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', alignItems: 'center', paddingVertical: 28 }}>
-            <Text style={{ fontSize: 28, marginBottom: 6 }}>📅</Text>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textTertiary }}>All clear — no events today</Text>
-          </View>
-        ) : todayEvents.map((ev, idx) => {
-          const chipColor = catColor(ev.category);
-          const dotColor  = ev.conflict ? BRAND.amber : chipColor;
-          const isLast    = idx === todayEvents.length - 1;
-          const lineColor = isDark ? colors.border : '#D1D5DB';
-
-          return (
-            /* Each item: [dot+line | card] */
-            <View key={ev.id} style={{ flexDirection: 'row', gap: 10, marginBottom: isLast ? 0 : 10 }}>
-
-              {/* Left column: dot at top, line fills to bottom */}
-              <View style={{ width: 20, alignItems: 'center' }}>
-                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: dotColor, marginTop: 16, zIndex: 1 }} />
-                {!isLast && (
-                  <View style={{ flex: 1, width: 2, backgroundColor: lineColor, marginTop: 4 }} />
-                )}
-              </View>
-
-              {/* Event card */}
-              <View style={{
-                flex: 1,
-                backgroundColor: isDark ? colors.card : '#fff',
-                borderRadius: 16, borderWidth: 1,
-                borderColor: ev.conflict ? BRAND.amber + '60' : isDark ? colors.border : '#E8E8F0',
-                padding: 14,
-              }}>
-                {/* Category chip + time */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <View style={{ backgroundColor: chipColor + '22', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4 }}>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: chipColor, textTransform: 'uppercase', letterSpacing: 0.6 }}>
-                      {ev.category ?? 'Event'}
-                    </Text>
-                  </View>
-                  {ev.time && (
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
-                      {fmtTime(ev.time)}
-                    </Text>
-                  )}
-                </View>
-
-                {/* Event title */}
-                <Text style={{ fontSize: TYPO.subheading, fontWeight: '800', color: colors.textPrimary, marginBottom: 4 }} numberOfLines={1}>
-                  {ev.title}
-                </Text>
-
-                {/* Driver row */}
-                {ev.driver ? (
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                    🚗 <Text style={{ fontWeight: '700', color: colors.textPrimary }}>Driver: {ev.driver}</Text>
-                    {ev.driverStatus === 'confirmed' && <Text style={{ color: '#10B981' }}> ✓</Text>}
-                    {ev.driverStatus === 'pending'   && <Text style={{ color: BRAND.amber }}> ⏳</Text>}
-                    {ev.driverStatus === 'rejected'  && <Text style={{ color: '#EF4444' }}> ✕</Text>}
-                  </Text>
-                ) : ev.location ? (
-                  <Text style={{ fontSize: TYPO.label, color: '#EF4444', fontWeight: '700' }}>⚠ No driver assigned</Text>
-                ) : null}
-
-                {ev.location && (
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>📍 {ev.location}</Text>
-                )}
-
-                {ev.conflict && (
-                  <Pressable onPress={() => router.push('/(tabs)/calendar')}
-                    style={{ marginTop: 8, backgroundColor: BRAND.amber, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7, alignSelf: 'flex-start' }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>Resolve Conflict</Text>
-                  </Pressable>
-                )}
-                {ev.driverStatus === 'rejected' && (
-                  <Pressable onPress={() => router.push('/(tabs)/calendar')}
-                    style={{ marginTop: 8, backgroundColor: '#EF4444', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7, alignSelf: 'flex-start' }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>Reassign Driver</Text>
-                  </Pressable>
-                )}
-              </View>
+        <View style={{
+          backgroundColor: isDark ? colors.card : '#fff',
+          borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
+          overflow: 'hidden', marginBottom: 12,
+        }}>
+          <Pressable onPress={() => setSupportExpanded(e => !e)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
+            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 18 }}>?</Text>
             </View>
-          );
-        })}
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>
+                Family Support &amp; Help Queue
+              </Text>
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+                Kids ask for assistance · parents approve
+              </Text>
+            </View>
+            <Ionicons name={supportExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textTertiary} />
+          </Pressable>
+
+          {supportExpanded && (
+            <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 12 }}>
+              <Pressable onPress={onHelpRequest}
+                style={{ backgroundColor: BRAND.purple, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }}>
+                <Text style={{ fontSize: 16, color: '#fff' }}>+</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Ask for Help</Text>
+              </Pressable>
+              <HelpQueueSection onRequestHelp={onHelpRequest} hideAskButton />
+            </View>
+          )}
+        </View>
       </View>
     </>
   );

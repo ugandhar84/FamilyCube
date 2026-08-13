@@ -31,6 +31,9 @@ export interface ChatMessage {
   voiceDuration?: number; // seconds
   // Location pin
   locationPin?: { address: string; lat: number; lng: number };
+  // Document attachment
+  documentUri?: string;
+  documentName?: string;
 }
 
 // DB row shape — "text" column stores AES-256-GCM ciphertext
@@ -50,6 +53,9 @@ interface DBRow {
   duration_sec?: number | null;
   voice_duration?: number | null;
   voice_url?: string | null;
+  location_pin?: { address: string; lat: number; lng: number } | null;
+  document_url?: string | null;
+  document_name?: string | null;
 }
 
 const PAGE_SIZE    = 100;
@@ -69,7 +75,10 @@ async function rowToMessage(row: DBRow): Promise<ChatMessage> {
     replyTo:       row.reply_to ?? undefined,
     edited:        row.edited,
     voiceDuration: row.duration_sec ?? row.voice_duration ?? undefined,
-    voiceUri:      (row as any).voice_url ?? undefined,
+    voiceUri:      row.voice_url ?? undefined,
+    locationPin:   row.location_pin ?? undefined,
+    documentUri:   row.document_url ?? undefined,
+    documentName:  row.document_name ?? undefined,
   };
 }
 
@@ -102,6 +111,7 @@ interface ChatState {
     voiceDuration?: number,
     locationPin?: { address: string; lat: number; lng: number },
     voiceUri?: string,
+    documentUri?: string, documentName?: string,
   ) => Promise<void>;
 
   addReaction:   (channelId: string, messageId: string, emoji: string, memberId: string) => Promise<void>;
@@ -259,7 +269,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // ── Send ──────────────────────────────────────────────────────────────────
 
-  sendMessage: async (channelId, senderId, text, imageUri, mediaType, replyTo, voiceDuration, locationPin, voiceUri) => {
+  sendMessage: async (channelId, senderId, text, imageUri, mediaType, replyTo, voiceDuration, locationPin, voiceUri, documentUri, documentName) => {
     const ciphertext   = await encryptMessage(text);
     const blind_index  = await buildBlindIndex(text);
 
@@ -281,6 +291,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       voiceDuration,
       voiceUri,
       locationPin,
+      documentUri,
+      documentName,
     };
     get()._upsertMessage(channelId, optimistic);
 
@@ -298,6 +310,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         media_type:  mediaType ?? null,
         reply_to:    replyTo ? { id: replyTo.id, senderId: replyTo.senderId, text: replyTo.text } : null,
         duration_sec: voiceDuration != null ? Math.round(voiceDuration) : null,
+        location_pin: locationPin ?? null,
+        document_url:  documentUri ?? null,
+        document_name: documentName ?? null,
         // voice_url omitted from initial insert — added via background update after upload
       };
       const { error } = await supabase.from('chat_messages').insert(row);

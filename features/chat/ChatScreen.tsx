@@ -14,12 +14,22 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, FlatList, Pressable, StyleSheet, TextInput,
   KeyboardAvoidingView, Platform, Modal, Alert, Image, Animated, Clipboard,
-  PanResponder,
+  PanResponder, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
+import * as DocumentPicker from 'expo-document-picker';
+import MapView, { Marker } from 'react-native-maps';
 import { useAudioRecorder, AudioModule, RecordingPresets, createAudioPlayer } from 'expo-audio';
-import { Ionicons } from '@expo/vector-icons';
+import {
+  Play, Pause, Trash2, Send, Square, CheckCheck, Search, X, XCircle,
+  ChevronDown, ChevronUp, CornerUpLeft, Copy, ShoppingCart, Pencil,
+  MessageSquare, Paperclip, Mic, Lock, ShieldCheck, Video, Plus,
+  Camera, Image as ImageIcon, MapPin, FileText,
+  type LucideIcon,
+} from 'lucide-react-native';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import AppHeader from '@/components/AppHeader';
@@ -282,7 +292,7 @@ function VoiceNoteBubble({ uri, msgId, duration, isMine, colors }: {
       <View style={{ width: 36, height: 36, borderRadius: 18,
         backgroundColor: isMine ? 'rgba(255,255,255,0.18)' : VOICE_COLOR + '22',
         alignItems: 'center', justifyContent: 'center' }}>
-        <Ionicons name={playing ? 'pause' : 'play'} size={18} color={color} />
+        {playing ? <Pause size={18} color={color} /> : <Play size={18} color={color} />}
       </View>
       {/* Waveform — live while playing, static fingerprint otherwise */}
       {playing
@@ -343,12 +353,12 @@ function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
       {/* Discard */}
       <Pressable onPress={onDiscard} style={{ width: 36, height: 36, borderRadius: 18,
         backgroundColor: '#EF444420', alignItems: 'center', justifyContent: 'center' }}>
-        <Ionicons name="trash-outline" size={19} color="#EF4444" />
+        <Trash2 size={19} color="#EF4444" />
       </Pressable>
       {/* Play/pause */}
       <Pressable onPress={toggle} style={{ width: 36, height: 36, borderRadius: 18,
         backgroundColor: VOICE_COLOR + '22', alignItems: 'center', justifyContent: 'center' }}>
-        <Ionicons name={playing ? 'pause' : 'play'} size={18} color={VOICE_COLOR} />
+        {playing ? <Pause size={18} color={VOICE_COLOR} /> : <Play size={18} color={VOICE_COLOR} />}
       </Pressable>
       {/* Waveform */}
       {playing
@@ -363,7 +373,7 @@ function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
       <Pressable onPress={onSend} style={{ width: 40, height: 40, borderRadius: 20,
         backgroundColor: VOICE_COLOR, alignItems: 'center', justifyContent: 'center',
         shadowColor: VOICE_COLOR, shadowOpacity: 0.4, shadowRadius: 8, elevation: 4 }}>
-        <Ionicons name="send" size={16} color="#fff" />
+        <Send size={16} color="#fff" />
       </Pressable>
     </View>
   );
@@ -414,7 +424,7 @@ function RecordingBar({ elapsed, isDark, onStop }: {
         style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#EF4444',
           alignItems: 'center', justifyContent: 'center',
           shadowColor: '#EF4444', shadowOpacity: 0.5, shadowRadius: 8, elevation: 4 }}>
-        <Ionicons name="stop" size={16} color="#fff" />
+        <Square size={16} color="#fff" fill="#fff" />
       </Pressable>
     </View>
   );
@@ -537,8 +547,8 @@ function CollapsibleText({ text, memberMap, myId, searchQuery, isMe, bubbleMeTxt
 
 // ─── Message bubble (WhatsApp style — rounded rect with tail) ────────────────
 
-const BUBBLE_R  = 16; // standard corners
-const BUBBLE_SM = 4;  // tail corner (first msg in group)
+const BUBBLE_R  = 18; // standard corners
+const BUBBLE_SM = 4;  // tail corner (last in group)
 
 function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, senderEmoji,
   senderColor, activeMemberId, memberMap, searchQuery, colors, isDark, highlighted,
@@ -551,11 +561,10 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
   searchQuery: string; colors: any; isDark: boolean;
   onLongPress: () => void; onDoubleTap: () => void; onSwipeRight: () => void;
 }) {
-  // iMessage-style: solid blue for mine, white/dark-card for others
-  const bubbleMe       = '#5B8DEF';
+  const bubbleMe       = colors.primary;
   const bubbleMeTxt    = '#FFFFFF';
-  const bubbleOther    = isDark ? '#2C2C3E' : '#FFFFFF';
-  const bubbleOtherTxt = isDark ? '#E2E8F0' : '#1A1A2E';
+  const bubbleOther    = isDark ? '#131927' : '#FFFFFF';
+  const bubbleOtherTxt = isDark ? '#E2E8F0' : '#0F172A';
   const tsColor        = isMe ? 'rgba(255,255,255,0.65)' : (isDark ? 'rgba(226,232,240,0.5)' : 'rgba(26,26,46,0.38)');
 
   const totalRx = Object.values(msg.reactions ?? {}).flat().length;
@@ -579,19 +588,19 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
   const highlightBorder = highlightAnim.interpolate({ inputRange: [0, 1], outputRange: ['transparent', '#F5A623'] });
   const highlightWidth  = highlightAnim.interpolate({ inputRange: [0, 0.05, 1], outputRange: [0, 2, 2] });
 
-  // WhatsApp style — tail on the last bubble of each group (sender side, bottom corner)
-  const btlr = BUBBLE_R;
-  const btrr = BUBBLE_R;
-  const bblr = isMe ? BUBBLE_R : (isGroupLast ? BUBBLE_SM : BUBBLE_R);
-  const bbrr = isMe ? (isGroupLast ? BUBBLE_SM : BUBBLE_R) : BUBBLE_R;
+  // Flat corner on the chat-side tip (last bubble in group)
+  const btlr = isMe ? BUBBLE_R : (isGroupFirst ? BUBBLE_SM : BUBBLE_R);
+  const btrr = isMe ? (isGroupFirst ? BUBBLE_SM : BUBBLE_R) : BUBBLE_R;
+  const bblr = BUBBLE_R;
+  const bbrr = BUBBLE_R;
 
-  // Timestamp + tick row — rendered BELOW the bubble
+  // Timestamp + tick — inline at bottom-right of bubble (WhatsApp style)
   const metaRow = (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3,
-      alignSelf: isMe ? 'flex-end' : 'flex-start', marginTop: 2, marginHorizontal: 4 }}>
+      alignSelf: 'flex-end', marginTop: 4, marginBottom: -2 }}>
       {msg.edited && <Text style={{ fontSize: 9, color: tsColor }}>edited · </Text>}
       <Text style={{ fontSize: 10, color: tsColor }}>{formatTime(msg.timestamp)}</Text>
-      {isMe && <Ionicons name="checkmark-done" size={13} color={isDark ? '#53BDEB' : '#34B7F1'} />}
+      {isMe && <CheckCheck size={13} color={isDark ? '#53BDEB' : '#34B7F1'} />}
     </View>
   );
 
@@ -606,7 +615,7 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
     <SwipeableBubble onSwipeRight={onSwipeRight} timeNode={swipeTimeNode}>
       <View style={{ flexDirection: isMe ? 'row-reverse' : 'row',
         alignItems: 'flex-end', gap: 6, paddingHorizontal: 10,
-        marginBottom: isGroupLast ? 6 : 1, marginTop: isGroupFirst ? 4 : 0 }}>
+        marginBottom: isGroupLast ? 14 : 3, marginTop: isGroupFirst ? 8 : 0 }}>
 
         {/* Avatar — shown only on last bubble of group for others */}
         {!isMe && (
@@ -620,8 +629,14 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
             : <View style={{ width: 34 }} />
         )}
 
-        <Animated.View style={{ maxWidth: '78%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 1,
+        <Animated.View style={{ maxWidth: '78%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 2,
           borderRadius: BUBBLE_R, borderWidth: highlightWidth, borderColor: highlightBorder }}>
+          {/* Sender name — above bubble, outside */}
+          {!isMe && isGroupFirst && (
+            <Text style={{ fontSize: 11, fontWeight: '800', color: senderColor, marginLeft: 4, marginBottom: 1 }}>
+              {senderName}
+            </Text>
+          )}
 
           {/* Bubble */}
           <Pressable
@@ -634,46 +649,49 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
               borderTopRightRadius: btrr,
               borderBottomLeftRadius: bblr,
               borderBottomRightRadius: bbrr,
+              borderWidth: isMe ? 0 : 1,
+              borderColor: isDark ? '#1E293B' : '#E2E8F0',
               overflow: 'hidden',
-              padding: isVoice ? 8 : 10,
-              paddingTop: (!isMe && isGroupFirst && !msg.replyTo) ? 6 : (msg.replyTo ? 0 : (isVoice ? 8 : 10)),
+              padding: isVoice ? 8 : 11,
+              minWidth: msg.replyTo ? 220 : undefined,
               shadowColor: '#000',
-              shadowOpacity: isMe ? 0 : (isDark ? 0.22 : 0.07),
-              shadowRadius: 3,
-              shadowOffset: { width: 0, height: 1 },
-              elevation: isMe ? 0 : 2,
+              shadowOpacity: isMe ? 0.18 : (isDark ? 0.25 : 0.06),
+              shadowRadius: isMe ? 6 : 3,
+              shadowOffset: { width: 0, height: isMe ? 2 : 1 },
+              elevation: isMe ? 3 : 1,
             }}
           >
-            {/* Reply quote — inside bubble, WhatsApp style */}
+            {/* Reply quote — WhatsApp inset card */}
             {msg.replyTo && (
               <Pressable onPress={onQuoteTap}
-                style={{ flexDirection: 'row', marginBottom: 6,
-                  marginLeft: -(isVoice ? 8 : 10), marginRight: -(isVoice ? 8 : 10),
-                  borderBottomWidth: StyleSheet.hairlineWidth,
-                  borderBottomColor: isMe ? 'rgba(255,255,255,0.2)' : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'),
+                style={{
+                  flexDirection: 'row',
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  marginBottom: 8,
+                  // Outgoing: dark navy card so it pops against purple
+                  // Incoming: very light tinted card against white/dark card
+                  backgroundColor: isMe
+                    ? (isDark ? '#1E1B4B' : '#2D1F6E')
+                    : (isDark ? '#0F172A' : '#EDE9FE'),
                 }}>
-                {/* Accent strip */}
-                <View style={{ width: 4, backgroundColor: isMe ? 'rgba(255,255,255,0.7)' : senderColor }} />
-                <View style={{ flex: 1, paddingHorizontal: 10, paddingVertical: 7,
-                  backgroundColor: isMe ? 'rgba(0,0,0,0.15)' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)') }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', marginBottom: 2,
-                    color: isMe ? 'rgba(255,255,255,0.9)' : senderColor }}>
+                {/* Accent strip — sender colour */}
+                <View style={{ width: 3, backgroundColor: senderColor }} />
+                <View style={{ flex: 1, paddingHorizontal: 9, paddingVertical: 7 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', marginBottom: 2,
+                    color: senderColor }}>
                     {memberMap[msg.replyTo.senderId]?.name?.split(' ')[0] ?? 'Family'}
                   </Text>
-                  <Text numberOfLines={1}
-                    style={{ fontSize: 12, color: isMe ? 'rgba(255,255,255,0.7)' : (isDark ? 'rgba(226,232,240,0.6)' : 'rgba(26,26,46,0.5)') }}>
+                  <Text numberOfLines={2} style={{ fontSize: 12, lineHeight: 16,
+                    color: isMe ? '#C4B5FD' : (isDark ? '#94A3B8' : '#6D28D9') }}>
                     {msg.replyTo.text || '🎙️ Voice note'}
                   </Text>
                 </View>
               </Pressable>
             )}
 
-            {/* Sender name — inside bubble, first line, iMessage style */}
-            {!isMe && isGroupFirst && (
-              <Text style={{ fontSize: 12, fontWeight: '800', color: senderColor, marginBottom: 3 }}>
-                {senderName}
-              </Text>
-            )}
+            {/* Sender name — shown outside/above bubble on first in group */}
+            {!isMe && isGroupFirst && false && null}
 
             {/* Voice note */}
             {isVoice && msg.voiceUri ? (
@@ -684,19 +702,83 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
               </Text>
             ) : (
               <>
+                {/* Location pin */}
+                {msg.locationPin && (
+                  <Pressable
+                    onPress={() => {
+                      const { lat, lng, address } = msg.locationPin!;
+                      const label = encodeURIComponent(address);
+                      const appleUrl  = `maps:0,0?q=${label}&ll=${lat},${lng}`;
+                      const googleUrl = `comgooglemaps://?q=${label}&center=${lat},${lng}`;
+                      const webUrl    = `https://maps.google.com/?q=${lat},${lng}`;
+                      Linking.canOpenURL(googleUrl)
+                        .then(can => Linking.openURL(can ? googleUrl : appleUrl))
+                        .catch(() => Linking.openURL(webUrl));
+                    }}
+                    style={{ borderRadius: 12, overflow: 'hidden', width: 230, marginHorizontal: -2 }}>
+                    {/* Map snapshot — non-interactive, tap handled by outer Pressable */}
+                    <MapView
+                      style={{ width: 230, height: 140 }}
+                      initialRegion={{ latitude: msg.locationPin.lat, longitude: msg.locationPin.lng, latitudeDelta: 0.004, longitudeDelta: 0.004 }}
+                      scrollEnabled={false} zoomEnabled={false}
+                      pitchEnabled={false} rotateEnabled={false}
+                      pointerEvents="none"
+                      legalLabelInsets={{ bottom: -999, right: -999 }}
+                    >
+                      <Marker coordinate={{ latitude: msg.locationPin.lat, longitude: msg.locationPin.lng }} />
+                    </MapView>
+                    {/* Address footer */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                      paddingHorizontal: 10, paddingVertical: 8,
+                      backgroundColor: isMe ? 'rgba(0,0,0,0.28)' : (isDark ? '#1e293b' : '#f1f5f9') }}>
+                      <MapPin size={13} color={isMe ? '#C4B5FD' : colors.primary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '700',
+                          color: isMe ? '#fff' : colors.textPrimary }} numberOfLines={1}>
+                          {msg.locationPin.address}
+                        </Text>
+                        <Text style={{ fontSize: 10, color: isMe ? 'rgba(255,255,255,0.55)' : colors.textTertiary }}>
+                          Tap to open in Maps
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                )}
+                {/* Document attachment */}
+                {msg.documentUri && (
+                  <Pressable onPress={() => Linking.openURL(msg.documentUri!)}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                    backgroundColor: isMe ? 'rgba(0,0,0,0.2)' : (isDark ? '#1e293b' : '#f1f5f9'),
+                    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, maxWidth: 220 }}>
+                    <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: '#F59E0B22',
+                      alignItems: 'center', justifyContent: 'center' }}>
+                      <FileText size={20} color="#F59E0B" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isMe ? '#fff' : colors.textPrimary }} numberOfLines={2}>
+                        {msg.documentName ?? 'Document'}
+                      </Text>
+                      <Text style={{ fontSize: 10, color: isMe ? 'rgba(255,255,255,0.6)' : colors.textTertiary }}>
+                        Tap to open
+                      </Text>
+                    </View>
+                  </Pressable>
+                )}
                 {/* Image / video */}
                 {msg.imageUri && (
-                  <View style={{ marginBottom: msg.text ? 6 : 0, borderRadius: 12, overflow: 'hidden' }}>
+                  <Pressable
+                    onPress={() => msg.mediaType === 'video' ? setVideoLightboxUri(msg.imageUri!) : setLightboxUri(msg.imageUri!)}
+                    style={{ marginBottom: msg.text ? 6 : 0, borderRadius: 12, overflow: 'hidden' }}>
                     <Image source={{ uri: msg.imageUri }} style={{ width: 210, height: 158 }} resizeMode="cover" />
                     {msg.mediaType === 'video' && (
                       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,
                         alignItems: 'center', justifyContent: 'center' }}>
                         <View style={{ backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 24, padding: 10 }}>
-                          <Ionicons name="play" size={22} color="#fff" />
+                          <Play size={22} color="#fff" fill="#fff" />
                         </View>
                       </View>
                     )}
-                  </View>
+                  </Pressable>
                 )}
                 {/* Text — collapse after 10 lines */}
                 {!!msg.text && (
@@ -712,10 +794,9 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
                 )}
               </>
             )}
+            {/* Time + tick — inside bubble, bottom-right (WhatsApp style) */}
+            {metaRow}
           </Pressable>
-
-          {/* Time + tick — below bubble */}
-          {metaRow}
 
           {/* Reaction chips */}
           {totalRx > 0 && (
@@ -760,16 +841,16 @@ function MessageActionSheet({ visible, msg, isMe, canEdit, colors, isDark, onClo
 }) {
   if (!msg) return null;
 
-  type Action = { icon: string; label: string; color: string; onPress: () => void };
+  type Action = { Icon: LucideIcon; label: string; color: string; onPress: () => void };
   const actions: Action[] = [
-    { icon: 'arrow-undo-outline', label: 'Reply',        color: colors.primary,       onPress: onReply },
-    { icon: 'copy-outline',       label: 'Copy Text',    color: colors.textSecondary, onPress: onCopy },
-    { icon: 'cart-outline',       label: 'Add to List',  color: '#10b981',            onPress: onAddGrocery },
+    { Icon: CornerUpLeft,  label: 'Reply',        color: colors.primary,       onPress: onReply },
+    { Icon: Copy,          label: 'Copy Text',    color: colors.textSecondary, onPress: onCopy },
+    { Icon: ShoppingCart,  label: 'Add to List',  color: '#10b981',            onPress: onAddGrocery },
     ...(isMe && canEdit ? [
-      { icon: 'pencil-outline',   label: 'Edit',         color: '#f59e0b',            onPress: onEdit },
+      { Icon: Pencil,      label: 'Edit',         color: '#f59e0b',            onPress: onEdit },
     ] : []),
     ...(isMe ? [
-      { icon: 'trash-outline',    label: 'Delete',       color: '#ef4444',            onPress: onDelete },
+      { Icon: Trash2,      label: 'Delete',       color: '#ef4444',            onPress: onDelete },
     ] : []),
   ];
 
@@ -799,7 +880,7 @@ function MessageActionSheet({ visible, msg, isMe, canEdit, colors, isDark, onClo
               style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 13, paddingHorizontal: 8, borderRadius: 12 }}>
               <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: a.color+'22',
                 alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name={a.icon as any} size={18} color={a.color} />
+                <a.Icon size={18} color={a.color} />
               </View>
               <Text style={{ fontSize: 15, fontWeight: '600', color: a.color }}>{a.label}</Text>
             </Pressable>
@@ -834,10 +915,10 @@ function GroceryModal({ visible, initialName, addedByMemberId, onClose, onAdd }:
         <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, gap: 16 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name="cart" size={20} color="#10b981" />
+              <ShoppingCart size={20} color="#10b981" />
               <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary }}>Add to Shopping List</Text>
             </View>
-            <Pressable onPress={onClose}><Ionicons name="close" size={20} color={colors.textSecondary} /></Pressable>
+            <Pressable onPress={onClose}><X size={20} color={colors.textSecondary} /></Pressable>
           </View>
           <View>
             <Text style={gm.label(colors)}>Item Name</Text>
@@ -882,7 +963,7 @@ function GroceryModal({ visible, initialName, addedByMemberId, onClose, onAdd }:
               <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancel</Text>
             </Pressable>
             <Pressable onPress={submit} style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: '#10b981', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Ionicons name="add" size={16} color="#fff" />
+              <Plus size={16} color="#fff" />
               <Text style={{ color: '#fff', fontWeight: '800' }}>Save to List</Text>
             </Pressable>
           </View>
@@ -910,7 +991,7 @@ function Sidebar({ colors, isDark, channelId, setChannelId, members, currentMemb
     <View style={{ width: 220, backgroundColor: bg, position: 'absolute', top: 0, bottom: 0, left: 0, zIndex: 50 }}>
       <View style={{ backgroundColor: headerBg, paddingHorizontal: 14, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <Text style={{ fontSize: 14, fontWeight: '800', color: '#e2e8f0' }}>💬 Family Chat</Text>
-        <Pressable onPress={onClose} style={{ padding: 4 }}><Ionicons name="close" size={18} color="#818cf8" /></Pressable>
+        <Pressable onPress={onClose} style={{ padding: 4 }}><X size={18} color="#818cf8" /></Pressable>
       </View>
       <View style={{ flex: 1, paddingHorizontal: 10, paddingTop: 14 }}>
         <Text style={{ fontSize: 10, fontWeight: '700', color: '#818cf8', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Channels</Text>
@@ -920,7 +1001,7 @@ function Sidebar({ colors, isDark, channelId, setChannelId, members, currentMemb
           return (
             <Pressable key={ch.id} onPress={() => { setChannelId(ch.id); onClose(); }}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 9, borderRadius: 10, marginBottom: 2, backgroundColor: isAct ? active : 'transparent' }}>
-              <Ionicons name="chatbubbles-outline" size={14} color={isAct ? '#fff' : '#818cf8'} />
+              <MessageSquare size={14} color={isAct ? '#fff' : '#818cf8'} />
               <Text style={{ fontSize: 13, fontWeight: isAct ? '700' : '500', color: isAct ? '#fff' : '#e2e8f0' }}>{ch.label}</Text>
             </Pressable>
           );
@@ -945,7 +1026,7 @@ function Sidebar({ colors, isDark, channelId, setChannelId, members, currentMemb
         })}
       </View>
       <View style={{ margin: 10, padding: 10, backgroundColor: isDark ? '#1e293b' : '#312e81', borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Ionicons name="shield-checkmark" size={16} color="#10b981" />
+        <ShieldCheck size={16} color="#10b981" />
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 11, fontWeight: '700', color: '#10b981' }}>E2E Encrypted</Text>
           <Text style={{ fontSize: 10, color: '#818cf8' }}>AES-256-GCM · passcode-wrapped key</Text>
@@ -978,6 +1059,11 @@ export default function ChatScreen() {
   const [attachType, setAttachType]       = useState<'image' | 'video'>('image');
   const [mentionQuery, setMentionQuery]   = useState<string | null>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [tipVisible, setTipVisible]       = useState(true);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [lightboxUri, setLightboxUri]       = useState<string | null>(null);
+  const [videoLightboxUri, setVideoLightboxUri] = useState<string | null>(null);
+  const videoPlayer = useVideoPlayer(videoLightboxUri, pl => { pl.loop = false; pl.play(); });
 
   // Voice recording
   const recorder        = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -1082,8 +1168,10 @@ export default function ChatScreen() {
       finalText = finalText.split(token).join(full);
     }
     pendingMentions.current = {};
-    sendMessage(channelId, activeMemberId, finalText, attachUri ?? undefined, attachUri ? attachType : undefined);
+    sendMessage(channelId, activeMemberId, finalText, attachUri ?? undefined, attachUri ? attachType : undefined, replyingTo ?? undefined);
     setText(''); setAttachUri(null); setReplyingTo(null); setMentionQuery(null);
+    // Scroll to newest (offset 0 on inverted list = visual bottom)
+    requestAnimationFrame(() => flatRef.current?.scrollToOffset({ offset: 0, animated: true }));
   };
 
   const pickImage = useCallback(async () => {
@@ -1109,13 +1197,36 @@ export default function ChatScreen() {
     if (!result.canceled && result.assets[0]) { setAttachUri(result.assets[0].uri); setAttachType('image'); }
   }, []);
 
-  const handleAttach = () => Alert.alert('Send Attachment', 'Choose an option', [
-    { text: '📷 Camera',           onPress: pickCamera },
-    { text: '🖼️ Photo Library',    onPress: pickImage },
-    { text: '🎥 Record Video',      onPress: recordVideo },
-    { text: '📄 File / Document',   onPress: () => Alert.alert('Coming Soon', 'File upload coming soon.') },
-    { text: 'Cancel', style: 'cancel' },
-  ]);
+  const sendDocument = useCallback(async () => {
+    if (!activeMemberId) return;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      sendMessage(channelId, activeMemberId, '', undefined, undefined, undefined, undefined, undefined, undefined, asset.uri, asset.name);
+    } catch {
+      Alert.alert('Could not open document picker');
+    }
+  }, [activeMemberId, channelId, sendMessage]);
+
+  const sendLocation = useCallback(async () => {
+    if (!activeMemberId) return;
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Location permission required'); return; }
+    try {
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude: lat, longitude: lng } = loc.coords;
+      const [geo] = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+      const address = geo
+        ? [geo.name, geo.street, geo.city, geo.region].filter(Boolean).join(', ')
+        : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      sendMessage(channelId, activeMemberId, '', undefined, undefined, undefined, undefined, { address, lat, lng });
+    } catch {
+      Alert.alert('Could not get location', 'Please try again.');
+    }
+  }, [activeMemberId, channelId, sendMessage]);
+
+  const handleAttach = () => setShowAttachMenu(v => !v);
 
   // ── Voice recording ──────────────────────────────────────────────────────
 
@@ -1228,40 +1339,49 @@ export default function ChatScreen() {
         </View>
       </View>
 
-      {/* ── Channel header ── */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, marginBottom: 6, gap: 8 }}>
+      {/* ── Channel sub-header: label + member avatars ── */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, gap: 8, backgroundColor: colors.card, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <Ionicons name="shield-checkmark" size={12} color="#10b981" />
+          <ShieldCheck size={12} color="#10b981" />
           <Text style={{ fontSize: 12, fontWeight: '800', color: colors.primary }} numberOfLines={1}>{channelLabel}</Text>
           <Text style={{ fontSize: 10, color: colors.textTertiary }}>· {members.length} members</Text>
         </View>
 
-        {/* Overlapping avatar ring */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
-          {members.slice(0, 4).map((m: any, i: number) => (
-            <View key={m.id} style={{ marginLeft: i === 0 ? 0 : -8, zIndex: members.length - i }}>
-              <FamilyAvatar
-                name={m.name ?? ''}
-                emoji={m.emoji}
-                avatarUrl={m.avatarUrl}
-                siblings={members.filter((o: any) => o.id !== m.id).map((o: any) => o.name ?? '')}
-                size={26}
-                ringColor={accentColor(m.id)}
-                ringWidth={2}
-                bgColor={accentColor(m.id) + '33'}
-              />
-            </View>
-          ))}
-          {members.length > 4 && (
+        {/* Avatar cluster — solid separator border so no ring bleed */}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {members.slice(0, 5).map((m: any, i: number) => {
+            const sep = colors.card;
+            return (
+              <View key={m.id} style={{
+                marginLeft: i === 0 ? 0 : -10,
+                zIndex: 10 - i,
+                width: 26, height: 26, borderRadius: 13,
+                borderWidth: 2, borderColor: sep,
+                overflow: 'hidden',
+              }}>
+                <FamilyAvatar
+                  name={m.name ?? ''}
+                  emoji={m.emoji}
+                  avatarUrl={m.avatarUrl}
+                  siblings={[]}
+                  size={22}
+                  ringColor={accentColor(m.id)}
+                  ringWidth={0}
+                  bgColor={accentColor(m.id) + '44'}
+                />
+              </View>
+            );
+          })}
+          {members.length > 5 && (
             <View style={{
+              marginLeft: -10, zIndex: 0,
               width: 26, height: 26, borderRadius: 13,
-              backgroundColor: colors.border,
+              backgroundColor: colors.surface,
               alignItems: 'center', justifyContent: 'center',
               borderWidth: 2, borderColor: colors.card,
-              marginLeft: -8,
             }}>
-              <Text style={{ fontSize: 9, fontWeight: '800', color: colors.textSecondary }}>
-                +{members.length - 4}
+              <Text style={{ fontSize: 8, fontWeight: '900', color: colors.textSecondary }}>
+                +{members.length - 5}
               </Text>
             </View>
           )}
@@ -1269,14 +1389,14 @@ export default function ChatScreen() {
 
         <Pressable onPress={() => setSearchOpen(v => !v)}
           style={[s.iconBtn, { backgroundColor: searchOpen ? colors.primaryLight : colors.surface, borderColor: searchOpen ? colors.primary : colors.border }]}>
-          <Ionicons name={searchOpen ? 'close' : 'search'} size={15} color={searchOpen ? colors.primary : colors.textSecondary} />
+          {searchOpen ? <X size={15} color={colors.primary} /> : <Search size={15} color={colors.textSecondary} />}
         </Pressable>
       </View>
 
       {/* ── Search bar ── */}
       <Animated.View style={{ height: searchHeight, overflow: 'hidden', paddingHorizontal: 14 }}>
         <View style={[s.searchWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Ionicons name="search" size={14} color={colors.textTertiary} />
+          <Search size={14} color={colors.textTertiary} />
           <TextInput value={searchQuery} onChangeText={setSearchQuery} placeholder="Search messages…"
             placeholderTextColor={colors.placeholder} autoFocus={searchOpen}
             style={{ flex: 1, fontSize: 13, color: colors.textPrimary, paddingVertical: 0 }} />
@@ -1290,14 +1410,14 @@ export default function ChatScreen() {
                 setSearchMatchIdx(next);
                 const idx = reversedItems.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
                 if (idx >= 0) flatRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
-              }}><Ionicons name="chevron-up" size={18} color={colors.primary} /></Pressable>
+              }}><ChevronUp size={18} color={colors.primary} /></Pressable>
               <Pressable onPress={() => {
                 const next = (searchMatchIdx + 1) % msgs.length;
                 setSearchMatchIdx(next);
                 const idx = reversedItems.findIndex(it => it.type === 'msg' && it.msg.id === msgs[next].id);
                 if (idx >= 0) flatRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
-              }}><Ionicons name="chevron-down" size={18} color={colors.primary} /></Pressable>
-              <Pressable onPress={() => setSearchQuery('')}><Ionicons name="close-circle" size={16} color={colors.textTertiary} /></Pressable>
+              }}><ChevronDown size={18} color={colors.primary} /></Pressable>
+              <Pressable onPress={() => setSearchQuery('')}><XCircle size={16} color={colors.textTertiary} /></Pressable>
             </>
           )}
         </View>
@@ -1307,13 +1427,37 @@ export default function ChatScreen() {
         {parentLocked ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 16 }}>
             <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: '#fef3c7', borderWidth: 2, borderColor: '#fbbf24', alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="lock-closed" size={30} color="#b45309" />
+              <Lock size={30} color="#b45309" />
             </View>
             <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' }}>🔒 Parents Vault</Text>
             <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>Restricted to parents. Switch profile to access.</Text>
           </View>
         ) : (
           <>
+            {/* ── Family coaching tip banner ── */}
+            {isParent && tipVisible && (
+              <View style={{
+                marginHorizontal: 12, marginTop: 6, marginBottom: 2,
+                borderRadius: 14, padding: 10,
+                backgroundColor: isDark ? '#1A1040' : '#F3F0FF',
+                borderWidth: 1, borderColor: isDark ? '#4B38B360' : '#6C5CE730',
+                flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+              }}>
+                <Text style={{ fontSize: 16, lineHeight: 20 }}>📌</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: colors.primary, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 }}>
+                    Family Goal Insights
+                  </Text>
+                  <Text style={{ fontSize: 11, color: colors.textSecondary, lineHeight: 16 }}>
+                    Break larger weekend chores into smaller 10-min steps to help kids build streaks without feeling overwhelmed!
+                  </Text>
+                </View>
+                <Pressable onPress={() => setTipVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={{ fontSize: 12, color: colors.textTertiary, fontWeight: '700' }}>✕</Text>
+                </Pressable>
+              </View>
+            )}
+
             {/* ── Messages — inverted so newest is always at visual bottom ── */}
             <FlatList
               ref={flatRef}
@@ -1324,6 +1468,7 @@ export default function ChatScreen() {
               style={{ backgroundColor: isDark ? '#13131F' : '#EEF2FF' }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
+              onTouchStart={() => showAttachMenu && setShowAttachMenu(false)}
               onScroll={({ nativeEvent: { contentOffset } }) => {
                 // In inverted list offset 0 = bottom; >200 means user scrolled up
                 setShowScrollBtn(contentOffset.y > 200);
@@ -1387,13 +1532,14 @@ export default function ChatScreen() {
             />
             {/* Scroll-to-bottom */}
             {showScrollBtn && (
-              <Pressable onPress={() => flatRef.current?.scrollToEnd({ animated: true })}
+              <Pressable onPress={() => flatRef.current?.scrollToOffset({ offset: 0, animated: true })}
                 style={{ position: 'absolute', bottom: 12, right: 16,
-                  width: 38, height: 38, borderRadius: 19,
-                  backgroundColor: isDark ? 'rgba(99,102,241,0.75)' : 'rgba(99,102,241,0.6)',
+                  width: 42, height: 42, borderRadius: 21,
+                  backgroundColor: colors.primary,
                   alignItems: 'center', justifyContent: 'center',
-                  shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, elevation: 4 }}>
-                <Ionicons name="chevron-down" size={20} color="#fff" />
+                  shadowColor: colors.primary, shadowOpacity: 0.4, shadowRadius: 8,
+                  shadowOffset: { width: 0, height: 3 }, elevation: 6 }}>
+                <ChevronDown size={22} color="#fff" />
               </Pressable>
             )}
 
@@ -1401,12 +1547,12 @@ export default function ChatScreen() {
             {replyingTo && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 8,
                 backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-                <Ionicons name="arrow-undo" size={16} color={colors.primary} />
+                <CornerUpLeft size={16} color={colors.primary} />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary }}>Reply to {memberMap[replyingTo.senderId]?.name?.split(' ')[0]}</Text>
                   <Text style={{ fontSize: 12, color: colors.textSecondary }} numberOfLines={1}>{replyingTo.text}</Text>
                 </View>
-                <Pressable onPress={() => setReplyingTo(null)}><Ionicons name="close" size={18} color={colors.textTertiary} /></Pressable>
+                <Pressable onPress={() => setReplyingTo(null)}><X size={18} color={colors.textTertiary} /></Pressable>
               </View>
             )}
 
@@ -1414,9 +1560,9 @@ export default function ChatScreen() {
             {editingMsg && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 8,
                 backgroundColor: isDark ? '#1e293b' : '#fef9c3', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#fbbf24' }}>
-                <Ionicons name="pencil" size={16} color="#f59e0b" />
+                <Pencil size={16} color="#f59e0b" />
                 <Text style={{ flex: 1, fontSize: 12, color: colors.textSecondary }} numberOfLines={1}>Editing: {editingMsg.text}</Text>
-                <Pressable onPress={() => { setEditingMsg(null); setText(''); }}><Ionicons name="close" size={18} color={colors.textTertiary} /></Pressable>
+                <Pressable onPress={() => { setEditingMsg(null); setText(''); }}><X size={18} color={colors.textTertiary} /></Pressable>
               </View>
             )}
 
@@ -1428,7 +1574,7 @@ export default function ChatScreen() {
                   <Image source={{ uri: attachUri }} style={{ width: 56, height: 56, borderRadius: 10 }} resizeMode="cover" />
                   {attachType === 'video' && (
                     <View style={{ position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' }}>
-                      <Ionicons name="videocam" size={16} color="#fff" />
+                      <Video size={16} color="#fff" />
                     </View>
                   )}
                 </View>
@@ -1436,7 +1582,7 @@ export default function ChatScreen() {
                   <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textPrimary }}>{attachType === 'video' ? '🎥 Video clip (≤10s)' : '🖼️ Image'}</Text>
                 </View>
                 <Pressable onPress={() => setAttachUri(null)} style={{ padding: 6 }}>
-                  <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
+                  <XCircle size={20} color={colors.textTertiary} />
                 </Pressable>
               </View>
             )}
@@ -1475,13 +1621,32 @@ export default function ChatScreen() {
               </View>
             )}
 
+            {/* ── Attach menu popup ── */}
+            {showAttachMenu && (
+              <View style={[s.attachMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                {([
+                  { Icon: Camera,    label: 'Camera',   color: '#6C5CE7', onPress: () => { setShowAttachMenu(false); pickCamera(); } },
+                  { Icon: ImageIcon, label: 'Photo',    color: '#10B981', onPress: () => { setShowAttachMenu(false); pickImage(); } },
+                  { Icon: Video,     label: 'Video',    color: '#EF4444', onPress: () => { setShowAttachMenu(false); recordVideo(); } },
+                  { Icon: FileText,  label: 'Document', color: '#F59E0B', onPress: () => { setShowAttachMenu(false); sendDocument(); } },
+                  { Icon: MapPin,    label: 'Location', color: '#3B82F6', onPress: () => { setShowAttachMenu(false); sendLocation(); } },
+                ] as { Icon: LucideIcon; label: string; color: string; onPress: () => void }[]).map(item => (
+                  <Pressable key={item.label} onPress={item.onPress} style={s.attachItem}>
+                    <View style={[s.attachIcon, { backgroundColor: item.color + '22' }]}>
+                      <item.Icon size={24} color={item.color} />
+                    </View>
+                    <Text style={[s.attachLabel, { color: colors.textSecondary }]}>{item.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
             {/* ── Input bar ── */}
             {!reviewing && !recording && (
               <View style={[s.inputBar, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
                 {/* Attach */}
-                <Pressable onPress={handleAttach}
-                  style={[s.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  <Ionicons name="attach" size={18} color={colors.textSecondary} />
+                <Pressable onPress={handleAttach} style={s.bareIconBtn}>
+                  <Paperclip size={20} color={colors.textSecondary} />
                 </Pressable>
 
                 {/* Text input */}
@@ -1499,26 +1664,20 @@ export default function ChatScreen() {
                   />
                 </View>
 
-                {/* Mic (hold to record) → Send (when text/attach ready) */}
+                {/* Mic → Send */}
                 {canSend ? (
                   <Pressable onPress={handleSend}
-                    style={[s.actionBtn, {
+                    style={[s.sendBtn, {
                       backgroundColor: colors.primary,
                       shadowColor: colors.primary,
-                      shadowOpacity: 0.4, shadowRadius: 6,
-                      shadowOffset: { width: 0, height: 2 }, elevation: 4,
+                      shadowOpacity: 0.35, shadowRadius: 8,
+                      shadowOffset: { width: 0, height: 3 }, elevation: 5,
                     }]}>
-                    <Ionicons name="send" size={18} color="#fff" />
+                    <Send size={17} color="#fff" />
                   </Pressable>
                 ) : (
-                  <Pressable
-                    onPress={startRecording}
-                    style={[s.actionBtn, {
-                      backgroundColor: colors.surface,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                    }]}>
-                    <Ionicons name="mic-outline" size={20} color={colors.textSecondary} />
+                  <Pressable onPress={startRecording} style={s.bareIconBtn}>
+                    <Mic size={22} color={colors.textSecondary} />
                   </Pressable>
                 )}
               </View>
@@ -1566,6 +1725,37 @@ export default function ChatScreen() {
         onClose={() => setGroceryMsg(null)}
         onAdd={item => { addGrocery(item); Alert.alert('✅ Added!', `"${item.name}" added to the shopping list.`); }}
       />
+
+      {/* ── Image lightbox ── */}
+      <Modal visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' }}
+          onPress={() => setLightboxUri(null)}>
+          {lightboxUri && (
+            <Image source={{ uri: lightboxUri }} style={{ width: '100%', height: '80%' }} resizeMode="contain" />
+          )}
+          <Pressable onPress={() => setLightboxUri(null)}
+            style={{ position: 'absolute', top: 56, right: 20, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 20, padding: 8 }}>
+            <X size={22} color="#fff" />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ── Video lightbox ── */}
+      <Modal visible={!!videoLightboxUri} transparent animationType="fade"
+        onRequestClose={() => setVideoLightboxUri(null)}>
+        <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
+          <VideoView
+            player={videoPlayer}
+            style={{ width: '100%', height: '55%' }}
+            contentFit="contain"
+            nativeControls
+          />
+          <Pressable onPress={() => setVideoLightboxUri(null)}
+            style={{ position: 'absolute', top: 56, right: 20, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 20, padding: 8 }}>
+            <X size={22} color="#fff" />
+          </Pressable>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1588,4 +1778,10 @@ const s = StyleSheet.create({
   input:      { flex: 1, fontSize: 14.5, lineHeight: 21, minHeight: 36, maxHeight: 111,
     paddingVertical: Platform.OS === 'ios' ? 8 : 4, textAlignVertical: 'top' },
   actionBtn:  { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end' },
+  sendBtn:    { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end' },
+  bareIconBtn:{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end' },
+  attachMenu: { flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 8, paddingVertical: 12, borderTopWidth: 1 },
+  attachItem: { alignItems: 'center', gap: 6, flex: 1 },
+  attachIcon: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  attachLabel:{ fontSize: 11, fontWeight: '700' },
 });

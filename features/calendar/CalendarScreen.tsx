@@ -1111,6 +1111,7 @@ export default function CalendarScreen() {
                 const isConf = ev.conflict;
                 const assignee = members.find(m => m.id === ev.memberId);
                 const isLast = idx === dayEvents.length - 1;
+                const isPast = ev.date < toDateStr(new Date());
                 return (
                   <View key={ev.id} style={{ flexDirection: 'row', minHeight: 56 }}>
 
@@ -1147,7 +1148,7 @@ export default function CalendarScreen() {
                         </Text>
                         {/* Category chip — always shown on right */}
                         <View style={{ backgroundColor: cs.dot + '1A', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: cs.dot + '44' }}>
-                          <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: cs.dot }}>{ev.category}</Text>
+                          <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: cs.dot }}>{isPast ? '✓ Done' : ev.category}</Text>
                         </View>
                         {isConf && <I.AlertTriangle c="#F59E0B" size={12} />}
                       </View>
@@ -1233,10 +1234,13 @@ export default function CalendarScreen() {
                 cat === 'Ride'    ? '🚗 Driven by'      :
                 '🤝 Organised by';
 
-              // RBAC checks
-              const canApproveRequest = isParent && ev.approvalPending;
-              const hasPendingHelper  = ev.helper && ev.helperStatus === 'pending';
-              const hasRejectedHelper = ev.helper && ev.helperStatus === 'rejected';
+              // Past events: read-only except notes
+              const isPast     = ev.date < toDateStr(new Date());
+
+              // RBAC checks (all blocked for past events)
+              const canApproveRequest = !isPast && isParent && ev.approvalPending;
+              const hasPendingHelper  = !isPast && !!(ev.helper && ev.helperStatus === 'pending');
+              const hasRejectedHelper = !isPast && !!(ev.helper && ev.helperStatus === 'rejected');
 
               // Which members to show in the picker depends on category
               const pickerMembers = (cat === 'Work')
@@ -1244,7 +1248,6 @@ export default function CalendarScreen() {
                 : members.filter(m => m.role === 'kid');
 
               // Swipe-delete eligibility: future event + parent (any) or kid own pending
-              const isPast     = ev.date < toDateStr(new Date());
               const canDelete  = !isPast && (isParent || (isKid && !!ev.approvalPending && ev.memberId === activeMemberId));
 
               const handleEvDelete = () => Alert.alert(
@@ -1310,7 +1313,7 @@ export default function CalendarScreen() {
                               {assignee.name.split(' ')[0]}
                             </Text>
                           </Text>
-                        ) : isParent && pickerMembers.length > 0 ? (
+                        ) : !isPast && isParent && pickerMembers.length > 0 ? (
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
                             <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>{forLabel}:</Text>
                             {pickerMembers.map(k => (
@@ -1386,7 +1389,7 @@ export default function CalendarScreen() {
                       </View>
                     )}
 
-                    {isKid && ev.approvalPending && (
+                    {!isPast && isKid && ev.approvalPending && (
                       <View style={[sc.approvalRow, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9', justifyContent: 'flex-start', gap: 6 }]}>
                         <I.AlertTriangle c="#F59E0B" size={12} />
                         <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#F59E0B' }}>Awaiting parent approval…</Text>

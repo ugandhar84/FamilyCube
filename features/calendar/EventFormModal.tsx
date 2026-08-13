@@ -27,6 +27,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, FamilyEvent, EventType, HelperStatus } from '@/store/eventStore';
 import { useGroceryStore } from '@/store/groceryStore';
+import { DEFAULT_GROCERY_ITEMS, DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -529,7 +530,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
 
             {/* ── Scrollable form fields (category included) ── */}
             <ScrollView
-              keyboardShouldPersistTaps="handled"
+              keyboardShouldPersistTaps="always"
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 48 }}
             >
@@ -570,7 +571,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
               value={title}
               onChangeText={setTitle}
               onFocus={() => setTitleFocused(true)}
-              onBlur={() => setTimeout(() => { if (!suggPressing.current) setTitleFocused(false); }, 200)}
+              onBlur={() => setTitleFocused(false)}
               returnKeyType="next"
             />
             {/* Suggestions */}
@@ -579,12 +580,11 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                 <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 6, fontWeight: '600' }}>
                   {title.trim() ? 'Matching — tap to fill' : 'Quick picks'}
                 </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
                   <View style={{ flexDirection: 'row', gap: 7 }}>
                     {suggestions.map((s, i) => (
                       <TouchableOpacity
                         key={i}
-                        onPressIn={() => { suggPressing.current = true; }}
                         onPress={() => applySuggestion(s)}
                         style={[f.suggPill, {
                           backgroundColor: title === s.title ? catColor + '20' : (isDark ? colors.surface : '#F5F4FA'),
@@ -1116,12 +1116,14 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                       </Pressable>
                     ) : (
                       newGroceryLines.map((line, idx) => {
+                        const allItemPool = [...new Set([...cachedItemNames, ...DEFAULT_GROCERY_ITEMS])];
+                        const allStorePool = [...new Set([...cachedStores, ...DEFAULT_GROCERY_STORES])];
                         const nameSuggs = line.name.trim().length > 0
-                          ? cachedItemNames.filter(n => n.toLowerCase().includes(line.name.toLowerCase()) && n.toLowerCase() !== line.name.toLowerCase()).slice(0, 4)
+                          ? allItemPool.filter(n => n.toLowerCase().includes(line.name.toLowerCase()) && n.toLowerCase() !== line.name.toLowerCase()).slice(0, 6)
                           : [];
                         const storeSuggs = line.store.trim().length === 0
-                          ? cachedStores.slice(0, 5)
-                          : cachedStores.filter(s => s.toLowerCase().includes(line.store.toLowerCase()) && s.toLowerCase() !== line.store.toLowerCase()).slice(0, 4);
+                          ? allStorePool.slice(0, 6)
+                          : allStorePool.filter(s => s.toLowerCase().includes(line.store.toLowerCase()) && s.toLowerCase() !== line.store.toLowerCase()).slice(0, 6);
                         const showNameSuggs  = focusedLineIdx === idx && focusedField === 'name'  && nameSuggs.length > 0;
                         const showStoreSuggs = focusedLineIdx === idx && focusedField === 'store' && storeSuggs.length > 0;
 
@@ -1149,7 +1151,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                             </View>
                             {/* Name suggestions */}
                             {showNameSuggs && (
-                              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+                              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" style={{ marginBottom: 4 }}>
                                 {nameSuggs.map(s => (
                                   <Pressable key={s} onPress={() => { setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, name: s } : l)); setFocusedField(null); }}
                                     style={{ backgroundColor: catColor + '15', borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10, marginRight: 6, borderWidth: 1, borderColor: catColor + '40' }}>
@@ -1169,7 +1171,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                             />
                             {/* Store suggestions */}
                             {showStoreSuggs && (
-                              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
+                              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" style={{ marginTop: 4 }}>
                                 {storeSuggs.map(s => (
                                   <Pressable key={s} onPress={() => { setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, store: s } : l)); setFocusedField(null); }}
                                     style={{ backgroundColor: isDark ? '#252540' : '#F3F4F6', borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10, marginRight: 6, borderWidth: 1, borderColor: colors.border }}>
@@ -1455,7 +1457,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
 
             {/* ── Scrollable body (editable fields only) ── */}
             <ScrollView
-              keyboardShouldPersistTaps="handled"
+              keyboardShouldPersistTaps="always"
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ gap: 12, paddingBottom: 12 }}
             >

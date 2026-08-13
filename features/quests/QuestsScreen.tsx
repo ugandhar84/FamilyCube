@@ -18,7 +18,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  TextInput, Modal, ActivityIndicator, Alert, Platform, Image, Animated, Switch,
+  TextInput, Modal, ActivityIndicator, Alert, Platform, Image, Animated, Switch, KeyboardAvoidingView,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -40,6 +40,7 @@ import { supabase } from '@/lib/supabase';
 import { useChatStore } from '@/store/chatStore';
 import { fetchCustomCategories, fetchCustomSuggestions, recordCustomSuggestion, CustomCategory } from '@/lib/familyCustomCategories';
 import { useGroceryStore } from '@/store/groceryStore';
+import { DEFAULT_GROCERY_ITEMS, DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 const I = {
@@ -481,6 +482,7 @@ const dm = StyleSheet.create({
 // ─── Add Quest Modal ──────────────────────────────────────────────────────────
 const ALL_CATEGORIES: QuestCategory[] = ['Kitchen', 'Room', 'Yard', 'School', 'Pet', 'Living Room', 'Garage', 'Bathroom', 'Laundry', 'Errand', 'Tech', 'Finance', 'Health', 'Garden', 'Car', 'Shopping', 'Cooking', 'Social', 'Creative', 'Other'];
 
+
 // ─── Collapsible quest card — header always visible, body expands on tap ─────
 function CollapsibleQuestCard({
   accentColor, cardBg, cardBord, header, children, onDoubleTap,
@@ -520,80 +522,80 @@ function CollapsibleQuestCard({
 }
 
 // ─── Quest title suggestion bank (category-tagged for auto-select) ────────────
-const QUEST_SUGGESTIONS: { title: string; category: QuestCategory; coins: number }[] = [
+const QUEST_SUGGESTIONS: { title: string; category: QuestCategory; coins: number; desc: string }[] = [
   // Kitchen
-  { title: 'Wash the dishes',          category: 'Kitchen',     coins: 20 },
-  { title: 'Load the dishwasher',      category: 'Kitchen',     coins: 15 },
-  { title: 'Unload the dishwasher',    category: 'Kitchen',     coins: 15 },
-  { title: 'Wipe down the counters',   category: 'Kitchen',     coins: 15 },
-  { title: 'Clean the stovetop',       category: 'Kitchen',     coins: 25 },
-  { title: 'Empty the trash',          category: 'Kitchen',     coins: 10 },
-  { title: 'Take out recycling',       category: 'Kitchen',     coins: 10 },
-  { title: 'Mop the kitchen floor',    category: 'Kitchen',     coins: 30 },
-  { title: 'Clean the microwave',      category: 'Kitchen',     coins: 20 },
-  { title: 'Refill the water filter',  category: 'Kitchen',     coins: 10 },
+  { title: 'Wash the dishes',          category: 'Kitchen',     coins: 20, desc: 'Wash all dishes in the sink, rinse and leave them to dry.' },
+  { title: 'Load the dishwasher',      category: 'Kitchen',     coins: 15, desc: 'Load all dirty dishes and run the dishwasher.' },
+  { title: 'Unload the dishwasher',    category: 'Kitchen',     coins: 15, desc: 'Put away all clean dishes from the dishwasher.' },
+  { title: 'Wipe down the counters',   category: 'Kitchen',     coins: 15, desc: 'Wipe all kitchen counters clean with a cloth.' },
+  { title: 'Clean the stovetop',       category: 'Kitchen',     coins: 25, desc: 'Scrub and wipe the stovetop until grease-free.' },
+  { title: 'Empty the trash',          category: 'Kitchen',     coins: 10, desc: 'Empty the kitchen trash bin and replace the bag.' },
+  { title: 'Take out recycling',       category: 'Kitchen',     coins: 10, desc: 'Collect and take out all recyclables to the bin.' },
+  { title: 'Mop the kitchen floor',    category: 'Kitchen',     coins: 30, desc: 'Sweep then mop the kitchen floor until clean.' },
+  { title: 'Clean the microwave',      category: 'Kitchen',     coins: 20, desc: 'Wipe inside and outside the microwave thoroughly.' },
+  { title: 'Refill the water filter',  category: 'Kitchen',     coins: 10, desc: 'Refill the water filter pitcher and put it back.' },
   // Room / Bedroom
-  { title: 'Make your bed',            category: 'Room',        coins: 10 },
-  { title: 'Tidy your room',           category: 'Room',        coins: 20 },
-  { title: 'Vacuum your bedroom',      category: 'Room',        coins: 25 },
-  { title: 'Organize your closet',     category: 'Room',        coins: 30 },
-  { title: 'Put away clean clothes',   category: 'Room',        coins: 15 },
+  { title: 'Make your bed',            category: 'Room',        coins: 10, desc: 'Make the bed neatly with pillows in place.' },
+  { title: 'Tidy your room',           category: 'Room',        coins: 20, desc: 'Pick up clutter, put items away, and straighten up the room.' },
+  { title: 'Vacuum your bedroom',      category: 'Room',        coins: 25, desc: 'Vacuum the entire bedroom floor including under the bed.' },
+  { title: 'Organize your closet',     category: 'Room',        coins: 30, desc: 'Sort and organize clothes and items in the closet.' },
+  { title: 'Put away clean clothes',   category: 'Room',        coins: 15, desc: 'Fold and put away all clean laundry in the right places.' },
   // Living Room
-  { title: 'Vacuum the living room',   category: 'Living Room', coins: 25 },
-  { title: 'Dust the shelves',         category: 'Living Room', coins: 20 },
-  { title: 'Tidy the couch cushions',  category: 'Living Room', coins: 10 },
-  { title: 'Wipe down the TV stand',   category: 'Living Room', coins: 15 },
+  { title: 'Vacuum the living room',   category: 'Living Room', coins: 25, desc: 'Vacuum the entire living room including under cushions.' },
+  { title: 'Dust the shelves',         category: 'Living Room', coins: 20, desc: 'Dust all shelves, surfaces, and decorative items.' },
+  { title: 'Tidy the couch cushions',  category: 'Living Room', coins: 10, desc: 'Fluff and arrange all couch cushions neatly.' },
+  { title: 'Wipe down the TV stand',   category: 'Living Room', coins: 15, desc: 'Wipe the TV stand and tidy up cables.' },
   // Bathroom
-  { title: 'Clean the toilet',         category: 'Bathroom',    coins: 30 },
-  { title: 'Scrub the bathtub',        category: 'Bathroom',    coins: 35 },
-  { title: 'Wipe the bathroom mirror', category: 'Bathroom',    coins: 15 },
-  { title: 'Replace toilet paper',     category: 'Bathroom',    coins: 5  },
-  { title: 'Empty bathroom trash',     category: 'Bathroom',    coins: 10 },
+  { title: 'Clean the toilet',         category: 'Bathroom',    coins: 30, desc: 'Scrub and disinfect the toilet bowl, seat, and exterior.' },
+  { title: 'Scrub the bathtub',        category: 'Bathroom',    coins: 35, desc: 'Scrub the bathtub and rinse until clean.' },
+  { title: 'Wipe the bathroom mirror', category: 'Bathroom',    coins: 15, desc: 'Clean the bathroom mirror until streak-free.' },
+  { title: 'Replace toilet paper',     category: 'Bathroom',    coins: 5,  desc: 'Replace empty rolls and stock spare toilet paper.' },
+  { title: 'Empty bathroom trash',     category: 'Bathroom',    coins: 10, desc: 'Empty the bathroom bin and replace the bag.' },
   // Laundry
-  { title: 'Do a load of laundry',     category: 'Laundry',     coins: 25 },
-  { title: 'Move laundry to dryer',    category: 'Laundry',     coins: 10 },
-  { title: 'Fold the laundry',         category: 'Laundry',     coins: 20 },
-  { title: 'Iron the clothes',         category: 'Laundry',     coins: 30 },
+  { title: 'Do a load of laundry',     category: 'Laundry',     coins: 25, desc: 'Sort, wash, and start a full load of laundry.' },
+  { title: 'Move laundry to dryer',    category: 'Laundry',     coins: 10, desc: 'Transfer wet clothes from washer to dryer and start it.' },
+  { title: 'Fold the laundry',         category: 'Laundry',     coins: 20, desc: 'Fold all clean dry laundry and set aside for putting away.' },
+  { title: 'Iron the clothes',         category: 'Laundry',     coins: 30, desc: 'Iron all clothes that need it and hang them up.' },
   // Yard / Garden
-  { title: 'Mow the lawn',             category: 'Yard',        coins: 50 },
-  { title: 'Rake the leaves',          category: 'Yard',        coins: 40 },
-  { title: 'Water the plants',         category: 'Garden',      coins: 15 },
-  { title: 'Pull out weeds',           category: 'Garden',      coins: 35 },
-  { title: 'Sweep the porch',          category: 'Yard',        coins: 20 },
-  { title: 'Take out the garbage bins',category: 'Yard',        coins: 15 },
+  { title: 'Mow the lawn',             category: 'Yard',        coins: 50, desc: 'Mow the entire lawn and collect the clippings.' },
+  { title: 'Rake the leaves',          category: 'Yard',        coins: 40, desc: 'Rake all fallen leaves and bag them for disposal.' },
+  { title: 'Water the plants',         category: 'Garden',      coins: 15, desc: 'Water all indoor and outdoor plants thoroughly.' },
+  { title: 'Pull out weeds',           category: 'Garden',      coins: 35, desc: 'Pull weeds from the garden beds and dispose of them.' },
+  { title: 'Sweep the porch',          category: 'Yard',        coins: 20, desc: 'Sweep the front and back porch clean.' },
+  { title: 'Take out the garbage bins',category: 'Yard',        coins: 15, desc: 'Wheel garbage and recycling bins to the curb for pickup.' },
   // Pet
-  { title: 'Feed the dog',             category: 'Pet',         coins: 15 },
-  { title: 'Walk the dog',             category: 'Pet',         coins: 25 },
-  { title: 'Clean the litter box',     category: 'Pet',         coins: 20 },
-  { title: 'Bathe the dog',            category: 'Pet',         coins: 40 },
-  { title: 'Refill pet water bowl',    category: 'Pet',         coins: 10 },
+  { title: 'Feed the dog',             category: 'Pet',         coins: 15, desc: 'Give the dog the correct portion of food and fresh water.' },
+  { title: 'Walk the dog',             category: 'Pet',         coins: 25, desc: 'Take the dog for a 20–30 minute walk.' },
+  { title: 'Clean the litter box',     category: 'Pet',         coins: 20, desc: 'Scoop and clean the litter box, replace litter if needed.' },
+  { title: 'Bathe the dog',            category: 'Pet',         coins: 40, desc: 'Give the dog a bath and dry them off properly.' },
+  { title: 'Refill pet water bowl',    category: 'Pet',         coins: 10, desc: 'Clean and refill the pet water bowl with fresh water.' },
   // School
-  { title: 'Finish homework',          category: 'School',      coins: 30 },
-  { title: 'Read for 20 minutes',      category: 'School',      coins: 20 },
-  { title: 'Study for the test',       category: 'School',      coins: 35 },
-  { title: 'Organize school bag',      category: 'School',      coins: 10 },
+  { title: 'Finish homework',          category: 'School',      coins: 30, desc: 'Complete all assigned homework and pack it in the school bag.' },
+  { title: 'Read for 20 minutes',      category: 'School',      coins: 20, desc: 'Read a book or assignment for at least 20 minutes.' },
+  { title: 'Study for the test',       category: 'School',      coins: 35, desc: 'Study the relevant material for the upcoming test.' },
+  { title: 'Organize school bag',      category: 'School',      coins: 10, desc: 'Pack the school bag with everything needed for tomorrow.' },
   // Errands / Shopping
-  { title: 'Grocery run',              category: 'Shopping',    coins: 40 },
-  { title: 'Pick up dry cleaning',     category: 'Errand',      coins: 20 },
-  { title: 'Drop off package',         category: 'Errand',      coins: 15 },
-  { title: 'Return library books',     category: 'Errand',      coins: 15 },
+  { title: 'Grocery run',              category: 'Shopping',    coins: 40, desc: 'Go to the grocery store and pick up the items on the list.' },
+  { title: 'Pick up dry cleaning',     category: 'Errand',      coins: 20, desc: 'Pick up the dry cleaning and bring it home.' },
+  { title: 'Drop off package',         category: 'Errand',      coins: 15, desc: 'Drop off the package at the post office or shipping location.' },
+  { title: 'Return library books',     category: 'Errand',      coins: 15, desc: 'Return all overdue or finished library books.' },
   // Cooking
-  { title: 'Cook dinner tonight',      category: 'Cooking',     coins: 50 },
-  { title: 'Make breakfast',           category: 'Cooking',     coins: 25 },
-  { title: 'Pack school lunches',      category: 'Cooking',     coins: 20 },
-  { title: 'Bake something special',   category: 'Cooking',     coins: 40 },
+  { title: 'Cook dinner tonight',      category: 'Cooking',     coins: 50, desc: 'Plan and cook a full dinner for the family.' },
+  { title: 'Make breakfast',           category: 'Cooking',     coins: 25, desc: 'Prepare a proper breakfast for everyone.' },
+  { title: 'Pack school lunches',      category: 'Cooking',     coins: 20, desc: 'Pack healthy lunches for school tomorrow.' },
+  { title: 'Bake something special',   category: 'Cooking',     coins: 40, desc: 'Bake a treat or dessert for the family to enjoy.' },
   // Car / Garage
-  { title: 'Wash the car',             category: 'Car',         coins: 40 },
-  { title: 'Vacuum the car interior',  category: 'Car',         coins: 30 },
-  { title: 'Organize the garage',      category: 'Garage',      coins: 50 },
+  { title: 'Wash the car',             category: 'Car',         coins: 40, desc: 'Wash and rinse the exterior of the car thoroughly.' },
+  { title: 'Vacuum the car interior',  category: 'Car',         coins: 30, desc: 'Vacuum all seats and floor mats inside the car.' },
+  { title: 'Organize the garage',      category: 'Garage',      coins: 50, desc: 'Sort and organize items in the garage, clear walkways.' },
   // Tech / Finance / Health
-  { title: 'Charge all devices',       category: 'Tech',        coins: 10 },
-  { title: 'Back up family photos',    category: 'Tech',        coins: 20 },
-  { title: 'Pay a bill online',        category: 'Finance',     coins: 15 },
-  { title: 'Go for a 30-min walk',     category: 'Health',      coins: 25 },
+  { title: 'Charge all devices',       category: 'Tech',        coins: 10, desc: 'Plug in and charge all family devices overnight.' },
+  { title: 'Back up family photos',    category: 'Tech',        coins: 20, desc: 'Back up recent photos to the cloud or external drive.' },
+  { title: 'Pay a bill online',        category: 'Finance',     coins: 15, desc: 'Log in and pay the specified bill before the due date.' },
+  { title: 'Go for a 30-min walk',     category: 'Health',      coins: 25, desc: 'Go outside for a brisk 30-minute walk.' },
   // Social / Creative
-  { title: 'Write a thank-you card',   category: 'Social',      coins: 20 },
-  { title: 'Draw or paint something',  category: 'Creative',    coins: 20 },
+  { title: 'Write a thank-you card',   category: 'Social',      coins: 20, desc: 'Write a heartfelt thank-you card and send or deliver it.' },
+  { title: 'Draw or paint something',  category: 'Creative',    coins: 20, desc: 'Create a drawing or painting to share with the family.' },
 ];
 
 // Format a Date as "June 25, 2026"
@@ -872,6 +874,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
     setTitle(s.title);
     setCategory(s.category);
     setCoins(String(s.coins));
+    setDesc(s.desc);
     setTitleFocused(false);
   };
 
@@ -901,6 +904,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
 
   const reset = () => {
     setTitle(''); setDesc(''); setCoins('30'); setBonusCoins(''); setDifficulty('');
+    setCategory('Kitchen');
     setAssignIds([]); setIsPool(false); setMaxClaimants(1);
     setPhotoReq(false); setDueDate(defaultDue()); setIsAdultTask(false);
     setShowDatePick(false); setShowTimePick(false);
@@ -1007,13 +1011,14 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={() => { reset(); onClose(); }}>
-      <View style={aq.backdrop}>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ justifyContent: 'flex-end', flexGrow: 1 }}>
-          <View style={[aq.sheet, { backgroundColor: colors.card }]}>
-            <View style={[aq.handle, { backgroundColor: colors.border }]} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={aq.backdrop}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { reset(); onClose(); }} />
+          <View style={[aq.sheet, { backgroundColor: colors.card, minHeight: '75%', maxHeight: '92%' }]}>
 
-            {/* Header */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            {/* ── Fixed: drag handle + header ── */}
+            <View style={[aq.handle, { backgroundColor: colors.border }]} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
               <View>
                 <Text style={[aq.title, { color: colors.textPrimary }]}>New Quest</Text>
                 <Text style={{ fontSize: TYPO.label, color: BRAND.purple, fontWeight: '700', marginTop: 1 }}>Assign a chore, bounty, or task</Text>
@@ -1027,6 +1032,9 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
               </TouchableOpacity>
             </View>
 
+            {/* ── Scrollable body ── */}
+            <ScrollView keyboardShouldPersistTaps="always" style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
+
             {/* Title */}
             <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
             <TextInput
@@ -1036,7 +1044,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
               value={title}
               onChangeText={setTitle}
               onFocus={() => setTitleFocused(true)}
-              onBlur={() => setTimeout(() => { if (!suggPressing.current) setTitleFocused(false); }, 250)}
+              onBlur={() => setTitleFocused(false)}
               returnKeyType="next"
             />
             {/* Dynamic suggestion pills — always visible */}
@@ -1045,7 +1053,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                 <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 5, fontWeight: '600' }}>
                   {title.trim() ? 'Matching suggestions' : 'Quick picks — tap to fill'}
                 </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
                   <View style={{ flexDirection: 'row', gap: 7 }}>
                     {suggestions.map((s, i) => (
                       <TouchableOpacity
@@ -1054,8 +1062,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                           backgroundColor: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple + '25' : colors.surface,
                           borderColor:     title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple : colors.border,
                         }]}
-                        onPressIn={() => { suggPressing.current = true; }}
-                        onPress={() => 'coins' in s ? applySuggestion(s) : (setTitle(s.title), suggPressing.current = false, setTitleFocused(false))}
+                        onPress={() => 'coins' in s ? applySuggestion(s) : setTitle(s.title)}
                       >
                         <Text style={{ fontSize: TYPO.micro + 1, color: colors.textSecondary, fontWeight: '600' }} numberOfLines={1}>
                           {s.title}
@@ -1185,7 +1192,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                     {/* New items inline */}
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: groceryItems.length > 0 ? 8 : 0, marginBottom: 6 }}>
                       <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Add new items</Text>
-                      <Pressable onPress={() => setNewGroceryLines(prev => [...prev, { name: '', qty: '', store: '' }])}
+                      <Pressable onPress={() => setNewGroceryLines(prev => [{ name: '', qty: '', store: '' }, ...prev])}
                         style={{ backgroundColor: BRAND.purple, borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10 }}>
                         <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '700' }}>+ Add item</Text>
                       </Pressable>
@@ -1196,8 +1203,14 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                         <Text style={{ color: BRAND.purple, fontSize: 13 }}>+ Tap to add grocery items</Text>
                       </Pressable>
                     ) : newGroceryLines.map((line, idx) => {
-                      const nameSuggs  = line.name.trim().length > 0 ? cachedItemNames.filter(n => n.toLowerCase().includes(line.name.toLowerCase()) && n.toLowerCase() !== line.name.toLowerCase()).slice(0, 4) : [];
-                      const storeSuggs = line.store.trim().length === 0 ? cachedStores.slice(0, 5) : cachedStores.filter(s => s.toLowerCase().includes(line.store.toLowerCase()) && s.toLowerCase() !== line.store.toLowerCase()).slice(0, 4);
+                      const allItemPool = [...new Set([...cachedItemNames, ...DEFAULT_GROCERY_ITEMS])];
+                      const allStorePool = [...new Set([...cachedStores, ...DEFAULT_GROCERY_STORES])];
+                      const nameSuggs  = line.name.trim().length > 0
+                        ? allItemPool.filter(n => n.toLowerCase().includes(line.name.toLowerCase()) && n.toLowerCase() !== line.name.toLowerCase()).slice(0, 6)
+                        : [];
+                      const storeSuggs = line.store.trim().length === 0
+                        ? allStorePool.slice(0, 6)
+                        : allStorePool.filter(s => s.toLowerCase().includes(line.store.toLowerCase()) && s.toLowerCase() !== line.store.toLowerCase()).slice(0, 6);
                       const showNameSuggs  = focusedLineIdx === idx && focusedField === 'name'  && nameSuggs.length > 0;
                       const showStoreSuggs = focusedLineIdx === idx && focusedField === 'store' && storeSuggs.length > 0;
                       return (
@@ -1222,7 +1235,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                             </Pressable>
                           </View>
                           {showNameSuggs && (
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" style={{ marginBottom: 4 }}>
                               {nameSuggs.map(s => (
                                 <Pressable key={s} onPress={() => { setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, name: s } : l)); setFocusedField(null); }}
                                   style={{ backgroundColor: BRAND.purple + '15', borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10, marginRight: 6, borderWidth: 1, borderColor: BRAND.purple + '40' }}>
@@ -1240,7 +1253,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                             onBlur={() => { setFocusedLineIdx(null); setFocusedField(null); }}
                           />
                           {showStoreSuggs && (
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" style={{ marginTop: 4 }}>
                               {storeSuggs.map(s => (
                                 <Pressable key={s} onPress={() => { setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, store: s } : l)); setFocusedField(null); }}
                                   style={{ backgroundColor: isDark ? '#252540' : '#F3F4F6', borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10, marginRight: 6, borderWidth: 1, borderColor: colors.border }}>
@@ -1555,16 +1568,17 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                     </Text>
                   </>}
             </TouchableOpacity>
+            </ScrollView>
           </View>
-        </ScrollView>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 const aq = StyleSheet.create({
   backdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
-  sheet:      { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
-  handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  sheet:      { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12 },
+  handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
   title:      { fontSize: TYPO.subheading, fontWeight: '900' },
   label:      { fontSize: TYPO.label, fontWeight: '700', marginBottom: 5 },
   input:      { borderWidth: 1, borderRadius: 12, padding: 10, fontSize: TYPO.caption, marginBottom: 12 },
@@ -1574,7 +1588,7 @@ const aq = StyleSheet.create({
   datePill:   { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, flex: 1 },
   pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 20 },
   pickerCard:    { borderRadius: 20, overflow: 'hidden', paddingBottom: 12 },
-  suggPill:   { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, maxWidth: 200 },
+  suggPill:   { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, maxWidth: 220 },
   diffChip:   { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 5 },
   descInput:  { minHeight: 72, marginBottom: 4 },
   submitBtn:  { borderRadius: 14, padding: 14, alignItems: 'center' },
@@ -2416,11 +2430,14 @@ export default function QuestsScreen() {
         store.reassignQuest(item.questId, item.targetKidId, activeMember?.id);
       }
     } else if (type === 'bounty') {
-      // AI suggested a new pool bounty — add it
+      const goPool = !item.assignedToId;
       store.addQuest({
         title: item.title, category: 'Other', priority: 'medium',
-        coins: item.coins ?? 20, xpReward: 15, isPool: true, isDaily: false,
-        recurrence: 'once', status: 'todo', assignedToIds: [], isAdultTask: false,
+        coins: item.coins ?? 20, xpReward: 15,
+        isPool: goPool, isDaily: false,
+        recurrence: 'once', status: 'todo',
+        assignedToIds: goPool ? [] : [item.assignedToId],
+        isAdultTask: false,
         dueDate: new Date().toISOString().split('T')[0], photoRequired: false,
         createdById: activeMember?.id,
       });

@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import {
   FolderOpen, Search, SlidersHorizontal, Lock, X, AlertCircle, RefreshCw,
+  Download, CheckSquare,
 } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
@@ -13,6 +14,7 @@ import RecordCard    from '../records/RecordCard';
 import AiReviewSheet from '../records/AiReviewSheet';
 import AddRecordModal from '../records/AddRecordModal';
 import { encryptAnalysis, decryptAnalysis, isEncryptedBlob } from '../records/recordsCrypto';
+import { downloadSingle, downloadZip } from '../records/recordsDownload';
 import { MedRecord, AiAnalysis, RecordForm, TAGS, memberColor } from '../records/types';
 import type * as DocumentPicker from 'expo-document-picker';
 
@@ -32,14 +34,16 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
   const [filterMember, setFilterMember] = useState<string>('all');
   const [showFilter,   setShowFilter]   = useState(false);
 
-  // ── Modal state ─────────────────────────────────────────────────────────────
+  // ── Modal / action state ─────────────────────────────────────────────────────
   const [showAdd,     setShowAdd]     = useState(false);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
-  // Pending analyses awaiting approval: record_id → AiAnalysis
-  const [pending, setPending] = useState<Record<string, AiAnalysis>>({});
-  // Which record's review sheet is open
-  const [reviewRec, setReviewRec] = useState<MedRecord | null>(null);
-  const [approving, setApproving] = useState(false);
+  const [pending,     setPending]     = useState<Record<string, AiAnalysis>>({});
+  const [reviewRec,   setReviewRec]   = useState<MedRecord | null>(null);
+  const [approving,   setApproving]   = useState(false);
+  // Selection / download
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [downloading, setDownloading] = useState(false);
+  const selectable = selectedIds.size > 0;
 
   // ── Load ────────────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -211,6 +215,37 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
     setReviewRec(null);
   };
 
+  // ── Selection / download ──────────────────────────────────────────────────
+  const toggleSelect = (id: string) =>
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleDownload = async () => {
+    const toDownload = filtered.filter(r => selectedIds.has(r.id) && r.file_path);
+    if (toDownload.length === 0) {
+      Alert.alert('No files', 'None of the selected records have attached files.');
+      return;
+    }
+    setDownloading(true);
+    try {
+      if (toDownload.length === 1) {
+        await downloadSingle(toDownload[0]);
+      } else {
+        await downloadZip(toDownload);
+      }
+      clearSelection();
+    } catch (err: any) {
+      Alert.alert('Download failed', err.message ?? 'Could not download the file(s). Please try again.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   // ── Guards ────────────────────────────────────────────────────────────────────
   if (!familyId || familyId === 'family-1') return (
     <SCard colors={colors} isDark={isDark}>
@@ -255,6 +290,38 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
             AES-256 encrypted · per-member vault · analysis locked with family key
           </Text>
         </View>
+
+        {/* Download / selection bar — appears when records are selected */}
+        {selectable && (
+          <View style={[r.downloadBar, { backgroundColor: BRAND.teal + '15', borderColor: BRAND.teal + '40' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <CheckSquare size={14} color={BRAND.teal} />
+              <Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.teal }}>
+                {selectedIds.size} selected
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity onPress={clearSelection}
+                style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+                  borderWidth: 1, borderColor: BRAND.teal + '60' }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: BRAND.teal }}>Clear</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleDownload} disabled={downloading}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                  paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8,
+                  backgroundColor: BRAND.teal, opacity: downloading ? 0.65 : 1 }}>
+                {downloading
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Download size={13} color="#fff" />}
+                <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>
+                  {downloading ? 'Downloading…'
+                    : selectedIds.size === 1 ? 'Download file'
+                    : `Download ZIP (${selectedIds.size})`}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Search + filter */}
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, marginBottom: 4 }}>
@@ -341,6 +408,9 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
                 onOpenReview={() => setReviewRec(rec)}
                 analyzing={analyzingId === rec.id}
                 hasPending={!!pending[rec.id]}
+                selectable={selectable}
+                selected={selectedIds.has(rec.id)}
+                onToggleSelect={() => toggleSelect(rec.id)}
                 colors={colors}
                 isDark={isDark}
               />
@@ -384,4 +454,7 @@ const r = StyleSheet.create({
   filterPanel: { borderRadius: 14, borderWidth: 1, padding: 12, marginTop: 8 },
   filterLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 0.8, marginBottom: 7 },
   chip:        { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 10, paddingVertical: 5 },
+  downloadBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                 borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 10,
+                 marginTop: 8 },
 });

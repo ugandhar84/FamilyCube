@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import {
   FileText, Calendar, Lock, Sparkles, ChevronDown, ChevronUp,
-  Trash2, CheckCircle, AlertTriangle, ArrowRight,
+  Trash2, CheckCircle, AlertTriangle, ArrowRight, Download, Square, CheckSquare,
 } from 'lucide-react-native';
 import { BRAND, StatusPill } from '../tabs/shared';
 import { MedRecord, TAG_MAP, URGENCY_META, memberColor, fmtSize } from './types';
@@ -16,6 +16,9 @@ interface Props {
   onOpenReview: () => void;
   analyzing:    boolean;
   hasPending:   boolean;
+  selectable:   boolean;
+  selected:     boolean;
+  onToggleSelect: () => void;
   colors:       any;
   isDark:       boolean;
 }
@@ -24,6 +27,7 @@ export default function RecordCard({
   rec, memberName, memberIdx,
   onDelete, onAnalyze, onOpenReview,
   analyzing, hasPending,
+  selectable, selected, onToggleSelect,
   colors, isDark,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
@@ -41,14 +45,29 @@ export default function RecordCard({
   return (
     <View style={[s.card, {
       backgroundColor: isDark ? colors.card + 'CC' : '#FFFFFF',
-      borderColor: cardBorderColor,
+      borderColor: selected ? BRAND.teal : cardBorderColor,
+      borderWidth: selected ? 2 : 1.5,
     }]}>
       {/* Header row — always visible */}
-      <TouchableOpacity onPress={() => setExpanded(e => !e)}
+      <TouchableOpacity
+        onPress={() => selectable ? onToggleSelect() : setExpanded(e => !e)}
+        onLongPress={() => !selectable && onToggleSelect()}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <View style={[s.tagIcon, { backgroundColor: tag.color + '20' }]}>
-          <TIcon size={16} color={tag.color} />
-        </View>
+        {/* Checkbox in select mode, tag icon otherwise */}
+        {selectable ? (
+          <View style={[s.tagIcon, {
+            backgroundColor: selected ? BRAND.teal + '25' : (isDark ? colors.surface : '#F1F5F9'),
+            borderWidth: 1.5, borderColor: selected ? BRAND.teal : colors.border,
+          }]}>
+            {selected
+              ? <CheckSquare size={18} color={BRAND.teal} />
+              : <Square size={18} color={colors.textTertiary} />}
+          </View>
+        ) : (
+          <View style={[s.tagIcon, { backgroundColor: tag.color + '20' }]}>
+            <TIcon size={16} color={tag.color} />
+          </View>
+        )}
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
             {rec.title}

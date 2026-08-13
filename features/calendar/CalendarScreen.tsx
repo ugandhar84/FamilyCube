@@ -649,10 +649,10 @@ function SwipeableEventCard({ children, onDelete, onLongPress, canDelete }: {
 }) {
   const tx      = useRef(new Animated.Value(0)).current;
   const [open, setOpen] = useState(false);
-  const DELETE_W = 72;
+  const DELETE_W = 84;
 
   const pan = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_, g) => canDelete && Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    onMoveShouldSetPanResponder: (_, g) => canDelete && Math.abs(g.dx) > 5 && Math.abs(g.dx) > Math.abs(g.dy) * 1.2,
     onPanResponderMove: (_, g) => {
       if (!canDelete) return;
       const base = open ? -DELETE_W : 0;
@@ -691,19 +691,19 @@ function SwipeableEventCard({ children, onDelete, onLongPress, canDelete }: {
           </TouchableOpacity>
         </View>
 
-        {/* Delete zone — revealed when slid left (naturally off-screen until swipe) */}
+        {/* Delete zone — revealed when slid left */}
         {canDelete && (
           <TouchableOpacity
             onPress={() => { close(); onDelete(); }}
             style={{
-              width: DELETE_W, alignItems: 'center', justifyContent: 'center',
-              backgroundColor: '#EF4444', borderRadius: 16,
-              marginLeft: 6, flexShrink: 0,
+              width: DELETE_W, alignItems: 'center', justifyContent: 'center', gap: 4,
+              backgroundColor: '#EF4444', borderRadius: 18,
+              marginLeft: 8, flexShrink: 0,
             }}
           >
-            <Text style={{ fontSize: 18 }}>🗑️</Text>
-            <Text style={{ fontSize: 9, color: '#fff', fontWeight: '800', marginTop: 2 }}>
-              {open ? 'DELETE' : ''}
+            <Text style={{ fontSize: 22 }}>🗑️</Text>
+            <Text style={{ fontSize: 10, color: '#fff', fontWeight: '900', letterSpacing: 0.5 }}>
+              Delete
             </Text>
           </TouchableOpacity>
         )}
@@ -1137,14 +1137,17 @@ export default function CalendarScreen() {
 
               return (
                 <View key={ev.id} style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-                  {/* Left: dot + time on spine */}
-                  <View style={{ width: 56, alignItems: 'center', paddingTop: 14, marginLeft: -56 }}>
-                    <View style={{ width: 14, height: 14, borderRadius: 7, borderWidth: 3,
+                  {/* Left: time-dot on spine */}
+                  <View style={{ width: 56, alignItems: 'center', paddingTop: 10, marginLeft: -56, zIndex: 2 }}>
+                    <View style={{
+                      width: 42, height: 42, borderRadius: 21,
                       backgroundColor: isConf ? '#F59E0B' : cs.dot,
-                      borderColor: isDark ? colors.background : '#F0EEFF',
-                      zIndex: 2 }} />
-                    <Text style={{ fontSize: 10, fontWeight: '800', color: BRAND.purple, marginTop: 3, lineHeight: 12 }}>{time}</Text>
-                    <Text style={{ fontSize: 9, fontWeight: '600', color: colors.textTertiary }}>{ampm}</Text>
+                      borderWidth: 3, borderColor: isDark ? colors.background : '#F0EEFF',
+                      alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff', lineHeight: 12 }}>{time}</Text>
+                      <Text style={{ fontSize: 8, fontWeight: '700', color: 'rgba(255,255,255,0.8)', lineHeight: 10 }}>{ampm}</Text>
+                    </View>
                   </View>
 
                   {/* Event Card (swipeable + long-press to edit) */}
@@ -1156,18 +1159,12 @@ export default function CalendarScreen() {
                   <View style={[sc.evCard, { flex: 1, borderColor: isConf ? '#F59E0B60' : cardBord,
                     backgroundColor: isConf ? (isDark ? '#1C1700' : '#FFFBEB') : cardBg,
                     overflow: 'hidden' }]}>
-                    {/* Category color accent bar */}
-                    <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4,
-                      backgroundColor: isConf ? '#F59E0B' : cs.dot, borderTopLeftRadius: 24, borderBottomLeftRadius: 24 }} />
 
-                    {/* Header: category badge */}
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    {/* Header: category badge — time lives in the dot now */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                       <View style={[sc.catBadge, { backgroundColor: cs.badge, borderColor: cs.dot + '60' }]}>
                         <Text style={[sc.catText, { color: cs.text }]}>{cat.toUpperCase()}</Text>
                       </View>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>
-                        {time} {ampm}
-                      </Text>
                     </View>
 
                     {isConf && (

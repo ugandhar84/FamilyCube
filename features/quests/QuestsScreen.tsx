@@ -24,8 +24,6 @@ import { Swipeable } from 'react-native-gesture-handler';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
@@ -41,6 +39,8 @@ import { useChatStore } from '@/store/chatStore';
 import { fetchCustomCategories, fetchCustomSuggestions, recordCustomSuggestion, CustomCategory } from '@/lib/familyCustomCategories';
 import { useGroceryStore } from '@/store/groceryStore';
 import { DEFAULT_GROCERY_ITEMS, DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
+import { AiEngineBanner, AiTool } from './components/AiEngineBanner';
+import { QuestFilters, TabStatus } from './components/QuestFilters';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 const I = {
@@ -105,9 +105,72 @@ const I = {
       <Path d="M3.5,15 C4.8,18.3 8,20.5 11.8,20.5 C16.8,20.5 20.8,16.5 20.8,11.5 C20.8,6.5 16.8,2.5 11.8,2.5 C8,2.5 4.8,4.7 3.5,8 L1,4" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
     </Svg>
   ),
-  X: ({ c }: { c: string }) => (
-    <Svg width={14} height={14} viewBox="0 0 24 24">
+  X: ({ c, size = 14 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path d="M6,6 L18,18 M18,6 L6,18" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
+    </Svg>
+  ),
+  Check: ({ c, size = 12 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M5,13 L9,17 L19,7" stroke={c} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </Svg>
+  ),
+  Zap: ({ c, size = 13 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M13,2 L4.5,13.5 H11 L11,22 L19.5,10.5 H13 L13,2 Z" stroke={c} strokeWidth={1.5} fill={c} strokeLinejoin="round" />
+    </Svg>
+  ),
+  Coins: ({ c, size = 13 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={9} cy={9} r={7} stroke={c} strokeWidth={1.5} fill="none" />
+      <Path d="M15.5,5.5 C18.5,6.5 20.5,9.3 20.5,12.5 C20.5,16.6 17.1,20 13,20 C10.5,20 8.3,18.8 7,17" stroke={c} strokeWidth={1.5} strokeLinecap="round" fill="none" />
+      <Path d="M9,6.5 L9,9 L11,9.5" stroke={c} strokeWidth={1.5} strokeLinecap="round" fill="none" />
+    </Svg>
+  ),
+  Photo: ({ c, size = 13 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M23,19 C23,20.1 22.1,21 21,21 H3 C1.9,21 1,20.1 1,19 V8 C1,6.9 1.9,6 3,6 H7 L9,3 H15 L17,6 H21 C22.1,6 23,6.9 23,8 Z" stroke={c} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
+      <Circle cx={12} cy={13} r={4} stroke={c} strokeWidth={1.5} fill="none" />
+    </Svg>
+  ),
+  Trash: ({ c, size = 14 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M3,6 L21,6 M19,6 L18,20 C18,21.1 17.1,22 16,22 H8 C6.9,22 6,21.1 6,20 L5,6" stroke={c} strokeWidth={1.5} strokeLinecap="round" fill="none" />
+      <Path d="M9,6 L9,4 C9,3.4 9.4,3 10,3 H14 C14.6,3 15,3.4 15,4 L15,6" stroke={c} strokeWidth={1.5} fill="none" />
+    </Svg>
+  ),
+  Mail: ({ c, size = 13 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M4,4 H20 C21.1,4 22,4.9 22,6 V18 C22,19.1 21.1,20 20,20 H4 C2.9,20 2,19.1 2,18 V6 C2,4.9 2.9,4 4,4 Z" stroke={c} strokeWidth={1.5} fill="none" />
+      <Path d="M22,6 L12,13 L2,6" stroke={c} strokeWidth={1.5} strokeLinecap="round" fill="none" />
+    </Svg>
+  ),
+  ChevronUp: ({ c, size = 16 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M18,15 L12,9 L6,15" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </Svg>
+  ),
+  ChevronDown: ({ c, size = 16 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M6,9 L12,15 L18,9" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </Svg>
+  ),
+  User: ({ c, size = 13 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={12} cy={8} r={4} stroke={c} strokeWidth={1.5} fill="none" />
+      <Path d="M4,20 C4,16.7 7.6,14 12,14 C16.4,14 20,16.7 20,20" stroke={c} strokeWidth={1.5} strokeLinecap="round" fill="none" />
+    </Svg>
+  ),
+  Edit2: ({ c, size = 12 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M11,4 H4 C2.9,4 2,4.9 2,6 V20 C2,21.1 2.9,22 4,22 H18 C19.1,22 20,21.1 20,20 V13" stroke={c} strokeWidth={1.5} strokeLinecap="round" fill="none" />
+      <Path d="M18.5,2.5 C19.3,1.7 20.7,1.7 21.5,2.5 C22.3,3.3 22.3,4.7 21.5,5.5 L12,15 L8,16 L9,12 L18.5,2.5 Z" stroke={c} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
+    </Svg>
+  ),
+  AlertTriangle: ({ c, size = 12 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M10.3,3.3 L2.2,18 C1.7,18.9 2.4,20 3.5,20 H20.5 C21.6,20 22.3,18.9 21.8,18 L13.7,3.3 C13.2,2.4 10.8,2.4 10.3,3.3 Z" stroke={c} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
+      <Path d="M12,9 L12,13 M12,16 L12,17" stroke={c} strokeWidth={1.5} strokeLinecap="round" fill="none" />
     </Svg>
   ),
 };
@@ -509,7 +572,7 @@ function CollapsibleQuestCard({
         <Pressable onPress={handlePress}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 14, paddingBottom: expanded ? 0 : 14 }}>
           <View style={{ flex: 1 }}>{header}</View>
-          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={accentColor} />
+          {expanded ? <I.ChevronUp c={accentColor} /> : <I.ChevronDown c={accentColor} />}
         </Pressable>
         {expanded && (
           <View style={{ padding: 14, paddingTop: 10 }}>
@@ -1843,15 +1906,19 @@ function AiCardHeader({ icon, title, accentColor, onClose }: any) {
         {icon}
         <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: accentColor, flex: 1 }}>{title}</Text>
       </View>
-      <TouchableOpacity onPress={onClose}><Text style={{ color: accentColor, fontSize: TYPO.micro + 1 }}>✕ Close</Text></TouchableOpacity>
+      <TouchableOpacity onPress={onClose} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <I.X c={accentColor} size={12} />
+        <Text style={{ color: accentColor, fontSize: TYPO.micro + 1 }}>Close</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
-function AiSectionDivider({ label, color }: { label: string; color: string }) {
+function AiSectionDivider({ label, color, icon }: { label: string; color: string; icon?: React.ReactNode }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 4 }}>
       <View style={{ flex: 1, height: 1, backgroundColor: color + '40' }} />
+      {icon}
       <Text style={{ fontSize: TYPO.caption, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8, color }}>{label}</Text>
       <View style={{ flex: 1, height: 1, backgroundColor: color + '40' }} />
     </View>
@@ -1891,7 +1958,7 @@ function AutoBalanceCard({ result, onApply, appliedActions, onClose, isDark, col
           <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>Powered by AI · adjust before applying</Text>
         </View>
         <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={{ color: colors.textSecondary, fontSize: 20 }}>✕</Text>
+          <I.X c={colors.textSecondary} size={16} />
         </TouchableOpacity>
       </View>
 
@@ -1903,7 +1970,7 @@ function AutoBalanceCard({ result, onApply, appliedActions, onClose, isDark, col
       {/* Reassignment section */}
       {(result.assignments ?? []).length > 0 && (
         <>
-          <AiSectionDivider label="Reassign Suggestions" color={BRAND.amber} />
+          <AiSectionDivider label="Reassign Suggestions" color={BRAND.amber} icon={<I.RotateCcw c={BRAND.amber} />} />
           {(result.assignments ?? []).map((item: any, idx: number) => {
             const applied = appliedActions[`bal_${idx}`];
             const selectedKidId = assignEdits[idx] ?? '';
@@ -1955,7 +2022,7 @@ function AutoBalanceCard({ result, onApply, appliedActions, onClose, isDark, col
       {/* New bounties section */}
       {(result.newSuggestedQuests ?? []).length > 0 && (
         <>
-          <AiSectionDivider label="New Bounties" color="#10B981" />
+          <AiSectionDivider label="New Bounties" color="#10B981" icon={<I.Zap c="#10B981" size={12} />} />
           {(result.newSuggestedQuests ?? []).map((q: any, idx: number) => {
             const applied = appliedActions[`bounty_${idx}`];
             const edit = bountyEdits[idx] ?? { coins: q.coins ?? 20, kidId: '' };
@@ -2041,32 +2108,34 @@ function FomoCard({ result, onApply, appliedActions, onClose, isDark, colors, ki
           <I.Flame c={amber} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: amber }}>FOMO Engine</Text>
+          <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: amber }}>Spark Engine</Text>
           <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>Flash bonuses · penalties · force-assign</Text>
         </View>
         <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
-          <Text style={{ color: colors.textSecondary, fontSize: 18 }}>✕</Text>
+          <I.X c={colors.textSecondary} size={16} />
         </TouchableOpacity>
       </View>
 
       {/* Summary */}
-      <View style={{ borderRadius: 14, backgroundColor: amber + '18', borderWidth: 1, borderColor: amber + '35', padding: 14 }}>
-        <Text style={{ fontSize: TYPO.body, fontWeight: '600', color: isDark ? '#FDE68A' : '#92400E', lineHeight: 22 }}>
-          🔥 {result.fomoNudgeSummary}
+      <View style={{ borderRadius: 14, backgroundColor: amber + '18', borderWidth: 1, borderColor: amber + '35', padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+        <I.Flame c={amber} />
+        <Text style={{ flex: 1, fontSize: TYPO.body, fontWeight: '600', color: isDark ? '#FDE68A' : '#92400E', lineHeight: 22 }}>
+          {result.fomoNudgeSummary}
         </Text>
         {allActive && (
-          <Text style={{ fontSize: TYPO.caption, color: '#10B981', fontWeight: '700', marginTop: 8 }}>
-            ✅ All flash bonuses active — no one can game the system.
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+            <I.CheckCircle c="#10B981" />
+            <Text style={{ fontSize: TYPO.caption, color: '#10B981', fontWeight: '700' }}>All bonuses active</Text>
+          </View>
         )}
       </View>
 
       {/* Flash bonuses */}
       {(result.urgentAlerts ?? []).length > 0 && (
         <>
-          <AiSectionDivider label="⚡ Flash Bonuses" color={amber} />
+          <AiSectionDivider label="Flash Bonuses" color={amber} icon={<I.Sparkles c={amber} />} />
           {(result.urgentAlerts ?? []).map((alert: any, idx: number) => {
-            const isActive = alert.alreadyHasBonus || appliedActions[`fomo_${idx}`];
+            const isActive = alert.alreadyHasBonus || appliedActions[`spark_${idx}`];
             const editedCoins = bonusEdits[idx] ?? alert.bonusCoins;
             return (
               <View key={idx} style={{ borderRadius: 16, borderWidth: 1, backgroundColor: isDark ? '#1C1200' : '#FFFBEB', borderColor: isActive ? amber + '80' : amber + '35', overflow: 'hidden' }}>
@@ -2076,8 +2145,9 @@ function FomoCard({ result, onApply, appliedActions, onClose, isDark, colors, ki
                 </View>
                 <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
                   {isActive
-                    ? <View style={{ backgroundColor: amber + '25', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1.5, borderColor: amber, alignSelf: 'flex-start' }}>
-                        <Text style={{ color: amber, fontSize: TYPO.caption, fontWeight: '900' }}>🔥 +{editedCoins}🪙 Active!</Text>
+                    ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: amber + '25', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1.5, borderColor: amber, alignSelf: 'flex-start' }}>
+                        <I.Sparkles c={amber} />
+                        <Text style={{ color: amber, fontSize: TYPO.caption, fontWeight: '900' }}>+{editedCoins} coins Active!</Text>
                       </View>
                     : <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, fontWeight: '600' }}>Bonus:</Text>
@@ -2086,7 +2156,7 @@ function FomoCard({ result, onApply, appliedActions, onClose, isDark, colors, ki
                             style={{ width: 40, height: 36, alignItems: 'center', justifyContent: 'center' }}>
                             <Text style={{ color: amber, fontWeight: '900', fontSize: 20 }}>−</Text>
                           </TouchableOpacity>
-                          <Text style={{ color: amber, fontWeight: '900', fontSize: TYPO.body, minWidth: 48, textAlign: 'center' }}>+{editedCoins}🪙</Text>
+                          <Text style={{ color: amber, fontWeight: '900', fontSize: TYPO.body, minWidth: 48, textAlign: 'center' }}>+{editedCoins}</Text>
                           <TouchableOpacity onPress={() => setBonusEdits(p => ({ ...p, [idx]: Math.min(100, editedCoins + 5) }))}
                             style={{ width: 40, height: 36, alignItems: 'center', justifyContent: 'center' }}>
                             <Text style={{ color: amber, fontWeight: '900', fontSize: 20 }}>+</Text>
@@ -2094,13 +2164,14 @@ function FomoCard({ result, onApply, appliedActions, onClose, isDark, colors, ki
                         </View>
                         <View style={{ flex: 1, alignItems: 'flex-end' }}>
                           <TouchableOpacity
-                            style={{ backgroundColor: amber, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6 }}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: amber, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 6 }}
                             onPress={() => Alert.alert(
-                              '🔥 Activate Flash Bonus?',
-                              `Add +${editedCoins}🪙 flash bonus to "${alert.questTitle}"?\n\nMotivates kids to act now. Cannot be reversed.`,
-                              [{ text: 'Cancel', style: 'cancel' }, { text: 'Activate', onPress: () => onApply(`fomo_${idx}`, { ...alert, bonusCoins: editedCoins }, 'fomo') }]
+                              'Activate Spark Bonus?',
+                              `Add +${editedCoins} coin spark bonus to "${alert.questTitle}"?\n\nMotivates kids to act now. Cannot be reversed.`,
+                              [{ text: 'Cancel', style: 'cancel' }, { text: 'Activate', onPress: () => onApply(`spark_${idx}`, { ...alert, bonusCoins: editedCoins }, 'spark') }]
                             )}>
-                            <Text style={{ color: '#0F172A', fontSize: TYPO.caption, fontWeight: '900' }}>🔥 Activate</Text>
+                            <I.Sparkles c="#0F172A" />
+                            <Text style={{ color: '#0F172A', fontSize: TYPO.caption, fontWeight: '900' }}>Activate</Text>
                           </TouchableOpacity>
                         </View>
                       </View>}
@@ -2114,7 +2185,7 @@ function FomoCard({ result, onApply, appliedActions, onClose, isDark, colors, ki
       {/* Force assigns */}
       {(result.penaltiesAndForceAssigns ?? []).length > 0 && (
         <>
-          <AiSectionDivider label="⚠️ Overdue Actions" color="#EF4444" />
+          <AiSectionDivider label="Overdue Actions" color="#EF4444" icon={<I.AlertTriangle c="#EF4444" size={12} />} />
           {(result.penaltiesAndForceAssigns ?? []).map((pen: any, idx: number) => {
             const applied = appliedActions[`pen_${idx}`];
             const selectedKidId = penEdits[idx] ?? pen.targetKidId ?? '';
@@ -2149,11 +2220,11 @@ function FomoCard({ result, onApply, appliedActions, onClose, isDark, colors, ki
                     <View style={{ flex: 1, alignItems: 'flex-end' }}>
                       {applied
                         ? <View style={{ backgroundColor: '#EF4444', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 5 }}>
-                            <Text style={{ color: '#fff', fontSize: TYPO.caption, fontWeight: '800' }}>⚠️ Assigned</Text>
+                            <Text style={{ color: '#fff', fontSize: TYPO.caption, fontWeight: '800' }}>Assigned</Text>
                           </View>
                         : <TouchableOpacity style={{ backgroundColor: '#EF4444', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 5 }}
                             onPress={() => Alert.alert(
-                              '⚠️ Force Assign?',
+                              'Force Assign?',
                               `Force-assign "${pen.questTitle}" to ${kids.find((k: any) => k.id === selectedKidId)?.name ?? 'this kid'}?\n\nThis overrides the current assignment.`,
                               [{ text: 'Cancel', style: 'cancel' }, { text: 'Force Assign', style: 'destructive', onPress: () => onApply(`pen_${idx}`, { ...pen, targetKidId: selectedKidId }, 'penalty') }]
                             )}>
@@ -2189,7 +2260,7 @@ function AdviceCard({ result, appliedActions, onApply, onClose, isDark, colors }
           <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>AI coaching based on real quest data</Text>
         </View>
         <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
-          <Text style={{ color: colors.textSecondary, fontSize: 18 }}>✕</Text>
+          <I.X c={colors.textSecondary} size={16} />
         </TouchableOpacity>
       </View>
 
@@ -2202,7 +2273,10 @@ function AdviceCard({ result, appliedActions, onApply, onClose, isDark, colors }
       {/* Cheat pattern alert */}
       {result.cheatPatternAlert && (
         <View style={{ borderRadius: 14, backgroundColor: '#EF444418', borderWidth: 1, borderColor: '#EF444440', padding: 14 }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8, color: '#EF4444', marginBottom: 6 }}>⚠️ Pattern Detected</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 6 }}>
+            <I.AlertTriangle c="#EF4444" size={12} />
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8, color: '#EF4444' }}>Pattern Detected</Text>
+          </View>
           <Text style={{ fontSize: TYPO.body, fontWeight: '600', color: isDark ? '#FCA5A5' : '#991B1B', lineHeight: 22 }}>{result.cheatPatternAlert}</Text>
         </View>
       )}
@@ -2221,7 +2295,7 @@ function AdviceCard({ result, appliedActions, onApply, onClose, isDark, colors }
       {/* Per-kid notes */}
       {entries.length > 0 && (
         <>
-          <AiSectionDivider label="Kid Notes" color={accent} />
+          <AiSectionDivider label="Kid Notes" color={accent} icon={<I.User c={accent} size={12} />} />
           {entries.map(([kid, note]: [string, any]) => (
             <View key={kid} style={{ borderRadius: 14, backgroundColor: indigo, borderWidth: 1, borderColor: accent + '30', padding: 14 }}>
               <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: accent, marginBottom: 5 }}>{kid}</Text>
@@ -2234,7 +2308,7 @@ function AdviceCard({ result, appliedActions, onApply, onClose, isDark, colors }
       {/* Suggested rule updates */}
       {ruleUpdates.length > 0 && (
         <>
-          <AiSectionDivider label="Suggested Rules" color="#10B981" />
+          <AiSectionDivider label="Suggested Rules" color="#10B981" icon={<I.CheckCircle c="#10B981" />} />
           {ruleUpdates.map((rule, i) => (
             <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingHorizontal: 4 }}>
               <Text style={{ color: '#10B981', fontWeight: '900', fontSize: TYPO.body, marginTop: 2 }}>→</Text>
@@ -2282,8 +2356,7 @@ const ai = StyleSheet.create({
 });
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
-type TabStatus = 'all' | 'todo' | 'review' | 'completed';
-type AiTool   = 'none' | 'autobalance' | 'fomo' | 'advice';
+// TabStatus and AiTool are imported from ./components/QuestFilters and ./components/AiEngineBanner
 
 export default function QuestsScreen() {
   const { colors, isDark } = useTheme();
@@ -2369,8 +2442,8 @@ export default function QuestsScreen() {
   }, [quests]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── AI result caching — skip re-analysis if quests haven't changed ──────────
-  const aiQuestHash = useRef<Record<AiTool, string>>({ autobalance: '', fomo: '', advice: '', none: '' });
-  const [aiFromCache, setAiFromCache] = useState<Record<AiTool, boolean>>({ autobalance: false, fomo: false, advice: false, none: false });
+  const aiQuestHash = useRef<Record<AiTool, string>>({ autobalance: '', spark: '', advice: '', none: '' });
+  const [aiFromCache, setAiFromCache] = useState<Record<AiTool, boolean>>({ autobalance: false, spark: false, advice: false, none: false });
 
   const buildQuestHash = (qs: Quest[]) =>
     qs.map(q => `${q.id}:${q.status}:${q.assignedToId ?? ''}:${q.bonusCoins}`).join('|');
@@ -2398,7 +2471,7 @@ export default function QuestsScreen() {
       try { const r = await callAutoBalance(quests, kids); setAutoBalResult(r); }
       catch (e) { console.warn('[AutoBalance] AI failed, using local fallback:', e);
         const r = await callAutoBalanceFallback(quests, kids); setAutoBalResult(r); }
-    } else if (tool === 'fomo') {
+    } else if (tool === 'spark') {
       try { const r = await callFomo(quests, kids); setFomoResult(r); }
       catch (e) { console.warn('[FOMO] AI failed, using local fallback:', e);
         setFomoResult(buildFomoResult(quests, kids)); }
@@ -2415,7 +2488,7 @@ export default function QuestsScreen() {
     setAppliedActions(p => ({ ...p, [key]: true }));
     const store = useQuestStore.getState();
 
-    if (type === 'fomo') {
+    if (type === 'spark') {
       // Flash bonus: update the real quest with bonusCoins + expiry
       if (item.questId) {
         store.updateQuest(
@@ -2582,38 +2655,11 @@ export default function QuestsScreen() {
 
         {/* ── AI Engine Banner (parent ONLY) ── */}
         {isParent && (
-          <View style={{ marginHorizontal: 14, marginBottom: 12 }}>
-            <LinearGradient
-              colors={['#1E1B4B', '#1E3A5F', '#0F172A']}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              style={s.aiBanner}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                <View style={s.aiIconBox}><I.Bot c="#C4B5FD" /></View>
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={s.aiBannerTitle}>CubeAI Chores Engine</Text>
-                    <View style={s.activePill}><Text style={s.activePillText}>Active</Text></View>
-                  </View>
-                  <Text style={s.aiBannerSub}>Auto-balancing, FOMO bounties, penalties & age-based coaching</Text>
-                </View>
-              </View>
-              <View style={{ flexDirection: 'row', gap: 7 }}>
-                <TouchableOpacity style={[s.aiBtnBase, showAiTool === 'autobalance' && s.aiBtnActive]} onPress={() => runAI('autobalance')}>
-                  <I.Sparkles c={showAiTool === 'autobalance' ? '#fff' : '#FCD34D'} />
-                  <Text style={[s.aiBtnText, showAiTool === 'autobalance' && { color: '#fff' }]}>Auto-Balance</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[s.aiBtnBase, showAiTool === 'fomo' && { backgroundColor: BRAND.amber, borderColor: BRAND.amber }]} onPress={() => runAI('fomo')}>
-                  <I.Flame c={showAiTool === 'fomo' ? '#0F172A' : BRAND.amber} />
-                  <Text style={[s.aiBtnText, showAiTool === 'fomo' && { color: '#0F172A' }]}>FOMO & Penalties</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[s.aiBtnBase, showAiTool === 'advice' && { backgroundColor: '#4338CA', borderColor: '#6366F1' }]} onPress={() => runAI('advice')}>
-                  <I.Award c="#818CF8" />
-                  <Text style={s.aiBtnText}>Chores Advice</Text>
-                </TouchableOpacity>
-              </View>
-            </LinearGradient>
-          </View>
+          <AiEngineBanner
+            showAiTool={showAiTool}
+            isAiLoading={isAiLoading}
+            onRunAI={runAI}
+          />
         )}
 
         {/* ── Senior context banner ── */}
@@ -2641,75 +2687,25 @@ export default function QuestsScreen() {
         {isParent && !isAiLoading && showAiTool === 'autobalance' && autoBalResult && (
           <AutoBalanceCard result={autoBalResult} onApply={handleApply} appliedActions={appliedActions} onClose={() => setShowAiTool('none')} isDark={isDark} colors={colors} kids={kids} />
         )}
-        {isParent && !isAiLoading && showAiTool === 'fomo' && fomoResult && (
+        {isParent && !isAiLoading && showAiTool === 'spark' && fomoResult && (
           <FomoCard result={fomoResult} onApply={handleApply} appliedActions={appliedActions} onClose={() => setShowAiTool('none')} isDark={isDark} colors={colors} kids={kids} />
         )}
         {isParent && !isAiLoading && showAiTool === 'advice' && adviceResult && (
           <AdviceCard result={adviceResult} appliedActions={appliedActions} onApply={handleApply} onClose={() => setShowAiTool('none')} isDark={isDark} colors={colors} />
         )}
 
-        {/* ── Member / Filter Pills ── */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 14, gap: 8, marginBottom: 10, paddingVertical: 2 }}>
-          {/* "All Family" for parent/senior, "My Quests" for kid */}
-          <TouchableOpacity
-            style={[s.filterPill, kidFilter === 'all'
-              ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple }
-              : { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderColor: isDark ? '#334155' : '#E2E8F0' }]}
-            onPress={() => { setKidFilter('all'); setTabStatus('all'); }}
-          >
-            <Text style={[s.filterText, { color: kidFilter === 'all' ? '#fff' : colors.textSecondary }]}>
-              {isKid ? '🎯 My Quests' : 'All Family'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Per-kid pills (parent/senior only) */}
-          {!isKid && kids.map(k => (
-            <TouchableOpacity
-              key={k.id}
-              style={[s.filterPill, kidFilter === k.id
-                ? { backgroundColor: (k as any).color ?? BRAND.amber, borderColor: (k as any).color ?? BRAND.amber }
-                : { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderColor: isDark ? '#334155' : '#E2E8F0' }]}
-              onPress={() => { setKidFilter(k.id); setTabStatus('all'); }}
-            >
-              <Text style={[s.filterText, { color: kidFilter === k.id ? '#fff' : colors.textSecondary }]}>
-                {k.emoji ?? '🧒'} {k.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-
-          {/* Adults — parent-only tasks (parent/senior only) */}
-          {isParentOrSenior && (
-            <TouchableOpacity
-              style={[s.filterPill, kidFilter === 'adults'
-                ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple }
-                : { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderColor: isDark ? '#334155' : '#E2E8F0' }]}
-              onPress={() => { setKidFilter('adults'); setTabStatus('all'); }}
-            >
-              <Text style={[s.filterText, { color: kidFilter === 'adults' ? '#fff' : colors.textSecondary }]}>👨‍👩 Adults</Text>
-            </TouchableOpacity>
-          )}
-
-          {/* Bounty — open pool quests */}
-          <TouchableOpacity
-            style={[s.filterPill, kidFilter === 'pool'
-              ? { backgroundColor: BRAND.amber, borderColor: BRAND.amber }
-              : { backgroundColor: isDark ? '#1E293B' : '#FFFBEB', borderColor: isDark ? '#78350F50' : '#FDE68A' }]}
-            onPress={() => { setKidFilter('pool'); setTabStatus('all'); }}
-          >
-            <Text style={[s.filterText, { color: kidFilter === 'pool' ? '#fff' : BRAND.amber }]}>⚡ Bounty</Text>
-          </TouchableOpacity>
-
-          {/* Sibling Cheer */}
-          <TouchableOpacity
-            style={[s.filterPill, kidFilter === 'cheer'
-              ? { backgroundColor: '#4338CA', borderColor: '#6366F1' }
-              : { backgroundColor: isDark ? '#1E1B4B' : '#EEF2FF', borderColor: isDark ? '#4338CA50' : '#C7D2FE' }]}
-            onPress={() => { setKidFilter('cheer'); setTabStatus('all'); }}
-          >
-            <I.ThumbsUp c={kidFilter === 'cheer' ? '#fff' : '#6366F1'} />
-            <Text style={[s.filterText, { color: kidFilter === 'cheer' ? '#fff' : '#6366F1', marginLeft: 4 }]}>Sibling Cheer</Text>
-          </TouchableOpacity>
-        </ScrollView>
+        {/* ── Member / Filter Pills + Status Tabs ── */}
+        <QuestFilters
+          kidFilter={kidFilter}
+          tabStatus={tabStatus}
+          isKid={isKid}
+          isParentOrSenior={isParentOrSenior}
+          kids={kids as any[]}
+          isDark={isDark}
+          colors={colors}
+          onSetKidFilter={setKidFilter}
+          onSetTabStatus={setTabStatus}
+        />
 
         {/* ── Sibling Cheer Panel ── */}
         {kidFilter === 'cheer' ? (
@@ -2735,38 +2731,6 @@ export default function QuestsScreen() {
           </View>
         ) : (
           <>
-            {/* ── Status Tabs — single segmented strip ── */}
-            <View style={{
-              flexDirection: 'row', marginHorizontal: 14, marginBottom: 12,
-              backgroundColor: colors.surface,
-              borderRadius: 22, padding: 3,
-            }}>
-              {([
-                { key: 'all',       label: 'All' },
-                { key: 'todo',      label: 'To Do' },
-                { key: 'review',    label: 'In Review' },
-                { key: 'completed', label: 'Paid' },
-              ] as { key: TabStatus; label: string }[]).map(tab => {
-                const active = tabStatus === tab.key;
-                return (
-                  <TouchableOpacity
-                    key={tab.key}
-                    onPress={() => setTabStatus(tab.key)}
-                    style={{
-                      flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 20,
-                      backgroundColor: active ? colors.primary : 'transparent',
-                    }}
-                  >
-                    <Text style={{
-                      fontSize: 12, fontWeight: '700',
-                      color: active ? '#fff' : colors.textTertiary,
-                    }}>
-                      {tab.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
 
             {/* ── Quest Cards — keyed by activeMemberId so expanded state resets on persona switch ── */}
             <View key={activeMemberId ?? 'default'} style={{ paddingHorizontal: 14, gap: 10, marginTop: 12 }}>
@@ -2848,7 +2812,7 @@ export default function QuestsScreen() {
                 const statusLine = isReview
                   ? `Submitted ${q.submittedAt ? new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'for review'}`
                   : isDoneCard
-                    ? 'Approved ✅'
+                    ? 'Approved'
                     : isDeclined
                       ? 'Declined ❌'
                       : isPoolCard && claimants.length > 1
@@ -2921,7 +2885,7 @@ export default function QuestsScreen() {
                       )}
                     >
                       <Animated.View style={{ alignItems: 'center', transform: [{ scale }] }}>
-                        <Text style={{ fontSize: 20 }}>🗑</Text>
+                        <I.Trash c="#fff" size={20} />
                         <Text style={{ color: '#fff', fontSize: TYPO.micro, fontWeight: '800', marginTop: 2 }}>Delete</Text>
                       </Animated.View>
                     </TouchableOpacity>
@@ -2968,7 +2932,7 @@ export default function QuestsScreen() {
                         <View style={{ marginBottom: 12, borderRadius: 12, borderWidth: 1, borderColor: isDark ? BRAND.purple + '40' : '#C7D2FE', overflow: 'hidden', backgroundColor: isDark ? BRAND.purple + '12' : '#EEF2FF' }}>
                           {/* Submitted banner */}
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10 }}>
-                            <Text style={{ fontSize: TYPO.micro + 1 }}>📬</Text>
+                            <I.Mail c={isDark ? '#A78BFA' : '#4338CA'} />
                             <View style={{ flex: 1 }}>
                               <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#A78BFA' : '#4338CA' }}>
                                 {assignee?.name ?? 'Kid'} submitted for review
@@ -2998,8 +2962,8 @@ export default function QuestsScreen() {
                               </View>
                             </TouchableOpacity>
                           ) : q.photoRequired ? (
-                            <View style={{ height: 80, alignItems: 'center', justifyContent: 'center', gap: 4, backgroundColor: isDark ? '#1C1200' : '#FFF7ED' }}>
-                              <Text style={{ fontSize: 24 }}>📷</Text>
+                            <View style={{ height: 80, alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: isDark ? '#1C1200' : '#FFF7ED' }}>
+                              <I.Photo c="#D97706" size={28} />
                               <Text style={{ fontSize: TYPO.label, color: '#D97706', fontWeight: '600' }}>Photo proof missing</Text>
                             </View>
                           ) : null}
@@ -3040,7 +3004,10 @@ export default function QuestsScreen() {
                         )}
                         {q.photoRequired && (isTodoCard || isPoolCard) && (
                           <View style={[s.badge, { backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderColor: '#FCD34D60' }]}>
-                            <Text style={[s.badgeText, { color: '#D97706' }]}>📷 Photo proof</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              <I.Photo c="#D97706" size={11} />
+                              <Text style={[s.badgeText, { color: '#D97706' }]}>Photo proof</Text>
+                            </View>
                           </View>
                         )}
                         {hasBonus && (() => {
@@ -3067,7 +3034,12 @@ export default function QuestsScreen() {
                       {/* edited-by notice — only when modified */}
                       {q.lastModifiedById && (
                         <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }}>
-                          ✏️ edited by {members.find(m => m.id === q.lastModifiedById)?.name ?? 'parent'}
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <I.Edit2 c={colors.textTertiary} size={10} />
+                          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
+                            edited by {members.find(m => m.id === q.lastModifiedById)?.name ?? 'parent'}
+                          </Text>
+                        </View>
                         </Text>
                       )}
 
@@ -3260,15 +3232,6 @@ const s = StyleSheet.create({
   title:       { fontSize: TYPO.heading, fontWeight: '900' },
   headerBtn:   { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
 
-  aiBanner:    { borderRadius: 24, padding: 14, borderWidth: 1, borderColor: '#6D28D940' },
-  aiIconBox:   { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(139,92,246,0.3)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(167,139,250,0.3)' },
-  aiBannerTitle: { fontSize: TYPO.label, fontWeight: '900', color: '#C4B5FD' },
-  activePill:  { backgroundColor: 'rgba(16,185,129,0.3)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: 'rgba(52,211,153,0.4)' },
-  activePillText: { fontSize: TYPO.micro, fontWeight: '700', color: '#6EE7B7' },
-  aiBannerSub: { fontSize: TYPO.micro + 1, color: 'rgba(196,181,253,0.8)', marginTop: 2 },
-  aiBtnBase:   { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 9, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(139,92,246,0.3)' },
-  aiBtnActive: { backgroundColor: BRAND.purple, borderColor: '#C4B5FD' },
-  aiBtnText:   { fontSize: TYPO.micro, fontWeight: '700', color: '#E0D9FF' },
 
   seniorBanner:     { borderRadius: 20, borderWidth: 1, borderColor: '#92400E60', backgroundColor: '#1C1000', padding: 12 },
   seniorBannerText: { fontSize: TYPO.label, color: '#FCD34D', fontWeight: '600', lineHeight: 16 },
@@ -3276,8 +3239,6 @@ const s = StyleSheet.create({
   aiLoadingBox:  { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#0F172A', borderRadius: 20, borderWidth: 1, borderColor: '#6D28D940', padding: 14 },
   aiLoadingText: { fontSize: TYPO.label, fontWeight: '700', color: '#A78BFA', flex: 1 },
 
-  filterPill:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5 },
-  filterText:  { fontSize: 13, fontWeight: '700' },
 
   statusTabs:  { flexDirection: 'row', borderBottomWidth: 1, gap: 4 },
   tabItem:     { paddingBottom: 8, paddingHorizontal: 4, position: 'relative' },

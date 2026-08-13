@@ -23,6 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import AppHeader from '@/components/AppHeader';
+import FamilyAvatar from '@/components/FamilyAvatar';
 import { useChatStore, ChatMessage } from '@/store/chatStore';
 import { useGroceryStore, GroceryCategory, GroceryStore } from '@/store/groceryStore';
 import { supabase } from '@/lib/supabase';
@@ -77,23 +78,32 @@ function highlightSearch(raw: string, query: string, baseStyle: any): React.Reac
   return <Text style={baseStyle}>{parts}</Text>;
 }
 
-function MentionText({ text, memberMap, myId, searchQuery, textStyle }: {
+/** Strip markdown bold/italic asterisks and render @mentions inline. */
+function MentionText({ text, memberMap, myId, searchQuery, textStyle, numberOfLines, onTextLayout }: {
   text: string; memberMap: Record<string, any>; myId: string; searchQuery?: string; textStyle: any;
+  numberOfLines?: number; onTextLayout?: (e: any) => void;
 }) {
+  // Split on mention tokens first, then strip * from plain segments
   const parts = text.split(/(@\[[^\]]+\|[^\]]+\])/g);
   return (
-    <Text style={textStyle}>
+    <Text style={textStyle} numberOfLines={numberOfLines} onTextLayout={onTextLayout}>
       {parts.map((part, i) => {
         const m = part.match(/^@\[([^\]]+)\|([^\]]+)\]$/);
-        if (!m) return searchQuery ? highlightSearch(part, searchQuery, {}) : <Text key={i}>{part}</Text>;
-        const [, , id] = m;
-        const member = memberMap[id];
-        const isMe   = id === myId;
-        return (
-          <Text key={i} style={{ fontWeight: '800', color: isMe ? '#fbbf24' : '#a78bfa' }}>
-            @{member?.name?.split(' ')[0] ?? 'unknown'}
-          </Text>
-        );
+        if (m) {
+          const [, , id] = m;
+          const member = memberMap[id];
+          const isMe   = id === myId;
+          return (
+            <Text key={i} style={{ fontWeight: '800', color: isMe ? '#fbbf24' : '#a78bfa' }}>
+              @{member?.name?.split(' ')[0] ?? 'unknown'}
+            </Text>
+          );
+        }
+        // Strip markdown bold/italic markers (* and _)
+        const clean = part.replace(/\*+([^*]+)\*+/g, '$1').replace(/_([^_]+)_/g, '$1');
+        return searchQuery
+          ? highlightSearch(clean, searchQuery, {})
+          : <Text key={i}>{clean}</Text>;
       })}
     </Text>
   );
@@ -238,6 +248,8 @@ function VoiceNoteBubble({ uri, msgId, duration, isMine, colors }: {
       setPlaying(false);
       return;
     }
+    // Switch audio session to playback mode so it works after a recording session
+    try { await AudioModule.setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false }); } catch {}
     playerRef.current?.remove();
     playerRef.current = createAudioPlayer({ uri });
     playerRef.current.play();
@@ -245,8 +257,9 @@ function VoiceNoteBubble({ uri, msgId, duration, isMine, colors }: {
     setPlaying(true);
     tickRef.current = setInterval(() => {
       const pos = playerRef.current?.currentTime ?? 0;
-      setProgress(pos / (duration || 1));
-      if (pos >= duration - 0.1) {
+      const dur = duration > 0 ? duration : 1;
+      setProgress(pos / dur);
+      if (pos >= dur - 0.15) {
         if (tickRef.current) clearInterval(tickRef.current);
         setPlaying(false); setProgress(0);
       }
@@ -423,7 +436,7 @@ function SwipeableBubble({ children, onSwipeRight, timeNode }: {
   const activeRef   = useRef(false);
 
   const snapBack = () =>
-    Animated.timing(translateX, { toValue: 0, duration: 180, useNativeDriver: true }).start();
+    Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 40, bounciness: 0 }).start();
 
   const panResponder = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => false,
@@ -480,6 +493,44 @@ function SwipeableBubble({ children, onSwipeRight, timeNode }: {
       <Animated.View style={{ position: 'absolute', right: 4, opacity: timeOpacity, transform: [{ translateX: timeSlide }], pointerEvents: 'none' }}>
         {timeNode}
       </Animated.View>
+    </View>
+  );
+}
+
+// ─── Collapsible text (10-line cap with Show more / Show less) ───────────────
+
+const COLLAPSE_LINES = 10;
+
+function CollapsibleText({ text, memberMap, myId, searchQuery, isMe, bubbleMeTxt, bubbleOtherTxt }: {
+  text: string; memberMap: Record<string, any>; myId: string; searchQuery?: string;
+  isMe: boolean; bubbleMeTxt: string; bubbleOtherTxt: string;
+}) {
+  const [collapsed, setCollapsed] = useState(true);
+  const [needsCollapse, setNeedsCollapse] = useState(false);
+  const txtColor = isMe ? bubbleMeTxt : bubbleOtherTxt;
+  const txtStyle = { fontSize: 15, lineHeight: 22, letterSpacing: 0.1, fontWeight: '400' as const, color: txtColor };
+
+  return (
+    <View>
+      <MentionText
+        text={text}
+        memberMap={memberMap}
+        myId={myId}
+        searchQuery={searchQuery}
+        textStyle={txtStyle}
+        numberOfLines={needsCollapse && collapsed ? COLLAPSE_LINES : undefined}
+        onTextLayout={(e: any) => {
+          if (!needsCollapse && e.nativeEvent.lines.length > COLLAPSE_LINES) setNeedsCollapse(true);
+        }}
+      />
+      {needsCollapse && (
+        <Pressable onPress={() => setCollapsed(v => !v)} hitSlop={8}>
+          <Text style={{ fontSize: 13, fontWeight: '700', marginTop: 4,
+            color: isMe ? 'rgba(255,255,255,0.75)' : '#818cf8' }}>
+            {collapsed ? 'Show more ▾' : 'Show less ▴'}
+          </Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -571,12 +622,6 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
 
         <Animated.View style={{ maxWidth: '78%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 1,
           borderRadius: BUBBLE_R, borderWidth: highlightWidth, borderColor: highlightBorder }}>
-          {/* Sender name — others, first bubble only */}
-          {!isMe && isGroupFirst && (
-            <Text style={{ fontSize: 12, fontWeight: '700', color: senderColor, marginLeft: 2, marginBottom: 1 }}>
-              {senderName}
-            </Text>
-          )}
 
           {/* Bubble */}
           <Pressable
@@ -591,7 +636,7 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
               borderBottomRightRadius: bbrr,
               overflow: 'hidden',
               padding: isVoice ? 8 : 10,
-              paddingTop: msg.replyTo ? 0 : (isVoice ? 8 : 10),
+              paddingTop: (!isMe && isGroupFirst && !msg.replyTo) ? 6 : (msg.replyTo ? 0 : (isVoice ? 8 : 10)),
               shadowColor: '#000',
               shadowOpacity: isMe ? 0 : (isDark ? 0.22 : 0.07),
               shadowRadius: 3,
@@ -623,6 +668,13 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
               </Pressable>
             )}
 
+            {/* Sender name — inside bubble, first line, iMessage style */}
+            {!isMe && isGroupFirst && (
+              <Text style={{ fontSize: 12, fontWeight: '800', color: senderColor, marginBottom: 3 }}>
+                {senderName}
+              </Text>
+            )}
+
             {/* Voice note */}
             {isVoice && msg.voiceUri ? (
               <VoiceNoteBubble uri={msg.voiceUri} msgId={msg.id} duration={msg.voiceDuration ?? 0} isMine={isMe} colors={colors} />
@@ -646,12 +698,17 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
                     )}
                   </View>
                 )}
-                {/* Text */}
+                {/* Text — collapse after 10 lines */}
                 {!!msg.text && (
-                  <MentionText text={msg.text} memberMap={memberMap} myId={activeMemberId}
+                  <CollapsibleText
+                    text={msg.text}
+                    memberMap={memberMap}
+                    myId={activeMemberId}
                     searchQuery={searchQuery}
-                    textStyle={{ fontSize: 14.5, lineHeight: 21,
-                      color: isMe ? bubbleMeTxt : bubbleOtherTxt }} />
+                    isMe={isMe}
+                    bubbleMeTxt={bubbleMeTxt}
+                    bubbleOtherTxt={bubbleOtherTxt}
+                  />
                 )}
               </>
             )}
@@ -999,10 +1056,17 @@ export default function ChatScreen() {
     setMentionQuery(null);
   };
 
+  // pendingMentions maps display token "@FirstName_idx" → full @[Name|id] for send-time substitution
+  const pendingMentions = useRef<Record<string, string>>({});
+
   const insertMention = (member: any) => {
-    const atIdx  = text.lastIndexOf('@');
-    const before = text.slice(0, atIdx);
-    setText(before + `@[${member.name}|${member.id}] `);
+    const atIdx    = text.lastIndexOf('@');
+    const before   = text.slice(0, atIdx);
+    const firstName = member.name.split(' ')[0];
+    const token    = `@${firstName}`;
+    // store the full mention format keyed by token so handleSend can substitute it
+    pendingMentions.current[token] = `@[${member.name}|${member.id}]`;
+    setText(before + token + ' ');
     setMentionQuery(null);
     inputRef.current?.focus();
   };
@@ -1012,7 +1076,13 @@ export default function ChatScreen() {
   const handleSend = () => {
     if ((!text.trim() && !attachUri) || !activeMemberId) return;
     if (editingMsg) { deleteMessage(channelId, editingMsg.id); setEditingMsg(null); }
-    sendMessage(channelId, activeMemberId, text.trim(), attachUri ?? undefined, attachUri ? attachType : undefined);
+    // Convert display tokens "@FirstName" back to storage format "@[Name|id]"
+    let finalText = text.trim();
+    for (const [token, full] of Object.entries(pendingMentions.current)) {
+      finalText = finalText.split(token).join(full);
+    }
+    pendingMentions.current = {};
+    sendMessage(channelId, activeMemberId, finalText, attachUri ?? undefined, attachUri ? attachType : undefined);
     setText(''); setAttachUri(null); setReplyingTo(null); setMentionQuery(null);
   };
 
@@ -1141,9 +1211,16 @@ export default function ChatScreen() {
               return (
                 <Pressable key={ch.id} onPress={() => setChannelId(ch.id)}
                   style={[s.channelBtn, { backgroundColor: act ? ((ch as any).isDM ? colors.primary : colors.card) : 'transparent' }]}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: act ? ((ch as any).isDM ? '#fff' : colors.textPrimary) : colors.textTertiary }}>
-                    {ch.label}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    {(ch as any).isDM && (
+                      <View style={{ width: 7, height: 7, borderRadius: 4,
+                        backgroundColor: '#22c55e',
+                        borderWidth: 1.5, borderColor: act ? colors.primary : colors.surface }} />
+                    )}
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: act ? ((ch as any).isDM ? '#fff' : colors.textPrimary) : colors.textTertiary }}>
+                      {ch.label}
+                    </Text>
+                  </View>
                 </Pressable>
               );
             })}
@@ -1158,6 +1235,38 @@ export default function ChatScreen() {
           <Text style={{ fontSize: 12, fontWeight: '800', color: colors.primary }} numberOfLines={1}>{channelLabel}</Text>
           <Text style={{ fontSize: 10, color: colors.textTertiary }}>· {members.length} members</Text>
         </View>
+
+        {/* Overlapping avatar ring */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
+          {members.slice(0, 4).map((m: any, i: number) => (
+            <View key={m.id} style={{ marginLeft: i === 0 ? 0 : -8, zIndex: members.length - i }}>
+              <FamilyAvatar
+                name={m.name ?? ''}
+                emoji={m.emoji}
+                avatarUrl={m.avatarUrl}
+                siblings={members.filter((o: any) => o.id !== m.id).map((o: any) => o.name ?? '')}
+                size={26}
+                ringColor={accentColor(m.id)}
+                ringWidth={2}
+                bgColor={accentColor(m.id) + '33'}
+              />
+            </View>
+          ))}
+          {members.length > 4 && (
+            <View style={{
+              width: 26, height: 26, borderRadius: 13,
+              backgroundColor: colors.border,
+              alignItems: 'center', justifyContent: 'center',
+              borderWidth: 2, borderColor: colors.card,
+              marginLeft: -8,
+            }}>
+              <Text style={{ fontSize: 9, fontWeight: '800', color: colors.textSecondary }}>
+                +{members.length - 4}
+              </Text>
+            </View>
+          )}
+        </View>
+
         <Pressable onPress={() => setSearchOpen(v => !v)}
           style={[s.iconBtn, { backgroundColor: searchOpen ? colors.primaryLight : colors.surface, borderColor: searchOpen ? colors.primary : colors.border }]}>
           <Ionicons name={searchOpen ? 'close' : 'search'} size={15} color={searchOpen ? colors.primary : colors.textSecondary} />
@@ -1288,25 +1397,6 @@ export default function ChatScreen() {
               </Pressable>
             )}
 
-            {/* ── Mention dropdown ── */}
-            {mentionSuggestions.length > 0 && (
-              <View style={[s.mentionBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                {mentionSuggestions.map(m => (
-                  <Pressable key={m.id} onPress={() => insertMention(m)}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 10,
-                      borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-                    <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: accentColor(m.id)+'22', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 16 }}>{m.emoji ?? '👤'}</Text>
-                    </View>
-                    <View>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>{m.name}</Text>
-                      <Text style={{ fontSize: 11, color: colors.textTertiary }}>{m.role}</Text>
-                    </View>
-                  </Pressable>
-                ))}
-              </View>
-            )}
-
             {/* ── Reply banner ── */}
             {replyingTo && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 8,
@@ -1360,6 +1450,29 @@ export default function ChatScreen() {
             {reviewing && reviewUri && (
               <VoiceReviewBar uri={reviewUri} duration={reviewDur} isDark={isDark}
                 onSend={sendVoiceNote} onDiscard={discardVoice} />
+            )}
+
+            {/* ── Mention picker — grows upward from just above input bar ── */}
+            {mentionSuggestions.length > 0 && (
+              <View style={{ backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.border,
+                shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: -3 }, elevation: 10 }}>
+                {mentionSuggestions.map((m, i) => (
+                  <Pressable key={m.id} onPress={() => insertMention(m)}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 11,
+                      borderBottomWidth: i < mentionSuggestions.length - 1 ? StyleSheet.hairlineWidth : 0,
+                      borderBottomColor: colors.border }}>
+                    <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: accentColor(m.id) + '22',
+                      alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 18 }}>{m.emoji ?? '👤'}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>{m.name.split(' ')[0]}</Text>
+                      <Text style={{ fontSize: 12, color: colors.textSecondary, textTransform: 'capitalize' }}>{m.role}</Text>
+                    </View>
+                    <Text style={{ fontSize: 12, color: accentColor(m.id), fontWeight: '600' }}>tap to mention</Text>
+                  </Pressable>
+                ))}
+              </View>
             )}
 
             {/* ── Input bar ── */}

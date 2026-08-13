@@ -55,7 +55,7 @@ function makeSeed(): FamilyEvent[] {
   return [
     { id: 'e1',  title: 'Dentist appointment', date: d(0), time: '10:00', memberId: 'kid-1',    type: 'appointment', color: '#EF4444', category: 'Medical',  location: 'Dr. Smith Clinic' },
     { id: 'e2',  title: 'Soccer practice',     date: d(0), time: '15:30', memberId: 'kid-1',    type: 'event',       color: '#10B981', category: 'Sports',   driver: 'Priya (Mom)', driverStatus: 'confirmed', location: 'Riverside Park' },
-    { id: 'e3',  title: 'Math tutoring',       date: d(0), time: '17:00', memberId: 'kid-2',    type: 'event',       color: '#6C5CE7', category: 'School',   driver: 'Alex (Dad)',  driverStatus: 'pending',   conflict: true, driverRequestedBy: 'Priya (Mom)', taskOwner: 'Priya (Mom)' },
+    { id: 'e3',  title: 'Math tutoring',       date: d(0), time: '17:00', memberId: 'kid-2',    type: 'event',       color: '#6C5CE7', category: 'School',   location: 'Home — zoom with Mr. Kumar', conflict: true },
     { id: 'e4',  title: 'Family game night',   date: d(0), time: '19:00',                        type: 'event',       color: '#6C5CE7', category: 'Event' },
     { id: 'e5',  title: 'Grocery run',         date: d(1), time: '11:00', memberId: 'parent-1', type: 'reminder',    color: '#3B82F6', category: 'Work' },
     { id: 'e6',  title: 'Soccer tournament',   date: d(1), time: '09:00', memberId: 'kid-1',    type: 'event',       color: '#10B981', category: 'Sports',   driver: 'Alex (Dad)',  driverStatus: 'confirmed', location: 'City Stadium' },

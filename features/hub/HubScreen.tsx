@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet,
-  RefreshControl, Alert, Dimensions, Modal,
+  RefreshControl, Alert, Dimensions, Modal, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -130,6 +130,162 @@ function SectionCard({
       <View style={{ padding: 10, gap: 8 }}>
         {children}
       </View>
+    </View>
+  );
+}
+
+/**
+/**
+ * AlertBanner — red/amber fire-strip at the very top of the Hub for conflicts
+ * and declined drivers. High-visibility, can't be missed.
+ */
+function AlertBanner({ conflictEvents, rejectedEvents, members, colors, isDark, updateEvent }: {
+  conflictEvents: FamilyEvent[]; rejectedEvents: FamilyEvent[];
+  members: FamilyMember[]; colors: any; isDark: boolean;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+}) {
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  return (
+    <View style={{ marginHorizontal: 16, marginBottom: 12, gap: 8 }}>
+      {/* Declined driver cards */}
+      {rejectedEvents.map(ev => {
+        const kid = members.find(m => m.id === ev.memberId);
+        const isOpen = openId === ev.id;
+        return (
+          <View key={ev.id} style={{
+            backgroundColor: isDark ? '#2d0a0a' : '#FEF2F2',
+            borderRadius: 16, borderWidth: 1.5, borderColor: '#EF444450',
+            overflow: 'hidden',
+          }}>
+            {/* Urgent strip */}
+            <View style={{ backgroundColor: '#EF4444', flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
+              <Text style={{ fontSize: 15 }}>🚨</Text>
+              <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
+                Driver Declined — {ev.title}
+              </Text>
+              <Text style={{ fontSize: TYPO.label, color: 'rgba(255,255,255,0.85)', fontWeight: '700' }}>{fmtTime(ev.time)}</Text>
+            </View>
+            <View style={{ padding: 14, gap: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                  <Text style={{ fontWeight: '700', color: '#EF4444' }}>{ev.driver}</Text> declined
+                  {ev.declineReason ? `: "${ev.declineReason}"` : ''}
+                </Text>
+              </View>
+              {kid && ev.location && (
+                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>📍 {ev.location} · For {kid.name.split(' ')[0]}</Text>
+              )}
+              <Pressable onPress={() => setOpenId(isOpen ? null : ev.id)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#EF444415', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: '#EF444430' }}>
+                <Ionicons name={isOpen ? 'chevron-up' : 'person-add-outline'} size={14} color="#EF4444" />
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>
+                  {isOpen ? 'Cancel' : 'Reassign Driver Now'}
+                </Text>
+              </Pressable>
+              {isOpen && (
+                <InlineReassignPanel ev={ev} members={members} colors={colors} isDark={isDark}
+                  onDone={(name, note) => {
+                    updateEvent(ev.id, { driver: name, driverStatus: 'pending', notes: note || undefined });
+                    setOpenId(null);
+                  }} />
+              )}
+            </View>
+          </View>
+        );
+      })}
+
+      {/* Scheduling conflict cards */}
+      {conflictEvents.map(ev => (
+        <View key={ev.id} style={{
+          backgroundColor: isDark ? '#1c1400' : '#FFFBEB',
+          borderRadius: 16, borderWidth: 1.5, borderColor: BRAND.amber + '60',
+          overflow: 'hidden',
+        }}>
+          <View style={{ backgroundColor: BRAND.amber, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
+            <Text style={{ fontSize: 15 }}>⚡</Text>
+            <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
+              Schedule Conflict — {ev.title}
+            </Text>
+            <Text style={{ fontSize: TYPO.label, color: 'rgba(255,255,255,0.9)', fontWeight: '700' }}>{fmtTime(ev.time)}</Text>
+          </View>
+          <View style={{ padding: 14, gap: 8 }}>
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+              This event overlaps with another commitment. Review in Schedule to resolve.
+            </Text>
+            <Pressable onPress={() => router.push('/(tabs)/calendar')}
+              style={{ backgroundColor: BRAND.amber, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="calendar-outline" size={13} color="#fff" />
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Open Schedule →</Text>
+            </Pressable>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * InlineReassignPanel — member picker that opens inside the Hub alert card.
+ * No navigation needed — pick a new driver, add a note, confirm.
+ */
+function InlineReassignPanel({ ev, members, colors, isDark, onDone }: {
+  ev: FamilyEvent; members: FamilyMember[]; colors: any; isDark: boolean;
+  onDone: (driverName: string, note: string) => void;
+}) {
+  const [picked, setPicked] = useState<string | null>(null);
+  const [note,   setNote]   = useState('');
+  const adults = members.filter(m => m.role !== 'kid');
+
+  const statusIcon = (m: FamilyMember) => {
+    if (ev.driver === m.name) {
+      if (ev.driverStatus === 'rejected')  return { icon: '✕', color: '#EF4444', label: 'Declined' };
+      if (ev.driverStatus === 'pending')   return { icon: '⏳', color: BRAND.amber, label: 'Awaiting' };
+      if (ev.driverStatus === 'confirmed') return { icon: '✓', color: '#10B981',  label: 'Confirmed' };
+    }
+    return { icon: '○', color: colors.textTertiary, label: 'Available' };
+  };
+
+  return (
+    <View style={{ gap: 10, marginTop: 4 }}>
+      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+        Pick a driver
+      </Text>
+      {adults.map(m => {
+        const st  = statusIcon(m);
+        const sel = picked === m.name;
+        return (
+          <Pressable key={m.id} onPress={() => setPicked(m.name)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 12,
+              borderWidth: 1.5, borderColor: sel ? BRAND.teal : colors.border,
+              backgroundColor: sel ? BRAND.teal + '18' : (isDark ? colors.card : '#F8FAFC') }}>
+            <FamilyAvatar name={m.name} emoji={m.emoji} size={34} ringColor={sel ? BRAND.teal : colors.border} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: sel ? BRAND.teal : colors.textPrimary }}>{m.name}</Text>
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, textTransform: 'capitalize' }}>{m.role}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+              backgroundColor: st.color + '18', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+              <Text style={{ fontSize: 11, color: st.color, fontWeight: '800' }}>{st.icon} {st.label}</Text>
+            </View>
+          </Pressable>
+        );
+      })}
+      {picked && (
+        <>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: isDark ? colors.card : '#F1F5F9',
+            borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: colors.border }}>
+            <Ionicons name="pencil-outline" size={13} color={colors.textTertiary} />
+            <TextInput value={note} onChangeText={setNote} placeholder="Add a note (optional)…"
+              placeholderTextColor={colors.placeholder}
+              style={{ flex: 1, fontSize: TYPO.label, color: colors.textPrimary }} maxLength={100} />
+          </View>
+          <Pressable onPress={() => onDone(picked, note)}
+            style={{ backgroundColor: BRAND.teal, borderRadius: 12, paddingVertical: 11, alignItems: 'center' }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>✓ Assign {picked} — Awaiting Response</Text>
+          </Pressable>
+        </>
+      )}
     </View>
   );
 }
@@ -293,11 +449,25 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
 
   const awaitingApproval = quests.filter(q => q.status === 'pending_approval');
 
-  const alertCount = noDriverEvents.length + pendingRequests.length + awaitingApproval.length;
+  const rejectedDriverEvents = todayEvents.filter(e => e.driverStatus === 'rejected');
+  const conflictEvents       = todayEvents.filter(e => e.conflict);
+  const alertCount = noDriverEvents.length + pendingRequests.length + awaitingApproval.length + rejectedDriverEvents.length;
   const pad = { paddingHorizontal: 16 };
 
   return (
     <>
+      {/* ── 0. FIRE BANNER — conflicts / rejected drivers that need action NOW ── */}
+      {(conflictEvents.length > 0 || rejectedDriverEvents.length > 0) && (
+        <AlertBanner
+          conflictEvents={conflictEvents}
+          rejectedEvents={rejectedDriverEvents}
+          members={members}
+          colors={colors}
+          isDark={isDark}
+          updateEvent={updateEvent}
+        />
+      )}
+
       {/* ── 1. Quick Action Tiles — bare colored tiles, no wrapper ── */}
       <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginBottom: 12 }}>
         {[
@@ -319,46 +489,41 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
         ))}
       </View>
 
-      {/* ── 2. Conflict Detection Alerts ── */}
+      {/* ── 2. Needs Attention — no driver + ride requests + quest approvals ── */}
       {alertCount > 0 && (
         <View style={pad}>
-          <SectionCard icon="🚨" title="Needs Your Attention"
+          <SectionCard icon="⚡" title="Action Needed"
             badge={alertCount} badgeColor="#EF4444"
             colors={colors} isDark={isDark}>
 
-            {/* No driver urgents — each is an individually collapsible card */}
+            {/* No driver assigned for kid events today */}
             {noDriverEvents.map(ev => {
               const kid = members.find(m => m.id === ev.memberId);
               return (
-                <CollapsibleCard key={ev.id} accent="#EF4444" colors={colors} isDark={isDark} defaultExpanded={false}
+                <CollapsibleCard key={ev.id} accent="#EF4444" colors={colors} isDark={isDark} defaultExpanded={true}
                   summary={
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: 16 }}>🚨</Text>
+                      <Text style={{ fontSize: 16 }}>🚗</Text>
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#EF4444' }} numberOfLines={1}>
                           No driver — {ev.title}
                         </Text>
-                        <Text style={{ fontSize: TYPO.label, color: '#EF4444', opacity: 0.75 }}>
-                          {kid?.name.split(' ')[0] ?? 'Kid'} · {fmtTime(ev.time)}
+                        <Text style={{ fontSize: TYPO.label, color: '#EF4444', opacity: 0.8 }}>
+                          {kid?.name.split(' ')[0] ?? 'Kid'} · {fmtTime(ev.time)}{ev.location ? ` · ${ev.location}` : ''}
                         </Text>
                       </View>
                       <View style={{ backgroundColor: '#EF444430', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Urgent</Text>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>🔴 Urgent</Text>
                       </View>
                     </View>
                   }>
-                  {ev.location && (
-                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>📍 {ev.location}</Text>
-                  )}
-                  <Pressable onPress={() => router.push('/(tabs)/calendar')}
-                    style={{ backgroundColor: '#EF4444', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 9, alignSelf: 'flex-start' }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Assign Driver Now</Text>
-                  </Pressable>
+                  <InlineReassignPanel ev={ev} members={members} colors={colors} isDark={isDark}
+                    onDone={(name, note) => updateEvent(ev.id, { driver: name, driverStatus: 'pending', notes: note || undefined })} />
                 </CollapsibleCard>
               );
             })}
 
-            {/* Pending ride / schedule requests — each collapsible */}
+            {/* Pending ride requests from kids */}
             {pendingRequests.map(ev => {
               const requester = ev.driverRequestedBy ?? members.find(m => m.id === ev.memberId)?.name ?? 'Kid';
               return (
@@ -368,9 +533,9 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
                       <Text style={{ fontSize: 16 }}>🙋</Text>
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.amber }} numberOfLines={1}>
-                          {ev.title}
+                          Ride requested · {ev.title}
                         </Text>
-                        <Text style={{ fontSize: TYPO.label, color: BRAND.amber, opacity: 0.75 }}>
+                        <Text style={{ fontSize: TYPO.label, color: BRAND.amber, opacity: 0.8 }}>
                           {requester} · {fmtTime(ev.time)}{ev.location ? ` · ${ev.location}` : ''}
                         </Text>
                       </View>
@@ -379,38 +544,45 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
                       </View>
                     </View>
                   }>
+                  {ev.notes && (
+                    <View style={{ backgroundColor: isDark ? '#1e293b' : '#fefce8', borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: BRAND.amber }}>
+                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{ev.notes}"</Text>
+                    </View>
+                  )}
                   <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, driverStatus: 'confirmed' })}
+                    <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, driverStatus: 'confirmed', driver: active.name })}
                       style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>✓ Claim</Text>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>✓ I'll Drive</Text>
                     </Pressable>
-                    <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, driverStatus: 'rejected', declineReason: 'Declined by parent', declinedBy: active.name })}
+                    <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, driverStatus: 'rejected', declineReason: "Can't make it", declinedBy: active.name })}
                       style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>✕ Decline</Text>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>✕ Can't Do It</Text>
                     </Pressable>
                   </View>
+                  <InlineReassignPanel ev={ev} members={members} colors={colors} isDark={isDark}
+                    onDone={(name, note) => updateEvent(ev.id, { approvalPending: false, driver: name, driverStatus: 'pending', notes: note || undefined })} />
                 </CollapsibleCard>
               );
             })}
 
-            {/* Quest approvals — each collapsible */}
+            {/* Quest approvals */}
             {awaitingApproval.map(q => {
               const kid = members.find(m => m.id === q.assignedToId);
               return (
-                <CollapsibleCard key={q.id} accent={BRAND.purple} colors={colors} isDark={isDark}
+                <CollapsibleCard key={q.id} accent={BRAND.purple} colors={colors} isDark={isDark} defaultExpanded={false}
                   summary={
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Text style={{ fontSize: 16 }}>📸</Text>
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.purple }} numberOfLines={1}>
-                          {q.title}
+                          Quest done — {q.title}
                         </Text>
                         {kid && (
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
                             <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl}
                               siblings={allNames} size={14} ringColor={BRAND.purple} ringWidth={1} />
-                            <Text style={{ fontSize: TYPO.micro + 1, color: BRAND.purple, fontWeight: '600' }}>
-                              {kid.name.split(' ')[0]} · 🪙{q.coins}
+                            <Text style={{ fontSize: TYPO.label, color: BRAND.purple, fontWeight: '600' }}>
+                              {kid.name.split(' ')[0]} wants 🪙{q.coins}
                             </Text>
                           </View>
                         )}
@@ -422,7 +594,7 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
                   }>
                   <Pressable onPress={() => approveQuest(q.id, active.id)}
                     style={{ backgroundColor: BRAND.purple, paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Pay Out 🪙{q.coins}</Text>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>✅ Approve & Pay 🪙{q.coins}</Text>
                   </Pressable>
                 </CollapsibleCard>
               );

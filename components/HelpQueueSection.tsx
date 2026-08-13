@@ -437,7 +437,7 @@ function PendingCard({ req, active, allMembers, colors, isDark }: {
   const allNames     = allMembers.map(m => m.name);
 
   return (
-    <CollapsibleCard accent={accent} defaultExpanded colors={colors} isDark={isDark}
+    <CollapsibleCard accent={accent} defaultExpanded={false} colors={colors} isDark={isDark}
       summary={
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
           <View style={{ flex: 1, gap: 2 }}>
@@ -519,7 +519,7 @@ function AwaitingCard({ req, active, allMembers, colors, isDark }: {
 
   if (isOfferedToMe) {
     return (
-      <CollapsibleCard accent={BRAND.teal} defaultExpanded colors={colors} isDark={isDark}
+      <CollapsibleCard accent={BRAND.teal} defaultExpanded={false} colors={colors} isDark={isDark}
         summary={
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
             <View style={{ flex: 1, gap: 2 }}>
@@ -570,7 +570,7 @@ function AwaitingCard({ req, active, allMembers, colors, isDark }: {
 
   // Observer view — start collapsed
   return (
-    <CollapsibleCard accent={BRAND.purple} defaultExpanded colors={colors} isDark={isDark}
+    <CollapsibleCard accent={BRAND.purple} defaultExpanded={false} colors={colors} isDark={isDark}
       summary={
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
           <View style={{ flex: 1, gap: 2 }}>
@@ -639,7 +639,7 @@ function AssignedCard({ req, active, allMembers, colors, isDark }: {
   const allNames      = allMembers.map(m => m.name);
 
   return (
-    <CollapsibleCard accent={accent} defaultExpanded={iAmHelper} colors={colors} isDark={isDark}
+    <CollapsibleCard accent={accent} defaultExpanded={false} colors={colors} isDark={isDark}
       summary={
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
           <View style={{ flex: 1, gap: 2 }}>
@@ -718,7 +718,7 @@ function KidCard({ req, active, allMembers, colors, isDark, onResubmit }: {
   // Kid was offered to help someone else (adult request routed to them)
   if ((req.offeredToIds ?? []).includes(active.id) && req.status === 'awaiting_acceptance') {
     return (
-      <CollapsibleCard accent={BRAND.teal} defaultExpanded colors={colors} isDark={isDark}
+      <CollapsibleCard accent={BRAND.teal} defaultExpanded={false} colors={colors} isDark={isDark}
         summary={
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
             <View style={{ flex: 1, gap: 2 }}>
@@ -752,7 +752,7 @@ function KidCard({ req, active, allMembers, colors, isDark, onResubmit }: {
   // Kid is the confirmed helper
   if (req.assignedHelperId === active.id && req.status === 'assigned') {
     return (
-      <CollapsibleCard accent={BRAND.teal} defaultExpanded colors={colors} isDark={isDark}
+      <CollapsibleCard accent={BRAND.teal} defaultExpanded={false} colors={colors} isDark={isDark}
         summary={
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
             <View style={{ flex: 1, gap: 2 }}>

@@ -17,16 +17,16 @@ import { useHelpStore } from '@/store/helpStore';
 
 // ── Tab icon name map ─────────────────────────────────────────────────────────
 const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
-  index:    'home-outline',
-  quests:   'flag-outline',
+  index:    'grid-outline',
+  quests:   'checkbox-outline',
   calendar: 'calendar-outline',
   chat:     'chatbubbles-outline',
   store:    'gift-outline',
   profile:  'shield-outline',
 };
 const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
-  index:    'home',
-  quests:   'flag',
+  index:    'grid',
+  quests:   'checkbox',
   calendar: 'calendar',
   chat:     'chatbubbles',
   store:    'gift',
@@ -282,7 +282,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   label: {
-    fontSize: 10,
+    fontSize: 12,
   },
   badge: {
     position: 'absolute',

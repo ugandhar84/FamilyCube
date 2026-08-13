@@ -21,7 +21,7 @@ import PetleyLogo from '@/components/PawBondLogo';
 import PawBondSplashScreen from '@/components/PawBondSplashScreen';
 import { useFeatureFlag } from '@/lib/hooks/useAppSettings';
 import { type PartnerCategory } from '@/lib/discovery';
-import { parseDbTime } from '@/lib/dates';
+import { parseDbTime, todayLocal } from '@/lib/dates';
 import { formatTime } from '@/lib/units';
 import { usePaywall } from '@/lib/hooks/usePaywall';
 import { useActiveLostAlert } from '@/lib/hooks/useActiveLostAlert';
@@ -439,7 +439,7 @@ export default function HomeScreen() {
       getCareStreak(displayPetId).then(async n => {
         usePetStore.setState(s => ({ streaks: { ...s.streaks, [displayPetId]: n } }));
         if (!STREAK_MILESTONES.includes(n)) return;
-        const today = new Date().toISOString().slice(0, 10);
+        const today = todayLocal();
         const key = `streak_celebrated_${displayPetId}_${n}_${today}`;
         const already = await AsyncStorage.getItem(key);
         if (already) return;

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { todayLocal } from '@/lib/dates';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator,
   Modal, ScrollView, KeyboardAvoidingView, Platform,
@@ -44,7 +45,7 @@ function AddMemoryModal({ visible, onClose, onSave, colors, isDark }: {
 }) {
   const [title, setTitle]   = useState('');
   const [desc, setDesc]     = useState('');
-  const [date, setDate]     = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate]     = useState(todayLocal());
   const [icon, setIcon]     = useState('Trophy');
   const [iconColor, setIconColor] = useState(BRAND.amber);
   const [tag, setTag]       = useState('');

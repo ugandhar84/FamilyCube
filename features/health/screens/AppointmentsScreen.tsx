@@ -132,17 +132,17 @@ export default function AppointmentsScreen() {
 
   const upcoming = useMemo(() => filtered
     .filter(a => a.status === 'upcoming' && !isPast(parseDbTime(a.scheduled_at)))
-    .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()),
+    .sort((a, b) => parseDbTime(a.scheduled_at).getTime() - parseDbTime(b.scheduled_at).getTime()),
     [filtered]);
   // Overdue = status still 'upcoming' but datetime has already passed
   const overdue = useMemo(() => filtered
     .filter(a => a.status === 'upcoming' && isPast(parseDbTime(a.scheduled_at)))
-    .sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime()),
+    .sort((a, b) => parseDbTime(b.scheduled_at).getTime() - parseDbTime(a.scheduled_at).getTime()),
     [filtered]);
   // Past = completed or cancelled (not overdue)
   const past = useMemo(() => filtered
     .filter(a => a.status === 'completed' || a.status === 'cancelled')
-    .sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime()),
+    .sort((a, b) => parseDbTime(b.scheduled_at).getTime() - parseDbTime(a.scheduled_at).getTime()),
     [filtered]);
 
   const scrollRef = useRef<ScrollView>(null);
@@ -510,7 +510,7 @@ export default function AppointmentsScreen() {
               {(() => {
                 if (!voiceReview.scheduled_at) return null;
                 try {
-                  const apptDate = new Date(voiceReview.scheduled_at.replace(' ', 'T'));
+                  const apptDate = parseDbTime(voiceReview.scheduled_at);
                   if (isValid(apptDate) && isPast(apptDate)) {
                     return (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -534,7 +534,7 @@ export default function AppointmentsScreen() {
                   { icon: 'calendar-outline' as const,   label: 'Date & time', value: (() => {
                     if (!voiceReview.scheduled_at) return '—';
                     try {
-                      const d = new Date(voiceReview.scheduled_at.replace(' ', 'T'));
+                      const d = parseDbTime(voiceReview.scheduled_at);
                       return isValid(d) ? `${format(d, 'EEE, MMM d, yyyy')} · ${formatTime(d)}` : voiceReview.scheduled_at;
                     } catch { return voiceReview.scheduled_at; }
                   })() },

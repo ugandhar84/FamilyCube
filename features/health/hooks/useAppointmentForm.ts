@@ -58,7 +58,7 @@ export function useAppointmentForm({
     if (!apptData?.title?.trim() || !apptData?.scheduled_at || !activePetId) {
       showAlert('Required', 'Title and date are required.'); return;
     }
-    const parsedAppt = new Date(apptData.scheduled_at.trim().replace(' ', 'T'));
+    const parsedAppt = parseDbTime(apptData.scheduled_at);
     if (isNaN(parsedAppt.getTime())) { showAlert('Invalid date'); return; }
     const iso = parsedAppt.toISOString();
     setSaving(true);

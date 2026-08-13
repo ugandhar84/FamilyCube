@@ -1,3 +1,4 @@
+import { todayLocal, localDateStr } from '@/lib/dates';
 import { showAlert } from '@/components/AppAlert';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
@@ -392,7 +393,7 @@ export default function RecordDetailScreen() {
           const kg = parseFloat(item.raw_value ?? '0');
           if (!isNaN(kg) && kg > 0) {
             // logWeight stamps logged_at = now, so dedup against today's UTC date (matches existing keys)
-            const wtKey = `${kg}|${new Date().toISOString().slice(0, 10)}`;
+            const wtKey = `${kg}|${todayLocal()}`;
             if (wtKeys.has(wtKey)) { skipped++; continue; }
             wtKeys.add(wtKey);
             await logWeight(petId, kg, { source_record_id: record.id });
@@ -402,7 +403,7 @@ export default function RecordDetailScreen() {
         } else if (item.type === 'appointment') {
           const apptDate = item.follow_up_date ?? date;
           if (apptDate) {
-            const apptKey = `${norm(item.title)}|${new Date(apptDate).toISOString().slice(0, 10)}`;
+            const apptKey = `${norm(item.title)}|${localDateStr(new Date(apptDate))}`;
             if (apptKeys.has(apptKey)) { skipped++; continue; }
             apptKeys.add(apptKey);
             await saveAppointment(petId, {

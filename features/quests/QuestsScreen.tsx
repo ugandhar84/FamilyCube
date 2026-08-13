@@ -33,7 +33,7 @@ import AppHeader from '@/components/AppHeader';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
-import { fmtDateShort } from '@/lib/dates';
+import { fmtDateShort, todayLocal, localDateStr } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
 import { useChatStore } from '@/store/chatStore';
 import { fetchCustomCategories, fetchCustomSuggestions, recordCustomSuggestion, CustomCategory } from '@/lib/familyCustomCategories';
@@ -178,7 +178,7 @@ const I = {
 // ─── AI Simulation helpers ────────────────────────────────────────────────────
 
 function callAutoBalanceFallback(quests: any[], kids: any[]) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayLocal();
   const openCount = (id: string) => quests.filter(q => q.assignedToId === id && q.status !== 'done' && q.status !== 'approved').length;
   const sorted = [...kids].sort((a, b) => openCount(a.id) - openCount(b.id));
   const assignments = quests
@@ -192,7 +192,7 @@ function callAutoBalanceFallback(quests: any[], kids: any[]) {
 }
 
 function buildAdviceFallback(quests: any[], kids: any[]) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayLocal();
   const kidStats = kids.map((k: any) => {
     const assigned   = quests.filter(q => q.assignedToId === k.id);
     const done       = assigned.filter(q => q.status === 'done' || q.status === 'approved').length;
@@ -284,7 +284,7 @@ async function callAutoBalance(quests: any[], kids: any[]) {
 // ── Real FOMO engine — no fake data, reads live quest state ──────────────────
 function buildFomoResult(quests: any[], kids: any[]) {
   const now   = Date.now();
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayLocal();
 
   // ── BONUS targets: need positive motivation (no one has acted yet) ──────────
   // Pool bounties with zero claimants — incentivise first grab
@@ -419,7 +419,7 @@ async function callFomo(quests: any[], kids: any[]) {
 }
 
 async function callAdvice(quests: any[], kids: any[]) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayLocal();
 
   // Alias kid names before sending to AI
   const aliasMap: Record<string, string> = {};
@@ -995,7 +995,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
       assignedToId: isPool || isMulti ? undefined : (assignIds[0] || undefined),
       assignedToIds: isMulti ? assignIds : [],
       isPool: !isAdultTask && (isPool || assignIds.length === 0), isDaily: false, recurrence: 'once', status: 'todo',
-      dueDate: dueDate.toISOString().split('T')[0],
+      dueDate: localDateStr(dueDate),
       dueTime: fmtTimeLabel(dueDate),
       photoRequired: photoReq,
       createdById: activeMemberId,
@@ -1049,7 +1049,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
             if (!itemIds.length) continue;
             const { data: runRow, error: runErr } = await supabase
               .from('grocery_runs')
-              .insert({ family_id: familyId, name: title.trim(), store: store === 'Any store' ? 'Store' : store, status: 'draft', created_by: activeMemberId, planned_at: dueDate.toISOString().split('T')[0] })
+              .insert({ family_id: familyId, name: title.trim(), store: store === 'Any store' ? 'Store' : store, status: 'draft', created_by: activeMemberId, planned_at: localDateStr(dueDate) })
               .select('id').single();
             if (!runErr && runRow?.id) {
               await supabase.from('grocery_run_items').insert(itemIds.map(itemId => ({ run_id: runRow.id, item_id: itemId, checked_in_run: false })));
@@ -2511,7 +2511,7 @@ export default function QuestsScreen() {
         recurrence: 'once', status: 'todo',
         assignedToIds: goPool ? [] : [item.assignedToId],
         isAdultTask: false,
-        dueDate: new Date().toISOString().split('T')[0], photoRequired: false,
+        dueDate: todayLocal(), photoRequired: false,
         createdById: activeMember?.id,
       });
     } else if (type === 'reassign') {

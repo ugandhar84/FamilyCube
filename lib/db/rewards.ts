@@ -1,3 +1,4 @@
+import { todayLocal, localDateStr } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
 
 export interface PartnerOffer {
@@ -157,7 +158,7 @@ export const COIN_REWARDS: Record<string, number> = {
 
 /** Fetch user's remaining daily coin budget (for UI hints) */
 export async function fetchDailyProgress(userId: string): Promise<{ earned: number; cap: number; remaining: number }> {
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayLocal();
   const { data } = await supabase
     .from('coin_ledger')
     .select('delta')

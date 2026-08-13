@@ -44,7 +44,7 @@ export async function onCareDayComplete(
     const today = todayLocal();
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().slice(0, 10);
+    const yesterdayStr = localDateStr(yesterday);
 
     const { data } = await supabase
       .from('pet_care_streaks')

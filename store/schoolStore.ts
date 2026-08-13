@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { todayLocal, localDateStr } from '@/lib/dates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
@@ -85,8 +86,8 @@ interface SchoolState {
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
 
-const today    = new Date().toISOString().split('T')[0];
-const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+const today    = todayLocal();
+const tomorrow = localDateStr(new Date(Date.now() + 86400_000));
 
 const SEED_SCHEDULES: KidSchedule[] = [
   {
@@ -290,7 +291,7 @@ export const useSchoolStore = create<SchoolState>((set, get) => ({
   getHomeworkForMember: (memberId) => get().homeworks.filter(h => h.memberId === memberId),
 
   getOverdueHomework: (memberId) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today    = todayLocal();
     return get().homeworks.filter(h =>
       h.memberId === memberId && h.status !== 'done' && h.dueDate < today
     );

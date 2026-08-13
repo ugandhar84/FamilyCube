@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { todayLocal, parseDbTime } from '@/lib/dates';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
   TextInput, Modal, ScrollView, KeyboardAvoidingView, Platform, Alert, Animated, Easing, Switch,
@@ -76,7 +77,7 @@ const CAT_COLORS: Record<string, string> = {
   supplement: BRAND.amber, other: BRAND.blue,
 };
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayLocal();
 
 // ─── Add-Medication Modal ──────────────────────────────────────────────────────
 

@@ -2,6 +2,7 @@
 
 import { FlaskConical, Stethoscope, Pill, FileText, Shield, File } from 'lucide-react-native';
 import { BRAND } from '../tabs/shared';
+import { todayLocal } from '@/lib/dates';
 
 export type RecordTag  = 'lab' | 'discharge' | 'prescription' | 'imaging' | 'insurance' | 'vaccination' | 'other';
 export type Urgency    = 'routine' | 'attention' | 'urgent';
@@ -65,7 +66,7 @@ export const memberColor   = (idx: number) => MEMBER_COLORS[idx % MEMBER_COLORS.
 
 export const BLANK_FORM: RecordForm = {
   title: '', tag: 'lab',
-  record_date: new Date().toISOString().slice(0, 10),
+  record_date: todayLocal(),
   notes: '',
 };
 

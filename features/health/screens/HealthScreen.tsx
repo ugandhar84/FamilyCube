@@ -130,7 +130,7 @@ export default function HealthScreen({ hideHeader = false }: { hideHeader?: bool
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const midnight = new Date(today); midnight.setDate(midnight.getDate() + 1);
     return hd.appts.filter(a => { const d = safeISO(a.scheduled_at); return !!d && d >= today && d < midnight; })
-      .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+      .sort((a, b) => parseDbTime(a.scheduled_at).getTime() - parseDbTime(b.scheduled_at).getTime());
   }, [hd.appts]);
 
   const futureUpcoming = useMemo(() => {
@@ -138,7 +138,7 @@ export default function HealthScreen({ hideHeader = false }: { hideHeader?: bool
     return hd.appts.filter(a => {
       if (a.status === 'completed' || a.status === 'cancelled') return false;
       const d = safeISO(a.scheduled_at); return !!d && d >= midnight;
-    }).sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+    }).sort((a, b) => parseDbTime(a.scheduled_at).getTime() - parseDbTime(b.scheduled_at).getTime());
   }, [hd.appts]);
 
   const apptCards = useMemo(() => {
@@ -151,7 +151,7 @@ export default function HealthScreen({ hideHeader = false }: { hideHeader?: bool
     return hd.appts.filter(a => {
       if (a.status === 'completed' || a.status === 'cancelled') return false;
       const d = safeISO(a.scheduled_at); return !!d && d >= today;
-    }).sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+    }).sort((a, b) => parseDbTime(a.scheduled_at).getTime() - parseDbTime(b.scheduled_at).getTime());
   }, [hd.appts]);
 
   const overdueVax = hd.vaxes.filter(v => v.next_due && differenceInDays(parseISO(v.next_due), new Date()) < 0).length;
@@ -433,7 +433,7 @@ export default function HealthScreen({ hideHeader = false }: { hideHeader?: bool
               </View>
               {(() => {
                 if (!apptF.voiceReview.scheduled_at) return null;
-                try { const d = new Date(apptF.voiceReview.scheduled_at.replace(' ', 'T')); if (isValid(d) && isPast(d)) return (
+                try { const d = parseDbTime(apptF.voiceReview.scheduled_at); if (isValid(d) && isPast(d)) return (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF9C3', borderRadius: 12, padding: 10, marginBottom: 12, borderWidth: 1, borderColor: '#FDE047' }}>
                     <Ionicons name="warning-outline" size={16} color="#CA8A04" />
                     <Text style={{ flex: 1, fontSize: TYPO.caption, color: '#92400E', fontWeight: '600' }}>This date is in the past — please update it in the form.</Text>
@@ -445,7 +445,7 @@ export default function HealthScreen({ hideHeader = false }: { hideHeader?: bool
                 {[
                   { icon: 'clipboard-outline' as const,  label: 'Title',    value: apptF.voiceReview.title ?? '—' },
                   { icon: 'medical-outline' as const,    label: 'Type',     value: apptF.voiceReview.type ? apptF.voiceReview.type.charAt(0).toUpperCase() + apptF.voiceReview.type.slice(1) : '—' },
-                  { icon: 'calendar-outline' as const,   label: 'Date & time', value: (() => { if (!apptF.voiceReview.scheduled_at) return '—'; try { const d = new Date(apptF.voiceReview.scheduled_at.replace(' ', 'T')); return isValid(d) ? `${format(d, 'EEE, MMM d, yyyy')} · ${formatTime(d)}` : apptF.voiceReview.scheduled_at; } catch { return apptF.voiceReview.scheduled_at; } })() },
+                  { icon: 'calendar-outline' as const,   label: 'Date & time', value: (() => { if (!apptF.voiceReview.scheduled_at) return '—'; try { const d = parseDbTime(apptF.voiceReview.scheduled_at); return isValid(d) ? `${format(d, 'EEE, MMM d, yyyy')} · ${formatTime(d)}` : apptF.voiceReview.scheduled_at; } catch { return apptF.voiceReview.scheduled_at; } })() },
                   { icon: 'person-outline' as const,     label: 'Vet',      value: apptF.voiceReview.vet_name ?? null },
                   { icon: 'business-outline' as const,   label: 'Clinic',   value: apptF.voiceReview.clinic_name ?? null },
                   { icon: 'location-outline' as const,   label: 'Address',  value: apptF.voiceReview.clinic_address ?? null },
@@ -604,14 +604,14 @@ export default function HealthScreen({ hideHeader = false }: { hideHeader?: bool
                   <FieldLabel label="Date & time *" colors={colors} />
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     <TouchableOpacity style={[s.dateBtn, { flex: 1, backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}
-                      onPress={() => { const b = apptF.apptData?.scheduled_at ? new Date(apptF.apptData.scheduled_at.replace(' ', 'T')) : new Date(); apptF.setPickerDate(isNaN(b.getTime()) ? new Date() : b); apptF.setPickerMode('date'); }}>
+                      onPress={() => { const b = apptF.apptData?.scheduled_at ? parseDbTime(apptF.apptData.scheduled_at) : new Date(); apptF.setPickerDate(isNaN(b.getTime()) ? new Date() : b); apptF.setPickerMode('date'); }}>
                       <Ionicons name="calendar-outline" size={14} color={accent} />
-                      <Text style={[s.dateBtnText, { color: apptF.apptData?.scheduled_at ? colors.textPrimary : colors.placeholder }]}>{apptF.apptData?.scheduled_at ? format(new Date(apptF.apptData.scheduled_at.replace(' ', 'T')), 'MMM d, yyyy') : 'Select date'}</Text>
+                      <Text style={[s.dateBtnText, { color: apptF.apptData?.scheduled_at ? colors.textPrimary : colors.placeholder }]}>{apptF.apptData?.scheduled_at ? format(parseDbTime(apptF.apptData.scheduled_at), 'MMM d, yyyy') : 'Select date'}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={[s.dateBtn, { flex: 0.7, backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}
-                      onPress={() => { const b = apptF.apptData?.scheduled_at ? new Date(apptF.apptData.scheduled_at.replace(' ', 'T')) : new Date(); apptF.setPickerDate(isNaN(b.getTime()) ? new Date() : b); apptF.setPickerMode('time'); }}>
+                      onPress={() => { const b = apptF.apptData?.scheduled_at ? parseDbTime(apptF.apptData.scheduled_at) : new Date(); apptF.setPickerDate(isNaN(b.getTime()) ? new Date() : b); apptF.setPickerMode('time'); }}>
                       <Ionicons name="time-outline" size={14} color={accent} />
-                      <Text style={[s.dateBtnText, { color: apptF.apptData?.scheduled_at ? colors.textPrimary : colors.placeholder }]}>{apptF.apptData?.scheduled_at ? formatTime(new Date(apptF.apptData.scheduled_at.replace(' ', 'T'))) : 'Time'}</Text>
+                      <Text style={[s.dateBtnText, { color: apptF.apptData?.scheduled_at ? colors.textPrimary : colors.placeholder }]}>{apptF.apptData?.scheduled_at ? formatTime(parseDbTime(apptF.apptData.scheduled_at)) : 'Time'}</Text>
                     </TouchableOpacity>
                   </View>
 

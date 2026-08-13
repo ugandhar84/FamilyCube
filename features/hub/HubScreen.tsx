@@ -446,22 +446,49 @@ function TimelineCard({ ev, members, allNames, colors, isDark, updateEvent }: {
             {ev.title}
           </Text>
 
-          {/* Location */}
-          {ev.location && (
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }} numberOfLines={1}>
-              📍 {ev.location}
-            </Text>
-          )}
-
-          {/* Driver row */}
-          {!isPast && ev.driver && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              <Ionicons name="car-outline" size={13} color={colors.textTertiary} />
+          {/* For + Location row */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            {kid && (
               <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{ev.driver}</Text>
-                {isConfirmed && <Text style={{ color: '#10B981' }}> · Confirmed ✓</Text>}
-                {showRemind && <Text style={{ color: BRAND.amber }}> · Awaiting ⏳</Text>}
-                {driverRejected && <Text style={{ color: '#EF4444' }}> · Declined ✕</Text>}
+                👤 For <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{kid.name.split(' ')[0]}</Text>
+              </Text>
+            )}
+            {!kid && (
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                👨‍👩‍👧 <Text style={{ fontWeight: '700', color: colors.textPrimary }}>Family</Text>
+              </Text>
+            )}
+            {ev.location && (
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }} numberOfLines={1}>
+                📍 {ev.location}
+              </Text>
+            )}
+          </View>
+
+          {/* Helper row — label + emoji based on event type/category */}
+          {ev.driver && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 }}>
+              <Text style={{ fontSize: 13 }}>
+                {ev.category === 'Sports'  ? '🏅' :
+                 ev.category === 'Medical' ? '🏥' :
+                 ev.category === 'School'  ? (ev.title?.toLowerCase().includes('ride') ? '🚗' : '📚') :
+                 ev.category === 'Study'   ? '📚' :
+                 ev.category === 'Work'    ? '💼' : '🚗'}
+              </Text>
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                {isPast
+                  ? (ev.category === 'Sports'  ? 'Coached by '   :
+                     ev.category === 'Medical' ? 'Accompanied by ' :
+                     ev.category === 'Study' || ev.title?.toLowerCase().includes('tutor') ? 'Tutored by ' :
+                     ev.title?.toLowerCase().includes('ride') ? 'Driven by ' : 'Assisted by ')
+                  : (ev.title?.toLowerCase().includes('ride') ? 'Driver: ' :
+                     ev.category === 'Medical' ? 'Escort: ' :
+                     ev.category === 'Sports'  ? 'Coach: '  :
+                     ev.category === 'Study'   ? 'Tutor: '  : 'Helper: ')}
+                <Text style={{ fontWeight: '700', color: isPast ? '#10B981' : colors.textPrimary }}>{ev.driver}</Text>
+                {!isPast && isConfirmed && <Text style={{ color: '#10B981' }}> · Confirmed ✓</Text>}
+                {!isPast && showRemind && <Text style={{ color: BRAND.amber }}> · Awaiting ⏳</Text>}
+                {!isPast && driverRejected && <Text style={{ color: '#EF4444' }}> · Declined ✕</Text>}
               </Text>
             </View>
           )}

@@ -90,3 +90,30 @@ CREATE INDEX IF NOT EXISTS idx_fam_mem_family ON public.family_memories(family_i
 ALTER TABLE public.member_locations
   ADD COLUMN IF NOT EXISTS status_text    text,
   ADD COLUMN IF NOT EXISTS safe_zone_name text;
+
+-- global_med_suggestions: crowd-sourced medication name suggestions across all families
+CREATE TABLE IF NOT EXISTS public.global_med_suggestions (
+  name      text        PRIMARY KEY,
+  category  text        NOT NULL DEFAULT 'other',
+  hint      text,
+  use_count integer     NOT NULL DEFAULT 1,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+ALTER TABLE public.global_med_suggestions DISABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_gms_category ON public.global_med_suggestions(category);
+
+-- RPC to upsert a med suggestion and increment use_count atomically
+CREATE OR REPLACE FUNCTION public.upsert_med_suggestion(
+  p_name     text,
+  p_category text,
+  p_hint     text DEFAULT NULL
+) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO public.global_med_suggestions (name, category, hint, use_count, updated_at)
+  VALUES (p_name, p_category, COALESCE(p_hint, p_category), 1, now())
+  ON CONFLICT (name) DO UPDATE
+    SET use_count  = global_med_suggestions.use_count + 1,
+        updated_at = now();
+END;
+$$;

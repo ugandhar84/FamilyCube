@@ -138,6 +138,17 @@ function AddMedModal({ visible, onClose, onSave, members, colors, isDark }: {
   const [showRefillPicker, setShowRefillPicker] = useState(false);
   const [refillDate, setRefillDate]   = useState<Date | null>(null);
   const [nameFocused, setNameFocused] = useState(false);
+  const [globalSuggestions, setGlobalSuggestions] = useState<{ name: string; hint: string; category: string }[]>([]);
+
+  // Load global suggestions once when modal opens
+  useEffect(() => {
+    if (!visible) return;
+    supabase.from('global_med_suggestions')
+      .select('name, hint, category')
+      .order('use_count', { ascending: false })
+      .limit(100)
+      .then(({ data }) => { if (data) setGlobalSuggestions(data as any); });
+  }, [visible]);
 
   const set = (k: keyof MedForm, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -159,10 +170,21 @@ function AddMedModal({ visible, onClose, onSave, members, colors, isDark }: {
 
   const catColor = CAT_COLORS[form.category] ?? BRAND.purple;
   const suggestions = useMemo(() => {
-    const pool = MED_SUGGESTIONS[form.category] ?? [];
-    if (!form.name.trim()) return pool.slice(0, 6);
-    return pool.filter(s => s.name.toLowerCase().includes(form.name.toLowerCase())).slice(0, 6);
-  }, [form.category, form.name]);
+    const builtIn = MED_SUGGESTIONS[form.category] ?? [];
+    const global = globalSuggestions
+      .filter(s => s.category === form.category)
+      .map(s => ({ name: s.name, hint: s.hint ?? s.category }));
+    // Merge: global first (community-sourced), then built-in, deduplicated
+    const seen = new Set<string>();
+    const merged: { name: string; hint: string }[] = [];
+    for (const s of [...global, ...builtIn]) {
+      const key = s.name.toLowerCase();
+      if (!seen.has(key)) { seen.add(key); merged.push(s); }
+    }
+    if (!form.name.trim()) return merged.slice(0, 8);
+    const q = form.name.toLowerCase();
+    return merged.filter(s => s.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [form.category, form.name, globalSuggestions]);
 
   const inp = [
     aStyles.inp,
@@ -938,7 +960,15 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
       escalation_enabled: form.escalation_enabled,
       escalation_after_min: parseInt(form.escalation_after_min) || 60,
     }).select().single();
-    if (data) setMeds(prev => [data as Medication, ...prev]);
+    if (data) {
+      setMeds(prev => [data as Medication, ...prev]);
+      // Persist to global suggestions so other families see it; increment use_count on conflict
+      supabase.rpc('upsert_med_suggestion', {
+        p_name: form.name.trim(),
+        p_category: form.category,
+        p_hint: form.category,
+      }).then(() => {});
+    }
   };
 
   const addVax = async (memberId: string, form: VaxForm) => {
@@ -1184,7 +1214,16 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
                   </Text>
                 </View>
               : <>
-                  <Text style={{ fontSize: 13, color: colors.textPrimary, lineHeight: 21 }}>
+                  {/* Close button */}
+                  <TouchableOpacity
+                    onPress={() => { setAiResult(''); setAiShared(false); setAiQuery(''); }}
+                    style={{ position: 'absolute', top: 10, right: 10, zIndex: 1,
+                      width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)' }}>
+                    <X size={13} color={colors.textSecondary} />
+                  </TouchableOpacity>
+
+                  <Text style={{ fontSize: 13, color: colors.textPrimary, lineHeight: 21, paddingRight: 24 }}>
                     {aiResult}
                   </Text>
                   <View style={{ marginTop: 12, alignItems: 'flex-end' }}>

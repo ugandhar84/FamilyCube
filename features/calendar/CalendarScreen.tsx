@@ -21,7 +21,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal,
   TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
-  Animated, PanResponder,
+  Animated, PanResponder, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -61,6 +61,40 @@ function currentWeekBounds() {
 }
 // Mon-first ordering
 const DAY_SHORT = ['MON','TUE','WED','THU','FRI','SAT','SUN'];
+
+// ─── Location helpers ─────────────────────────────────────────────────────────
+function shortAddress(addr: string, maxLen = 22): string {
+  if (addr.length <= maxLen) return addr;
+  // Keep up to the second comma segment (street + city), then ellipsis
+  const parts = addr.split(',');
+  const short = parts.length > 1 ? `${parts[0].trim()}, ${parts[1].trim()}` : addr;
+  return short.length <= maxLen + 6 ? short : addr.slice(0, maxLen).trimEnd() + '…';
+}
+
+function openInMaps(addr: string) {
+  const encoded = encodeURIComponent(addr);
+  const appleUrl = `maps:?q=${encoded}`;
+  const googleUrl = `https://maps.google.com/?q=${encoded}`;
+  Linking.canOpenURL(appleUrl)
+    .then(ok => Linking.openURL(ok ? appleUrl : googleUrl))
+    .catch(() => Linking.openURL(googleUrl));
+}
+
+function LocationLink({ addr, color, fontSize = 13, iconSize = 12, fontWeight = '600' }: {
+  addr: string; color: string; fontSize?: number; iconSize?: number; fontWeight?: string;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={() => openInMaps(addr)}
+      activeOpacity={0.7}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+      <Text style={{ fontSize, fontWeight: fontWeight as any, color, textDecorationLine: 'underline', textDecorationStyle: 'dotted' }} numberOfLines={1}>
+        {shortAddress(addr)}
+      </Text>
+      <Text style={{ fontSize: fontSize - 2, color, opacity: 0.7 }}>↗</Text>
+    </TouchableOpacity>
+  );
+}
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 const I = {
@@ -1182,7 +1216,7 @@ export default function CalendarScreen() {
                         {ev.location ? (
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                             <I.MapPin c={isDark ? '#34D399' : '#059669'} size={12} />
-                            <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: isDark ? '#34D399' : '#059669' }} numberOfLines={1}>{ev.location}</Text>
+                            <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.caption} fontWeight="600" />
                           </View>
                         ) : null}
                         {ev.helper ? (
@@ -1333,8 +1367,8 @@ export default function CalendarScreen() {
                         )}
                         {ev.location && (
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                            <I.MapPin c={colors.textTertiary} size={11} />
-                            <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }} numberOfLines={1}>{ev.location}</Text>
+                            <I.MapPin c={isDark ? '#34D399' : '#059669'} size={11} />
+                            <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.label} fontWeight="600" />
                           </View>
                         )}
                       </View>
@@ -1361,15 +1395,15 @@ export default function CalendarScreen() {
                         {ev.pickupLocation && (
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                             <I.MapPin c={isDark ? '#34D399' : '#059669'} size={11} />
-                            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                              From: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.pickupLocation}</Text>
-                            </Text>
+                            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>From: </Text>
+                            <LocationLink addr={ev.pickupLocation} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.label} fontWeight="700" />
                           </View>
                         )}
                         {ev.dropLocation && (
-                          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                            → To: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.dropLocation}</Text>
-                          </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>→ To: </Text>
+                            <LocationLink addr={ev.dropLocation} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.label} fontWeight="700" />
+                          </View>
                         )}
                       </View>
                     )}
@@ -1647,7 +1681,7 @@ export default function CalendarScreen() {
                   {ev.location ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <I.MapPin c={isDark ? '#34D399' : '#059669'} size={15} />
-                      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, flex: 1 }}>{ev.location}</Text>
+                      <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.caption} fontWeight="600" iconSize={11} />
                     </View>
                   ) : null}
                   {ev.helper ? (

@@ -73,11 +73,13 @@ function shortAddress(addr: string, maxLen = 22): string {
 
 function openInMaps(addr: string) {
   const encoded = encodeURIComponent(addr);
-  const appleUrl = `maps:?q=${encoded}`;
-  const googleUrl = `https://maps.google.com/?q=${encoded}`;
-  Linking.canOpenURL(appleUrl)
-    .then(ok => Linking.openURL(ok ? appleUrl : googleUrl))
-    .catch(() => Linking.openURL(googleUrl));
+  // iOS → Apple Maps; Android → geo: URI (opens in Google Maps / default maps app)
+  const url = Platform.OS === 'ios'
+    ? `maps://?q=${encoded}`
+    : `geo:0,0?q=${encoded}`;
+  Linking.openURL(url).catch(() =>
+    Linking.openURL(`https://maps.google.com/?q=${encoded}`)
+  );
 }
 
 function LocationLink({ addr, color, fontSize = 13, iconSize = 12, fontWeight = '600' }: {

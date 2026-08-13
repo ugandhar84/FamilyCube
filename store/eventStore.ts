@@ -78,9 +78,15 @@ export const useEventStore = create<EventState>((set, get) => ({
     try {
       const raw = await AsyncStorage.getItem(KEY);
       const seed = makeSeed();
-      const events = raw ? JSON.parse(raw) as FamilyEvent[] : seed;
-      if (!raw) save(seed);
-      set({ events, loaded: true });
+      if (!raw) { save(seed); set({ events: seed, loaded: true }); return; }
+      const cached = JSON.parse(raw) as FamilyEvent[];
+      // Re-apply fresh dates from seed onto cached seed events so dates never go stale.
+      // User-created events (ids not in seed) are kept as-is.
+      const seedIds = new Set(seed.map(s => s.id));
+      const seedMap = Object.fromEntries(seed.map(s => [s.id, s]));
+      const merged = cached.map(e => seedIds.has(e.id) ? { ...e, date: seedMap[e.id].date } : e);
+      set({ events: merged, loaded: true });
+      save(merged);
     } catch { set({ events: makeSeed(), loaded: true }); }
   },
 

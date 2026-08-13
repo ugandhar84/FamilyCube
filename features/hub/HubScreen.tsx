@@ -591,6 +591,7 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
   const { events, updateEvent } = useEventStore();
   const { items: groceryItems, load: loadGrocery } = useGroceryStore();
   const [supportExpanded, setSupportExpanded] = useState(false);
+  const [showPast, setShowPast] = useState(false);
 
   useEffect(() => { loadGrocery('family-1'); }, []);
 
@@ -632,15 +633,50 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
           </Pressable>
         </View>
 
-        {todayEvents.length === 0 ? (
-          <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderRadius: 16, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', alignItems: 'center', paddingVertical: 28, marginBottom: 12 }}>
-            <Text style={{ fontSize: 28, marginBottom: 6 }}>📅</Text>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textTertiary }}>All clear — no events today</Text>
-          </View>
-        ) : todayEvents.map(ev => (
-          <TimelineCard key={ev.id} ev={ev} members={members} allNames={allNames}
-            colors={colors} isDark={isDark} updateEvent={updateEvent} />
-        ))}
+        {(() => {
+          const upcoming = todayEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) > -0.5);
+          const past     = todayEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) <= -0.5);
+
+          if (todayEvents.length === 0) return (
+            <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderRadius: 16, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', alignItems: 'center', paddingVertical: 28, marginBottom: 12 }}>
+              <Text style={{ fontSize: 28, marginBottom: 6 }}>📅</Text>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textTertiary }}>All clear — no events today</Text>
+            </View>
+          );
+
+          return (
+            <>
+              {/* Upcoming events */}
+              {upcoming.length === 0 ? (
+                <View style={{ backgroundColor: isDark ? colors.card : '#f0fdf4', borderRadius: 14, padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Text style={{ fontSize: 20 }}>🎉</Text>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#10B981' }}>All done for today!</Text>
+                </View>
+              ) : upcoming.map(ev => (
+                <TimelineCard key={ev.id} ev={ev} members={members} allNames={allNames}
+                  colors={colors} isDark={isDark} updateEvent={updateEvent} />
+              ))}
+
+              {/* Past events — collapsed by default */}
+              {past.length > 0 && (
+                <>
+                  <Pressable onPress={() => setShowPast(v => !v)}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 4 }}>
+                    <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>
+                      {showPast ? 'Hide' : `${past.length} completed`} {showPast ? '▴' : '▾'}
+                    </Text>
+                    <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+                  </Pressable>
+                  {showPast && past.map(ev => (
+                    <TimelineCard key={ev.id} ev={ev} members={members} allNames={allNames}
+                      colors={colors} isDark={isDark} updateEvent={updateEvent} />
+                  ))}
+                </>
+              )}
+            </>
+          );
+        })()}
       </View>
 
       {/* ── 2. Alert Banner — only when imminent (< 4h) AND driver issue ── */}

@@ -1,14 +1,20 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  TextInput, Modal, ScrollView, KeyboardAvoidingView, Platform, Switch, Alert,
+  TextInput, Modal, ScrollView, KeyboardAvoidingView, Platform, Alert, Animated, Easing, Switch,
+  Image,
 } from 'react-native';
+import ViewShot from 'react-native-view-shot';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   Pill, Syringe, Trash2, Check, Clock, ChevronDown, ChevronUp,
   User, Calendar, AlertCircle, X, RefreshCw, Stethoscope, Send,
-  MessageSquare, SlidersHorizontal, Share2, FileText, Download,
+  MessageSquare, SlidersHorizontal, Share2, FileText, Download, ScanLine,
 } from 'lucide-react-native';
+import Svg, { Path, Circle, Rect, Polyline, Line } from 'react-native-svg';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import { usePrescriptionScanner, ParsedMedication, ParsedVaccine } from '../usePrescriptionScanner';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
 import { useChatStore } from '@/store/chatStore';
@@ -897,14 +903,16 @@ const QUICK_PROMPTS = [
   'Safe OTC meds for kids under 12',
 ];
 
-export default function HealthTab({ colors, isDark }: { colors: any; isDark: boolean }) {
+export default function HealthTab({ colors, isDark, kidView = false }: { colors: any; isDark: boolean; kidView?: boolean }) {
   const { members, activeMemberId } = useFamilyStore();
   const familyId = (members[0] as any)?.familyId ?? 'family-1';
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
+  const insets = useSafeAreaInsets();
 
   const [meds, setMeds]     = useState<Medication[]>([]);
   const [vaxes, setVaxes]   = useState<Vaccine[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showMedModal, setShowMedModal] = useState(false);
   const [showVaxModal, setShowVaxModal] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -951,18 +959,222 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
   const [aiLoading, setAiLoading] = useState(false);
   const [aiShared, setAiShared]   = useState(false);
 
+  // AI banner open state
+  const [aiOpen, setAiOpen] = useState(false);
+
+  // Prescription scanner
+  const {
+    scanning, scanResult, showReview, scanError,
+    pendingImages, maxPhotos,
+    pickImage, scan, pickAndScan,
+    removeImage, clearPending, clearScan, setScanResult,
+  } = usePrescriptionScanner();
+  const [reviewMed, setReviewMed] = useState<ParsedMedication | null>(null);
+  const [reviewVax, setReviewVax] = useState<ParsedVaccine | null>(null);
+  const [reviewDocType, setReviewDocType] = useState<'medication' | 'vaccine'>('medication');
+  const [reviewMemberId, setReviewMemberId] = useState('');
+  const [rxSaving, setRxSaving] = useState(false);
+
+  // Scan bottom sheet state
+  const [showScanSheet, setShowScanSheet] = useState(false);
+  const [scanMode, setScanMode] = useState<'rx' | 'vaccine'>('rx');
+  const [scanPage, setScanPage] = useState<1 | 2>(1);
+
+  // Redact step — draw black boxes over sensitive text before sending to AI
+  type RedactBox = { x: number; y: number; w: number; h: number };
+  // per-image boxes: redactBoxesByImage[i] = boxes for pendingImages[i]
+  const [redactBoxesByImage, setRedactBoxesByImage] = useState<RedactBox[][]>([]);
+  const [activeRedactIdx, setActiveRedactIdx]       = useState(0);
+  const [currentBox, setCurrentBox]                 = useState<RedactBox | null>(null);
+  const currentBoxRef                               = useRef<RedactBox | null>(null);
+  const dragStart                                   = useRef<{ x: number; y: number } | null>(null);
+  const viewShotRef                                 = useRef<ViewShot>(null);
+
+  // boxes for the currently-viewed image
+  const activeBoxes = redactBoxesByImage[activeRedactIdx] ?? [];
+  // Keep a ref so the stable gesture closure always reads the current index
+  const activeRedactIdxRef = useRef(activeRedactIdx);
+  useEffect(() => { activeRedactIdxRef.current = activeRedactIdx; }, [activeRedactIdx]);
+
+  // Stable gesture — never recreated so RNGH doesn't leave stale native state
+  const redactGesture = useMemo(() =>
+    Gesture.Pan()
+      .runOnJS(true)
+      .minDistance(0)
+      .onBegin((e) => {
+        dragStart.current = { x: e.x, y: e.y };
+        const box: RedactBox = { x: e.x, y: e.y, w: 0, h: 0 };
+        currentBoxRef.current = box;
+        setCurrentBox(box);
+      })
+      .onUpdate((e) => {
+        if (!dragStart.current) return;
+        const dx = e.x - dragStart.current.x;
+        const dy = e.y - dragStart.current.y;
+        const box: RedactBox = {
+          x: dx < 0 ? e.x : dragStart.current.x,
+          y: dy < 0 ? e.y : dragStart.current.y,
+          w: Math.abs(dx),
+          h: Math.abs(dy),
+        };
+        currentBoxRef.current = box;
+        setCurrentBox(box);
+      })
+      .onEnd(() => {
+        const box = currentBoxRef.current;
+        if (box && box.w > 8 && box.h > 8) {
+          // Read index from ref — avoids stale closure without recreating the gesture
+          setRedactBoxesByImage(prev => {
+            const idx  = activeRedactIdxRef.current;
+            const copy = [...prev];
+            copy[idx]  = [...(copy[idx] ?? []), box];
+            return copy;
+          });
+        }
+        currentBoxRef.current = null;
+        dragStart.current     = null;
+        setCurrentBox(null);
+      }),
+  // empty deps — gesture is created once and never replaced
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  []);
+
+  // Animation refs
+  const scanBeamY  = useRef(new Animated.Value(0)).current;   // scanning beam
+  const pulseScale = useRef(new Animated.Value(1)).current;    // pulsing circle
+  const spinAnim   = useRef(new Animated.Value(0)).current;    // spinning ring
+  const dotOpacity = [
+    useRef(new Animated.Value(0.3)).current,
+    useRef(new Animated.Value(0.3)).current,
+    useRef(new Animated.Value(0.3)).current,
+  ];
+
+  // Start scanning beam animation
+  const startBeam = useCallback(() => {
+    scanBeamY.setValue(0);
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scanBeamY, { toValue: 1, duration: 1600, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+        Animated.timing(scanBeamY, { toValue: 0, duration: 1600, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+      ])
+    ).start();
+  }, [scanBeamY]);
+
+  // Start pulse + spin + dots when AI is processing
+  const startProcessing = useCallback(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseScale, { toValue: 1.15, duration: 700, useNativeDriver: true }),
+        Animated.timing(pulseScale, { toValue: 1,    duration: 700, useNativeDriver: true }),
+      ])
+    ).start();
+    Animated.loop(
+      Animated.timing(spinAnim, { toValue: 1, duration: 1800, useNativeDriver: true, easing: Easing.linear })
+    ).start();
+    dotOpacity.forEach((dot, i) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 200),
+          Animated.timing(dot, { toValue: 1,   duration: 400, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0.3, duration: 400, useNativeDriver: true }),
+          Animated.delay((dotOpacity.length - i - 1) * 200),
+        ])
+      ).start();
+    });
+  }, [pulseScale, spinAnim, dotOpacity]);
+
+  const stopAnimations = useCallback(() => {
+    scanBeamY.stopAnimation();
+    pulseScale.stopAnimation();
+    spinAnim.stopAnimation();
+    dotOpacity.forEach(d => d.stopAnimation());
+    pulseScale.setValue(1);
+  }, []);
+
+  useEffect(() => {
+    if (scanning) { startBeam(); startProcessing(); }
+    else           { stopAnimations(); }
+  }, [scanning]);
+
+  // Advance to page 2 when result arrives
+  useEffect(() => {
+    if (!scanResult) return;
+    const dt = scanResult.doc_type === 'vaccine' ? 'vaccine' : 'medication';
+    setReviewDocType(dt);
+    if (scanResult.medication) setReviewMed({ ...scanResult.medication });
+    if (scanResult.vaccine)    setReviewVax({ ...scanResult.vaccine });
+    setReviewMemberId(activeMember?.id ?? '');
+    setScanPage(2);
+  }, [scanResult]);
+
+  const openScanSheet = (mode: 'rx' | 'vaccine') => {
+    setScanMode(mode);
+    setScanPage(1);
+    setShowScanSheet(true);
+  };
+
+  const closeScanSheet = () => {
+    setShowScanSheet(false);
+    clearScan();
+    setScanPage(1);
+    setRedactBoxesByImage([]);
+    setCurrentBox(null);
+    setActiveRedactIdx(0);
+  };
+
+  // Reset redact boxes when image count changes (new image added)
+  useEffect(() => {
+    setRedactBoxesByImage(prev => {
+      if (pendingImages.length === prev.length) return prev;
+      // pad/trim to match new count
+      const copy = pendingImages.map((_, i) => prev[i] ?? []);
+      return copy;
+    });
+    if (pendingImages.length > 0) setActiveRedactIdx(pendingImages.length - 1);
+  }, [pendingImages.length]);
+
   const load = useCallback(async () => {
+    if (familyId === 'family-1') return; // real family not resolved yet
     setLoading(true);
+    setLoadError(null);
+    // Kids only see their own assigned medications and vaccines
+    const medsQ = kidView && activeMember?.id
+      ? supabase.from('family_medications').select('*').eq('family_id', familyId).eq('member_id', activeMember.id)
+      : supabase.from('family_medications').select('*').eq('family_id', familyId);
+    const vaxQ = kidView && activeMember?.id
+      ? supabase.from('family_vaccines').select('*').eq('family_id', familyId).eq('member_id', activeMember.id)
+      : supabase.from('family_vaccines').select('*').eq('family_id', familyId);
     const [medsRes, vaxRes] = await Promise.all([
-      supabase.from('family_medications').select('*').eq('family_id', familyId).order('created_at', { ascending: false }),
-      supabase.from('family_vaccines').select('*').eq('family_id', familyId).order('date', { ascending: false }),
+      medsQ.order('created_at', { ascending: false }),
+      vaxQ.order('date', { ascending: false }),
     ]);
-    if (medsRes.data) setMeds(medsRes.data as Medication[]);
-    if (vaxRes.data)  setVaxes(vaxRes.data as Vaccine[]);
+    if (medsRes.error || vaxRes.error) {
+      setLoadError('Could not load health records. Tap refresh to try again.');
+    } else {
+      if (medsRes.data) setMeds(medsRes.data as Medication[]);
+      if (vaxRes.data)  setVaxes(vaxRes.data as Vaccine[]);
+    }
     setLoading(false);
-  }, [familyId]);
+  }, [familyId, kidView, activeMember?.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Realtime: keep medications and vaccines in sync across devices
+  useEffect(() => {
+    if (familyId === 'family-1') return;
+    const channel = supabase
+      .channel(`health-${familyId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'family_medications',
+        filter: `family_id=eq.${familyId}`,
+      }, () => { load(); })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'family_vaccines',
+        filter: `family_id=eq.${familyId}`,
+      }, () => { load(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [familyId, load]);
 
   // Mark medication taken today — records who marked it
   const markTaken = async (med: Medication) => {
@@ -1110,6 +1322,64 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
       done: false,
     }).select().single();
     if (data) setVaxes(prev => [data as Vaccine, ...prev]);
+  };
+
+  const saveScannedMed = async () => {
+    if (!reviewMed || !reviewMemberId) return;
+    setRxSaving(true);
+    try {
+      const { data } = await supabase.from('family_medications').insert({
+        family_id: familyId,
+        member_id: reviewMemberId,
+        assigned_by: activeMember?.id ?? null,
+        name: reviewMed.name.trim() || 'Unknown medication',
+        dosage: reviewMed.dosage.trim(),
+        dosage_unit: 'mg',
+        frequency: reviewMed.frequency || 'As directed',
+        frequency_times: ['08:00'],
+        category: 'other',
+        prescribing_doctor: reviewMed.prescriber || null,
+        pharmacy: reviewMed.pharmacy || null,
+        instructions: reviewMed.instructions || null,
+        is_ongoing: !reviewMed.duration || reviewMed.duration.toLowerCase().includes('ongoing'),
+        is_active: true,
+        escalation_enabled: false,
+        escalation_after_min: 60,
+      }).select().single();
+      if (data) setMeds(prev => [data as Medication, ...prev]);
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Could not save medication.');
+      throw e;
+    } finally {
+      setRxSaving(false);
+    }
+  };
+
+  const saveScannedVax = async () => {
+    if (!reviewVax || !reviewMemberId) return;
+    setRxSaving(true);
+    try {
+      const { data } = await supabase.from('family_vaccines').insert({
+        family_id: familyId,
+        member_id: reviewMemberId,
+        title: reviewVax.vaccine_name.trim() || 'Unknown vaccine',
+        vaccine_type: reviewVax.manufacturer || null,
+        date: reviewVax.administered_date ?? today(),
+        next_due_date: reviewVax.next_due_date ?? null,
+        series_current: reviewVax.dose_number ?? 1,
+        series_total: reviewVax.total_doses ?? 1,
+        administered_by: reviewVax.administered_by || null,
+        location: reviewVax.site || null,
+        notes: reviewVax.lot_number ? `Lot: ${reviewVax.lot_number}` : null,
+        done: true,
+      }).select().single();
+      if (data) setVaxes(prev => [data as Vaccine, ...prev]);
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Could not save vaccine record.');
+      throw e;
+    } finally {
+      setRxSaving(false);
+    }
   };
 
   // Returns true if today's dose is overdue (past scheduled time + grace, not taken)
@@ -1279,109 +1549,222 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
     </SCard>
   );
 
+  if (loadError) return (
+    <SCard colors={colors} isDark={isDark}>
+      <CardHeader Icon={Pill} iconColor={BRAND.rose} title="Health Tracker" colors={colors} />
+      <View style={{ backgroundColor: BRAND.rose + '15', borderRadius: 12, padding: 14, marginTop: 12, gap: 10 }}>
+        <Text style={{ color: BRAND.rose, fontSize: 13, fontWeight: '600', textAlign: 'center' }}>{loadError}</Text>
+        <TouchableOpacity
+          onPress={load}
+          style={{ alignSelf: 'center', backgroundColor: BRAND.rose, borderRadius: 10, paddingHorizontal: 20, paddingVertical: 8 }}
+        >
+          <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    </SCard>
+  );
+
   return (
     <>
-      {/* ── AI Health Assistant ──────────────────────── */}
-      <SCard colors={colors} isDark={isDark}>
-        <CardHeader Icon={Stethoscope} iconColor={BRAND.teal} title="AI Health Assistant"
-          badge="Informational" badgeColor={BRAND.amber} colors={colors} />
-
-        <View style={[h.disclaimer, { backgroundColor: BRAND.amber + '12', borderColor: BRAND.amber + '40' }]}>
-          <AlertCircle size={12} color={BRAND.amber} />
-          <Text style={{ fontSize: 11, color: BRAND.amber, fontWeight: '700', flex: 1 }}>
-            General info only — not a substitute for professional medical advice.
-          </Text>
-        </View>
-
-        {/* Quick prompts */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {QUICK_PROMPTS.map(p => (
-              <TouchableOpacity key={p} onPress={() => askAI(p)}
-                style={[h.qChip, { borderColor: BRAND.teal + '50', backgroundColor: BRAND.teal + '08' }]}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.teal }}>{p}</Text>
-              </TouchableOpacity>
-            ))}
+      {/* ── AI Health Assistant — Quest-style dark collapsible banner ── */}
+      <View style={{
+        backgroundColor: '#0D1424',
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: '#1E2A42',
+        overflow: 'hidden',
+      }}>
+        {/* Header row — always visible */}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => setAiOpen(v => !v)}
+          style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, gap: 10 }}
+        >
+          <View style={{
+            width: 32, height: 32, borderRadius: 10,
+            backgroundColor: 'rgba(124,58,237,0.25)',
+            borderWidth: 1, borderColor: 'rgba(167,139,250,0.4)',
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Stethoscope size={16} color="#C4B5FD" />
           </View>
-        </ScrollView>
 
-        {/* Input */}
-        <View style={[h.aiInputRow, { borderColor: colors.border, backgroundColor: isDark ? colors.card : '#F0FDFA' }]}>
-          <TextInput
-            value={aiQuery}
-            onChangeText={setAiQuery}
-            placeholder="Ask a health question…"
-            placeholderTextColor={colors.textTertiary}
-            style={[h.aiInput, { color: colors.textPrimary }]}
-            multiline
-            returnKeyType="send"
-            onSubmitEditing={() => askAI()}
-          />
-          <TouchableOpacity onPress={() => askAI()} disabled={aiLoading || !aiQuery.trim()}
-            style={[h.aiSendBtn, { backgroundColor: BRAND.teal, opacity: aiQuery.trim() ? 1 : 0.4 }]}>
-            {aiLoading ? <ActivityIndicator size="small" color="#fff" /> : <Send size={16} color="#fff" />}
-          </TouchableOpacity>
-        </View>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+              <Text style={{ fontSize: 13, fontWeight: '900', color: '#C4B5FD' }}>CubeAI Health Assistant</Text>
+              <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: '#10B981' }} />
+              {(aiLoading || scanning) && <ActivityIndicator size="small" color="#A78BFA" style={{ marginLeft: 2 }} />}
+            </View>
+            <Text style={{ fontSize: 11, color: 'rgba(196,181,253,0.65)', marginTop: 1 }}>
+              Ask · Scan Rx · Log Vaccine
+            </Text>
+          </View>
 
-        {/* Inline result card */}
-        {(aiLoading || aiResult) ? (
-          <View style={[h.aiResult, {
-            backgroundColor: isDark ? '#0F4C4C' : '#F0FDFA',
-            borderColor: BRAND.teal + '50',
-          }]}>
-            {aiLoading
-              ? <View style={{ alignItems: 'center', padding: 12 }}>
-                  <ActivityIndicator color={BRAND.teal} />
-                  <Text style={{ fontSize: 12, color: BRAND.teal, marginTop: 8, fontWeight: '700' }}>
-                    Consulting Health AI…
-                  </Text>
-                </View>
-              : <>
-                  {/* Close button */}
-                  <TouchableOpacity
-                    onPress={() => { setAiResult(''); setAiShared(false); setAiQuery(''); }}
-                    style={{ position: 'absolute', top: 10, right: 10, zIndex: 1,
-                      width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)' }}>
-                    <X size={13} color={colors.textSecondary} />
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', gap: 4,
+            backgroundColor: 'rgba(255,255,255,0.09)',
+            paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12,
+          }}>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: '#A78BFA' }}>
+              {aiOpen ? 'Collapse' : 'Tools'}
+            </Text>
+            {aiOpen ? <ChevronUp size={12} color="#A78BFA" /> : <ChevronDown size={12} color="#A78BFA" />}
+          </View>
+        </TouchableOpacity>
+
+        {/* Expanded body */}
+        {aiOpen && (
+          <View style={{ borderTopWidth: 1, borderTopColor: '#1E2A42', padding: 14, gap: 12 }}>
+
+            {/* ── Tool buttons row (like Quest) ── */}
+            {!kidView && (
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {/* Scan Medication Rx */}
+                <TouchableOpacity
+                  disabled={scanning}
+                  onPress={() => openScanSheet('rx')}
+                  style={{
+                    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+                    paddingVertical: 10, borderRadius: 14,
+                    backgroundColor: scanning ? 'rgba(124,58,237,0.25)' : 'rgba(124,58,237,0.15)',
+                    borderWidth: 1, borderColor: 'rgba(139,92,246,0.4)',
+                  }}>
+                  {scanning
+                    ? <ActivityIndicator size="small" color="#C4B5FD" />
+                    : <ScanLine size={13} color="#C4B5FD" />}
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#C4B5FD' }}>Scan Rx</Text>
+                </TouchableOpacity>
+
+                {/* Scan Vaccine */}
+                <TouchableOpacity
+                  disabled={scanning}
+                  onPress={() => openScanSheet('vaccine')}
+                  style={{
+                    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+                    paddingVertical: 10, borderRadius: 14,
+                    backgroundColor: 'rgba(20,184,166,0.12)',
+                    borderWidth: 1, borderColor: 'rgba(20,184,166,0.35)',
+                  }}>
+                  <Syringe size={13} color="#5EEAD4" />
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#5EEAD4' }}>Scan Vaccine</Text>
+                </TouchableOpacity>
+
+                {/* Ask AI */}
+                <TouchableOpacity
+                  onPress={() => { setAiQuery(''); }}
+                  style={{
+                    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+                    paddingVertical: 10, borderRadius: 14,
+                    backgroundColor: 'rgba(245,158,11,0.12)',
+                    borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)',
+                  }}>
+                  <MessageSquare size={13} color="#FCD34D" />
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#FCD34D' }}>Ask AI</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Quick prompts */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {QUICK_PROMPTS.map(p => (
+                  <TouchableOpacity key={p} onPress={() => askAI(p)}
+                    style={{
+                      borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
+                      backgroundColor: 'rgba(124,58,237,0.18)',
+                      borderWidth: 1, borderColor: 'rgba(167,139,250,0.3)',
+                    }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#C4B5FD' }}>{p}</Text>
                   </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
 
-                  <Text style={{ fontSize: 13, color: colors.textPrimary, lineHeight: 21, paddingRight: 24 }}>
-                    {aiResult}
-                  </Text>
-                  <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
-                    {aiShared
-                      ? <View style={[h.sharedBtn, { backgroundColor: BRAND.emerald }]}>
-                          <Check size={13} color="#fff" />
-                          <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>Posted to Family Chat</Text>
-                        </View>
-                      : <TouchableOpacity onPress={shareAiToChat}
-                          style={[h.sharedBtn, { backgroundColor: BRAND.purple }]}>
-                          <MessageSquare size={13} color="#fff" />
-                          <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>Share with Family</Text>
-                        </TouchableOpacity>}
-                  </View>
-                </>}
+            {/* Input row */}
+            <View style={{
+              flexDirection: 'row', alignItems: 'flex-end', gap: 8,
+              backgroundColor: 'rgba(255,255,255,0.06)',
+              borderRadius: 14, borderWidth: 1, borderColor: '#2A3555',
+              paddingHorizontal: 12, paddingVertical: 8,
+            }}>
+              <TextInput
+                value={aiQuery}
+                onChangeText={setAiQuery}
+                placeholder="Ask a health question…"
+                placeholderTextColor="rgba(196,181,253,0.4)"
+                style={[h.aiInput, { color: '#E2D9FD', flex: 1 }]}
+                multiline
+                returnKeyType="send"
+                onSubmitEditing={() => askAI()}
+              />
+              <TouchableOpacity onPress={() => askAI()} disabled={aiLoading || !aiQuery.trim()}
+                style={[h.aiSendBtn, { backgroundColor: BRAND.purple, opacity: aiQuery.trim() ? 1 : 0.35 }]}>
+                {aiLoading ? <ActivityIndicator size="small" color="#fff" /> : <Send size={16} color="#fff" />}
+              </TouchableOpacity>
+            </View>
+
+            {/* Result */}
+            {(aiLoading || aiResult) ? (
+              <View style={{
+                borderRadius: 14, borderWidth: 1,
+                borderColor: 'rgba(124,58,237,0.35)',
+                backgroundColor: 'rgba(124,58,237,0.12)',
+                padding: 14,
+              }}>
+                {aiLoading
+                  ? <View style={{ alignItems: 'center', paddingVertical: 8, gap: 8 }}>
+                      <ActivityIndicator color="#A78BFA" />
+                      <Text style={{ fontSize: 12, color: '#A78BFA', fontWeight: '700' }}>Consulting Health AI…</Text>
+                    </View>
+                  : <>
+                      <TouchableOpacity
+                        onPress={() => { setAiResult(''); setAiShared(false); setAiQuery(''); }}
+                        style={{
+                          position: 'absolute', top: 10, right: 10, zIndex: 1,
+                          width: 24, height: 24, borderRadius: 12,
+                          alignItems: 'center', justifyContent: 'center',
+                          backgroundColor: 'rgba(255,255,255,0.1)',
+                        }}>
+                        <X size={13} color="#A78BFA" />
+                      </TouchableOpacity>
+                      <Text style={{ fontSize: 13, color: '#E2D9FD', lineHeight: 21, paddingRight: 24 }}>{aiResult}</Text>
+                      <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
+                        {aiShared
+                          ? <View style={[h.sharedBtn, { backgroundColor: BRAND.emerald }]}>
+                              <Check size={13} color="#fff" />
+                              <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>Posted to Family Chat</Text>
+                            </View>
+                          : <TouchableOpacity onPress={shareAiToChat} style={[h.sharedBtn, { backgroundColor: BRAND.purple }]}>
+                              <MessageSquare size={13} color="#fff" />
+                              <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>Share with Family</Text>
+                            </TouchableOpacity>}
+                      </View>
+                    </>}
+              </View>
+            ) : null}
           </View>
-        ) : null}
-      </SCard>
+        )}
+      </View>
 
       {/* ── Medications + Immunizations (unified) ───── */}
       <SCard colors={colors} isDark={isDark}>
         {/* ── Card header row ── */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <CardHeader
-            Icon={healthTab === 'meds' ? Pill : Syringe}
-            iconColor={healthTab === 'meds' ? BRAND.purple : BRAND.teal}
-            title="Health Records"
-            colors={colors}
-          />
-          <TouchableOpacity onPress={load} style={{ padding: 4 }}>
-            <RefreshCw size={13} color={colors.textTertiary} />
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ flex: 1 }}>
+            <CardHeader
+              Icon={healthTab === 'meds' ? Pill : Syringe}
+              iconColor={healthTab === 'meds' ? BRAND.purple : BRAND.teal}
+              title="Health Records"
+              colors={colors}
+            />
+          </View>
+          <TouchableOpacity onPress={load} style={{ padding: 8 }}>
+            <RefreshCw size={14} color={colors.textTertiary} />
           </TouchableOpacity>
         </View>
 
-        {/* ── Inner tab switcher ── */}
+        {/* ── Inner tab switcher — hidden for kids (Medications only) ── */}
+        {!kidView && (
         <View style={[hf.innerTabRow, { backgroundColor: isDark ? colors.card : '#F5F3FF', borderColor: colors.border }]}>
           {([
             { id: 'meds', label: 'Medications',   Icon: Pill,    color: BRAND.purple, count: meds.length },
@@ -1401,6 +1784,7 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
             </TouchableOpacity>
           ))}
         </View>
+        )}
 
         {/* ── Search bar + filter icon ── */}
         {(() => {
@@ -1414,7 +1798,7 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
           return (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 }}>
               <View style={[hf.searchRow, { flex: 1, borderColor: colors.border,
-                backgroundColor: isDark ? colors.card : (healthTab === 'meds' ? '#F5F3FF' : '#F0FDFA') }]}>
+                backgroundColor: isDark ? colors.card : (healthTab === 'meds' ? '#F5F3FF' : '#F0FDFA80') }]}>
                 <TextInput
                   value={currentSearch} onChangeText={setSearch}
                   placeholder={placeholder} placeholderTextColor={colors.textTertiary}
@@ -1610,6 +1994,7 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
 
                     {/* Action buttons */}
                     <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                      {/* Kids can mark taken; parents/seniors get all controls */}
                       <TouchableOpacity onPress={() => markTaken(med)}
                         style={[h.actionBtn, {
                           borderColor: isTakenToday ? BRAND.emerald + '60' : BRAND.purple + '60',
@@ -1622,21 +2007,24 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
                           {isTakenToday ? 'Taken Today' : 'Mark Taken'}
                         </Text>
                       </TouchableOpacity>
-                      {/* Active / Inactive toggle */}
-                      <TouchableOpacity onPress={() => toggleMedActive(med)}
-                        style={[h.actionBtn, {
-                          borderColor: med.is_active ? BRAND.amber + '60' : BRAND.emerald + '60',
-                          backgroundColor: med.is_active ? BRAND.amber + '10' : BRAND.emerald + '10',
-                        }]}>
-                        <Text style={{ fontSize: 11, fontWeight: '800',
-                          color: med.is_active ? BRAND.amber : BRAND.emerald }}>
-                          {med.is_active ? 'Deactivate' : 'Reactivate'}
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => deleteMed(med.id)}
-                        style={[h.actionBtn, { borderColor: BRAND.rose + '50', backgroundColor: BRAND.rose + '10' }]}>
-                        <Trash2 size={14} color={BRAND.rose} />
-                      </TouchableOpacity>
+                      {!kidView && (
+                        <>
+                          <TouchableOpacity onPress={() => toggleMedActive(med)}
+                            style={[h.actionBtn, {
+                              borderColor: med.is_active ? BRAND.amber + '60' : BRAND.emerald + '60',
+                              backgroundColor: med.is_active ? BRAND.amber + '10' : BRAND.emerald + '10',
+                            }]}>
+                            <Text style={{ fontSize: 11, fontWeight: '800',
+                              color: med.is_active ? BRAND.amber : BRAND.emerald }}>
+                              {med.is_active ? 'Deactivate' : 'Reactivate'}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => deleteMed(med.id)}
+                            style={[h.actionBtn, { borderColor: BRAND.rose + '50', backgroundColor: BRAND.rose + '10' }]}>
+                            <Trash2 size={14} color={BRAND.rose} />
+                          </TouchableOpacity>
+                        </>
+                      )}
                     </View>
                   </View>
                 )}
@@ -1645,9 +2033,9 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
           })
         )}
 
-        {healthTab === 'meds' && <AddBtn label="Add Medication" onPress={() => setShowMedModal(true)} color={BRAND.purple} />}
+        {healthTab === 'meds' && !kidView && <AddBtn label="Add Medication" onPress={() => setShowMedModal(true)} color={BRAND.purple} />}
 
-        {healthTab === 'vax' && (filteredVaxes.length === 0
+        {!kidView && healthTab === 'vax' && (filteredVaxes.length === 0
           ? <EmptyState Icon={Syringe} label={vaxes.length === 0 ? 'No vaccine records yet' : 'No results — adjust filters'} colors={colors} />
           : filteredVaxes.map(vax => {
             const mc = memberColor(vax.member_id);
@@ -1714,7 +2102,7 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
           })
         )}
 
-        {healthTab === 'vax' && <AddBtn label="Log Vaccine" onPress={() => setShowVaxModal(true)} color={BRAND.teal} />}
+        {!kidView && healthTab === 'vax' && <AddBtn label="Log Vaccine" onPress={() => setShowVaxModal(true)} color={BRAND.teal} />}
       </SCard>
 
       {/* Modals */}
@@ -1722,6 +2110,555 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
         onSave={addMed} members={members} colors={colors} isDark={isDark} />
       <AddVaxModal visible={showVaxModal} onClose={() => setShowVaxModal(false)}
         onSave={addVax} members={members} colors={colors} isDark={isDark} />
+
+      {/* ── Scan Rx / Vaccine — 2-page bottom sheet (full-screen during redact) ── */}
+      <Modal visible={showScanSheet} animationType="slide" transparent onRequestClose={closeScanSheet}>
+        {/* ── REDACT MODE: full-screen layout ── */}
+        {pendingImages.length > 0 && !scanning && (() => {
+          const img    = pendingImages[activeRedactIdx];
+          const accent = scanMode === 'vaccine' ? BRAND.teal : BRAND.purple;
+          return (
+            <View style={{ flex: 1, backgroundColor: '#000' }}>
+              {/* Header */}
+              <View style={{ paddingTop: insets.top + 12, paddingBottom: 12, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#111' }}>
+                <TouchableOpacity onPress={clearPending} style={{ padding: 6 }}>
+                  <X size={22} color="#fff" />
+                </TouchableOpacity>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '900', color: '#fff' }}>
+                    {`Cover Sensitive Info${pendingImages.length > 1 ? `  ·  Page ${activeRedactIdx + 1}/${pendingImages.length}` : ''}`}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
+                    Drag to black out names, DOB or any detail
+                  </Text>
+                </View>
+                {activeBoxes.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => setRedactBoxesByImage(prev => {
+                        const idx = activeRedactIdxRef.current;
+                        const copy = [...prev];
+                        copy[idx] = (copy[idx] ?? []).slice(0, -1);
+                        return copy;
+                      })}
+                    style={{ padding: 8, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 10 }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff' }}>{'↩ Undo'}</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Page thumbnails strip */}
+              {pendingImages.length > 1 && (
+                <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: '#111' }}>
+                  {pendingImages.map((im, idx) => (
+                    <TouchableOpacity key={idx} onPress={() => setActiveRedactIdx(idx)}
+                      style={{ width: 52, height: 52, borderRadius: 10, overflow: 'hidden', borderWidth: 2, borderColor: idx === activeRedactIdx ? accent : 'rgba(255,255,255,0.2)' }}>
+                      <Image source={{ uri: `data:${im.mimeType};base64,${im.base64}` }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                    </TouchableOpacity>
+                  ))}
+                  {pendingImages.length < maxPhotos && (
+                    <TouchableOpacity onPress={() => pickImage('camera')}
+                      style={{ width: 52, height: 52, borderRadius: 10, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.3)', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 20, color: 'rgba(255,255,255,0.6)', lineHeight: 24 }}>+</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              {/* Image */}
+              <ViewShot ref={viewShotRef} options={{ format: 'jpg', quality: 0.88 }} style={{ flex: 1 }}>
+                <Image source={{ uri: `data:${img.mimeType};base64,${img.base64}` }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
+                {activeBoxes.map((box, i) => (
+                  <View key={i} style={{ position: 'absolute', left: box.x, top: box.y, width: box.w, height: box.h, backgroundColor: '#000' }} />
+                ))}
+                {currentBox && (
+                  <View style={{ position: 'absolute', left: currentBox.x, top: currentBox.y, width: currentBox.w, height: currentBox.h, backgroundColor: '#000', opacity: 0.7 }} />
+                )}
+                <GestureDetector gesture={redactGesture}>
+                  <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+                </GestureDetector>
+              </ViewShot>
+
+              {/* Bottom bar */}
+              <View style={{ paddingTop: 12, paddingBottom: insets.bottom + 14, paddingHorizontal: 16, gap: 10, backgroundColor: '#111' }}>
+                {/* ── Scan error banner ── */}
+                {scanError && (
+                  <View style={{ backgroundColor: BRAND.rose + '22', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: BRAND.rose + '55', gap: 10 }}>
+                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+                      <AlertCircle size={16} color={BRAND.rose} style={{ marginTop: 1 }} />
+                      <Text style={{ fontSize: 13, color: '#ffb3b3', fontWeight: '700', flex: 1, lineHeight: 18 }}>{scanError}</Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <TouchableOpacity
+                        onPress={() => { clearPending(); }}
+                        style={{ flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }}
+                      >
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>Start Over</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => pickImage('camera')}
+                        style={{ flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center', backgroundColor: BRAND.rose + '33', borderWidth: 1, borderColor: BRAND.rose + '66' }}
+                      >
+                        <Text style={{ fontSize: 12, fontWeight: '800', color: '#ffb3b3' }}>Replace photo</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
+                {!scanError && pendingImages.length < maxPhotos && pendingImages.length === 1 && (
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity onPress={() => pickImage('camera')}
+                      style={{ flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: 'rgba(255,255,255,0.7)' }}>+ Add page (camera)</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => pickImage('library')}
+                      style={{ flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: 'rgba(255,255,255,0.7)' }}>+ Add page (library)</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {!scanError && (
+                  <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>
+                    {activeBoxes.length === 0 ? 'Drag on image to cover sensitive text' : `${activeBoxes.length} area${activeBoxes.length > 1 ? 's' : ''} covered`}
+                  </Text>
+                )}
+                {!scanError && (
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity onPress={clearPending}
+                    style={{ flex: 1, paddingVertical: 14, borderRadius: 16, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' }}>
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: '#fff' }}>Discard</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{ flex: 2, paddingVertical: 14, borderRadius: 16, alignItems: 'center', backgroundColor: accent }}
+                    onPress={async () => {
+                      const toBase64 = async (uri: string) => {
+                        const r = await fetch(uri); const b = await r.arrayBuffer(); const u = new Uint8Array(b);
+                        let s = ''; for (let i = 0; i < u.byteLength; i++) s += String.fromCharCode(u[i]); return btoa(s);
+                      };
+                      try {
+                        const capturedUri = await viewShotRef.current?.capture?.();
+                        const capturedB64 = capturedUri ? await toBase64(capturedUri) : null;
+                        const finalImages = pendingImages.map((im, idx) =>
+                          (idx === activeRedactIdx && capturedB64) ? { base64: capturedB64, mimeType: 'image/jpeg' } : im
+                        );
+                        await scan(finalImages);
+                      } catch {
+                        await scan(pendingImages);
+                      }
+                    }}
+                  >
+                    <Text style={{ fontSize: 15, fontWeight: '900', color: '#fff' }}>
+                      {`Scan ${pendingImages.length > 1 ? `${pendingImages.length} Pages` : 'Now'} →`}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                )}
+              </View>
+            </View>
+          );
+        })()}
+
+        {/* ── NORMAL MODE: bottom sheet ── */}
+        {(pendingImages.length === 0 || scanning) && (
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}>
+            <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={closeScanSheet} />
+            <View style={{
+              backgroundColor: isDark ? '#13131F' : '#F8F8FC',
+              borderTopLeftRadius: 28, borderTopRightRadius: 28,
+              maxHeight: '92%',
+              paddingBottom: insets.bottom || 16,
+            }}>
+              {/* ── Progress bar (2 steps) ── */}
+              <View style={{ flexDirection: 'row', gap: 4, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 4 }}>
+                {[1, 2].map(s => (
+                  <View key={s} style={{
+                    flex: 1, height: 3, borderRadius: 2,
+                    backgroundColor: scanPage >= s
+                      ? (scanMode === 'vaccine' ? BRAND.teal : BRAND.purple)
+                      : (isDark ? '#333' : '#E5E7EB'),
+                  }} />
+                ))}
+              </View>
+
+              {/* ── Handle + header ── */}
+              <View style={{ alignItems: 'center', paddingTop: 6 }}>
+                <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: isDark ? '#444' : '#DDD' }} />
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  {/* Back on page 2 only when not scanning */}
+                  {scanPage === 2 && !scanning && !rxSaving && (
+                    <TouchableOpacity onPress={() => { setScanPage(1); clearScan(); }}
+                      style={{ marginRight: 4, padding: 4 }}>
+                      <Svg width={20} height={20} viewBox="0 0 24 24">
+                        <Path d="M19 12H5M12 19l-7-7 7-7" stroke={isDark ? '#aaa' : '#555'} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                      </Svg>
+                    </TouchableOpacity>
+                  )}
+                  <View style={{
+                    width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: scanMode === 'vaccine' ? BRAND.teal + '20' : BRAND.purple + '20',
+                  }}>
+                    {scanMode === 'vaccine'
+                      ? <Syringe size={16} color={BRAND.teal} />
+                      : <ScanLine size={16} color={BRAND.purple} />}
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 15, fontWeight: '900', color: isDark ? '#fff' : '#111' }}>
+                      {scanMode === 'vaccine' ? 'Scan Vaccine Record' : 'Scan Prescription'}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: isDark ? '#888' : '#999', marginTop: 1 }}>
+                      Step {scanPage} of 2 · {scanPage === 1 ? 'Choose source' : 'Review & assign'}
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity onPress={closeScanSheet} style={{ padding: 4 }}>
+                  <X size={22} color={isDark ? '#aaa' : '#666'} />
+                </TouchableOpacity>
+              </View>
+
+              {/* ══════════════════════════════════════════════════════════
+                  PAGE 1 — Source picker + animated scan area
+              ══════════════════════════════════════════════════════════ */}
+              {scanPage === 1 && (
+                <View style={{ paddingHorizontal: 20, paddingBottom: 24, gap: 20 }}>
+                  {/* Animated scan preview box */}
+                  <View style={{
+                    height: 160, borderRadius: 20, overflow: 'hidden',
+                    backgroundColor: isDark ? '#0D1424' : '#F0F4FF',
+                    borderWidth: 1.5, borderColor: scanMode === 'vaccine' ? BRAND.teal + '40' : BRAND.purple + '40',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {scanning ? (
+                      <>
+                        {/* Corner brackets */}
+                        {[
+                          { top: 10, left: 10, rotate: '0deg' },
+                          { top: 10, right: 10, rotate: '90deg' },
+                          { bottom: 10, right: 10, rotate: '180deg' },
+                          { bottom: 10, left: 10, rotate: '270deg' },
+                        ].map((pos, i) => (
+                          <View key={i} style={{ position: 'absolute', ...pos as any, width: 24, height: 24 }}>
+                            <Svg width={24} height={24} viewBox="0 0 24 24" style={{ transform: [{ rotate: pos.rotate }] }}>
+                              <Path d="M2 8V2h6" stroke={scanMode === 'vaccine' ? BRAND.teal : BRAND.purple} strokeWidth={2.5} strokeLinecap="round" fill="none" />
+                            </Svg>
+                          </View>
+                        ))}
+                        {/* Scanning beam */}
+                        <Animated.View style={{
+                          position: 'absolute', left: 12, right: 12, height: 2, borderRadius: 1,
+                          backgroundColor: scanMode === 'vaccine' ? BRAND.teal : BRAND.purple,
+                          opacity: 0.85,
+                          transform: [{
+                            translateY: scanBeamY.interpolate({ inputRange: [0, 1], outputRange: [-68, 68] }),
+                          }],
+                        }} />
+                        {/* Pulsing icon */}
+                        <Animated.View style={{ transform: [{ scale: pulseScale }] }}>
+                          <View style={{
+                            width: 56, height: 56, borderRadius: 28,
+                            backgroundColor: (scanMode === 'vaccine' ? BRAND.teal : BRAND.purple) + '25',
+                            alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            {scanMode === 'vaccine'
+                              ? <Syringe size={24} color={BRAND.teal} />
+                              : <ScanLine size={24} color={BRAND.purple} />}
+                          </View>
+                        </Animated.View>
+                        {/* Dot loader */}
+                        <View style={{ flexDirection: 'row', gap: 6, marginTop: 14 }}>
+                          {dotOpacity.map((op, i) => (
+                            <Animated.View key={i} style={{
+                              width: 7, height: 7, borderRadius: 4,
+                              backgroundColor: scanMode === 'vaccine' ? BRAND.teal : BRAND.purple,
+                              opacity: op,
+                            }} />
+                          ))}
+                        </View>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#aaa' : '#666', marginTop: 10 }}>
+                          AI is reading your document…
+                        </Text>
+                      </>
+                    ) : (
+                      <View style={{ alignItems: 'center', gap: 8 }}>
+                        <Svg width={48} height={48} viewBox="0 0 24 24">
+                          <Rect x={3} y={2} width={14} height={18} rx={2} stroke={scanMode === 'vaccine' ? BRAND.teal : BRAND.purple} strokeWidth={1.5} fill="none" />
+                          <Path d="M7 7h6M7 10h6M7 13h4" stroke={scanMode === 'vaccine' ? BRAND.teal : BRAND.purple} strokeWidth={1.5} strokeLinecap="round" fill="none" />
+                          <Path d="M17 8l4 4-4 4" stroke={isDark ? '#555' : '#ccc'} strokeWidth={1.5} strokeLinecap="round" fill="none" />
+                        </Svg>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#666' : '#aaa' }}>
+                          Choose how to add your document
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Error banner */}
+                  {scanError && (
+                    <View style={{
+                      flexDirection: 'row', gap: 8, alignItems: 'flex-start',
+                      backgroundColor: BRAND.rose + '12', borderRadius: 12, padding: 12,
+                      borderWidth: 1, borderColor: BRAND.rose + '40',
+                    }}>
+                      <AlertCircle size={14} color={BRAND.rose} style={{ marginTop: 1 }} />
+                      <Text style={{ fontSize: 12, color: BRAND.rose, flex: 1, fontWeight: '600' }}>{scanError}</Text>
+                    </View>
+                  )}
+
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    {/* Camera */}
+                    <TouchableOpacity
+                      disabled={scanning}
+                      onPress={() => pickImage('camera')}
+                      style={{
+                        flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 18,
+                        backgroundColor: isDark ? '#1E1E2E' : '#fff',
+                        borderWidth: 1.5, borderColor: isDark ? '#333' : '#E5E7EB',
+                        gap: 10, opacity: scanning ? 0.5 : 1,
+                        shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+                      }}>
+                      <Svg width={36} height={36} viewBox="0 0 24 24">
+                        <Path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" stroke={scanMode === 'vaccine' ? BRAND.teal : BRAND.purple} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
+                        <Circle cx={12} cy={13} r={4} stroke={scanMode === 'vaccine' ? BRAND.teal : BRAND.purple} strokeWidth={1.5} fill="none" />
+                      </Svg>
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? '#ddd' : '#333' }}>Camera</Text>
+                    </TouchableOpacity>
+
+                    {/* Photo Library */}
+                    <TouchableOpacity
+                      disabled={scanning}
+                      onPress={() => pickImage('library')}
+                      style={{
+                        flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 18,
+                        backgroundColor: isDark ? '#1E1E2E' : '#fff',
+                        borderWidth: 1.5, borderColor: isDark ? '#333' : '#E5E7EB',
+                        gap: 10, opacity: scanning ? 0.5 : 1,
+                        shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+                      }}>
+                      <Svg width={36} height={36} viewBox="0 0 24 24">
+                        <Rect x={3} y={3} width={18} height={18} rx={2} stroke={scanMode === 'vaccine' ? BRAND.teal : BRAND.purple} strokeWidth={1.5} fill="none" />
+                        <Circle cx={8.5} cy={8.5} r={1.5} fill={scanMode === 'vaccine' ? BRAND.teal : BRAND.purple} />
+                        <Path d="M21 15l-5-5L5 21" stroke={scanMode === 'vaccine' ? BRAND.teal : BRAND.purple} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                      </Svg>
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? '#ddd' : '#333' }}>Photo Library</Text>
+                    </TouchableOpacity>
+
+                    {/* PDF */}
+                    <TouchableOpacity
+                      disabled={scanning}
+                      onPress={() => pickAndScan('document')}
+                      style={{
+                        flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 18,
+                        backgroundColor: isDark ? '#1E1E2E' : '#fff',
+                        borderWidth: 1.5, borderColor: isDark ? '#333' : '#E5E7EB',
+                        gap: 10, opacity: scanning ? 0.5 : 1,
+                        shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+                      }}>
+                      <Svg width={36} height={36} viewBox="0 0 24 24">
+                        <Path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke={scanMode === 'vaccine' ? BRAND.teal : BRAND.purple} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
+                        <Polyline points="14 2 14 8 20 8" stroke={scanMode === 'vaccine' ? BRAND.teal : BRAND.purple} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
+                        <Text style={{ fontSize: 7, fontWeight: '900', color: scanMode === 'vaccine' ? BRAND.teal : BRAND.purple }}>{/* PDF label below icon */}</Text>
+                      </Svg>
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: isDark ? '#ddd' : '#333' }}>PDF</Text>
+                      <Text style={{ fontSize: 9, fontWeight: '600', color: isDark ? '#666' : '#aaa', marginTop: -6 }}>max 3 pages</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* ══════════════════════════════════════════════════════════
+                  PAGE 2 — Member assignment + review fields
+              ══════════════════════════════════════════════════════════ */}
+              {scanPage === 2 && (
+                <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: '80%' }} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24, gap: 16 }}>
+
+                  {/* ── Who is this for? ── */}
+                  <View>
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#888' : '#888', letterSpacing: 0.5, marginBottom: 10 }}>
+                      WHO IS THIS FOR?
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {members.map(m => {
+                        const sel = reviewMemberId === m.id;
+                        const accent = scanMode === 'vaccine' ? BRAND.teal : BRAND.purple;
+                        return (
+                          <TouchableOpacity key={m.id} onPress={() => setReviewMemberId(m.id)}
+                            style={{
+                              flexDirection: 'row', alignItems: 'center', gap: 8,
+                              paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16,
+                              backgroundColor: sel ? accent : (isDark ? '#1E1E2E' : '#F3F4F6'),
+                              borderWidth: 2, borderColor: sel ? accent : 'transparent',
+                            }}>
+                            <View style={{
+                              width: 28, height: 28, borderRadius: 14,
+                              backgroundColor: sel ? 'rgba(255,255,255,0.25)' : (isDark ? '#333' : '#E5E7EB'),
+                              alignItems: 'center', justifyContent: 'center',
+                            }}>
+                              <Text style={{ fontSize: 13, fontWeight: '900', color: sel ? '#fff' : (isDark ? '#ccc' : '#555') }}>
+                                {m.name.charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: sel ? '#fff' : (isDark ? '#ccc' : '#333') }}>
+                              {m.name}
+                            </Text>
+                            {sel && (
+                              <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.3)', alignItems: 'center', justifyContent: 'center' }}>
+                                <Svg width={10} height={10} viewBox="0 0 24 24">
+                                  <Path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                                </Svg>
+                              </View>
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  {/* ── Doc type toggle (if both) ── */}
+                  {scanResult?.doc_type === 'both' && (
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {(['medication', 'vaccine'] as const).map(t => (
+                        <TouchableOpacity key={t} onPress={() => setReviewDocType(t)}
+                          style={{
+                            flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center',
+                            backgroundColor: reviewDocType === t
+                              ? (t === 'vaccine' ? BRAND.teal : BRAND.purple)
+                              : (isDark ? '#1E1E2E' : '#F3F4F6'),
+                          }}>
+                          <Text style={{ fontWeight: '800', fontSize: 12, textTransform: 'uppercase',
+                            color: reviewDocType === t ? '#fff' : (isDark ? '#888' : '#666') }}>
+                            {t}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* ── Divider ── */}
+                  <View style={{ height: 1, backgroundColor: isDark ? '#222' : '#EBEBEB' }} />
+
+                  {/* ── Medication fields ── */}
+                  {reviewDocType === 'medication' && reviewMed && (
+                    <View style={{ gap: 12 }}>
+                      {([
+                        ['Medication name *', 'name'],
+                        ['Dosage', 'dosage'],
+                        ['Frequency', 'frequency'],
+                        ['Duration', 'duration'],
+                        ['Instructions', 'instructions'],
+                        ['Prescribing doctor', 'prescriber'],
+                        ['Pharmacy', 'pharmacy'],
+                        ['Notes', 'notes'],
+                      ] as [string, keyof ParsedMedication][]).map(([label, field]) => (
+                        <View key={field}>
+                          <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#666' : '#999', marginBottom: 4, letterSpacing: 0.4 }}>
+                            {label.toUpperCase()}
+                          </Text>
+                          <TextInput
+                            value={String(reviewMed[field] ?? '')}
+                            onChangeText={v => setReviewMed(prev => prev ? { ...prev, [field]: v } : prev)}
+                            placeholder={`—`}
+                            placeholderTextColor={isDark ? '#444' : '#ccc'}
+                            style={{
+                              borderWidth: 1.5,
+                              borderColor: field === 'name' && !reviewMed.name
+                                ? BRAND.rose + '80'
+                                : (isDark ? '#2A2A3E' : '#E5E7EB'),
+                              borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,
+                              color: isDark ? '#fff' : '#111',
+                              backgroundColor: isDark ? '#1A1A2E' : '#fff',
+                              fontSize: 14, fontWeight: '500',
+                            }}
+                          />
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* ── Vaccine fields ── */}
+                  {reviewDocType === 'vaccine' && reviewVax && (
+                    <View style={{ gap: 12 }}>
+                      {([
+                        ['Vaccine name *', 'vaccine_name'],
+                        ['Manufacturer', 'manufacturer'],
+                        ['Lot number', 'lot_number'],
+                        ['Date administered (YYYY-MM-DD)', 'administered_date'],
+                        ['Next due date (YYYY-MM-DD)', 'next_due_date'],
+                        ['Dose #', 'dose_number'],
+                        ['Total doses', 'total_doses'],
+                        ['Administered by', 'administered_by'],
+                        ['Site (e.g. Left arm)', 'site'],
+                      ] as [string, keyof ParsedVaccine][]).map(([label, field]) => (
+                        <View key={field}>
+                          <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? '#666' : '#999', marginBottom: 4, letterSpacing: 0.4 }}>
+                            {label.toUpperCase()}
+                          </Text>
+                          <TextInput
+                            value={reviewVax[field] != null ? String(reviewVax[field]) : ''}
+                            onChangeText={v => setReviewVax(prev => prev ? { ...prev, [field]: v || null } : prev)}
+                            placeholder="—"
+                            placeholderTextColor={isDark ? '#444' : '#ccc'}
+                            keyboardType={['dose_number', 'total_doses'].includes(field as string) ? 'numeric' : 'default'}
+                            style={{
+                              borderWidth: 1.5,
+                              borderColor: field === 'vaccine_name' && !reviewVax.vaccine_name
+                                ? BRAND.rose + '80'
+                                : (isDark ? '#2A2A3E' : '#E5E7EB'),
+                              borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,
+                              color: isDark ? '#fff' : '#111',
+                              backgroundColor: isDark ? '#1A1A2E' : '#fff',
+                              fontSize: 14, fontWeight: '500',
+                            }}
+                          />
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* ── Save / Discard ── */}
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                    <TouchableOpacity onPress={closeScanSheet}
+                      style={{
+                        flex: 1, paddingVertical: 15, borderRadius: 16, alignItems: 'center',
+                        backgroundColor: isDark ? '#1E1E2E' : '#F3F4F6',
+                        borderWidth: 1, borderColor: isDark ? '#333' : '#E5E7EB',
+                      }}>
+                      <Text style={{ fontWeight: '800', fontSize: 14, color: isDark ? '#aaa' : '#666' }}>Discard</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      disabled={rxSaving || !reviewMemberId}
+                      onPress={async () => {
+                        try {
+                          if (reviewDocType === 'medication') await saveScannedMed();
+                          else await saveScannedVax();
+                          closeScanSheet();
+                        } catch { /* error already shown via Alert */ }
+                      }}
+                      style={{
+                        flex: 2, paddingVertical: 15, borderRadius: 16, alignItems: 'center',
+                        backgroundColor: !reviewMemberId || rxSaving
+                          ? (isDark ? '#333' : '#E5E7EB')
+                          : (reviewDocType === 'vaccine' ? BRAND.teal : BRAND.purple),
+                      }}>
+                      {rxSaving
+                        ? <ActivityIndicator color="#fff" size="small" />
+                        : <Text style={{
+                            fontWeight: '900', fontSize: 14,
+                            color: !reviewMemberId ? (isDark ? '#666' : '#aaa') : '#fff',
+                          }}>
+                            Save {reviewDocType === 'vaccine' ? 'Vaccine' : 'Medication'}
+                          </Text>}
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              )}
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+        )}
+
+      </Modal>
 
       {/* ── Filter Bottom Sheet ─────────────────────── */}
       <Modal visible={showFilterSheet} animationType="slide" transparent onRequestClose={() => setShowFilterSheet(false)}>

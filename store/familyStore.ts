@@ -25,6 +25,7 @@ export interface FamilyMember {
   questsPending: number;
   pin?: string;
   pinEnabled?: boolean;
+  familyId?: string;
 }
 
 interface FamilyState {
@@ -68,6 +69,7 @@ function fromRow(row: any): FamilyMember {
     subRole:         row.sub_role ?? undefined,
     emoji:           isUrl ? undefined : (row.avatar ?? undefined),
     avatarUrl:       isUrl ? row.avatar : undefined,
+    familyId:        row.family_id ?? undefined,
     coins,
     mainCoins:       row.main_coins ?? coins,
     gpCoins:         row.gp_coins ?? 0,

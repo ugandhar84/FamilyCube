@@ -137,6 +137,18 @@ const I = {
       <Path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
     </Svg>
   ),
+  User: ({ c, size=14 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
+      <Circle cx={12} cy={7} r={4} stroke={c} strokeWidth={2} fill="none" />
+    </Svg>
+  ),
+  FileText: ({ c, size=14 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke={c} strokeWidth={2} fill="none" strokeLinejoin="round" />
+      <Path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
+    </Svg>
+  ),
   Refresh: ({ c, size=14 }: { c: string; size?: number }) => (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path d="M23 4v6h-6M1 20v-6h6" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
@@ -966,16 +978,17 @@ export default function CalendarScreen() {
               borderColor: isDark ? '#6D28D940' : 'rgba(146,97,199,0.25)',
               marginHorizontal: 12, marginTop: 10,
             }]}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <I.Bot c={isDark ? '#C4B5FD' : BRAND.purple} size={15} />
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: isDark ? '#C4B5FD' : BRAND.purple }}>CubeAI Schedule Conflict & Helper Recommendations</Text>
-                </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+                <I.Bot c={isDark ? '#C4B5FD' : BRAND.purple} size={15} />
+                <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '900', color: isDark ? '#C4B5FD' : BRAND.purple }} numberOfLines={1}>
+                  Schedule Conflicts & Recommendations
+                </Text>
                 <TouchableOpacity
                   onPress={() => setShowAiPanel(false)}
-                  hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                  style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? 'rgba(167,139,250,0.15)' : 'rgba(146,97,199,0.1)' }}>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#A78BFA' : BRAND.purple }}>✕ Close</Text>
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={{ flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16, backgroundColor: isDark ? 'rgba(167,139,250,0.18)' : 'rgba(146,97,199,0.12)' }}>
+                  <I.X c={isDark ? '#A78BFA' : BRAND.purple} size={11} />
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isDark ? '#A78BFA' : BRAND.purple }}>Close</Text>
                 </TouchableOpacity>
               </View>
               {isAnalyzing ? (
@@ -1102,9 +1115,9 @@ export default function CalendarScreen() {
                   <View key={ev.id} style={{ flexDirection: 'row', minHeight: 56 }}>
 
                     {/* Left col: time label + connecting line */}
-                    <View style={{ width: 52, alignItems: 'flex-end', paddingRight: 10 }}>
-                      <Text style={{ fontSize: 10, fontWeight: '800', color: BRAND.purple, lineHeight: 13 }}>{time}</Text>
-                      <Text style={{ fontSize: 9, fontWeight: '600', color: colors.textTertiary, lineHeight: 11 }}>{ampm}</Text>
+                    <View style={{ width: 40, alignItems: 'flex-end', paddingRight: 6 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '900', color: isDark ? '#C4B5FD' : BRAND.purple, lineHeight: 14 }}>{time}</Text>
+                      <Text style={{ fontSize: 9, fontWeight: '700', color: isDark ? '#A78BFA' : '#7C3AED', lineHeight: 11 }}>{ampm}</Text>
                       {/* Connecting line to next event */}
                       {!isLast && (
                         <View style={{
@@ -1121,34 +1134,61 @@ export default function CalendarScreen() {
                       onPress={() => setDetailEv(ev)}
                       onLongPress={() => setEditEv(ev)}
                       style={{
-                        flex: 1, marginBottom: isLast ? 0 : 10,
-                        backgroundColor: cardBg, borderRadius: 16,
+                        flex: 1, marginBottom: isLast ? 0 : 8,
+                        backgroundColor: cardBg, borderRadius: 14,
                         borderWidth: 1, borderColor: isConf ? '#F59E0B55' : cardBord,
                         borderLeftWidth: 3, borderLeftColor: isConf ? '#F59E0B' : cs.dot,
-                        paddingHorizontal: 12, paddingVertical: 10, gap: 3,
+                        paddingHorizontal: 12, paddingVertical: 9, gap: 4,
                       }}>
-                      {/* Row 1: title + status badge */}
+                      {/* Row 1: title + category + status */}
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={1}>
                           {ev.title}
                         </Text>
-                        {ev.helperStatus === 'confirmed' && <View style={{ backgroundColor: '#D1FAE5', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>✓ Confirmed</Text></View>}
-                        {ev.helperStatus === 'pending'   && <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#D97706' }}>⏳ Pending</Text></View>}
-                        {ev.helperStatus === 'rejected'  && <View style={{ backgroundColor: '#FEE2E2', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>✕ Declined</Text></View>}
+                        {/* Category chip — always shown on right */}
+                        <View style={{ backgroundColor: cs.dot + '1A', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: cs.dot + '44' }}>
+                          <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: cs.dot }}>{ev.category}</Text>
+                        </View>
                         {isConf && <I.AlertTriangle c="#F59E0B" size={12} />}
                       </View>
+                      {/* Row 1b: status badge (full width, only when set) */}
+                      {ev.helperStatus === 'confirmed' && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#10B981' }} />
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#10B981' }}>Confirmed driver</Text>
+                        </View>
+                      )}
+                      {ev.helperStatus === 'pending' && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#D97706' }} />
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#D97706' }}>Driver pending</Text>
+                        </View>
+                      )}
+                      {ev.helperStatus === 'rejected' && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#EF4444' }} />
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>Driver declined</Text>
+                        </View>
+                      )}
                       {/* Row 2: member + location + driver */}
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         {assignee && (
-                          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                            {assignee.emoji ?? '👤'} {assignee.name.split(' ')[0]}
-                          </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <I.User c={isDark ? '#A78BFA' : BRAND.purple} size={13} />
+                            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isDark ? '#A78BFA' : BRAND.purple }}>{assignee.name.split(' ')[0]}</Text>
+                          </View>
                         )}
                         {ev.location ? (
-                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }} numberOfLines={1}>📍 {ev.location}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <I.MapPin c={isDark ? '#34D399' : '#059669'} size={12} />
+                            <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: isDark ? '#34D399' : '#059669' }} numberOfLines={1}>{ev.location}</Text>
+                          </View>
                         ) : null}
                         {ev.helper ? (
-                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>🚗 {ev.helper.split(' ')[0]}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <I.Car c={isDark ? '#FBBF24' : '#D97706'} size={12} />
+                            <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: isDark ? '#FBBF24' : '#D97706' }}>{ev.helper.split(' ')[0]}</Text>
+                          </View>
                         ) : null}
                       </View>
                     </TouchableOpacity>
@@ -1316,9 +1356,12 @@ export default function CalendarScreen() {
                     {(cat === 'Ride' || cat === 'Sports') && (ev.pickupLocation || ev.dropLocation) && (
                       <View style={{ flexDirection: 'row', gap: 12, marginTop: 2 }}>
                         {ev.pickupLocation && (
-                          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                            📍 From: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.pickupLocation}</Text>
-                          </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <I.MapPin c={isDark ? '#34D399' : '#059669'} size={11} />
+                            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                              From: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.pickupLocation}</Text>
+                            </Text>
+                          </View>
                         )}
                         {ev.dropLocation && (
                           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
@@ -1589,7 +1632,9 @@ export default function CalendarScreen() {
                 <View style={{ padding: 18, gap: 12 }}>
                   {assignee && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                      <Text style={{ fontSize: 22 }}>{assignee.emoji ?? '👤'}</Text>
+                      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: cs.dot + '22', alignItems: 'center', justifyContent: 'center' }}>
+                        <I.User c={cs.dot} size={20} />
+                      </View>
                       <View>
                         <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontWeight: '700', textTransform: 'uppercase' }}>For</Text>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{assignee.name}</Text>
@@ -1598,7 +1643,7 @@ export default function CalendarScreen() {
                   )}
                   {ev.location ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: 16 }}>📍</Text>
+                      <I.MapPin c={isDark ? '#34D399' : '#059669'} size={15} />
                       <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, flex: 1 }}>{ev.location}</Text>
                     </View>
                   ) : null}
@@ -1610,7 +1655,7 @@ export default function CalendarScreen() {
                       paddingHorizontal: 14, paddingVertical: 10,
                     }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={{ fontSize: 16 }}>🚗</Text>
+                        <I.Car c={isDark ? '#FBBF24' : '#D97706'} size={15} />
                         <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
                           Driver: <Text style={{ fontWeight: '800', color: colors.textPrimary }}>{ev.helper}</Text>
                         </Text>

@@ -1322,7 +1322,7 @@ export default function CalendarScreen() {
                           </View>
                         )}
 
-                        {isConf && isParent && ev.helperStatus !== 'pending' && (
+                        {isConf && isParent && ev.helperStatus !== 'pending' && !['Study', 'Work'].includes(ev.category ?? '') && (
                           <TouchableOpacity style={[sc.reassignBtn, { marginTop: 8 }]} onPress={() => openReassign(ev)}>
                             <I.Arrows c="#0F172A" size={12} />
                             <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>Reassign / Swap</Text>

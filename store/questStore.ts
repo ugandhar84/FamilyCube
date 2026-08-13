@@ -133,6 +133,16 @@ export interface Quest {
   isAdultTask:      boolean;  // true = only visible to parent/senior; hidden from kids/grandparents
 }
 
+// ─── Cache + realtime state ───────────────────────────────────────────────────
+
+const CACHE_KEY   = '@familycube_quests_v3';
+const CACHE_TTL   = 5 * 60_000;   // 5 min SWR
+let   _fetchedAt  = 0;
+const _inFlight   = new Set<string>();
+let   _abort: AbortController | null = null;
+let   _rtChannel: ReturnType<typeof supabase.channel> | null = null;
+let   _rtFamilyId = '';
+
 // ─── Store interface ──────────────────────────────────────────────────────────
 
 interface QuestState {
@@ -172,12 +182,12 @@ function histEntry(action: QuestHistoryEntry['action'], by?: string, note?: stri
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
-const KEY  = '@familycube_quests_v3';
-const save = (quests: Quest[]) => AsyncStorage.setItem(KEY, JSON.stringify(quests));
+const save = (quests: Quest[]) => AsyncStorage.setItem(CACHE_KEY, JSON.stringify(quests));
 
 // ─── DB helpers ───────────────────────────────────────────────────────────────
 
 function dbUpdate(id: string, patch: Record<string, unknown>) {
+  _fetchedAt = 0; // invalidate TTL so next syncFromDB re-fetches
   supabase.from('quests').update(patch).eq('id', id).then(({ error }) => {
     if (error) console.warn('[questStore] DB update failed', id, error.message);
   });
@@ -193,6 +203,86 @@ function awardMemberCoins(memberId: string, coins: number, xp: number) {
     });
 }
 
+// ─── Realtime subscription ────────────────────────────────────────────────────
+
+function ensureRealtime(
+  familyId: string,
+  getState: () => QuestState,
+  setState: (s: Partial<QuestState>) => void,
+) {
+  if (_rtFamilyId === familyId && _rtChannel) return;
+  if (_rtChannel) { supabase.removeChannel(_rtChannel); _rtChannel = null; }
+  _rtFamilyId = familyId;
+
+  _rtChannel = supabase
+    .channel(`quests:${familyId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'quests', filter: `family_id=eq.${familyId}` },
+      (payload) => {
+        const { quests } = getState();
+        const newRow = payload.new as any;
+        const oldRow = payload.old as any;
+
+        let next: Quest[];
+        if (payload.eventType === 'INSERT') {
+          if (quests.find(q => q.id === newRow.id)) return; // already added optimistically
+          const q = fromRow(newRow);
+          q.participants = backfillParticipants(q);
+          next = [q, ...quests];
+        } else if (payload.eventType === 'UPDATE') {
+          if (newRow.deleted_at || newRow.status === 'archived') {
+            next = quests.filter(q => q.id !== newRow.id);
+          } else {
+            next = quests.map(q => {
+              if (q.id !== newRow.id) return q;
+              const updated = fromRow(newRow);
+              updated.participants = q.participants; // keep in-memory participants
+              return updated;
+            });
+          }
+        } else if (payload.eventType === 'DELETE') {
+          next = quests.filter(q => q.id !== oldRow.id);
+        } else return;
+
+        setState({ quests: next });
+        save(next);
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'quest_participants' },
+      (payload) => {
+        const { quests } = getState();
+        const newRow = payload.new as any;
+        const oldRow = payload.old as any;
+        const questId  = newRow?.quest_id ?? oldRow?.quest_id;
+        const memberId = newRow?.member_id ?? oldRow?.member_id;
+        if (!questId) return;
+
+        const next = quests.map(q => {
+          if (q.id !== questId) return q;
+          let parts = q.participants;
+          if (payload.eventType === 'INSERT') {
+            if (parts.find(p => p.memberId === memberId)) return q;
+            parts = [...parts, participantFromRow(newRow)];
+          } else if (payload.eventType === 'UPDATE') {
+            parts = parts.map(p => p.memberId === memberId ? participantFromRow(newRow) : p);
+          } else if (payload.eventType === 'DELETE') {
+            parts = parts.filter(p => p.memberId !== memberId);
+          }
+          return { ...q, participants: parts };
+        });
+
+        setState({ quests: next });
+        save(next);
+      }
+    )
+    .subscribe(status => {
+      console.log('[questStore] realtime', status, familyId);
+    });
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useQuestStore = create<QuestState>((set, get) => ({
@@ -200,23 +290,30 @@ export const useQuestStore = create<QuestState>((set, get) => ({
   loaded: false,
 
   loadFromStorage: async () => {
-    // First load from cache so UI shows instantly, then sync from DB
+    // 1. Paint instantly from disk cache
     try {
-      const raw = await AsyncStorage.getItem(KEY);
+      const raw = await AsyncStorage.getItem(CACHE_KEY);
       const cached = raw ? (JSON.parse(raw) as Quest[]) : null;
-      if (cached && cached.length > 0) {
-        set({ quests: cached, loaded: true });
-      } else {
-        set({ loaded: true });
-      }
-    } catch {
-      set({ loaded: true });
-    }
-    // Always sync from DB on load — DB is source of truth
-    get().syncFromDB();
+      if (cached && cached.length > 0) set({ quests: cached, loaded: true });
+    } catch { /* ignore */ }
+
+    // 2. Fetch from DB (respects TTL — skip if cache is still fresh)
+    await get().syncFromDB();
+    set({ loaded: true });
   },
 
   syncFromDB: async () => {
+    // SWR: skip if data was fetched recently
+    if (Date.now() - _fetchedAt < CACHE_TTL && get().quests.length > 0) return;
+
+    // Dedup: skip if a fetch is already in-flight
+    if (_inFlight.has('quests')) return;
+    _inFlight.add('quests');
+
+    // Abort previous stale fetch
+    _abort?.abort();
+    _abort = new AbortController();
+
     try {
       const familyId = getFamilyId();
       const [questsRes, partRes] = await Promise.all([
@@ -230,31 +327,47 @@ export const useQuestStore = create<QuestState>((set, get) => ({
           if (familyId) q = q.eq('family_id', familyId);
           return q;
         })(),
-        supabase
-          .from('quest_participants')
-          .select('*')
-          .order('created_at', { ascending: true }),
+        (() => {
+          let q = supabase
+            .from('quest_participants')
+            .select('*')
+            .order('created_at', { ascending: true });
+          if (familyId) {
+            // Filter participants to only this family's quests via subquery approach
+            // (quest_participants has no family_id — join via in-memory after fetch)
+          }
+          return q;
+        })(),
       ]);
+
+      if (_abort?.signal.aborted) return;
       if (questsRes.error || !questsRes.data) return;
 
-      // Group participants by quest_id
+      const questIds = new Set(questsRes.data.map((r: any) => r.id));
       const partsByQuest: Record<string, QuestParticipant[]> = {};
       for (const row of (partRes.data ?? [])) {
+        if (!questIds.has(row.quest_id)) continue; // only this family's quests
         const p = participantFromRow(row);
         if (!partsByQuest[p.questId]) partsByQuest[p.questId] = [];
         partsByQuest[p.questId].push(p);
       }
 
-      const quests = questsRes.data.map(row => {
+      const quests = questsRes.data.map((row: any) => {
         const q = fromRow(row);
         q.participants = partsByQuest[q.id] ?? backfillParticipants(q);
         return q;
       });
 
+      _fetchedAt = Date.now();
       set({ quests, loaded: true });
       save(quests);
-    } catch (e) {
-      console.warn('[questStore] syncFromDB failed', e);
+
+      // Wire realtime after first successful fetch
+      if (familyId) ensureRealtime(familyId, get, set);
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') console.warn('[questStore] syncFromDB failed', e);
+    } finally {
+      _inFlight.delete('quests');
     }
   },
 
@@ -280,12 +393,14 @@ export const useQuestStore = create<QuestState>((set, get) => ({
         ...(q.assignedToId ? [histEntry('assigned', q.createdById)] : []),
       ],
     } as Quest & { createdAt: string };
-    const next = [quest, ...get().quests];
+    const prev = get().quests;
+    const next = [quest, ...prev];
     set({ quests: next }); save(next);
     supabase.from('quests').insert([toRow(quest)]).then(({ error }) => {
-      if (error) console.warn('[questStore] insert failed', error.message);
-      // Notify assignee if already assigned at creation
-      else if (quest.assignedToId) {
+      if (error) {
+        console.warn('[questStore] insert failed', error.message);
+        set({ quests: prev }); save(prev); // rollback
+      } else if (quest.assignedToId) {
         notifyQuestEvent(quest.id, 'quest_assigned', { questTitle: quest.title, assigneeId: quest.assignedToId, coins: quest.coins, triggeredById: quest.createdById });
       }
     });
@@ -293,8 +408,9 @@ export const useQuestStore = create<QuestState>((set, get) => ({
   },
 
   updateQuest: (id, updates, by) => {
-    const before = get().quests.find(q => q.id === id);
-    const next = get().quests.map(q => {
+    const prev   = get().quests;
+    const before = prev.find(q => q.id === id);
+    const next   = prev.map(q => {
       if (q.id !== id) return q;
       const hist = by ? [...q.history, histEntry('assigned', by)] : q.history;
       return { ...q, ...updates, history: hist };
@@ -302,15 +418,22 @@ export const useQuestStore = create<QuestState>((set, get) => ({
     set({ quests: next }); save(next);
     const updated = next.find(q => q.id === id);
     if (updated) {
-      dbUpdate(id, { ...toRow(updated), last_modified_by_id: by ?? null });
-      // Detect bonus activation — was 0, now >0
+      supabase.from('quests')
+        .update({ ...toRow(updated), last_modified_by_id: by ?? null })
+        .eq('id', id)
+        .then(({ error }) => {
+          if (error) {
+            console.warn('[questStore] update failed', id, error.message);
+            set({ quests: prev }); save(prev); // rollback
+          }
+        });
       if ((!before?.bonusCoins || before.bonusCoins === 0) && (updates.bonusCoins ?? 0) > 0) {
         notifyQuestEvent(id, 'bonus_activated', {
-          questTitle:      updated.title,
-          assigneeId:      updated.assignedToId,
-          bonusCoins:      updates.bonusCoins,
-          bonusExpiresAt:  updates.bonusExpiresAt,
-          triggeredById:   by,
+          questTitle:     updated.title,
+          assigneeId:     updated.assignedToId,
+          bonusCoins:     updates.bonusCoins,
+          bonusExpiresAt: updates.bonusExpiresAt,
+          triggeredById:  by,
         });
       }
     }

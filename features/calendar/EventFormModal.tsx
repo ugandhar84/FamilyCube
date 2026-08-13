@@ -15,7 +15,7 @@
  * Swipe-to-delete is handled in CalendarScreen (this file exports the modals only).
  */
 
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   Modal, KeyboardAvoidingView, Platform, StyleSheet, Alert,
@@ -36,14 +36,9 @@ const X = ({ c, size = 14 }: { c: string; size?: number }) => (
     <Path d="M6 6l12 12M18 6L6 18" stroke={c} strokeWidth={2} strokeLinecap="round" />
   </Svg>
 );
-const ChevronDown = ({ c, size = 14 }: { c: string; size?: number }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24">
-    <Path d="M6 9l6 6 6-6" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-  </Svg>
-);
 
 // ─── Category definitions ──────────────────────────────────────────────────────
-export type EventCategory = 'Medical' | 'Sports' | 'Study' | 'Ride' | 'Work' | 'Event' | 'Birthday';
+export type EventCategory = 'Medical' | 'Sports' | 'Study' | 'Ride' | 'Work' | 'Event' | 'Birthday' | 'Errand' | 'Other';
 
 const CATEGORIES: { key: EventCategory; emoji: string; label: string; color: string }[] = [
   { key: 'Medical',  emoji: '🏥', label: 'Medical',  color: '#EF4444' },
@@ -53,6 +48,8 @@ const CATEGORIES: { key: EventCategory; emoji: string; label: string; color: str
   { key: 'Work',     emoji: '💼', label: 'Work',     color: '#A855F7' },
   { key: 'Event',    emoji: '🎉', label: 'Event',    color: '#6C5CE7' },
   { key: 'Birthday', emoji: '🎂', label: 'Birthday', color: '#F59E0B' },
+  { key: 'Errand',   emoji: '🛒', label: 'Errand',   color: '#0EA5E9' },
+  { key: 'Other',    emoji: '✨', label: 'Other',    color: '#64748B' },
 ];
 
 // ─── Smart suggestions ─────────────────────────────────────────────────────────
@@ -112,6 +109,15 @@ const SUGGESTIONS: Record<EventCategory, { title: string; hint: string }[]> = {
     { title: 'Birthday dinner',       hint: '🎂 Family meal' },
     { title: 'Friend\'s birthday',   hint: '🎊 Guest at party' },
   ],
+  Errand: [
+    { title: 'Grocery run',           hint: '🛒 Supermarket' },
+    { title: 'Shopping trip',         hint: '🛍️ Mall / stores' },
+    { title: 'Pharmacy pickup',       hint: '💊 Medicines' },
+    { title: 'Bank errand',           hint: '🏦 Branch visit' },
+    { title: 'Post office run',       hint: '📮 Drop / collect' },
+    { title: 'Car service drop-off',  hint: '🔧 Garage' },
+  ],
+  Other: [],
 };
 
 // ─── Sport type chips ──────────────────────────────────────────────────────────
@@ -149,7 +155,7 @@ function Chip({ label, active, color, onPress, small }: {
         borderColor: active ? color : (isDark ? colors.border : '#E2E8F0'),
       }}
     >
-      <Text style={{ fontSize: small ? TYPO.micro : TYPO.label, fontWeight: '700', color: active ? color : colors.textTertiary }}>
+      <Text style={{ fontSize: small ? TYPO.micro : TYPO.label, fontWeight: '700', color: active ? color : colors.textSecondary }}>
         {label}
       </Text>
     </TouchableOpacity>
@@ -174,7 +180,7 @@ function MemberPicker({ label, selectedId, members, onSelect, colors, isDark, si
                 <FamilyAvatar
                   name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl}
                   siblings={siblings} size={44}
-                  ringColor={sel ? BRAND.purple : 'transparent'}
+                  ringColor={sel ? BRAND.purple : (isDark ? '#64748B' : '#94A3B8')}
                   ringWidth={sel ? 2.5 : 0}
                   bgColor={sel ? BRAND.purple + '20' : (isDark ? '#1E293B' : '#F1F5F9')}
                 />
@@ -199,6 +205,9 @@ function MemberPicker({ label, selectedId, members, onSelect, colors, isDark, si
   );
 }
 
+// ─── Family-specific custom categories/suggestions — backed by DB ─────────────
+import { fetchCustomSuggestions, recordCustomSuggestion, fetchCustomCategories, CustomCategory } from '@/lib/familyCustomCategories';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // AddEventModal
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -215,10 +224,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   const isSenior  = activeMember?.role === 'senior';
   const isKid     = activeMember?.role === 'kid';
 
-  // Kids can only request Ride or Study
-  const allowedCategories = isKid
-    ? CATEGORIES.filter(c => c.key === 'Ride' || c.key === 'Study')
-    : CATEGORIES;
+  // Kids can only request Ride or Study (allCategories computed after state is declared below)
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [category,       setCategory]       = useState<EventCategory>(isKid ? 'Ride' : 'Medical');
@@ -244,7 +250,9 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   const [sportType,      setSportType]      = useState('');
   const [coachName,      setCoachName]      = useState('');
   const [venueLocation,  setVenueLocation]  = useState('');
-  const [returnTime,     setReturnTime]     = useState('');
+  const [returnDate,     setReturnDate]     = useState<Date | null>(null);
+  const [showReturnDatePick, setShowReturnDatePick] = useState(false);
+  const [showReturnTimePick, setShowReturnTimePick] = useState(false);
   const [kitReminder,    setKitReminder]    = useState(false);
   const [subject,        setSubject]        = useState('');
   const [tutorName,      setTutorName]      = useState('');
@@ -255,16 +263,42 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   const [workType,       setWorkType]       = useState('');
   const [workLocation,   setWorkLocation]   = useState('');
   const [generalLocation,setGeneralLocation]= useState('');
+  const [customSuggestions,  setCustomSuggestions]  = useState<{ title: string; hint: string }[]>([]);
+  const [customCategories,   setCustomCategories]   = useState<CustomCategory[]>([]);
+
+  const familyId = activeMember?.familyId ?? '';
+
+  useEffect(() => {
+    if (!familyId) return;
+    fetchCustomCategories(familyId, 'event').then(setCustomCategories);
+  }, [familyId]);
+
+  useEffect(() => {
+    if (!familyId || category !== 'Other') return;
+    fetchCustomSuggestions(familyId, 'event', 'Other').then(setCustomSuggestions);
+  }, [familyId, category]);
+
+  // Merge system + family custom categories (after state is declared)
+  const allCategories = [
+    ...CATEGORIES,
+    ...customCategories
+      .filter(cc => !CATEGORIES.some(sc => sc.key === cc.key))
+      .map(cc => ({ key: cc.key as EventCategory, emoji: cc.emoji, label: cc.label, color: cc.color })),
+  ];
+  const allowedCategories = isKid
+    ? allCategories.filter(c => c.key === 'Ride' || c.key === 'Study')
+    : allCategories;
 
   const suggPressing = useRef(false);
 
   // ── Suggestions ────────────────────────────────────────────────────────────
   const suggestions = useMemo(() => {
-    const pool = SUGGESTIONS[category] ?? [];
+    const base = SUGGESTIONS[category] ?? [];
+    const pool = category === 'Other' ? customSuggestions : base;
     if (!title.trim()) return pool.slice(0, 6);
     const q = title.toLowerCase();
     return pool.filter(s => s.title.toLowerCase().includes(q)).slice(0, 6);
-  }, [category, title]);
+  }, [category, title, customSuggestions]);
 
   const applySuggestion = (s: { title: string }) => {
     suggPressing.current = false;
@@ -300,11 +334,12 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
     setMemberId(isKid ? activeMemberId : undefined);
     setHelperId(undefined); setHelperName('');
     setDoctorName(''); setClinicLocation(''); setApptType('');
-    setSportType(''); setCoachName(''); setVenueLocation(''); setReturnTime(''); setKitReminder(false);
+    setSportType(''); setCoachName(''); setVenueLocation(''); setKitReminder(false);
     setSubject(''); setTutorName(''); setIsOnline(false); setMeetingUrl('');
-    setPickupLocation(''); setDropLocation('');
+    setPickupLocation(''); setDropLocation(''); setReturnDate(null);
     setWorkType(''); setWorkLocation(''); setGeneralLocation('');
     setShowDatePick(false); setShowTimePick(false);
+    setShowReturnDatePick(false); setShowReturnTimePick(false);
   };
 
   // ── Validation ─────────────────────────────────────────────────────────────
@@ -349,11 +384,17 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
       // Ride/Sports
       pickupLocation:  pickupLocation.trim() || undefined,
       dropLocation:    dropLocation.trim()   || undefined,
+      returnTime:      returnDate ? fmtTimeDisplay(returnDate) : undefined,
       // Approval flow
       approvalPending: isKid, // kids' requests go to parent approval
       conflict:        false,
       color:           CATEGORIES.find(c => c.key === category)?.color,
     });
+
+    // Persist custom title so it appears in future suggestions for this family
+    if (category === 'Other' && finalTitle && familyId) {
+      recordCustomSuggestion(familyId, 'event', 'Other', finalTitle);
+    }
 
     setSaving(false);
     reset();
@@ -368,16 +409,12 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { reset(); onClose(); }} />
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            style={[f.sheet, { backgroundColor: colors.card }]}
-            contentContainerStyle={{ paddingBottom: 48 }}
-          >
-            <View style={[f.handle, { backgroundColor: colors.border }]} />
+          <View style={[f.sheet, { backgroundColor: colors.card }]}>
+            {/* Drag handle */}
+            <View style={[f.handle, { backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }]} />
 
-            {/* ── Header ── */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+            {/* ── Fixed header ── */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
               <View style={{ flex: 1, marginRight: 12 }}>
                 <Text style={[f.title, { color: colors.textPrimary }]}>
                   {isKid ? '🙋 Request Help' : '+ New Event'}
@@ -397,9 +434,15 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
               </TouchableOpacity>
             </View>
 
+            {/* ── Scrollable form fields (category included) ── */}
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 48 }}
+            >
             {/* ── Category selector ── */}
-            <Text style={[f.label, { color: colors.textSecondary }]}>Category</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+            <Text style={[f.label, { color: colors.textSecondary, marginBottom: 6 }]}>Category</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 {allowedCategories.map(c => {
                   const active = category === c.key;
@@ -414,8 +457,8 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                         borderColor: active ? c.color : (isDark ? colors.border : '#E2E8F0'),
                       }}
                     >
-                      <Text style={{ fontSize: 20 }}>{c.emoji}</Text>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: active ? c.color : colors.textTertiary }}>
+                      <Text style={{ fontSize: 20, opacity: active ? 1 : 0.6 }}>{c.emoji}</Text>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: active ? c.color : colors.textSecondary }}>
                         {c.label}
                       </Text>
                     </TouchableOpacity>
@@ -467,33 +510,68 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
             )}
 
             {/* ── Date / Time ── */}
+            <Text style={[f.label, { color: colors.textSecondary }]}>Date & Time</Text>
             <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
               <TouchableOpacity
-                style={[f.dateBtn, { flex: 3, backgroundColor: colors.surface, borderColor: colors.border }]}
-                onPress={() => { setShowDatePick(true); setShowTimePick(false); }}
+                style={[f.dateBtn, { flex: 3, backgroundColor: showDatePick ? catColor + '20' : colors.surface, borderColor: showDatePick ? catColor : colors.border }]}
+                onPress={() => { setShowDatePick(p => !p); setShowTimePick(false); }}
               >
                 <Text style={{ fontSize: 13 }}>📅</Text>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showDatePick ? catColor : colors.textPrimary }}>
                   {fmtDisplay(eventDate)}
                 </Text>
-                <ChevronDown c={colors.textTertiary} />
               </TouchableOpacity>
               {!allDay && (
                 <TouchableOpacity
-                  style={[f.dateBtn, { flex: 2, backgroundColor: colors.surface, borderColor: colors.border }]}
-                  onPress={() => { setShowTimePick(true); setShowDatePick(false); }}
+                  style={[f.dateBtn, { flex: 2, backgroundColor: showTimePick ? catColor + '20' : colors.surface, borderColor: showTimePick ? catColor : colors.border }]}
+                  onPress={() => { setShowTimePick(p => !p); setShowDatePick(false); }}
                 >
                   <Text style={{ fontSize: 13 }}>🕐</Text>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showTimePick ? catColor : colors.textPrimary }}>
                     {fmtTimeDisplay(eventDate)}
                   </Text>
                 </TouchableOpacity>
               )}
             </View>
 
+            {/* Picker overlay — floats above form, no layout shift */}
+            {(showDatePick || showTimePick) && (
+              <Modal transparent animationType="fade" visible onRequestClose={() => { setShowDatePick(false); setShowTimePick(false); }}>
+                <TouchableOpacity style={f.pickerOverlay} activeOpacity={1} onPress={() => { setShowDatePick(false); setShowTimePick(false); }}>
+                  <TouchableOpacity activeOpacity={1} style={[f.pickerCard, { backgroundColor: colors.card }]}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                      <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>
+                        {showDatePick ? '📅 Pick a Date' : '🕐 Pick a Time'}
+                      </Text>
+                      <TouchableOpacity onPress={() => { setShowDatePick(false); setShowTimePick(false); }}>
+                        <Text style={{ color: catColor, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {showDatePick && (
+                      <DateTimePicker
+                        value={eventDate} mode="date" display="spinner"
+                        minimumDate={new Date()}
+                        onChange={(_, d) => { if (d) { const m = new Date(d); m.setHours(eventDate.getHours(), eventDate.getMinutes()); setEventDate(m); } }}
+                        textColor={colors.textPrimary}
+                        style={{ height: 180, width: '100%' }}
+                      />
+                    )}
+                    {showTimePick && (
+                      <DateTimePicker
+                        value={eventDate} mode="time" display="spinner"
+                        is24Hour={false}
+                        onChange={(_, d) => { if (d) { const m = new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setEventDate(m); } }}
+                        textColor={colors.textPrimary}
+                        style={{ height: 180, width: '100%' }}
+                      />
+                    )}
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              </Modal>
+            )}
+
             {/* All day toggle */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16,
-              paddingHorizontal: 4 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingHorizontal: 4 }}>
               <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>All day</Text>
               <Switch
                 value={allDay} onValueChange={setAllDay}
@@ -501,21 +579,6 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                 thumbColor={allDay ? catColor : colors.textTertiary}
               />
             </View>
-
-            {/* Date pickers */}
-            {showDatePick && (
-              <DateTimePicker
-                value={eventDate} mode="date" display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                minimumDate={new Date()}
-                onChange={(_, d) => { setShowDatePick(Platform.OS === 'ios'); if (d) { const m = new Date(d); m.setHours(eventDate.getHours(), eventDate.getMinutes()); setEventDate(m); } }}
-              />
-            )}
-            {showTimePick && !allDay && (
-              <DateTimePicker
-                value={eventDate} mode="time" display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(_, d) => { setShowTimePick(Platform.OS === 'ios'); if (d) { const m = new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setEventDate(m); } }}
-              />
-            )}
 
             {/* ── MEDICAL fields ── */}
             {category === 'Medical' && (
@@ -575,20 +638,10 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                   </View>
                 </View>
 
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
-                      placeholder="Home / School" placeholderTextColor={colors.textTertiary}
-                      value={pickupLocation} onChangeText={setPickupLocation} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Return time</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
-                      placeholder="5:00 PM" placeholderTextColor={colors.textTertiary}
-                      value={returnTime} onChangeText={setReturnTime} />
-                  </View>
-                </View>
+                <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
+                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                  placeholder="Home / School" placeholderTextColor={colors.textTertiary}
+                  value={pickupLocation} onChangeText={setPickupLocation} />
 
                 {/* Kit reminder */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingHorizontal: 4 }}>
@@ -640,6 +693,46 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                     <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
                       placeholder="Home / Library" placeholderTextColor={colors.textTertiary}
                       value={venueLocation} onChangeText={setVenueLocation} />
+                    {/* External tutor + in-person → show drop & pickup */}
+                    {!helperId && tutorName.trim().length > 0 && (
+                      <>
+                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
+                            <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                              placeholder="Home / School" placeholderTextColor={colors.textTertiary}
+                              value={pickupLocation} onChangeText={setPickupLocation} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[f.label, { color: colors.textSecondary }]}>🏁 Drop to</Text>
+                            <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                              placeholder="Tutor's place / Library" placeholderTextColor={colors.textTertiary}
+                              value={dropLocation} onChangeText={setDropLocation} />
+                          </View>
+                        </View>
+                        <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Return pickup (optional)</Text>
+                        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+                          <TouchableOpacity
+                            style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
+                            onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); }}
+                          >
+                            <Text style={{ fontSize: 13 }}>📅</Text>
+                            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
+                              {returnDate ? fmtDisplay(returnDate) : 'Return date'}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[f.dateBtn, { flex: 2, backgroundColor: showReturnTimePick ? catColor + '20' : colors.surface, borderColor: showReturnTimePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
+                            onPress={() => { setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
+                          >
+                            <Text style={{ fontSize: 13 }}>🕐</Text>
+                            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnTimePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
+                              {returnDate ? fmtTimeDisplay(returnDate) : 'Time'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    )}
                   </>
                 )}
               </>
@@ -664,10 +757,62 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                       value={dropLocation} onChangeText={setDropLocation} />
                   </View>
                 </View>
-                <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Return pickup time (optional)</Text>
-                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
-                  placeholder="e.g. 5:30 PM — if someone needs to pick up after" placeholderTextColor={colors.textTertiary}
-                  value={returnTime} onChangeText={setReturnTime} />
+                <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Return pickup (optional)</Text>
+                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+                  <TouchableOpacity
+                    style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
+                    onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); }}
+                  >
+                    <Text style={{ fontSize: 13 }}>📅</Text>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
+                      {returnDate ? fmtDisplay(returnDate) : 'Return date'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[f.dateBtn, { flex: 2, backgroundColor: showReturnTimePick ? catColor + '20' : colors.surface, borderColor: showReturnTimePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
+                    onPress={() => { setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
+                  >
+                    <Text style={{ fontSize: 13 }}>🕐</Text>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnTimePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
+                      {returnDate ? fmtTimeDisplay(returnDate) : 'Time'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {(showReturnDatePick || showReturnTimePick) && (
+                  <Modal transparent animationType="fade" visible onRequestClose={() => { setShowReturnDatePick(false); setShowReturnTimePick(false); }}>
+                    <TouchableOpacity style={f.pickerOverlay} activeOpacity={1} onPress={() => { setShowReturnDatePick(false); setShowReturnTimePick(false); }}>
+                      <TouchableOpacity activeOpacity={1} style={[f.pickerCard, { backgroundColor: colors.card }]}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                          <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>
+                            {showReturnDatePick ? '📅 Return Date' : '🕐 Return Time'}
+                          </Text>
+                          <TouchableOpacity onPress={() => { setShowReturnDatePick(false); setShowReturnTimePick(false); }}>
+                            <Text style={{ color: catColor, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+                          </TouchableOpacity>
+                        </View>
+                        {showReturnDatePick && (
+                          <DateTimePicker
+                            value={returnDate ?? eventDate}
+                            mode="date" display="spinner"
+                            minimumDate={new Date()}
+                            onChange={(_, d) => { if (d) { const m = returnDate ? new Date(returnDate) : new Date(eventDate); m.setFullYear(d.getFullYear(), d.getMonth(), d.getDate()); setReturnDate(m); } }}
+                            textColor={colors.textPrimary}
+                            style={{ height: 180, width: '100%' }}
+                          />
+                        )}
+                        {showReturnTimePick && (
+                          <DateTimePicker
+                            value={returnDate ?? eventDate}
+                            mode="time" display="spinner" is24Hour={false}
+                            onChange={(_, d) => { if (d) { const m = returnDate ? new Date(returnDate) : new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setReturnDate(m); } }}
+                            textColor={colors.textPrimary}
+                            style={{ height: 180, width: '100%' }}
+                          />
+                        )}
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  </Modal>
+                )}
               </>
             )}
 
@@ -691,22 +836,95 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
             {/* ── EVENT / BIRTHDAY fields ── */}
             {(category === 'Event' || category === 'Birthday') && (
               <>
-                <Text style={[f.sectionLabel, { color: catColor }]}>🎉 Event details</Text>
+                <Text style={[f.sectionLabel, { color: catColor }]}>
+                  {category === 'Birthday' ? '🎂 Party details' : '🎉 Event details'}
+                </Text>
                 <Text style={[f.label, { color: colors.textSecondary }]}>📍 Location</Text>
                 <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
-                  placeholder="Living Room / Park / Restaurant" placeholderTextColor={colors.textTertiary}
+                  placeholder={category === 'Birthday' ? "Friend's house / venue" : 'Living Room / Park / Restaurant'}
+                  placeholderTextColor={colors.textTertiary}
+                  value={generalLocation} onChangeText={setGeneralLocation} />
+                {category === 'Birthday' && (
+                  <>
+                    <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Return pickup (optional)</Text>
+                    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+                      <TouchableOpacity
+                        style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
+                        onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); }}
+                      >
+                        <Text style={{ fontSize: 13 }}>📅</Text>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
+                          {returnDate ? fmtDisplay(returnDate) : 'Pickup date'}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[f.dateBtn, { flex: 2, backgroundColor: showReturnTimePick ? catColor + '20' : colors.surface, borderColor: showReturnTimePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
+                        onPress={() => { setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
+                      >
+                        <Text style={{ fontSize: 13 }}>🕐</Text>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnTimePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
+                          {returnDate ? fmtTimeDisplay(returnDate) : 'Time'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
+              </>
+            )}
+
+            {/* ── ERRAND fields ── */}
+            {category === 'Errand' && (
+              <>
+                <Text style={[f.sectionLabel, { color: catColor }]}>🛒 Errand details</Text>
+                <Text style={[f.label, { color: colors.textSecondary }]}>📍 Where</Text>
+                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                  placeholder="Supermarket / Mall / Pharmacy" placeholderTextColor={colors.textTertiary}
+                  value={generalLocation} onChangeText={setGeneralLocation} />
+                <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Expected return (optional)</Text>
+                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+                  <TouchableOpacity
+                    style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
+                    onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); }}
+                  >
+                    <Text style={{ fontSize: 13 }}>📅</Text>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
+                      {returnDate ? fmtDisplay(returnDate) : 'Return date'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[f.dateBtn, { flex: 2, backgroundColor: showReturnTimePick ? catColor + '20' : colors.surface, borderColor: showReturnTimePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
+                    onPress={() => { setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
+                  >
+                    <Text style={{ fontSize: 13 }}>🕐</Text>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnTimePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
+                      {returnDate ? fmtTimeDisplay(returnDate) : 'Time'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+
+            {/* ── OTHER fields ── */}
+            {category === 'Other' && (
+              <>
+                <Text style={[f.sectionLabel, { color: catColor }]}>✨ Custom event</Text>
+                <Text style={[f.label, { color: colors.textSecondary }]}>📍 Location (optional)</Text>
+                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                  placeholder="Where is this happening?" placeholderTextColor={colors.textTertiary}
                   value={generalLocation} onChangeText={setGeneralLocation} />
               </>
             )}
 
             {/* ── For (member picker) ── */}
-            {category !== 'Event' && category !== 'Birthday' && !isKid && (
+            {category !== 'Event' && !isKid && (
               <MemberPicker
                 label={
-                  category === 'Medical' ? 'Patient (which child?)' :
-                  category === 'Sports'  ? 'Player (which child?)' :
-                  category === 'Study'   ? 'Student (which child?)' :
-                  category === 'Ride'    ? 'Passenger' :
+                  category === 'Medical'  ? 'Patient (which child?)' :
+                  category === 'Sports'   ? 'Player (which child?)' :
+                  category === 'Study'    ? 'Student (which child?)' :
+                  category === 'Ride'     ? 'Passenger' :
+                  category === 'Birthday' ? '🎂 Who\'s attending?' :
+                  category === 'Other'    ? '👤 For (optional)' :
                   'For'
                 }
                 selectedId={memberId}
@@ -717,7 +935,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
             )}
 
             {/* ── Helper assignment (parent only; kid sees "Parent will assign") ── */}
-            {category !== 'Work' && category !== 'Event' && category !== 'Birthday' && (
+            {category !== 'Work' && category !== 'Event' && (
               <>
                 {isKid ? (
                   <View style={[f.kidNote, { backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderColor: '#F59E0B40' }]}>
@@ -731,9 +949,10 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                 ) : (
                   <MemberPicker
                     label={
-                      category === 'Medical' ? '🏥 Accompanied by (adult)' :
-                      category === 'Study'   ? '📚 Tutored by (pick from family or type name)' :
-                      category === 'Sports'  ? '🚗 Drop-off by (adult)' :
+                      category === 'Medical'  ? '🏥 Accompanied by (adult)' :
+                      category === 'Study'    ? '📚 Tutored by (pick from family or type name)' :
+                      category === 'Sports'   ? '🚗 Drop-off by (adult)' :
+                      category === 'Birthday' ? '🚗 Driven by / accompanying' :
                       '🚗 Driven by (adult)'
                     }
                     selectedId={helperId}
@@ -795,6 +1014,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                   </Text>}
             </TouchableOpacity>
           </ScrollView>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -827,8 +1047,10 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const restricted     = isKid && isParentApproved; // kid, already approved → read-only
 
   const [notes,      setNotes]      = useState(event.notes ?? '');
-  const [helperName, setHelperName] = useState(event.helper ?? '');
-  const [helperId,   setHelperId]   = useState<string | undefined>();
+  const [helperName, setHelperName] = useState('');
+  const [helperId,   setHelperId]   = useState<string | undefined>(
+    members.find((m: any) => m.name === event.helper)?.id
+  );
   const [saving,     setSaving]     = useState(false);
 
   const catColor = CATEGORIES.find(c => c.key === event.category)?.color ?? BRAND.purple;
@@ -879,169 +1101,158 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={f.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            style={[f.sheet, { backgroundColor: colors.card }]}
-            contentContainerStyle={{ paddingBottom: 48 }}
-          >
-            <View style={[f.handle, { backgroundColor: colors.border }]} />
 
-            {/* Header */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={[f.title, { color: colors.textPrimary }]}>
-                  {restricted ? 'Event Details' : `Edit ${catEmoji}`}
-                </Text>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: catColor }}>
-                  {restricted
-                    ? '🔒 Approved — read-only for you'
-                    : isOwnPending
-                    ? '📝 Your pending request — you can update notes'
-                    : `${event.category} · ${isParent ? 'full edit' : 'limited edit'}`}
+          {/* Sheet — header outside scroll, content scrolls */}
+          <View style={[f.sheet, { backgroundColor: colors.card }]}>
+            {/* Drag handle */}
+            <View style={[f.handle, { backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }]} />
+
+            {/* ── Fixed header (never scrolls) ── */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: catColor + '22', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 18 }}>{catEmoji}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>{event.title}</Text>
+                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>
+                  {event.date}{event.time ? ` · ${event.time}` : ''}{event.location ? ` · ${event.location}` : ''}
                 </Text>
               </View>
-              <TouchableOpacity onPress={onClose} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
-                <X c={colors.textSecondary} />
+              <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                <X c={colors.textSecondary} size={14} />
               </TouchableOpacity>
             </View>
 
-            {/* Event summary (always shown) */}
-            <View style={[f.summaryCard, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: catColor + '20', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 20 }}>{catEmoji}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>{event.title}</Text>
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-                    {event.date}{event.time ? ` · ${event.time}` : ''}
-                    {event.location ? ` · ${event.location}` : ''}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Category-specific details */}
-              <View style={{ marginTop: 10, gap: 4 }}>
-                {event.category === 'Medical' && event.doctorName && (
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                    🩺 Doctor: <Text style={{ fontWeight: '700' }}>{event.doctorName}</Text>
-                  </Text>
-                )}
-                {event.category === 'Study' && event.subject && (
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                    📖 Subject: <Text style={{ fontWeight: '700' }}>{event.subject}</Text>
-                  </Text>
-                )}
-                {event.category === 'Sports' && event.coachName && (
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                    🏅 Coach: <Text style={{ fontWeight: '700' }}>{event.coachName}</Text>
-                  </Text>
-                )}
-                {(event.pickupLocation || event.dropLocation) && (
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                    🚗 {event.pickupLocation ?? '?'} → {event.dropLocation ?? '?'}
-                  </Text>
-                )}
-                {event.memberId && (
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                    👤 {event.category === 'Medical' ? 'Patient' : event.category === 'Study' ? 'Student' : 'For'}:{' '}
-                    <Text style={{ fontWeight: '700' }}>
-                      {members.find(m => m.id === event.memberId)?.name?.split(' ')[0] ?? 'Unknown'}
+            {/* Detail pills — fixed */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+              {event.memberId && (() => {
+                const name = members.find((m: any) => m.id === event.memberId)?.name?.split(' ')[0];
+                return name ? (
+                  <View style={{ backgroundColor: catColor + '18', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: catColor }}>
+                      {event.category === 'Medical' ? '🩺' : event.category === 'Study' ? '🎓' : '👤'} {name}
                     </Text>
-                  </Text>
-                )}
-                {event.helper && (
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                    {event.category === 'Medical' ? '🏥 Accompanied by' :
-                     event.category === 'Study'   ? '📚 Tutored by' :
-                     event.category === 'Sports'  ? '🚗 Drop-off by' :
-                     '🚗 Driven by'}:{' '}
-                    <Text style={{ fontWeight: '700', color: event.helperStatus === 'confirmed' ? '#10B981' : event.helperStatus === 'rejected' ? '#EF4444' : '#D97706' }}>
-                      {event.helper}
-                      {event.helperStatus === 'confirmed' ? ' ✓' : event.helperStatus === 'rejected' ? ' ✕' : ' ⏳'}
-                    </Text>
-                  </Text>
-                )}
-              </View>
-            </View>
-
-            {/* Editable: helper reassignment (parent only) */}
-            {isParent && event.category !== 'Work' && event.category !== 'Event' && (
-              <>
-                <Text style={[f.sectionLabel, { color: BRAND.purple, marginTop: 16 }]}>Reassign helper</Text>
-                <MemberPicker
-                  label={
-                    event.category === 'Medical' ? '🏥 Accompanied by'   :
-                    event.category === 'Study'   ? '📚 Tutored by'       :
-                    event.category === 'Sports'  ? '🚗 Drop-off by'      :
-                    '🚗 Driven by'
-                  }
-                  selectedId={helperId ?? members.find(m => m.name === event.helper)?.id}
-                  members={adults}
-                  onSelect={handleHelperSelect}
-                  colors={colors} isDark={isDark} siblings={siblings}
-                />
-                <TextInput
-                  style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border, marginTop: -8 }]}
-                  placeholder="Or type name (e.g. external tutor)"
-                  placeholderTextColor={colors.textTertiary}
-                  value={helperName}
-                  onChangeText={t => { setHelperName(t); if (!t) setHelperId(undefined); }}
-                />
-              </>
-            )}
-
-            {/* Editable: notes */}
-            {!restricted && (
-              <>
-                <Text style={[f.label, { color: colors.textSecondary, marginTop: 8 }]}>📝 Notes</Text>
-                <TextInput
-                  style={[f.input, f.multiInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
-                  placeholder="Add or update notes…"
-                  placeholderTextColor={colors.textTertiary}
-                  value={notes} onChangeText={t => setNotes(t.slice(0, 200))}
-                  multiline numberOfLines={3} textAlignVertical="top"
-                />
-              </>
-            )}
-
-            {/* Actions */}
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-              {/* Delete / Withdraw — shown when: parent (any event) OR kid (own pending) */}
-              {(isParent || isOwnPending) && onDelete && (
-                <TouchableOpacity
-                  style={{ paddingHorizontal: 18, borderRadius: 14, justifyContent: 'center', alignItems: 'center',
-                    borderWidth: 1, borderColor: '#FCA5A560', backgroundColor: isDark ? '#2D1515' : '#FEF2F2' }}
-                  onPress={handleDelete}
-                >
-                  <X c="#EF4444" size={16} />
-                </TouchableOpacity>
+                  </View>
+                ) : null;
+              })()}
+              {event.category === 'Medical' && event.doctorName && (
+                <View style={{ backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>🩺 {event.doctorName}</Text>
+                </View>
               )}
-              {!restricted && (
-                <TouchableOpacity
-                  style={[f.submitBtn, { flex: 1, opacity: saving ? 0.7 : 1 }]}
-                  onPress={save} disabled={saving}
-                >
-                  {saving
-                    ? <ActivityIndicator color="#fff" size="small" />
-                    : <Text style={{ color: '#fff', fontSize: TYPO.caption, fontWeight: '900' }}>Save Changes</Text>}
-                </TouchableOpacity>
+              {event.category === 'Study' && event.subject && (
+                <View style={{ backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>📖 {event.subject}</Text>
+                </View>
+              )}
+              {event.category === 'Sports' && event.coachName && (
+                <View style={{ backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>🏅 {event.coachName}</Text>
+                </View>
+              )}
+              {(event.pickupLocation || event.dropLocation) && (
+                <View style={{ backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>📍 {event.pickupLocation ?? '?'} → {event.dropLocation ?? '?'}</Text>
+                </View>
+              )}
+              {event.helper && (
+                <View style={{ backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: event.helperStatus === 'confirmed' ? '#10B981' : event.helperStatus === 'rejected' ? '#EF4444' : '#D97706' }}>
+                    {event.helperStatus === 'confirmed' ? '✓' : event.helperStatus === 'rejected' ? '✕' : '⏳'} {event.helper}
+                  </Text>
+                </View>
               )}
               {restricted && (
-                <TouchableOpacity style={[f.submitBtn, { flex: 1, backgroundColor: colors.surface }]} onPress={onClose}>
-                  <Text style={{ color: colors.textSecondary, fontSize: TYPO.caption, fontWeight: '700' }}>Close</Text>
-                </TouchableOpacity>
+                <View style={{ backgroundColor: '#FEF3C715', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                  <Text style={{ fontSize: TYPO.micro, color: '#D97706', fontWeight: '700' }}>🔒 Read-only</Text>
+                </View>
               )}
             </View>
 
-            {restricted && (
-              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, textAlign: 'center', marginTop: 12 }}>
-                This event was approved by a parent. Ask a parent to make changes.
-              </Text>
-            )}
-          </ScrollView>
+            {/* ── Scrollable body (editable fields only) ── */}
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ gap: 12, paddingBottom: 12 }}
+            >
+              {/* Helper reassignment */}
+              {isParent && !['Work', 'Event'].includes(event.category ?? '') && (
+                <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 8 }}>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>
+                    {event.category === 'Medical' ? '🏥 Reassign escort' :
+                     event.category === 'Study'   ? '📚 Change tutor / helper' :
+                     event.category === 'Sports'  ? '🚗 Reassign drop-off' :
+                     '🚗 Reassign driver'}
+                  </Text>
+                  <MemberPicker
+                    label={
+                      event.category === 'Medical' ? '🏥 Accompanied by' :
+                      event.category === 'Study'   ? '📚 Tutored by'     :
+                      event.category === 'Sports'  ? '🚗 Drop-off by'    :
+                      '🚗 Driven by'
+                    }
+                    selectedId={helperId}
+                    members={adults}
+                    onSelect={handleHelperSelect}
+                    colors={colors} isDark={isDark} siblings={siblings}
+                  />
+                  {!helperId && (
+                    <TextInput
+                      style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border, marginTop: -4 }]}
+                      placeholder="Or type a name (e.g. external tutor)"
+                      placeholderTextColor={colors.textTertiary}
+                      value={helperName}
+                      onChangeText={t => setHelperName(t)}
+                    />
+                  )}
+                </View>
+              )}
+
+              {/* Notes */}
+              {!restricted && (
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>📝 Notes</Text>
+                  <TextInput
+                    style={[f.input, f.multiInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                    placeholder="Add or update notes…"
+                    placeholderTextColor={colors.textTertiary}
+                    value={notes} onChangeText={t => setNotes(t.slice(0, 200))}
+                    multiline numberOfLines={3} textAlignVertical="top"
+                  />
+                </View>
+              )}
+
+              {/* Actions */}
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+                {(isParent || isOwnPending) && onDelete && (
+                  <TouchableOpacity
+                    style={{ paddingHorizontal: 18, borderRadius: 14, justifyContent: 'center', alignItems: 'center',
+                      borderWidth: 1, borderColor: '#FCA5A560', backgroundColor: isDark ? '#2D1515' : '#FEF2F2' }}
+                    onPress={handleDelete}>
+                    <X c="#EF4444" size={16} />
+                  </TouchableOpacity>
+                )}
+                {!restricted && (
+                  <TouchableOpacity style={[f.submitBtn, { flex: 1, opacity: saving ? 0.7 : 1 }]} onPress={save} disabled={saving}>
+                    {saving ? <ActivityIndicator color="#fff" size="small" />
+                      : <Text style={{ color: '#fff', fontSize: TYPO.caption, fontWeight: '900' }}>Save Changes</Text>}
+                  </TouchableOpacity>
+                )}
+                {restricted && (
+                  <TouchableOpacity style={[f.submitBtn, { flex: 1, backgroundColor: colors.surface }]} onPress={onClose}>
+                    <Text style={{ color: colors.textSecondary, fontSize: TYPO.caption, fontWeight: '700' }}>Close</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {restricted && (
+                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, textAlign: 'center' }}>
+                  This event was approved by a parent. Ask a parent to make changes.
+                </Text>
+              )}
+            </ScrollView>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -1051,15 +1262,17 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const f = StyleSheet.create({
   backdrop:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
-  sheet:       { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, maxHeight: '92%' },
-  handle:      { width: 44, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  sheet:       { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, maxHeight: '75%' },
+  handle:      { width: 44, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
   title:       { fontSize: 17, fontWeight: '900' },
   label:       { fontSize: TYPO.label, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6, marginTop: 8 },
   sectionLabel:{ fontSize: TYPO.caption, fontWeight: '900', letterSpacing: 0.6, marginBottom: 10, marginTop: 4 },
   input:       { borderWidth: 1.5, borderRadius: 14, padding: 11, fontSize: 13, marginBottom: 10 },
   multiInput:  { minHeight: 72, textAlignVertical: 'top' },
   dateBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10 },
-  suggPill:    { flexDirection: 'row', alignItems: 'center', borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 10, paddingVertical: 6, maxWidth: 180 },
+  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  pickerCard:    { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 32 },
+  suggPill:    { flexDirection: 'row', alignItems: 'center', borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 10, paddingVertical: 6, flexShrink: 0 },
   kidNote:     { borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 12 },
   submitBtn:   { flex: 1, borderRadius: 16, paddingVertical: 14, alignItems: 'center', justifyContent: 'center',
                  flexDirection: 'row', gap: 8, backgroundColor: BRAND.purple },

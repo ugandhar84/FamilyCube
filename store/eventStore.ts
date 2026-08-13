@@ -41,6 +41,7 @@ export interface FamilyEvent {
   helperRequestedBy?: string;
   pickupLocation?: string;
   dropLocation?: string;
+  returnTime?: string;
   doctorName?: string;
   subject?: string;
   coachName?: string;

@@ -38,6 +38,7 @@ import { TYPO } from '@/constants/theme';
 import { fmtDateShort } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
 import { useChatStore } from '@/store/chatStore';
+import { fetchCustomCategories, fetchCustomSuggestions, recordCustomSuggestion, CustomCategory } from '@/lib/familyCustomCategories';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 const I = {
@@ -805,21 +806,39 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
   const [bonusCoins,   setBonusCoins]   = useState('');
   const [saving,       setSaving]       = useState(false);
   const [titleFocused, setTitleFocused] = useState(false);
-  const [isAdultTask,  setIsAdultTask]  = useState(false);
+  const [isAdultTask,       setIsAdultTask]       = useState(false);
+  const [customCategories,  setCustomCategories]  = useState<CustomCategory[]>([]);
+  const [customSuggestions, setCustomSuggestions] = useState<{ title: string; hint: string }[]>([]);
   const suggPressing = React.useRef(false);
 
-  // Dynamic suggestions: when typing, fuzzy-match by word; when blank+focused, show top picks
+  const activeMember = members.find(m => m.id === activeMemberId);
+  const familyId = activeMember?.familyId ?? '';
+
+  useEffect(() => {
+    if (!familyId) return;
+    fetchCustomCategories(familyId, 'quest').then(setCustomCategories);
+  }, [familyId]);
+
+  useEffect(() => {
+    if (!familyId || category !== 'Other') return;
+    fetchCustomSuggestions(familyId, 'quest', 'Other').then(setCustomSuggestions);
+  }, [familyId, category]);
+
+  // Dynamic suggestions: system bank for system categories; DB suggestions for Other/custom
   const suggestions = useMemo(() => {
-    const q = title.trim().toLowerCase();
-    if (!q) {
-      // Show a curated shortlist when field is empty but focused
-      return QUEST_SUGGESTIONS.slice(0, 8);
+    const isCustomCat = customCategories.some(cc => cc.key === category);
+    if (isCustomCat || category === 'Other') {
+      const q = title.trim().toLowerCase();
+      if (!q) return customSuggestions.slice(0, 8);
+      return customSuggestions.filter(s => s.title.toLowerCase().includes(q)).slice(0, 8);
     }
+    const q = title.trim().toLowerCase();
+    if (!q) return QUEST_SUGGESTIONS.slice(0, 8);
     const words = q.split(/\s+/);
     return QUEST_SUGGESTIONS
       .filter(s => words.every(w => s.title.toLowerCase().includes(w)))
       .slice(0, 8);
-  }, [title]);
+  }, [title, category, customSuggestions, customCategories]);
 
   const applySuggestion = (s: typeof QUEST_SUGGESTIONS[0]) => {
     suggPressing.current = false;
@@ -897,6 +916,12 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
         useQuestStore.getState().updateQuest(newQ.id, { maxClaimants });
       }
     }
+    // Record custom suggestion for this family if it's a custom/Other category
+    const isCustomCat = customCategories.some(cc => cc.key === category) || category === 'Other';
+    if (isCustomCat && title.trim() && familyId) {
+      recordCustomSuggestion(familyId, 'quest', category, title.trim());
+    }
+
     setSaving(false);
     reset();
     onClose();
@@ -955,14 +980,16 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                           borderColor:     title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple : colors.border,
                         }]}
                         onPressIn={() => { suggPressing.current = true; }}
-                        onPress={() => applySuggestion(s)}
+                        onPress={() => 'coins' in s ? applySuggestion(s) : (setTitle(s.title), suggPressing.current = false, setTitleFocused(false))}
                       >
                         <Text style={{ fontSize: TYPO.micro + 1, color: colors.textSecondary, fontWeight: '600' }} numberOfLines={1}>
                           {s.title}
                         </Text>
+                        {'coins' in s && (
                         <Text style={{ fontSize: TYPO.micro, color: BRAND.amber, fontWeight: '700', marginLeft: 5 }}>
                           +{s.coins}🪙
                         </Text>
+                        )}
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -1059,7 +1086,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
             <Text style={[aq.label, { color: colors.textSecondary }]}>Category</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
               <View style={{ flexDirection: 'row', gap: 6 }}>
-                {ALL_CATEGORIES.map(c => (
+                {[...ALL_CATEGORIES, ...customCategories.filter(cc => !ALL_CATEGORIES.includes(cc.key as QuestCategory)).map(cc => cc.key as QuestCategory)].map(c => (
                   <TouchableOpacity
                     key={c}
                     style={[aq.catChip, { borderColor: pillBdr, backgroundColor: pillBg },

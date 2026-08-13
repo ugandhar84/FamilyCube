@@ -82,18 +82,18 @@ function BadgeStack({ cat, urgency }: { cat: string; urgency?: string }) {
   );
 }
 
-function Btn({ label, color, onPress, outline, disabled, small }: {
+function Btn({ label, color, onPress, outline, disabled }: {
   label: string; color: string; onPress: () => void; outline?: boolean; disabled?: boolean; small?: boolean;
 }) {
   return (
     <Pressable onPress={onPress} disabled={disabled}
-      style={{
-        flex: 1, paddingVertical: small ? 8 : 10, borderRadius: 12, alignItems: 'center',
+      style={({ pressed }) => ({
+        flex: 1, paddingVertical: 7, paddingHorizontal: 10, borderRadius: 10, alignItems: 'center',
         backgroundColor: outline ? 'transparent' : disabled ? color + '50' : color,
         borderWidth: outline ? 1 : 0, borderColor: outline ? color + '70' : undefined,
-        opacity: disabled ? 0.55 : 1,
-      }}>
-      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: outline ? color : '#fff' }}>{label}</Text>
+        opacity: disabled ? 0.55 : pressed ? 0.82 : 1,
+      })}>
+      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: outline ? color : '#fff' }}>{label}</Text>
     </Pressable>
   );
 }
@@ -472,18 +472,23 @@ function PendingCard({ req, active, allMembers, colors, isDark }: {
         </View>
       )}
 
-      {/* Actions */}
-      <View style={{ gap: 8 }}>
-        <Btn label={`⚡ I'll do it  (${active.name.split(' ')[0]})`} color="#10B981"
+      {/* Actions — all on one compact row */}
+      <View style={{ flexDirection: 'row', gap: 6 }}>
+        <Btn label="⚡ I'll Handle It" color="#10B981"
           onPress={() => selfAssign(req.id, active.id, active.name)} />
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          {candidates.length > 0 && (
-            <Btn label="👤 Ask someone..." color={BRAND.purple} onPress={() => setOfferModal(true)} />
-          )}
-          {isKidRequest && (
-            <Btn label="❌ Reject" color="#EF4444" outline onPress={() => setRejectModal(true)} />
-          )}
-        </View>
+        {candidates.length > 0 && (
+          <Btn label="👤 Delegate" color={BRAND.purple} onPress={() => setOfferModal(true)} />
+        )}
+        {isKidRequest && (
+          <Pressable onPress={() => setRejectModal(true)}
+            style={({ pressed }) => ({
+              width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+              borderWidth: 1, borderColor: '#EF444470',
+              opacity: pressed ? 0.7 : 1,
+            })}>
+            <Ionicons name="close" size={16} color="#EF4444" />
+          </Pressable>
+        )}
       </View>
 
       <OfferModal
@@ -554,7 +559,7 @@ function AwaitingCard({ req, active, allMembers, colors, isDark }: {
           </View>
         )}
 
-        <View style={{ flexDirection: 'row', gap: 8 }}>
+        <View style={{ flexDirection: 'row', gap: 6 }}>
           <Btn label="✅ Yes, I'll do it" color={BRAND.teal} onPress={() => acceptOffer(req.id, active.id, active.name)} />
           <Btn label="❌ Can't do it" color="#EF4444" outline onPress={() => setDeclineModal(true)} />
         </View>
@@ -606,11 +611,11 @@ function AwaitingCard({ req, active, allMembers, colors, isDark }: {
       )}
 
       {/* Actions: person who offered can self-assign or re-offer to someone else */}
-      <View style={{ gap: 8 }}>
-        <Btn label={`⚡ I'll take it myself`} color="#10B981"
+      <View style={{ flexDirection: 'row', gap: 6 }}>
+        <Btn label="⚡ Take it" color="#10B981"
           onPress={() => selfAssign(req.id, active.id, active.name)} />
         {candidates.length > 0 && (
-          <Btn label="👤 Ask someone else instead" color={BRAND.purple} outline
+          <Btn label="👤 Re-offer" color={BRAND.purple} outline
             onPress={() => setReofferModal(true)} />
         )}
       </View>
@@ -736,9 +741,9 @@ function KidCard({ req, active, allMembers, colors, isDark, onResubmit }: {
             <Text style={{ fontSize: TYPO.body, color: colors.textPrimary, fontStyle: 'italic' }}>"{req.offerNote}"</Text>
           </View>
         )}
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Btn label="✅ Sure, I'll help!" color={BRAND.teal} onPress={() => acceptOffer(req.id, active.id, active.name)} />
-          <Btn label="❌ Can't right now" color="#EF4444" outline onPress={() => setDeclineModal(true)} />
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          <Btn label="✅ Sure!" color={BRAND.teal} onPress={() => acceptOffer(req.id, active.id, active.name)} />
+          <Btn label="❌ Can't" color="#EF4444" outline onPress={() => setDeclineModal(true)} />
         </View>
         <DeclineOfferModal
           visible={declineModal}
@@ -858,11 +863,11 @@ export default function HelpQueueSection({ onRequestHelp, hideAskButton = false 
       {!hideAskButton && (
         <Pressable onPress={onRequestHelp}
           style={{
-            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-            backgroundColor: BRAND.purple, borderRadius: 14, paddingVertical: 12,
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+            backgroundColor: BRAND.purple, borderRadius: 10, paddingVertical: 8,
           }}>
-          <Ionicons name="add" size={16} color="#fff" />
-          <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: '#fff' }}>Ask for Help</Text>
+          <Ionicons name="add" size={14} color="#fff" />
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#fff' }}>Ask for Help</Text>
         </Pressable>
       )}
 

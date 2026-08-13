@@ -281,7 +281,9 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
     if (!run || !visible) return;
 
     loadRunDetail(run.id).then(detail => {
-      setRunItems(detail?.runItems ?? []);
+      const items = detail?.runItems ?? [];
+      setRunItems(items);
+      if (items.length === 0) setTab('add');
     });
 
     // Subscribe to check-off changes for this run
@@ -407,9 +409,13 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
           {tab === 'items' && (
             <ScrollView style={{ flex: 1, marginTop: 8 }} showsVerticalScrollIndicator={false}>
               {runItems.length === 0 ? (
-                <View style={{ alignItems: 'center', paddingVertical: 32 }}>
-                  <Text style={{ fontSize: 32, marginBottom: 8 }}>🛒</Text>
-                  <Text style={{ fontSize: 14, color: colors.textSecondary }}>No items yet. Add items from the pool.</Text>
+                <View style={{ alignItems: 'center', paddingVertical: 32, gap: 12 }}>
+                  <Text style={{ fontSize: 40 }}>🛒</Text>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>No items yet</Text>
+                  <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>Tap "+ Add" above to add items from your grocery list.</Text>
+                  <Pressable onPress={() => setTab('add')} style={{ backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 24, marginTop: 4 }}>
+                    <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 14 }}>+ Add Items</Text>
+                  </Pressable>
                 </View>
               ) : (
                 runItems.map(ri => (
@@ -854,8 +860,8 @@ export default function GroceryScreen() {
   const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set());
   const isSelecting = selectedIds.size > 0;
 
-  const activeMember = members.find(m => m.id === activeMemberId);
-  const familyId = members[0]?.id ? 'family-1' : 'family-1'; // TODO: real family id from store
+  const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
+  const familyId = (activeMember as any)?.familyId ?? 'family-1';
 
   useEffect(() => {
     load(familyId);

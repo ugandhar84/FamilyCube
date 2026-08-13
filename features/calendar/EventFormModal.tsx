@@ -26,6 +26,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, FamilyEvent, EventType, HelperStatus } from '@/store/eventStore';
+import { useGroceryStore } from '@/store/groceryStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -218,6 +219,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   const { colors, isDark } = useTheme();
   const { addEvent } = useEventStore();
   const members = useFamilyStore(s => s.members);
+  const { pastStores: cachedStores, pastItemNames: cachedItemNames, appendToCache } = useGroceryStore();
   const siblings = members.map(m => m.name);
 
   const activeMember = members.find(m => m.id === activeMemberId);
@@ -272,7 +274,9 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   const [groceryItems,       setGroceryItems]        = useState<{ id: string; name: string; quantity?: string; category?: string; storePreference?: string }[]>([]);
   const [selectedItemIds,    setSelectedItemIds]    = useState<Set<string>>(new Set());
   const [loadingGroceries,   setLoadingGroceries]   = useState(false);
-  const [newGroceryLines,    setNewGroceryLines]    = useState<{ name: string; store: string }[]>([]);
+  const [newGroceryLines,    setNewGroceryLines]    = useState<{ name: string; qty: string; store: string }[]>([]);
+  const [focusedLineIdx,     setFocusedLineIdx]     = useState<number | null>(null);
+  const [focusedField,       setFocusedField]       = useState<'name' | 'store' | null>(null);
 
   const familyId = activeMember?.familyId ?? '';
 
@@ -289,12 +293,9 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   useEffect(() => {
     if (!linkGroceries || !familyId) return;
     setLoadingGroceries(true);
-    supabase
-      .from('grocery_items')
+    supabase.from('grocery_items')
       .select('id, name, quantity, category, store_preference')
-      .eq('family_id', familyId)
-      .eq('is_bought', false)
-      .order('category')
+      .eq('family_id', familyId).eq('is_bought', false).order('category')
       .then(({ data }) => {
         setGroceryItems((data ?? []).map((r: any) => ({
           id: r.id, name: r.name, quantity: r.quantity ?? undefined,
@@ -367,6 +368,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
     setShowDatePick(false); setShowTimePick(false);
     setShowReturnDatePick(false); setShowReturnTimePick(false);
     setLinkGroceries(false); setGroceryItems([]); setSelectedItemIds(new Set()); setNewGroceryLines([]);
+    setFocusedLineIdx(null); setFocusedField(null);
   };
 
   // ── Validation ─────────────────────────────────────────────────────────────
@@ -435,7 +437,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
             const store = line.store.trim() || 'Any store';
             const { data: inserted } = await supabase
               .from('grocery_items')
-              .insert({ family_id: familyId, name: line.name.trim(), store_preference: line.store.trim() || null, added_by: activeMemberId ?? '', is_bought: false, ai_generated: false })
+              .insert({ family_id: familyId, name: line.name.trim(), quantity: line.qty.trim() || null, store_preference: line.store.trim() || null, added_by: activeMemberId ?? '', is_bought: false, ai_generated: false })
               .select('id')
               .single();
             if (inserted?.id) {
@@ -477,6 +479,10 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
               await supabase.from('grocery_run_items').insert(rows);
             }
           }
+          // Update local cache immediately so next form open has suggestions
+          const newNames  = validNewLines.map(l => l.name.trim()).filter(Boolean);
+          const newStores = [...allStores].filter(s => s !== 'Any store');
+          if (newNames.length || newStores.length) appendToCache(newNames, newStores);
         } catch (e: any) {
           console.warn('[EventFormModal] grocery run creation failed', e?.message);
         }
@@ -1097,38 +1103,84 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                       <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
                         Add new items
                       </Text>
-                      <Pressable onPress={() => setNewGroceryLines(prev => [...prev, { name: '', store: generalLocation.trim() || '' }])}
+                      <Pressable onPress={() => setNewGroceryLines(prev => [...prev, { name: '', qty: '', store: generalLocation.trim() || '' }])}
                         style={{ backgroundColor: catColor, borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10 }}>
                         <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '700' }}>+ Add item</Text>
                       </Pressable>
                     </View>
                     {newGroceryLines.length === 0 ? (
-                      <Pressable onPress={() => setNewGroceryLines([{ name: '', store: generalLocation.trim() || '' }])}
+                      <Pressable onPress={() => setNewGroceryLines([{ name: '', qty: '', store: generalLocation.trim() || '' }])}
                         style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: catColor + '60', borderRadius: 10,
                           paddingVertical: 12, alignItems: 'center' }}>
                         <Text style={{ color: catColor, fontSize: 13 }}>+ Tap to add grocery items</Text>
                       </Pressable>
                     ) : (
-                      newGroceryLines.map((line, idx) => (
-                        <View key={idx} style={{ flexDirection: 'row', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                          <TextInput
-                            style={[f.input, { flex: 2, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border, marginBottom: 0 }]}
-                            placeholder="Item name" placeholderTextColor={colors.textTertiary}
-                            value={line.name}
-                            onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, name: v } : l))}
-                          />
-                          <TextInput
-                            style={[f.input, { flex: 1.2, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border, marginBottom: 0 }]}
-                            placeholder="Store" placeholderTextColor={colors.textTertiary}
-                            value={line.store}
-                            onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, store: v } : l))}
-                          />
-                          <Pressable onPress={() => setNewGroceryLines(prev => prev.filter((_, i) => i !== idx))}
-                            style={{ padding: 6 }}>
-                            <X c={colors.textTertiary} size={16} />
-                          </Pressable>
-                        </View>
-                      ))
+                      newGroceryLines.map((line, idx) => {
+                        const nameSuggs = line.name.trim().length > 0
+                          ? cachedItemNames.filter(n => n.toLowerCase().includes(line.name.toLowerCase()) && n.toLowerCase() !== line.name.toLowerCase()).slice(0, 4)
+                          : [];
+                        const storeSuggs = line.store.trim().length === 0
+                          ? cachedStores.slice(0, 5)
+                          : cachedStores.filter(s => s.toLowerCase().includes(line.store.toLowerCase()) && s.toLowerCase() !== line.store.toLowerCase()).slice(0, 4);
+                        const showNameSuggs  = focusedLineIdx === idx && focusedField === 'name'  && nameSuggs.length > 0;
+                        const showStoreSuggs = focusedLineIdx === idx && focusedField === 'store' && storeSuggs.length > 0;
+
+                        return (
+                          <View key={idx} style={{ marginBottom: 8 }}>
+                            {/* Row 1: name + qty + delete */}
+                            <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+                              <TextInput
+                                style={[f.input, { flex: 2.5, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'name' ? catColor : colors.border, marginBottom: 0 }]}
+                                placeholder="Item name" placeholderTextColor={colors.textTertiary}
+                                value={line.name}
+                                onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, name: v } : l))}
+                                onFocus={() => { setFocusedLineIdx(idx); setFocusedField('name'); }}
+                                onBlur={() => { setFocusedLineIdx(null); setFocusedField(null); }}
+                              />
+                              <TextInput
+                                style={[f.input, { flex: 1, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border, marginBottom: 0 }]}
+                                placeholder="Qty" placeholderTextColor={colors.textTertiary}
+                                value={line.qty}
+                                onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, qty: v } : l))}
+                              />
+                              <Pressable onPress={() => setNewGroceryLines(prev => prev.filter((_, i) => i !== idx))} style={{ padding: 6 }}>
+                                <X c={colors.textTertiary} size={16} />
+                              </Pressable>
+                            </View>
+                            {/* Name suggestions */}
+                            {showNameSuggs && (
+                              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+                                {nameSuggs.map(s => (
+                                  <Pressable key={s} onPress={() => { setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, name: s } : l)); setFocusedField(null); }}
+                                    style={{ backgroundColor: catColor + '15', borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10, marginRight: 6, borderWidth: 1, borderColor: catColor + '40' }}>
+                                    <Text style={{ fontSize: 12, color: catColor, fontWeight: '600' }}>{s}</Text>
+                                  </Pressable>
+                                ))}
+                              </ScrollView>
+                            )}
+                            {/* Row 2: store field */}
+                            <TextInput
+                              style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'store' ? catColor : colors.border, marginBottom: 0 }]}
+                              placeholder="🏪 Store (e.g. Walmart, Costco)" placeholderTextColor={colors.textTertiary}
+                              value={line.store}
+                              onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, store: v } : l))}
+                              onFocus={() => { setFocusedLineIdx(idx); setFocusedField('store'); }}
+                              onBlur={() => { setFocusedLineIdx(null); setFocusedField(null); }}
+                            />
+                            {/* Store suggestions */}
+                            {showStoreSuggs && (
+                              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
+                                {storeSuggs.map(s => (
+                                  <Pressable key={s} onPress={() => { setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, store: s } : l)); setFocusedField(null); }}
+                                    style={{ backgroundColor: isDark ? '#252540' : '#F3F4F6', borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10, marginRight: 6, borderWidth: 1, borderColor: colors.border }}>
+                                    <Text style={{ fontSize: 12, color: colors.textPrimary }}>🏪 {s}</Text>
+                                  </Pressable>
+                                ))}
+                              </ScrollView>
+                            )}
+                          </View>
+                        );
+                      })
                     )}
                   </>
                 )}

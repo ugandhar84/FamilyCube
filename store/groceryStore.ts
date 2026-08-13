@@ -116,10 +116,14 @@ function rowToRunItem(r: any): GroceryRunItem {
 // ─── State ────────────────────────────────────────────────────────────────────
 
 interface GroceryState {
-  items:    GroceryItem[];    // pending (not bought) items for the family
-  runs:     GroceryRun[];     // all runs (latest first)
-  loading:  boolean;
-  familyId: string | null;
+  items:      GroceryItem[];    // pending (not bought) items for the family
+  runs:       GroceryRun[];     // all runs (latest first)
+  loading:    boolean;
+  familyId:   string | null;
+
+  // Autocomplete caches (populated at load time, used by forms)
+  pastStores:    string[];   // distinct store names from past runs
+  pastItemNames: string[];   // distinct item names ever added (incl. bought)
 
   // Realtime subscriptions
   _itemSub: any | null;
@@ -146,6 +150,9 @@ interface GroceryState {
   uncheckRunItem:    (runId: string, itemId: string) => Promise<void>;
 
   loadRunDetail: (runId: string) => Promise<GroceryRun | null>;
+
+  // Update autocomplete caches after new items/runs are added externally
+  appendToCache: (newItemNames: string[], newStores: string[]) => void;
 }
 
 function uuid() {
@@ -158,12 +165,14 @@ function uuid() {
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useGroceryStore = create<GroceryState>((set, get) => ({
-  items:    [],
-  runs:     [],
-  loading:  false,
-  familyId: null,
-  _itemSub: null,
-  _runSub:  null,
+  items:         [],
+  runs:          [],
+  loading:       false,
+  familyId:      null,
+  pastStores:    [],
+  pastItemNames: [],
+  _itemSub:      null,
+  _runSub:       null,
 
   load: async (familyId) => {
     if (get().familyId === familyId && get().items.length > 0) return;
@@ -187,10 +196,19 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
         .order('created_at', { ascending: false })
         .limit(30);
 
-      set({
-        items:   (iData ?? []).map(rowToItem),
-        runs:    (rData ?? []).map(rowToRun),
-        loading: false,
+      const pendingItems = (iData ?? []).map(rowToItem);
+      const recentRuns   = (rData ?? []).map(rowToRun);
+
+      set({ items: pendingItems, runs: recentRuns, loading: false });
+
+      // Build autocomplete caches in the background (non-blocking)
+      Promise.all([
+        supabase.from('grocery_runs').select('store').eq('family_id', familyId).order('created_at', { ascending: false }).limit(100),
+        supabase.from('grocery_items').select('name').eq('family_id', familyId).order('created_at', { ascending: false }).limit(500),
+      ]).then(([storesRes, namesRes]) => {
+        const uniqueStores = [...new Set((storesRes.data ?? []).map((r: any) => r.store as string).filter(Boolean))];
+        const uniqueNames  = [...new Set((namesRes.data ?? []).map((r: any) => r.name as string).filter(Boolean))];
+        set({ pastStores: uniqueStores, pastItemNames: uniqueNames });
       });
 
       // Realtime: item changes
@@ -409,5 +427,12 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
     const updated = { ...run, runItems };
     set(s => ({ runs: s.runs.map(r => r.id === runId ? updated : r) }));
     return updated;
+  },
+
+  appendToCache: (newItemNames, newStores) => {
+    set(s => ({
+      pastItemNames: [...new Set([...newItemNames, ...s.pastItemNames])],
+      pastStores:    [...new Set([...newStores,    ...s.pastStores])],
+    }));
   },
 }));

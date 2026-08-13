@@ -231,6 +231,14 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
         activeMemberId: applyActive(members, activeId, get().activeMemberId),
       });
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(members));
+
+      // Warm up custom category + suggestion caches in background
+      const familyId = members[0]?.familyId;
+      if (familyId) {
+        import('@/lib/familyCustomCategories').then(({ warmupCustomCache }) => {
+          warmupCustomCache(familyId).catch(() => {});
+        });
+      }
     } catch (e) {
       console.warn('[familyStore] syncFromDB:', e);
     }

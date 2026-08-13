@@ -58,9 +58,10 @@ function fmtTime(t?: string) {
 
 function hoursUntilEvent(dateStr: string, timeStr?: string): number {
   if (!timeStr) return 999;
+  // Parse date components manually to avoid UTC-shift bug ("YYYY-MM-DD" → UTC midnight)
+  const [year, month, day] = dateStr.split('-').map(Number);
   const [h, m] = timeStr.split(':').map(Number);
-  const ev = new Date(dateStr);
-  ev.setHours(h, m, 0, 0);
+  const ev = new Date(year, month - 1, day, h, m, 0, 0); // local time
   return (ev.getTime() - Date.now()) / 3600000;
 }
 

@@ -244,7 +244,7 @@ export default function TermsScreen() {
     setLoading(true);
     try {
       await acceptTerms();
-      router.replace('/onboarding/handle-picker');
+      router.replace('/onboarding/family-choice');
     } catch {
       // Retry-able; keep user on screen so they can try again
     } finally {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, TextInput,
   Alert, Switch,
@@ -373,6 +373,15 @@ export default function VaultScreen() {
 
   const [activeTab, setActiveTab] = useState<VaultTab>('gps');
 
+  const vaultScrollRef = useRef<ScrollView>(null);
+  const prevVaultMemberRef = useRef(activeMemberId);
+  useEffect(() => {
+    if (prevVaultMemberRef.current === activeMemberId) return;
+    prevVaultMemberRef.current = activeMemberId;
+    setActiveTab('gps');
+    vaultScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [activeMemberId]);
+
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
@@ -399,30 +408,47 @@ export default function VaultScreen() {
         onPersonaPress={() => {}}
       />
 
-      {/* ── Sub-tab nav (stays fixed) ── */}
-      <View style={[s.subTabBar, { backgroundColor: isDark ? colors.card : '#fff',
-        borderBottomColor: colors.border }]}>
-        <View style={[s.subTabInner, { backgroundColor: isDark ? colors.surface : '#F3F4F8',
-          borderColor: colors.border }]}>
-          {SUBTABS.map(t => (
-            <SubTab key={t.id} label={t.label} icon={t.icon}
-              active={activeTab === t.id} onPress={() => setActiveTab(t.id)} colors={colors} />
-          ))}
-        </View>
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false}
+      <ScrollView ref={vaultScrollRef} showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 48 }}>
 
         {/* ── Page title row ── */}
-        <View style={[s.header, { backgroundColor: isDark ? colors.card : '#fff', borderBottomColor: colors.border }]}>
-          <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>Family Hearth</Text>
+        <View style={[s.header, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }]}>
+          <View>
+            <Text style={{ fontSize: 22, fontWeight: '900', color: colors.textPrimary }}>Family Hearth</Text>
+            <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>GPS · Health · Memories · Ledger</Text>
+          </View>
           <Pressable onPress={() => Alert.alert('Sign Out', 'Sign out of Family Cube?', [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Sign Out', style: 'destructive', onPress: () => signOut() },
           ])}>
             <Ionicons name="log-out-outline" size={22} color={colors.textSecondary} />
           </Pressable>
+        </View>
+
+        {/* ── Segmented tab strip ── */}
+        <View style={{
+          flexDirection: 'row', marginHorizontal: 14, marginBottom: 14,
+          backgroundColor: colors.surface,
+          borderRadius: 22, padding: 3,
+        }}>
+          {SUBTABS.map(t => {
+            const active = activeTab === t.id;
+            return (
+              <Pressable
+                key={t.id}
+                onPress={() => setActiveTab(t.id)}
+                style={{
+                  flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 20,
+                  backgroundColor: active ? colors.primary : 'transparent',
+                }}
+              >
+                <Text style={{ fontSize: 14, marginBottom: 1 }}>{t.icon}</Text>
+                <Text style={{ fontSize: 10, fontWeight: '700', color: active ? '#fff' : colors.textTertiary }}>
+                  {t.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
 
         <View style={{ padding: 12, gap: 10 }}>

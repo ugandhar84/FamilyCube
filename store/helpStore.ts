@@ -149,6 +149,20 @@ const RETRY_DELAY_MS = 1000;
 function uid() { return `hr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`; }
 function now() { return new Date().toISOString(); }
 
+// Fire-and-forget push via family-notifier. Resolves familyId from requesterId.
+async function notifyHelp(requesterId: string, type: string, payload: Record<string, unknown>) {
+  try {
+    const { data } = await supabase.from('members').select('family_id').eq('id', requesterId).single();
+    const familyId = data?.family_id;
+    if (!familyId) return;
+    supabase.functions
+      .invoke('family-notifier', { body: { type, familyId, payload, persist: true } })
+      .catch(e => console.warn('[helpStore] notify failed:', e?.message));
+  } catch (e: any) {
+    console.warn('[helpStore] notify error:', e?.message);
+  }
+}
+
 async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promise<T> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -302,6 +316,12 @@ export const useHelpStore = create<HelpState>((set, get) => ({
     set({ requests: next });
     saveCache(next);
     await upsertRow(req);
+    // Notify parents/seniors that a help request was submitted
+    notifyHelp(req.requesterId, 'help_requested', {
+      requestId: id, title: req.title, category: req.category,
+      requesterName: req.requesterName, requesterId: req.requesterId,
+      urgency: req.urgency,
+    });
     return id;
   },
 
@@ -401,6 +421,11 @@ export const useHelpStore = create<HelpState>((set, get) => ({
     set({ requests: next });
     saveCache(next);
     patchRow(id, { status: 'rejected', rejected_by_name: byName, rejection_reason: reason });
+    const rejected = get().requests.find(r => r.id === id);
+    if (rejected) notifyHelp(rejected.requesterId, 'help_resolved', {
+      requestId: id, title: rejected.title, outcome: 'rejected',
+      byName, reason, requesterId: rejected.requesterId,
+    });
   },
 
   // ── Complete ──────────────────────────────────────────────────────────────
@@ -411,6 +436,11 @@ export const useHelpStore = create<HelpState>((set, get) => ({
     set({ requests: next });
     saveCache(next);
     patchRow(id, { status: 'completed' });
+    const completed = get().requests.find(r => r.id === id);
+    if (completed) notifyHelp(completed.requesterId, 'help_resolved', {
+      requestId: id, title: completed.title, outcome: 'completed',
+      byName: completed.assignedHelper ?? 'Someone', requesterId: completed.requesterId,
+    });
   },
 
   // ── Withdraw ──────────────────────────────────────────────────────────────

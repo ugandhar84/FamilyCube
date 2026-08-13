@@ -1,110 +1,107 @@
-// PawBond — Edge Function: mention-notify
-// Called after a post is published. Resolves @handles → user IDs and sends
-// push + in-app notifications to mentioned users (skips the post author).
+// FamilyCube — Edge Function: mention-notify
+// Called fire-and-forget from chatStore when a chat message contains @mentions.
+// Resolves @firstName matches against family members, sends push to mentioned
+// members (skips the sender), persists in-app notification via family-notifier.
 //
 // Deploy: supabase functions deploy mention-notify
+// Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { canNotify } from './prefs.ts';
 
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-
-const corsHeaders = {
+const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
-
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status, headers: { 'Content-Type': 'application/json', ...corsHeaders },
-  });
-}
+const json = (b: unknown, s = 200) =>
+  new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
-  // Auth check
-  const authHeader = req.headers.get('Authorization');
-  if (!authHeader) return json({ error: 'Unauthorized' }, 401);
+  try {
+    const {
+      messageId,
+      channelId,
+      senderId,
+      text,
+      mentions,  // string[] — the raw @handle words extracted by chatStore
+    } = await req.json() as {
+      messageId: string;
+      channelId: string;
+      senderId:  string;
+      text:      string;
+      mentions:  string[];
+    };
 
-  const anonClient = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_ANON_KEY')!,
-  );
-  const { data: { user }, error: authErr } = await anonClient.auth.getUser(
-    authHeader.replace('Bearer ', '')
-  );
-  if (authErr || !user) return json({ error: 'Unauthorized' }, 401);
+    if (!senderId || !channelId || !Array.isArray(mentions) || mentions.length === 0) {
+      return json({ ok: false, error: 'senderId, channelId, mentions required' }, 400);
+    }
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  );
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    );
 
-  const { post_id, handles, actor_pet_name, actor_pet_emoji } = await req.json();
+    // ── 1. Resolve sender name + family ────────────────────────────────────────
+    const { data: sender } = await supabase
+      .from('members')
+      .select('id, name, family_id')
+      .eq('id', senderId)
+      .single();
 
-  if (!post_id || !Array.isArray(handles) || handles.length === 0) {
-    return json({ error: 'post_id and handles required' }, 400);
-  }
+    if (!sender?.family_id) return json({ ok: true, notified: 0 });
 
-  // Resolve handles → profile IDs, exclude the post author
-  const { data: profiles } = await supabase
-    .from('profiles')
-    .select('id, handle')
-    .in('handle', handles.map((h: string) => h.toLowerCase()))
-    .neq('id', user.id);
+    // ── 2. Load all family members (excluding sender) ──────────────────────────
+    const { data: members } = await supabase
+      .from('members')
+      .select('id, name, expo_push_token')
+      .eq('family_id', sender.family_id)
+      .neq('id', senderId);
 
-  if (!profiles?.length) return json({ success: true, notified: 0 });
+    if (!members?.length) return json({ ok: true, notified: 0 });
 
-  const title = `${actor_pet_emoji} ${actor_pet_name} mentioned you`;
-  const body  = 'Tap to see the post';
-  let notified = 0;
-
-  for (const profile of profiles) {
-    // Dedup: one mention notification per post per recipient
-    const dedupKey = `mention:${post_id}:${profile.id}`;
-    const { count } = await supabase
-      .from('notification_logs')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', profile.id)
-      .eq('dedup_key', dedupKey);
-    if ((count ?? 0) > 0) continue;
-
-    const allowed = await canNotify(supabase, profile.id, 'notif_mention');
-    if (!allowed) continue;
-
-    // Insert in-app notification
-    await supabase.from('notification_logs').insert({
-      user_id: profile.id, title, body,
-      type: 'mention', read: false,
-      dedup_key: dedupKey,
-      data: { post_id, handle: profile.handle, actor_pet_name, actor_pet_emoji },
+    // ── 3. Match @mentions against member first names (case-insensitive) ───────
+    const mentionedMembers = members.filter(m => {
+      const firstName = m.name.split(' ')[0].toLowerCase();
+      return mentions.some((handle: string) => handle.toLowerCase() === firstName);
     });
 
-    // Push notification
-    {
-      const { data: tokens } = await supabase
-        .from('push_tokens')
-        .select('token')
-        .eq('user_id', profile.id)
-        .like('token', 'ExponentPushToken%');
+    if (!mentionedMembers.length) return json({ ok: true, notified: 0 });
 
-      if (tokens?.length) {
-        const msgs = tokens.map((t: any) => ({
-          to: t.token, sound: 'default', title, body,
-          data: { type: 'mention', post_id },
-          priority: 'normal', channelId: 'social',
-        }));
-        await fetch(EXPO_PUSH_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify(msgs),
-        });
-        notified++;
-      }
-    }
+    // ── 4. Delegate to family-notifier for push + persistence ─────────────────
+    const notifierUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/family-notifier`;
+    const notifierHeaders = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+    };
+
+    const tokens    = mentionedMembers.map((m: any) => m.expo_push_token).filter(Boolean);
+    const memberIds = mentionedMembers.map((m: any) => m.id);
+
+    await fetch(notifierUrl, {
+      method: 'POST',
+      headers: notifierHeaders,
+      body: JSON.stringify({
+        type: 'chat_mention',
+        tokens,
+        memberIds,
+        familyId: sender.family_id,
+        persist: true,
+        payload: {
+          messageId, channelId,
+          senderName: sender.name,
+          senderId,
+          preview: text.length > 80 ? text.slice(0, 77) + '…' : text,
+        },
+      }),
+    });
+
+    console.log(`[mention-notify] ${sender.name} mentioned ${memberIds.length} member(s) in channel ${channelId}`);
+    return json({ ok: true, notified: memberIds.length });
+
+  } catch (e: any) {
+    console.error('[mention-notify]', e);
+    return json({ ok: false, error: e.message }, 500);
   }
-
-  return json({ success: true, notified });
 });

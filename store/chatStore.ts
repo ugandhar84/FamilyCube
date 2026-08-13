@@ -302,6 +302,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
       const { error } = await supabase.from('chat_messages').insert(row);
       if (error) throw error;
+      // Fire mention-notify if message contains @mentions
+      const mentions = [...(text ?? '').matchAll(/@(\w+)/g)].map(m => m[1]);
+      if (mentions.length > 0) {
+        supabase.functions
+          .invoke('mention-notify', { body: { messageId: msgId, channelId, senderId, text, mentions } })
+          .catch(e => console.warn('[chatStore] mention-notify failed:', e?.message));
+      }
       // Realtime subscription will deliver the real row and upsert it (replacing optimistic)
     } catch (err) {
       // Remove optimistic message on failure

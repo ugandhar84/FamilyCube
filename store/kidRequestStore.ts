@@ -5,6 +5,7 @@
  */
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '@/lib/supabase';
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -98,6 +99,19 @@ const SEED_REQUESTS: KidRequest[] = [
 const KEY  = '@familycube_kid_requests_v2';
 const save = (reqs: KidRequest[]) => AsyncStorage.setItem(KEY, JSON.stringify(reqs));
 
+async function notifyKidRequest(fromMemberId: string, type: string, payload: Record<string, unknown>) {
+  try {
+    const { data } = await supabase.from('members').select('family_id').eq('id', fromMemberId).single();
+    const familyId = data?.family_id;
+    if (!familyId) return;
+    supabase.functions
+      .invoke('family-notifier', { body: { type, familyId, payload, persist: true } })
+      .catch(e => console.warn('[kidRequestStore] notify failed:', e?.message));
+  } catch (e: any) {
+    console.warn('[kidRequestStore] notify error:', e?.message);
+  }
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useKidRequestStore = create<KidRequestState>((set, get) => ({
@@ -125,21 +139,38 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     };
     const all = [request, ...get().requests];
     set({ requests: all }); save(all);
+    // Notify parents/seniors of new request
+    notifyKidRequest(request.fromMemberId, 'kid_request', {
+      requestId: request.id, requestType: request.type, detail: request.detail,
+      urgency: request.urgency, fromMemberId: request.fromMemberId,
+      location: request.location, scheduledDate: request.scheduledDate,
+      scheduledTime: request.scheduledTime,
+    });
     return request;
   },
 
   approveRequest: (id, respondedBy, note) => {
+    const req = get().requests.find(r => r.id === id);
     const all = get().requests.map(r =>
       r.id === id ? { ...r, status: 'approved' as RequestStatus, respondedAt: new Date().toISOString(), respondedBy, parentNote: note } : r
     );
     set({ requests: all }); save(all);
+    if (req) notifyKidRequest(req.fromMemberId, 'kid_request_decision', {
+      requestId: id, requestType: req.type, detail: req.detail,
+      decision: 'approved', note, fromMemberId: req.fromMemberId,
+    });
   },
 
   declineRequest: (id, respondedBy, note) => {
+    const req = get().requests.find(r => r.id === id);
     const all = get().requests.map(r =>
       r.id === id ? { ...r, status: 'declined' as RequestStatus, respondedAt: new Date().toISOString(), respondedBy, parentNote: note } : r
     );
     set({ requests: all }); save(all);
+    if (req) notifyKidRequest(req.fromMemberId, 'kid_request_decision', {
+      requestId: id, requestType: req.type, detail: req.detail,
+      decision: 'declined', note, fromMemberId: req.fromMemberId,
+    });
   },
 
   assignRequest: (id, helperId, note) => {

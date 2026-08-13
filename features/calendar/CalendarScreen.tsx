@@ -17,10 +17,11 @@
  *  - AI runs simulated conflict detection; 1-click driver swap stored back into event
  *  - Category dots on day strip: Medical=red, Work=purple, Sports=amber, School=blue
  */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal,
   TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
+  Animated, PanResponder,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -32,6 +33,7 @@ import AppHeader from '@/components/AppHeader';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import { fmtDate, fmtDateShort, fmtTimeParts } from '@/lib/dates';
+import { AddEventModal as EventFormAdd, EditEventModal } from './EventFormModal';
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function toDateStr(d: Date) {
@@ -171,17 +173,17 @@ interface AiResult {
 function simulateConflictDetection(events: FamilyEvent[]): Promise<AiResult> {
   return new Promise(res => setTimeout(() => {
     const conflicted = events.filter(e => e.conflict);
-    const pending    = events.filter(e => e.driverStatus === 'pending');
-    const rejected   = events.filter(e => e.driverStatus === 'rejected');
+    const pending    = events.filter(e => e.helperStatus === 'pending');
+    const rejected   = events.filter(e => e.helperStatus === 'rejected');
 
     const conflicts: AiConflict[] = [];
 
     if (conflicted.length > 0) {
       conflicted.forEach(ev => {
         conflicts.push({
-          description: `"${ev.title}" at ${ev.time} overlaps with another commitment — driver gap detected`,
+          description: `"${ev.title}" at ${ev.time} overlaps with another commitment — assistant gap detected`,
           eventsInvolved: [ev.title, 'Parent schedule'],
-          suggestedFix: 'Swap driver to available adult family member',
+          suggestedFix: 'Assign an available adult family member to assist',
           recommendedDriverSwap: 'Grandma Mary',
         });
       });
@@ -190,9 +192,9 @@ function simulateConflictDetection(events: FamilyEvent[]): Promise<AiResult> {
     if (rejected.length > 0) {
       rejected.forEach(ev => {
         conflicts.push({
-          description: `"${ev.title}" driver declined — no confirmed driver assigned`,
+          description: `"${ev.title}" assistant declined — no confirmed helper assigned`,
           eventsInvolved: [ev.title],
-          suggestedFix: `Reassign driver to available parent or grandparent`,
+          suggestedFix: 'Find another available parent or grandparent',
           recommendedDriverSwap: 'Priya (Mom)',
         });
       });
@@ -200,16 +202,16 @@ function simulateConflictDetection(events: FamilyEvent[]): Promise<AiResult> {
 
     if (pending.length > 0) {
       conflicts.push({
-        description: `${pending.length} ride request(s) still awaiting driver confirmation`,
+        description: `${pending.length} event(s) still awaiting assistant confirmation`,
         eventsInvolved: pending.map(e => e.title),
-        suggestedFix: 'Follow up with pending drivers or reassign',
+        suggestedFix: 'Follow up or reassign to someone available',
       });
     }
 
     res({
       summary: conflicts.length === 0
-        ? 'All events are covered with confirmed drivers. No time overlaps detected. Family logistics look smooth for the selected period!'
-        : `Detected ${conflicts.length} logistics issue(s): ${conflicted.length} time conflict(s), ${rejected.length} declined driver(s), ${pending.length} pending confirmation(s). Immediate attention recommended.`,
+        ? 'All events have confirmed assistants. No time overlaps detected. Family schedule looks smooth for the selected period!'
+        : `Detected ${conflicts.length} logistics issue(s): ${conflicted.length} time conflict(s), ${rejected.length} declined assistant(s), ${pending.length} pending confirmation(s). Immediate attention recommended.`,
       conflictsFound: conflicts.length > 0,
       conflicts,
     });
@@ -224,13 +226,25 @@ const RIDE_DECLINE_PRESETS = [
   'Kid playing with the system',
 ];
 
+// Category → dot color map (used only in strip — no full event objects needed)
+const CAT_DOT: Record<string, string> = {
+  Medical:  '#EF4444',
+  Work:     '#A855F7',
+  Sports:   '#F59E0B',
+  Study:    '#3B82F6',
+  Ride:     '#10B981',
+  Event:    '#10B981',
+  Birthday: '#F59E0B',
+};
+
 // ─── Day Strip ────────────────────────────────────────────────────────────────
-function DayStrip({ selected, events, colors, isDark, onSelect }: {
-  selected: string; events: FamilyEvent[]; colors: any; isDark: boolean;
+// Uses lightweight stripMap (date→category[]) — no full event objects.
+function DayStrip({ selected, stripMap, colors, isDark, onSelect }: {
+  selected: string; stripMap: Record<string, string[]>; colors: any; isDark: boolean;
   onSelect: (d: string) => void;
 }) {
-  const today = toDateStr(new Date());
-  const days  = get15Days(selected);
+  const todayStr = toDateStr(new Date());
+  const days     = get15Days(selected);
 
   return (
     <View style={[ds.wrap, { backgroundColor: isDark ? colors.card : '#fff', borderBottomColor: colors.border }]}>
@@ -238,17 +252,15 @@ function DayStrip({ selected, events, colors, isDark, onSelect }: {
         contentContainerStyle={{ paddingHorizontal: 14, gap: 5, paddingVertical: 8 }}>
         {days.map(d => {
           const date    = parseDate(d);
-          const dayEvs  = events.filter(e => e.date === d);
+          const cats    = stripMap[d] ?? [];
           const isSel   = d === selected;
-          const isToday = d === today;
+          const isToday = d === todayStr;
 
-          // Collect up to 3 unique category dot colors for this day
-          const dotColors: string[] = [];
-          if (dayEvs.some(e => e.category === 'Medical'))                      dotColors.push('#EF4444');
-          if (dayEvs.some(e => e.category === 'Work'))                         dotColors.push('#A855F7');
-          if (dayEvs.some(e => e.category === 'Sports'))                       dotColors.push('#F59E0B');
-          if (dayEvs.some(e => e.category === 'School' || e.category === 'Study')) dotColors.push('#3B82F6');
-          if (dayEvs.some(e => !['Medical','Work','Sports','School','Study'].includes(e.category ?? ''))) dotColors.push('#10B981');
+          // Up to 3 distinct dot colors from the strip map
+          const dotColors = cats
+            .map(c => CAT_DOT[c] ?? '#10B981')
+            .filter((c, i, a) => a.indexOf(c) === i)
+            .slice(0, 3);
 
           return (
             <TouchableOpacity key={d} onPress={() => onSelect(d)}
@@ -265,12 +277,9 @@ function DayStrip({ selected, events, colors, isDark, onSelect }: {
                 color: isSel ? '#fff' : isToday ? BRAND.purple : colors.textPrimary }}>
                 {date.getDate()}
               </Text>
-              {/* Event indicator dots (max 3) */}
               <View style={{ flexDirection: 'row', gap: 3, minHeight: 7, alignItems: 'center' }}>
-                {dotColors.slice(0, 3).map((col, i) => (
-                  <View key={i} style={[ds.dot, {
-                    backgroundColor: isSel ? 'rgba(255,255,255,0.85)' : col,
-                  }]} />
+                {dotColors.map((col, i) => (
+                  <View key={i} style={[ds.dot, { backgroundColor: isSel ? 'rgba(255,255,255,0.85)' : col }]} />
                 ))}
               </View>
             </TouchableOpacity>
@@ -286,8 +295,8 @@ const ds = StyleSheet.create({
   dot:  { width: 5, height: 5, borderRadius: 3 },
 });
 
-// ─── Pending Driver Flow sub-component ───────────────────────────────────────
-function PendingDriverFlow({ ev, activeMemberName, isParent, isSenior, colors, isDark, onAccept, onDecline, onWithdraw, onReassign }: {
+// ─── Pending Helper Flow sub-component ───────────────────────────────────────
+function PendingHelperFlow({ ev, activeMemberName, isParent, isSenior, colors, isDark, onAccept, onDecline, onWithdraw, onReassign }: {
   ev: FamilyEvent; activeMemberName: string;
   isParent: boolean; isSenior: boolean;
   colors: any; isDark: boolean;
@@ -300,19 +309,19 @@ function PendingDriverFlow({ ev, activeMemberName, isParent, isSenior, colors, i
   const [showDecInput, setShowDecInput] = useState(false);
   const [decReason,    setDecReason]    = useState('');
 
-  const isRequestor = activeMemberName === ev.driverRequestedBy || activeMemberName === ev.taskOwner;
-  const isAssignedDriver = ev.driver && (
-    ev.driver.includes(activeMemberName) || activeMemberName.includes(ev.driver.split(' ')[0])
+  const isRequestor   = activeMemberName === ev.helperRequestedBy;
+  const isNamedHelper = ev.helper && (
+    ev.helper.includes(activeMemberName) || activeMemberName.includes(ev.helper.split(' ')[0])
   );
 
   return (
     <View style={[pf.box, { backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderColor: '#F59E0B60' }]}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
         <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#D97706' }}>
-          Awaiting confirmation from {ev.driver}
+          Awaiting confirmation from {ev.helper}
         </Text>
         <Text style={{ fontSize: TYPO.micro, color: '#D97706', opacity: 0.7 }}>
-          Owner: {ev.taskOwner ?? ev.driverRequestedBy ?? 'Parent'}
+          Requested by: {ev.helperRequestedBy ?? 'Parent'}
         </Text>
       </View>
 
@@ -350,36 +359,32 @@ function PendingDriverFlow({ ev, activeMemberName, isParent, isSenior, colors, i
         <View>
           <TextInput
             style={[pf.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#fff' }]}
-            placeholder="Add note for driver (optional, max 150 chars)..."
+            placeholder="Add a note (optional, max 150 chars)..."
             placeholderTextColor={colors.textTertiary}
             value={note} onChangeText={t => setNote(t.slice(0, 150))}
             maxLength={150}
           />
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 7 }}>
-            {/* Accept — shown to assigned driver (any role) */}
-            {(isAssignedDriver || isParent || isSenior) && (
+            {(isNamedHelper || isParent || isSenior) && (
               <TouchableOpacity style={[pf.btn, { flex: 2, backgroundColor: '#059669' }]}
                 onPress={() => onAccept(note)}>
                 <I.Check c="#fff" size={13} />
-                <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Accept Ride</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Accept</Text>
               </TouchableOpacity>
             )}
-            {/* Decline — assigned driver or parent/senior */}
-            {(isAssignedDriver || isParent || isSenior) && (
+            {(isNamedHelper || isParent || isSenior) && (
               <TouchableOpacity style={[pf.btn, { backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderWidth: 1, borderColor: '#FCA5A5' }]}
                 onPress={() => setShowDecInput(true)}>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444' }}>Decline</Text>
               </TouchableOpacity>
             )}
-            {/* Reassign — parent only */}
             {isParent && (
               <TouchableOpacity style={[pf.btn, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]}
                 onPress={onReassign}>
                 <I.Arrows c={colors.textSecondary} size={12} />
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Reassign</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Find Another</Text>
               </TouchableOpacity>
             )}
-            {/* Withdraw — only the requestor */}
             {isRequestor && (
               <TouchableOpacity style={[pf.btn, { paddingHorizontal: 8 }]} onPress={onWithdraw}>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444' }}>🗑️ Withdraw</Text>
@@ -399,21 +404,25 @@ const pf = StyleSheet.create({
   btn:       { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 7 },
 });
 
-// ─── Reassign Driver Modal ─────────────────────────────────────────────────────
-function ReassignModal({ visible, ev, members, onAssign, onClose, colors, isDark }: {
+// ─── Find Helper Modal ────────────────────────────────────────────────────────
+function FindHelperModal({ visible, ev, members, onAssign, onClose, colors, isDark }: {
   visible: boolean; ev: FamilyEvent | null;
   members: any[]; onAssign: (name: string) => void;
   onClose: () => void; colors: any; isDark: boolean;
 }) {
   const adults = members.filter(m => m.role === 'parent' || m.role === 'senior');
+  const helperLabel = ev?.category === 'Medical' ? '🏥 Accompanied by'
+    : ev?.category === 'Study'   ? '📚 Tutored by'
+    : ev?.category === 'Sports'  ? '🚗 Drop-off by'
+    : '🚗 Driven by';
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={rm.backdrop}>
         <View style={[rm.sheet, { backgroundColor: colors.card }]}>
           <View style={[rm.handle, { backgroundColor: colors.border }]} />
-          <Text style={[rm.title, { color: colors.textPrimary }]}>Reassign Driver</Text>
+          <Text style={[rm.title, { color: colors.textPrimary }]}>{helperLabel}</Text>
           {ev && <Text style={[rm.sub, { color: colors.textSecondary }]} numberOfLines={1}>"{ev.title}"</Text>}
-          <Text style={[rm.label, { color: colors.textSecondary }]}>Select available adult:</Text>
+          <Text style={[rm.label, { color: colors.textSecondary }]}>Pick an available adult:</Text>
           {adults.map(m => (
             <TouchableOpacity key={m.id} style={[rm.option, { backgroundColor: isDark ? colors.surface : '#F8FAFC', borderColor: colors.border }]}
               onPress={() => onAssign(m.name)}>
@@ -449,9 +458,11 @@ const EVENT_TYPES: EventType[] = ['event', 'reminder', 'appointment', 'birthday'
 const EVENT_TYPE_LABEL: Record<EventType, string> = {
   event: '🎉 Event', reminder: '🔔 Reminder', appointment: '📋 Appointment', birthday: '🎂 Birthday',
 };
-const EVENT_CATS = ['Event', 'Medical', 'Work', 'Sports', 'School', 'Study'];
+const EVENT_CATS = ['Event', 'Medical', 'Work', 'Sports', 'Study', 'Ride'];
 
-function AddEventModal({ visible, selectedDate, colors, isDark, onClose, onSave }: {
+// AddEventModal and AskHelpModal replaced by EventFormAdd / EditEventModal from EventFormModal.tsx
+
+function _OldAddEventModal({ visible, selectedDate, colors, isDark, onClose, onSave }: {
   visible: boolean; selectedDate: string;
   colors: any; isDark: boolean; onClose: () => void; onSave: (d: any) => void;
 }) {
@@ -461,7 +472,7 @@ function AddEventModal({ visible, selectedDate, colors, isDark, onClose, onSave 
   const [type,     setType]     = useState<EventType>('event');
   const [category, setCategory] = useState('Event');
   const [location, setLocation] = useState('');
-  const [driver,   setDriver]   = useState('');
+  const [helper,   setHelper]   = useState('');
   const [saving,   setSaving]   = useState(false);
 
   React.useEffect(() => { if (visible) setDate(selectedDate); }, [visible, selectedDate]);
@@ -472,13 +483,14 @@ function AddEventModal({ visible, selectedDate, colors, isDark, onClose, onSave 
     await new Promise(r => setTimeout(r, 500));
     onSave({
       title: title.trim(), date, time: time || undefined, type, category,
-      location: location || undefined, driver: driver || undefined,
-      driverStatus: driver ? 'pending' : undefined,
+      location: location || undefined,
+      helper: helper || undefined,
+      helperStatus: helper ? 'pending' : undefined,
       approvalPending: false, conflict: false,
     });
     setSaving(false);
     onClose();
-    setTitle(''); setTime(''); setLocation(''); setDriver('');
+    setTitle(''); setTime(''); setLocation(''); setHelper('');
   };
 
   return (
@@ -529,9 +541,15 @@ function AddEventModal({ visible, selectedDate, colors, isDark, onClose, onSave 
             <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F9F8FD' }]}
               placeholder="e.g. Riverside Park" placeholderTextColor={colors.textTertiary} value={location} onChangeText={setLocation} />
 
-            <Text style={[ae.label, { color: colors.textSecondary }]}>DRIVER / TUTOR (optional)</Text>
+            <Text style={[ae.label, { color: colors.textSecondary }]}>
+              {category === 'Medical' ? '🏥 ACCOMPANIED BY (optional)'
+                : category === 'Study'  ? '📚 TUTOR NAME (optional)'
+                : category === 'Sports' ? '🚗 DROP-OFF BY (optional)'
+                : category === 'Ride'   ? '🚗 DRIVEN BY (optional)'
+                : '🤝 ORGANISED BY (optional)'}
+            </Text>
             <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F9F8FD' }]}
-              placeholder="e.g. Priya (Mom)" placeholderTextColor={colors.textTertiary} value={driver} onChangeText={setDriver} />
+              placeholder="e.g. Priya (Mom)" placeholderTextColor={colors.textTertiary} value={helper} onChangeText={setHelper} />
 
             <TouchableOpacity style={[ae.submitBtn, { backgroundColor: title.trim() ? BRAND.purple : colors.border, opacity: saving ? 0.7 : 1 }]}
               onPress={submit} disabled={saving || !title.trim()}>
@@ -555,8 +573,8 @@ const ae = StyleSheet.create({
   submitBtn: { borderRadius: 16, paddingVertical: 14, alignItems: 'center', marginTop: 8, flexDirection: 'row', justifyContent: 'center', gap: 8 },
 });
 
-// ─── Ask Help / Ride Modal (kid) ──────────────────────────────────────────────
-function AskHelpModal({ visible, selectedDate, activeMemberId, colors, isDark, onClose, onSave }: {
+// AskHelpModal replaced by EventFormAdd (kid path shows simplified Ride/Study form)
+function _OldAskHelpModal({ visible, selectedDate, activeMemberId, colors, isDark, onClose, onSave }: {
   visible: boolean; selectedDate: string; activeMemberId: string;
   colors: any; isDark: boolean; onClose: () => void; onSave: (d: any) => void;
 }) {
@@ -572,9 +590,9 @@ function AskHelpModal({ visible, selectedDate, activeMemberId, colors, isDark, o
     onSave({
       title: what.trim(), date: selectedDate, time: time || undefined,
       location: location || undefined,
-      type: 'event' as EventType, category: 'School',
+      type: 'event' as EventType, category: 'Ride',
       memberId: activeMemberId, approvalPending: true, conflict: false,
-      driverRequestedBy: 'Kid',
+      helperRequestedBy: 'Kid',
     });
     setSaving(false);
     onClose(); setWhat(''); setTime(''); setLocation('');
@@ -619,11 +637,86 @@ function AskHelpModal({ visible, selectedDate, activeMemberId, colors, isDark, o
   );
 }
 
+// ─── Swipeable event card wrapper ────────────────────────────────────────────
+// Swipe left to reveal delete. Only shown for future events (per RBAC).
+function SwipeableEventCard({ children, onDelete, onLongPress, canDelete }: {
+  children: React.ReactNode; onDelete: () => void; onLongPress: () => void; canDelete: boolean;
+}) {
+  const tx      = useRef(new Animated.Value(0)).current;
+  const [open, setOpen] = useState(false);
+  const DELETE_W = 72;
+
+  const pan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_, g) => canDelete && Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    onPanResponderMove: (_, g) => {
+      if (!canDelete) return;
+      const base = open ? -DELETE_W : 0;
+      const clamped = Math.max(-DELETE_W, Math.min(0, base + g.dx));
+      tx.setValue(clamped);
+    },
+    onPanResponderRelease: (_, g) => {
+      if (!canDelete) return;
+      const dest = (open ? g.dx < DELETE_W / 2 : g.dx < -(DELETE_W / 2)) ? -DELETE_W : 0;
+      setOpen(dest !== 0);
+      Animated.spring(tx, { toValue: dest, useNativeDriver: true, friction: 7, tension: 60 }).start();
+    },
+  })).current;
+
+  const close = () => {
+    setOpen(false);
+    Animated.spring(tx, { toValue: 0, useNativeDriver: true }).start();
+  };
+
+  // Slide whole row left so delete zone slides in from right (overflow clipped by parent)
+  return (
+    <View style={{ flexDirection: 'row', overflow: 'hidden' }}>
+      <Animated.View
+        {...pan.panHandlers}
+        style={{ flexDirection: 'row', transform: [{ translateX: tx }], width: '100%' }}
+      >
+        {/* Card content — takes full width, slides left */}
+        <View style={{ width: '100%' }}>
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onLongPress={onLongPress}
+            onPress={open ? close : undefined}
+            delayLongPress={450}
+          >
+            {children}
+          </TouchableOpacity>
+        </View>
+
+        {/* Delete zone — revealed when slid left (naturally off-screen until swipe) */}
+        {canDelete && (
+          <TouchableOpacity
+            onPress={() => { close(); onDelete(); }}
+            style={{
+              width: DELETE_W, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: '#EF4444', borderRadius: 16,
+              marginLeft: 6, flexShrink: 0,
+            }}
+          >
+            <Text style={{ fontSize: 18 }}>🗑️</Text>
+            <Text style={{ fontSize: 9, color: '#fff', fontWeight: '800', marginTop: 2 }}>
+              {open ? 'DELETE' : ''}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </Animated.View>
+    </View>
+  );
+}
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function CalendarScreen() {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, setActiveMember } = useFamilyStore();
-  const { events, addEvent, updateEvent } = useEventStore();
+  const {
+    events, dayLoading, hasMore,
+    stripMap,
+    addEvent, updateEvent, deleteEvent,
+    selectDate: storeSelectDate, loadMoreDay, loadStrip,
+  } = useEventStore();
 
   const activeMember = members.find(m => m.id === activeMemberId)
     ?? members.find(m => m.role === 'parent') ?? members[0];
@@ -634,15 +727,40 @@ export default function CalendarScreen() {
   const activeMemberName = activeMember?.name ?? '';
 
   const [selectedDate, setSelectedDate] = useState(toDateStr(new Date()));
+
+  // On mount: load today's events + strip for visible 15-day window
+  React.useEffect(() => {
+    storeSelectDate(selectedDate);
+    const days = get15Days(selectedDate);
+    loadStrip(days);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [filterMember, setFilterMember] = useState<string | null>(null);
   const [showAdd,       setShowAdd]       = useState(false);
   const [showAskHelp,   setShowAskHelp]   = useState(false);
   const [showReassign,  setShowReassign]  = useState(false);
   const [reassignEv,    setReassignEv]    = useState<FamilyEvent | null>(null);
+  const [editEv,        setEditEv]        = useState<FamilyEvent | null>(null);
+
+  const calScrollRef = useRef<ScrollView>(null);
+  const prevCalMemberRef = useRef(activeMemberId);
+  React.useEffect(() => {
+    if (prevCalMemberRef.current === activeMemberId) return;
+    prevCalMemberRef.current = activeMemberId;
+    setFilterMember(null);
+    setShowAdd(false);
+    setShowAskHelp(false);
+    setShowReassign(false);
+    setReassignEv(null);
+    setEditEv(null);
+    setShowAiPanel(false);
+    setIsAnalyzing(false);
+    calScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [activeMemberId]);
   const [showRange,     setShowRange]     = useState(false);
   const weekBounds = useMemo(() => currentWeekBounds(), []);
-  const [rangeStart,    setRangeStart]    = useState(weekBounds.start);
-  const [rangeEnd,      setRangeEnd]      = useState(weekBounds.end);
+  const [rangeStart,    setRangeStart]    = useState('');  // no default filter
+  const [rangeEnd,      setRangeEnd]      = useState('');
 
   // AI state
   const [aiResult,       setAiResult]       = useState<AiResult | null>(null);
@@ -666,28 +784,28 @@ export default function CalendarScreen() {
 
   const handleApplySwap = (idx: number, conflict: AiConflict) => {
     if (!conflict.recommendedDriverSwap) return;
-    const targetEv = events.find(e => e.conflict || e.driverStatus === 'rejected') ?? events[0];
+    const targetEv = events.find(e => e.conflict || e.helperStatus === 'rejected') ?? events[0];
     if (targetEv) {
-      updateEvent(targetEv.id, { driver: conflict.recommendedDriverSwap, driverStatus: 'pending', conflict: false });
+      updateEvent(targetEv.id, { helper: conflict.recommendedDriverSwap, helperStatus: 'pending', conflict: false });
     }
     setAppliedSwaps(p => ({ ...p, [`swap_${idx}`]: true }));
   };
 
-  const handleAcceptRide = (evId: string, note: string) => {
-    updateEvent(evId, { driverStatus: 'confirmed', notes: note || undefined });
+  const handleAccept = (evId: string, note: string) => {
+    updateEvent(evId, { helperStatus: 'confirmed', notes: note || undefined });
   };
 
-  const handleDeclineRide = (evId: string, reason: string) => {
-    updateEvent(evId, { driverStatus: 'rejected', declineReason: reason, declinedBy: activeMemberName });
+  const handleDecline = (evId: string, reason: string) => {
+    updateEvent(evId, { helperStatus: 'rejected', declineReason: reason, declinedBy: activeMemberName });
   };
 
-  const handleWithdrawRide = (evId: string) => {
-    updateEvent(evId, { approvalPending: false, driver: undefined, driverStatus: undefined });
+  const handleWithdraw = (evId: string) => {
+    updateEvent(evId, { approvalPending: false, helper: undefined, helperStatus: undefined });
   };
 
-  const handleReassignDriver = (name: string) => {
+  const handleFindHelper = (name: string) => {
     if (reassignEv) {
-      updateEvent(reassignEv.id, { driver: name, driverStatus: 'pending' });
+      updateEvent(reassignEv.id, { helper: name, helperStatus: 'pending' });
     }
     setShowReassign(false);
     setReassignEv(null);
@@ -730,12 +848,12 @@ export default function CalendarScreen() {
       />
 
       {/* ── Main Scroll: title + AI + member filter + timeline ── */}
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 48 }}
+      <ScrollView ref={calScrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 48 }}
         stickyHeaderIndices={[1]}>
 
         {/* [0] Scrollable: Title row + AI banner + AI panel */}
         <View>
-          <View style={[sc.titleRow, { backgroundColor: isDark ? colors.card : '#fff', borderBottomColor: colors.border }]}>
+          <View style={[sc.titleRow, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }]}>
             <View>
               <Text style={[sc.title, { color: isDark ? colors.textPrimary : '#1E2D6B' }]}>
                 {isKid ? 'My Schedule' : 'Family Schedule'}
@@ -775,7 +893,7 @@ export default function CalendarScreen() {
                       <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>Range</Text>
                     </TouchableOpacity>
                   )}
-                  {isParent && (
+                  {isParentOrSenior && (
                     <TouchableOpacity style={[sc.headerBtn, { backgroundColor: BRAND.purple }]} onPress={() => setShowAdd(true)}>
                       <I.Plus c="#fff" size={14} />
                       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Event</Text>
@@ -805,7 +923,7 @@ export default function CalendarScreen() {
                       </View>
                     </View>
                     <Text style={{ fontSize: TYPO.micro, color: 'rgba(255,255,255,0.8)', marginTop: 2 }}>
-                      Conflict detection, driver gaps &amp; swap suggestions
+                      Conflict detection, helper gaps &amp; swap suggestions
                     </Text>
                   </View>
                   <TouchableOpacity style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 14,
@@ -831,7 +949,7 @@ export default function CalendarScreen() {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <I.Bot c={isDark ? '#C4B5FD' : BRAND.purple} size={15} />
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: isDark ? '#C4B5FD' : BRAND.purple }}>CubeAI Conflict & Driver Swap Recommendations</Text>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: isDark ? '#C4B5FD' : BRAND.purple }}>CubeAI Schedule Conflict & Helper Recommendations</Text>
                 </View>
                 <TouchableOpacity
                   onPress={() => setShowAiPanel(false)}
@@ -916,11 +1034,30 @@ export default function CalendarScreen() {
         </View>
 
         {/* Day strip (scrolls with content) */}
-        <DayStrip selected={selectedDate} events={events} colors={colors} isDark={isDark} onSelect={setSelectedDate} />
+        <DayStrip
+          selected={selectedDate}
+          stripMap={stripMap}
+          colors={colors}
+          isDark={isDark}
+          onSelect={(d) => {
+            setSelectedDate(d);
+            storeSelectDate(d);
+            // Expand strip window if user scrolls near the edge
+            const days = get15Days(d);
+            loadStrip(days);
+          }}
+        />
 
         {/* ── Timeline ── */}
         <View style={{ paddingTop: 16 }}>
-        {dayEvents.length === 0 ? (
+        {dayLoading && dayEvents.length === 0 ? (
+          // Skeleton loader — 3 placeholder cards while fetching
+          <View style={{ paddingHorizontal: 14, gap: 12 }}>
+            {[80, 110, 70].map((h, i) => (
+              <View key={i} style={{ height: h, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#E8E6F0', opacity: 0.5 + i * 0.1 }} />
+            ))}
+          </View>
+        ) : dayEvents.length === 0 ? (
           <View style={[sc.emptyBox, { backgroundColor: cardBg, borderColor: cardBord }]}>
             <Text style={{ fontSize: 32, marginBottom: 8 }}>📅</Text>
             <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B', marginBottom: 4 }}>
@@ -949,43 +1086,83 @@ export default function CalendarScreen() {
               const cs     = catStyle(ev.category, isDark);
               const isConf = ev.conflict;
               const assignee = members.find(m => m.id === ev.memberId);
-              const memberLabel = assignee ? assignee.name.split(' ')[0] : 'Family';
-              const isLast = i === dayEvents.length - 1;
+
+              // Context-aware "for" label per category
+              const cat = ev.category ?? 'Event';
+              const forLabel =
+                cat === 'Medical' ? 'Patient'  :
+                cat === 'Sports'  ? 'Player'   :
+                cat === 'Study'   ? 'Student'  :
+                cat === 'Ride'    ? 'Passenger':
+                cat === 'Work'    ? null        : // no "for" row on own tasks
+                'For';
+
+              // Context-aware helper label
+              const helperLabel =
+                cat === 'Medical' ? '🏥 Accompanied by' :
+                cat === 'Study'   ? '📚 Tutored by'     :
+                cat === 'Sports'  ? '🚗 Drop-off by'    :
+                cat === 'Ride'    ? '🚗 Driven by'      :
+                '🤝 Organised by';
 
               // RBAC checks
               const canApproveRequest = isParent && ev.approvalPending;
-              const hasPendingDriver  = ev.driver && ev.driverStatus === 'pending';
-              const hasRejectedDriver = ev.driver && ev.driverStatus === 'rejected';
+              const hasPendingHelper  = ev.helper && ev.helperStatus === 'pending';
+              const hasRejectedHelper = ev.helper && ev.helperStatus === 'rejected';
+
+              // Which members to show in the picker depends on category
+              const pickerMembers = (cat === 'Work')
+                ? members.filter(m => m.role === 'parent' || m.role === 'senior')
+                : members.filter(m => m.role === 'kid');
+
+              // Swipe-delete eligibility: future event + parent (any) or kid own pending
+              const isPast     = ev.date < toDateStr(new Date());
+              const canDelete  = !isPast && (isParent || (isKid && !!ev.approvalPending && ev.memberId === activeMemberId));
+
+              const handleEvDelete = () => Alert.alert(
+                ev.approvalPending ? 'Withdraw Request' : 'Remove Event',
+                `${ev.approvalPending ? 'Withdraw' : 'Remove'} "${ev.title}"?`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: ev.approvalPending ? 'Withdraw' : 'Delete', style: 'destructive', onPress: () => deleteEvent(ev.id) },
+                ]
+              );
 
               return (
                 <View key={ev.id} style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-                  {/* Left: dot + time stacked on the spine */}
+                  {/* Left: dot + time on spine */}
                   <View style={{ width: 56, alignItems: 'center', paddingTop: 14, marginLeft: -56 }}>
-                    {/* Timeline dot */}
                     <View style={{ width: 14, height: 14, borderRadius: 7, borderWidth: 3,
                       backgroundColor: isConf ? '#F59E0B' : cs.dot,
                       borderColor: isDark ? colors.background : '#F0EEFF',
                       zIndex: 2 }} />
-                    {/* Time below dot */}
                     <Text style={{ fontSize: 10, fontWeight: '800', color: BRAND.purple, marginTop: 3, lineHeight: 12 }}>{time}</Text>
                     <Text style={{ fontSize: 9, fontWeight: '600', color: colors.textTertiary }}>{ampm}</Text>
                   </View>
 
-                  {/* Event Card */}
+                  {/* Event Card (swipeable + long-press to edit) */}
+                  <SwipeableEventCard
+                    canDelete={canDelete}
+                    onDelete={handleEvDelete}
+                    onLongPress={() => setEditEv(ev)}
+                  >
                   <View style={[sc.evCard, { flex: 1, borderColor: isConf ? '#F59E0B60' : cardBord,
-                    backgroundColor: isConf ? (isDark ? '#1C1700' : '#FFFBEB') : cardBg }]}>
+                    backgroundColor: isConf ? (isDark ? '#1C1700' : '#FFFBEB') : cardBg,
+                    overflow: 'hidden' }]}>
+                    {/* Category color accent bar */}
+                    <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4,
+                      backgroundColor: isConf ? '#F59E0B' : cs.dot, borderTopLeftRadius: 24, borderBottomLeftRadius: 24 }} />
 
-                    {/* Header row: category badge + time */}
+                    {/* Header: category badge */}
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                       <View style={[sc.catBadge, { backgroundColor: cs.badge, borderColor: cs.dot + '60' }]}>
-                        <Text style={[sc.catText, { color: cs.text }]}>{(ev.category ?? ev.type).toUpperCase()}</Text>
+                        <Text style={[sc.catText, { color: cs.text }]}>{cat.toUpperCase()}</Text>
                       </View>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>
                         {time} {ampm}
                       </Text>
                     </View>
 
-                    {/* Conflict flag */}
                     {isConf && (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
                         <I.AlertTriangle c="#F59E0B" size={12} />
@@ -998,53 +1175,89 @@ export default function CalendarScreen() {
                       {ev.title}
                     </Text>
 
-                    {/* For + location row */}
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
-                        For: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{memberLabel}</Text>
-                      </Text>
-                      {ev.location && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                          <I.MapPin c={colors.textTertiary} size={11} />
-                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>{ev.location}</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Parent: Assign member to event */}
-                    {isParent && (
-                      <View style={[sc.assignRow, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Assign to:</Text>
-                        <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap' }}>
-                          {members.filter(m => m.role === 'kid').map(k => (
-                            <TouchableOpacity key={k.id}
-                              style={[sc.assignChip, { backgroundColor: ev.memberId === k.id ? BRAND.purple : isDark ? '#1E293B' : '#F1F5F9', borderColor: ev.memberId === k.id ? BRAND.purple : isDark ? '#334155' : '#E2E8F0' }]}
-                              onPress={() => updateEvent(ev.id, { memberId: k.id })}>
-                              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: ev.memberId === k.id ? '#fff' : colors.textSecondary }}>
-                                {k.emoji ?? ''} {k.name.split(' ')[0]}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
+                    {/* Context-aware "For / Patient / Player" — chips when assignee missing, text when set */}
+                    {forLabel && (
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        {assignee ? (
+                          <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
+                            {forLabel}:{' '}
+                            <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
+                              {assignee.name.split(' ')[0]}
+                            </Text>
+                          </Text>
+                        ) : isParent && pickerMembers.length > 0 ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
+                            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>{forLabel}:</Text>
+                            {pickerMembers.map(k => (
+                              <TouchableOpacity key={k.id}
+                                style={[sc.assignChip, { backgroundColor: ev.memberId === k.id ? BRAND.purple : isDark ? '#1E293B' : '#F1F5F9', borderColor: ev.memberId === k.id ? BRAND.purple : isDark ? '#334155' : '#E2E8F0' }]}
+                                onPress={() => updateEvent(ev.id, { memberId: k.id })}>
+                                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: ev.memberId === k.id ? '#fff' : colors.textSecondary }}>
+                                  {k.emoji ?? ''} {k.name.split(' ')[0]}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        ) : (
+                          <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>
+                            {forLabel}: <Text style={{ fontWeight: '700' }}>—</Text>
+                          </Text>
+                        )}
+                        {ev.location && (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                            <I.MapPin c={colors.textTertiary} size={11} />
+                            <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }} numberOfLines={1}>{ev.location}</Text>
+                          </View>
+                        )}
                       </View>
                     )}
 
-                    {/* Kid approval pending — parent sees approve button */}
+                    {/* Category-specific extra fields */}
+                    {cat === 'Medical' && ev.doctorName && (
+                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+                        🩺 Doctor: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.doctorName}</Text>
+                      </Text>
+                    )}
+                    {cat === 'Study' && ev.subject && (
+                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+                        📖 Subject: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.subject}</Text>
+                      </Text>
+                    )}
+                    {cat === 'Sports' && ev.coachName && (
+                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+                        🏅 Coached by: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.coachName}</Text>
+                      </Text>
+                    )}
+                    {(cat === 'Ride' || cat === 'Sports') && (ev.pickupLocation || ev.dropLocation) && (
+                      <View style={{ flexDirection: 'row', gap: 12, marginTop: 2 }}>
+                        {ev.pickupLocation && (
+                          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                            📍 From: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.pickupLocation}</Text>
+                          </Text>
+                        )}
+                        {ev.dropLocation && (
+                          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                            → To: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.dropLocation}</Text>
+                          </Text>
+                        )}
+                      </View>
+                    )}
+
+                    {/* Kid approval pending */}
                     {canApproveRequest && (
                       <View style={[sc.approvalRow, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                           <I.AlertTriangle c="#F59E0B" size={12} />
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#F59E0B' }}>Kid Request Pending</Text>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#F59E0B' }}>Request Pending</Text>
                         </View>
                         <TouchableOpacity style={[sc.approveBtn]}
-                          onPress={() => updateEvent(ev.id, { approvalPending: false, driverStatus: 'pending' })}>
+                          onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'pending' })}>
                           <I.Check c="#fff" size={13} />
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Approve & Claim</Text>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Approve & Assign</Text>
                         </TouchableOpacity>
                       </View>
                     )}
 
-                    {/* Kid: sees their own pending request */}
                     {isKid && ev.approvalPending && (
                       <View style={[sc.approvalRow, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9', justifyContent: 'flex-start', gap: 6 }]}>
                         <I.AlertTriangle c="#F59E0B" size={12} />
@@ -1052,55 +1265,50 @@ export default function CalendarScreen() {
                       </View>
                     )}
 
-                    {/* Driver section */}
-                    {ev.driver && !ev.approvalPending && (
+                    {/* Helper section */}
+                    {ev.helper && !ev.approvalPending && (
                       <View style={[sc.driverSection, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <I.Car c={colors.textTertiary} size={13} />
-                            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
-                              Driver: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.driver}</Text>
-                            </Text>
-                          </View>
-                          {/* Status badges */}
-                          {ev.driverStatus === 'confirmed' && (
+                          <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
+                            {helperLabel}{' '}
+                            <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.helper}</Text>
+                          </Text>
+                          {ev.helperStatus === 'confirmed' && (
                             <View style={[sc.statusBadge, { backgroundColor: isDark ? '#064E3B' : '#D1FAE5', borderColor: '#6EE7B7' }]}>
                               <Text style={[sc.statusText, { color: '#10B981' }]}>✓ Confirmed</Text>
                             </View>
                           )}
-                          {ev.driverStatus === 'pending' && (
+                          {ev.helperStatus === 'pending' && (
                             <View style={[sc.statusBadge, { backgroundColor: isDark ? '#1C1700' : '#FEF3C7', borderColor: '#FCD34D' }]}>
                               <Text style={[sc.statusText, { color: '#D97706' }]}>⏳ Pending</Text>
                             </View>
                           )}
-                          {ev.driverStatus === 'rejected' && (
+                          {ev.helperStatus === 'rejected' && (
                             <View style={[sc.statusBadge, { backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderColor: '#FCA5A5' }]}>
                               <Text style={[sc.statusText, { color: '#EF4444' }]}>❌ Declined</Text>
                             </View>
                           )}
                         </View>
 
-                        {/* Pending driver flow */}
-                        {hasPendingDriver && (
-                          <PendingDriverFlow
+                        {hasPendingHelper && (
+                          <PendingHelperFlow
                             ev={ev}
                             activeMemberName={activeMemberName}
                             isParent={isParent}
                             isSenior={isSenior}
                             colors={colors}
                             isDark={isDark}
-                            onAccept={note => handleAcceptRide(ev.id, note)}
-                            onDecline={reason => handleDeclineRide(ev.id, reason)}
-                            onWithdraw={() => handleWithdrawRide(ev.id)}
+                            onAccept={note => handleAccept(ev.id, note)}
+                            onDecline={reason => handleDecline(ev.id, reason)}
+                            onWithdraw={() => handleWithdraw(ev.id)}
                             onReassign={() => openReassign(ev)}
                           />
                         )}
 
-                        {/* Rejected driver info */}
-                        {hasRejectedDriver && (
+                        {hasRejectedHelper && (
                           <View style={[sc.rejectedBox, { backgroundColor: isDark ? '#450A0A' : '#FEF2F2', borderColor: '#FCA5A5' }]}>
                             <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444', marginBottom: 4 }}>
-                              ❌ Declined by {ev.declinedBy ?? ev.driver}:
+                              ❌ Declined by {ev.declinedBy ?? ev.helper}:
                             </Text>
                             <Text style={{ fontSize: TYPO.label, color: '#EF4444', fontStyle: 'italic' }}>
                               "{ev.declineReason ?? 'No reason provided'}"
@@ -1108,54 +1316,78 @@ export default function CalendarScreen() {
                             {isParentOrSenior && (
                               <TouchableOpacity style={[sc.reassignBtn, { marginTop: 8 }]} onPress={() => openReassign(ev)}>
                                 <I.Arrows c="#0F172A" size={12} />
-                                <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>Reassign Driver Now</Text>
+                                <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>Find Someone Else</Text>
                               </TouchableOpacity>
                             )}
                           </View>
                         )}
 
-                        {/* Conflict + confirmed: parent can still swap */}
-                        {isConf && isParent && ev.driverStatus !== 'pending' && (
+                        {isConf && isParent && ev.helperStatus !== 'pending' && (
                           <TouchableOpacity style={[sc.reassignBtn, { marginTop: 8 }]} onPress={() => openReassign(ev)}>
                             <I.Arrows c="#0F172A" size={12} />
-                            <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>Assign New Driver / Swap</Text>
+                            <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>Reassign / Swap</Text>
                           </TouchableOpacity>
                         )}
                       </View>
                     )}
 
-                    {/* Notes */}
                     {ev.notes && (
                       <Text style={[sc.notesText, { backgroundColor: isDark ? '#1E1B4B' : '#F0F0FE', color: isDark ? '#C4B5FD' : '#4338CA', borderColor: isDark ? '#4338CA50' : '#C7D2FE' }]}>
                         📝 "{ev.notes}"
                       </Text>
                     )}
+
+                    {/* Long-press hint (only on non-past events) */}
+                    {!isPast && (
+                      <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4, textAlign: 'right', opacity: 0.6 }}>
+                        Hold to edit{canDelete ? ' · Swipe ← to delete' : ''}
+                      </Text>
+                    )}
                   </View>
+                  </SwipeableEventCard>
                 </View>
               );
             })}
             </View>
+
+            {/* Load more — only on days with 30+ events */}
+            {hasMore && (
+              <TouchableOpacity
+                style={{ marginHorizontal: 14, marginTop: 4, paddingVertical: 12, borderRadius: 16,
+                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9', alignItems: 'center' }}
+                onPress={loadMoreDay}
+                disabled={dayLoading}
+              >
+                {dayLoading
+                  ? <ActivityIndicator size="small" color={BRAND.purple} />
+                  : <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.purple }}>Load more events</Text>}
+              </TouchableOpacity>
+            )}
           </View>
         )}
         </View>
       </ScrollView>
 
       {/* Modals */}
-      {isParent && (
-        <AddEventModal visible={showAdd} selectedDate={selectedDate} colors={colors} isDark={isDark}
-          onClose={() => setShowAdd(false)}
-          onSave={d => { addEvent(d); setShowAdd(false); }}
+      {/* Full event form — parent/senior create; kid requests Ride/Study */}
+      <EventFormAdd
+        visible={showAdd || showAskHelp}
+        activeMemberId={activeMember?.id ?? ''}
+        onClose={() => { setShowAdd(false); setShowAskHelp(false); }}
+      />
+
+      {/* Edit event — long-press on any card opens this */}
+      {editEv && (
+        <EditEventModal
+          event={editEv}
+          activeMemberId={activeMember?.id ?? ''}
+          onClose={() => setEditEv(null)}
+          onDelete={() => { deleteEvent(editEv.id); setEditEv(null); }}
         />
       )}
-      {isKid && (
-        <AskHelpModal visible={showAskHelp} selectedDate={selectedDate} activeMemberId={activeMember?.id ?? ''}
-          colors={colors} isDark={isDark}
-          onClose={() => setShowAskHelp(false)}
-          onSave={d => { addEvent(d); setShowAskHelp(false); }}
-        />
-      )}
-      <ReassignModal visible={showReassign} ev={reassignEv} members={members}
-        onAssign={handleReassignDriver} onClose={() => { setShowReassign(false); setReassignEv(null); }}
+
+      <FindHelperModal visible={showReassign} ev={reassignEv} members={members}
+        onAssign={handleFindHelper} onClose={() => { setShowReassign(false); setReassignEv(null); }}
         colors={colors} isDark={isDark}
       />
 

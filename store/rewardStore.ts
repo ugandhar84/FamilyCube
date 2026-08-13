@@ -90,6 +90,19 @@ const SEED_REWARDS: Reward[] = [
 const REWARDS_KEY     = '@familycube_rewards_v2';
 const REDEMPTIONS_KEY = '@familycube_redemptions_v2';
 
+async function notifyReward(memberId: string, type: string, payload: Record<string, unknown>) {
+  try {
+    const { data } = await supabase.from('members').select('family_id').eq('id', memberId).single();
+    const familyId = data?.family_id;
+    if (!familyId) return;
+    supabase.functions
+      .invoke('family-notifier', { body: { type, familyId, payload, persist: true } })
+      .catch(e => console.warn('[rewardStore] notify failed:', e?.message));
+  } catch (e: any) {
+    console.warn('[rewardStore] notify error:', e?.message);
+  }
+}
+
 const save = (rewards: Reward[], redemptions: Redemption[]) => {
   AsyncStorage.setItem(REWARDS_KEY,     JSON.stringify(rewards));
   AsyncStorage.setItem(REDEMPTIONS_KEY, JSON.stringify(redemptions));
@@ -186,21 +199,36 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     const nextRd = [...get().redemptions, redemption];
     set({ rewards: nextRewards, redemptions: nextRd });
     save(nextRewards, nextRd);
+    if (reward.requiresApproval) {
+      notifyReward(memberId, 'reward_redeemed', {
+        redemptionId: redemption.id, rewardId, rewardTitle: reward.title,
+        rewardEmoji: reward.emoji, cost: reward.cost, memberId,
+      });
+    }
     return true;
   },
 
   approveRedemption: (id, approverId, note) => {
     const now = new Date().toISOString();
-    const nextRd = get().redemptions.map(rd =>
-      rd.id === id ? { ...rd, status: 'approved' as RedemptionStatus, approvedBy: approverId, note, respondedAt: now } : rd
+    const rd = get().redemptions.find(r => r.id === id);
+    const nextRd = get().redemptions.map(r =>
+      r.id === id ? { ...r, status: 'approved' as RedemptionStatus, approvedBy: approverId, note, respondedAt: now } : r
     );
     set({ redemptions: nextRd }); save(get().rewards, nextRd);
+    if (rd) {
+      const reward = get().rewards.find(r => r.id === rd.rewardId);
+      notifyReward(rd.memberId, 'reward_decision', {
+        redemptionId: id, rewardTitle: reward?.title ?? '', rewardEmoji: reward?.emoji ?? '🎁',
+        decision: 'approved', note, memberId: rd.memberId,
+      });
+    }
   },
 
   rejectRedemption: (id, rejectorId, note) => {
     const now = new Date().toISOString();
-    const nextRd = get().redemptions.map(rd =>
-      rd.id === id ? { ...rd, status: 'rejected' as RedemptionStatus, rejectedBy: rejectorId, note, respondedAt: now } : rd
+    const rd = get().redemptions.find(r => r.id === id);
+    const nextRd = get().redemptions.map(r =>
+      r.id === id ? { ...r, status: 'rejected' as RedemptionStatus, rejectedBy: rejectorId, note, respondedAt: now } : r
     );
     // Restore stock if applicable
     const rejected = get().redemptions.find(rd => rd.id === id);
@@ -212,6 +240,13 @@ export const useRewardStore = create<RewardState>((set, get) => ({
       }
     }
     set({ redemptions: nextRd }); save(get().rewards, nextRd);
+    if (rd) {
+      const reward = get().rewards.find(r => r.id === rd.rewardId);
+      notifyReward(rd.memberId, 'reward_decision', {
+        redemptionId: id, rewardTitle: reward?.title ?? '', rewardEmoji: reward?.emoji ?? '🎁',
+        decision: 'rejected', note, memberId: rd.memberId,
+      });
+    }
   },
 
   cancelRedemption: (id) => {

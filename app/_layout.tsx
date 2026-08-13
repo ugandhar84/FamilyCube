@@ -22,7 +22,7 @@ import { ThemeProvider, useTheme } from '@/lib/ThemeContext';
 import { useAuthStore, invalidateProfileCache } from '@/store/authStore';
 import { usePetStore } from '@/store/petStore';
 import { useWidgetSync } from '@/lib/hooks/useWidgetSync';
-import { savePushToken, addNotificationResponseListener, addNotificationReceivedListener, registerNotificationCategories } from '@/lib/notifications';
+import { savePushToken, saveTokenToMember, addNotificationResponseListener, addNotificationReceivedListener, registerNotificationCategories } from '@/lib/notifications';
 import { todayLocal } from '@/lib/dates';
 import { reloadBlockedWords } from '@/lib/profanityFilter';
 import { isBiometricEnabled, isBiometricAvailable, saveBiometricSession } from '@/lib/biometrics';
@@ -35,6 +35,7 @@ import PaywallSheet from '@/components/PaywallSheet';
 import PickerLoadingOverlay from '@/components/PickerLoadingOverlay';
 import { usePaywallSheetStore } from '@/store/paywallSheetStore';
 import { useNotifStore } from '@/store/notifStore';
+import { useFamilyStore } from '@/store/familyStore';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -287,6 +288,19 @@ function RootNavigator() {
         savePushToken(session.user.id).catch((e) =>
           dbgWarn(TAG, 'savePushToken failed', e?.message)
         );
+        // Save token to the active family member row (FamilyCube push routing).
+        // If members haven't loaded yet, subscribe and fire once they do.
+        const activeMemberId = useFamilyStore.getState().activeMemberId;
+        if (activeMemberId) {
+          saveTokenToMember(activeMemberId).catch(() => {});
+        } else {
+          const unsub = useFamilyStore.subscribe((state) => {
+            if (state.activeMemberId) {
+              saveTokenToMember(state.activeMemberId).catch(() => {});
+              unsub();
+            }
+          });
+        }
         registerNotificationCategories().catch(() => {});
 
         // Seed home_timezone + timezone on first sign-in if not yet set.

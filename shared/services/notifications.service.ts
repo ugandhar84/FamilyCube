@@ -306,6 +306,31 @@ export async function savePushToken(userId: string): Promise<void> {
   );
 }
 
+// ── Save token to members table (FamilyCube) ──────────────────────────────────
+// Called whenever the active member switches. Stores the device's Expo push token
+// on members.expo_push_token so family-notifier can look it up by member ID.
+
+export async function saveTokenToMember(memberId: string): Promise<void> {
+  const token = await registerForPushNotifications();
+  if (!token || !memberId) return;
+  try {
+    await supabase.from('members').update({ expo_push_token: token }).eq('id', memberId);
+  } catch (e) {
+    console.warn('[notifications] saveTokenToMember failed:', e);
+  }
+}
+
+// ── Clear token from member on profile switch / logout ────────────────────────
+
+export async function clearTokenFromMember(memberId: string): Promise<void> {
+  if (!memberId) return;
+  try {
+    await supabase.from('members').update({ expo_push_token: null }).eq('id', memberId);
+  } catch (e) {
+    console.warn('[notifications] clearTokenFromMember failed:', e);
+  }
+}
+
 // ── Remove token on logout ────────────────────────────────────────────────────
 
 export async function removePushToken(userId: string): Promise<void> {

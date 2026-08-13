@@ -334,7 +334,7 @@ export default function StoreScreen() {
         contentContainerStyle={{ paddingBottom: 40 }}>
 
         {/* ── Page title row ── */}
-        <View style={[s.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <View style={[s.header, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }]}>
           <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>
             Family Perks Store
           </Text>

@@ -1,6 +1,16 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
+// Lazy-read family_id from active member without circular dep
+const getFamilyId = (): string | null => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useFamilyStore } = require('@/store/familyStore');
+    const state = useFamilyStore.getState();
+    const active = state.members.find((m: any) => m.id === state.activeMemberId) ?? state.members[0];
+    return (active as any)?.familyId ?? null;
+  } catch { return null; }
+};
 
 // ─── Quest event notifier (fire-and-forget) ───────────────────────────────────
 // familyId is resolved from the quests table row so the edge function can
@@ -119,6 +129,8 @@ export interface Quest {
   history:          QuestHistoryEntry[];
   createdById?:     string;
   lastModifiedById?: string;
+
+  isAdultTask:      boolean;  // true = only visible to parent/senior; hidden from kids/grandparents
 }
 
 // ─── Store interface ──────────────────────────────────────────────────────────
@@ -206,13 +218,18 @@ export const useQuestStore = create<QuestState>((set, get) => ({
 
   syncFromDB: async () => {
     try {
+      const familyId = getFamilyId();
       const [questsRes, partRes] = await Promise.all([
-        supabase
-          .from('quests')
-          .select('*')
-          .is('deleted_at', null)
-          .not('status', 'eq', 'archived')
-          .order('created_at', { ascending: false }),
+        (() => {
+          let q = supabase
+            .from('quests')
+            .select('*')
+            .is('deleted_at', null)
+            .not('status', 'eq', 'archived')
+            .order('created_at', { ascending: false });
+          if (familyId) q = q.eq('family_id', familyId);
+          return q;
+        })(),
         supabase
           .from('quest_participants')
           .select('*')
@@ -255,6 +272,7 @@ export const useQuestStore = create<QuestState>((set, get) => ({
       isMultiAssign:    false,
       maxClaimants:     1,
       participants:     [],
+      isAdultTask:      (q as any).isAdultTask ?? false,
       createdAt:        new Date().toISOString(),
       isPool:           q.isPool ?? !q.assignedToId,
       history:          [
@@ -790,6 +808,7 @@ function fromRow(row: any): Quest {
     history:          Array.isArray(row.history) ? row.history : [],
     createdById:      row.created_by_id ? String(row.created_by_id) : undefined,
     lastModifiedById: row.last_modified_by_id ? String(row.last_modified_by_id) : undefined,
+    isAdultTask:      Boolean(row.is_adult_task),
   };
 }
 
@@ -798,6 +817,7 @@ function fromRow(row: any): Quest {
 function toRow(q: Quest & { createdAt?: string }) {
   return {
     id:                 q.id,
+    family_id:          getFamilyId(),
     title:              q.title,
     description:        q.description ?? null,
     instructions:       q.instructions ?? null,
@@ -852,6 +872,7 @@ function toRow(q: Quest & { createdAt?: string }) {
     history:            q.history ?? [],
     created_by_id:      q.createdById ?? null,
     last_modified_by_id: q.lastModifiedById ?? null,
+    is_adult_task:      q.isAdultTask ?? false,
 
     created_at:         q.createdAt ?? new Date().toISOString(),
   };

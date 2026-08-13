@@ -48,6 +48,12 @@ type NotifType =
   | 'chat_mention'
   | 'coins_awarded'
   | 'chore_ghosted'
+  | 'help_requested'
+  | 'help_resolved'
+  | 'reward_redeemed'
+  | 'reward_decision'
+  | 'kid_request'
+  | 'kid_request_decision'
   | 'custom';
 
 interface NotifShape {
@@ -173,6 +179,66 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         body: `${p.kidName} claimed "${p.questTitle}" but hasn't started — it may be reassigned`,
         data: { screen: 'Quests', questId: p.questId },
       };
+
+    // ── Help requests ─────────────────────────────────────────────────────────
+    case 'help_requested':
+      return {
+        title: `🆘 Help Needed — ${p.category ?? ''}`,
+        body: `${p.requesterName} needs help: "${p.title}"${p.urgency === 'High' ? ' (Urgent!)' : ''}`,
+        sound: 'default',
+        data: { screen: 'Help', requestId: p.requestId },
+      };
+    case 'help_resolved':
+      return {
+        title: p.outcome === 'completed' ? '✅ Help Completed' : '❌ Help Request Rejected',
+        body: p.outcome === 'completed'
+          ? `"${p.title}" was completed by ${p.byName} — great teamwork! 🎉`
+          : `"${p.title}" was rejected${p.reason ? `: ${p.reason}` : ''}`,
+        data: { screen: 'Help', requestId: p.requestId },
+      };
+
+    // ── Rewards ───────────────────────────────────────────────────────────────
+    case 'reward_redeemed':
+      return {
+        title: `${p.rewardEmoji ?? '🎁'} Reward Request`,
+        body: `Someone wants to redeem "${p.rewardTitle}" for ${p.cost}🪙 — approve or decline`,
+        sound: 'default',
+        data: { screen: 'Rewards', redemptionId: p.redemptionId },
+      };
+    case 'reward_decision':
+      return {
+        title: p.decision === 'approved' ? `${p.rewardEmoji ?? '🎁'} Reward Approved!` : `${p.rewardEmoji ?? '🎁'} Reward Declined`,
+        body: p.decision === 'approved'
+          ? `"${p.rewardTitle}" approved! Enjoy it 🎉${p.note ? ` — ${p.note}` : ''}`
+          : `"${p.rewardTitle}" was declined${p.note ? `: ${p.note}` : ''}`,
+        sound: 'default',
+        data: { screen: 'Rewards', redemptionId: p.redemptionId },
+      };
+
+    // ── Kid requests ──────────────────────────────────────────────────────────
+    case 'kid_request': {
+      const urgencyPrefix = p.urgency === 'emergency' ? '🚨 EMERGENCY: ' : p.urgency === 'urgent' ? '⚡ Urgent: ' : '';
+      const typeEmoji: Record<string, string> = {
+        ride: '🚗', tutor: '🎒', cheer: '✋', emergency: '🚨',
+        question: '❓', permission: '🔓', appointment: '📅',
+        delegation: '📋', checkin: '📞', medication: '💊',
+      };
+      return {
+        title: `${typeEmoji[p.requestType as string] ?? '📣'} ${urgencyPrefix}Kid Request`,
+        body: p.detail as string,
+        sound: 'default',
+        data: { screen: 'Requests', requestId: p.requestId },
+      };
+    }
+    case 'kid_request_decision':
+      return {
+        title: p.decision === 'approved' ? '✅ Request Approved!' : '❌ Request Declined',
+        body: p.decision === 'approved'
+          ? `Your request was approved!${p.note ? ` "${p.note}"` : ''}`
+          : `Your request was declined${p.note ? `: ${p.note}` : ''}`,
+        data: { screen: 'Requests', requestId: p.requestId },
+      };
+
     case 'custom':
     default:
       return {
@@ -259,12 +325,44 @@ serve(async (req) => {
 
     // Resolve push tokens — caller can pass directly or let us look them up
     let pushTokens: string[] = tokens ?? [];
+    let resolvedMemberIds: string[] = memberIds ?? [];
 
-    if (!pushTokens.length && memberIds?.length) {
+    // Auto-route: if no memberIds passed, resolve by type
+    const NOTIFY_PARENTS = ['help_requested', 'reward_redeemed', 'kid_request', 'quest_claimed', 'quest_submitted', 'chore_ghosted', 'bonus_expired_penalty'];
+    const NOTIFY_SPECIFIC = ['help_resolved', 'reward_decision', 'kid_request_decision', 'quest_approved', 'quest_declined', 'quest_assigned', 'force_assigned', 'bonus_activated', 'coins_awarded', 'penalty_applied', 'deadline_reminder', 'deadline_overdue'];
+
+    if (!pushTokens.length && !resolvedMemberIds.length && familyId) {
+      if (NOTIFY_PARENTS.includes(type)) {
+        const { data: parents } = await supabase
+          .from('members')
+          .select('id, expo_push_token')
+          .eq('family_id', familyId)
+          .in('role', ['parent', 'senior'])
+          .not('expo_push_token', 'is', null);
+        resolvedMemberIds = (parents ?? []).map((m: any) => m.id);
+        pushTokens = (parents ?? []).map((m: any) => m.expo_push_token).filter(Boolean);
+      } else if (NOTIFY_SPECIFIC.includes(type)) {
+        // For member-specific types, the payload should carry memberId or fromMemberId
+        const specificId = (payload.memberId ?? payload.fromMemberId ?? payload.assigneeId) as string | undefined;
+        if (specificId) {
+          const { data: member } = await supabase
+            .from('members')
+            .select('id, expo_push_token')
+            .eq('id', specificId)
+            .single();
+          if (member?.expo_push_token) {
+            resolvedMemberIds = [member.id];
+            pushTokens = [member.expo_push_token];
+          }
+        }
+      }
+    }
+
+    if (!pushTokens.length && resolvedMemberIds.length) {
       const { data: members } = await supabase
         .from('members')
         .select('expo_push_token')
-        .in('id', memberIds)
+        .in('id', resolvedMemberIds)
         .not('expo_push_token', 'is', null);
       pushTokens = (members ?? []).map((m: any) => m.expo_push_token).filter(Boolean);
     }
@@ -279,14 +377,18 @@ serve(async (req) => {
 
     // Persist to notifications table (so in-app bell shows it even if push fails)
     if (persist !== false && familyId) {
-      const rows = (memberIds ?? [payload.memberId as string]).filter(Boolean).map((memberId: string) => ({
-        family_id:  familyId,
-        member_id:  memberId,
+      const rows = (resolvedMemberIds.length ? resolvedMemberIds : [payload.memberId as string]).filter(Boolean).map((memberId: string) => ({
+        family_id:     familyId,
+        member_id:     memberId,
+        target_member: memberId,
         type,
-        title:      message.title,
-        body:       message.body,
-        data:       { ...message.data, ...payload },
-        read:       false,
+        title:         message.title,
+        message:       message.body,
+        body:          message.body,
+        data:          { ...message.data, ...payload },
+        meta:          { ...message.data, ...payload },
+        timestamp:     new Date().toISOString(),
+        read:          false,
       }));
       if (rows.length) {
         const { error } = await supabase.from('notifications').insert(rows);

@@ -151,7 +151,7 @@ function SectionCard({
 /**
 /**
  * AlertBanner — red/amber fire-strip at the very top of the Hub for conflicts
- * and declined drivers. High-visibility, can't be missed.
+ * and declined helpers. High-visibility, can't be missed.
  */
 function AlertBanner({ conflictEvents, rejectedEvents, members, colors, isDark, updateEvent }: {
   conflictEvents: FamilyEvent[]; rejectedEvents: FamilyEvent[];
@@ -183,7 +183,7 @@ function AlertBanner({ conflictEvents, rejectedEvents, members, colors, isDark, 
             <View style={{ padding: 14, gap: 8 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                  <Text style={{ fontWeight: '700', color: '#EF4444' }}>{ev.driver}</Text> declined
+                  <Text style={{ fontWeight: '700', color: '#EF4444' }}>{ev.helper}</Text> declined
                   {ev.declineReason ? `: "${ev.declineReason}"` : ''}
                 </Text>
               </View>
@@ -200,7 +200,7 @@ function AlertBanner({ conflictEvents, rejectedEvents, members, colors, isDark, 
               {isOpen && (
                 <InlineReassignPanel ev={ev} members={members} colors={colors} isDark={isDark}
                   onDone={(name, note) => {
-                    updateEvent(ev.id, { driver: name, driverStatus: 'pending', notes: note || undefined });
+                    updateEvent(ev.id, { helper: name, helperStatus: 'pending', notes: note || undefined });
                     setOpenId(null);
                   }} />
               )}
@@ -252,10 +252,10 @@ function InlineReassignPanel({ ev, members, colors, isDark, onDone }: {
   const adults = members.filter(m => m.role !== 'kid');
 
   const statusIcon = (m: FamilyMember) => {
-    if (ev.driver === m.name) {
-      if (ev.driverStatus === 'rejected')  return { icon: '✕', color: '#EF4444', label: 'Declined' };
-      if (ev.driverStatus === 'pending')   return { icon: '⏳', color: BRAND.amber, label: 'Awaiting' };
-      if (ev.driverStatus === 'confirmed') return { icon: '✓', color: '#10B981',  label: 'Confirmed' };
+    if (ev.helper === m.name) {
+      if (ev.helperStatus === 'rejected')  return { icon: '✕', color: '#EF4444', label: 'Declined' };
+      if (ev.helperStatus === 'pending')   return { icon: '⏳', color: BRAND.amber, label: 'Awaiting' };
+      if (ev.helperStatus === 'confirmed') return { icon: '✓', color: '#10B981',  label: 'Confirmed' };
     }
     return { icon: '○', color: colors.textTertiary, label: 'Available' };
   };
@@ -263,7 +263,7 @@ function InlineReassignPanel({ ev, members, colors, isDark, onDone }: {
   return (
     <View style={{ gap: 10, marginTop: 4 }}>
       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-        Pick a driver
+        Pick a helper
       </Text>
       {adults.map(m => {
         const st  = statusIcon(m);
@@ -390,14 +390,14 @@ function TimelineCard({ ev, members, allNames, colors, isDark, updateEvent }: {
   const hours = hoursUntilEvent(ev.date, ev.time);
   const isPast = hours < 0;
 
-  const hasDriver = !!ev.driver;
+  const hasHelper = !!ev.helper;
   const hasLocation = !!ev.location;
-  const driverMissing = !hasDriver && hasLocation;
-  const driverRejected = ev.driverStatus === 'rejected';
-  const hasIssue = driverMissing || driverRejected;
+  const helperMissing = !hasHelper && hasLocation;
+  const helperRejected = ev.helperStatus === 'rejected';
+  const hasIssue = helperMissing || helperRejected;
   const showFixBtn = hasIssue && hours < 24 && hours >= 0;
-  const showRemind = hasDriver && ev.driverStatus === 'pending';
-  const isConfirmed = hasDriver && ev.driverStatus === 'confirmed';
+  const showRemind = hasHelper && ev.helperStatus === 'pending';
+  const isConfirmed = hasHelper && ev.helperStatus === 'confirmed';
   const chipColor = catColor(ev.category);
 
   // Red left border for imminent issues
@@ -466,7 +466,7 @@ function TimelineCard({ ev, members, allNames, colors, isDark, updateEvent }: {
           </View>
 
           {/* Helper row — label + emoji based on event type/category */}
-          {ev.driver && (
+          {ev.helper && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 }}>
               <Text style={{ fontSize: 13 }}>
                 {ev.category === 'Sports'  ? '🏅' :
@@ -485,17 +485,17 @@ function TimelineCard({ ev, members, allNames, colors, isDark, updateEvent }: {
                      ev.category === 'Medical' ? 'Escort: ' :
                      ev.category === 'Sports'  ? 'Coach: '  :
                      ev.category === 'Study'   ? 'Tutor: '  : 'Helper: ')}
-                <Text style={{ fontWeight: '700', color: isPast ? '#10B981' : colors.textPrimary }}>{ev.driver}</Text>
+                <Text style={{ fontWeight: '700', color: isPast ? '#10B981' : colors.textPrimary }}>{ev.helper}</Text>
                 {!isPast && isConfirmed && <Text style={{ color: '#10B981' }}> · Confirmed ✓</Text>}
                 {!isPast && showRemind && <Text style={{ color: BRAND.amber }}> · Awaiting ⏳</Text>}
-                {!isPast && driverRejected && <Text style={{ color: '#EF4444' }}> · Declined ✕</Text>}
+                {!isPast && helperRejected && <Text style={{ color: '#EF4444' }}> · Declined ✕</Text>}
               </Text>
             </View>
           )}
 
           {/* Status badge row (right-aligned) */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 2 }}>
-            {showRemind && !driverRejected && (
+            {showRemind && !helperRejected && (
               <Pressable style={{ backgroundColor: BRAND.amber + '18', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: BRAND.amber + '40' }}>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.amber }}>Remind</Text>
               </Pressable>
@@ -508,7 +508,7 @@ function TimelineCard({ ev, members, allNames, colors, isDark, updateEvent }: {
                   borderWidth: 1, borderColor: '#EF444435' }}>
                 <Ionicons name="person-add-outline" size={12} color="#EF4444" />
                 <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>
-                  {fixOpen ? 'Cancel' : 'Assign driver'}
+                  {fixOpen ? 'Cancel' : 'Assign helper'}
                 </Text>
               </Pressable>
             )}
@@ -521,7 +521,7 @@ function TimelineCard({ ev, members, allNames, colors, isDark, updateEvent }: {
         <View style={{ paddingHorizontal: 14, paddingBottom: 14, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 }}>
           <InlineReassignPanel ev={ev} members={members} colors={colors} isDark={isDark}
             onDone={(name, note) => {
-              updateEvent(ev.id, { driver: name, driverStatus: 'pending', notes: note || undefined });
+              updateEvent(ev.id, { helper: name, helperStatus: 'pending', notes: note || undefined });
               setFixOpen(false);
             }} />
         </View>
@@ -601,9 +601,9 @@ function EnRouteModal({ visible, onClose, kids, onDispatch }: {
 /**
  * Redesigned layout:
  *  1. Today's Timeline (hero) — urgency-gated cards with inline Fix/Remind
- *  2. Alert Banner — ONLY fires when hoursUntil < 4 AND driver missing/rejected
+ *  2. Alert Banner — ONLY fires when hoursUntil < 4 AND helper missing/rejected
  *  3. Quick Action Tiles
- *  4. Action Needed — quest approvals + ride requests (no no-driver alerts)
+ *  4. Action Needed — quest approvals + ride requests (no no-helper alerts)
  *  5. Dispatch En Route
  *  6. Family Support (collapsible)
  */
@@ -634,14 +634,14 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
 
   const awaitingApproval = quests.filter(q => q.status === 'pending_approval');
 
-  const rejectedDriverEvents = todayEvents.filter(e => e.driverStatus === 'rejected');
+  const rejectedHelperEvents = todayEvents.filter(e => e.helperStatus === 'rejected');
   const conflictEvents       = todayEvents.filter(e => e.conflict);
 
-  // Action Needed: quest approvals + ride requests only (no-driver alerts live on timeline)
+  // Action Needed: quest approvals + ride requests only (no-helper alerts live on timeline)
   const actionCount = pendingRequests.length + awaitingApproval.length;
 
-  // Banner fires only when hoursUntil < 4 AND driver missing/rejected
-  const urgentRejected = rejectedDriverEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) < 4);
+  // Banner fires only when hoursUntil < 4 AND helper missing/rejected
+  const urgentRejected = rejectedHelperEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) < 4);
   const showBanner = conflictEvents.length > 0 || urgentRejected.length > 0;
 
   const pad = { paddingHorizontal: 16 };
@@ -706,7 +706,7 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
         })()}
       </View>
 
-      {/* ── 2. Alert Banner — only when imminent (< 4h) AND driver issue ── */}
+      {/* ── 2. Alert Banner — only when imminent (< 4h) AND helper issue ── */}
       {showBanner && (
         <AlertBanner
           conflictEvents={conflictEvents}
@@ -748,7 +748,7 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
 
             {/* Pending ride requests from kids */}
             {pendingRequests.map(ev => {
-              const requester = ev.driverRequestedBy ?? members.find(m => m.id === ev.memberId)?.name ?? 'Kid';
+              const requester = ev.helperRequestedBy ?? members.find(m => m.id === ev.memberId)?.name ?? 'Kid';
               return (
                 <CollapsibleCard key={ev.id} accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={false}
                   summary={
@@ -773,17 +773,17 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
                     </View>
                   )}
                   <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, driverStatus: 'confirmed', driver: active.name })}
+                    <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'confirmed', helper: active.name })}
                       style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>✓ I'll Drive</Text>
                     </Pressable>
-                    <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, driverStatus: 'rejected', declineReason: "Can't make it", declinedBy: active.name })}
+                    <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'rejected', declineReason: "Can't make it", declinedBy: active.name })}
                       style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>✕ Can't Do It</Text>
                     </Pressable>
                   </View>
                   <InlineReassignPanel ev={ev} members={members} colors={colors} isDark={isDark}
-                    onDone={(name, note) => updateEvent(ev.id, { approvalPending: false, driver: name, driverStatus: 'pending', notes: note || undefined })} />
+                    onDone={(name, note) => updateEvent(ev.id, { approvalPending: false, helper: name, helperStatus: 'pending', notes: note || undefined })} />
                 </CollapsibleCard>
               );
             })}
@@ -898,8 +898,8 @@ function KidView({ active, members, colors, isDark, onHelpRequest }: {
 
   const parentWorkConflict = events.find(e => e.date === today && e.category === 'Work' && e.conflict);
   const myPendingRides   = events.filter(e => e.memberId === active.id && e.approvalPending);
-  const myDeclinedRides  = events.filter(e => e.memberId === active.id && e.driverStatus === 'rejected' && !e.approvalPending);
-  const myConfirmedRides = todayMyEvents.filter(e => e.driver && e.driverStatus === 'confirmed');
+  const myDeclinedRides  = events.filter(e => e.memberId === active.id && e.helperStatus === 'rejected' && !e.approvalPending);
+  const myConfirmedRides = todayMyEvents.filter(e => e.helper && e.helperStatus === 'confirmed');
 
   const myQuests   = quests.filter(q => q.assignedToId === active.id);
   const inProgress = myQuests.filter(q => q.status === 'todo' || q.status === 'claimed').length;
@@ -1002,7 +1002,7 @@ function KidView({ active, members, colors, isDark, onHelpRequest }: {
                     <Text style={{ fontSize: 16 }}>✅</Text>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#10B981' }} numberOfLines={1}>
-                        {ev.driver} is picking you up!
+                        {ev.helper} is picking you up!
                       </Text>
                       <Text style={{ fontSize: TYPO.label, color: '#10B981', opacity: 0.75 }}>
                         {ev.title} · {fmtTime(ev.time)}{ev.location ? ` · ${ev.location}` : ''}
@@ -1158,11 +1158,11 @@ function KidView({ active, members, colors, isDark, onHelpRequest }: {
                 </View>
               }>
               {ev.location && <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>📍 {ev.location}</Text>}
-              {ev.driver && ev.driverStatus === 'confirmed' && (
-                <Text style={{ fontSize: TYPO.label, color: '#10B981', fontWeight: '600' }}>🚗 {ev.driver} confirmed</Text>
+              {ev.helper && ev.helperStatus === 'confirmed' && (
+                <Text style={{ fontSize: TYPO.label, color: '#10B981', fontWeight: '600' }}>🚗 {ev.helper} confirmed</Text>
               )}
-              {ev.driver && ev.driverStatus === 'pending' && (
-                <Text style={{ fontSize: TYPO.label, color: BRAND.amber, fontWeight: '600' }}>🚗 {ev.driver} (confirming...)</Text>
+              {ev.helper && ev.helperStatus === 'pending' && (
+                <Text style={{ fontSize: TYPO.label, color: BRAND.amber, fontWeight: '600' }}>🚗 {ev.helper} (confirming...)</Text>
               )}
             </CollapsibleCard>
           ))}
@@ -1185,7 +1185,7 @@ function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute 
   const today   = localToday();
 
   const myDrivingToday = events.filter(e =>
-    e.date === today && e.driver === active.name && e.driverStatus === 'confirmed'
+    e.date === today && e.helper === active.name && e.helperStatus === 'confirmed'
   );
   const openRequests = events.filter(e => e.approvalPending);
   const todayEvents = events
@@ -1245,7 +1245,7 @@ function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute 
                   <Pressable style={{ flex: 1, backgroundColor: '#10B981', borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}>
                     <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#fff' }}>✓ I'm On It</Text>
                   </Pressable>
-                  <Pressable onPress={() => updateEvent(ev.id, { driverStatus: 'rejected', driver: undefined, declinedBy: active.name, declineReason: 'Unavailable' })}
+                  <Pressable onPress={() => updateEvent(ev.id, { helperStatus: 'rejected', helper: undefined, declinedBy: active.name, declineReason: 'Unavailable' })}
                     style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}>
                     <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>Can't Make It</Text>
                   </Pressable>
@@ -1275,7 +1275,7 @@ function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute 
                 }>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   {kid && <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl} siblings={allNames} size={28} ringColor={BRAND.amber} />}
-                  <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, driver: active.name, driverStatus: 'confirmed' })}
+                  <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, helper: active.name, helperStatus: 'confirmed' })}
                     style={{ flex: 1, backgroundColor: BRAND.purple, paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
                     <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
                   </Pressable>

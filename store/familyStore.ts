@@ -121,6 +121,10 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   setActiveMember: (id) => {
     set({ activeMemberId: id });
     AsyncStorage.setItem(ACTIVE_KEY, id);
+    // Save push token to the newly active member row
+    import('@/lib/notifications').then(({ saveTokenToMember }) => {
+      saveTokenToMember(id).catch(() => {});
+    });
   },
 
   addMember: async (member) => {

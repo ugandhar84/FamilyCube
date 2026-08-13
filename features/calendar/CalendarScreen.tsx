@@ -132,6 +132,11 @@ const I = {
       <Path d="M6 6l12 12M18 6L6 18" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
     </Svg>
   ),
+  List: ({ c, size=14 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
+    </Svg>
+  ),
   Refresh: ({ c, size=14 }: { c: string; size?: number }) => (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path d="M23 4v6h-6M1 20v-6h6" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
@@ -764,6 +769,7 @@ export default function CalendarScreen() {
   }, [activeMemberId]);
   const [showRange,     setShowRange]     = useState(false);
   const weekBounds = useMemo(() => currentWeekBounds(), []);
+  const [compact,       setCompact]       = useState(false);
   const [rangeStart,    setRangeStart]    = useState('');  // no default filter
   const [rangeEnd,      setRangeEnd]      = useState('');
 
@@ -898,6 +904,12 @@ export default function CalendarScreen() {
                       <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>Range</Text>
                     </TouchableOpacity>
                   )}
+                  {/* Compact toggle */}
+                  <TouchableOpacity
+                    onPress={() => setCompact(v => !v)}
+                    style={[sc.headerBtnOutline, { borderColor: compact ? BRAND.purple : colors.border, backgroundColor: compact ? BRAND.purple + '15' : 'transparent' }]}>
+                    <I.List c={compact ? BRAND.purple : colors.textTertiary} size={14} />
+                  </TouchableOpacity>
                   {isParentOrSenior && (
                     <TouchableOpacity style={[sc.headerBtn, { backgroundColor: BRAND.purple }]} onPress={() => setShowAdd(true)}>
                       <I.Plus c="#fff" size={14} />
@@ -1076,7 +1088,48 @@ export default function CalendarScreen() {
             </Text>
           </View>
         ) : (
-          /* Outer row: solid vertical line on left, cards on right */
+          compact ? (
+            /* Compact list — no spine, just dot + pill rows */
+            <View style={{ paddingHorizontal: 14, gap: 8, paddingBottom: 8 }}>
+            {dayEvents.map((ev, i) => {
+              const { time, ampm } = fmtTimeParts(ev.time);
+              const cs = catStyle(ev.category, isDark);
+              const isConf = ev.conflict;
+              const assignee = members.find(m => m.id === ev.memberId);
+              return (
+                <TouchableOpacity key={ev.id} onPress={() => setCompact(false)} onLongPress={() => setEditEv(ev)}
+                  activeOpacity={0.75}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={{
+                    width: 44, height: 44, borderRadius: 22,
+                    backgroundColor: isConf ? '#F59E0B' : cs.dot,
+                    borderWidth: 3, borderColor: isDark ? colors.background : '#F0EEFF',
+                    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  }}>
+                    <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff', lineHeight: 12 }}>{time}</Text>
+                    <Text style={{ fontSize: 8, fontWeight: '700', color: 'rgba(255,255,255,0.8)', lineHeight: 10 }}>{ampm}</Text>
+                  </View>
+                  <View style={{
+                    flex: 1, flexDirection: 'row', alignItems: 'center',
+                    backgroundColor: cardBg, borderRadius: 14,
+                    borderWidth: 1, borderColor: isConf ? '#F59E0B60' : cardBord,
+                    paddingHorizontal: 12, paddingVertical: 10, gap: 8,
+                  }}>
+                    <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: isConf ? '#F59E0B' : cs.dot, flexShrink: 0 }} />
+                    <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={1}>{ev.title}</Text>
+                    {ev.location ? <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={1}>📍 {ev.location}</Text> : null}
+                    {assignee && <Text style={{ fontSize: 13 }}>{assignee.emoji ?? '👤'}</Text>}
+                    {ev.helperStatus === 'confirmed' && <View style={{ backgroundColor: '#D1FAE5', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2 }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>✓</Text></View>}
+                    {ev.helperStatus === 'pending'   && <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2 }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#D97706' }}>⏳</Text></View>}
+                    {ev.helperStatus === 'rejected'  && <View style={{ backgroundColor: '#FEE2E2', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2 }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>✕</Text></View>}
+                    {isConf && <I.AlertTriangle c="#F59E0B" size={12} />}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+            </View>
+          ) : (
+          /* Full view: solid vertical line on left, cards on right */
           <View style={{ flexDirection: 'row', paddingRight: 14 }}>
 
             {/* Vertical timeline spine */}
@@ -1384,6 +1437,7 @@ export default function CalendarScreen() {
               </TouchableOpacity>
             )}
           </View>
+          )
         )}
         </View>
       </ScrollView>

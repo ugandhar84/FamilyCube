@@ -265,9 +265,14 @@ function DayStrip({ selected, stripMap, colors, isDark, onSelect }: {
           return (
             <TouchableOpacity key={d} onPress={() => onSelect(d)}
               style={[ds.cell, {
-                backgroundColor: isSel ? BRAND.purple : 'transparent',
-                borderColor: isSel ? BRAND.purple : isToday ? BRAND.purple + '55' : 'transparent',
-                borderWidth: isSel ? 0 : isToday ? 1.5 : 0,
+                backgroundColor: isSel ? BRAND.purple : isDark ? '#1E293B' : '#FFFFFF',
+                borderColor: isSel ? BRAND.purple : isToday ? BRAND.purple + '80' : (isDark ? '#334155' : '#E2E8F0'),
+                borderWidth: 1,
+                shadowColor: '#000',
+                shadowOpacity: isSel ? 0.18 : isDark ? 0 : 0.04,
+                shadowRadius: isSel ? 6 : 2,
+                shadowOffset: { width: 0, height: 2 },
+                elevation: isSel ? 3 : 1,
               }]}>
               <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.4,
                 color: isSel ? 'rgba(255,255,255,0.8)' : isToday ? BRAND.purple : colors.textTertiary }}>
@@ -907,35 +912,37 @@ export default function CalendarScreen() {
           {/* AI Conflict Banner (parent only) */}
           {isParent && (
             <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 6 }}>
-              <LinearGradient
-                colors={[BRAND.purple, BRAND.teal]}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                style={[sc.aiBannerCard, { borderRadius: 20 }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <View style={[sc.aiIconBox, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
-                    <I.Bot c="#fff" size={17} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>CubeAI Schedule Agent</Text>
-                      <View style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
-                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }}>● Active</Text>
-                      </View>
-                    </View>
-                    <Text style={{ fontSize: TYPO.micro, color: 'rgba(255,255,255,0.8)', marginTop: 2 }}>
-                      Conflict detection, helper gaps &amp; swap suggestions
-                    </Text>
-                  </View>
-                  <TouchableOpacity style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 14,
-                    paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}
-                    onPress={runAiScan}>
-                    {isAnalyzing
-                      ? <ActivityIndicator size={12} color="#fff" />
-                      : <I.AlertTriangle c="#fff" size={12} />}
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Scan</Text>
-                  </TouchableOpacity>
+              <View style={{
+                borderRadius: 20, padding: 12,
+                backgroundColor: isDark ? '#0D1B2A' : '#0F2027',
+                borderWidth: 1, borderColor: isDark ? '#1E3A4A' : '#1A3346',
+                flexDirection: 'row', alignItems: 'center', gap: 10,
+              }}>
+                <View style={{ width: 32, height: 32, borderRadius: 10,
+                  backgroundColor: 'rgba(20,184,166,0.25)', borderWidth: 1, borderColor: 'rgba(20,184,166,0.4)',
+                  alignItems: 'center', justifyContent: 'center' }}>
+                  <I.Bot c="#5EEAD4" size={16} />
                 </View>
-              </LinearGradient>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>CubeAI Schedule Agent</Text>
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#34D399' }} />
+                  </View>
+                  <Text style={{ fontSize: TYPO.micro, color: '#94A3B8', marginTop: 1 }}>
+                    Conflict detection &amp; swap suggestions active
+                  </Text>
+                </View>
+                <TouchableOpacity style={{
+                  backgroundColor: 'rgba(20,184,166,0.2)', borderWidth: 1, borderColor: 'rgba(20,184,166,0.35)',
+                  borderRadius: 12, paddingHorizontal: 11, paddingVertical: 7,
+                  flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                  onPress={runAiScan}>
+                  {isAnalyzing
+                    ? <ActivityIndicator size={11} color="#5EEAD4" />
+                    : <I.AlertTriangle c="#5EEAD4" size={11} />}
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#5EEAD4' }}>Scan</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 
@@ -1268,24 +1275,40 @@ export default function CalendarScreen() {
                     {/* Helper section */}
                     {ev.helper && !ev.approvalPending && (
                       <View style={[sc.driverSection, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
-                            {helperLabel}{' '}
-                            <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.helper}</Text>
-                          </Text>
+                        {/* Inset driver row — mockup inner-box pattern */}
+                        <View style={{
+                          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                          backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
+                          borderRadius: 14, borderWidth: 1,
+                          borderColor: isDark ? '#1E293B' : '#E2E8F0',
+                          paddingHorizontal: 12, paddingVertical: 8,
+                        }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <I.Car c={colors.textSecondary} size={13} />
+                            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
+                              {helperLabel.replace(/^[^\s]+\s/, '')}{' '}
+                              <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.helper}</Text>
+                            </Text>
+                          </View>
                           {ev.helperStatus === 'confirmed' && (
-                            <View style={[sc.statusBadge, { backgroundColor: isDark ? '#064E3B' : '#D1FAE5', borderColor: '#6EE7B7' }]}>
-                              <Text style={[sc.statusText, { color: '#10B981' }]}>✓ Confirmed</Text>
+                            <View style={{ backgroundColor: isDark ? '#064E3B' : '#D1FAE5', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#6EE7B7' }}>
+                              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>Confirmed ✓</Text>
                             </View>
                           )}
                           {ev.helperStatus === 'pending' && (
-                            <View style={[sc.statusBadge, { backgroundColor: isDark ? '#1C1700' : '#FEF3C7', borderColor: '#FCD34D' }]}>
-                              <Text style={[sc.statusText, { color: '#D97706' }]}>⏳ Pending</Text>
+                            <View style={{ backgroundColor: isDark ? '#1C1700' : '#FEF3C7', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCD34D' }}>
+                              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#D97706' }}>⏳ Pending</Text>
                             </View>
                           )}
-                          {ev.helperStatus === 'rejected' && (
-                            <View style={[sc.statusBadge, { backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderColor: '#FCA5A5' }]}>
-                              <Text style={[sc.statusText, { color: '#EF4444' }]}>❌ Declined</Text>
+                          {ev.helperStatus === 'rejected' && isParent && (
+                            <TouchableOpacity onPress={() => openReassign(ev)}
+                              style={{ backgroundColor: '#F59E0B', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 }}>
+                              <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>Swap Driver</Text>
+                            </TouchableOpacity>
+                          )}
+                          {ev.helperStatus === 'rejected' && !isParent && (
+                            <View style={{ backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCA5A5' }}>
+                              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Declined ✕</Text>
                             </View>
                           )}
                         </View>

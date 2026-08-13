@@ -747,7 +747,7 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
           borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0',
         }}>
           <PlusCircle size={18} color="#10B981" />
-          <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? colors.textPrimary : '#334155' }}>+ Quest</Text>
+          <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? colors.textPrimary : '#334155' }}>Quest</Text>
         </Pressable>
 
         {/* + Event — neutral tile */}
@@ -757,7 +757,7 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
           borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0',
         }}>
           <Calendar size={18} color={BRAND.purple} />
-          <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? colors.textPrimary : '#334155' }}>+ Event</Text>
+          <Text style={{ fontSize: 10, fontWeight: '700', color: isDark ? colors.textPrimary : '#334155' }}>Event</Text>
         </Pressable>
 
         {/* Grocery — neutral tile */}
@@ -890,29 +890,31 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
           borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
           overflow: 'hidden', marginBottom: 12,
         }}>
-          <Pressable onPress={() => setSupportExpanded(e => !e)}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
             <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' }}>
               <Text style={{ fontSize: 18 }}>?</Text>
             </View>
-            <View style={{ flex: 1 }}>
+            <Pressable onPress={() => setSupportExpanded(e => !e)} style={{ flex: 1 }}>
               <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>
-                Family Support &amp; Help Queue
+                Who Needs Help?
               </Text>
               <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-                Kids ask for assistance · parents approve
+                Claim or assign open family requests
               </Text>
-            </View>
-            {supportExpanded ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
-          </Pressable>
+            </Pressable>
+            <Pressable onPress={onHelpRequest} style={{
+              backgroundColor: BRAND.purple, borderRadius: 16,
+              paddingHorizontal: 10, paddingVertical: 6,
+            }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Ask for Help</Text>
+            </Pressable>
+            <Pressable onPress={() => setSupportExpanded(e => !e)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              {supportExpanded ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
+            </Pressable>
+          </View>
 
           {supportExpanded && (
-            <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 12 }}>
-              <Pressable onPress={onHelpRequest}
-                style={{ backgroundColor: BRAND.purple, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }}>
-                <Text style={{ fontSize: 16, color: '#fff' }}>+</Text>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Ask for Help</Text>
-              </Pressable>
+            <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
               <HelpQueueSection onRequestHelp={onHelpRequest} hideAskButton />
             </View>
           )}

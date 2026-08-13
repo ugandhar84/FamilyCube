@@ -117,3 +117,19 @@ BEGIN
         updated_at = now();
 END;
 $$;
+
+-- Audit columns: modified_by, deleted_by, updated_at on family_medications
+ALTER TABLE public.family_medications
+  ADD COLUMN IF NOT EXISTS modified_by  text,
+  ADD COLUMN IF NOT EXISTS deleted_by   text,
+  ADD COLUMN IF NOT EXISTS updated_at   timestamptz DEFAULT now();
+
+-- is_active flag (soft activate/deactivate without deleting)
+ALTER TABLE public.family_medications
+  ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true;
+
+-- Audit columns on family_vaccines
+ALTER TABLE public.family_vaccines
+  ADD COLUMN IF NOT EXISTS modified_by text,
+  ADD COLUMN IF NOT EXISTS deleted_by  text,
+  ADD COLUMN IF NOT EXISTS updated_at  timestamptz DEFAULT now();

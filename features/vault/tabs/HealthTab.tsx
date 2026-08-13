@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  TextInput, Modal, ScrollView, KeyboardAvoidingView, Platform, Switch,
+  TextInput, Modal, ScrollView, KeyboardAvoidingView, Platform, Switch, Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {
@@ -20,6 +20,7 @@ interface Medication {
   id: string;
   member_id: string;
   assigned_by: string | null;
+  modified_by: string | null;
   name: string;
   dosage: string;
   dosage_unit: string;
@@ -31,6 +32,7 @@ interface Medication {
   refill_date: string | null;
   pills_remaining: number | null;
   is_ongoing: boolean;
+  is_active: boolean;
   start_date: string | null;
   end_date: string | null;
   instructions: string | null;
@@ -39,6 +41,7 @@ interface Medication {
   escalation_after_min: number;
   escalation_to: string[];
   notes: string | null;
+  updated_at: string | null;
 }
 
 interface Vaccine {
@@ -139,6 +142,8 @@ function AddMedModal({ visible, onClose, onSave, members, colors, isDark }: {
   const [refillDate, setRefillDate]   = useState<Date | null>(null);
   const [nameFocused, setNameFocused] = useState(false);
   const [globalSuggestions, setGlobalSuggestions] = useState<{ name: string; hint: string; category: string }[]>([]);
+  const [touched, setTouched]         = useState<Record<string, boolean>>({});
+  const [submitAttempted, setSubmitAttempted] = useState(false);
 
   // Load global suggestions once when modal opens
   useEffect(() => {
@@ -151,16 +156,29 @@ function AddMedModal({ visible, onClose, onSave, members, colors, isDark }: {
   }, [visible]);
 
   const set = (k: keyof MedForm, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const touch = (k: string) => setTouched(t => ({ ...t, [k]: true }));
+
+  // Derived validation errors
+  const medErrors = useMemo(() => ({
+    name:   !form.name.trim()   ? 'Medication name is required' : '',
+    dosage: !form.dosage.trim() ? 'Dosage amount is required'   : '',
+    member: !selectedMember     ? 'Select a family member'      : '',
+  }), [form.name, form.dosage, selectedMember]);
+
+  const showErr = (k: keyof typeof medErrors) =>
+    !!(medErrors[k] && (touched[k] || submitAttempted));
 
   const reset = () => {
     setForm(BLANK_MED); setRefillDate(null);
     setShowRefillPicker(false); setNameFocused(false);
+    setTouched({}); setSubmitAttempted(false);
   };
 
   const handleClose = () => { reset(); onClose(); };
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.dosage.trim()) return;
+    setSubmitAttempted(true);
+    if (medErrors.name || medErrors.dosage || medErrors.member) return;
     setSaving(true);
     await onSave(selectedMember, { ...form, refill_date: refillDate ? fmtDate(refillDate) : '' });
     setSaving(false);
@@ -240,12 +258,18 @@ function AddMedModal({ visible, onClose, onSave, members, colors, isDark }: {
 
               {/* ── Medication name + suggestions ── */}
               <View>
-                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Medication Name *</Text>
+                <Text style={[aStyles.label, { color: showErr('name') ? BRAND.rose : colors.textSecondary }]}>
+                  Medication Name *
+                </Text>
                 <TextInput value={form.name} onChangeText={v => set('name', v)}
-                  onFocus={() => setNameFocused(true)} onBlur={() => setNameFocused(false)}
+                  onFocus={() => setNameFocused(true)}
+                  onBlur={() => { touch('name'); setNameFocused(false); }}
                   placeholder={MED_SUGGESTIONS[form.category]?.[0]?.name ?? 'e.g. Aspirin'}
                   placeholderTextColor={colors.textTertiary}
-                  style={[inp, { borderColor: form.name ? colors.border : catColor + '60' }]} />
+                  style={[inp, { borderColor: showErr('name') ? BRAND.rose : form.name ? colors.border : catColor + '60' }]} />
+                {showErr('name') && (
+                  <Text style={aStyles.errText}>{medErrors.name}</Text>
+                )}
                 {suggestions.length > 0 && (
                   <View style={{ marginTop: 6 }}>
                     <Text style={{ fontSize: 11, color: colors.textTertiary, marginBottom: 5, fontWeight: '600' }}>
@@ -274,10 +298,17 @@ function AddMedModal({ visible, onClose, onSave, members, colors, isDark }: {
                 <Text style={[aStyles.sectionLabel, { color: catColor }]}>Dosage & Schedule</Text>
                 <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[aStyles.label, { color: colors.textSecondary }]}>Dosage *</Text>
+                    <Text style={[aStyles.label, { color: showErr('dosage') ? BRAND.rose : colors.textSecondary }]}>
+                      Dosage *
+                    </Text>
                     <TextInput value={form.dosage} onChangeText={v => set('dosage', v)}
+                      onBlur={() => touch('dosage')}
                       placeholder="10" keyboardType="decimal-pad"
-                      placeholderTextColor={colors.textTertiary} style={inp} />
+                      placeholderTextColor={colors.textTertiary}
+                      style={[inp, { borderColor: showErr('dosage') ? BRAND.rose : colors.border }]} />
+                    {showErr('dosage') && (
+                      <Text style={aStyles.errText}>{medErrors.dosage}</Text>
+                    )}
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[aStyles.label, { color: colors.textSecondary }]}>Unit</Text>
@@ -392,7 +423,9 @@ function AddMedModal({ visible, onClose, onSave, members, colors, isDark }: {
 
               {/* ── Member picker (avatar row) ── */}
               <View>
-                <Text style={[aStyles.sectionLabel, { color: catColor }]}>Assigned To</Text>
+                <Text style={[aStyles.sectionLabel, { color: showErr('member') ? BRAND.rose : catColor }]}>
+                  Assigned To {showErr('member') ? '— ' + medErrors.member : ''}
+                </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}
                   contentContainerStyle={{ flexDirection: 'row', gap: 14, paddingBottom: 4 }}>
                   {members.map(m => {
@@ -540,15 +573,30 @@ function AddVaxModal({ visible, onClose, onSave, members, colors, isDark }: {
 
   const set = (k: keyof VaxForm, v: string) => setForm(f => ({ ...f, [k]: v }));
 
+  const [vaxTouched, setVaxTouched]           = useState<Record<string, boolean>>({});
+  const [vaxSubmitAttempted, setVaxSubmitAttempted] = useState(false);
+
+  const vaxErrors = useMemo(() => ({
+    title:  !form.title.trim()  ? 'Vaccine name is required' : '',
+    member: !selectedMember     ? 'Select a family member'   : '',
+  }), [form.title, selectedMember]);
+
+  const showVaxErr = (k: keyof typeof vaxErrors) =>
+    !!(vaxErrors[k] && (vaxTouched[k] || vaxSubmitAttempted));
+
+  const touchVax = (k: string) => setVaxTouched(t => ({ ...t, [k]: true }));
+
   const reset = () => {
     setForm(BLANK_VAX); setAdminDate(new Date()); setNextDate(null);
     setShowAdminPick(false); setShowNextPick(false); setNameFocused(false);
+    setVaxTouched({}); setVaxSubmitAttempted(false);
   };
 
   const handleClose = () => { reset(); onClose(); };
 
   const handleSave = async () => {
-    if (!form.title.trim()) return;
+    setVaxSubmitAttempted(true);
+    if (vaxErrors.title || vaxErrors.member) return;
     setSaving(true);
     await onSave(selectedMember, {
       ...form,
@@ -596,11 +644,17 @@ function AddVaxModal({ visible, onClose, onSave, members, colors, isDark }: {
 
               {/* ── Vaccine name + suggestions ── */}
               <View>
-                <Text style={[aStyles.label, { color: colors.textSecondary }]}>Vaccine Name *</Text>
+                <Text style={[aStyles.label, { color: showVaxErr('title') ? BRAND.rose : colors.textSecondary }]}>
+                  Vaccine Name *
+                </Text>
                 <TextInput value={form.title} onChangeText={v => set('title', v)}
-                  onFocus={() => setNameFocused(true)} onBlur={() => setNameFocused(false)}
+                  onFocus={() => setNameFocused(true)}
+                  onBlur={() => { touchVax('title'); setNameFocused(false); }}
                   placeholder="e.g. Flu Shot 2025" placeholderTextColor={colors.textTertiary}
-                  style={[inp, { borderColor: form.title ? colors.border : BRAND.teal + '60' }]} />
+                  style={[inp, { borderColor: showVaxErr('title') ? BRAND.rose : form.title ? colors.border : BRAND.teal + '60' }]} />
+                {showVaxErr('title') && (
+                  <Text style={aStyles.errText}>{vaxErrors.title}</Text>
+                )}
                 {suggestions.length > 0 && (
                   <View style={{ marginTop: 6 }}>
                     <Text style={{ fontSize: 11, color: colors.textTertiary, marginBottom: 5, fontWeight: '600' }}>
@@ -767,7 +821,9 @@ function AddVaxModal({ visible, onClose, onSave, members, colors, isDark }: {
 
               {/* ── Member avatar picker ── */}
               <View>
-                <Text style={[aStyles.sectionLabel, { color: BRAND.teal }]}>For Member</Text>
+                <Text style={[aStyles.sectionLabel, { color: showVaxErr('member') ? BRAND.rose : BRAND.teal }]}>
+                  For Member {showVaxErr('member') ? '— ' + vaxErrors.member : ''}
+                </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}
                   contentContainerStyle={{ flexDirection: 'row', gap: 14, paddingBottom: 4 }}>
                   {members.map(m => {
@@ -908,32 +964,64 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
 
   useEffect(() => { load(); }, [load]);
 
-  // Mark medication taken today
+  // Mark medication taken today — records who marked it
   const markTaken = async (med: Medication) => {
     const todayStr = today();
     const alreadyTaken = med.taken_date === todayStr;
     const newDate = alreadyTaken ? null : todayStr;
     const { error } = await supabase.from('family_medications')
-      .update({ taken_date: newDate, updated_at: new Date().toISOString() })
+      .update({
+        taken_date: newDate,
+        modified_by: activeMember?.id ?? null,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', med.id);
     if (!error) {
-      setMeds(prev => prev.map(m => m.id === med.id ? { ...m, taken_date: newDate } : m));
+      setMeds(prev => prev.map(m => m.id === med.id
+        ? { ...m, taken_date: newDate, modified_by: activeMember?.id ?? null }
+        : m));
     }
   };
 
   // Toggle vaccine done
   const toggleVax = async (vax: Vaccine) => {
     const { error } = await supabase.from('family_vaccines')
-      .update({ done: !vax.done, updated_at: new Date().toISOString() })
+      .update({
+        done: !vax.done,
+        modified_by: activeMember?.id ?? null,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', vax.id);
     if (!error) {
       setVaxes(prev => prev.map(v => v.id === vax.id ? { ...v, done: !v.done } : v));
     }
   };
 
-  const deleteMed = async (id: string) => {
-    await supabase.from('family_medications').delete().eq('id', id);
-    setMeds(prev => prev.filter(m => m.id !== id));
+  // Delete med — requires a comment/reason
+  const deleteMed = (id: string) => {
+    Alert.prompt(
+      'Reason for removing',
+      'Enter a brief note (required)',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async (comment: string | undefined) => {
+            if (!comment?.trim()) {
+              Alert.alert('Comment required', 'Please enter a reason before removing.');
+              return;
+            }
+            await supabase.from('family_medications')
+              .update({ deleted_by: activeMember?.id ?? null, notes: comment.trim(), updated_at: new Date().toISOString() })
+              .eq('id', id);
+            await supabase.from('family_medications').delete().eq('id', id);
+            setMeds(prev => prev.filter(m => m.id !== id));
+          },
+        },
+      ],
+      'plain-text'
+    );
   };
 
   const deleteVax = async (id: string) => {
@@ -941,10 +1029,44 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
     setVaxes(prev => prev.filter(v => v.id !== id));
   };
 
+  const toggleMedActive = (med: Medication) => {
+    const newActive = !med.is_active;
+    const action = newActive ? 'reactivate' : 'deactivate';
+    Alert.prompt(
+      `${newActive ? 'Reactivate' : 'Deactivate'} medication`,
+      `Why are you ${action === 'deactivate' ? 'stopping' : 'restarting'} ${med.name}? (required)`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: newActive ? 'Reactivate' : 'Deactivate',
+          style: newActive ? 'default' : 'destructive',
+          onPress: async (comment: string | undefined) => {
+            if (!comment?.trim()) {
+              Alert.alert('Comment required', 'Please enter a reason.');
+              return;
+            }
+            const { error } = await supabase.from('family_medications')
+              .update({
+                is_active: newActive,
+                modified_by: activeMember?.id ?? null,
+                notes: comment.trim(),
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', med.id);
+            if (!error) setMeds(prev => prev.map(m =>
+              m.id === med.id ? { ...m, is_active: newActive, modified_by: activeMember?.id ?? null } : m));
+          },
+        },
+      ],
+      'plain-text'
+    );
+  };
+
   const addMed = async (memberId: string, form: MedForm) => {
     const { data } = await supabase.from('family_medications').insert({
       family_id: familyId,
       member_id: memberId,
+      assigned_by: activeMember?.id ?? null,
       name: form.name.trim(),
       dosage: form.dosage.trim(),
       dosage_unit: form.dosage_unit,
@@ -957,6 +1079,7 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
       pills_remaining: form.pills_remaining ? parseInt(form.pills_remaining) : null,
       instructions: form.instructions || null,
       is_ongoing: true,
+      is_active: true,
       escalation_enabled: form.escalation_enabled,
       escalation_after_min: parseInt(form.escalation_after_min) || 60,
     }).select().single();
@@ -1406,6 +1529,7 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
               <View key={med.id} style={[h.medCard, {
                 backgroundColor: isDark ? colors.card + 'CC' : '#F5F3FF80',
                 borderColor: isTakenToday ? BRAND.emerald + '60' : colors.border,
+                opacity: med.is_active === false ? 0.55 : 1,
               }]}>
                 <TouchableOpacity onPress={() => setExpandedId(expanded ? null : med.id)}>
                   <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
@@ -1432,6 +1556,7 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
                       {expanded ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />}
                       {isTakenToday && <StatusPill label="Taken" color={BRAND.emerald} Icon={Check} />}
                       {!isTakenToday && overdue && <StatusPill label="Overdue" color={BRAND.rose} Icon={AlertCircle} />}
+                      {!med.is_active && <StatusPill label="Inactive" color={colors.textTertiary} />}
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -1468,6 +1593,22 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
                       </Text>
                     )}
 
+                    {/* Audit trail */}
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                      {med.assigned_by && (
+                        <Text style={h.auditText}>
+                          Added by {memberName(med.assigned_by)}
+                        </Text>
+                      )}
+                      {med.modified_by && (
+                        <Text style={h.auditText}>
+                          · Last updated by {memberName(med.modified_by)}
+                          {med.updated_at ? ` on ${new Date(med.updated_at).toLocaleDateString()}` : ''}
+                        </Text>
+                      )}
+                    </View>
+
+                    {/* Action buttons */}
                     <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
                       <TouchableOpacity onPress={() => markTaken(med)}
                         style={[h.actionBtn, {
@@ -1479,6 +1620,17 @@ export default function HealthTab({ colors, isDark }: { colors: any; isDark: boo
                         <Text style={{ fontSize: 12, fontWeight: '800',
                           color: isTakenToday ? BRAND.emerald : BRAND.purple }}>
                           {isTakenToday ? 'Taken Today' : 'Mark Taken'}
+                        </Text>
+                      </TouchableOpacity>
+                      {/* Active / Inactive toggle */}
+                      <TouchableOpacity onPress={() => toggleMedActive(med)}
+                        style={[h.actionBtn, {
+                          borderColor: med.is_active ? BRAND.amber + '60' : BRAND.emerald + '60',
+                          backgroundColor: med.is_active ? BRAND.amber + '10' : BRAND.emerald + '10',
+                        }]}>
+                        <Text style={{ fontSize: 11, fontWeight: '800',
+                          color: med.is_active ? BRAND.amber : BRAND.emerald }}>
+                          {med.is_active ? 'Deactivate' : 'Reactivate'}
                         </Text>
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => deleteMed(med.id)}
@@ -1984,6 +2136,7 @@ const h = StyleSheet.create({
   detailText: { fontSize: 12 },
   actionBtn:  { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, borderWidth: 1,
                 paddingHorizontal: 10, paddingVertical: 7 },
+  auditText:  { fontSize: 10, color: '#94A3B8', fontStyle: 'italic' },
   disclaimer: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, borderRadius: 10,
                 borderWidth: 1, padding: 10, marginTop: 12 },
   qChip:      { borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 7 },
@@ -2030,6 +2183,9 @@ const aStyles = StyleSheet.create({
                    paddingVertical: 16, borderTopWidth: StyleSheet.hairlineWidth },
   cancelBtn:     { flex: 1, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, alignItems: 'center' },
   saveBtn:       { flex: 2, borderRadius: 14, paddingVertical: 13, alignItems: 'center' },
+
+  // Validation error text
+  errText:       { fontSize: 11, fontWeight: '700', color: '#F43F5E', marginTop: 4, marginLeft: 2 },
 
   // Kept for legacy (filter toggles in sheet use hf.toggle)
   memberChip:    { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 14, borderWidth: 1.5,

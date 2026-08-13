@@ -1,10 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
   View, Text, Modal, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, StyleSheet, Platform, KeyboardAvoidingView,
+  TextInput, ActivityIndicator, StyleSheet, Platform, KeyboardAvoidingView, Alert,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import { X, Upload, Lock, Shield } from 'lucide-react-native';
+import * as ImagePicker    from 'expo-image-picker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { X, Lock, Shield, FileText, Camera, Image, FolderOpen } from 'lucide-react-native';
 import { BRAND } from '../tabs/shared';
 import { RecordForm, TAGS, BLANK_FORM, memberColor, fmtSize } from './types';
 
@@ -18,9 +20,22 @@ interface Props {
   activeMemberId: string | null;
 }
 
+// Wraps ImagePicker result as a DocumentPickerAsset-compatible shape
+function imageAssetToDoc(asset: ImagePicker.ImagePickerAsset): DocumentPicker.DocumentPickerAsset {
+  const name = asset.fileName ?? `photo_${Date.now()}.jpg`;
+  return {
+    uri:      asset.uri,
+    name,
+    mimeType: asset.mimeType ?? 'image/jpeg',
+    size:     asset.fileSize ?? null,
+  } as DocumentPicker.DocumentPickerAsset;
+}
+
 export default function AddRecordModal({
   visible, onClose, onSave, colors, isDark, members, activeMemberId,
 }: Props) {
+  const insets = useSafeAreaInsets();
+
   const [form,      setForm]      = useState<RecordForm>(BLANK_FORM);
   const [selMember, setSelMember] = useState(activeMemberId ?? members[0]?.id ?? '');
   const [file,      setFile]      = useState<DocumentPicker.DocumentPickerAsset | null>(null);
@@ -41,12 +56,41 @@ export default function AddRecordModal({
 
   const showErr = (k: keyof typeof errors) => !!(errors[k] && tried);
 
-  const pickFile = async () => {
+  // ── File picker options ───────────────────────────────────────────────────────
+  const pickFromFiles = async () => {
     const result = await DocumentPicker.getDocumentAsync({
       type: ['application/pdf', 'image/*'],
       copyToCacheDirectory: true,
     });
     if (!result.canceled && result.assets[0]) setFile(result.assets[0]);
+  };
+
+  const pickFromCamera = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Camera access needed', 'Please allow camera access in Settings.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      quality: 0.85,
+      allowsEditing: false,
+    });
+    if (!result.canceled && result.assets[0]) setFile(imageAssetToDoc(result.assets[0]));
+  };
+
+  const pickFromLibrary = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Photo library access needed', 'Please allow photo library access in Settings.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.85,
+      allowsEditing: false,
+    });
+    if (!result.canceled && result.assets[0]) setFile(imageAssetToDoc(result.assets[0]));
   };
 
   const handleSave = async () => {
@@ -58,22 +102,22 @@ export default function AddRecordModal({
     onClose();
   };
 
-  const cardBg = isDark ? colors.card : '#FFFFFF';
-  const bg     = isDark ? colors.background : '#F8F5FF';
-  const inp    = [s.inp, { backgroundColor: cardBg, borderColor: colors.border, color: colors.textPrimary }];
+  const cardBg = colors.card;
+  const inp = [s.inp, { backgroundColor: isDark ? colors.surface : '#F8FAFC', borderColor: colors.border, color: colors.textPrimary }];
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={[s.backdrop, { backgroundColor: 'rgba(0,0,0,0.55)' }]}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%' }}>
-          <View style={[s.sheet, { backgroundColor: bg }]}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={s.backdrop}>
+          {/* Tap-to-dismiss area */}
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
 
-            <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 4 }}>
-              <View style={[s.handle, { backgroundColor: colors.border }]} />
-            </View>
+          <View style={[s.sheet, { backgroundColor: cardBg }]}>
+            {/* Handle */}
+            <View style={[s.handle, { backgroundColor: colors.border, alignSelf: 'center', marginBottom: 10 }]} />
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-              paddingHorizontal: 20, paddingVertical: 12 }}>
+            {/* Header */}
+            <View style={s.headerRow}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Lock size={15} color={BRAND.teal} />
                 <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary }}>
@@ -86,17 +130,17 @@ export default function AddRecordModal({
             </View>
 
             {/* Vault notice */}
-            <View style={{ marginHorizontal: 20, marginBottom: 12, flexDirection: 'row', alignItems: 'center',
-              gap: 7, backgroundColor: BRAND.teal + '12', borderRadius: 10,
-              paddingHorizontal: 12, paddingVertical: 8 }}>
+            <View style={[s.vaultBadge, { backgroundColor: BRAND.teal + '12' }]}>
               <Shield size={12} color={BRAND.teal} />
               <Text style={{ fontSize: 11, color: BRAND.teal, fontWeight: '700', flex: 1 }}>
                 Encrypted · protected by your family vault · never shared externally
               </Text>
             </View>
 
-            <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24, gap: 14 }}
-              showsVerticalScrollIndicator={false}>
+            <ScrollView
+              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 16, gap: 14 }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled">
 
               {/* Member picker */}
               <View>
@@ -108,10 +152,7 @@ export default function AddRecordModal({
                       const c   = memberColor(i);
                       return (
                         <TouchableOpacity key={m.id} onPress={() => setSelMember(m.id)}
-                          style={[s.chip, {
-                            backgroundColor: sel ? c + '25' : cardBg,
-                            borderColor: sel ? c : colors.border,
-                          }]}>
+                          style={[s.chip, { backgroundColor: sel ? c + '25' : 'transparent', borderColor: sel ? c : colors.border }]}>
                           <Text style={{ fontSize: 12, fontWeight: '800', color: sel ? c : colors.textSecondary }}>
                             {m.name.split(' ')[0]}
                           </Text>
@@ -142,7 +183,7 @@ export default function AddRecordModal({
                     return (
                       <TouchableOpacity key={t.id} onPress={() => setForm(f => ({ ...f, tag: t.id }))}
                         style={[s.chip, {
-                          backgroundColor: sel ? t.color + '20' : cardBg,
+                          backgroundColor: sel ? t.color + '20' : 'transparent',
                           borderColor: sel ? t.color : colors.border,
                           flexDirection: 'row', alignItems: 'center', gap: 5,
                         }]}>
@@ -164,20 +205,44 @@ export default function AddRecordModal({
                   placeholder="YYYY-MM-DD" placeholderTextColor={colors.textTertiary} style={inp} />
               </View>
 
-              {/* File */}
+              {/* File — 3 source options */}
               <View>
                 <Text style={[s.label, { color: colors.textSecondary }]}>
-                  Attach File — enables AI analysis
+                  Attach File <Text style={{ fontWeight: '400' }}>— enables AI analysis</Text>
                 </Text>
-                <TouchableOpacity onPress={pickFile}
-                  style={[s.fileBtn, { backgroundColor: cardBg, borderColor: file ? BRAND.teal : colors.border }]}>
-                  <Upload size={16} color={file ? BRAND.teal : colors.textTertiary} />
-                  <Text style={{ fontSize: 13, fontWeight: '700',
-                    color: file ? BRAND.teal : colors.textTertiary, flex: 1 }} numberOfLines={1}>
-                    {file ? file.name : 'Tap to pick PDF or image…'}
-                  </Text>
-                  {file && <Text style={{ fontSize: 11, color: colors.textTertiary }}>{fmtSize(file.size ?? null)}</Text>}
-                </TouchableOpacity>
+
+                {file ? (
+                  // Chosen file row
+                  <View style={[s.fileRow, { backgroundColor: BRAND.teal + '10', borderColor: BRAND.teal + '50' }]}>
+                    <FileText size={15} color={BRAND.teal} />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: BRAND.teal, flex: 1 }} numberOfLines={1}>
+                      {file.name}
+                    </Text>
+                    {file.size != null && (
+                      <Text style={{ fontSize: 11, color: colors.textTertiary }}>{fmtSize(file.size)}</Text>
+                    )}
+                    <TouchableOpacity onPress={() => setFile(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <X size={14} color={BRAND.teal} />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  // Source picker buttons
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity onPress={pickFromCamera} style={[s.srcBtn, { borderColor: colors.border, flex: 1 }]}>
+                      <Camera size={18} color={colors.textSecondary} />
+                      <Text style={[s.srcLabel, { color: colors.textSecondary }]}>Camera</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={pickFromLibrary} style={[s.srcBtn, { borderColor: colors.border, flex: 1 }]}>
+                      <Image size={18} color={colors.textSecondary} />
+                      <Text style={[s.srcLabel, { color: colors.textSecondary }]}>Photos</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={pickFromFiles} style={[s.srcBtn, { borderColor: colors.border, flex: 1 }]}>
+                      <FolderOpen size={18} color={colors.textSecondary} />
+                      <Text style={[s.srcLabel, { color: colors.textSecondary }]}>Files</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 }}>
                   <Lock size={10} color={colors.textTertiary} />
                   <Text style={{ fontSize: 10, color: colors.textTertiary }}>
@@ -192,11 +257,12 @@ export default function AddRecordModal({
                 <TextInput value={form.notes} onChangeText={v => setForm(f => ({ ...f, notes: v }))}
                   placeholder="Any context about this document…"
                   placeholderTextColor={colors.textTertiary}
-                  style={[inp, { height: 72, textAlignVertical: 'top' }]} multiline />
+                  style={[inp, { height: 72, textAlignVertical: 'top', paddingTop: 10 }]} multiline />
               </View>
             </ScrollView>
 
-            <View style={[s.footer, { borderColor: colors.border, backgroundColor: isDark ? colors.card : '#F8F5FF' }]}>
+            {/* Footer */}
+            <View style={[s.footer, { borderColor: colors.border, paddingBottom: Math.max(insets.bottom, 16) }]}>
               <TouchableOpacity onPress={onClose} style={[s.cancelBtn, { borderColor: colors.border }]}>
                 <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
               </TouchableOpacity>
@@ -208,24 +274,33 @@ export default function AddRecordModal({
               </TouchableOpacity>
             </View>
           </View>
-        </KeyboardAvoidingView>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const s = StyleSheet.create({
-  backdrop:  { flex: 1, justifyContent: 'flex-end' },
-  sheet:     { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: 8, maxHeight: '92%' },
-  handle:    { width: 40, height: 4, borderRadius: 2 },
-  closeBtn:  { padding: 8, borderRadius: 20, backgroundColor: 'rgba(100,116,139,0.12)' },
-  label:     { fontSize: 12, fontWeight: '700', marginBottom: 5 },
-  inp:       { borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 13, paddingVertical: 10, fontSize: 14, fontWeight: '600' },
-  chip:      { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 10, paddingVertical: 5 },
-  fileBtn:   { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1.5,
-               paddingHorizontal: 13, paddingVertical: 11, borderStyle: 'dashed' },
-  footer:    { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingVertical: 16, borderTopWidth: StyleSheet.hairlineWidth },
-  cancelBtn: { flex: 1, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, alignItems: 'center' },
-  saveBtn:   { flex: 2, borderRadius: 14, paddingVertical: 13, alignItems: 'center' },
-  err:       { fontSize: 11, fontWeight: '700', color: '#F43F5E', marginTop: 4, marginLeft: 2 },
+  backdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheet:      { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 10, maxHeight: '92%' },
+  handle:     { width: 40, height: 4, borderRadius: 2 },
+  headerRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                paddingHorizontal: 20, paddingVertical: 10 },
+  closeBtn:   { padding: 8, borderRadius: 20, backgroundColor: 'rgba(100,116,139,0.12)' },
+  vaultBadge: { marginHorizontal: 20, marginBottom: 12, flexDirection: 'row', alignItems: 'center',
+                gap: 7, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  label:      { fontSize: 12, fontWeight: '700', marginBottom: 5 },
+  inp:        { borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 13, paddingVertical: 10,
+                fontSize: 14, fontWeight: '600' },
+  chip:       { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 10, paddingVertical: 5 },
+  fileRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1.5,
+                paddingHorizontal: 13, paddingVertical: 11 },
+  srcBtn:     { alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 14, borderWidth: 1.5,
+                paddingVertical: 14, borderStyle: 'dashed' },
+  srcLabel:   { fontSize: 11, fontWeight: '800' },
+  footer:     { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 14,
+                borderTopWidth: StyleSheet.hairlineWidth },
+  cancelBtn:  { flex: 1, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, alignItems: 'center' },
+  saveBtn:    { flex: 2, borderRadius: 14, paddingVertical: 13, alignItems: 'center' },
+  err:        { fontSize: 11, fontWeight: '700', color: '#F43F5E', marginTop: 4, marginLeft: 2 },
 });

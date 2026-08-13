@@ -9,7 +9,7 @@ import {
 } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
-import { SCard, CardHeader, AddBtn, EmptyState, BRAND } from './shared';
+import { SCard, CardHeader, EmptyState, BRAND } from './shared';
 import RecordCard    from '../records/RecordCard';
 import AiReviewSheet from '../records/AiReviewSheet';
 import AddRecordModal from '../records/AddRecordModal';
@@ -38,6 +38,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
   const [showAdd,     setShowAdd]     = useState(false);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [pending,     setPending]     = useState<Record<string, AiAnalysis>>({});
+  const [notMedical,  setNotMedical]  = useState<Record<string, string>>({});
   const [reviewRec,   setReviewRec]   = useState<MedRecord | null>(null);
   const [approving,   setApproving]   = useState(false);
   // Selection / download
@@ -147,6 +148,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
         await supabase.from('medical_records').delete().eq('id', rec.id);
         setRecords(prev => prev.filter(r => r.id !== rec.id));
         setPending(prev => { const c = { ...prev }; delete c[rec.id]; return c; });
+        setNotMedical(prev => { const c = { ...prev }; delete c[rec.id]; return c; });
       }},
     ]);
   };
@@ -161,11 +163,28 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
       });
       if (error) throw new Error(error.message);
       if (fnData?.error) throw new Error(fnData.error);
+      if (fnData?.not_medical) {
+        setNotMedical(prev => ({ ...prev, [rec.id]: fnData.message ?? 'This does not appear to be a medical document.' }));
+        return;
+      }
       const analysis: AiAnalysis = fnData?.analysis;
       if (!analysis?.summary) throw new Error('Invalid AI response');
       setPending(prev => ({ ...prev, [rec.id]: analysis }));
       // Auto-open the review sheet
       setReviewRec(rec);
+      // Push notification to the record's assigned member
+      supabase.functions.invoke('family-notifier', {
+        body: {
+          familyId,
+          memberId:   rec.member_id,
+          type:       'custom',
+          payload: {
+            title: '🧬 AI Analysis Ready',
+            body:  `${rec.title} — tap to review and approve the findings`,
+            data:  { screen: 'vault', tab: 'records', record_id: rec.id },
+          },
+        },
+      }).catch(() => { /* non-blocking */ });
     } catch (err: any) {
       Alert.alert('Analysis failed', err.message ?? 'Could not analyze. Please try again.');
     } finally {
@@ -256,14 +275,16 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
 
   if (loading) return (
     <SCard colors={colors} isDark={isDark}>
-      <CardHeader Icon={FolderOpen} iconColor={BRAND.teal} title="Medical Records" colors={colors} />
+      <CardHeader Icon={FolderOpen} iconColor={BRAND.teal} title="Medical Records" colors={colors}
+        onAction={() => setShowAdd(true)} actionLabel="Upload" />
       <ActivityIndicator color={BRAND.teal} style={{ marginVertical: 24 }} />
     </SCard>
   );
 
   if (loadError) return (
     <SCard colors={colors} isDark={isDark}>
-      <CardHeader Icon={FolderOpen} iconColor={BRAND.teal} title="Medical Records" colors={colors} />
+      <CardHeader Icon={FolderOpen} iconColor={BRAND.teal} title="Medical Records" colors={colors}
+        onAction={() => setShowAdd(true)} actionLabel="Upload" />
       <View style={{ alignItems: 'center', paddingVertical: 24, gap: 10 }}>
         <AlertCircle size={28} color={BRAND.rose} />
         <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>{loadError}</Text>
@@ -282,7 +303,8 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
     <>
       <SCard colors={colors} isDark={isDark}>
         <CardHeader Icon={FolderOpen} iconColor={BRAND.teal} title="Medical Records"
-          badge={`${records.length}`} badgeColor={BRAND.teal} colors={colors} />
+          badge={`${records.length}`} badgeColor={BRAND.teal} colors={colors}
+          onAction={() => setShowAdd(true)} actionLabel="Upload" />
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6, marginBottom: 2 }}>
           <Lock size={10} color={BRAND.teal} />
@@ -408,6 +430,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
                 onOpenReview={() => setReviewRec(rec)}
                 analyzing={analyzingId === rec.id}
                 hasPending={!!pending[rec.id]}
+                notMedicalMsg={notMedical[rec.id]}
                 selectable={selectable}
                 selected={selectedIds.has(rec.id)}
                 onToggleSelect={() => toggleSelect(rec.id)}
@@ -418,7 +441,6 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
           </View>
         )}
 
-        <AddBtn label="Upload Record" onPress={() => setShowAdd(true)} color={BRAND.teal} />
       </SCard>
 
       {/* Upload modal */}

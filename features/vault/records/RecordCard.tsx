@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import {
   FileText, Calendar, Lock, Sparkles, ChevronDown, ChevronUp,
-  Trash2, CheckCircle, AlertTriangle, ArrowRight, Download, Square, CheckSquare,
+  Trash2, CheckCircle, AlertTriangle, ArrowRight, Square, CheckSquare, FileX,
 } from 'lucide-react-native';
 import { BRAND, StatusPill } from '../tabs/shared';
 import { MedRecord, TAG_MAP, URGENCY_META, memberColor, fmtSize } from './types';
@@ -16,17 +16,18 @@ interface Props {
   onOpenReview: () => void;
   analyzing:    boolean;
   hasPending:   boolean;
-  selectable:   boolean;
-  selected:     boolean;
+  selectable:    boolean;
+  selected:      boolean;
   onToggleSelect: () => void;
-  colors:       any;
-  isDark:       boolean;
+  notMedicalMsg?: string;
+  colors:        any;
+  isDark:        boolean;
 }
 
 export default function RecordCard({
   rec, memberName, memberIdx,
   onDelete, onAnalyze, onOpenReview,
-  analyzing, hasPending,
+  analyzing, hasPending, notMedicalMsg,
   selectable, selected, onToggleSelect,
   colors, isDark,
 }: Props) {
@@ -177,8 +178,26 @@ export default function RecordCard({
             </View>
           )}
 
+          {/* Not a medical document — inline rejection */}
+          {notMedicalMsg && !rec.ai_analyzed && !hasPending && (
+            <View style={[s.actionRow, { borderColor: BRAND.amber + '60', backgroundColor: BRAND.amber + '10', flexDirection: 'column', alignItems: 'flex-start', gap: 6 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                <FileX size={14} color={BRAND.amber} />
+                <Text style={{ fontSize: 12, fontWeight: '900', color: BRAND.amber }}>
+                  Not a medical document
+                </Text>
+              </View>
+              <Text style={{ fontSize: 11, color: colors.textSecondary, lineHeight: 16 }}>
+                {notMedicalMsg}
+              </Text>
+              <Text style={{ fontSize: 10, color: colors.textTertiary }}>
+                Only human clinical reports (lab results, prescriptions, discharge summaries, etc.) can be analyzed.
+              </Text>
+            </View>
+          )}
+
           {/* No analysis yet */}
-          {!rec.ai_analyzed && !hasPending && (
+          {!rec.ai_analyzed && !hasPending && !notMedicalMsg && (
             <TouchableOpacity onPress={onAnalyze} disabled={analyzing}
               style={[s.actionRow, {
                 borderColor: analyzing ? colors.border : BRAND.teal + '60',

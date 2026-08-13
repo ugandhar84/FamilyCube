@@ -1,22 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Radio, Pill, ChefHat, Image as ImageIcon, ScrollText, Users, LogOut, LucideIcon } from 'lucide-react-native';
+import { Radio, Pill, ChefHat, Image as ImageIcon, ScrollText, Users, LogOut, FolderOpen, LucideIcon } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useAuthStore } from '@/store/authStore';
+import type { MemberRole } from '@/store/familyStore';
 import AppHeader from '@/components/AppHeader';
 // Modular vault tabs
-import GpsTabComp     from './tabs/GpsTab';
-import HealthTabComp  from './tabs/HealthTab';
-import MealsTabComp   from './tabs/MealsTab';
+import GpsTabComp      from './tabs/GpsTab';
+import HealthTabComp   from './tabs/HealthTab';
+import MealsTabComp    from './tabs/MealsTab';
 import MemoriesTabComp from './tabs/MemoriesTab';
-import LedgerTabComp  from './tabs/LedgerTab';
-import RosterTabComp  from './tabs/RosterTab';
+import LedgerTabComp   from './tabs/LedgerTab';
+import RosterTabComp   from './tabs/RosterTab';
+import RecordsTabComp  from './tabs/RecordsTab';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type VaultTab = 'gps' | 'health' | 'meals' | 'memories' | 'ledger' | 'roster';
+type VaultTab = 'gps' | 'health' | 'records' | 'meals' | 'memories' | 'ledger' | 'roster';
 
 const BRAND = {
   purple:  '#7C3AED',
@@ -27,48 +29,62 @@ const BRAND = {
   blue:    '#3B82F6',
 };
 
-// ─── Shared atoms ─────────────────────────────────────────────────────────────
+// ─── RBAC — which tabs each role can see ────────────────────────────────────
+// Senior: read-only Memories only (parent pays, seniors are passive viewers)
+// Kid:    no Records, no Roster
+// Parent: all tabs
 
-
-// ─── VaultScreen ─────────────────────────────────────────────────────────────
-
-type TabDef = { id: VaultTab; label: string; Icon: LucideIcon };
+type TabDef = { id: VaultTab; label: string; Icon: LucideIcon; roles: MemberRole[] };
 
 const SUBTABS: TabDef[] = [
-  { id: 'gps',      label: 'Radar',    Icon: Radio      },
-  { id: 'health',   label: 'Health',   Icon: Pill       },
-  { id: 'meals',    label: 'Meals',    Icon: ChefHat    },
-  { id: 'memories', label: 'Memories', Icon: ImageIcon  },
-  { id: 'ledger',   label: 'Ledger',   Icon: ScrollText },
-  { id: 'roster',   label: 'Roster',   Icon: Users      },
+  { id: 'gps',      label: 'Radar',    Icon: Radio,      roles: ['parent', 'kid'] },
+  { id: 'health',   label: 'Health',   Icon: Pill,       roles: ['parent', 'kid'] },
+  { id: 'records',  label: 'Records',  Icon: FolderOpen, roles: ['parent'] },
+  { id: 'meals',    label: 'Meals',    Icon: ChefHat,    roles: ['parent'] },
+  { id: 'memories', label: 'Memories', Icon: ImageIcon,  roles: ['parent', 'kid', 'senior'] },
+  { id: 'ledger',   label: 'Ledger',   Icon: ScrollText, roles: ['parent', 'kid'] },
+  { id: 'roster',   label: 'Roster',   Icon: Users,      roles: ['parent'] },
 ];
+
+// ─── VaultScreen ─────────────────────────────────────────────────────────────
 
 export default function VaultScreen() {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, loaded, loadFromStorage } = useFamilyStore();
   const { signOut } = useAuthStore();
 
-  const [activeTab, setActiveTab] = useState<VaultTab>('gps');
+  const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
+  const role: MemberRole = activeMember?.role ?? 'parent';
+
+  const visibleTabs = SUBTABS.filter(t => t.roles.includes(role));
+  const defaultTab = visibleTabs[0]?.id ?? 'memories';
+
+  const [activeTab, setActiveTab] = useState<VaultTab>(defaultTab);
 
   const scrollRef = useRef<ScrollView>(null);
   const prevMemberRef = useRef(activeMemberId);
   useEffect(() => {
     if (prevMemberRef.current === activeMemberId) return;
     prevMemberRef.current = activeMemberId;
-    setActiveTab('gps');
+    // Reset to role-appropriate default tab when member switches
+    const newRole: MemberRole = members.find(m => m.id === activeMemberId)?.role ?? 'parent';
+    const tabs = SUBTABS.filter(t => t.roles.includes(newRole));
+    setActiveTab(tabs[0]?.id ?? 'memories');
     scrollRef.current?.scrollTo({ y: 0, animated: false });
-  }, [activeMemberId]);
+  }, [activeMemberId, members]);
 
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
 
-  const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const bg = isDark ? '#0B0F1A' : '#F3F0FB';
+
+  // Senior-specific: read-only flag passed to Memories tab
+  const isSenior = role === 'senior';
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: bg }]} edges={['top']}>
       <AppHeader
         memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
-        memberRole={activeMember?.role as 'parent' | 'kid' | 'senior' ?? 'parent'}
+        memberRole={role as 'parent' | 'kid' | 'senior'}
         onBellPress={() => {}}
         onPersonaPress={() => {}}
       />
@@ -82,7 +98,7 @@ export default function VaultScreen() {
               Family Vault
             </Text>
             <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 1 }}>
-              GPS · Health · Meals · Memories · Ledger · Roster
+              {isSenior ? 'Family Memories' : 'GPS · Health · Records · Meals · Memories · Ledger'}
             </Text>
           </View>
           <TouchableOpacity onPress={() => Alert.alert('Sign Out', 'Sign out of Family Cube?', [
@@ -93,11 +109,11 @@ export default function VaultScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Horizontal pill tab bar */}
+        {/* Horizontal pill tab bar — only shows role-permitted tabs */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false}
           contentContainerStyle={s.tabScrollContent}
           style={{ marginHorizontal: 14, marginBottom: 14 }}>
-          {SUBTABS.map(t => {
+          {visibleTabs.map(t => {
             const active = activeTab === t.id;
             const TIcon = t.Icon;
             return (
@@ -117,9 +133,10 @@ export default function VaultScreen() {
 
         <View style={{ paddingHorizontal: 14, gap: 12 }}>
           {activeTab === 'gps'      && <GpsTabComp      colors={colors} isDark={isDark} />}
-          {activeTab === 'health'   && <HealthTabComp   colors={colors} isDark={isDark} />}
+          {activeTab === 'health'   && <HealthTabComp   colors={colors} isDark={isDark} kidView={role === 'kid'} />}
+          {activeTab === 'records'  && <RecordsTabComp  colors={colors} isDark={isDark} />}
           {activeTab === 'meals'    && <MealsTabComp    colors={colors} isDark={isDark} />}
-          {activeTab === 'memories' && <MemoriesTabComp colors={colors} isDark={isDark} />}
+          {activeTab === 'memories' && <MemoriesTabComp colors={colors} isDark={isDark} readOnly={isSenior} />}
           {activeTab === 'ledger'   && <LedgerTabComp   colors={colors} isDark={isDark} />}
           {activeTab === 'roster'   && <RosterTabComp   colors={colors} isDark={isDark} />}
         </View>

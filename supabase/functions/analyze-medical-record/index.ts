@@ -47,7 +47,7 @@ async function callGemini(
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: [{ role: 'user', parts }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
     }),
   });
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -65,7 +65,7 @@ async function callGeminiText(prompt: string): Promise<string> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+      generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
     }),
   });
   if (!res.ok) throw new Error(`Gemini text ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -75,20 +75,48 @@ async function callGeminiText(prompt: string): Promise<string> {
 
 // ── JSON extraction ───────────────────────────────────────────────────────────
 function extractJson(raw: string): Record<string, unknown> {
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-  try { return JSON.parse(cleaned); } catch { /* ignore */ }
-  const match = cleaned.match(/\{[\s\S]*\}/);
-  if (match) { try { return JSON.parse(match[0]); } catch { /* ignore */ } }
+  // Strip leading/trailing whitespace + common markdown fence variations
+  let cleaned = raw.trim();
+
+  // Remove <think>…</think> blocks (Gemini 2.5 flash sometimes emits these)
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  // Strip ```json … ``` or ``` … ``` fences (greedy-last so nested braces survive)
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+
+  // 1. Try the whole cleaned string
+  try { return JSON.parse(cleaned); } catch { /* fall through */ }
+
+  // 2. Find the LAST outermost { … } block (handles trailing commentary)
+  const matches = [...cleaned.matchAll(/\{[\s\S]*?\}/g)];
+  // Walk from the end — take the longest valid JSON object
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const candidate = matches[i][0];
+    try { return JSON.parse(candidate); } catch { /* keep trying */ }
+  }
+
+  // 3. Greedy match — largest { … } span in the whole string
+  const greedyMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (greedyMatch) {
+    try { return JSON.parse(greedyMatch[0]); } catch { /* fall through */ }
+  }
+
+  console.error('[analyze-medical-record] Raw AI text that failed JSON parse:', cleaned.slice(0, 500));
   throw new Error('Could not parse JSON from AI response');
 }
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are a medical document analysis AI for a family health vault.
-Analyze the given document (which may be a lab report, discharge summary, prescription, imaging report, insurance document, vaccination record, or other medical document).
+You analyze human medical documents only — lab reports, discharge summaries, prescriptions, imaging reports, vaccination records, doctor visit notes, pathology reports, and similar clinical documents issued by or for a human patient.
 
 The patient is referred to as [PATIENT]. Do NOT invent a name.
 
-Return ONLY a valid JSON object with no markdown fences:
+IMPORTANT: First determine if this is a human medical/clinical document.
+If it is NOT (e.g. a receipt, invoice, grocery list, utility bill, contract, photo, veterinary record, insurance EOB, general health article, or any non-clinical document),
+return ONLY this JSON:
+{ "not_medical": true, "message": "one friendly sentence explaining what the document appears to be and that only human medical reports are supported" }
+
+If it IS a human medical document, return ONLY a valid JSON object with no markdown fences:
 {
   "summary": "2-3 plain-language sentences describing what this document contains and its overall significance",
   "key_findings": ["finding 1", "finding 2"],
@@ -195,7 +223,19 @@ serve(async (req) => {
     }
 
     // ── Parse and return ──────────────────────────────────────────────────
-    const analysis = extractJson(rawText);
+    console.log('[analyze-medical-record] rawText length:', rawText.length);
+    console.log('[analyze-medical-record] rawText[:800]:', rawText.slice(0, 800));
+
+    let analysis: Record<string, unknown>;
+    try {
+      analysis = extractJson(rawText);
+    } catch (parseErr: any) {
+      return json({ error: 'AI returned unparseable response', raw: rawText.slice(0, 1000) }, 500);
+    }
+
+    if (analysis.not_medical === true) {
+      return json({ ok: true, not_medical: true, message: analysis.message ?? 'This does not appear to be a medical document.' });
+    }
     return json({ ok: true, analysis, analyzed_at: new Date().toISOString() });
 
   } catch (err: any) {

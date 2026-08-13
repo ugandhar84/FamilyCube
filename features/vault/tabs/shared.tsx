@@ -24,22 +24,34 @@ export function SCard({ children, colors, isDark, style }: {
   );
 }
 
-export function CardHeader({ Icon, iconColor, title, badge, badgeColor, colors }: {
+export function CardHeader({ Icon, iconColor, title, badge, badgeColor, colors, onAction, actionLabel }: {
   Icon: LucideIcon; iconColor?: string; title: string;
   badge?: string; badgeColor?: string; colors: any;
+  onAction?: () => void; actionLabel?: string;
 }) {
   const ic = iconColor ?? BRAND.purple;
   return (
-    <View style={sh.cardHeaderRow}>
-      <View style={[sh.cardHeaderIconBox, { backgroundColor: ic + '20' }]}>
-        <Icon size={16} color={ic} />
-      </View>
-      <Text style={[sh.cardHeaderTitle, { color: colors.textPrimary }]}>{title}</Text>
-      {badge ? (
-        <View style={[sh.badge, { backgroundColor: (badgeColor ?? ic) + '20',
-          borderColor: (badgeColor ?? ic) + '50' }]}>
-          <Text style={[sh.badgeText, { color: badgeColor ?? ic }]}>{badge}</Text>
+    <View style={[sh.cardHeaderRow, { justifyContent: 'space-between' }]}>
+      <View style={[sh.cardHeaderRow, { flex: 1 }]}>
+        <View style={[sh.cardHeaderIconBox, { backgroundColor: ic + '20' }]}>
+          <Icon size={16} color={ic} />
         </View>
+        <Text style={[sh.cardHeaderTitle, { color: colors.textPrimary }]}>{title}</Text>
+        {badge ? (
+          <View style={[sh.badge, { backgroundColor: (badgeColor ?? ic) + '20',
+            borderColor: (badgeColor ?? ic) + '50' }]}>
+            <Text style={[sh.badgeText, { color: badgeColor ?? ic }]}>{badge}</Text>
+          </View>
+        ) : null}
+      </View>
+      {onAction ? (
+        <TouchableOpacity onPress={onAction}
+          style={[sh.headerAction, { backgroundColor: ic + '18', borderColor: ic + '50' }]}>
+          <Text style={{ fontSize: 18, color: ic, fontWeight: '300', lineHeight: 20 }}>+</Text>
+          {actionLabel ? (
+            <Text style={{ fontSize: 11, fontWeight: '800', color: ic }}>{actionLabel}</Text>
+          ) : null}
+        </TouchableOpacity>
       ) : null}
     </View>
   );
@@ -106,4 +118,6 @@ const sh = StyleSheet.create({
   statusPillText:  { fontSize: 11, fontWeight: '800' },
   addBtn:          { flexDirection: 'row', alignItems: 'center', borderRadius: 14, borderWidth: 1.5,
                      paddingHorizontal: 14, paddingVertical: 9, marginTop: 12, alignSelf: 'flex-start' },
+  headerAction:    { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 10, borderWidth: 1.5,
+                     paddingHorizontal: 10, paddingVertical: 5 },
 });

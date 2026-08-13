@@ -148,7 +148,7 @@ function AddMemoryModal({ visible, onClose, onSave, colors, isDark }: {
   );
 }
 
-export default function MemoriesTab({ colors, isDark }: { colors: any; isDark: boolean }) {
+export default function MemoriesTab({ colors, isDark, readOnly = false }: { colors: any; isDark: boolean; readOnly?: boolean }) {
   const { members, activeMemberId } = useFamilyStore();
   const familyId = (members[0] as any)?.familyId ?? 'family-1';
 
@@ -268,7 +268,7 @@ export default function MemoriesTab({ colors, isDark }: { colors: any; isDark: b
             </View>
           )}
 
-        <AddBtn label="Add Memory" onPress={() => setShowModal(true)} color={BRAND.purple} />
+        {!readOnly && <AddBtn label="Add Memory" onPress={() => setShowModal(true)} color={BRAND.purple} />}
       </SCard>
 
       <AddMemoryModal visible={showModal} onClose={() => setShowModal(false)}

@@ -150,6 +150,16 @@ const I = {
       <Path d="M12 5v14M5 12h14" stroke={c} strokeWidth={2.5} strokeLinecap="round" fill="none" />
     </Svg>
   ),
+  ChevronDown: ({ c, size=14 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M6 9l6 6 6-6" stroke={c} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </Svg>
+  ),
+  ChevronUp: ({ c, size=14 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M18 15l-6-6-6 6" stroke={c} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </Svg>
+  ),
   HelpCircle: ({ c, size=14 }: { c: string; size?: number }) => (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Circle cx={12} cy={12} r={10} stroke={c} strokeWidth={2} fill="none" />
@@ -828,6 +838,10 @@ export default function CalendarScreen() {
   const [isAnalyzing,    setIsAnalyzing]    = useState(false);
   const [showAiPanel,    setShowAiPanel]    = useState(false);
   const [appliedSwaps,   setAppliedSwaps]   = useState<Record<string, boolean>>({});
+  // Collapsed event cards — id in set = collapsed
+  const [collapsedEvs,   setCollapsedEvs]   = useState<Set<string>>(new Set());
+  const toggleCollapse = (id: string) =>
+    setCollapsedEvs(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
   const switchMember = () => {
     const idx = members.findIndex(m => m.id === activeMember?.id);
@@ -1285,7 +1299,8 @@ export default function CalendarScreen() {
                 : members.filter(m => m.role === 'kid');
 
               // Swipe-delete eligibility: future event + parent (any) or kid own pending
-              const canDelete  = !isPast && (isParent || (isKid && !!ev.approvalPending && ev.memberId === activeMemberId));
+              const canDelete    = !isPast && (isParent || (isKid && !!ev.approvalPending && ev.memberId === activeMemberId));
+              const isCollapsed = collapsedEvs.has(ev.id);
 
               const handleEvDelete = () => Alert.alert(
                 ev.approvalPending ? 'Withdraw Request' : 'Remove Event',
@@ -1321,27 +1336,35 @@ export default function CalendarScreen() {
                     backgroundColor: isConf ? (isDark ? '#1C1700' : '#FFFBEB') : cardBg,
                     overflow: 'hidden' }]}>
 
-                    {/* Header: category badge — time lives in the dot now */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                      <View style={[sc.catBadge, { backgroundColor: cs.badge, borderColor: cs.dot + '60' }]}>
-                        <Text style={[sc.catText, { color: cs.text }]}>{cat.toUpperCase()}</Text>
+                    {/* Header: always visible — tap to collapse/expand */}
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => toggleCollapse(ev.id)}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: isCollapsed ? 0 : 4 }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                        <View style={[sc.catBadge, { backgroundColor: cs.badge, borderColor: cs.dot + '60' }]}>
+                          <Text style={[sc.catText, { color: cs.text }]}>{cat.toUpperCase()}</Text>
+                        </View>
+                        {isConf && <I.AlertTriangle c="#F59E0B" size={12} />}
+                        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B', flex: 1 }} numberOfLines={isCollapsed ? 1 : undefined}>
+                          {ev.title}
+                        </Text>
                       </View>
-                    </View>
+                      {isCollapsed
+                        ? <I.ChevronDown c={colors.textTertiary} size={15} />
+                        : <I.ChevronUp   c={colors.textTertiary} size={15} />}
+                    </TouchableOpacity>
 
-                    {isConf && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                    {!isCollapsed && isConf && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4, marginTop: 2 }}>
                         <I.AlertTriangle c="#F59E0B" size={12} />
                         <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#F59E0B' }}>Scheduling Conflict Detected</Text>
                       </View>
                     )}
 
-                    {/* Title */}
-                    <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B', marginBottom: 5 }}>
-                      {ev.title}
-                    </Text>
-
-                    {/* Context-aware "For / Patient / Player" — chips when assignee missing, text when set */}
-                    {forLabel && (
+                    {/* Collapsible body */}
+                    {!isCollapsed && forLabel && (
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                         {assignee ? (
                           <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
@@ -1376,6 +1399,9 @@ export default function CalendarScreen() {
                         )}
                       </View>
                     )}
+
+                    {/* Body — hidden when collapsed */}
+                    {!isCollapsed && <>
 
                     {/* Category-specific extra fields */}
                     {cat === 'Medical' && ev.doctorName && (
@@ -1527,6 +1553,8 @@ export default function CalendarScreen() {
                         Hold to edit{canDelete ? ' · Swipe ← to delete' : ''}
                       </Text>
                     )}
+
+                    </>}
                   </View>
                   </SwipeableEventCard>
                 </View>

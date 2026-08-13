@@ -55,6 +55,11 @@ function fmtTime(t?: string) {
   const [h, m] = t.split(':').map(Number);
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
+function fmtHumanDate(dateStr: string): string {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const d = new Date(year, month - 1, day);
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
 
 function hoursUntilEvent(dateStr: string, timeStr?: string): number {
   if (!timeStr) return 999;
@@ -401,82 +406,97 @@ function TimelineCard({ ev, members, allNames, colors, isDark, updateEvent }: {
   return (
     <View style={{
       backgroundColor: isDark ? colors.card : '#FFFFFF',
-      borderRadius: 16, borderWidth: 1,
-      borderColor: isPast ? colors.border : (hasIssue && hours < 4 && hours >= 0) ? '#EF444445' : (isDark ? colors.border : '#E8E8F0'),
+      borderRadius: 18, borderWidth: 1,
+      borderColor: isPast ? colors.border : (hasIssue && hours < 4) ? '#EF444440' : (isDark ? colors.border : '#EBEBF0'),
       borderLeftWidth: 4, borderLeftColor: leftBorderColor,
-      overflow: 'hidden', opacity: isPast ? 0.5 : 1,
+      overflow: 'hidden', opacity: isPast ? 0.45 : 1,
       marginBottom: 10,
+      shadowColor: '#000', shadowOpacity: isDark ? 0 : 0.05, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: isPast ? 0 : 2,
     }}>
-      {/* Summary row */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 }}>
-        {/* Time */}
-        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isPast ? colors.textTertiary : colors.textPrimary, minWidth: 52 }}>
-          {ev.time ? fmtTime(ev.time) : '—'}
-        </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'stretch', padding: 14, gap: 12 }}>
 
-        {/* Kid avatar */}
-        {kid && (
-          <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl}
-            siblings={allNames} size={28} ringColor={chipColor} ringWidth={1.5} />
-        )}
-
-        {/* Content */}
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: isPast ? colors.textTertiary : colors.textPrimary }} numberOfLines={1}>
-            {isPast ? '✓ ' : ''}{ev.title}
+        {/* Left — time column */}
+        <View style={{ alignItems: 'center', minWidth: 48, gap: 4 }}>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: isPast ? colors.textTertiary : chipColor, lineHeight: 16 }}>
+            {ev.time ? fmtTime(ev.time).replace(' ', '\n') : '—'}
           </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-            {kid && <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>{kid.name.split(' ')[0]}</Text>}
-            {ev.location && <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }} numberOfLines={1}>📍 {ev.location}</Text>}
-          </View>
+          {kid && (
+            <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl}
+              siblings={allNames} size={30} ringColor={isPast ? colors.border : chipColor} ringWidth={1.5} />
+          )}
         </View>
 
-        {/* Right side: urgency badge OR driver status */}
-        {isPast ? (
-          <View style={{ backgroundColor: '#10B98120', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#10B981' }}>Done</Text>
-          </View>
-        ) : isConfirmed ? (
-          <View style={{ backgroundColor: '#10B98120', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-            <Ionicons name="checkmark-circle" size={12} color="#10B981" />
-            <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#10B981' }}>Driver set</Text>
-          </View>
-        ) : showRemind ? (
+        {/* Right — content */}
+        <View style={{ flex: 1, gap: 4 }}>
+          {/* Category chip + title */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <View style={{ backgroundColor: BRAND.amber + '25', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
-              <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: BRAND.amber }}>⏳ Awaiting</Text>
+            <View style={{ backgroundColor: chipColor + '20', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 }}>
+              <Text style={{ fontSize: 10, fontWeight: '800', color: chipColor, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                {ev.category ?? 'Event'}
+              </Text>
             </View>
-            <Pressable style={{ backgroundColor: BRAND.amber + '20', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: BRAND.amber + '40' }}>
-              <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: BRAND.amber }}>Remind</Text>
-            </Pressable>
+            {isPast && (
+              <View style={{ backgroundColor: '#10B98118', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 10, fontWeight: '700', color: '#10B981' }}>✓ Done</Text>
+              </View>
+            )}
           </View>
-        ) : hasIssue ? (
-          <UrgencyBadge hours={hours} hasIssue={true} />
-        ) : null}
-      </View>
 
-      {/* Fix → action row (only when issue + < 24h) */}
-      {showFixBtn && (
-        <View style={{ paddingHorizontal: 12, paddingBottom: 10 }}>
-          <Pressable onPress={() => setFixOpen(o => !o)}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
-              backgroundColor: '#EF444412', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7,
-              borderWidth: 1, borderColor: '#EF444430', alignSelf: 'flex-start' }}>
-            <Ionicons name={fixOpen ? 'chevron-up' : 'person-add-outline'} size={13} color="#EF4444" />
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>
-              {fixOpen ? 'Cancel' : 'Fix →'}
+          <Text style={{ fontSize: TYPO.subheading, fontWeight: '800', color: isPast ? colors.textTertiary : colors.textPrimary, lineHeight: 22 }} numberOfLines={1}>
+            {ev.title}
+          </Text>
+
+          {/* Location */}
+          {ev.location && (
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }} numberOfLines={1}>
+              📍 {ev.location}
             </Text>
-          </Pressable>
+          )}
 
-          {fixOpen && (
-            <View style={{ marginTop: 10 }}>
-              <InlineReassignPanel ev={ev} members={members} colors={colors} isDark={isDark}
-                onDone={(name, note) => {
-                  updateEvent(ev.id, { driver: name, driverStatus: 'pending', notes: note || undefined });
-                  setFixOpen(false);
-                }} />
+          {/* Driver row */}
+          {!isPast && ev.driver && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+              <Ionicons name="car-outline" size={13} color={colors.textTertiary} />
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{ev.driver}</Text>
+                {isConfirmed && <Text style={{ color: '#10B981' }}> · Confirmed ✓</Text>}
+                {showRemind && <Text style={{ color: BRAND.amber }}> · Awaiting ⏳</Text>}
+                {driverRejected && <Text style={{ color: '#EF4444' }}> · Declined ✕</Text>}
+              </Text>
             </View>
           )}
+
+          {/* Status badge row (right-aligned) */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 2 }}>
+            {showRemind && !driverRejected && (
+              <Pressable style={{ backgroundColor: BRAND.amber + '18', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: BRAND.amber + '40' }}>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.amber }}>Remind</Text>
+              </Pressable>
+            )}
+            {hasIssue && !isPast && <UrgencyBadge hours={hours} hasIssue={true} />}
+            {showFixBtn && (
+              <Pressable onPress={() => setFixOpen(o => !o)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+                  backgroundColor: '#EF444412', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4,
+                  borderWidth: 1, borderColor: '#EF444435' }}>
+                <Ionicons name="person-add-outline" size={12} color="#EF4444" />
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>
+                  {fixOpen ? 'Cancel' : 'Assign driver'}
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        </View>
+      </View>
+
+      {/* Inline reassign panel */}
+      {fixOpen && (
+        <View style={{ paddingHorizontal: 14, paddingBottom: 14, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 }}>
+          <InlineReassignPanel ev={ev} members={members} colors={colors} isDark={isDark}
+            onDone={(name, note) => {
+              updateEvent(ev.id, { driver: name, driverStatus: 'pending', notes: note || undefined });
+              setFixOpen(false);
+            }} />
         </View>
       )}
     </View>
@@ -602,12 +622,13 @@ function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpReques
     <>
       {/* ── 1. Today's Timeline — HERO ── */}
       <View style={pad}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-            Today's Timeline
-          </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+          <View>
+            <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary }}>Today</Text>
+            <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 1 }}>{fmtHumanDate(localToday())}</Text>
+          </View>
           <Pressable onPress={() => router.push('/(tabs)/calendar')}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>Full →</Text>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>Full schedule →</Text>
           </Pressable>
         </View>
 

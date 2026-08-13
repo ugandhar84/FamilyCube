@@ -73,10 +73,11 @@ function shortAddress(addr: string, maxLen = 22): string {
 
 function openInMaps(addr: string) {
   const encoded = encodeURIComponent(addr);
-  // iOS → Apple Maps; Android → geo: URI (opens in Google Maps / default maps app)
+  // Use web URLs — these open the native Maps app but stay in search/pin mode,
+  // not turn-by-turn directions (which the maps:// scheme can trigger).
   const url = Platform.OS === 'ios'
-    ? `maps://?q=${encoded}`
-    : `geo:0,0?q=${encoded}`;
+    ? `https://maps.apple.com/?q=${encoded}`
+    : `https://maps.google.com/?q=${encoded}`;
   Linking.openURL(url).catch(() =>
     Linking.openURL(`https://maps.google.com/?q=${encoded}`)
   );

@@ -942,7 +942,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
   };
 
   // Due date/time — default to tomorrow 6 PM
-  const defaultDue = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(18, 0, 0, 0); return d; };
+  const defaultDue = () => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); return d; };
   const [dueDate,      setDueDate]      = useState<Date>(defaultDue);
   const [showDatePick, setShowDatePick] = useState(false);
   const [showTimePick, setShowTimePick] = useState(false);
@@ -1548,9 +1548,17 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                       style={{ alignItems: 'center', gap: 4 }}
                       onPress={() => {
                         setIsPool(false);
-                        setAssignIds(prev =>
-                          prev.includes(m.id) ? prev.filter(id => id !== m.id) : [...prev, m.id]
-                        );
+                        const next = assignIds.includes(m.id)
+                          ? assignIds.filter(id => id !== m.id)
+                          : [...assignIds, m.id];
+                        setAssignIds(next);
+                        // Auto-mark adult task if any selected member is parent/senior
+                        const hasAdult = next.some(id => {
+                          const role = members.find(x => x.id === id)?.role;
+                          return role === 'parent' || role === 'senior';
+                        });
+                        if (hasAdult) setIsAdultTask(true);
+                        else if (!next.some(id => members.find(x => x.id === id)?.role !== 'kid')) setIsAdultTask(false);
                       }}
                     >
                       <View style={{ position: 'relative' }}>
@@ -2370,6 +2378,10 @@ export default function QuestsScreen() {
   const isKid            = activeMember?.role === 'kid';
   const isParentOrSenior = isParent || isSenior;   // RBAC: approve/decline/reopen
   const kids             = members.filter(m => m.role === 'kid');
+  const myId             = activeMember?.id;
+  const isAssignedTo     = (q: typeof quests[0], memberId: string) =>
+    q.assignedToId === memberId ||
+    (q.assignedToIds?.length > 0 && q.assignedToIds.includes(memberId));
 
   const [kidFilter,      setKidFilter]      = useState('all');
   const [tabStatus,      setTabStatus]      = useState<TabStatus>('all');
@@ -2548,25 +2560,50 @@ export default function QuestsScreen() {
   const filteredQuests = useMemo(() => {
     let list = quests;
 
-    // Kids (and non-parent/senior roles) never see adult tasks
+    // Build set of parent/senior member IDs for role-based hiding
+    const adultMemberIds = new Set(members.filter(m => m.role === 'parent' || m.role === 'senior').map(m => m.id));
+
+    const myId = activeMember?.id;
+
+    // Helper: is this quest assigned to a specific member (single or multi-assign)?
+    const isAssignedTo = (q: typeof quests[0], memberId: string) =>
+      q.assignedToId === memberId ||
+      (q.assignedToIds?.length > 0 && q.assignedToIds.includes(memberId));
+
     if (isKid) {
-      list = list.filter(q => !q.isAdultTask);
+      // Kids only ever see:
+      //  1. Quests assigned specifically to them (single or multi-assign)
+      //  2. Open pool quests (shown only in Bounty tab below)
+      // Never: adult tasks, other kids' quests, parent/senior quests
+      list = list.filter(q => {
+        if (q.isAdultTask) return false;
+        if (q.assignedToId && adultMemberIds.has(q.assignedToId)) return false;
+        if (q.isPool) return true; // pool quests filtered to Bounty tab below
+        return myId ? isAssignedTo(q, myId) : false;
+      });
+    }
+
+    // Non-parents (seniors): only see their own quests or pool quests, not other adults' work
+    if (!isParent && !isKid) {
+      list = list.filter(q =>
+        q.isPool ||
+        (myId ? isAssignedTo(q, myId) : false) ||
+        (!q.isAdultTask)
+      );
     }
 
     if (kidFilter === 'adults') {
-      // Adults filter — only parent-only tasks
       list = list.filter(q => q.isAdultTask);
     } else if (kidFilter === 'pool') {
-      // ⚡ Bounty tab — open pool quests (non-adult)
       list = list.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask);
     } else if (isKid && kidFilter === 'all') {
-      // Kid "My Quests" — their own assigned quests only
-      list = list.filter(q => q.assignedToId === activeMember?.id);
+      // Kid "My Quests" — only their directly assigned quests (no pool here)
+      list = list.filter(q => !q.isPool && myId && isAssignedTo(q, myId));
     } else if (!isKid && kidFilter !== 'all' && kidFilter !== 'cheer') {
-      // Parent filtered by specific kid — exclude adult tasks
-      list = list.filter(q => q.assignedToId === kidFilter && !q.isAdultTask);
+      // Parent filtered by specific kid
+      list = list.filter(q => isAssignedTo(q, kidFilter) && !q.isAdultTask);
     } else if (!isKid && kidFilter === 'all') {
-      // Parent "All Family" — exclude adult tasks (they live in the Adults tab)
+      // Parent "All Family" — all non-adult assigned + pool quests
       list = list.filter(q => !q.isAdultTask);
     }
 
@@ -2755,8 +2792,10 @@ export default function QuestsScreen() {
 
                 // RBAC checks
                 const canClaim   = isKid && isPoolCard;
-                // Submit: kid and it's their own quest
-                const canSubmit  = isKid && isTodoCard && q.assignedToId === activeMember?.id;
+                // Submit: kid and it's their own quest (single OR multi-assign)
+                const canSubmit  = isKid && isTodoCard && !!myId && isAssignedTo(q, myId);
+                // Kid can refuse a quest assigned to them before they start
+                const canKidDecline = isKid && isTodoCard && !q.isPool && !!myId && isAssignedTo(q, myId);
                 // Approve/Decline: parent or senior, quest in review
                 const canApprove = isParentOrSenior && isReview;
                 // Reopen: parent or senior, quest was declined
@@ -3056,7 +3095,10 @@ export default function QuestsScreen() {
                     {/* ── Participant tracker — multi-kid only (single-kid: header + stepper covers it) ── */}
                     {q.participants.length > 1 && (
                       <View style={{ marginBottom: 4 }}>
-                        {q.participants.map(p => {
+                        {q.participants.filter(p =>
+                          // Kids only see their own participant row; parents/seniors see all
+                          isParentOrSenior || p.memberId === activeMember?.id
+                        ).map(p => {
                           const pm = members.find(m => m.id === p.memberId);
                           if (!pm) return null;
                           const pSiblings = members.map(m => m.name);
@@ -3154,6 +3196,30 @@ export default function QuestsScreen() {
                           {isClaiming[q.id]
                             ? <ActivityIndicator color="#0F172A" size="small" />
                             : <Text style={[s.actionBtnText, { color: '#0F172A' }]}>Claim Quest</Text>}
+                        </TouchableOpacity>
+                      )}
+
+                      {/* Kid: Submit single-assign quest (multi-assign submits via participant row) */}
+                      {canSubmit && q.participants.length <= 1 && (
+                        <TouchableOpacity
+                          style={[s.actionBtn, { backgroundColor: BRAND.purple }]}
+                          onPress={() => Alert.alert(
+                            'Submit Quest',
+                            `Submit "${q.title}" for review?`,
+                            [{ text: 'Cancel', style: 'cancel' }, { text: 'Submit', onPress: () => submitQuest(q.id) }]
+                          )}
+                        >
+                          <Text style={[s.actionBtnText, { color: '#fff' }]}>Submit for Review</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {/* Kid: Decline / refuse an assigned quest */}
+                      {canKidDecline && (
+                        <TouchableOpacity
+                          style={[s.actionBtn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#EF4444' }]}
+                          onPress={() => setDeclineTarget({ id: q.id, title: q.title, memberId: undefined })}
+                        >
+                          <Text style={[s.actionBtnText, { color: '#EF4444' }]}>Can't do this</Text>
                         </TouchableOpacity>
                       )}
 

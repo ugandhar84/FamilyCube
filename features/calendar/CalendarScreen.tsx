@@ -17,13 +17,14 @@
  *  - AI runs simulated conflict detection; 1-click driver swap stored back into event
  *  - Category dots on day strip: Medical=red, Work=purple, Sports=amber, School=blue
  */
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal,
   TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
   Animated, PanResponder, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
@@ -839,9 +840,14 @@ export default function CalendarScreen() {
   const [showAiPanel,    setShowAiPanel]    = useState(false);
   const [appliedSwaps,   setAppliedSwaps]   = useState<Record<string, boolean>>({});
   // Collapsed event cards — id in set = collapsed
+  // expandedEvs: IDs whose action section is expanded; reset to empty on every screen focus
   const [collapsedEvs,   setCollapsedEvs]   = useState<Set<string>>(new Set());
   const toggleCollapse = (id: string) =>
     setCollapsedEvs(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  useFocusEffect(useCallback(() => {
+    setCollapsedEvs(new Set()); // reset all expanded actions when screen comes into focus
+  }, []));
 
   const switchMember = () => {
     const idx = members.findIndex(m => m.id === activeMember?.id);
@@ -902,10 +908,12 @@ export default function CalendarScreen() {
   const dayEvents = useMemo(() => {
     return events
       .filter(e => e.date === selectedDate &&
+        // Kids only see their own events or family-wide events (no specific member)
+        (!isKid || e.memberId === activeMemberId || !e.memberId) &&
         (!filterMember || e.memberId === filterMember || !e.memberId) &&
         isInRange(e.date))
       .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
-  }, [events, selectedDate, filterMember, rangeStart, rangeEnd]);
+  }, [events, selectedDate, filterMember, rangeStart, rangeEnd, isKid, activeMemberId]);
 
   const selectedDateLabel = fmtDate(selectedDate);
 
@@ -1203,46 +1211,43 @@ export default function CalendarScreen() {
                         </View>
                         {isConf && <I.AlertTriangle c="#F59E0B" size={12} />}
                       </View>
-                      {/* Row 1b: status badge (full width, only when set) */}
-                      {ev.helperStatus === 'confirmed' && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#10B981' }} />
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#10B981' }}>Confirmed driver</Text>
-                        </View>
-                      )}
-                      {ev.helperStatus === 'pending' && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#D97706' }} />
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#D97706' }}>Driver pending</Text>
-                        </View>
-                      )}
-                      {ev.helperStatus === 'rejected' && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#EF4444' }} />
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>Driver declined</Text>
-                        </View>
-                      )}
-                      {/* Row 2: member + location + driver */}
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        {assignee && (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                            <I.User c={isDark ? '#A78BFA' : BRAND.purple} size={13} />
-                            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isDark ? '#A78BFA' : BRAND.purple }}>{assignee.name.split(' ')[0]}</Text>
-                          </View>
-                        )}
+                      {/* Row 2: For (patient chips) + location */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {(() => {
+                          const all = ev.memberIds?.length ? members.filter(m => ev.memberIds!.includes(m.id)) : assignee ? [assignee] : [];
+                          return all.length > 0 ? (
+                            <>
+                              <I.User c={isDark ? '#A78BFA' : BRAND.purple} size={12} />
+                              {all.map(m => (
+                                <View key={m.id} style={{ backgroundColor: BRAND.purple + '18', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}>
+                                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isDark ? '#A78BFA' : BRAND.purple }}>{m.name.split(' ')[0]}</Text>
+                                </View>
+                              ))}
+                            </>
+                          ) : null;
+                        })()}
                         {ev.location ? (
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                             <I.MapPin c={isDark ? '#34D399' : '#059669'} size={12} />
                             <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.caption} fontWeight="600" />
                           </View>
                         ) : null}
-                        {ev.helper ? (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                            <I.Car c={isDark ? '#FBBF24' : '#D97706'} size={12} />
-                            <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: isDark ? '#FBBF24' : '#D97706' }}>{ev.helper.split(' ')[0]}</Text>
-                          </View>
-                        ) : null}
                       </View>
+                      {/* Row 3: accompanying person + status */}
+                      {ev.helper ? (() => {
+                        const stColor = ev.helperStatus === 'confirmed' ? '#10B981' : ev.helperStatus === 'rejected' ? '#EF4444' : '#D97706';
+                        const stLabel = ev.helperStatus === 'confirmed' ? 'confirmed' : ev.helperStatus === 'rejected' ? 'declined' : 'pending';
+                        return (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <I.Car c={isDark ? '#FBBF24' : '#D97706'} size={12} />
+                            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isDark ? '#FBBF24' : '#D97706' }}>{ev.helper.split(' ')[0]}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                              <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: stColor }} />
+                              <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: stColor }}>{stLabel}</Text>
+                            </View>
+                          </View>
+                        );
+                      })() : null}
                     </TouchableOpacity>
                   </View>
                 );
@@ -1300,7 +1305,8 @@ export default function CalendarScreen() {
 
               // Swipe-delete eligibility: future event + parent (any) or kid own pending
               const canDelete    = !isPast && (isParent || (isKid && !!ev.approvalPending && ev.memberId === activeMemberId));
-              const isCollapsed = collapsedEvs.has(ev.id);
+              // Action section is collapsed by default; tap to expand
+              const isCollapsed = !collapsedEvs.has(ev.id);
 
               const handleEvDelete = () => Alert.alert(
                 ev.approvalPending ? 'Withdraw Request' : 'Remove Event',
@@ -1336,74 +1342,71 @@ export default function CalendarScreen() {
                     backgroundColor: isConf ? (isDark ? '#1C1700' : '#FFFBEB') : cardBg,
                     overflow: 'hidden' }]}>
 
-                    {/* Header: always visible — tap to collapse/expand */}
-                    <TouchableOpacity
-                      activeOpacity={0.7}
-                      onPress={() => toggleCollapse(ev.id)}
-                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: isCollapsed ? 0 : 4 }}
-                    >
+                    {/* Header: always visible */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
                         <View style={[sc.catBadge, { backgroundColor: cs.badge, borderColor: cs.dot + '60' }]}>
                           <Text style={[sc.catText, { color: cs.text }]}>{cat.toUpperCase()}</Text>
                         </View>
                         {isConf && <I.AlertTriangle c="#F59E0B" size={12} />}
-                        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B', flex: 1 }} numberOfLines={isCollapsed ? 1 : undefined}>
+                        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B', flex: 1 }}>
                           {ev.title}
                         </Text>
                       </View>
-                      {isCollapsed
-                        ? <I.ChevronDown c={colors.textTertiary} size={15} />
-                        : <I.ChevronUp   c={colors.textTertiary} size={15} />}
-                    </TouchableOpacity>
+                    </View>
 
-                    {!isCollapsed && isConf && (
+                    {isConf && (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4, marginTop: 2 }}>
                         <I.AlertTriangle c="#F59E0B" size={12} />
                         <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#F59E0B' }}>Scheduling Conflict Detected</Text>
                       </View>
                     )}
 
-                    {/* Collapsible body */}
-                    {!isCollapsed && forLabel && (
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        {assignee ? (
-                          <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
-                            {forLabel}:{' '}
-                            <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
-                              {assignee.name.split(' ')[0]}
+                    {/* Always-visible: for / patient row — shows ALL assigned members */}
+                    {forLabel && (() => {
+                      const allAssignees = ev.memberIds?.length
+                        ? members.filter(m => ev.memberIds!.includes(m.id))
+                        : assignee ? [assignee] : [];
+                      return (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 4 }}>
+                          {allAssignees.length > 0 ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap', flex: 1 }}>
+                              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>{forLabel}:</Text>
+                              {allAssignees.map(m => (
+                                <View key={m.id} style={{ backgroundColor: cs.dot + '18', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: cs.dot + '30' }}>
+                                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{m.name.split(' ')[0]}</Text>
+                                </View>
+                              ))}
+                            </View>
+                          ) : !isPast && isParent && pickerMembers.length > 0 ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
+                              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>{forLabel}:</Text>
+                              {pickerMembers.map(k => (
+                                <TouchableOpacity key={k.id}
+                                  style={[sc.assignChip, { backgroundColor: ev.memberId === k.id ? BRAND.purple : isDark ? '#1E293B' : '#F1F5F9', borderColor: ev.memberId === k.id ? BRAND.purple : isDark ? '#334155' : '#E2E8F0' }]}
+                                  onPress={() => updateEvent(ev.id, { memberId: k.id })}>
+                                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: ev.memberId === k.id ? '#fff' : colors.textSecondary }}>
+                                    {k.emoji ?? ''} {k.name.split(' ')[0]}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          ) : (
+                            <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>
+                              {forLabel}: <Text style={{ fontWeight: '700' }}>—</Text>
                             </Text>
-                          </Text>
-                        ) : !isPast && isParent && pickerMembers.length > 0 ? (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
-                            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>{forLabel}:</Text>
-                            {pickerMembers.map(k => (
-                              <TouchableOpacity key={k.id}
-                                style={[sc.assignChip, { backgroundColor: ev.memberId === k.id ? BRAND.purple : isDark ? '#1E293B' : '#F1F5F9', borderColor: ev.memberId === k.id ? BRAND.purple : isDark ? '#334155' : '#E2E8F0' }]}
-                                onPress={() => updateEvent(ev.id, { memberId: k.id })}>
-                                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: ev.memberId === k.id ? '#fff' : colors.textSecondary }}>
-                                  {k.emoji ?? ''} {k.name.split(' ')[0]}
-                                </Text>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        ) : (
-                          <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>
-                            {forLabel}: <Text style={{ fontWeight: '700' }}>—</Text>
-                          </Text>
-                        )}
-                        {ev.location && (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                            <I.MapPin c={isDark ? '#34D399' : '#059669'} size={11} />
-                            <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.label} fontWeight="600" />
-                          </View>
-                        )}
-                      </View>
-                    )}
+                          )}
+                          {ev.location && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                              <I.MapPin c={isDark ? '#34D399' : '#059669'} size={11} />
+                              <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.label} fontWeight="600" />
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })()}
 
-                    {/* Body — hidden when collapsed */}
-                    {!isCollapsed && <>
-
-                    {/* Category-specific extra fields */}
+                    {/* Always-visible: category-specific extra fields */}
                     {cat === 'Medical' && ev.doctorName && (
                       <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
                         🩺 Doctor: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.doctorName}</Text>
@@ -1437,6 +1440,54 @@ export default function CalendarScreen() {
                       </View>
                     )}
 
+                    {/* Always-visible: helper / accompaniment */}
+                    {ev.helper && !ev.approvalPending && (
+                      <View style={[sc.driverSection, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
+                        <View style={{
+                          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                          backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
+                          borderRadius: 14, borderWidth: 1,
+                          borderColor: isDark ? '#1E293B' : '#E2E8F0',
+                          paddingHorizontal: 12, paddingVertical: 8,
+                        }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <I.Car c={colors.textSecondary} size={13} />
+                            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
+                              {(() => {
+                                const hl = cat === 'Medical' ? '🏥 Accompanied by' : cat === 'Study' ? '📚 Tutored by' : cat === 'Sports' ? '🚗 Drop-off by' : cat === 'Ride' ? '🚗 Driven by' : '🤝 Organised by';
+                                return hl.replace(/^[^\s]+\s/, '');
+                              })()} <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.helper}</Text>
+                            </Text>
+                          </View>
+                          {ev.helperStatus === 'confirmed' && <View style={{ backgroundColor: isDark ? '#064E3B' : '#D1FAE5', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#6EE7B7' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>Confirmed ✓</Text></View>}
+                          {ev.helperStatus === 'pending'   && <View style={{ backgroundColor: isDark ? '#1C1700' : '#FEF3C7', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCD34D' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#D97706' }}>⏳ Pending</Text></View>}
+                          {ev.helperStatus === 'rejected' && isParent && <TouchableOpacity onPress={() => openReassign(ev)} style={{ backgroundColor: '#F59E0B', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 }}><Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>Swap Driver</Text></TouchableOpacity>}
+                          {ev.helperStatus === 'rejected' && !isParent && <View style={{ backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCA5A5' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Declined ✕</Text></View>}
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Always-visible: notes */}
+                    {ev.notes && (
+                      <Text style={[sc.notesText, { backgroundColor: isDark ? '#1E1B4B' : '#F0F0FE', color: isDark ? '#C4B5FD' : '#4338CA', borderColor: isDark ? '#4338CA50' : '#C7D2FE' }]}>
+                        📝 "{ev.notes}"
+                      </Text>
+                    )}
+
+                    {/* Collapsible actions section — tap chevron to expand */}
+                    {(canApproveRequest || hasPendingHelper || hasRejectedHelper || (!isPast && isKid && ev.approvalPending)) && (
+                      <TouchableOpacity activeOpacity={0.7} onPress={() => toggleCollapse(ev.id)}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2, paddingVertical: 4 }}>
+                        <View style={{ flex: 1, height: 1, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }} />
+                        {isCollapsed
+                          ? <><I.ChevronDown c={colors.textTertiary} size={12} /><Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontWeight: '700' }}>Actions</Text><I.ChevronDown c={colors.textTertiary} size={12} /></>
+                          : <><I.ChevronUp   c={colors.textTertiary} size={12} /><Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontWeight: '700' }}>Actions</Text><I.ChevronUp   c={colors.textTertiary} size={12} /></>}
+                        <View style={{ flex: 1, height: 1, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }} />
+                      </TouchableOpacity>
+                    )}
+
+                    {!isCollapsed && <>
+
                     {/* Kid approval pending */}
                     {canApproveRequest && (
                       <View style={[sc.approvalRow, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
@@ -1459,47 +1510,9 @@ export default function CalendarScreen() {
                       </View>
                     )}
 
-                    {/* Helper section */}
-                    {ev.helper && !ev.approvalPending && (
+                    {/* Actions — PendingHelperFlow, rejection, reassign */}
+                    {ev.helper && !ev.approvalPending && hasPendingHelper && (
                       <View style={[sc.driverSection, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                        {/* Inset driver row — mockup inner-box pattern */}
-                        <View style={{
-                          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                          backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
-                          borderRadius: 14, borderWidth: 1,
-                          borderColor: isDark ? '#1E293B' : '#E2E8F0',
-                          paddingHorizontal: 12, paddingVertical: 8,
-                        }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <I.Car c={colors.textSecondary} size={13} />
-                            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
-                              {helperLabel.replace(/^[^\s]+\s/, '')}{' '}
-                              <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.helper}</Text>
-                            </Text>
-                          </View>
-                          {ev.helperStatus === 'confirmed' && (
-                            <View style={{ backgroundColor: isDark ? '#064E3B' : '#D1FAE5', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#6EE7B7' }}>
-                              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>Confirmed ✓</Text>
-                            </View>
-                          )}
-                          {ev.helperStatus === 'pending' && (
-                            <View style={{ backgroundColor: isDark ? '#1C1700' : '#FEF3C7', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCD34D' }}>
-                              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#D97706' }}>⏳ Pending</Text>
-                            </View>
-                          )}
-                          {ev.helperStatus === 'rejected' && isParent && (
-                            <TouchableOpacity onPress={() => openReassign(ev)}
-                              style={{ backgroundColor: '#F59E0B', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 }}>
-                              <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>Swap Driver</Text>
-                            </TouchableOpacity>
-                          )}
-                          {ev.helperStatus === 'rejected' && !isParent && (
-                            <View style={{ backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCA5A5' }}>
-                              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Declined ✕</Text>
-                            </View>
-                          )}
-                        </View>
-
                         {hasPendingHelper && (
                           <PendingHelperFlow
                             ev={ev}
@@ -1539,12 +1552,6 @@ export default function CalendarScreen() {
                           </TouchableOpacity>
                         )}
                       </View>
-                    )}
-
-                    {ev.notes && (
-                      <Text style={[sc.notesText, { backgroundColor: isDark ? '#1E1B4B' : '#F0F0FE', color: isDark ? '#C4B5FD' : '#4338CA', borderColor: isDark ? '#4338CA50' : '#C7D2FE' }]}>
-                        📝 "{ev.notes}"
-                      </Text>
                     )}
 
                     {/* Long-press hint (only on non-past events) */}
@@ -1667,97 +1674,172 @@ export default function CalendarScreen() {
       </Modal>
 
       {/* ── Compact Detail Popup ── */}
-      <Modal visible={!!detailEv} transparent animationType="fade" onRequestClose={() => setDetailEv(null)}>
-        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 20 }}
+      <Modal visible={!!detailEv} transparent animationType="slide" onRequestClose={() => setDetailEv(null)}>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' }}
           activeOpacity={1} onPress={() => setDetailEv(null)}>
           {detailEv && (() => {
             const ev = detailEv;
             const { time, ampm } = fmtTimeParts(ev.time);
             const cs = catStyle(ev.category, isDark);
             const isConf = ev.conflict;
-            const assignee = members.find(m => m.id === ev.memberId);
+            const assignee  = members.find(m => m.id === ev.memberId);
+            const assignees = ev.memberIds?.length
+              ? members.filter(m => ev.memberIds!.includes(m.id))
+              : assignee ? [assignee] : [];
             const cat = ev.category ?? 'Event';
+
+            const helperLabelDetail =
+              cat === 'Medical' ? 'Accompanied by' :
+              cat === 'Study'   ? 'Tutored by'     :
+              cat === 'Sports'  ? 'Drop-off'        :
+              cat === 'Ride'    ? 'Driver'          : 'Organised by';
+
+            const forLabelDetail =
+              cat === 'Medical' ? 'Patient'   :
+              cat === 'Sports'  ? 'Player'    :
+              cat === 'Study'   ? 'Student'   :
+              cat === 'Ride'    ? 'Passenger' :
+              cat === 'Work'    ? null         : 'For';
+
             return (
               <TouchableOpacity activeOpacity={1} onPress={() => {}} style={{
-                backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-                borderRadius: 24, overflow: 'hidden',
-                shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 24, shadowOffset: { width: 0, height: 8 }, elevation: 12,
+                backgroundColor: isDark ? '#1A2235' : '#FFFFFF',
+                borderTopLeftRadius: 28, borderTopRightRadius: 28,
+                paddingBottom: 32,
+                shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: -4 }, elevation: 16,
               }}>
-                {/* Color header strip */}
-                <View style={{ backgroundColor: isConf ? '#F59E0B' : cs.dot, paddingHorizontal: 18, paddingVertical: 14,
-                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <View>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: 'rgba(255,255,255,0.8)', textTransform: 'uppercase', letterSpacing: 0.8 }}>{cat}</Text>
-                    <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: '#fff', marginTop: 2 }} numberOfLines={2}>{ev.title}</Text>
+                {/* Drag handle */}
+                <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 6 }}>
+                  <View style={{ width: 38, height: 4, borderRadius: 2, backgroundColor: isDark ? '#334155' : '#E2E8F0' }} />
+                </View>
+
+                {/* Header row — accent dot + title + time badge */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10, gap: 10 }}>
+                  <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: (isConf ? '#F59E0B' : cs.dot) + '18', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: (isConf ? '#F59E0B' : cs.dot) + '44' }}>
+                    <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: isConf ? '#F59E0B' : cs.dot }} />
                   </View>
-                  <View style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center' }}>
-                    <Text style={{ fontSize: 15, fontWeight: '900', color: '#fff' }}>{time}</Text>
-                    <Text style={{ fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.8)' }}>{ampm}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isConf ? '#F59E0B' : cs.dot, textTransform: 'uppercase', letterSpacing: 0.6 }}>{cat}</Text>
+                    <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={2}>{ev.title}</Text>
+                  </View>
+                  <View style={{ backgroundColor: isDark ? '#0F172A' : '#F1F5F9', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center', borderWidth: 1, borderColor: isDark ? '#1E293B' : '#E2E8F0', minWidth: 48 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{time}</Text>
+                    <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textTertiary }}>{ampm}</Text>
                   </View>
                 </View>
 
+                {/* Divider */}
+                <View style={{ height: 1, backgroundColor: isDark ? '#1E293B' : '#F1F5F9', marginHorizontal: 20, marginBottom: 14 }} />
+
                 {/* Details body */}
-                <View style={{ padding: 18, gap: 12 }}>
-                  {assignee && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: cs.dot + '22', alignItems: 'center', justifyContent: 'center' }}>
-                        <I.User c={cs.dot} size={20} />
-                      </View>
-                      <View>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontWeight: '700', textTransform: 'uppercase' }}>For</Text>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{assignee.name}</Text>
-                      </View>
+                <ScrollView style={{ maxHeight: 360 }} contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }} showsVerticalScrollIndicator={false}>
+
+                  {/* For / Patient chips */}
+                  {forLabelDetail && assignees.length > 0 && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary, minWidth: 64 }}>{forLabelDetail}:</Text>
+                      {assignees.map(m => (
+                        <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: cs.dot + '15', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: cs.dot + '30' }}>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{m.name.split(' ')[0]}</Text>
+                        </View>
+                      ))}
                     </View>
                   )}
+
+                  {/* Category-specific details */}
+                  {cat === 'Medical' && ev.doctorName && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, width: 64 }}>Doctor:</Text>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{ev.doctorName}</Text>
+                    </View>
+                  )}
+                  {cat === 'Study' && ev.subject && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, width: 64 }}>Subject:</Text>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{ev.subject}</Text>
+                    </View>
+                  )}
+                  {cat === 'Sports' && ev.coachName && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, width: 64 }}>Coach:</Text>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{ev.coachName}</Text>
+                    </View>
+                  )}
+
+                  {/* Location */}
                   {ev.location ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <I.MapPin c={isDark ? '#34D399' : '#059669'} size={15} />
-                      <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.caption} fontWeight="600" iconSize={11} />
+                      <I.MapPin c={isDark ? '#34D399' : '#059669'} size={14} />
+                      <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.caption} fontWeight="600" iconSize={0} />
                     </View>
                   ) : null}
-                  {ev.helper ? (
+
+                  {/* Pickup / drop */}
+                  {(ev.pickupLocation || ev.dropLocation) && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {ev.pickupLocation && <>
+                        <I.MapPin c={isDark ? '#34D399' : '#059669'} size={13} />
+                        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>From:</Text>
+                        <LocationLink addr={ev.pickupLocation} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.label} fontWeight="700" iconSize={0} />
+                      </>}
+                      {ev.dropLocation && <>
+                        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>→ To:</Text>
+                        <LocationLink addr={ev.dropLocation} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.label} fontWeight="700" iconSize={0} />
+                      </>}
+                    </View>
+                  )}
+
+                  {/* Accompaniment / helper */}
+                  {ev.helper && (
                     <View style={{
                       flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                       backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
-                      borderRadius: 14, borderWidth: 1, borderColor: isDark ? '#1E293B' : '#E2E8F0',
+                      borderRadius: 14, borderWidth: 1, borderColor: isDark ? '#1E293B' : '#E8E8F0',
                       paddingHorizontal: 14, paddingVertical: 10,
                     }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <I.Car c={isDark ? '#FBBF24' : '#D97706'} size={15} />
+                        <I.Car c={isDark ? '#FBBF24' : '#D97706'} size={14} />
                         <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
-                          Driver: <Text style={{ fontWeight: '800', color: colors.textPrimary }}>{ev.helper}</Text>
+                          {helperLabelDetail}:{' '}
+                          <Text style={{ fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.helper}</Text>
                         </Text>
                       </View>
-                      {ev.helperStatus === 'confirmed' && <View style={{ backgroundColor: '#D1FAE5', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>Confirmed ✓</Text></View>}
-                      {ev.helperStatus === 'pending'   && <View style={{ backgroundColor: '#FEF3C7', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#D97706' }}>⏳ Pending</Text></View>}
-                      {ev.helperStatus === 'rejected'  && <View style={{ backgroundColor: '#FEE2E2', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Declined ✕</Text></View>}
-                    </View>
-                  ) : null}
-                  {isConf && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF3C7', borderRadius: 12, padding: 10 }}>
-                      <I.AlertTriangle c="#D97706" size={14} />
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#D97706' }}>Scheduling conflict detected</Text>
+                      {ev.helperStatus === 'confirmed' && <View style={{ backgroundColor: isDark ? '#064E3B' : '#D1FAE5', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#6EE7B7' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>Confirmed ✓</Text></View>}
+                      {ev.helperStatus === 'pending'   && <View style={{ backgroundColor: isDark ? '#1C1700' : '#FEF3C7', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCD34D' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#D97706' }}>⏳ Pending</Text></View>}
+                      {ev.helperStatus === 'rejected'  && <View style={{ backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCA5A5' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Declined ✕</Text></View>}
                     </View>
                   )}
+
+                  {/* Conflict */}
+                  {isConf && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: '#F59E0B44' }}>
+                      <I.AlertTriangle c="#D97706" size={13} />
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#D97706' }}>Scheduling conflict detected</Text>
+                    </View>
+                  )}
+
+                  {/* Notes */}
                   {ev.notes ? (
-                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic', borderLeftWidth: 3, borderLeftColor: cs.dot, paddingLeft: 10 }}>
-                      "{ev.notes}"
-                    </Text>
+                    <View style={{ backgroundColor: isDark ? '#1E1B4B' : '#F5F3FF', borderRadius: 12, padding: 12, borderLeftWidth: 3, borderLeftColor: cs.dot }}>
+                      <Text style={{ fontSize: TYPO.label, color: isDark ? '#C4B5FD' : '#4338CA', fontStyle: 'italic' }}>"{ev.notes}"</Text>
+                    </View>
                   ) : null}
 
-                  {/* Actions */}
-                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-                    <TouchableOpacity style={{ flex: 1, backgroundColor: isDark ? '#0F172A' : '#F1F5F9', borderRadius: 14, paddingVertical: 11, alignItems: 'center', borderWidth: 1, borderColor: isDark ? '#1E293B' : '#E2E8F0' }}
-                      onPress={() => { setDetailEv(null); }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Close</Text>
+                  <View style={{ height: 4 }} />
+                </ScrollView>
+
+                {/* Actions */}
+                <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 14 }}>
+                  <TouchableOpacity style={{ flex: 1, backgroundColor: isDark ? '#0F172A' : '#F1F5F9', borderRadius: 16, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: isDark ? '#1E293B' : '#E2E8F0' }}
+                    onPress={() => { setDetailEv(null); }}>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Close</Text>
+                  </TouchableOpacity>
+                  {isParent && (
+                    <TouchableOpacity style={{ flex: 2, backgroundColor: BRAND.purple, borderRadius: 16, paddingVertical: 13, alignItems: 'center' }}
+                      onPress={() => { setDetailEv(null); setEditEv(ev); }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Edit Event</Text>
                     </TouchableOpacity>
-                    {isParent && (
-                      <TouchableOpacity style={{ flex: 2, backgroundColor: BRAND.purple, borderRadius: 14, paddingVertical: 11, alignItems: 'center' }}
-                        onPress={() => { setDetailEv(null); setEditEv(ev); }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Edit Event</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
+                  )}
                 </View>
               </TouchableOpacity>
             );

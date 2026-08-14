@@ -68,13 +68,22 @@ serve(async (req) => {
                   },
                 },
                 {
-                  text: `Extract all items from this grocery receipt.
-${store ? `Store hint: "${store}"` : "Also extract the store name if visible."}
+                  text: `You are a grocery receipt parser. First check what this image is.
 
-Return ONLY valid JSON, no markdown, no explanation:
+STEP 1 — Is this a receipt at all?
+If the image is NOT a receipt (selfie, landscape, document, ID, etc.), return ONLY:
+{"notAReceipt": true, "reason": "one sentence explaining what it actually is"}
+
+STEP 2 — Is this a GROCERY or RETAIL SHOPPING receipt?
+Allowed: grocery stores, supermarkets, wholesale clubs (Costco/Sam's), Indian/ethnic grocery stores, department stores, pharmacies with groceries, convenience stores, farmers markets.
+NOT allowed: restaurants, fast food, gas stations, utility bills, hotel bills, airline tickets, medical bills, car services.
+If it is a receipt but NOT grocery/retail shopping, return ONLY:
+{"notGrocery": true, "reason": "one sentence e.g. This is a restaurant receipt from Chipotle"}
+
+STEP 3 — Extract items. Return ONLY valid JSON (no markdown, no code fences, no explanation):
 {
-  "store": "store name or Unknown",
-  "date": "YYYY-MM-DD or today",
+  "store": "${store ? store : "store name from receipt or Unknown"}",
+  "date": "YYYY-MM-DD",
   "items": [
     {
       "name": "item name",
@@ -87,11 +96,11 @@ Return ONLY valid JSON, no markdown, no explanation:
   ]
 }
 
-Rules:
-- Skip tax lines, subtotals, discounts, and fee entries — only real products
-- If quantity is unclear, use 1
-- If price is unclear, use 0
-- category must be one of the listed values`,
+Rules for extraction:
+- Skip tax lines, subtotals, discounts, payment method lines — only real products
+- If quantity is unclear use 1; if price is unclear use 0
+- category must be exactly one of the listed values
+- Output raw JSON only — no \`\`\` fences, no markdown`,
                 },
               ],
             },
@@ -116,14 +125,13 @@ Rules:
     const geminiData = await geminiRes.json();
     const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 
-    // Strip markdown code fences if present
+    // Strip all markdown code fences (gemini-2.5-flash sometimes wraps mid-string)
     const cleaned = rawText
-      .replace(/^```json\s*/i, "")
-      .replace(/^```\s*/i, "")
-      .replace(/\s*```$/i, "")
+      .replace(/```json\s*/gi, "")
+      .replace(/```\s*/gi, "")
       .trim();
 
-    let extracted: ParsedReceipt;
+    let extracted: ParsedReceipt & { notAReceipt?: boolean; notGrocery?: boolean; reason?: string };
     try {
       extracted = JSON.parse(cleaned);
     } catch (e) {
@@ -131,6 +139,22 @@ Rules:
       return new Response(
         JSON.stringify({ error: "Could not parse AI response as JSON", raw: rawText }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Guard: not a receipt at all
+    if (extracted.notAReceipt) {
+      return new Response(
+        JSON.stringify({ error: "not_a_receipt", message: extracted.reason ?? "This image doesn't appear to be a receipt." }),
+        { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Guard: receipt but not grocery/shopping
+    if (extracted.notGrocery) {
+      return new Response(
+        JSON.stringify({ error: "not_grocery", message: extracted.reason ?? "This looks like a non-grocery receipt (restaurant, gas, etc). Only grocery and retail shopping receipts are supported." }),
+        { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 

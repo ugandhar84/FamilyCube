@@ -95,6 +95,17 @@ export function ReceiptScanSheet({
 
       if (error) throw new Error(error.message);
 
+      if (data?.error === 'not_a_receipt') {
+        Alert.alert("Not a Receipt", data.message ?? "This image doesn't look like a receipt. Please take a photo of a grocery receipt.");
+        setStep('menu');
+        return;
+      }
+      if (data?.error === 'not_grocery') {
+        Alert.alert("Wrong Receipt Type", data.message ?? "Only grocery and shopping receipts are supported.");
+        setStep('menu');
+        return;
+      }
+
       setExtractedItems(data.items || []);
       setStore(data.store || store);
       setSelectedIndices(new Set(data.items.map((_: ExtractedItem, i: number) => i)));

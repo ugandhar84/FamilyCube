@@ -175,9 +175,15 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
   _runSub:       null,
 
   load: async (familyId) => {
-    if (get().familyId === familyId && get().items.length > 0) return;
-    get().cleanup();
-    set({ loading: true, familyId });
+    const existing = get();
+
+    // Skip if already loaded for this family — realtime keeps it live
+    if (existing.familyId === familyId && existing._itemSub) return;
+
+    // Tear down old subs and wait for removal before creating new ones
+    if (existing._itemSub) await supabase.removeChannel(existing._itemSub);
+    if (existing._runSub)  await supabase.removeChannel(existing._runSub);
+    set({ _itemSub: null, _runSub: null, loading: true, familyId });
 
     try {
       // Load pending items
@@ -211,7 +217,6 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
         set({ pastStores: uniqueStores, pastItemNames: uniqueNames });
       });
 
-      // Realtime: item changes
       const itemSub = supabase
         .channel(`grocery_items:${familyId}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'grocery_items', filter: `family_id=eq.${familyId}` },
@@ -277,6 +282,12 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
   // ── Items ─────────────────────────────────────────────────────────────────
 
   addItem: async (params) => {
+    // Skip if same name already in the pending list
+    const existing = get().items.find(
+      i => !i.isBought && i.name.toLowerCase().trim() === params.name.toLowerCase().trim()
+    );
+    if (existing) return existing;
+
     const id  = uuid();
     const now = new Date().toISOString();
     const row = {
@@ -415,7 +426,7 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
   loadRunDetail: async (runId) => {
     const { data, error } = await supabase
       .from('grocery_run_items')
-      .select('*, grocery_items(*)')
+      .select('*')
       .eq('run_id', runId);
 
     if (error) { console.warn('[groceryStore] loadRunDetail error', error); return null; }

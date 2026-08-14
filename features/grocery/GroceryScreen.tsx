@@ -414,7 +414,7 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-        <View style={[sh.sheet, { backgroundColor: sheetBg, borderColor: border, maxHeight: '90%' }]}>
+        <View style={[sh.sheet, { backgroundColor: sheetBg, borderColor: border, maxHeight: '90%', minHeight: '72%', flex: 1 }]}>
           <View style={sh.handle} />
 
           {/* Header */}
@@ -1019,6 +1019,110 @@ function ItemDetailSheet({ item, members, onClose, onEdit, onBuy, onDelete, colo
   );
 }
 
+// ─── CategorySection ──────────────────────────────────────────────────────────
+
+function CategorySection({ label, emoji, color, items, isDark, colors, isKid, onBuy, members }: {
+  label: string; emoji: string; color: string;
+  items: GroceryItem[]; isDark: boolean; colors: any; isKid: boolean;
+  onBuy: (item: GroceryItem) => void;
+  members: any[];
+}) {
+  const pending = items.filter(i => !i.isBought).length;
+  // Group by store
+  const byStore: Record<string, GroceryItem[]> = {};
+  for (const item of items) {
+    const key = item.storePreference || 'Any store';
+    if (!byStore[key]) byStore[key] = [];
+    byStore[key].push(item);
+  }
+  const storeGroups = Object.entries(byStore).sort(([a], [b]) =>
+    a === 'Any store' ? 1 : b === 'Any store' ? -1 : a.localeCompare(b)
+  );
+
+  return (
+    <View style={{ marginBottom: 24 }}>
+      {/* Section header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: color + '18', alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontSize: 16 }}>{emoji}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 12, fontWeight: '800', color, letterSpacing: 0.8 }}>{label.toUpperCase()}</Text>
+          <Text style={{ fontSize: 11, color: colors.textTertiary }}>Approved kid requests · needs pickup</Text>
+        </View>
+        <View style={{ borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: color + '20' }}>
+          <Text style={{ fontSize: 12, fontWeight: '800', color }}>{pending} left</Text>
+        </View>
+      </View>
+
+      {storeGroups.map(([store, storeItems]) => (
+        <View key={store} style={{ marginBottom: 10 }}>
+          {storeGroups.length > 1 && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 5, paddingHorizontal: 4 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color, textTransform: 'uppercase', letterSpacing: 0.7, opacity: 0.7 }}>
+                {store === 'Any store' ? 'Any Store' : store}
+              </Text>
+            </View>
+          )}
+          <View style={{ backgroundColor: isDark ? '#1A1F35' : '#FAFAFA', borderRadius: 14, overflow: 'hidden',
+            borderWidth: 1.5, borderColor: isDark ? color + '30' : color + '25' }}>
+            {storeItems.map((item, idx) => (
+              <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center',
+                paddingHorizontal: 14, paddingVertical: 12,
+                borderBottomWidth: idx < storeItems.length - 1 ? StyleSheet.hairlineWidth : 0,
+                borderBottomColor: isDark ? color + '20' : color + '18',
+                opacity: item.isBought ? 0.45 : 1 }}>
+                <Pressable onPress={() => !isKid && onBuy(item)}
+                  style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 2,
+                    borderColor: item.isBought ? color : color + '80',
+                    backgroundColor: item.isBought ? color : 'transparent',
+                    alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                  {item.isBought && <Text style={{ fontSize: 12, color: '#fff' }}>✓</Text>}
+                </Pressable>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700',
+                    color: item.isBought ? colors.textTertiary : colors.textPrimary,
+                    textDecorationLine: item.isBought ? 'line-through' : 'none' }}>
+                    {item.name}
+                    {item.quantity ? <Text style={{ fontWeight: '400', color: colors.textSecondary }}> × {item.quantity}</Text> : null}
+                  </Text>
+                  {item.addedBy ? (() => {
+                    const requester = members.find((m: any) => m.id === item.addedBy);
+                    const name = requester?.name?.split(' ')[0] ?? 'Kid';
+                    return (
+                      <Text style={{ fontSize: 11, fontWeight: '600', color: color, marginTop: 2 }}>
+                        👦 {name} asked for this
+                      </Text>
+                    );
+                  })() : null}
+                </View>
+                {!item.isBought && !isKid && (
+                  <Pressable onPress={() => onBuy(item)}
+                    style={{ borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: color }}>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>Got it ✓</Text>
+                  </Pressable>
+                )}
+              </View>
+            ))}
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function mapBoughtRow(r: any): GroceryItem {
+  return {
+    id: r.id, familyId: r.family_id, name: r.name,
+    quantity: r.quantity ?? undefined, category: r.category ?? undefined,
+    storePreference: r.store_preference ?? undefined, notes: r.notes ?? undefined,
+    addedBy: r.added_by ?? '', isBought: true,
+    boughtBy: r.bought_by ?? undefined, boughtAt: r.bought_at ?? undefined,
+    estimatedPrice: r.estimated_price ?? undefined, aiGenerated: r.ai_generated ?? false,
+    createdAt: r.created_at,
+  } as GroceryItem;
+}
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function GroceryScreen() {
@@ -1039,6 +1143,23 @@ export default function GroceryScreen() {
   const [priceMap, setPriceMap]         = useState<Record<string, { price: number | null; unit: string | null; source: 'kroger' | 'estimate' | 'unknown' }>>({});
   const [priceLoading, setPriceLoading] = useState(false);
   const [pricesLoaded, setPricesLoaded] = useState(false);
+
+  // Seed priceMap from stored estimatedPrice whenever items load
+  useEffect(() => {
+    if (!items.length) return;
+    const seeded: typeof priceMap = {};
+    let any = false;
+    for (const item of items) {
+      if (item.estimatedPrice != null && !priceMap[item.name]) {
+        seeded[item.name] = { price: item.estimatedPrice, unit: null, source: 'estimate' };
+        any = true;
+      }
+    }
+    if (any) {
+      setPriceMap(prev => ({ ...seeded, ...prev }));
+      setPricesLoaded(true);
+    }
+  }, [items]);
 
   const checkPrices = async () => {
     const unbought = items.filter(i => !i.isBought);
@@ -1086,6 +1207,11 @@ export default function GroceryScreen() {
           // Merge with existing prices (don't overwrite already-priced items)
           setPriceMap(prev => ({ ...prev, ...newEntries }));
           setPricesLoaded(true);
+          // Persist prices to DB so future sessions skip the AI call
+          const updates = toFetch
+            .filter(i => newEntries[i.name]?.price != null)
+            .map(i => supabase.from('grocery_items').update({ estimated_price: newEntries[i.name].price }).eq('id', i.id));
+          Promise.allSettled(updates).catch(() => {});
         }
       } finally {
         clearTimeout(timer);
@@ -1106,6 +1232,22 @@ export default function GroceryScreen() {
     load(familyId);
   }, [familyId]);
 
+  // Recently bought items (last 7 days)
+  const [boughtItems, setBoughtItems]       = useState<GroceryItem[]>([]);
+  const [boughtExpanded, setBoughtExpanded] = useState(false);
+
+  const refreshBought = () => {
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    supabase.from('grocery_items')
+      .select('*').eq('family_id', familyId).eq('is_bought', true)
+      .gte('bought_at', since).order('bought_at', { ascending: false }).limit(50)
+      .then(({ data }) => setBoughtItems((data ?? []).map(mapBoughtRow)));
+  };
+
+  useEffect(() => {
+    if (familyId) refreshBought();
+  }, [familyId]);
+
   // Prices are fetched on demand only (user taps "Estimate Prices" button)
 
   const cartTotal = useMemo(() => {
@@ -1114,9 +1256,25 @@ export default function GroceryScreen() {
       .reduce((sum, i) => sum + (priceMap[i.name]?.price ?? 0), 0);
   }, [items, priceMap]);
 
-  // Separate school supplies from grocery items
-  const suppliesItems = useMemo(() => items.filter(i => i.category === 'School Supplies'), [items]);
-  const groceryItems  = useMemo(() => items.filter(i => i.category !== 'School Supplies'), [items]);
+  // Category buckets — order matters for display
+  const CATEGORY_SECTIONS = [
+    { key: 'groceries', label: 'Groceries',  emoji: '🛒', color: '#10B981', match: (c?: string) => !c || (!['Supplies','School Supplies','Clothing','Clothes'].includes(c ?? '') && !['Clothing','Clothes'].includes(c ?? '')) },
+    { key: 'supplies',  label: 'Supplies',   emoji: '📚', color: '#6366F1', match: (c?: string) => c === 'Supplies' || c === 'School Supplies' },
+    { key: 'clothing',  label: 'Clothing',   emoji: '👕', color: '#F59E0B', match: (c?: string) => c === 'Clothing' || c === 'Clothes' },
+  ] as const;
+
+  const categorisedItems = useMemo(() => {
+    const buckets: Record<string, GroceryItem[]> = { groceries: [], supplies: [], clothing: [], other: [] };
+    for (const item of items) {
+      const cat = item.category;
+      if (cat === 'Supplies' || cat === 'School Supplies') buckets.supplies.push(item);
+      else if (cat === 'Clothing' || cat === 'Clothes') buckets.clothing.push(item);
+      else buckets.groceries.push(item);
+    }
+    return buckets;
+  }, [items]);
+
+  const groceryItems = categorisedItems.groceries;
 
   // Group grocery items by store preference
   const groupedItems = useMemo(() => {
@@ -1141,7 +1299,7 @@ export default function GroceryScreen() {
   const handleBuyItem = (item: GroceryItem) => {
     Alert.alert('Mark as bought?', `"${item.name}"`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Bought ✓', onPress: () => buyItem(item.id, activeMemberId ?? '') },
+      { text: 'Bought ✓', onPress: () => { buyItem(item.id, activeMemberId ?? ''); setTimeout(refreshBought, 600); } },
     ]);
   };
 
@@ -1246,77 +1404,43 @@ export default function GroceryScreen() {
             />
           )}
 
-          {/* School Supplies section (approved kid requests) */}
-          {suppliesItems.length > 0 && (
-            <View style={{ marginBottom: 24 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#6366F115', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 16 }}>📚</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#6366F1', letterSpacing: 0.8 }}>SCHOOL SUPPLIES</Text>
-                  <Text style={{ fontSize: 11, color: colors.textTertiary }}>Requested by kids · needs pickup</Text>
-                </View>
-                <View style={{ borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#6366F120' }}>
-                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#6366F1' }}>{suppliesItems.filter(i => !i.isBought).length} pending</Text>
-                </View>
-              </View>
-              <View style={{ backgroundColor: isDark ? '#1A1F35' : '#F5F3FF', borderRadius: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: isDark ? '#6366F130' : '#DDD6FE' }}>
-                {suppliesItems.map((item, idx) => {
-                  // Parse requester and approver from notes field
-                  const notesText  = item.notes ?? '';
-                  const approverMatch  = notesText.match(/Approved by ([^·]+)/);
-                  const requesterMatch = notesText.match(/Requested by ([^·\n]+)/);
-                  const approver   = approverMatch?.[1]?.trim() ?? '';
-                  const requester  = requesterMatch?.[1]?.trim() ?? '';
-                  return (
-                    <View key={item.id}
-                      style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12,
-                        borderBottomWidth: idx < suppliesItems.length - 1 ? StyleSheet.hairlineWidth : 0,
-                        borderBottomColor: isDark ? '#6366F120' : '#DDD6FE',
-                        opacity: item.isBought ? 0.45 : 1 }}>
-                      <Pressable onPress={() => !isKid && handleBuyItem(item)}
-                        style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 2,
-                          borderColor: item.isBought ? '#6366F1' : '#A5B4FC',
-                          backgroundColor: item.isBought ? '#6366F1' : 'transparent',
-                          alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                        {item.isBought && <Text style={{ fontSize: 12, color: '#fff' }}>✓</Text>}
-                      </Pressable>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '700', color: item.isBought ? colors.textTertiary : colors.textPrimary,
-                          textDecorationLine: item.isBought ? 'line-through' : 'none' }}>
-                          {item.name}
-                          {item.quantity ? <Text style={{ fontWeight: '400', color: colors.textSecondary }}> × {item.quantity}</Text> : null}
-                        </Text>
-                        {(requester || approver) ? (
-                          <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>
-                            {requester ? `👦 ${requester}` : ''}{requester && approver ? '  ·  ' : ''}{approver ? `✅ ${approver}` : ''}
-                          </Text>
-                        ) : null}
-                      </View>
-                      {!item.isBought && !isKid && (
-                        <Pressable onPress={() => handleBuyItem(item)}
-                          style={{ borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#6366F1' }}>
-                          <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>Got it ✓</Text>
-                        </Pressable>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
+          {/* Supplies section */}
+          {categorisedItems.supplies.length > 0 && (
+            <CategorySection label="Supplies" emoji="📚" color="#6366F1"
+              items={categorisedItems.supplies} isDark={isDark} colors={colors}
+              isKid={isKid} onBuy={handleBuyItem} members={members} />
           )}
 
-          {groceryItems.length === 0 && suppliesItems.length === 0 ? (
+          {/* Clothing section */}
+          {categorisedItems.clothing.length > 0 && (
+            <CategorySection label="Clothing" emoji="👕" color="#F59E0B"
+              items={categorisedItems.clothing} isDark={isDark} colors={colors}
+              isKid={isKid} onBuy={handleBuyItem} members={members} />
+          )}
+
+          {groceryItems.length === 0 && categorisedItems.supplies.length === 0 && categorisedItems.clothing.length === 0 ? (
             <View style={s.empty}>
               <Text style={s.emptyEmoji}>🛒</Text>
               <Text style={[s.emptyTitle, { color: colors.textPrimary }]}>Nothing on the list</Text>
               <Text style={[s.emptyDesc, { color: colors.textSecondary }]}>Tap + to add items or use ✨ AI to suggest.</Text>
             </View>
           ) : groceryItems.length > 0 ? (
-            groupedItems.map(([store, storeItems]) => (
+            <>
+              {/* Groceries section label */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#10B98118', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 16 }}>🛒</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#10B981', letterSpacing: 0.8 }}>GROCERIES</Text>
+                </View>
+                <View style={{ borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#10B98120' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#10B981' }}>{groceryItems.filter(i => !i.isBought).length} left</Text>
+                </View>
+              </View>
+            {groupedItems.map(([store, storeItems]) => (
               <View key={store} style={{ marginBottom: 22 }}>
-                {/* Section header */}
+                {/* Store sub-header */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, paddingHorizontal: 4 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                     <Ionicons name="storefront-outline" size={12} color="#7C3AED" />
@@ -1358,8 +1482,52 @@ export default function GroceryScreen() {
                   ))}
                 </View>
               </View>
-            ))
+            ))}
+            </>
           ) : null}
+
+          {/* ✅ Recently Bought */}
+          {boughtItems.length > 0 && (
+            <View style={{ marginTop: 8, marginBottom: 8 }}>
+              <Pressable onPress={() => setBoughtExpanded(e => !e)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 4 }}>
+                <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#10B98118', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 15 }}>✅</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#10B981', letterSpacing: 0.8 }}>RECENTLY BOUGHT</Text>
+                  <Text style={{ fontSize: 11, color: colors.textTertiary }}>Last 7 days · {boughtItems.length} items</Text>
+                </View>
+                <Text style={{ fontSize: 18, color: colors.textTertiary }}>{boughtExpanded ? '▲' : '▼'}</Text>
+              </Pressable>
+              {boughtExpanded && (
+                <View style={{ backgroundColor: isDark ? '#0d1f14' : '#F0FDF4', borderRadius: 14, overflow: 'hidden',
+                  borderWidth: 1, borderColor: isDark ? '#10B98130' : '#A7F3D0' }}>
+                  {boughtItems.map((item, idx) => {
+                    const buyer = members.find(m => m.id === item.boughtBy);
+                    const when  = item.boughtAt ? new Date(item.boughtAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+                    return (
+                      <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 11,
+                        borderBottomWidth: idx < boughtItems.length - 1 ? 1 : 0,
+                        borderBottomColor: isDark ? '#10B98118' : '#D1FAE5' }}>
+                        <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                          <Text style={{ fontSize: 11, color: '#fff' }}>✓</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, textDecorationLine: 'line-through' }}>
+                            {item.name}{item.quantity ? ` × ${item.quantity}` : ''}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>
+                            {buyer ? `${buyer.name.split(' ')[0]} · ` : ''}{when}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          )}
         </ScrollView>
 
         {/* Bulk action toolbar */}

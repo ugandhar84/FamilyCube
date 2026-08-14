@@ -624,7 +624,7 @@ export default function HealthScreen({ hideHeader = false }: { hideHeader?: bool
                     onConfirm={(d) => {
                       apptF.setPickerDate(d);
                       const ex = apptF.apptData?.scheduled_at ?? '';
-                      if (apptF.pickerMode === 'date') apptF.setApptData(p => ({ ...p, scheduled_at: `${format(d, 'yyyy-MM-dd')} ${ex.slice(11, 16) || '09:00'}` }));
+                      if (apptF.pickerMode === 'date') apptF.setApptData(p => ({ ...p, scheduled_at: `${format(d, 'yyyy-MM-dd')} ${ex.slice(11, 16) || `${String(new Date().getHours()).padStart(2,'0')}:${String(new Date().getMinutes()).padStart(2,'0')}`}` }));
                       else apptF.setApptData(p => ({ ...p, scheduled_at: `${ex.slice(0, 10) || format(d, 'yyyy-MM-dd')} ${format(d, 'HH:mm')}` }));
                       apptF.setPickerMode(null);
                     }}

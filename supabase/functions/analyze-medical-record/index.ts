@@ -193,33 +193,37 @@ serve(async (req) => {
       'Analyze this medical document carefully.',
     ].filter(Boolean).join('\n');
 
-    let rawText = '';
-
-    // ── Try vision analysis if file exists ────────────────────────────────
-    if (rec.file_path) {
-      try {
-        const { data: fileBytes, error: dlErr } = await svcClient.storage
-          .from('medical-records')
-          .download(rec.file_path);
-
-        if (!dlErr && fileBytes) {
-          const mimeType  = rec.file_name?.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg';
-          const buf       = await fileBytes.arrayBuffer();
-          const b64       = toBase64(new Uint8Array(buf));
-          const imageParts: GeminiImagePart[] = [
-            { inlineData: { mimeType, data: b64 } },
-          ];
-          rawText = await callGemini(contextPrompt, imageParts);
-        }
-      } catch (visionErr) {
-        console.warn('[analyze-medical-record] vision failed, falling back to text:', visionErr);
-      }
+    // ── Require a file — no hallucination from metadata alone ────────────
+    if (!rec.file_path) {
+      return json({
+        ok: true,
+        not_medical: true,
+        message: 'No file is attached to this record. Attach a PDF or photo of the document to enable AI analysis.',
+      });
     }
 
-    // ── Text-only fallback ────────────────────────────────────────────────
-    if (!rawText) {
-      const fallbackPrompt = `${SYSTEM_PROMPT}\n\n${contextPrompt}\n\n(No file available — analyze based on the metadata above and make reasonable inferences about what this type of document typically contains.)`;
-      rawText = await callGeminiText(fallbackPrompt);
+    // ── Vision analysis ───────────────────────────────────────────────────
+    let rawText = '';
+    try {
+      const { data: fileBytes, error: dlErr } = await svcClient.storage
+        .from('medical-records')
+        .download(rec.file_path);
+
+      if (dlErr || !fileBytes) throw new Error(`Storage download failed: ${dlErr?.message ?? 'empty response'}`);
+
+      const name     = (rec.file_name ?? rec.file_path).toLowerCase();
+      const mimeType = name.endsWith('.pdf')  ? 'application/pdf'
+                     : name.endsWith('.png')  ? 'image/png'
+                     : name.endsWith('.heic') ? 'image/heic'
+                     : 'image/jpeg';
+
+      const buf  = await fileBytes.arrayBuffer();
+      const b64  = toBase64(new Uint8Array(buf));
+      const imageParts: GeminiImagePart[] = [{ inlineData: { mimeType, data: b64 } }];
+      rawText = await callGemini(contextPrompt, imageParts);
+    } catch (visionErr: any) {
+      console.error('[analyze-medical-record] vision failed:', visionErr);
+      return json({ error: `Could not read the file: ${visionErr.message ?? 'unknown error'}` }, 500);
     }
 
     // ── Parse and return ──────────────────────────────────────────────────

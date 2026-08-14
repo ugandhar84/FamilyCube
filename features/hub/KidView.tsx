@@ -3,6 +3,7 @@ import { View, Text, Pressable, TouchableOpacity, Alert, Dimensions, ScrollView 
 import { ChevronRight } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import { TYPO } from '@/constants/theme';
 import { useQuestStore } from '@/store/questStore';
 import { useEventStore } from '@/store/eventStore';
 import { useRewardStore } from '@/store/rewardStore';
@@ -37,7 +38,9 @@ function useCountdown(date?: string, time?: string) {
 
 // Encoding helpers and modals live in KidModals.tsx
 export { GROCERY_PREFIX, SUPPLIES_PREFIX, encodeGroceryRequest, decodeGroceryRequest } from './KidModals';
-import { GroceryModal, SuppliesModal, AskModal } from './KidModals';
+import { SUPPLIES_PREFIX } from './KidModals';
+
+import { GroceryModal, SuppliesModal, AskModal, KidRequestHistoryModal } from './KidModals';
 
 
 // ─── Main KidView ──────────────────────────────────────────────────────────────
@@ -49,13 +52,14 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   const { quests, submitQuest, claimQuest, reopenQuest } = useQuestStore();
   const { events }                                        = useEventStore();
   const { rewards, redeemReward, getEligibleRewards }    = useRewardStore();
-  const { sendRequest }                                   = useKidRequestStore();
+  const { sendRequest, requests }                         = useKidRequestStore();
   const { sendMessage }                                   = useChatStore();
 
   const [kidTab, setKidTab]           = useState<KidTab>('quests');
   const [groceryModal,  setGroceryModal]  = useState(false);
   const [suppliesModal, setSuppliesModal] = useState(false);
   const [askModal, setAskModal]           = useState<null | 'permission' | 'question' | 'medication'>(null);
+  const [historyModal,  setHistoryModal]  = useState(false);
   const [lateNudgeSent, setLateNudgeSent] = useState<Record<string, boolean>>({});
 
   const today       = localToday();
@@ -78,6 +82,30 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   const myPendingRides  = events.filter(e =>
     e.memberId === active.id && e.approvalPending && e.date >= today
   );
+
+  // Grocery / supplies badge counts for this kid
+  const myRequests = requests.filter(r => r.fromMemberId === active.id && r.status !== 'cancelled');
+
+  const groceryBadge = (() => {
+    const reqs = myRequests.filter(r =>
+      r.type === 'delegation' && (r.items?.length ?? 0) > 0
+    );
+    if (!reqs.length) return null;
+    const allItems = reqs.flatMap(r => r.items ?? []);
+    const pending  = allItems.filter(it => it.status === 'pending').length;
+    const approved = allItems.filter(it => it.status === 'approved').length;
+    return { pending, approved, total: allItems.length };
+  })();
+
+  const suppliesBadge = (() => {
+    const reqs = myRequests.filter(r =>
+      r.type === 'delegation' && r.detail.startsWith(SUPPLIES_PREFIX)
+    );
+    if (!reqs.length) return null;
+    const pending  = reqs.filter(r => r.status === 'pending').length;
+    const approved = reqs.filter(r => r.status === 'approved').length;
+    return { pending, approved, total: reqs.length };
+  })();
 
   const myQuests       = quests.filter(q => q.assignedToId === active.id || q.assignedToIds?.includes(active.id));
   const poolQuests     = quests.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask);
@@ -296,6 +324,41 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
           </Pressable>
         ))}
       </View>
+      {/* My Requests history link */}
+      <Pressable onPress={() => setHistoryModal(true)}
+        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+          paddingVertical: 9, paddingHorizontal: 14, borderRadius: 12, marginTop: 6,
+          backgroundColor: isDark ? BRAND.purple + '18' : BRAND.purple + '10',
+          borderWidth: 1, borderColor: BRAND.purple + '30' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={{ fontSize: 12 }}>📋</Text>
+          <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.purple }}>My Request History</Text>
+        </View>
+        <View style={{ flexDirection: 'row', gap: 5 }}>
+          {(() => {
+            const totalPending  = (groceryBadge?.pending  ?? 0) + (suppliesBadge?.pending  ?? 0);
+            const totalApproved = (groceryBadge?.approved ?? 0) + (suppliesBadge?.approved ?? 0);
+            return (
+              <>
+                {totalPending > 0 && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3,
+                    backgroundColor: BRAND.amber + '25', borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 }}>
+                    <Text style={{ fontSize: 9 }}>⏳</Text>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: BRAND.amber }}>{totalPending} pending</Text>
+                  </View>
+                )}
+                {totalApproved > 0 && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3,
+                    backgroundColor: '#10B98120', borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 }}>
+                    <Text style={{ fontSize: 9 }}>✅</Text>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#10B981' }}>{totalApproved} approved</Text>
+                  </View>
+                )}
+              </>
+            );
+          })()}
+        </View>
+      </Pressable>
     </View>
   );
 
@@ -824,6 +887,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
       {askModal && (
         <AskModal visible={!!askModal} onClose={() => setAskModal(null)} type={askModal} active={active} />
       )}
+      <KidRequestHistoryModal visible={historyModal} onClose={() => setHistoryModal(false)} active={active} />
     </>
   );
 }

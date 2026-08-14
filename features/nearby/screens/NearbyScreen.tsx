@@ -104,8 +104,8 @@ export default function NearbyScreen() {
   // Proposal sheet
   const [proposalTarget,   setProposalTarget]   = useState<NearbyPet | null>(null);
   const [proposalVisible,  setProposalVisible]  = useState(false);
-  const [proposalDate,     setProposalDate]     = useState<Date>(() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(10, 0, 0, 0); return d; });
-  const [proposalEndDate,  setProposalEndDate]  = useState<Date>(() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(11, 0, 0, 0); return d; });
+  const [proposalDate,     setProposalDate]     = useState<Date>(() => () => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); return d; });
+  const [proposalEndDate,  setProposalEndDate]  = useState<Date>(() => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); d.setHours(d.getHours() + 1); return d; });
   const [proposalLocation, setProposalLocation] = useState('');
   const [proposalMessage,  setProposalMessage]  = useState('');
   const [pickerMode,       setPickerMode]       = useState<'date' | 'time' | 'endtime'>('date');
@@ -230,7 +230,7 @@ export default function NearbyScreen() {
   const openProposalSheet = (target: NearbyPet) => {
     if (!userId || !activePetId) return;
     if (target.owner_id === userId) { showAlert('That\'s your pet! 🐾', 'You can\'t request your own pet.'); return; }
-    const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(10, 0, 0, 0);
+    const d = new Date(); const _m = d.getMinutes(); d.setMinutes(_m < 30 ? 30 : 0, 0, 0); if (_m >= 30) d.setHours(d.getHours() + 1);
     const e = new Date(d); e.setHours(11, 0, 0, 0);
     setProposalDate(d);
     setProposalEndDate(e);

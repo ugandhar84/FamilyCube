@@ -2,7 +2,7 @@ const IS_EAS = !!process.env.EAS_BUILD;
 
 /** @type {import('expo/config').ExpoConfig} */
 const config = {
-  name: "Family Cube",
+  name: "FamilyCube",
   slug: "family-cube",
   version: "1.0.0",
   orientation: "portrait",
@@ -39,7 +39,7 @@ const config = {
       },
     },
     icon: {
-      light: "./assets/icon.png",
+      light: "./assets/icon-light.png",
       dark: "./assets/icon-dark.png",
       tinted: "./assets/icon-dark.png",
     },

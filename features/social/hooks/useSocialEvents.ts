@@ -6,7 +6,7 @@ import { insertCommunityEvent, deleteEventRsvpByUser, insertEventRsvp } from '@/
 import { todayLocal } from '@/lib/dates';
 import type { CommunityEvent } from '@/features/social/types';
 
-const tomorrow = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(10, 0, 0, 0); return d; };
+const nowRounded = () => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); return d; };
 
 export function useSocialEvents(userId: string | null, activePetId: string | null) {
   const [events, setEvents] = useState<CommunityEvent[]>([]);
@@ -17,8 +17,8 @@ export function useSocialEvents(userId: string | null, activePetId: string | nul
   const [evType, setEvType] = useState('meetup');
   const [evLocation, setEvLocation] = useState('');
   const [savingEvent, setSavingEvent] = useState(false);
-  const [evStart, setEvStart] = useState<Date>(tomorrow());
-  const [evEnd, setEvEnd] = useState<Date>(() => { const d = tomorrow(); d.setHours(12, 0, 0, 0); return d; });
+  const [evStart, setEvStart] = useState<Date>(nowRounded());
+  const [evEnd, setEvEnd] = useState<Date>(() => { const d = nowRounded(); d.setHours(d.getHours() + 1); return d; });
   const [pickerTarget, setPickerTarget] = useState<'startDate' | 'startTime' | 'endDate' | 'endTime' | null>(null);
   const [evCoverUri, setEvCoverUri] = useState<string | null>(null);
 
@@ -132,8 +132,8 @@ export function useSocialEvents(userId: string | null, activePetId: string | nul
     setPickerTarget(null);
     setShowCreateEvent(false);
     setEvTitle(''); setEvDesc(''); setEvLocation(''); setEvType('meetup'); setEvCoverUri(null);
-    const t = tomorrow(); setEvStart(t);
-    const e = tomorrow(); e.setHours(12, 0, 0, 0); setEvEnd(e);
+    const t = nowRounded(); setEvStart(t);
+    const e = nowRounded(); e.setHours(e.getHours() + 1); setEvEnd(e);
     showAlert('Event created! 🎉', 'Your event is live for the community.');
     loadEvents();
   }, [evTitle, evDesc, evType, evLocation, evStart, evEnd, userId, loadEvents]);

@@ -109,11 +109,21 @@ function MentionText({ text, memberMap, myId, searchQuery, textStyle, numberOfLi
             </Text>
           );
         }
-        // Strip markdown bold/italic markers (* and _)
-        const clean = part.replace(/\*+([^*]+)\*+/g, '$1').replace(/_([^_]+)_/g, '$1');
-        return searchQuery
-          ? highlightSearch(clean, searchQuery, {})
-          : <Text key={i}>{clean}</Text>;
+        // Render *bold* and _italic_ inline spans
+        const segments: React.ReactNode[] = [];
+        let remaining = part;
+        let si = 0;
+        const boldRe = /\*+([^*\n]+)\*+/g;
+        let bm: RegExpExecArray | null;
+        let lastIndex = 0;
+        boldRe.lastIndex = 0;
+        while ((bm = boldRe.exec(remaining)) !== null) {
+          if (bm.index > lastIndex) segments.push(<Text key={`${i}-${si++}`}>{remaining.slice(lastIndex, bm.index)}</Text>);
+          segments.push(<Text key={`${i}-${si++}`} style={{ fontWeight: '800' }}>{bm[1]}</Text>);
+          lastIndex = bm.index + bm[0].length;
+        }
+        if (lastIndex < remaining.length) segments.push(<Text key={`${i}-${si++}`}>{remaining.slice(lastIndex)}</Text>);
+        return <Text key={i}>{segments}</Text>;
       })}
     </Text>
   );

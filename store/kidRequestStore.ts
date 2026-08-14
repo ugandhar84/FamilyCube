@@ -10,8 +10,25 @@ import { supabase } from '@/lib/supabase';
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
 export type RequestType   = 'ride' | 'tutor' | 'cheer' | 'emergency' | 'question' | 'permission' | 'appointment' | 'delegation' | 'checkin' | 'medication';
-export type RequestStatus = 'pending' | 'approved' | 'declined' | 'cancelled' | 'expired' | 'completed';
+export type RequestStatus = 'pending' | 'approved' | 'declined' | 'cancelled' | 'expired' | 'completed' | 'partial';
 export type RequestUrgency = 'normal' | 'soon' | 'urgent' | 'emergency';
+export type ItemStatus = 'pending' | 'approved' | 'rejected';
+
+// Per-item tracking for grocery/supplies multi-item requests
+export interface KidRequestItem {
+  id:          string;
+  name:        string;
+  qty:         string;
+  category:    string;
+  emoji?:      string;
+  status:      ItemStatus;
+  requestedBy: string;   // kid memberId
+  approvedBy?: string;   // parent memberId
+  rejectedBy?: string;   // parent memberId
+  parentNote?: string;
+  approvedAt?: string;
+  rejectedAt?: string;
+}
 
 export interface KidRequest {
   id:             string;
@@ -20,6 +37,7 @@ export interface KidRequest {
   fromMemberId:   string;     // kid who sent
   toMemberId?:    string;     // specific parent; undefined = broadcast to all
   detail:         string;     // "Soccer practice at 3:30 PM"
+  items?:         KidRequestItem[];  // multi-item grocery/supplies requests
   location?:      string;
   requestedAt:    string;     // ISO
   expiresAt?:     string;     // auto-expire if not responded to
@@ -67,6 +85,13 @@ interface KidRequestState {
   clearResolved:   () => void;
   expireStale:     () => void;
 
+  // Per-item approval for grocery/supplies requests
+  approveItems:    (requestId: string, itemIds: string[], approvedBy: string, note?: string) => void;
+  rejectItems:     (requestId: string, itemIds: string[], rejectedBy: string, note?: string) => void;
+  approveAllItems: (requestId: string, approvedBy: string, note?: string) => void;
+  rejectAllItems:  (requestId: string, rejectedBy: string, note?: string) => void;
+  appendItems:     (requestId: string, newItems: KidRequestItem[]) => void;
+
   // Selectors
   getPending:           () => KidRequest[];
   getForMember:         (memberId: string) => KidRequest[];
@@ -99,6 +124,44 @@ const SEED_REQUESTS: KidRequest[] = [
 const KEY  = '@familycube_kid_requests_v2';
 const save = (reqs: KidRequest[]) => AsyncStorage.setItem(KEY, JSON.stringify(reqs));
 
+// Upsert a single request row to Supabase (fire-and-forget)
+async function upsertToDb(req: KidRequest) {
+  try {
+    const { data: member } = await supabase.from('members').select('family_id').eq('id', req.fromMemberId).single();
+    if (!member?.family_id) return;
+    await supabase.from('kid_requests').upsert({
+      id:             req.id,
+      family_id:      member.family_id,
+      from_member_id: req.fromMemberId,
+      to_member_id:   req.toMemberId ?? null,
+      type:           req.type,
+      urgency:        req.urgency,
+      detail:         req.detail,
+      status:         req.status,
+      items:          req.items ?? null,
+      requested_at:   req.requestedAt,
+      expires_at:     req.expiresAt ?? null,
+      read_at:        req.readAt ?? null,
+      responded_at:   req.respondedAt ?? null,
+      responded_by:   req.respondedBy ?? null,
+      parent_note:    req.parentNote ?? null,
+      attachment_url: req.attachmentUrl ?? null,
+      assigned_helper:req.assignedHelper ?? null,
+      reward_coins:   req.rewardCoins ?? null,
+      scheduled_date: req.scheduledDate ?? null,
+      scheduled_time: req.scheduledTime ?? null,
+    }, { onConflict: 'id' });
+  } catch (e: any) {
+    console.warn('[kidRequestStore] upsertToDb failed:', e?.message);
+  }
+}
+
+// Delete a request row from Supabase (fire-and-forget)
+async function deleteFromDb(id: string) {
+  supabase.from('kid_requests').delete().eq('id', id)
+    .then(({ error }) => { if (error) console.warn('[kidRequestStore] deleteFromDb failed:', error.message); });
+}
+
 async function notifyKidRequest(fromMemberId: string, type: string, payload: Record<string, unknown>) {
   try {
     const { data } = await supabase.from('members').select('family_id').eq('id', fromMemberId).single();
@@ -120,6 +183,38 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
 
   loadFromStorage: async () => {
     try {
+      // Try DB first (syncs across devices)
+      const { data: member } = await supabase.auth.getUser();
+      if (member.user) {
+        const { data: mem } = await supabase.from('members').select('family_id').eq('id', member.user.id).single();
+        if (mem?.family_id) {
+          const { data: rows } = await supabase
+            .from('kid_requests')
+            .select('*')
+            .eq('family_id', mem.family_id)
+            .order('requested_at', { ascending: false });
+          if (rows && rows.length > 0) {
+            const requests: KidRequest[] = rows.map((r: any) => ({
+              id: r.id, type: r.type, urgency: r.urgency, detail: r.detail,
+              status: r.status, fromMemberId: r.from_member_id,
+              toMemberId: r.to_member_id ?? undefined,
+              items: r.items ?? undefined,
+              requestedAt: r.requested_at, expiresAt: r.expires_at ?? undefined,
+              readAt: r.read_at ?? undefined, respondedAt: r.responded_at ?? undefined,
+              respondedBy: r.responded_by ?? undefined, parentNote: r.parent_note ?? undefined,
+              attachmentUrl: r.attachment_url ?? undefined, assignedHelper: r.assigned_helper ?? undefined,
+              rewardCoins: r.reward_coins ?? undefined, scheduledDate: r.scheduled_date ?? undefined,
+              scheduledTime: r.scheduled_time ?? undefined,
+            }));
+            set({ requests, loaded: true });
+            save(requests);
+            return;
+          }
+        }
+      }
+    } catch { /* fall through to AsyncStorage */ }
+    // Fallback to local cache
+    try {
       const raw      = await AsyncStorage.getItem(KEY);
       const requests = raw ? (JSON.parse(raw) as KidRequest[]) : SEED_REQUESTS;
       if (!raw) save(SEED_REQUESTS);
@@ -139,6 +234,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     };
     const all = [request, ...get().requests];
     set({ requests: all }); save(all);
+    upsertToDb(request);
     // Notify parents/seniors of new request
     notifyKidRequest(request.fromMemberId, 'kid_request', {
       requestId: request.id, requestType: request.type, detail: request.detail,
@@ -155,6 +251,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
       r.id === id ? { ...r, status: 'approved' as RequestStatus, respondedAt: new Date().toISOString(), respondedBy, parentNote: note } : r
     );
     set({ requests: all }); save(all);
+    const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
     if (req) notifyKidRequest(req.fromMemberId, 'kid_request_decision', {
       requestId: id, requestType: req.type, detail: req.detail,
       decision: 'approved', note, fromMemberId: req.fromMemberId,
@@ -167,6 +264,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
       r.id === id ? { ...r, status: 'declined' as RequestStatus, respondedAt: new Date().toISOString(), respondedBy, parentNote: note } : r
     );
     set({ requests: all }); save(all);
+    const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
     if (req) notifyKidRequest(req.fromMemberId, 'kid_request_decision', {
       requestId: id, requestType: req.type, detail: req.detail,
       decision: 'declined', note, fromMemberId: req.fromMemberId,
@@ -178,6 +276,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
       r.id === id ? { ...r, status: 'approved' as RequestStatus, assignedHelper: helperId, respondedAt: new Date().toISOString(), respondedBy: helperId, parentNote: note } : r
     );
     set({ requests: all }); save(all);
+    const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
   },
 
   completeRequest: (id, respondedBy) => {
@@ -185,6 +284,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
       r.id === id ? { ...r, status: 'completed' as RequestStatus, respondedAt: new Date().toISOString(), respondedBy } : r
     );
     set({ requests: all }); save(all);
+    const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
   },
 
   cancelRequest: (id) => {
@@ -192,6 +292,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
       r.id === id ? { ...r, status: 'cancelled' as RequestStatus } : r
     );
     set({ requests: all }); save(all);
+    const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
   },
 
   markRead: (id) => {
@@ -201,11 +302,71 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
       r.id === id ? { ...r, readAt: new Date().toISOString() } : r
     );
     set({ requests: all }); save(all);
+    const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
   },
 
   deleteRequest: (id) => {
     const all = get().requests.filter(r => r.id !== id);
     set({ requests: all }); save(all);
+    deleteFromDb(id);
+  },
+
+  approveItems: (requestId, itemIds, approvedBy, note) => {
+    const now = new Date().toISOString();
+    const idSet = new Set(itemIds);
+    const all = get().requests.map(r => {
+      if (r.id !== requestId || !r.items) return r;
+      const items = r.items.map(it =>
+        idSet.has(it.id) ? { ...it, status: 'approved' as ItemStatus, approvedBy, parentNote: note, approvedAt: now } : it
+      );
+      const allDone = items.every(it => it.status !== 'pending');
+      const allApproved = items.every(it => it.status === 'approved');
+      const allRejected = items.every(it => it.status === 'rejected');
+      const status: RequestStatus = allDone ? (allApproved ? 'approved' : allRejected ? 'declined' : 'partial') : 'pending';
+      return { ...r, items, status, respondedAt: now, respondedBy: approvedBy };
+    });
+    set({ requests: all }); save(all);
+    const updated = all.find(r => r.id === requestId); if (updated) upsertToDb(updated);
+  },
+
+  rejectItems: (requestId, itemIds, rejectedBy, note) => {
+    const now = new Date().toISOString();
+    const idSet = new Set(itemIds);
+    const all = get().requests.map(r => {
+      if (r.id !== requestId || !r.items) return r;
+      const items = r.items.map(it =>
+        idSet.has(it.id) ? { ...it, status: 'rejected' as ItemStatus, rejectedBy, parentNote: note, rejectedAt: now } : it
+      );
+      const allDone = items.every(it => it.status !== 'pending');
+      const allApproved = items.every(it => it.status === 'approved');
+      const allRejected = items.every(it => it.status === 'rejected');
+      const status: RequestStatus = allDone ? (allApproved ? 'approved' : allRejected ? 'declined' : 'partial') : 'pending';
+      return { ...r, items, status, respondedAt: now, respondedBy: rejectedBy };
+    });
+    set({ requests: all }); save(all);
+    const updated = all.find(r => r.id === requestId); if (updated) upsertToDb(updated);
+  },
+
+  approveAllItems: (requestId, approvedBy, note) => {
+    const req = get().requests.find(r => r.id === requestId);
+    if (!req?.items) return;
+    const pendingIds = req.items.filter(it => it.status === 'pending').map(it => it.id);
+    get().approveItems(requestId, pendingIds, approvedBy, note);
+  },
+
+  rejectAllItems: (requestId, rejectedBy, note) => {
+    const req = get().requests.find(r => r.id === requestId);
+    if (!req?.items) return;
+    const pendingIds = req.items.filter(it => it.status === 'pending').map(it => it.id);
+    get().rejectItems(requestId, pendingIds, rejectedBy, note);
+  },
+
+  appendItems: (requestId, newItems) => {
+    const all = get().requests.map(r =>
+      r.id !== requestId ? r : { ...r, items: [...(r.items ?? []), ...newItems] }
+    );
+    set({ requests: all }); save(all);
+    const updated = all.find(r => r.id === requestId); if (updated) upsertToDb(updated);
   },
 
   clearResolved: () => {

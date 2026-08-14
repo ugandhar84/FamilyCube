@@ -27,8 +27,8 @@ interface ProposalSheetProps {
   setOutgoingActiveReqs: React.Dispatch<React.SetStateAction<any[]>>;
 }
 
-const makeDefaultFrom = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(10, 0, 0, 0); return d; };
-const makeDefaultTo   = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(11, 0, 0, 0); return d; };
+const makeDefaultFrom = () => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); return d; };
+const makeDefaultTo   = () => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); d.setHours(d.getHours() + 1); return d; };
 
 export const ProposalSheet = React.memo(function ProposalSheet({
   visible, target, activePetId, myPet, onClose,

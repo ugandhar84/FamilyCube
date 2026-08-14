@@ -160,7 +160,7 @@ export function useAppointmentForm({
   const confirmPicker = useCallback(() => {
     const existing = apptData?.scheduled_at ?? '';
     if (pickerMode === 'date') {
-      setApptData(p => ({ ...p, scheduled_at: `${format(pickerDate, 'yyyy-MM-dd')} ${existing.slice(11, 16) || '09:00'}` }));
+      setApptData(p => ({ ...p, scheduled_at: `${format(pickerDate, 'yyyy-MM-dd')} ${existing.slice(11, 16) || `${String(new Date().getHours()).padStart(2,'0')}:${String(new Date().getMinutes()).padStart(2,'0')}`}` }));
     } else if (pickerMode === 'time') {
       setApptData(p => ({ ...p, scheduled_at: `${existing.slice(0, 10) || format(pickerDate, 'yyyy-MM-dd')} ${format(pickerDate, 'HH:mm')}` }));
     }

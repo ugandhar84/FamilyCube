@@ -23,8 +23,8 @@ interface CounterProposeSheetProps {
   setIncomingRequests: React.Dispatch<React.SetStateAction<IncomingRequest[]>>;
 }
 
-const makeDefaultDate = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(10, 0, 0, 0); return d; };
-const makeDefaultEnd  = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(11, 0, 0, 0); return d; };
+const makeDefaultDate = () => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); return d; };
+const makeDefaultEnd  = () => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); d.setHours(d.getHours() + 1); return d; };
 
 export const CounterProposeSheet = React.memo(function CounterProposeSheet({
   visible, requestId, onClose, ac, colors, setIncomingRequests,

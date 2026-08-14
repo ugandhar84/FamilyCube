@@ -102,7 +102,7 @@ export default function AppointmentsScreen() {
 
   const applyPicked = (mode: 'date' | 'time', d: Date) => {
     setApptDate(prev => mode === 'date'
-      ? `${format(d, 'yyyy-MM-dd')} ${prev.slice(11, 16) || '09:00'}`
+      ? `${format(d, 'yyyy-MM-dd')} ${prev.slice(11, 16) || `${String(new Date().getHours()).padStart(2,'0')}:${String(new Date().getMinutes()).padStart(2,'0')}`}`
       : `${prev.slice(0, 10) || format(d, 'yyyy-MM-dd')} ${format(d, 'HH:mm')}`);
   };
 

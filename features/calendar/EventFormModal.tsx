@@ -165,20 +165,31 @@ function Chip({ label, active, color, onPress, small }: {
   );
 }
 
-// ─── Avatar picker (member row) ────────────────────────────────────────────────
-function MemberPicker({ label, selectedId, members, onSelect, colors, isDark, siblings }: {
-  label: string; selectedId?: string;
-  members: any[]; onSelect: (id: string) => void;
+// ─── Multi-select member picker ────────────────────────────────────────────────
+function MemberPicker({ label, selectedIds, members, onToggle, onSelectAll, colors, isDark, siblings }: {
+  label: string; selectedIds: string[];
+  members: any[]; onToggle: (id: string) => void; onSelectAll?: () => void;
   colors: any; isDark: boolean; siblings: string[];
 }) {
+  const allSelected = members.length > 0 && members.every(m => selectedIds.includes(m.id));
   return (
     <View style={{ marginBottom: 14 }}>
-      <Text style={[f.label, { color: colors.textSecondary }]}>{label}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <Text style={[f.label, { color: colors.textSecondary }]}>{label}</Text>
+        {onSelectAll && members.length > 1 && (
+          <TouchableOpacity onPress={onSelectAll}
+            style={{ backgroundColor: allSelected ? BRAND.purple + '22' : (isDark ? '#1E293B' : '#F1F5F9'), borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: allSelected ? BRAND.purple : (isDark ? '#334155' : '#E2E8F0') }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: allSelected ? BRAND.purple : colors.textTertiary }}>
+              {allSelected ? '✓ All' : 'All'}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: 'row', gap: 12 }}>
         {members.map(m => {
-          const sel = selectedId === m.id;
+          const sel = selectedIds.includes(m.id);
           return (
-            <TouchableOpacity key={m.id} style={{ alignItems: 'center', gap: 4 }} onPress={() => onSelect(m.id)}>
+            <TouchableOpacity key={m.id} style={{ alignItems: 'center', gap: 4 }} onPress={() => onToggle(m.id)}>
               <View style={{ position: 'relative' }}>
                 <FamilyAvatar
                   name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl}
@@ -188,11 +199,7 @@ function MemberPicker({ label, selectedId, members, onSelect, colors, isDark, si
                   bgColor={sel ? BRAND.purple + '20' : (isDark ? '#1E293B' : '#F1F5F9')}
                 />
                 {sel && (
-                  <View style={{
-                    position: 'absolute', bottom: -2, right: -2,
-                    width: 16, height: 16, borderRadius: 8,
-                    backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center',
-                  }}>
+                  <View style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: 8, backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ fontSize: 9, color: '#fff', fontWeight: '900' }}>✓</Text>
                   </View>
                 )}
@@ -238,14 +245,14 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   const [saving,         setSaving]         = useState(false);
 
   // Date/time
-  const tomorrow = () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d; };
-  const [eventDate,      setEventDate]      = useState<Date>(tomorrow());
+  const nowRounded = () => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); return d; };
+  const [eventDate,      setEventDate]      = useState<Date>(nowRounded());
   const [showDatePick,   setShowDatePick]   = useState(false);
   const [showTimePick,   setShowTimePick]   = useState(false);
   const [allDay,         setAllDay]         = useState(false);
 
   // Category-specific
-  const [memberId,       setMemberId]       = useState<string | undefined>(isKid ? activeMemberId : undefined);
+  const [memberIds,      setMemberIds]      = useState<string[]>(isKid ? [activeMemberId] : []);
   const [helperId,       setHelperId]       = useState<string | undefined>();
   const [helperName,     setHelperName]     = useState('');
   const [doctorName,     setDoctorName]     = useState('');
@@ -337,7 +344,8 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   // ── Member pickers ─────────────────────────────────────────────────────────
   const kids   = members.filter(m => m.role === 'kid');
   const adults = members.filter(m => m.role === 'parent' || m.role === 'senior');
-  const forMembers = category === 'Work' ? adults : kids;
+  // Show all family members in "For" picker; exclude the selected helper so one person isn't in both roles
+  const forMembers = members.filter(m => m.id !== helperId);
 
   // When parent picks helper from list, fill name from member record
   const handleHelperSelect = (id: string) => {
@@ -358,8 +366,8 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   // ── Reset ──────────────────────────────────────────────────────────────────
   const reset = () => {
     setCategory(isKid ? 'Ride' : 'Medical');
-    setTitle(''); setNotes(''); setEventDate(tomorrow()); setAllDay(false);
-    setMemberId(isKid ? activeMemberId : undefined);
+    setTitle(''); setNotes(''); setEventDate(nowRounded()); setAllDay(false);
+    setMemberIds(isKid ? [activeMemberId] : []);
     setHelperId(undefined); setHelperName('');
     setDoctorName(''); setClinicLocation(''); setApptType('');
     setSportType(''); setCoachName(''); setVenueLocation(''); setKitReminder(false);
@@ -400,7 +408,8 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
       allDay,
       location,
       notes:           notes.trim() || undefined,
-      memberId,
+      memberId:        memberIds[0],
+      memberIds:       memberIds.length > 1 ? memberIds : undefined,
       // Helper
       helper,
       helperStatus:    helper ? 'pending' : undefined,
@@ -1200,21 +1209,25 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
               </>
             )}
 
-            {/* ── For (member picker) ── */}
+            {/* ── For (member picker — multi-select) ── */}
             {category !== 'Event' && !isKid && (
               <MemberPicker
                 label={
-                  category === 'Medical'  ? 'Patient (which child?)' :
-                  category === 'Sports'   ? 'Player (which child?)' :
-                  category === 'Study'    ? 'Student (which child?)' :
-                  category === 'Ride'     ? 'Passenger' :
+                  category === 'Medical'  ? 'Patient — select all who attend' :
+                  category === 'Sports'   ? 'Player — select participants' :
+                  category === 'Study'    ? 'Student — select all studying' :
+                  category === 'Ride'     ? 'Passenger(s)' :
                   category === 'Birthday' ? '🎂 Who\'s attending?' :
                   category === 'Other'    ? '👤 For (optional)' :
                   'For'
                 }
-                selectedId={memberId}
+                selectedIds={memberIds}
                 members={forMembers}
-                onSelect={setMemberId}
+                onToggle={id => setMemberIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}
+                onSelectAll={() => {
+                  const allIds = forMembers.map(m => m.id);
+                  setMemberIds(memberIds.length === forMembers.length ? [] : allIds);
+                }}
                 colors={colors} isDark={isDark} siblings={siblings}
               />
             )}
@@ -1240,9 +1253,9 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                       category === 'Birthday' ? '🚗 Driven by / accompanying' :
                       '🚗 Driven by (adult)'
                     }
-                    selectedId={helperId}
+                    selectedIds={helperId ? [helperId] : []}
                     members={adults}
-                    onSelect={handleHelperSelect}
+                    onToggle={handleHelperSelect}
                     colors={colors} isDark={isDark} siblings={siblings}
                   />
                 )}
@@ -1325,16 +1338,30 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const activeMember = members.find(m => m.id === activeMemberId);
   const isParent = activeMember?.role === 'parent';
   const isKid    = activeMember?.role === 'kid';
+  const isPast   = (() => {
+    if (!event.date) return false;
+    const today = new Date().toISOString().slice(0, 10);
+    if (event.date < today) return true;
+    if (event.date > today) return false;
+    // Same day — compare time
+    if (!event.time) return false;
+    const [h, m] = event.time.split(':').map(Number);
+    const now = new Date();
+    return h < now.getHours() || (h === now.getHours() && m <= now.getMinutes());
+  })();
 
   // Kids can only edit their own pending requests
   const isOwnPending   = isKid && event.approvalPending && event.memberId === activeMemberId;
   const isParentApproved = !event.approvalPending;
-  const restricted     = isKid && isParentApproved; // kid, already approved → read-only
+  const restricted     = isPast || (isKid && isParentApproved); // past or kid approved → read-only
 
   const [notes,      setNotes]      = useState(event.notes ?? '');
   const [helperName, setHelperName] = useState('');
   const [helperId,   setHelperId]   = useState<string | undefined>(
     members.find((m: any) => m.name === event.helper)?.id
+  );
+  const [editMemberIds, setEditMemberIds] = useState<string[]>(
+    event.memberIds?.length ? event.memberIds : event.memberId ? [event.memberId] : []
   );
   const [saving,     setSaving]     = useState(false);
 
@@ -1355,6 +1382,11 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       if (helperName !== event.helper) {
         patch.helper = helperName.trim() || undefined;
         patch.helperStatus = helperName.trim() ? 'pending' : undefined;
+      }
+      const origIds = event.memberIds?.length ? event.memberIds : event.memberId ? [event.memberId] : [];
+      if (JSON.stringify(editMemberIds) !== JSON.stringify(origIds)) {
+        patch.memberIds = editMemberIds.length > 1 ? editMemberIds : undefined;
+        patch.memberId  = editMemberIds[0];
       }
     } else if (isOwnPending) {
       // Kid can only update notes on their own pending request
@@ -1411,15 +1443,18 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
 
             {/* Detail pills — fixed */}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-              {event.memberId && (() => {
-                const name = members.find((m: any) => m.id === event.memberId)?.name?.split(' ')[0];
-                return name ? (
-                  <View style={{ backgroundColor: catColor + '18', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: catColor }}>
-                      {event.category === 'Medical' ? '🩺' : event.category === 'Study' ? '🎓' : '👤'} {name}
-                    </Text>
-                  </View>
-                ) : null;
+              {(() => {
+                const ids = event.memberIds?.length ? event.memberIds : event.memberId ? [event.memberId] : [];
+                return ids.map(mid => {
+                  const name = members.find((m: any) => m.id === mid)?.name?.split(' ')[0];
+                  return name ? (
+                    <View key={mid} style={{ backgroundColor: catColor + '18', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: catColor }}>
+                        {event.category === 'Medical' ? '🩺' : event.category === 'Study' ? '🎓' : '👤'} {name}
+                      </Text>
+                    </View>
+                  ) : null;
+                });
               })()}
               {event.category === 'Medical' && event.doctorName && (
                 <View style={{ backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: colors.border }}>
@@ -1461,6 +1496,28 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ gap: 12, paddingBottom: 12 }}
             >
+              {/* Change who it's for */}
+              {isParent && !['Work', 'Event'].includes(event.category ?? '') && (
+                <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 8 }}>
+                  <MemberPicker
+                    label={
+                      event.category === 'Medical'  ? '🩺 Change patient(s)' :
+                      event.category === 'Sports'   ? '🏅 Change player(s)' :
+                      event.category === 'Study'    ? '📚 Change student(s)' :
+                      event.category === 'Ride'     ? '🚗 Passenger(s)' : '👤 For'
+                    }
+                    selectedIds={editMemberIds}
+                    members={event.category === 'Work' ? adults : kids}
+                    onToggle={id => setEditMemberIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}
+                    onSelectAll={() => {
+                      const pool = event.category === 'Work' ? adults : kids;
+                      setEditMemberIds(editMemberIds.length === pool.length ? [] : pool.map(m => m.id));
+                    }}
+                    colors={colors} isDark={isDark} siblings={siblings}
+                  />
+                </View>
+              )}
+
               {/* Helper reassignment */}
               {isParent && !['Work', 'Event'].includes(event.category ?? '') && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 8 }}>
@@ -1477,9 +1534,9 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                       event.category === 'Sports'  ? '🚗 Drop-off by'    :
                       '🚗 Driven by'
                     }
-                    selectedId={helperId}
+                    selectedIds={helperId ? [helperId] : []}
                     members={adults}
-                    onSelect={handleHelperSelect}
+                    onToggle={handleHelperSelect}
                     colors={colors} isDark={isDark} siblings={siblings}
                   />
                   {!helperId && (
@@ -1510,7 +1567,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
 
               {/* Actions */}
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-                {(isParent || isOwnPending) && onDelete && (
+                {!isPast && (isParent || isOwnPending) && onDelete && (
                   <TouchableOpacity
                     style={{ paddingHorizontal: 18, borderRadius: 14, justifyContent: 'center', alignItems: 'center',
                       borderWidth: 1, borderColor: '#FCA5A560', backgroundColor: isDark ? '#2D1515' : '#FEF2F2' }}
@@ -1533,7 +1590,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
 
               {restricted && (
                 <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, textAlign: 'center' }}>
-                  This event was approved by a parent. Ask a parent to make changes.
+                  {isPast ? 'This event is in the past — no edits allowed.' : 'This event was approved by a parent. Ask a parent to make changes.'}
                 </Text>
               )}
             </ScrollView>

@@ -5,13 +5,13 @@
  */
 import React, { useState, useMemo } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView,
 } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useKidRequestStore, REQUEST_META } from '@/store/kidRequestStore';
-import type { KidRequest } from '@/store/kidRequestStore';
+import type { KidRequest, KidRequestItem } from '@/store/kidRequestStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { decodeGroceryRequest, GROCERY_PREFIX, SUPPLIES_PREFIX } from './KidView';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -103,6 +103,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
   const activeMemberId = useFamilyStore(s => s.activeMemberId);
   const {
     requests, declineRequest, assignRequest, completeRequest,
+    approveItems, rejectItems, approveAllItems, rejectAllItems,
   } = useKidRequestStore();
   const { addItem: addGroceryItem } = useGroceryStore();
 
@@ -130,6 +131,10 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
   const [processingComplete, setProcessingComplete] = useState<Record<string, boolean>>({});
   const [processingWithdraw, setProcessingWithdraw] = useState<Record<string, boolean>>({});
 
+  // Per-item approval state (keyed by requestId)
+  const [itemNote,      setItemNote]      = useState<Record<string, string>>({});    // requestId → shared comment
+  const [itemExpanded,  setItemExpanded]  = useState<Record<string, boolean>>({});   // requestId → show item list
+
   const memberName = (id: string) => members.find(m => m.id === id)?.name ?? id;
   const helperName = (id: string) => id === 'ai-tutor' ? 'AI Family Tutor' : memberName(id);
 
@@ -151,41 +156,40 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
     return req.detail;
   };
 
-  // Auto-add grocery/supplies items to grocery store when a delegation request is approved
-  const handleGroceryApproval = (req: KidRequest, approverId: string) => {
+  // Add approved items to the grocery store
+  const addApprovedItemsToStore = (req: KidRequest, approvedItemIds?: Set<string>) => {
     if (req.type !== 'delegation') return;
-    const familyId = activeMember?.familyId ?? members[0]?.familyId ?? 'family-1';
-    const approverName = memberName(approverId);
+    const familyId    = activeMember?.familyId ?? members[0]?.familyId ?? 'family-1';
+    const approverName = memberName(activeMemberId ?? '');
     const approvedNote = `Approved by ${approverName} · Requested by ${memberName(req.fromMemberId)}`;
 
-    if (req.detail.startsWith(GROCERY_PREFIX)) {
-      const parsed = decodeGroceryRequest(req.detail);
-      if (parsed) {
-        addGroceryItem({
-          familyId,
-          name: parsed.name,
-          quantity: parsed.qty || undefined,
-          category: parsed.category,
-          addedBy: req.fromMemberId,
-          notes: [approvedNote, parsed.notes].filter(Boolean).join(' · ') || undefined,
-        });
-      }
-    } else if (req.detail.startsWith(SUPPLIES_PREFIX)) {
-      try {
-        const parsed = JSON.parse(req.detail.slice(SUPPLIES_PREFIX.length)) as { items: { name: string; qty: string }[]; notes: string };
-        parsed.items.forEach(item => {
+    if (req.items && req.items.length > 0) {
+      // New multi-item format — only add the approved subset
+      req.items
+        .filter(it => !approvedItemIds || approvedItemIds.has(it.id))
+        .forEach(item => {
           addGroceryItem({
             familyId,
             name: item.name,
             quantity: item.qty || undefined,
-            category: 'School Supplies',
+            category: item.category,
             addedBy: req.fromMemberId,
-            notes: [approvedNote, parsed.notes].filter(Boolean).join(' · ') || undefined,
+            notes: approvedNote,
           });
         });
-      } catch { /* ignore parse error */ }
+    } else if (req.detail.startsWith(GROCERY_PREFIX)) {
+      const parsed = decodeGroceryRequest(req.detail);
+      if (parsed) addGroceryItem({ familyId, name: parsed.name, quantity: parsed.qty || undefined, category: parsed.category, addedBy: req.fromMemberId, notes: [approvedNote, parsed.notes].filter(Boolean).join(' · ') || undefined });
+    } else if (req.detail.startsWith(SUPPLIES_PREFIX)) {
+      try {
+        const parsed = JSON.parse(req.detail.slice(SUPPLIES_PREFIX.length)) as { items: { name: string; qty: string }[]; notes: string };
+        parsed.items.forEach(item => addGroceryItem({ familyId, name: item.name, quantity: item.qty || undefined, category: 'School Supplies', addedBy: req.fromMemberId, notes: [approvedNote, parsed.notes].filter(Boolean).join(' · ') || undefined }));
+      } catch { /* ignore */ }
     }
   };
+
+  // Legacy single-approve (non-item requests)
+  const handleGroceryApproval = (req: KidRequest, approverId: string) => addApprovedItemsToStore(req);
 
   const doDecline = async (id: string) => {
     if (processingDecline[id]) return;
@@ -302,8 +306,105 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
               ) : null}
             </View>
 
+            {/* ── Per-item approval panel (grocery/supplies with items[]) ── */}
+            {isParentOrSenior && req.type === 'delegation' && req.items && req.items.length > 0 && (
+              <View style={{ borderTopWidth: 1, borderTopColor: BRAND.amber + '33', paddingTop: 10, gap: 8 }}>
+                {/* Bulk actions header */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: isDark ? '#FCD34D' : '#B45309' }}>
+                    📦 {req.items.length} items requested by {memberName(req.fromMemberId)}:
+                  </Text>
+                  <TouchableOpacity onPress={() => setItemExpanded(p => ({ ...p, [req.id]: !p[req.id] }))}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: BRAND.purple }}>
+                      {itemExpanded[req.id] ? '▲ collapse' : '▼ review items'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {itemExpanded[req.id] && (
+                  <>
+                    {/* Per-item rows */}
+                    {req.items.map(item => {
+                      const isPending  = item.status === 'pending';
+                      const isApproved = item.status === 'approved';
+                      const isRejected = item.status === 'rejected';
+                      return (
+                        <View key={item.id} style={{
+                          borderRadius: 10, borderWidth: 1.5, padding: 8, gap: 4,
+                          backgroundColor: isApproved ? '#10B98112' : isRejected ? '#EF444412' : (isDark ? colors.surface : '#FAFAFA'),
+                          borderColor: isApproved ? '#10B98150' : isRejected ? '#EF444450' : colors.border,
+                        }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={{ fontSize: 13 }}>{item.emoji ?? '🛒'}</Text>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary }}>
+                                {item.name}{item.qty ? <Text style={{ fontWeight: '400', color: colors.textSecondary }}> × {item.qty}</Text> : null}
+                              </Text>
+                              <Text style={{ fontSize: 10, color: colors.textTertiary }}>{item.category}</Text>
+                            </View>
+                            {isPending ? (
+                              <View style={{ flexDirection: 'row', gap: 6 }}>
+                                <TouchableOpacity
+                                  onPress={() => { approveItems(req.id, [item.id], activeMemberId ?? '', itemNote[req.id]); addApprovedItemsToStore({ ...req, items: [item] }); }}
+                                  style={{ borderRadius: 8, backgroundColor: '#10B981', paddingHorizontal: 10, paddingVertical: 5 }}>
+                                  <Text style={{ fontSize: 11, fontWeight: '900', color: '#fff' }}>✓ OK</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  onPress={() => rejectItems(req.id, [item.id], activeMemberId ?? '', itemNote[req.id])}
+                                  style={{ borderRadius: 8, backgroundColor: '#EF4444', paddingHorizontal: 10, paddingVertical: 5 }}>
+                                  <Text style={{ fontSize: 11, fontWeight: '900', color: '#fff' }}>✗ No</Text>
+                                </TouchableOpacity>
+                              </View>
+                            ) : (
+                              <View style={{ borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4,
+                                backgroundColor: isApproved ? '#10B98120' : '#EF444420' }}>
+                                <Text style={{ fontSize: 10, fontWeight: '900', color: isApproved ? '#10B981' : '#EF4444' }}>
+                                  {isApproved ? '✓ Approved' : '✗ Rejected'}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                          {(item.parentNote) && (
+                            <Text style={{ fontSize: 10, fontStyle: 'italic', color: colors.textTertiary, paddingLeft: 20 }}>
+                              "{item.parentNote}"
+                            </Text>
+                          )}
+                        </View>
+                      );
+                    })}
+
+                    {/* Comment for this batch */}
+                    <TextInput
+                      style={[q.noteInput, { color: colors.textPrimary, borderColor: isDark ? '#4B2E00' : '#D97706', backgroundColor: isDark ? '#0F172A' : '#fff' }]}
+                      placeholder="Comment for all items (optional)…"
+                      placeholderTextColor={colors.textTertiary}
+                      maxLength={150}
+                      value={itemNote[req.id] ?? ''}
+                      onChangeText={v => setItemNote(p => ({ ...p, [req.id]: v }))}
+                    />
+
+                    {/* Bulk approve / reject all pending */}
+                    {req.items.some(it => it.status === 'pending') && (
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity
+                          onPress={() => { approveAllItems(req.id, activeMemberId ?? '', itemNote[req.id]); addApprovedItemsToStore(req, new Set(req.items!.filter(i => i.status === 'pending').map(i => i.id))); }}
+                          style={{ flex: 1, borderRadius: 12, backgroundColor: '#10B981', paddingVertical: 10, alignItems: 'center' }}>
+                          <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>✓ Approve All</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => rejectAllItems(req.id, activeMemberId ?? '', itemNote[req.id])}
+                          style={{ flex: 1, borderRadius: 12, backgroundColor: '#EF4444', paddingVertical: 10, alignItems: 'center' }}>
+                          <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>✗ Reject All</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </>
+                )}
+              </View>
+            )}
+
             {/* Parent actions */}
-            {isParentOrSenior ? (
+            {isParentOrSenior && !(req.type === 'delegation' && req.items && req.items.length > 0) ? (
               <View style={[q.actionsWrap, { borderTopColor: BRAND.amber + '33' }]}>
                 <View style={q.actionHeader}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -440,8 +541,10 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                   </View>
                 )}
               </View>
-            ) : (
-              /* Kid view — waiting / withdraw */
+            ) : null}
+
+            {/* Kid view — waiting / withdraw */}
+            {!isParentOrSenior && (
               <View style={[q.actionsWrap, { borderTopColor: BRAND.amber + '33', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <ClockIcon color={isDark ? '#FCD34D' : '#92400E'} />

@@ -293,15 +293,54 @@ Return JSON: { childName, ageYears, expectedMilestones: string[], recommendedAct
 }
 
 async function mealPlan(body: Record<string, unknown>) {
-  const { preferences, days, members } = body;
+  const { preferences, days, members, useMetric = false, region = 'US' } = body;
+  const familyMembers = (members as any[]) ?? [];
+  const familySize = familyMembers.length || 4;
+
+  const unitNote = useMetric
+    ? `Use metric units (g, kg, ml, L) for quantities — e.g. "700g chicken breast", "400ml coconut milk", "2 cups basmati rice".`
+    : `Use US units (lb, oz, cups, tbsp, tsp) for quantities — e.g. "1.5 lb chicken breast", "8 oz salmon fillet", "2 cups basmati rice". Never use grams or milliliters.`;
+
+  const unitExamples = useMetric
+    ? `"700g chicken breast", "2 cups basmati rice", "400g salmon fillet"`
+    : `"1.5 lb chicken breast", "2 cups basmati rice", "8 oz salmon fillet"`;
+
+  // Accept explicit dayNames array (client-parsed) or fall back to count
+  const dayNames: string[] = (body.dayNames as string[])?.length
+    ? (body.dayNames as string[])
+    : ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].slice(0, (days as number) || 7);
+
   const prompt = `You are the AI Family Nutrition & Meal Planning Agent.
 Preferences: "${preferences ?? 'Kid-friendly, balanced, 30 min prep'}"
-Family members: ${JSON.stringify(members ?? [])}
-Generate a ${(days as number) || 5}-day family dinner plan.
-Return JSON: { weeklyMeals: [{ day, mealName, prepMinutes, dietaryTags: string[], kidFriendlyRating: 1-5, ingredientsList: string[] }], groceryAutoList: string[], nutritionCoachingTip }`;
+Family members (${familySize} people): ${JSON.stringify(familyMembers)}
+Region: ${region}. ${unitNote}
+
+Generate exactly 3 dinner options for EACH of these days: ${dayNames.join(', ')}.
+Each day gets 3 distinct meal choices so the family can pick their favourite.
+Return ONLY valid JSON with NO markdown:
+{
+  "weeklyOptions": [
+    {
+      "day": "Mon",
+      "options": [
+        {
+          "mealName": string,
+          "emoji": string (one food emoji),
+          "prepMinutes": number,
+          "dietaryTags": string[],
+          "kidFriendlyRating": number (1-5),
+          "ingredientsList": string[] (each item with quantity for ${familySize} people, e.g. ${unitExamples}),
+          "prepSteps": string[] (4-6 clear steps)
+        }
+      ]
+    }
+  ],
+  "groceryAutoList": string[] (combined unique ingredients from ALL options, deduplicated, e.g. ${unitExamples}),
+  "nutritionCoachingTip": string
+}`;
 
   const text = await callAI(prompt);
-  return parseJson(text, { weeklyMeals: [], groceryAutoList: [], nutritionCoachingTip: 'Involve kids in meal prep to increase acceptance of new foods.' });
+  return parseJson(text, { weeklyOptions: [], groceryAutoList: [], nutritionCoachingTip: 'Involve kids in meal prep to increase acceptance of new foods.' });
 }
 
 async function rewardSuggest(body: Record<string, unknown>) {

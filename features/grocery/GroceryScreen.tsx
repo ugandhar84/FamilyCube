@@ -10,7 +10,7 @@
  *  "New run" → create run sheet → pick items from pool
  *  Active run card → RunDetailSheet (live check-off)
  */
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, ComponentType } from 'react';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, TextInput,
   Modal, KeyboardAvoidingView, Platform, Alert, Animated,
@@ -21,17 +21,45 @@ import { supabase } from '@/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
+import {
+  Apple, Milk, Wheat, Beef, Carrot, Cookie, Coffee, Snowflake,
+  ShoppingBasket, Salad, Sandwich, Wine, Croissant, Egg, Fish,
+  Grape, Banana, Cake, Nut, Pizza, ShoppingCart,
+} from 'lucide-react-native';
 import { useFamilyStore } from '@/store/familyStore';
 import { useGroceryStore, GroceryItem, GroceryRun, GroceryRunItem } from '@/store/groceryStore';
 import { TYPO, RADIUS } from '@/constants/theme';
 
 // ─── Category suggestions ─────────────────────────────────────────────────────
 
-const CATEGORIES = ['Produce', 'Dairy', 'Grains', 'Spices', 'Meat', 'Snacks', 'Beverages', 'Frozen', 'Cleaning', 'Personal Care', 'Other'];
+const CATEGORIES = ['Produce', 'Dairy', 'Grains', 'Spices', 'Meat', 'Snacks', 'Beverages', 'Frozen', 'Cleaning', 'Personal Care', 'Bakery', 'Seafood', 'Deli', 'Frozen Meals', 'Other'];
+const CAT_ICON: Record<string, ComponentType<{ size?: number; color?: string; strokeWidth?: number }>> = {
+  Produce:        Carrot,
+  Dairy:          Milk,
+  Grains:         Wheat,
+  Spices:         Apple,       // closest available; spice jar not in lucide
+  Meat:           Beef,
+  Snacks:         Cookie,
+  Beverages:      Wine,
+  Frozen:         Snowflake,
+  Cleaning:       ShoppingBasket,
+  'Personal Care': Nut,
+  Bakery:         Croissant,
+  Seafood:        Fish,
+  Deli:           Sandwich,
+  'Frozen Meals': Snowflake,
+  Other:          ShoppingCart,
+};
 const CAT_EMOJI: Record<string, string> = {
   Produce: '🥦', Dairy: '🥛', Grains: '🌾', Spices: '🌶️', Meat: '🥩',
-  Snacks: '🍿', Beverages: '🧃', Frozen: '🧊', Cleaning: '🧹', 'Personal Care': '🧴', Other: '📦',
+  Snacks: '🍿', Beverages: '🧃', Frozen: '🧊', Cleaning: '🧹', 'Personal Care': '🧴',
+  Bakery: '🥐', Seafood: '🐟', Deli: '🥪', 'Frozen Meals': '🧊', Other: '📦',
 };
+
+function CatIcon({ category, size = 20, color = '#7C3AED' }: { category?: string; size?: number; color?: string }) {
+  const Ic = CAT_ICON[category ?? 'Other'] ?? ShoppingCart;
+  return <Ic size={size} color={color} strokeWidth={1.8} />;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -47,12 +75,15 @@ function fmtDate(iso: string) {
 
 // ─── Add Item Sheet ───────────────────────────────────────────────────────────
 
-function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark }: {
+function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark, editItem }: {
   visible: boolean; onClose: () => void;
   familyId: string; memberId: string;
   colors: any; isDark: boolean;
+  editItem?: GroceryItem;
 }) {
   const addItem = useGroceryStore(s => s.addItem);
+  const isEdit = !!editItem;
+
   const [name, setName]   = useState('');
   const [qty,  setQty]    = useState('');
   const [cat,  setCat]    = useState('');
@@ -60,16 +91,39 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark }: 
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Populate fields when editing
+  useEffect(() => {
+    if (visible && editItem) {
+      setName(editItem.name);
+      setQty(editItem.quantity ?? '');
+      setCat(editItem.category ?? '');
+      setStore(editItem.storePreference ?? '');
+      setNotes(editItem.notes ?? '');
+    } else if (visible && !editItem) {
+      setName(''); setQty(''); setCat(''); setStore(''); setNotes('');
+    }
+  }, [visible, editItem]);
+
   const reset = () => { setName(''); setQty(''); setCat(''); setStore(''); setNotes(''); };
 
   const handleSave = async () => {
     if (!name.trim()) return;
     setSaving(true);
-    await addItem({
-      familyId, name: name.trim(), quantity: qty.trim() || undefined,
-      category: cat || undefined, storePreference: store.trim() || undefined,
-      addedBy: memberId, notes: notes.trim() || undefined,
-    });
+    if (isEdit && editItem) {
+      await supabase.from('grocery_items').update({
+        name: name.trim(),
+        quantity: qty.trim() || null,
+        category: cat || null,
+        store_preference: store.trim() || null,
+        notes: notes.trim() || null,
+      }).eq('id', editItem.id);
+    } else {
+      await addItem({
+        familyId, name: name.trim(), quantity: qty.trim() || undefined,
+        category: cat || undefined, storePreference: store.trim() || undefined,
+        addedBy: memberId, notes: notes.trim() || undefined,
+      });
+    }
     setSaving(false);
     reset();
     onClose();
@@ -85,7 +139,7 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark }: 
         <Pressable style={{ flex: 1 }} onPress={onClose} />
         <View style={[sh.sheet, { backgroundColor: sheetBg, borderColor: border }]}>
           <View style={sh.handle} />
-          <Text style={[sh.title, { color: colors.textPrimary }]}>Add Item</Text>
+          <Text style={[sh.title, { color: colors.textPrimary }]}>{isEdit ? 'Edit Item' : 'Add Item'}</Text>
 
           <TextInput
             style={[sh.input, { backgroundColor: inputBg, borderColor: border, color: colors.textPrimary }]}
@@ -118,9 +172,10 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark }: 
                     borderColor: cat === c ? colors.primary : border,
                   }]}
                 >
-                  <Text style={{ fontSize: 12, color: cat === c ? '#FFF' : colors.textSecondary }}>
-                    {CAT_EMOJI[c]} {c}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <CatIcon category={c} size={13} color={cat === c ? '#FFF' : colors.textSecondary} />
+                    <Text style={{ fontSize: 12, color: cat === c ? '#FFF' : colors.textSecondary }}>{c}</Text>
+                  </View>
                 </Pressable>
               ))}
             </View>
@@ -140,7 +195,7 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark }: 
           >
             {saving
               ? <ActivityIndicator color="#FFF" size="small" />
-              : <Text style={sh.btnText}>Add to List</Text>}
+              : <Text style={sh.btnText}>{isEdit ? 'Save Changes' : 'Add to List'}</Text>}
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -552,6 +607,13 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
 
 // ─── Item Card ────────────────────────────────────────────────────────────────
 
+const CAT_DOT_COLOR: Record<string, string> = {
+  Produce: '#14B8A6', Dairy: '#14B8A6', Meat: '#14B8A6', Frozen: '#14B8A6',
+  Grains: '#F59E0B', Snacks: '#F59E0B', Beverages: '#F59E0B',
+  Cleaning: '#7C3AED', 'Personal Care': '#7C3AED', Spices: '#7C3AED',
+  Other: '#9CA3AF',
+};
+
 function fmtProvenance(item: GroceryItem, members: any[]) {
   const time = new Date(item.createdAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   const dateStr = fmtDate(item.createdAt);
@@ -561,46 +623,74 @@ function fmtProvenance(item: GroceryItem, members: any[]) {
   return `Added by ${name} · ${dateStr}`;
 }
 
-function ItemCard({ item, members, selected, selecting, onBuy, onLongPress, onToggleSelect, colors, isDark }: {
+function ItemCard({ item, members, selected, selecting, onBuy, onLongPress, onToggleSelect, onPress, onEdit, onDelete, colors, isDark, priceInfo, isLast }: {
   item: GroceryItem; members: any[];
-  selected: boolean; selecting: boolean;
+  selected: boolean; selecting: boolean; isLast?: boolean;
   onBuy: () => void; onLongPress: () => void; onToggleSelect: () => void;
+  onPress: () => void; onEdit: () => void; onDelete?: () => void;
   colors: any; isDark: boolean;
+  priceInfo?: { price: number | null; unit: string | null; source: 'kroger' | 'estimate' | 'unknown' };
 }) {
-  const cardBg = isDark ? '#1F1F38' : '#FFFFFF';
-  const border = selected ? colors.primary : (isDark ? '#2D2D4E' : '#E5E7EB');
+  const dotColor = CAT_DOT_COLOR[item.category ?? 'Other'] ?? '#9CA3AF';
+  const isBought = item.isBought;
+  const sepColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)';
 
   return (
     <Pressable
-      onPress={selecting ? onToggleSelect : undefined}
+      onPress={selecting ? onToggleSelect : onPress}
       onLongPress={onLongPress}
-      delayLongPress={400}
-      style={[ic.card, { backgroundColor: cardBg, borderColor: border, borderWidth: selected ? 2 : StyleSheet.hairlineWidth }]}
+      delayLongPress={350}
+      style={({ pressed }) => ({
+        flexDirection: 'row', alignItems: 'center',
+        paddingVertical: 11, paddingHorizontal: 16,
+        backgroundColor: pressed ? (isDark ? 'rgba(124,58,237,0.07)' : '#FAF8FF') : 'transparent',
+        opacity: isBought ? 0.45 : 1,
+        borderBottomWidth: isLast ? 0 : StyleSheet.hairlineWidth,
+        borderBottomColor: sepColor,
+      })}
     >
-      {/* Multi-select checkbox */}
-      {selecting && (
-        <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2,
-          borderColor: selected ? colors.primary : colors.border,
-          backgroundColor: selected ? colors.primary : 'transparent',
-          alignItems: 'center', justifyContent: 'center', marginRight: 4 }}>
-          {selected && <Ionicons name="checkmark" size={13} color="#fff" />}
-        </View>
-      )}
-      <View style={{ flex: 1 }}>
-        <Text style={[ic.name, { color: colors.textPrimary }]}>{item.name}</Text>
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
-          {item.quantity && <Text style={[ic.tag, { color: colors.textSecondary }]}>📦 {item.quantity}</Text>}
-          {item.category && <Text style={[ic.tag, { color: colors.textSecondary }]}>{CAT_EMOJI[item.category] ?? '•'} {item.category}</Text>}
-          {item.storePreference && <Text style={[ic.tag, { color: colors.textSecondary }]}>🏪 {item.storePreference}</Text>}
-        </View>
-        {item.notes && <Text style={[ic.notes, { color: colors.textMuted ?? '#9CA3AF' }]} numberOfLines={1}>{item.notes}</Text>}
-        <Text style={[ic.ago, { color: colors.textMuted ?? '#9CA3AF' }]}>{fmtProvenance(item, members)}</Text>
+      {/* Left: checkbox or dot */}
+      <View style={{ width: 28, alignItems: 'center', marginRight: 12 }}>
+        {selecting ? (
+          <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: selected ? '#7C3AED' : (isDark ? '#475569' : '#CBD5E1'), backgroundColor: selected ? '#7C3AED' : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+            {selected && <Ionicons name="checkmark" size={12} color="#fff" />}
+          </View>
+        ) : (
+          <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: (CAT_DOT_COLOR[item.category ?? 'Other'] ?? '#9CA3AF') + '1A', alignItems: 'center', justifyContent: 'center' }}>
+            <CatIcon category={item.category} size={18} color={CAT_DOT_COLOR[item.category ?? 'Other'] ?? '#9CA3AF'} />
+          </View>
+        )}
       </View>
-      {!selecting && (
-        <Pressable onPress={onBuy} style={[ic.buyBtn, { backgroundColor: colors.primary }]}>
-          <Ionicons name="checkmark" size={14} color="#FFF" />
+
+      {/* Body */}
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 14, fontWeight: '700', color: isBought ? colors.textTertiary : colors.textPrimary, textDecorationLine: isBought ? 'line-through' : 'none' }} numberOfLines={1}>
+          {item.name}
+        </Text>
+        {/* Subtitle: qty · store · AI badge */}
+        {(item.quantity || item.storePreference || item.aiGenerated || item.notes) && (
+          <Text style={{ fontSize: 12, color: isDark ? '#64748B' : '#94A3B8', marginTop: 2 }} numberOfLines={1}>
+            {[
+              item.quantity,
+              item.storePreference,
+              item.aiGenerated ? '✨ AI' : null,
+              item.notes,
+            ].filter(Boolean).join(' · ')}
+          </Text>
+        )}
+      </View>
+
+      {/* Right: price + buy */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        {priceInfo?.price != null && (
+          <Text style={{ fontSize: 12, fontWeight: '800', color: priceInfo.source === 'kroger' ? '#15803D' : '#B45309' }}>
+            ${priceInfo.price.toFixed(2)}
+          </Text>
+        )}
+        <Pressable onPress={onBuy} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isBought ? (isDark ? '#064E3B' : '#D1FAE5') : (isDark ? '#0F172A' : '#F1F5F9'), alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: isBought ? '#10B981' : (isDark ? '#1E293B' : '#E2E8F0') }}>
+          <Ionicons name="checkmark" size={15} color={isBought ? '#10B981' : (isDark ? '#475569' : '#CBD5E1')} />
         </Pressable>
-      )}
+      </View>
     </Pressable>
   );
 }
@@ -608,7 +698,7 @@ function ItemCard({ item, members, selected, selecting, onBuy, onLongPress, onTo
 // ─── Run Card ─────────────────────────────────────────────────────────────────
 
 function RunCard({ run, onPress, onDelete, colors, isDark }: {
-  run: GroceryRun; onPress: () => void; onDelete: () => void;
+  run: GroceryRun; onPress: () => void; onDelete?: () => void;
   colors: any; isDark: boolean;
 }) {
   const cardBg = isDark ? '#1F1F38' : '#FFFFFF';
@@ -634,7 +724,7 @@ function RunCard({ run, onPress, onDelete, colors, isDark }: {
       </View>
       <View style={{ gap: 6, alignItems: 'flex-end' }}>
         <Ionicons name="chevron-forward" size={18} color={colors.textMuted ?? '#9CA3AF'} />
-        {!isActive && (
+        {!isActive && onDelete && (
           <Pressable onPress={onDelete} style={{ padding: 4 }}>
             <Ionicons name="trash-outline" size={16} color="#EF4444" />
           </Pressable>
@@ -844,6 +934,91 @@ function AiPanel({ familyId, memberId, existingItems, colors, isDark, onClose, o
   );
 }
 
+// ─── Item Detail Sheet ────────────────────────────────────────────────────────
+
+function ItemDetailSheet({ item, members, onClose, onEdit, onBuy, onDelete, colors, isDark, priceInfo }: {
+  item: GroceryItem | null; members: any[];
+  onClose: () => void; onEdit: () => void; onBuy: () => void; onDelete?: () => void;
+  colors: any; isDark: boolean;
+  priceInfo?: { price: number | null; unit: string | null; source: 'kroger' | 'estimate' | 'unknown' };
+}) {
+  if (!item) return null;
+  const dotColor = CAT_DOT_COLOR[item.category ?? 'Other'] ?? '#9CA3AF';
+  const sheetBg  = isDark ? '#1A1F35' : '#FFFFFF';
+
+  return (
+    <Modal visible={!!item} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' }} onPress={onClose} />
+      <View style={{ backgroundColor: sheetBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: 36 }}>
+        {/* Handle */}
+        <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 4 }}>
+          <View style={{ width: 38, height: 4, borderRadius: 2, backgroundColor: isDark ? '#334155' : '#E2E8F0' }} />
+        </View>
+
+        {/* Header */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, gap: 12 }}>
+          <View style={{ width: 46, height: 46, borderRadius: 14, backgroundColor: dotColor + '18', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: dotColor + '30' }}>
+            <CatIcon category={item.category} size={24} color={dotColor} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: isDark ? '#F8FAFC' : '#1E2D6B' }}>{item.name}</Text>
+            {item.category && (
+              <Text style={{ fontSize: 12, fontWeight: '700', color: dotColor, marginTop: 1 }}>{item.category}</Text>
+            )}
+          </View>
+          {priceInfo?.price != null && (
+            <View style={{ backgroundColor: priceInfo.source === 'kroger' ? '#DCFCE7' : '#FEF3C7', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center', borderWidth: 1, borderColor: priceInfo.source === 'kroger' ? '#6EE7B7' : '#FCD34D' }}>
+              <Text style={{ fontSize: 16, fontWeight: '900', color: priceInfo.source === 'kroger' ? '#15803D' : '#B45309' }}>${priceInfo.price.toFixed(2)}</Text>
+              <Text style={{ fontSize: 9, fontWeight: '700', color: priceInfo.source === 'kroger' ? '#16A34A' : '#D97706' }}>{priceInfo.source === 'kroger' ? 'Kroger' : '~est'}</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={{ height: 1, backgroundColor: isDark ? '#1E293B' : '#F1F5F9', marginHorizontal: 20, marginBottom: 14 }} />
+
+        {/* Details */}
+        <View style={{ paddingHorizontal: 20, gap: 10 }}>
+          {item.quantity && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#64748B' : '#94A3B8', width: 70 }}>Quantity</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#F1F5F9' : '#1E293B' }}>{item.quantity}</Text>
+            </View>
+          )}
+          {item.storePreference && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#64748B' : '#94A3B8', width: 70 }}>Store</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#F1F5F9' : '#1E293B' }}>{item.storePreference}</Text>
+            </View>
+          )}
+          {item.notes && (
+            <View style={{ backgroundColor: isDark ? '#1E1B4B' : '#F5F3FF', borderRadius: 12, padding: 12, borderLeftWidth: 3, borderLeftColor: '#7C3AED' }}>
+              <Text style={{ fontSize: 12, color: isDark ? '#C4B5FD' : '#4338CA', fontStyle: 'italic' }}>"{item.notes}"</Text>
+            </View>
+          )}
+          <Text style={{ fontSize: 11, color: isDark ? '#475569' : '#94A3B8', marginTop: 2 }}>
+            {fmtProvenance(item, members)}
+          </Text>
+        </View>
+
+        {/* Actions */}
+        <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 18 }}>
+          {onDelete && (
+            <Pressable onPress={() => { onDelete(); onClose(); }} style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? '#450A0A' : '#FEE2E2', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="trash-outline" size={18} color="#EF4444" />
+            </Pressable>
+          )}
+          <Pressable onPress={() => { onEdit(); onClose(); }} style={{ flex: 1, backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderRadius: 14, height: 44, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: isDark ? '#334155' : '#E2E8F0' }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary }}>Edit</Text>
+          </Pressable>
+          <Pressable onPress={() => { onBuy(); onClose(); }} style={{ flex: 2, backgroundColor: '#10B981', borderRadius: 14, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>✓ Mark Bought</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function GroceryScreen() {
@@ -854,18 +1029,90 @@ export default function GroceryScreen() {
 
   const [tab, setTab]                   = useState<'list' | 'runs'>('list');
   const [showAddItem, setShowAddItem]   = useState(false);
+  const [editingItem, setEditingItem]   = useState<GroceryItem | undefined>(undefined);
+  const [detailItem,  setDetailItem]    = useState<GroceryItem | null>(null);
   const [showNewRun,  setShowNewRun]    = useState(false);
   const [showAiPanel, setShowAiPanel]   = useState(false);
   const [selectedRun, setSelectedRun]  = useState<GroceryRun | null>(null);
+
+  // Price comparison state
+  const [priceMap, setPriceMap]         = useState<Record<string, { price: number | null; unit: string | null; source: 'kroger' | 'estimate' | 'unknown' }>>({});
+  const [priceLoading, setPriceLoading] = useState(false);
+  const [pricesLoaded, setPricesLoaded] = useState(false);
+
+  const checkPrices = async () => {
+    const unbought = items.filter(i => !i.isBought);
+    // Only fetch delta items — skip those already priced
+    const toFetch = unbought.filter(i => !priceMap[i.name]);
+    if (!toFetch.length) return;
+    setPriceLoading(true);
+    try {
+      // Get live location for country + zip — 5s timeout
+      let country = 'US';
+      let zipCode: string | undefined;
+      try {
+        const { getLocationAPI } = await import('@/lib/location');
+        const locationAPI = getLocationAPI();
+        if (locationAPI) {
+          const status = await Promise.race([
+            locationAPI.requestForegroundPermissionsAsync().then(r => r.status),
+            new Promise<string>(res => setTimeout(() => res('denied'), 5000)),
+          ]);
+          if (status === 'granted') {
+            const loc = await Promise.race([
+              locationAPI.getCurrentPositionAsync({ accuracy: locationAPI.Accuracy.Low }),
+              new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+            ]);
+            const [place] = await locationAPI.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+            country = place?.isoCountryCode ?? 'US';
+            zipCode = place?.postalCode ?? undefined;
+          }
+        }
+      } catch (locErr) {
+        console.warn('[GroceryScreen] location lookup failed:', String(locErr));
+      }
+
+      const timer = setTimeout(() => {}, 20_000);
+      try {
+        const { data, error } = await supabase.functions.invoke('kroger-prices', {
+          body: { items: toFetch.map(i => i.name), country, zipCode },
+        });
+        if (error) console.error('[GroceryScreen] kroger-prices error:', error);
+        if (data?.prices) {
+          const newEntries: typeof priceMap = {};
+          for (const p of data.prices) {
+            newEntries[p.name] = { price: p.krogerPrice ?? p.fallbackEstimate, unit: p.unit, source: p.source };
+          }
+          // Merge with existing prices (don't overwrite already-priced items)
+          setPriceMap(prev => ({ ...prev, ...newEntries }));
+          setPricesLoaded(true);
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (err) {
+      console.error('[GroceryScreen] checkPrices() uncaught error:', String(err));
+    }
+    setPriceLoading(false);
+  };
   const [selectedIds, setSelectedIds]   = useState<Set<string>>(new Set());
   const isSelecting = selectedIds.size > 0;
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
+  const isKid = (activeMember as any)?.role === 'child';
   const familyId = (activeMember as any)?.familyId ?? 'family-1';
 
   useEffect(() => {
     load(familyId);
   }, [familyId]);
+
+  // Prices are fetched on demand only (user taps "Estimate Prices" button)
+
+  const cartTotal = useMemo(() => {
+    return items
+      .filter(i => !i.isBought)
+      .reduce((sum, i) => sum + (priceMap[i.name]?.price ?? 0), 0);
+  }, [items, priceMap]);
 
   // Group items by store preference
   const groupedItems = useMemo(() => {
@@ -906,23 +1153,53 @@ export default function GroceryScreen() {
 
       {/* Header */}
       <View style={[s.header, { paddingTop: insets.top + 8, backgroundColor: card, borderBottomColor: border }]}>
-        <Text style={[s.headerTitle, { color: colors.textPrimary }]}>🛒 Groceries</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        {/* Title row */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <Text style={[s.headerTitle, { color: colors.textPrimary }]}>🛒 Groceries</Text>
           {items.length > 0 && (
-            <View style={[s.countBadge, { backgroundColor: P }]}>
+            <View style={[s.countBadge, { backgroundColor: '#7C3AED' }]}>
               <Text style={s.countText}>{items.length}</Text>
             </View>
           )}
-          <Pressable onPress={() => setShowAiPanel(v => !v)} style={[s.headerBtn, { borderColor: showAiPanel ? P : border, backgroundColor: showAiPanel ? P + '15' : 'transparent' }]}>
+        </View>
+        {/* Action buttons row */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Pressable onPress={() => setShowAiPanel(v => !v)}
+            style={[s.headerBtn, { borderColor: showAiPanel ? '#7C3AED' : 'rgba(124,58,237,0.3)', backgroundColor: showAiPanel ? 'rgba(124,58,237,0.15)' : 'transparent' }]}>
             <Text style={{ fontSize: 14 }}>✨</Text>
-            <Text style={[s.headerBtnText, { color: P }]}>AI</Text>
+            <Text style={[s.headerBtnText, { color: '#7C3AED' }]}>AI</Text>
           </Pressable>
-          <Pressable onPress={() => setShowNewRun(true)} style={[s.headerBtn, { borderColor: border }]}>
-            <Ionicons name="cart-outline" size={18} color={P} />
-            <Text style={[s.headerBtnText, { color: P }]}>New Run</Text>
+          <Pressable onPress={checkPrices} disabled={priceLoading}
+            style={[s.headerBtn, { borderColor: pricesLoaded ? '#10B981' : 'rgba(124,58,237,0.3)', backgroundColor: pricesLoaded ? 'rgba(16,185,129,0.12)' : 'transparent' }]}>
+            {priceLoading
+              ? <ActivityIndicator size="small" color="#7C3AED" />
+              : <><Ionicons name="pricetag-outline" size={16} color={pricesLoaded ? '#10B981' : '#7C3AED'} />
+                  <Text style={[s.headerBtnText, { color: pricesLoaded ? '#10B981' : '#7C3AED' }]}>
+                    {pricesLoaded ? 'Prices ✓' : 'Prices'}
+                  </Text></>}
+          </Pressable>
+          <Pressable onPress={() => setShowNewRun(true)}
+            style={[s.headerBtn, { borderColor: 'rgba(124,58,237,0.3)', backgroundColor: 'transparent' }]}>
+            <Ionicons name="cart-outline" size={16} color="#7C3AED" />
+            <Text style={[s.headerBtnText, { color: '#7C3AED' }]}>New Run</Text>
           </Pressable>
         </View>
       </View>
+
+      {/* Cart total */}
+      {cartTotal > 0 && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+          paddingHorizontal: 16, paddingVertical: 10,
+          backgroundColor: isDark ? '#1A1A2E' : '#F0EEFF',
+          borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border }}>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary }}>
+            🛒 Estimated cart total ({items.filter(i => !i.isBought).length} items)
+          </Text>
+          <Text style={{ fontSize: 16, fontWeight: '900', color: P }}>
+            ${cartTotal.toFixed(2)}
+          </Text>
+        </View>
+      )}
 
       {/* Active run banner */}
       {activeRuns.length > 0 && (
@@ -973,54 +1250,82 @@ export default function GroceryScreen() {
             </View>
           ) : (
             groupedItems.map(([store, storeItems]) => (
-              <View key={store} style={{ marginBottom: 20 }}>
-                <Text style={[s.sectionHeader, { color: colors.textSecondary }]}>
-                  {store === 'Any store' ? '🏪 No store preference' : `🏪 ${store}`}
-                </Text>
-                {storeItems.map(item => (
-                  <ItemCard
-                    key={item.id}
-                    item={item}
-                    members={members}
-                    selected={selectedIds.has(item.id)}
-                    selecting={isSelecting}
-                    onBuy={() => handleBuyItem(item)}
-                    onLongPress={() => setSelectedIds(prev => { const n = new Set(prev); n.add(item.id); return n; })}
-                    onToggleSelect={() => setSelectedIds(prev => {
-                      const n = new Set(prev);
-                      n.has(item.id) ? n.delete(item.id) : n.add(item.id);
-                      return n;
-                    })}
-                    colors={colors}
-                    isDark={isDark}
-                  />
-                ))}
+              <View key={store} style={{ marginBottom: 22 }}>
+                {/* Section header */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, paddingHorizontal: 4 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <Ionicons name="storefront-outline" size={12} color="#7C3AED" />
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: '#7C3AED', textTransform: 'uppercase', letterSpacing: 0.7 }}>
+                      {store === 'Any store' ? 'Any Store' : store}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#475569' : '#94A3B8' }}>
+                    {storeItems.filter(i => !i.isBought).length} left
+                  </Text>
+                </View>
+                {/* Inset grouped list */}
+                <View style={{ backgroundColor: isDark ? '#1A1F35' : '#FFFFFF', borderRadius: 16, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: isDark ? 'rgba(124,58,237,0.15)' : '#EDE9FE' }}>
+                  {storeItems.map((item, idx) => (
+                    <ItemCard
+                      key={item.id}
+                      item={item}
+                      members={members}
+                      selected={selectedIds.has(item.id)}
+                      selecting={isSelecting}
+                      isLast={idx === storeItems.length - 1}
+                      priceInfo={priceMap[item.name]}
+                      onPress={() => setDetailItem(item)}
+                      onBuy={() => handleBuyItem(item)}
+                      onLongPress={() => setSelectedIds(prev => { const n = new Set(prev); n.add(item.id); return n; })}
+                      onToggleSelect={() => setSelectedIds(prev => {
+                        const n = new Set(prev);
+                        n.has(item.id) ? n.delete(item.id) : n.add(item.id);
+                        return n;
+                      })}
+                      onEdit={() => { setDetailItem(null); setEditingItem(item); setShowAddItem(true); }}
+                      onDelete={isKid ? undefined : () => Alert.alert('Remove item?', `"${item.name}"`, [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Remove', style: 'destructive', onPress: () => removeItem(item.id) },
+                      ])}
+                      colors={colors}
+                      isDark={isDark}
+                    />
+                  ))}
+                </View>
               </View>
             ))
           )}
         </ScrollView>
 
-        {/* Bulk-delete toolbar */}
+        {/* Bulk action toolbar */}
         {isSelecting && (
-          <View style={{ position: 'absolute', bottom: 90, left: 16, right: 16, flexDirection: 'row', alignItems: 'center',
-            backgroundColor: isDark ? '#1F1F38' : '#fff', borderRadius: 14, borderWidth: 1, borderColor: colors.border,
-            padding: 12, gap: 12, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 10, elevation: 6 }}>
-            <Text style={{ flex: 1, fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>
-              {selectedIds.size} item{selectedIds.size !== 1 ? 's' : ''} selected
+          <View style={{ position: 'absolute', bottom: 90, left: 16, right: 16,
+            flexDirection: 'row', alignItems: 'center',
+            backgroundColor: '#1A0A3D', borderRadius: 20,
+            paddingVertical: 10, paddingHorizontal: 16, gap: 10,
+            shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 12, elevation: 8 }}>
+            <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: '#FFF' }}>
+              {selectedIds.size} selected
             </Text>
-            <Pressable onPress={() => setSelectedIds(new Set())}
-              style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: colors.border }}>
-              <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancel</Text>
+            <Pressable onPress={() => setSelectedIds(new Set(items.map(i => i.id)))}
+              style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' }}>
+              <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '600' }}>Select All</Text>
             </Pressable>
-            <Pressable onPress={() => Alert.alert('Delete items?', `Remove ${selectedIds.size} item${selectedIds.size !== 1 ? 's' : ''} from the list?`, [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Delete', style: 'destructive', onPress: () => {
-                selectedIds.forEach(id => removeItem(id));
-                setSelectedIds(new Set());
-              }},
-            ])}
-              style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: '#ef4444' }}>
-              <Text style={{ color: '#fff', fontWeight: '700' }}>Delete</Text>
+            {!isKid && (
+              <Pressable onPress={() => Alert.alert('Delete items?', `Remove ${selectedIds.size} item${selectedIds.size !== 1 ? 's' : ''} from the list?`, [
+                { text: 'Cancel', style: 'cancel' },
+                { text: `Delete (${selectedIds.size})`, style: 'destructive', onPress: () => {
+                  selectedIds.forEach(id => removeItem(id));
+                  setSelectedIds(new Set());
+                }},
+              ])}
+                style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: '#EF4444' }}>
+                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Delete ({selectedIds.size})</Text>
+              </Pressable>
+            )}
+            <Pressable onPress={() => setSelectedIds(new Set())}
+              style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' }}>
+              <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '600' }}>Cancel</Text>
             </Pressable>
           </View>
         )}
@@ -1039,7 +1344,7 @@ export default function GroceryScreen() {
                 <>
                   <Text style={[s.sectionHeader, { color: colors.textSecondary }]}>ACTIVE</Text>
                   {activeRuns.map(run => (
-                    <RunCard key={run.id} run={run} onPress={() => setSelectedRun(run)} onDelete={() => handleDeleteRun(run)} colors={colors} isDark={isDark} />
+                    <RunCard key={run.id} run={run} onPress={() => setSelectedRun(run)} onDelete={isKid ? undefined : () => handleDeleteRun(run)} colors={colors} isDark={isDark} />
                   ))}
                 </>
               )}
@@ -1047,7 +1352,7 @@ export default function GroceryScreen() {
                 <>
                   <Text style={[s.sectionHeader, { color: colors.textSecondary }]}>DRAFT</Text>
                   {draftRuns.map(run => (
-                    <RunCard key={run.id} run={run} onPress={() => setSelectedRun(run)} onDelete={() => handleDeleteRun(run)} colors={colors} isDark={isDark} />
+                    <RunCard key={run.id} run={run} onPress={() => setSelectedRun(run)} onDelete={isKid ? undefined : () => handleDeleteRun(run)} colors={colors} isDark={isDark} />
                   ))}
                 </>
               )}
@@ -1055,7 +1360,7 @@ export default function GroceryScreen() {
                 <>
                   <Text style={[s.sectionHeader, { color: colors.textSecondary }]}>COMPLETED</Text>
                   {doneRuns.map(run => (
-                    <RunCard key={run.id} run={run} onPress={() => setSelectedRun(run)} onDelete={() => handleDeleteRun(run)} colors={colors} isDark={isDark} />
+                    <RunCard key={run.id} run={run} onPress={() => setSelectedRun(run)} onDelete={isKid ? undefined : () => handleDeleteRun(run)} colors={colors} isDark={isDark} />
                   ))}
                 </>
               )}
@@ -1075,11 +1380,12 @@ export default function GroceryScreen() {
       {/* Sheets */}
       <AddItemSheet
         visible={showAddItem}
-        onClose={() => setShowAddItem(false)}
+        onClose={() => { setShowAddItem(false); setEditingItem(undefined); }}
         familyId={familyId}
         memberId={activeMemberId ?? ''}
         colors={colors}
         isDark={isDark}
+        editItem={editingItem}
       />
       <CreateRunSheet
         visible={showNewRun}
@@ -1099,6 +1405,20 @@ export default function GroceryScreen() {
         colors={colors}
         isDark={isDark}
       />
+      <ItemDetailSheet
+        item={detailItem}
+        members={members}
+        onClose={() => setDetailItem(null)}
+        onEdit={() => { setEditingItem(detailItem ?? undefined); setShowAddItem(true); }}
+        onBuy={() => detailItem && handleBuyItem(detailItem)}
+        onDelete={isKid ? undefined : () => detailItem && Alert.alert('Remove item?', `"${detailItem.name}"`, [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Remove', style: 'destructive', onPress: () => removeItem(detailItem.id) },
+        ])}
+        priceInfo={detailItem ? priceMap[detailItem.name] : undefined}
+        colors={colors}
+        isDark={isDark}
+      />
     </View>
   );
 }
@@ -1107,7 +1427,7 @@ export default function GroceryScreen() {
 
 const s = StyleSheet.create({
   root:          { flex: 1 },
-  header:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  header:        { flexDirection: 'column', paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   headerTitle:   { fontSize: TYPO.heading, fontWeight: '700' },
   countBadge:    { minWidth: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   countText:     { color: '#FFF', fontSize: 12, fontWeight: '700' },
@@ -1138,14 +1458,20 @@ const sh = StyleSheet.create({
 });
 
 const ic = StyleSheet.create({
-  card:    { flexDirection: 'row', borderRadius: RADIUS.md ?? 10, borderWidth: StyleSheet.hairlineWidth, padding: 12, marginBottom: 8, gap: 12 },
-  name:    { fontSize: 15, fontWeight: '600', marginBottom: 2 },
-  tag:     { fontSize: 12 },
-  aiBadge: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
-  notes:   { fontSize: 12, marginTop: 3 },
-  ago:     { fontSize: 11, marginTop: 4 },
-  buyBtn:  { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  delBtn:  { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
+  card:        { flexDirection: 'row', borderRadius: RADIUS.md ?? 12, borderWidth: StyleSheet.hairlineWidth, padding: 12, marginBottom: 8, gap: 10, alignItems: 'center' },
+  name:        { fontSize: 15, fontWeight: '700', marginBottom: 2 },
+  tag:         { fontSize: 11 },
+  notes:       { fontSize: 11, marginTop: 3 },
+  ago:         { fontSize: 10, marginTop: 4 },
+  buyBtn:      { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#10B981' },
+  delBtn:      { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#EF4444' },
+  priceBadge:  { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 10, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 3 },
+  priceText:   { fontSize: 13, fontWeight: '800' },
+  priceSource: { fontSize: 10, fontWeight: '700' },
+  catChip:     { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(20,184,166,0.15)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
+  catChipText: { fontSize: 11, fontWeight: '600', color: '#14B8A6' },
+  qtyChip:     { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(245,158,11,0.15)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
+  qtyChipText: { fontSize: 11, fontWeight: '600', color: '#F59E0B' },
 });
 
 const rc = StyleSheet.create({

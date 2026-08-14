@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { View, Text, Pressable, TouchableOpacity, Alert, TextInput, Dimensions, ScrollView } from 'react-native';
+import { View, Text, Pressable, TouchableOpacity, Alert, TextInput, Dimensions, ScrollView, Modal, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import { TYPO } from '@/constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { BRAND } from '@/components/FamilyCubeLogo';
-import BottomSheet from '@/components/BottomSheet';
 import { useQuestStore } from '@/store/questStore';
 import { useEventStore } from '@/store/eventStore';
 import { useRewardStore } from '@/store/rewardStore';
@@ -158,126 +158,199 @@ const ALL_GROCERY_SUGGESTIONS: { name: string; emoji: string; category: string }
 // Quantity quick-pick options
 const QTY_PICKS = ['1', '2', '3', '6', '1 pack', '1 box', '1 bag', '1 bottle', '1 dozen', '1 lb'];
 
-// ─── Grocery request bottom sheet (routes through parent approval) ─────────────
+// ─── Grocery request modal — mirrors EventFormModal structure exactly ──────────
 function GroceryModal({ visible, onClose, active, colors, isDark }: {
   visible: boolean; onClose: () => void;
   active: FamilyMember; colors: any; isDark: boolean;
 }) {
+  const insets = useSafeAreaInsets();
   const { sendRequest } = useKidRequestStore();
-  const [name,       setName]       = useState('');
-  const [qty,        setQty]        = useState('');
-  const [cat,        setCat]        = useState('Snacks');
-  const [notes,      setNotes]      = useState('');
+  const [name,        setName]        = useState('');
+  const [qty,         setQty]         = useState('');
+  const [cat,         setCat]         = useState('Snacks');
+  const [notes,       setNotes]       = useState('');
   const [nameFocused, setNameFocused] = useState(false);
+  const [qtyFocused,  setQtyFocused]  = useState(false);
 
   const reset = () => { setName(''); setQty(''); setCat('Snacks'); setNotes(''); };
+  const dismiss = () => { reset(); onClose(); };
   const canSubmit = name.trim().length > 0;
 
   const submit = () => {
     if (!canSubmit) return;
     const detail = encodeGroceryRequest({ name: name.trim(), qty: qty.trim(), category: cat, notes: notes.trim() });
     sendRequest({ type: 'delegation', fromMemberId: active.id, urgency: 'normal', detail });
-    reset();
-    onClose();
+    dismiss();
     Alert.alert('Request sent! 🛒', `"${name.trim()}" sent to parent for approval.`);
   };
 
-  const inp = { borderRadius: 12, backgroundColor: isDark ? '#1E1E2E' : '#F5F5FA', paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.textPrimary, borderWidth: 1.5, borderColor: isDark ? '#2A2A40' : '#E0E0F0' };
+  // Filtered suggestions shown only when field is focused
+  const nameSuggestions = (() => {
+    const q = name.trim().toLowerCase();
+    return q.length > 0
+      ? ALL_GROCERY_SUGGESTIONS.filter(s => s.name.toLowerCase().includes(q)).slice(0, 20)
+      : ALL_GROCERY_SUGGESTIONS.slice(0, 20);
+  })();
+  const qtySuggestions = qtyFocused ? QTY_PICKS : [];
+
+  const inp = gm.input(isDark, colors);
 
   return (
-    <BottomSheet visible={visible} onClose={() => { reset(); onClose(); }}
-      title="Request Grocery Item" subtitle="Parent approves before it's added to the list"
-      accent={BRAND.teal}>
-      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 16, paddingBottom: 8 }}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        {/* Dismiss area above sheet */}
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
 
-        {/* Item name input with live filtered suggestions */}
-        <View style={{ gap: 8 }}>
-          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>WHAT DO YOU NEED? *</Text>
-          <TextInput value={name} onChangeText={setName} placeholder="Type to search or pick below…"
-            placeholderTextColor={colors.textTertiary} autoFocus style={inp}
-            onFocus={() => setNameFocused(true)} onBlur={() => setNameFocused(false)}
-            returnKeyType="next" />
-          {nameFocused && (() => {
-            const q = name.trim().toLowerCase();
-            const shown = q.length > 0
-              ? ALL_GROCERY_SUGGESTIONS.filter(s => s.name.toLowerCase().includes(q)).slice(0, 20)
-              : ALL_GROCERY_SUGGESTIONS.slice(0, 20);
-            if (shown.length === 0) return null;
-            return (
-              <View style={{ marginTop: -4 }}>
-                <Text style={{ fontSize: 11, color: colors.textTertiary, marginBottom: 6, fontWeight: '600' }}>
-                  {name.trim() ? 'Matching — tap to fill' : 'Quick picks'}
-                </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
-                  <View style={{ flexDirection: 'row', gap: 7 }}>
-                    {shown.map(s => (
-                      <TouchableOpacity key={s.name} onPress={() => { setName(s.name); setCat(s.category); }}
-                        style={{ flexDirection: 'row', alignItems: 'center', borderRadius: 20, borderWidth: 1.5,
-                          paddingHorizontal: 10, paddingVertical: 6, flexShrink: 0,
-                          backgroundColor: name === s.name ? BRAND.teal + '20' : (isDark ? colors.surface : '#F5F4FA'),
-                          borderColor: name === s.name ? BRAND.teal : (isDark ? colors.border : '#E2E8F0') }}>
-                        <Text style={{ fontSize: TYPO.label }}>{s.emoji}</Text>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: name === s.name ? BRAND.teal : colors.textSecondary, marginLeft: 4 }} numberOfLines={1}>{s.name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </ScrollView>
-              </View>
-            );
-          })()}
-        </View>
+        <View style={[gm.sheet, { backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 16) }]}>
+          {/* Drag handle */}
+          <View style={gm.handleWrap}><View style={[gm.handle, { backgroundColor: colors.border }]} /></View>
 
-        {/* Quantity */}
-        <View style={{ gap: 8 }}>
-          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>QUANTITY / AMOUNT</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingBottom: 4 }}>
-            {QTY_PICKS.map(q => (
-              <Pressable key={q} onPress={() => setQty(q)}
-                style={{ borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7,
-                  backgroundColor: qty === q ? BRAND.amber + '25' : (isDark ? '#1E1E2E' : '#F0F0FA'),
-                  borderWidth: 1.5, borderColor: qty === q ? BRAND.amber : (isDark ? '#2A2A40' : '#E0E0F0') }}>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: qty === q ? BRAND.amber : colors.textSecondary }}>{q}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-          <TextInput value={qty} onChangeText={setQty} placeholder="Or type your own (e.g. 2 boxes)"
-            placeholderTextColor={colors.textTertiary} style={inp} />
-        </View>
-
-        {/* Category */}
-        <View style={{ gap: 8 }}>
-          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>CATEGORY</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            {GROCERY_CATEGORIES.map(c => (
-              <Pressable key={c} onPress={() => setCat(c)}
-                style={{ borderRadius: 18, paddingHorizontal: 12, paddingVertical: 6,
-                  backgroundColor: cat === c ? BRAND.teal + '22' : (isDark ? '#1E1E2E' : '#F0F0FA'),
-                  borderWidth: 1.5, borderColor: cat === c ? BRAND.teal + '80' : (isDark ? '#2A2A40' : '#E0E0F0') }}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: cat === c ? BRAND.teal : colors.textSecondary }}>{c}</Text>
-              </Pressable>
-            ))}
+          {/* Fixed header — outside scroll */}
+          <View style={gm.header}>
+            <View style={{ flex: 1 }}>
+              <Text style={[gm.title, { color: colors.textPrimary }]}>🛒 Request Grocery Item</Text>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '600', marginTop: 2, color: BRAND.teal }}>
+                Parent approves before it's added to the list
+              </Text>
+            </View>
+            <TouchableOpacity onPress={dismiss} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+              style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? colors.surface : '#F1F5F9' }}>
+              <Text style={{ fontSize: 16, color: colors.textSecondary }}>✕</Text>
+            </TouchableOpacity>
           </View>
-        </View>
 
-        {/* Note */}
-        <View style={{ gap: 6 }}>
-          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>NOTE FOR PARENT (optional)</Text>
-          <TextInput value={notes} onChangeText={setNotes} placeholder="e.g. the blue pack, not red"
-            placeholderTextColor={colors.textTertiary} multiline
-            style={[inp, { minHeight: 56, textAlignVertical: 'top' }]} />
-        </View>
+          {/* Scrollable form — keyboardShouldPersistTaps so chip taps always register */}
+          <ScrollView
+            keyboardShouldPersistTaps="always"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ gap: 14, paddingBottom: 8 }}
+          >
+            {/* Item name */}
+            <View>
+              <Text style={[gm.label, { color: colors.textSecondary }]}>What do you need? *</Text>
+              <TextInput value={name} onChangeText={setName}
+                placeholder="Type to search or pick below…"
+                placeholderTextColor={colors.textTertiary}
+                style={inp}
+                onFocus={() => setNameFocused(true)}
+                onBlur={() => setNameFocused(false)}
+                returnKeyType="next"
+                autoFocus
+              />
+              {nameFocused && nameSuggestions.length > 0 && (
+                <View style={{ marginTop: 6 }}>
+                  <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 6, fontWeight: '600' }}>
+                    {name.trim() ? 'Matching — tap to fill' : 'Quick picks'}
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
+                    <View style={{ flexDirection: 'row', gap: 7 }}>
+                      {nameSuggestions.map(s => (
+                        <TouchableOpacity key={s.name} onPress={() => { setName(s.name); setCat(s.category); }}
+                          style={[gm.pill, {
+                            backgroundColor: name === s.name ? BRAND.teal + '20' : (isDark ? colors.surface : '#F5F4FA'),
+                            borderColor: name === s.name ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
+                          }]}>
+                          <Text style={{ fontSize: TYPO.label }}>{s.emoji}</Text>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: name === s.name ? BRAND.teal : colors.textSecondary, marginLeft: 4 }} numberOfLines={1}>{s.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </View>
+              )}
+            </View>
 
-        <Pressable onPress={submit} disabled={!canSubmit}
-          style={{ borderRadius: 16, paddingVertical: 16, alignItems: 'center',
-            backgroundColor: canSubmit ? BRAND.teal : (isDark ? '#2A2A3E' : '#E0E0F0'), marginTop: 4 }}>
-          <Text style={{ fontSize: 15, fontWeight: '900', color: canSubmit ? '#fff' : colors.textTertiary }}>
-            🛒 Send to Parent for Approval
-          </Text>
-        </Pressable>
-      </ScrollView>
-    </BottomSheet>
+            {/* Quantity */}
+            <View>
+              <Text style={[gm.label, { color: colors.textSecondary }]}>Quantity / Amount</Text>
+              <TextInput value={qty} onChangeText={setQty}
+                placeholder="e.g. 2 boxes, 1 pack…"
+                placeholderTextColor={colors.textTertiary}
+                style={inp}
+                onFocus={() => setQtyFocused(true)}
+                onBlur={() => setQtyFocused(false)}
+                returnKeyType="next"
+              />
+              {qtyFocused && qtySuggestions.length > 0 && (
+                <View style={{ marginTop: 6 }}>
+                  <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 6, fontWeight: '600' }}>Quick picks</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
+                    <View style={{ flexDirection: 'row', gap: 7 }}>
+                      {qtySuggestions.map(q2 => (
+                        <TouchableOpacity key={q2} onPress={() => setQty(q2)}
+                          style={[gm.pill, {
+                            backgroundColor: qty === q2 ? BRAND.amber + '20' : (isDark ? colors.surface : '#F5F4FA'),
+                            borderColor: qty === q2 ? BRAND.amber : (isDark ? colors.border : '#E2E8F0'),
+                          }]}>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: qty === q2 ? BRAND.amber : colors.textSecondary }}>{q2}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </View>
+              )}
+            </View>
+
+            {/* Category */}
+            <View>
+              <Text style={[gm.label, { color: colors.textSecondary }]}>Category</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {GROCERY_CATEGORIES.map(c => (
+                    <TouchableOpacity key={c} onPress={() => setCat(c)}
+                      style={[gm.pill, {
+                        backgroundColor: cat === c ? BRAND.teal + '20' : (isDark ? colors.surface : '#F5F4FA'),
+                        borderColor: cat === c ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
+                      }]}>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: cat === c ? BRAND.teal : colors.textSecondary }}>{c}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+
+            {/* Note */}
+            <View>
+              <Text style={[gm.label, { color: colors.textSecondary }]}>Note for parent (optional)</Text>
+              <TextInput value={notes} onChangeText={setNotes}
+                placeholder="e.g. the blue pack, not red"
+                placeholderTextColor={colors.textTertiary}
+                multiline style={[inp, { minHeight: 60, textAlignVertical: 'top' }]}
+              />
+            </View>
+
+            {/* Submit */}
+            <TouchableOpacity onPress={submit} disabled={!canSubmit}
+              style={[gm.submitBtn, { backgroundColor: canSubmit ? BRAND.teal : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
+              <Text style={{ fontSize: 15, fontWeight: '900', color: canSubmit ? '#fff' : colors.textTertiary }}>
+                Send to Parent for Approval →
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
+
+// shared styles for GroceryModal / SuppliesModal
+const gm = {
+  sheet:     { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 0, maxHeight: '90%' } as const,
+  handleWrap:{ alignItems: 'center' as const, paddingTop: 12, paddingBottom: 4 },
+  handle:    { width: 40, height: 4, borderRadius: 2 } as const,
+  header:    { flexDirection: 'row' as const, alignItems: 'flex-start' as const, justifyContent: 'space-between' as const, marginBottom: 14 },
+  title:     { fontSize: 17, fontWeight: '900' as const },
+  label:     { fontSize: TYPO.label, fontWeight: '700' as const, letterSpacing: 0.4, marginBottom: 6, marginTop: 4 },
+  pill:      { flexDirection: 'row' as const, alignItems: 'center' as const, borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 10, paddingVertical: 6, flexShrink: 0 as const },
+  submitBtn: { borderRadius: 16, paddingVertical: 15, alignItems: 'center' as const, marginTop: 4 },
+  input: (isDark: boolean, colors: any) => ({
+    borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 11,
+    fontSize: 14, marginBottom: 0,
+    color: colors.textPrimary,
+    backgroundColor: isDark ? colors.surface : '#F9FAFB',
+    borderColor: colors.border,
+  }),
+};
 
 // ─── School Supplies bottom sheet ─────────────────────────────────────────────
 export const SUPPLIES_PREFIX = 'SUPPLIES_REQUEST:';
@@ -325,13 +398,15 @@ function SuppliesModal({ visible, onClose, active, colors, isDark }: {
   visible: boolean; onClose: () => void;
   active: FamilyMember; colors: any; isDark: boolean;
 }) {
+  const insets = useSafeAreaInsets();
   const { sendRequest } = useKidRequestStore();
-  const [items,        setItems]        = useState<{ name: string; qty: string }[]>([{ name: '', qty: '' }]);
-  const [urgency,      setUrgency]      = useState<'normal' | 'soon'>('normal');
-  const [notes,        setNotes]        = useState('');
+  const [items,         setItems]         = useState<{ name: string; qty: string }[]>([{ name: '', qty: '' }]);
+  const [urgency,       setUrgency]       = useState<'normal' | 'soon'>('normal');
+  const [notes,         setNotes]         = useState('');
   const [focusedRowIdx, setFocusedRowIdx] = useState<number | null>(null);
 
   const reset = () => { setItems([{ name: '', qty: '' }]); setUrgency('normal'); setNotes(''); };
+  const dismiss = () => { reset(); onClose(); };
   const validItems = items.filter(i => i.name.trim());
   const canSubmit  = validItems.length > 0;
 
@@ -339,111 +414,142 @@ function SuppliesModal({ visible, onClose, active, colors, isDark }: {
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, [field]: val } : it));
   const addRow    = () => setItems(prev => [...prev, { name: '', qty: '' }]);
   const removeRow = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
+
   const submit = () => {
     if (!canSubmit) return;
     const detail = `${SUPPLIES_PREFIX}${JSON.stringify({ items: validItems, notes: notes.trim(), urgency })}`;
     sendRequest({ type: 'delegation', fromMemberId: active.id, urgency, detail });
-    reset();
-    onClose();
+    dismiss();
     Alert.alert('Sent! 📚', `${validItems.length} item${validItems.length > 1 ? 's' : ''} sent to parent for approval.`);
   };
 
-  const inp = { borderRadius: 10, backgroundColor: isDark ? '#1E1E2E' : '#F5F5FA', paddingHorizontal: 12, paddingVertical: 11, fontSize: 14, color: colors.textPrimary, borderWidth: 1.5, borderColor: isDark ? '#2A2A40' : '#E0E0F0' };
+  const inp = gm.input(isDark, colors);
 
   return (
-    <BottomSheet visible={visible} onClose={() => { reset(); onClose(); }}
-      title="School Supplies" subtitle="Parent approves and picks these up for you"
-      accent="#6366F1">
-      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 14, paddingBottom: 8 }}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        {/* Dismiss area above sheet */}
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
 
-        {/* Urgency */}
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          {(['normal', 'soon'] as const).map(u => (
-            <Pressable key={u} onPress={() => setUrgency(u)}
-              style={{ flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center',
-                backgroundColor: urgency === u ? (u === 'soon' ? '#EF444420' : '#6366F120') : (isDark ? '#1E1E2E' : '#F0F0FA'),
-                borderWidth: 1.5, borderColor: urgency === u ? (u === 'soon' ? '#EF4444' : '#6366F1') : (isDark ? '#2A2A40' : '#E0E0F0') }}>
-              <Text style={{ fontSize: 13, fontWeight: '800', color: urgency === u ? (u === 'soon' ? '#EF4444' : '#6366F1') : colors.textSecondary }}>
-                {u === 'soon' ? '🔴 Need Soon' : '📋 No Rush'}
+        <View style={[gm.sheet, { backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <View style={gm.handleWrap}><View style={[gm.handle, { backgroundColor: colors.border }]} /></View>
+
+          {/* Fixed header */}
+          <View style={gm.header}>
+            <View style={{ flex: 1 }}>
+              <Text style={[gm.title, { color: colors.textPrimary }]}>📚 School Supplies</Text>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '600', marginTop: 2, color: '#6366F1' }}>
+                Parent approves and picks these up for you
               </Text>
-            </Pressable>
-          ))}
-        </View>
+            </View>
+            <TouchableOpacity onPress={dismiss} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+              style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? colors.surface : '#F1F5F9' }}>
+              <Text style={{ fontSize: 16, color: colors.textSecondary }}>✕</Text>
+            </TouchableOpacity>
+          </View>
 
-        {/* Searchable supplies picker + items list */}
-        <View style={{ gap: 8 }}>
-          <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textSecondary }}>ITEMS NEEDED *</Text>
-          {items.map((item, idx) => {
-            const isFocused = focusedRowIdx === idx;
-            const q = item.name.trim().toLowerCase();
-            const filtered = isFocused
-              ? (q.length > 0
-                ? SUPPLIES_SUGGESTIONS.filter(s => s.name.toLowerCase().includes(q) && !items.some((it, ii) => ii !== idx && it.name === s.name))
-                : SUPPLIES_SUGGESTIONS.filter(s => !items.some((it, ii) => ii !== idx && it.name === s.name)).slice(0, 18))
-              : [];
-            return (
-              <View key={idx} style={{ gap: 6 }}>
-                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                  <TextInput value={item.name} onChangeText={v => updateItem(idx, 'name', v)}
-                    placeholder={`Item ${idx + 1} — type or pick below`} placeholderTextColor={colors.textTertiary}
-                    onFocus={() => setFocusedRowIdx(idx)} onBlur={() => setFocusedRowIdx(null)}
-                    returnKeyType="next" style={[inp, { flex: 2 }]} />
-                  <TextInput value={item.qty} onChangeText={v => updateItem(idx, 'qty', v)}
-                    placeholder="Qty" placeholderTextColor={colors.textTertiary}
-                    style={[inp, { flex: 1 }]} />
-                  {items.length > 1 && (
-                    <Pressable onPress={() => removeRow(idx)} style={{ padding: 4 }}>
-                      <Text style={{ fontSize: 18, color: '#EF4444' }}>✕</Text>
-                    </Pressable>
-                  )}
-                </View>
-                {filtered.length > 0 && (
-                  <View style={{ marginTop: -2 }}>
-                    <Text style={{ fontSize: 11, color: colors.textTertiary, marginBottom: 5, fontWeight: '600' }}>
-                      {q.length > 0 ? 'Matching — tap to fill' : 'Quick picks'}
-                    </Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
-                      <View style={{ flexDirection: 'row', gap: 7 }}>
-                        {filtered.map(s => (
-                          <TouchableOpacity key={s.name} onPress={() => updateItem(idx, 'name', s.name)}
-                            style={{ flexDirection: 'row', alignItems: 'center', borderRadius: 20, borderWidth: 1.5,
-                              paddingHorizontal: 10, paddingVertical: 6, flexShrink: 0,
-                              backgroundColor: item.name === s.name ? '#6366F120' : (isDark ? colors.surface : '#F5F4FA'),
-                              borderColor: item.name === s.name ? '#6366F1' : (isDark ? colors.border : '#E2E8F0') }}>
-                            <Text style={{ fontSize: TYPO.label }}>{s.emoji}</Text>
-                            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: item.name === s.name ? '#6366F1' : colors.textSecondary, marginLeft: 4 }} numberOfLines={1}>{s.name}</Text>
-                          </TouchableOpacity>
-                        ))}
+          <ScrollView
+            keyboardShouldPersistTaps="always"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ gap: 14, paddingBottom: 8 }}
+          >
+            {/* Urgency */}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {(['normal', 'soon'] as const).map(u => (
+                <TouchableOpacity key={u} onPress={() => setUrgency(u)}
+                  style={{ flex: 1, borderRadius: 14, paddingVertical: 11, alignItems: 'center', borderWidth: 1.5,
+                    backgroundColor: urgency === u ? (u === 'soon' ? '#EF444418' : '#6366F118') : (isDark ? colors.surface : '#F5F4FA'),
+                    borderColor: urgency === u ? (u === 'soon' ? '#EF4444' : '#6366F1') : (isDark ? colors.border : '#E2E8F0') }}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800',
+                    color: urgency === u ? (u === 'soon' ? '#EF4444' : '#6366F1') : colors.textSecondary }}>
+                    {u === 'soon' ? '🔴 Need Soon' : '📋 No Rush'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Items — per-row focused suggestions */}
+            <View style={{ gap: 10 }}>
+              <Text style={[gm.label, { color: colors.textSecondary, marginTop: 0 }]}>Items needed *</Text>
+              {items.map((item, idx) => {
+                const isFocused = focusedRowIdx === idx;
+                const q = item.name.trim().toLowerCase();
+                const filtered = isFocused
+                  ? (q.length > 0
+                    ? SUPPLIES_SUGGESTIONS.filter(s => s.name.toLowerCase().includes(q) && !items.some((it, ii) => ii !== idx && it.name === s.name))
+                    : SUPPLIES_SUGGESTIONS.filter(s => !items.some((it, ii) => ii !== idx && it.name === s.name)).slice(0, 18))
+                  : [];
+                return (
+                  <View key={idx} style={{ gap: 6 }}>
+                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                      <TextInput value={item.name} onChangeText={v => updateItem(idx, 'name', v)}
+                        placeholder={`Item ${idx + 1} — type or pick below`}
+                        placeholderTextColor={colors.textTertiary}
+                        onFocus={() => setFocusedRowIdx(idx)}
+                        onBlur={() => setFocusedRowIdx(null)}
+                        returnKeyType="next"
+                        style={[inp, { flex: 2 }]}
+                      />
+                      <TextInput value={item.qty} onChangeText={v => updateItem(idx, 'qty', v)}
+                        placeholder="Qty" placeholderTextColor={colors.textTertiary}
+                        style={[inp, { flex: 1 }]}
+                      />
+                      {items.length > 1 && (
+                        <TouchableOpacity onPress={() => removeRow(idx)} style={{ padding: 6 }}>
+                          <Text style={{ fontSize: 18, color: '#EF4444' }}>✕</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    {filtered.length > 0 && (
+                      <View>
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 6, fontWeight: '600' }}>
+                          {q.length > 0 ? 'Matching — tap to fill' : 'Quick picks'}
+                        </Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
+                          <View style={{ flexDirection: 'row', gap: 7 }}>
+                            {filtered.map(s => (
+                              <TouchableOpacity key={s.name} onPress={() => updateItem(idx, 'name', s.name)}
+                                style={[gm.pill, {
+                                  backgroundColor: item.name === s.name ? '#6366F120' : (isDark ? colors.surface : '#F5F4FA'),
+                                  borderColor: item.name === s.name ? '#6366F1' : (isDark ? colors.border : '#E2E8F0'),
+                                }]}>
+                                <Text style={{ fontSize: TYPO.label }}>{s.emoji}</Text>
+                                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: item.name === s.name ? '#6366F1' : colors.textSecondary, marginLeft: 4 }} numberOfLines={1}>{s.name}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </ScrollView>
                       </View>
-                    </ScrollView>
+                    )}
                   </View>
-                )}
-              </View>
-            );
-          })}
-          <Pressable onPress={addRow}
-            style={{ borderRadius: 12, borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#6366F150', paddingVertical: 10, alignItems: 'center' }}>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: '#6366F1' }}>+ Add another item</Text>
-          </Pressable>
-        </View>
+                );
+              })}
+              <TouchableOpacity onPress={addRow}
+                style={{ borderRadius: 12, borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#6366F150', paddingVertical: 10, alignItems: 'center' }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#6366F1' }}>+ Add another item</Text>
+              </TouchableOpacity>
+            </View>
 
-        {/* Note */}
-        <View style={{ gap: 6 }}>
-          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>NOTE FOR PARENT (optional)</Text>
-          <TextInput value={notes} onChangeText={setNotes} placeholder="e.g. for science project due Friday"
-            placeholderTextColor={colors.textTertiary} multiline
-            style={[inp, { minHeight: 52, textAlignVertical: 'top' }]} />
-        </View>
+            {/* Note */}
+            <View>
+              <Text style={[gm.label, { color: colors.textSecondary }]}>Note for parent (optional)</Text>
+              <TextInput value={notes} onChangeText={setNotes}
+                placeholder="e.g. for science project due Friday"
+                placeholderTextColor={colors.textTertiary}
+                multiline style={[inp, { minHeight: 56, textAlignVertical: 'top' }]}
+              />
+            </View>
 
-        <Pressable onPress={submit} disabled={!canSubmit}
-          style={{ borderRadius: 16, paddingVertical: 16, alignItems: 'center',
-            backgroundColor: canSubmit ? '#6366F1' : (isDark ? '#2A2A3E' : '#E0E0F0'), marginTop: 4 }}>
-          <Text style={{ fontSize: 15, fontWeight: '900', color: canSubmit ? '#fff' : colors.textTertiary }}>
-            📚 Send to Parent ({validItems.length} item{validItems.length !== 1 ? 's' : ''})
-          </Text>
-        </Pressable>
-      </ScrollView>
-    </BottomSheet>
+            <TouchableOpacity onPress={submit} disabled={!canSubmit}
+              style={[gm.submitBtn, { backgroundColor: canSubmit ? '#6366F1' : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
+              <Text style={{ fontSize: 15, fontWeight: '900', color: canSubmit ? '#fff' : colors.textTertiary }}>
+                Send to Parent ({validItems.length} item{validItems.length !== 1 ? 's' : ''}) →
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -460,32 +566,50 @@ function AskModal({ visible, onClose, type, active, colors, isDark }: {
     question:   { emoji: '❓', label: 'Ask a Question',   hint: 'e.g. Can you bring money for the field trip?', accent: '#3B82F6' },
     medication: { emoji: '💊', label: 'Medication Alert', hint: "e.g. I didn't take my morning pill yet",  accent: '#EF4444' },
   }[type];
+  const insets = useSafeAreaInsets();
+  const dismiss = () => { setText(''); onClose(); };
   const submit = () => {
     if (!text.trim()) return;
     sendRequest({ type, fromMemberId: active.id, detail: text.trim(), urgency: type === 'medication' ? 'urgent' : 'normal' });
-    setText('');
-    onClose();
+    dismiss();
     Alert.alert('Sent! 👋', 'Your parent has been notified.');
   };
   return (
-    <BottomSheet visible={visible} onClose={() => { setText(''); onClose(); }}
-      title={`${meta.emoji} ${meta.label}`} accent={meta.accent}>
-      <View style={{ gap: 14, paddingBottom: 8 }}>
-        <TextInput value={text} onChangeText={setText} placeholder={meta.hint}
-          placeholderTextColor={colors.textTertiary} autoFocus multiline numberOfLines={4}
-          style={{ borderRadius: 14, backgroundColor: isDark ? '#1E1E2E' : '#F5F5FA',
-            paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, color: colors.textPrimary,
-            borderWidth: 1.5, borderColor: isDark ? '#2A2A40' : '#E0E0F0',
-            minHeight: 90, textAlignVertical: 'top' }} />
-        <Pressable onPress={submit} disabled={!text.trim()}
-          style={{ borderRadius: 16, paddingVertical: 16, alignItems: 'center',
-            backgroundColor: text.trim() ? meta.accent : (isDark ? '#2A2A3E' : '#E0E0F0') }}>
-          <Text style={{ fontSize: 15, fontWeight: '900', color: text.trim() ? '#fff' : colors.textTertiary }}>
-            Send to Parent →
-          </Text>
-        </Pressable>
-      </View>
-    </BottomSheet>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
+        <View style={[gm.sheet, { backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <View style={gm.handleWrap}><View style={[gm.handle, { backgroundColor: colors.border }]} /></View>
+
+          {/* Fixed header */}
+          <View style={gm.header}>
+            <View style={{ flex: 1 }}>
+              <Text style={[gm.title, { color: colors.textPrimary }]}>{meta.emoji} {meta.label}</Text>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '600', marginTop: 2, color: meta.accent }}>
+                Sent directly to your parent
+              </Text>
+            </View>
+            <TouchableOpacity onPress={dismiss} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+              style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? colors.surface : '#F1F5F9' }}>
+              <Text style={{ fontSize: 16, color: colors.textSecondary }}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ gap: 14, paddingBottom: 8 }}>
+            <TextInput value={text} onChangeText={setText} placeholder={meta.hint}
+              placeholderTextColor={colors.textTertiary} autoFocus multiline numberOfLines={4}
+              style={[gm.input(isDark, colors), { minHeight: 90, textAlignVertical: 'top' }]}
+            />
+            <TouchableOpacity onPress={submit} disabled={!text.trim()}
+              style={[gm.submitBtn, { backgroundColor: text.trim() ? meta.accent : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
+              <Text style={{ fontSize: 15, fontWeight: '900', color: text.trim() ? '#fff' : colors.textTertiary }}>
+                Send to Parent →
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 

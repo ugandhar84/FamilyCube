@@ -37,16 +37,36 @@ export function ReceiptScanSheet({
   const [store, setStore] = useState('');
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
 
+  const takePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Camera permission needed', 'Allow camera access in your device settings to take receipt photos.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      quality: 0.85,
+      base64: true,
+      allowsEditing: false,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      setReceiptUri(asset.uri);
+      setImageBase64(asset.base64 || '');
+      await parseReceipt(asset.base64 || '');
+    }
+  };
+
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'We need access to your photos to scan receipts.');
+      Alert.alert('Photo library permission needed', 'Allow photo access in your device settings to browse receipts.');
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.8,
+      quality: 0.85,
       base64: true,
       allowsEditing: false,
     });
@@ -178,7 +198,7 @@ export function ReceiptScanSheet({
               </Text>
 
               <Pressable
-                onPress={pickImage}
+                onPress={takePhoto}
                 style={{
                   width: '100%',
                   paddingVertical: 14,
@@ -188,7 +208,22 @@ export function ReceiptScanSheet({
                   marginTop: 8,
                 }}
               >
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>📷 Choose Photo</Text>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>📸 Take Photo</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={pickImage}
+                style={{
+                  width: '100%',
+                  paddingVertical: 14,
+                  borderRadius: 12,
+                  backgroundColor: isDark ? '#2D2D4E' : '#F3F4F6',
+                  alignItems: 'center',
+                  borderWidth: 1,
+                  borderColor: isDark ? '#4D4D7E' : '#E5E7EB',
+                }}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>🖼️ Browse Photos</Text>
               </Pressable>
             </View>
           )}

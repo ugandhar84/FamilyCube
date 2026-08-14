@@ -247,3 +247,453 @@ supabase functions deploy send-coupon partner-webhook
 - Never add `dob` or `city` to the pets embedded SELECT — those columns do not exist in the DB
 - Never call `award_coins()` from a server context without the `p_user_id` of the acting user (no admin grants via this function — use `coin_ledger` direct insert with service role for that)
 - Never commit `LOCAL_OVERRIDES` in `lib/featureFlags.ts` with any value set to `true`
+
+---
+
+# FamilyCubeApp Grocery Architecture (2026-08-14)
+
+## Overview
+Full grocery management system for parents/partners with:
+- Receipt scanning (camera/photos → AI extraction → DB storage)
+- Smart staples learning (3+ purchases auto-suggests as restock item)
+- Real-time partner presence (Supabase Realtime)
+- Budget tracking from completed runs
+- Purchase history for predictive restocking
+- Kroger API + AI pricing on-demand (delta-only, no re-fetch)
+
+## DB Schema
+
+### New Tables (migrations 20260814000002-005)
+
+**`grocery_receipts`** — scanned receipts
+```
+id (uuid PK)
+family_id (text FK)
+run_id (uuid FK → grocery_runs)
+store (text)
+scanned_by (text FK → members)
+receipt_date (date)
+total (numeric 10,2)
+image_url (text)
+ai_raw_json (jsonb) — full Claude Vision API response
+created_at (timestamptz)
+```
+
+**`grocery_receipt_items`** — line items extracted from receipts
+```
+id (uuid PK)
+receipt_id (uuid FK → grocery_receipts, CASCADE)
+family_id (text FK)
+name (text)
+category (text) — auto-extracted by AI (produce, dairy, meat, etc)
+quantity (numeric)
+unit_price (numeric 10,2)
+total_price (numeric 10,2)
+brand (text)
+added_to_list (boolean) — true if user added to current list
+```
+
+**`grocery_staples`** — learned staple items
+```
+id (uuid PK)
+family_id (text FK)
+name (text)
+category (text)
+avg_days_between (numeric) — computed from receipt dates
+last_bought_at (timestamptz)
+times_bought (integer)
+auto_suggest (boolean) — if true, show in "Restock This?" banner
+usual_store (text)
+usual_brand (text)
+UNIQUE(family_id, name)
+```
+
+**`grocery_price_cache`** — dedup-friendly price cache
+```
+id (uuid PK)
+family_id (text FK)
+item_name (text)
+kroger_price (numeric 10,2) — from Kroger API
+ai_estimate (numeric 10,2) — from Claude pricing prediction
+source (text) — 'kroger' | 'ai_estimate'
+unit (text) — 'each' | 'lb' | etc
+fetched_at (timestamptz)
+UNIQUE(family_id, item_name)
+```
+
+**`grocery_runs`** (existing, enhanced)
+```
++ total_spent (numeric 10,2) — sum of items marked bought
+```
+
+## Edge Functions
+
+### `parse-grocery-receipt` (new, replaces PawBond `parse-receipt`)
+
+**Trigger:** User taps "📷 Scan Receipt" → camera/photo picker → calls function
+
+**Input:**
+```typescript
+{
+  familyId: string;
+  scannedById: string;
+  imageBase64: string; // JPEG/PNG
+  store?: string;
+}
+```
+
+**Process:**
+1. Send image to Claude Vision API (models: `claude-3-5-sonnet-20241022` or later)
+2. Extract:
+   - Store name (if not provided)
+   - Receipt date
+   - Line items: name, quantity, unit price, total price
+   - AI-guessed category per item
+3. Insert `grocery_receipts` row with `ai_raw_json`
+4. Insert `grocery_receipt_items` rows (one per line)
+5. Call `grocery-ai-suggest` to update staples (async, via `rpc()`)
+
+**Response:**
+```typescript
+{
+  receiptId: uuid;
+  itemCount: number;
+  total: number;
+  store: string;
+  date: date;
+  items: Array<{
+    name: string;
+    category: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+  }>;
+}
+```
+
+### `grocery-ai-suggest` (new)
+
+**Trigger:** After receipt parsing, user completes a run, or cron daily
+
+**Process:**
+1. Count purchases by item name (last 90 days)
+2. For items appearing 3+ times: insert/upsert `grocery_staples`
+3. Compute `avg_days_between` from receipt dates
+4. Mark `auto_suggest = true` for high-frequency items (e.g., every 7-10 days)
+5. Update `last_bought_at` and `times_bought`
+
+**Upsert key:** `UNIQUE(family_id, name)` — updates existing rows
+
+## UI Changes
+
+### GroceryScreen Tabs (restructured from 2 → 4)
+
+1. **List** — editable items, prices, checkboxes
+   - SmartRestockBanner (top) — "Milk: you buy every 10 days, last bought 12 days ago"
+   - ReceiptScanButton (inline or FAB)
+   - PriceCheckButton (per-item or batch)
+   - Realtime presence badge (partner online status)
+
+2. **Runs** — history of completed shopping trips
+   - Summary: date, store, total, items
+   - Receipt images (carousel)
+   - Edit/delete
+
+3. **History** — receipt timeline
+   - Date, store, total
+   - Expandable: line items with categories
+   - Add to list button
+
+4. **Insights** — analytics
+   - Spending by category (pie/bar chart)
+   - Staples trend (chart: "Milk $X/month")
+   - Budget tracker (running spend, bar)
+   - Restock predictions (table: item, days_until_reorder)
+
+### Components (New)
+
+**`ReceiptScanSheet`** — camera/file picker modal
+```typescript
+props: {
+  visible: boolean;
+  onClose: () => void;
+  onSuccess: (receiptId, items) => void;
+  familyId: string;
+}
+```
+- Camera view with capture button
+- Or file picker for existing photos
+- Shows loading spinner during `parse-grocery-receipt` call
+- Error Alert on failure
+- Review screen: show extracted items, allow edit before confirm
+
+**`SmartRestockBanner`** — predictive item card
+```typescript
+props: {
+  item: GroceryStaple;
+  daysUntilReorder: number;
+  onAddToList: () => void;
+}
+```
+- Shows: "🥛 Milk • Every 10 days • Last bought 12d ago"
+- CTA: "Add to List"
+
+**`PartnerStatusBar`** — live presence
+```typescript
+props: {
+  familyId: string;
+  currentRun?: GroceryRun;
+}
+```
+- Realtime channel: `grocery:${familyId}`
+- Shows: "👤 Alex is shopping at Costco"
+- Uses member avatar + color
+
+**`BudgetBar`** — spending summary
+```typescript
+props: {
+  weeklyBudget?: number;
+  currentWeekSpend: number;
+  trend?: 'up' | 'down' | 'stable';
+}
+```
+- Horizontal bar: filled % of budget
+- "Spent: $X / $Y this week"
+- Color: green (< 50%), yellow (50-80%), red (> 80%)
+
+## Realtime Channels
+
+**`grocery:${familyId}`** — presence + events
+```typescript
+// Presence: partner online status
+channel.subscribe('presence', ({ event, key, newPresences, leftPresences }) => {
+  if (event === 'sync' || 'join') {
+    // Show "Alex is shopping" banner
+  }
+  if (event === 'leave') {
+    // Clear banner
+  }
+});
+
+// Broadcast: item price updated
+channel.on('broadcast', { event: 'price_updated', payload: { itemName, price } }, () => {
+  // Refetch prices, show toast
+});
+```
+
+## Integrations
+
+### Kroger API (Certification environment)
+
+**Base URL:** `api-ce.kroger.com/v1`
+
+**Flow (inside `features/grocery/GroceryScreen.tsx`):**
+1. User taps "Check Prices" on items missing from `priceMap`
+2. Delta-filter: `const toFetch = items.filter(i => !priceMap[i.name])`
+3. Call `supabase.functions.invoke('kroger-price-check', { items: toFetch })`
+4. Function returns `{ itemName, price, store }`
+5. Insert/upsert `grocery_price_cache`
+6. Merge: `setPriceMap(prev => ({ ...prev, ...newEntries }))`
+
+**Note:** Never re-fetch items already in `priceMap` — cache hit avoids API calls
+
+### Claude Vision (Receipt Parsing)
+
+**Model:** `claude-3-5-sonnet-20241022` (or latest vision model)
+
+**Prompt:**
+```
+Extract from this receipt:
+1. Store name (if visible)
+2. Date
+3. Every line item: name, quantity, unit, unit price, total price
+4. Categorize each item: produce/dairy/meat/snacks/beverages/frozen/household/other
+
+Format response as JSON:
+{
+  "store": "Whole Foods",
+  "date": "2026-08-14",
+  "items": [
+    { "name": "Milk 2%", "qty": 1, "unit": "1 gal", "unitPrice": 3.99, "totalPrice": 3.99, "category": "dairy" }
+  ]
+}
+```
+
+## Deployed Functions (Checklist)
+
+```bash
+supabase functions deploy parse-grocery-receipt
+supabase functions deploy grocery-ai-suggest
+```
+
+## Grocery Feature Flags
+
+In `lib/featureFlags.ts`:
+```typescript
+GROCERY_RECEIPT_SCAN: true   // Enables camera/scan UI
+GROCERY_AI_SUGGESTIONS: true // Enables smart restock banner
+GROCERY_PARTNER_PRESENCE: true // Enables real-time partner status
+```
+
+---
+
+# FamilyCube — Grocery Feature Architecture
+
+> Added: 2026-08-14. This section covers the full rearchitecture of the grocery system to make it 100% usable for parents/partners with real-time tracking, AI receipt reading, and smart suggestions.
+
+## Current state (what exists)
+
+| Feature | Status |
+|---|---|
+| List CRUD | ✅ Done |
+| Shopping runs (draft/active/done) | ✅ Done |
+| Realtime sync (items + runs) | ✅ Done |
+| Kroger pricing (on-demand, delta only) | ✅ Done |
+| AI suggestions (generic, no history) | ⚠️ Partial |
+| Receipt scan | ❌ Missing (`parse-receipt` is PawBond pet parser — wrong domain) |
+| Purchase history (DB) | ❌ No table |
+| Staples / restock prediction | ❌ Not built |
+| Budget / spend tracking | ❌ No spend data |
+| Partner presence indicator | ⚠️ Items sync live; no "who's shopping now" indicator |
+| Price cache (persisted to DB) | ⚠️ In-memory only — lost on reload |
+| Insights / analytics tab | ❌ Not built |
+
+## New DB tables — 4 migrations required
+
+### 1. `grocery_receipts`
+```sql
+ALTER TABLE grocery_runs ADD COLUMN IF NOT EXISTS total_spent numeric(10,2);
+
+CREATE TABLE grocery_receipts (
+  id           uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  family_id    text NOT NULL,
+  run_id       uuid REFERENCES grocery_runs(id),
+  store        text,
+  scanned_by   text REFERENCES members(id),
+  receipt_date date,
+  total        numeric(10,2),
+  image_url    text,       -- optional; only if user consents to store
+  ai_raw_json  jsonb,      -- full AI parse result
+  created_at   timestamptz DEFAULT now()
+);
+```
+
+### 2. `grocery_receipt_items`
+```sql
+CREATE TABLE grocery_receipt_items (
+  id           uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  receipt_id   uuid NOT NULL REFERENCES grocery_receipts(id) ON DELETE CASCADE,
+  family_id    text NOT NULL,
+  name         text NOT NULL,
+  category     text,
+  quantity     numeric,
+  unit_price   numeric(10,2),
+  total_price  numeric(10,2),
+  brand        text,
+  added_to_list boolean DEFAULT false  -- user confirmed adding back to list
+);
+```
+
+### 3. `grocery_staples`
+```sql
+CREATE TABLE grocery_staples (
+  id                 uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  family_id          text NOT NULL,
+  name               text NOT NULL,
+  category           text,
+  avg_days_between   numeric,     -- learned from receipt history
+  last_bought_at     timestamptz,
+  times_bought       integer DEFAULT 0,
+  auto_suggest       boolean DEFAULT true,
+  usual_store        text,
+  usual_brand        text,
+  UNIQUE(family_id, name)
+);
+```
+
+### 4. `grocery_price_cache`
+```sql
+CREATE TABLE grocery_price_cache (
+  id            uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  family_id     text NOT NULL,
+  item_name     text NOT NULL,
+  kroger_price  numeric(10,2),
+  ai_estimate   numeric(10,2),
+  source        text,   -- 'kroger' | 'estimate'
+  unit          text,
+  fetched_at    timestamptz DEFAULT now(),
+  UNIQUE(family_id, item_name)
+);
+```
+
+Migration files: `supabase/migration_grocery_receipts.sql`, `supabase/migration_grocery_staples.sql`, `supabase/migration_grocery_price_cache.sql`
+
+## New edge functions
+
+### `parse-grocery-receipt` (NEW)
+- POST `{ image_base64, familyId, memberId, runId? }`
+- Gemini 2.5 Flash Vision reads receipt → extracts items (name, qty, unit_price, category, brand), store, date, total
+- Saves to `grocery_receipts` + `grocery_receipt_items`
+- Upserts `grocery_staples`: increments `times_bought`, updates `last_bought_at`, recalculates `avg_days_between`
+- Falls back to DeepSeek Vision if Gemini fails
+- Replaces the current `parse-receipt` function which is PawBond pet-specific
+
+### `grocery-ai-suggest` (NEW)
+- POST `{ familyId, currentList: string[], context?: string }`
+- Loads last 90 days of `grocery_receipt_items` + `grocery_staples`
+- Returns ranked suggestions with human-readable reasons:
+  - "Milk — last bought 12 days ago, you usually buy every 8 days"
+  - "Eggs — appears in 9 of your last 12 receipts"
+- Skips items already on the current list
+
+### Staple learning rule
+- 1st time seen in a receipt → insert with `times_bought = 1`
+- 3+ times across receipts → `auto_suggest = true` (becomes a tracked staple)
+- `avg_days_between` = rolling average of gaps between purchase dates
+
+## `groceryStore.ts` changes
+
+**New state:** `receipts`, `staples`, `priceCache: Record<string, PriceCacheEntry>`, `partnerPresence: PartnerPresence[]`, `weeklySpend`, `monthlySpend`
+
+**New actions:** `saveReceipt(receipt, items)`, `loadReceipts(familyId)`, `loadStaples(familyId)`, `loadPriceCache(familyId)`, `upsertPriceCache(entries)`, `broadcastPresence(memberId, status, runId?)`
+
+**New realtime channels:**
+- `grocery:presence:{familyId}` — Supabase Presence (partner live shopping status; ephemeral, no DB writes)
+- `grocery_receipts:{familyId}` — DB changes for new receipts
+
+**Modified `load()`:** also loads price cache + staples from DB on init; computes `weeklySpend` from completed runs.
+
+## `GroceryScreen.tsx` — 4 tabs (currently 2)
+
+| Tab | Content | New components |
+|---|---|---|
+| **List** | Smart Restock Banner · Category sections · Prices · AI suggestions | `SmartRestockBanner`, `BudgetBar` |
+| **Runs** | Active run with partner check-off status · Past runs with totals | `PartnerCheckoffRow` |
+| **History** | Past receipts · Line items · Add missed items back to list | `ReceiptCard`, `ReceiptDetailSheet` |
+| **Insights** | Weekly/monthly spend · Top categories · Frequent items · Spend by store | `SpendChart`, `TopItemsList` |
+
+**Always-visible `PartnerStatusBar`** sits above tabs. Uses Supabase Presence. Shows "Alex is shopping at Costco — 12 items checked off" with a live pulse dot. Hidden if nobody is actively shopping.
+
+## Receipt scanner flow
+
+1. User taps 📷 FAB or camera icon inside Run Detail Sheet
+2. Camera/photo library → base64 sent to `parse-grocery-receipt`
+3. Gemini Vision extracts line items, prices, store name, date, total
+4. Review sheet: user confirms/edits items, removes non-grocery entries
+5. Saved to DB → staples updated → prices cached → run total updated
+6. Receipt image is NOT stored unless user explicitly enables it
+
+## Build order
+
+| # | Task | Effort |
+|---|---|---|
+| 1 | Run 4 DB migrations | XS |
+| 2 | Persist price cache to DB in kroger-prices fn + load on store init | S |
+| 3 | `parse-grocery-receipt` edge function (Gemini Vision) | M |
+| 4 | `ReceiptScanSheet` component (camera → review → save) | M |
+| 5 | Partner Presence channel + `PartnerStatusBar` UI | S |
+| 6 | `grocery-ai-suggest` edge function | M |
+| 7 | `SmartRestockBanner` + history-aware AI panel | M |
+| 8 | History tab (receipt list + `ReceiptDetailSheet`) | S |
+| 9 | Insights tab (spend charts, top items, store breakdown) | M |
+| 10 | `BudgetBar` on List tab (weekly spend vs estimate) | S |

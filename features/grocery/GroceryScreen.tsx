@@ -1578,6 +1578,77 @@ function InsightsTab({ familyId, colors, isDark }: { familyId: string; colors: a
   );
 }
 
+// ─── CubeAI Grocery Banner ───────────────────────────────────────────────────
+function GroceryAiBanner({ isDark, colors, onScan, onPriceCheck, pricesLoaded, priceLoading }: {
+  isDark: boolean; colors: any;
+  onScan: () => void; onPriceCheck: () => void;
+  pricesLoaded: boolean; priceLoading: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const pulseScale   = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useRef(new Animated.Value(0.8)).current;
+  useEffect(() => {
+    Animated.loop(Animated.sequence([
+      Animated.parallel([
+        Animated.timing(pulseScale,   { toValue: 2.6, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulseOpacity, { toValue: 0,   duration: 900, useNativeDriver: true }),
+      ]),
+      Animated.parallel([
+        Animated.timing(pulseScale,   { toValue: 1, duration: 0, useNativeDriver: true }),
+        Animated.timing(pulseOpacity, { toValue: 0.8, duration: 0, useNativeDriver: true }),
+      ]),
+      Animated.delay(300),
+    ])).start();
+  }, []);
+
+  return (
+    <View style={{ marginHorizontal: 14, marginBottom: 10, backgroundColor: '#0D1424', borderRadius: 20, borderWidth: 1, borderColor: '#1E2A42', overflow: 'hidden' }}>
+      {/* Header row */}
+      <Pressable onPress={() => setExpanded(v => !v)}
+        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, gap: 10 }}>
+        {/* Bot icon + pulse */}
+        <View style={{ width: 32, height: 32 }}>
+          <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(146,97,199,0.25)', borderWidth: 1, borderColor: 'rgba(185,142,219,0.4)', alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="sparkles" size={15} color="#C4B5FD" />
+          </View>
+          <View style={{ position: 'absolute', top: -2, right: -2, width: 14, height: 14, alignItems: 'center', justifyContent: 'center' }}>
+            <Animated.View style={{ position: 'absolute', width: 10, height: 10, borderRadius: 5, backgroundColor: '#10B981', opacity: pulseOpacity, transform: [{ scale: pulseScale }] }} />
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981' }} />
+          </View>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 13, fontWeight: '900', color: '#C4B5FD' }}>CubeAI Shopping</Text>
+          <Text style={{ fontSize: 11, color: 'rgba(196,181,253,0.65)', marginTop: 1 }}>Scan receipts · estimate prices</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.09)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}>
+          <Text style={{ fontSize: 11, fontWeight: '800', color: '#A78BFA' }}>{expanded ? 'Collapse' : 'Tools'}</Text>
+          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={12} color="#A78BFA" />
+        </View>
+      </Pressable>
+
+      {/* Expanded tools */}
+      {expanded && (
+        <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingBottom: 14, borderTopWidth: 1, borderTopColor: '#1E2A42', paddingTop: 12 }}>
+          {/* Scan Receipt */}
+          <Pressable onPress={onScan} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 14, backgroundColor: 'rgba(146,97,199,0.2)', borderWidth: 1, borderColor: 'rgba(185,142,219,0.4)' }}>
+            <Ionicons name="receipt-outline" size={14} color="#C4B5FD" />
+            <Text style={{ fontSize: 12, fontWeight: '800', color: '#C4B5FD' }}>Scan Receipt</Text>
+          </Pressable>
+          {/* Price Estimate */}
+          <Pressable onPress={onPriceCheck} disabled={priceLoading} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 14, backgroundColor: pricesLoaded ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: pricesLoaded ? 'rgba(16,185,129,0.4)' : 'rgba(139,92,246,0.3)' }}>
+            {priceLoading
+              ? <ActivityIndicator size="small" color="#A78BFA" />
+              : <Ionicons name="pricetag-outline" size={14} color={pricesLoaded ? '#10B981' : '#C4B5FD'} />}
+            <Text style={{ fontSize: 12, fontWeight: '800', color: pricesLoaded ? '#10B981' : '#C4B5FD' }}>
+              {pricesLoaded ? 'Prices ✓' : 'Price Check'}
+            </Text>
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+}
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function GroceryScreen() {
@@ -1782,25 +1853,6 @@ export default function GroceryScreen() {
         </View>
         {/* Action buttons row */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Pressable onPress={() => setShowAiPanel(v => !v)}
-            style={[s.headerBtn, { borderColor: showAiPanel ? '#7C3AED' : 'rgba(124,58,237,0.3)', backgroundColor: showAiPanel ? 'rgba(124,58,237,0.15)' : 'transparent' }]}>
-            <Text style={{ fontSize: 14 }}>✨</Text>
-            <Text style={[s.headerBtnText, { color: '#7C3AED' }]}>AI</Text>
-          </Pressable>
-          <Pressable onPress={checkPrices} disabled={priceLoading}
-            style={[s.headerBtn, { borderColor: pricesLoaded ? '#10B981' : 'rgba(124,58,237,0.3)', backgroundColor: pricesLoaded ? 'rgba(16,185,129,0.12)' : 'transparent' }]}>
-            {priceLoading
-              ? <ActivityIndicator size="small" color="#7C3AED" />
-              : <><Ionicons name="pricetag-outline" size={16} color={pricesLoaded ? '#10B981' : '#7C3AED'} />
-                  <Text style={[s.headerBtnText, { color: pricesLoaded ? '#10B981' : '#7C3AED' }]}>
-                    {pricesLoaded ? 'Prices ✓' : 'Prices'}
-                  </Text></>}
-          </Pressable>
-          <Pressable onPress={() => setShowReceiptScan(true)}
-            style={[s.headerBtn, { borderColor: 'rgba(16,185,129,0.4)', backgroundColor: 'rgba(16,185,129,0.08)' }]}>
-            <Ionicons name="receipt-outline" size={16} color="#10B981" />
-            <Text style={[s.headerBtnText, { color: '#10B981' }]}>Scan</Text>
-          </Pressable>
           <Pressable onPress={() => setShowNewRun(true)}
             style={[s.headerBtn, { borderColor: 'rgba(124,58,237,0.3)', backgroundColor: 'transparent' }]}>
             <Ionicons name="cart-outline" size={16} color="#7C3AED" />
@@ -1888,16 +1940,14 @@ export default function GroceryScreen() {
         <ActivityIndicator style={{ marginTop: 60 }} color={P} />
       ) : tab === 'list' ? (
         <>
+        {/* ── CubeAI Grocery Banner ── */}
+        <GroceryAiBanner
+          isDark={isDark} colors={colors}
+          onScan={() => setShowReceiptScan(true)}
+          onPriceCheck={() => checkPrices()}
+          pricesLoaded={pricesLoaded} priceLoading={priceLoading}
+        />
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
-          {/* Inline AI panel */}
-          {showAiPanel && (
-            <AiPanel
-              familyId={familyId} memberId={activeMemberId ?? ''}
-              existingItems={items} colors={colors} isDark={isDark}
-              onClose={() => setShowAiPanel(false)}
-              onAdded={() => setShowAiPanel(false)}
-            />
-          )}
 
           {/* Supplies section */}
           {categorisedItems.supplies.length > 0 && (

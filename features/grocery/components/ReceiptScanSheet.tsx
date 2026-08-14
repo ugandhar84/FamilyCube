@@ -1,17 +1,56 @@
-import React, { useState, useEffect, useRef } from 'react';
+/**
+ * ReceiptScanSheet — bottom-sheet AI receipt scanner matching the Health tab's Rx scan pattern.
+ * Dark handle → CubeAI header → animated scan box → Camera / Library / PDF source picker → review items.
+ */
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, Modal, Pressable, ActivityIndicator, Alert,
-  ScrollView, SafeAreaView, Animated, Easing,
+  View, Text, Modal, Pressable, TouchableOpacity, ActivityIndicator, Alert,
+  ScrollView, KeyboardAvoidingView, Platform, Animated, Easing,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import Svg, { Path, Rect, Circle, Line } from 'react-native-svg';
-import { supabase } from '@/lib/supabase';
+import * as FileSystem from 'expo-file-system';
+import * as DocumentPicker from 'expo-document-picker';
+import DocumentScanner from 'react-native-document-scanner-plugin';
+import Svg, { Path, Rect, Circle, Polyline } from 'react-native-svg';
 import { BRAND } from '@/components/FamilyCubeLogo';
-import { TYPO } from '@/constants/theme';
+import { supabase } from '@/lib/supabase';
 
-// ── Inline SVG icons ──────────────────────────────────────────────────────────
+// ── SVG icons ─────────────────────────────────────────────────────────────────
+const ScanLineIcon = ({ c, size = 24 }: { c: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Rect x={3} y={2} width={14} height={18} rx={2} stroke={c} strokeWidth={1.5} fill="none" />
+    <Path d="M7 7h6M7 10h6M7 13h4" stroke={c} strokeWidth={1.5} strokeLinecap="round" fill="none" />
+    <Path d="M19 9l2 2-2 2" stroke={c} strokeWidth={1.5} strokeLinecap="round" fill="none" />
+    <Path d="M1 12h20" stroke={c} strokeWidth={1.2} strokeLinecap="round" strokeDasharray="3 2" fill="none" />
+  </Svg>
+);
+const CameraIcon = ({ c }: { c: string }) => (
+  <Svg width={32} height={32} viewBox="0 0 24 24">
+    <Path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" stroke={c} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
+    <Circle cx={12} cy={13} r={4} stroke={c} strokeWidth={1.5} fill="none" />
+  </Svg>
+);
+const GalleryIcon = ({ c }: { c: string }) => (
+  <Svg width={32} height={32} viewBox="0 0 24 24">
+    <Rect x={3} y={3} width={18} height={18} rx={2} stroke={c} strokeWidth={1.5} fill="none" />
+    <Circle cx={8.5} cy={8.5} r={1.5} fill={c} />
+    <Path d="M21 15l-5-5L5 21" stroke={c} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  </Svg>
+);
+const FileIcon = ({ c }: { c: string }) => (
+  <Svg width={32} height={32} viewBox="0 0 24 24">
+    <Path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke={c} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
+    <Polyline points="14 2 14 8 20 8" stroke={c} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
+  </Svg>
+);
+const CheckIcon = ({ c }: { c: string }) => (
+  <Svg width={13} height={13} viewBox="0 0 24 24">
+    <Path d="M20,6 L9,17 L4,12" stroke={c} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+  </Svg>
+);
 const BotIcon = ({ c }: { c: string }) => (
-  <Svg width={18} height={18} viewBox="0 0 24 24">
+  <Svg width={16} height={16} viewBox="0 0 24 24">
     <Rect x={3} y={8} width={18} height={13} rx={2} stroke={c} strokeWidth={2} fill="none" />
     <Path d="M9,3 L12,3 M12,3 L15,3 M12,3 L12,8" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
     <Circle cx={9} cy={14} r={1.5} fill={c} />
@@ -19,145 +58,28 @@ const BotIcon = ({ c }: { c: string }) => (
     <Path d="M9,18 C9,17 10.3,16 12,16 C13.7,16 15,17 15,18" stroke={c} strokeWidth={1.5} strokeLinecap="round" fill="none" />
   </Svg>
 );
-const ReceiptIcon = ({ c }: { c: string }) => (
+const BackIcon = ({ c }: { c: string }) => (
   <Svg width={20} height={20} viewBox="0 0 24 24">
-    <Path d="M4,2 L20,2 L20,22 L17,20 L14,22 L11,20 L8,22 L5,20 L4,22 Z" stroke={c} strokeWidth={1.8} fill="none" strokeLinejoin="round" />
-    <Line x1={8} y1={8} x2={16} y2={8} stroke={c} strokeWidth={1.5} strokeLinecap="round" />
-    <Line x1={8} y1={12} x2={16} y2={12} stroke={c} strokeWidth={1.5} strokeLinecap="round" />
-    <Line x1={8} y1={16} x2={13} y2={16} stroke={c} strokeWidth={1.5} strokeLinecap="round" />
+    <Path d="M19 12H5M12 19l-7-7 7-7" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
   </Svg>
 );
-const CameraIcon = ({ c }: { c: string }) => (
-  <Svg width={22} height={22} viewBox="0 0 24 24">
-    <Path d="M23,19 C23,20.1 22.1,21 21,21 L3,21 C1.9,21 1,20.1 1,19 L1,8 C1,6.9 1.9,6 3,6 L7,6 L9,3 L15,3 L17,6 L21,6 C22.1,6 23,6.9 23,8 Z" stroke={c} strokeWidth={1.8} fill="none" />
-    <Circle cx={12} cy={13} r={4} stroke={c} strokeWidth={1.8} fill="none" />
-  </Svg>
-);
-const PhotoIcon = ({ c }: { c: string }) => (
-  <Svg width={22} height={22} viewBox="0 0 24 24">
-    <Rect x={3} y={3} width={18} height={18} rx={2} stroke={c} strokeWidth={1.8} fill="none" />
-    <Circle cx={8.5} cy={8.5} r={1.5} fill={c} />
-    <Path d="M21,15 L16,10 L5,21" stroke={c} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-  </Svg>
-);
-const CheckIcon = ({ c }: { c: string }) => (
-  <Svg width={14} height={14} viewBox="0 0 24 24">
-    <Path d="M20,6 L9,17 L4,12" stroke={c} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-  </Svg>
-);
-const SparkIcon = ({ c }: { c: string }) => (
-  <Svg width={12} height={12} viewBox="0 0 24 24">
-    <Path d="M12,2 L14.5,9.5 L22,12 L14.5,14.5 L12,22 L9.5,14.5 L2,12 L9.5,9.5 Z" fill={c} />
+const XIcon = ({ c }: { c: string }) => (
+  <Svg width={20} height={20} viewBox="0 0 24 24">
+    <Path d="M18 6L6 18M6 6l12 12" stroke={c} strokeWidth={2} strokeLinecap="round" fill="none" />
   </Svg>
 );
 
-// ── Category badge colors ─────────────────────────────────────────────────────
+// ── Category colors ───────────────────────────────────────────────────────────
 const CAT_COLOR: Record<string, string> = {
   produce: '#10B981', dairy: '#3B82F6', meat: '#EF4444', seafood: '#0EA5E9',
   bakery: '#F59E0B', frozen: '#6366F1', snacks: '#F97316', beverages: '#06B6D4',
   grains: '#84CC16', cleaning: '#8B5CF6', personal_care: '#EC4899', other: '#9CA3AF',
 };
 
-// ── Scanning dot animation ────────────────────────────────────────────────────
-function PulseDot() {
-  const scale   = useRef(new Animated.Value(1)).current;
-  const opacity = useRef(new Animated.Value(0.8)).current;
-  useEffect(() => {
-    Animated.loop(Animated.sequence([
-      Animated.parallel([
-        Animated.timing(scale,   { toValue: 2.8, duration: 900, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0,   duration: 900, useNativeDriver: true }),
-      ]),
-      Animated.parallel([
-        Animated.timing(scale,   { toValue: 1, duration: 0, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0.8, duration: 0, useNativeDriver: true }),
-      ]),
-      Animated.delay(300),
-    ])).start();
-  }, []);
-  return (
-    <View style={{ width: 10, height: 10, alignItems: 'center', justifyContent: 'center' }}>
-      <Animated.View style={{ position: 'absolute', width: 10, height: 10, borderRadius: 5, backgroundColor: '#10B981', opacity, transform: [{ scale }] }} />
-      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#10B981' }} />
-    </View>
-  );
-}
-
-// ── Scan-line animation (while AI is processing) ─────────────────────────────
-function ScanningAnimation() {
-  const translateY = useRef(new Animated.Value(0)).current;
-  const barOpacity = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(barOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(translateY, { toValue: 120, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-          Animated.timing(translateY, { toValue: 0,   duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        ])
-      ),
-    ]).start();
-  }, []);
-
-  return (
-    <View style={{ width: '100%', height: 140, backgroundColor: 'rgba(146,97,199,0.08)', borderRadius: 14, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(146,97,199,0.25)' }}>
-      {/* Receipt lines background */}
-      {[0.2, 0.36, 0.52, 0.66, 0.8].map((t, i) => (
-        <View key={i} style={{ position: 'absolute', top: `${t * 100}%` as any, left: 24, right: 24, height: 1.5, backgroundColor: 'rgba(146,97,199,0.2)', borderRadius: 1 }} />
-      ))}
-      {/* Scan line */}
-      <Animated.View style={{ position: 'absolute', left: 0, right: 0, opacity: barOpacity, transform: [{ translateY }] }}>
-        <View style={{ height: 2, backgroundColor: BRAND.purple, shadowColor: BRAND.purple, shadowRadius: 8, shadowOpacity: 0.8 }} />
-        <View style={{ height: 20, backgroundColor: 'rgba(146,97,199,0.12)' }} />
-      </Animated.View>
-      {/* Center label */}
-      <View style={{ alignItems: 'center', gap: 6 }}>
-        <ActivityIndicator color={BRAND.purple2} size="small" />
-        <Text style={{ fontSize: 12, fontWeight: '700', color: BRAND.purple2, letterSpacing: 0.5 }}>SCANNING RECEIPT…</Text>
-      </View>
-    </View>
-  );
-}
-
-// ── Dot-bounce loading indicator ─────────────────────────────────────────────
-function ThinkingDots() {
-  const dots = [0, 1, 2].map(i => {
-    const anim = useRef(new Animated.Value(0)).current;
-    useEffect(() => {
-      Animated.loop(Animated.sequence([
-        Animated.delay(i * 150),
-        Animated.timing(anim, { toValue: -6, duration: 300, useNativeDriver: true }),
-        Animated.timing(anim, { toValue: 0,  duration: 300, useNativeDriver: true }),
-        Animated.delay(600),
-      ])).start();
-    }, []);
-    return anim;
-  });
-  return (
-    <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center' }}>
-      {dots.map((anim, i) => (
-        <Animated.View key={i} style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: BRAND.purple2, transform: [{ translateY: anim }] }} />
-      ))}
-    </View>
-  );
-}
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ExtractedItem {
-  name: string;
-  quantity: number;
-  unit: string;
-  unitPrice: number;
-  totalPrice: number;
-  category: string;
-}
-
-interface Member {
-  id: string;
-  name: string;
-  emoji?: string;
-  avatarUrl?: string;
+  name: string; quantity: number; unit: string;
+  unitPrice: number; totalPrice: number; category: string;
 }
 
 export interface ReceiptScanSheetProps {
@@ -166,100 +88,117 @@ export interface ReceiptScanSheetProps {
   familyId: string;
   memberId: string;
   memberName?: string;
-  members?: Member[];
   colors: any;
   isDark: boolean;
   onSuccess?: (receipt: any) => void;
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 export function ReceiptScanSheet({
-  visible, onClose, familyId, memberId, memberName, members = [], colors, isDark, onSuccess,
+  visible, onClose, familyId, memberId, memberName, colors, isDark, onSuccess,
 }: ReceiptScanSheetProps) {
-  const [step, setStep]         = useState<'menu' | 'scanning' | 'review'>('menu');
+  const insets = useSafeAreaInsets();
+  const [page, setPage]         = useState<1 | 2>(1);
   const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
   const [items, setItems]       = useState<ExtractedItem[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [store, setStore]       = useState('');
   const [receiptDate, setReceiptDate] = useState('');
   const [total, setTotal]       = useState(0);
   const [saving, setSaving]     = useState(false);
-  const [fadeIn]                = useState(new Animated.Value(0));
 
-  const fadeInResults = () => {
-    fadeIn.setValue(0);
-    Animated.timing(fadeIn, { toValue: 1, duration: 500, useNativeDriver: true }).start();
-  };
+  // ── Scan beam animation ───────────────────────────────────────────────────
+  const beamY     = useRef(new Animated.Value(0)).current;
+  const pulseScale = useRef(new Animated.Value(1)).current;
+  const dotOpacity = useRef([0,1,2].map(() => new Animated.Value(0.3))).current;
 
-  const handleClose = () => {
-    setStep('menu');
-    setScanning(false);
-    setItems([]);
-    setSelected(new Set());
-    setStore('');
-    setReceiptDate('');
-    setTotal(0);
-    onClose();
-  };
+  useEffect(() => {
+    if (!scanning) { beamY.setValue(0); pulseScale.setValue(1); return; }
+    const beam = Animated.loop(
+      Animated.sequence([
+        Animated.timing(beamY, { toValue: 1, duration: 1300, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(beamY, { toValue: 0, duration: 1300, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ])
+    );
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseScale, { toValue: 1.12, duration: 600, useNativeDriver: true }),
+        Animated.timing(pulseScale, { toValue: 1.00, duration: 600, useNativeDriver: true }),
+      ])
+    );
+    const dots = Animated.loop(
+      Animated.stagger(180, dotOpacity.map(op =>
+        Animated.sequence([
+          Animated.timing(op, { toValue: 1,   duration: 300, useNativeDriver: true }),
+          Animated.timing(op, { toValue: 0.3, duration: 300, useNativeDriver: true }),
+        ])
+      ))
+    );
+    beam.start(); pulse.start(); dots.start();
+    return () => { beam.stop(); pulse.stop(); dots.stop(); };
+  }, [scanning]);
 
+  const reset = useCallback(() => {
+    setPage(1); setScanning(false); setScanError(null);
+    setItems([]); setSelected(new Set());
+    setStore(''); setReceiptDate(''); setTotal(0);
+  }, []);
+
+  const handleClose = () => { reset(); onClose(); };
+
+  // ── Core scan logic ───────────────────────────────────────────────────────
   const runScan = async (base64: string) => {
-    setStep('scanning');
-    setScanning(true);
+    setScanning(true); setScanError(null);
     try {
       const { data, error } = await supabase.functions.invoke('parse-grocery-receipt', {
         body: { familyId, scannedById: memberId, imageBase64: base64 },
       });
       if (error) throw new Error(error.message);
-
-      if (data?.error === 'not_a_receipt') {
-        Alert.alert('Not a Receipt', data.message ?? 'This image doesn\'t look like a receipt.');
-        setStep('menu');
-        return;
-      }
-      if (data?.error === 'not_grocery') {
-        Alert.alert('Wrong Receipt Type', data.message ?? 'Only grocery and shopping receipts are supported.');
-        setStep('menu');
-        return;
-      }
-
+      if (data?.error === 'not_a_receipt') throw new Error(data.message ?? 'This image doesn\'t look like a receipt.');
+      if (data?.error === 'not_grocery')   throw new Error(data.message ?? 'Only grocery/shopping receipts are supported.');
       const extracted: ExtractedItem[] = data.items ?? [];
       setItems(extracted);
       setSelected(new Set(extracted.map((_, i) => i)));
       setStore(data.store ?? '');
       setReceiptDate(data.date ?? '');
       setTotal(data.total ?? 0);
-      setStep('review');
-      fadeInResults();
+      setPage(2);
     } catch (err: any) {
-      Alert.alert('Scan failed', err?.message ?? 'Could not read this receipt.');
-      setStep('menu');
+      setScanError(err?.message ?? 'Could not read this receipt. Try again.');
     } finally {
       setScanning(false);
     }
   };
 
-  const takePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Camera access needed', 'Allow camera in Settings to take receipt photos.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9, base64: true });
-    if (!result.canceled && result.assets[0]?.base64) {
-      await runScan(result.assets[0].base64);
+  const pickCamera = async () => {
+    try {
+      // Native document scanner (edge detect + perspective correct)
+      const { scannedImages } = await DocumentScanner.scanDocument({ maxNumDocuments: 1 });
+      if (!scannedImages?.length) return;
+      const b64 = await FileSystem.readAsStringAsync(scannedImages[0], { encoding: 'base64' });
+      await runScan(b64);
+    } catch {
+      // Fallback to regular camera if document scanner fails/unavailable
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Camera access needed', 'Allow camera in Settings.'); return; }
+      const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9, base64: true });
+      if (!res.canceled && res.assets[0]?.base64) await runScan(res.assets[0].base64);
     }
   };
 
-  const browsePhoto = async () => {
+  const pickLibrary = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Photo access needed', 'Allow photo library in Settings to pick receipts.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9, base64: true });
-    if (!result.canceled && result.assets[0]?.base64) {
-      await runScan(result.assets[0].base64);
-    }
+    if (status !== 'granted') { Alert.alert('Photo access needed', 'Allow photo library in Settings.'); return; }
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9, base64: true });
+    if (!res.canceled && res.assets[0]?.base64) await runScan(res.assets[0].base64);
+  };
+
+  const pickPDF = async () => {
+    const res = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
+    if (res.canceled || !res.assets?.[0]) return;
+    const b64 = await FileSystem.readAsStringAsync(res.assets[0].uri, { encoding: 'base64' });
+    await runScan(b64);
   };
 
   const addToList = async () => {
@@ -268,21 +207,15 @@ export function ReceiptScanSheet({
       const toAdd = items.filter((_, i) => selected.has(i));
       for (const item of toAdd) {
         await supabase.from('grocery_items').insert({
-          family_id: familyId,
-          name: item.name,
-          category: item.category,
-          quantity: item.quantity,
-          estimated_price: item.totalPrice,
-          store_preference: store,
+          family_id: familyId, name: item.name, category: item.category,
+          quantity: item.quantity, estimated_price: item.totalPrice, store_preference: store,
         });
       }
-      onSuccess?.({ store, items: toAdd, scannedBy: memberId });
+      onSuccess?.({ store, items: toAdd, scannedBy: memberId, total });
       handleClose();
     } catch (err: any) {
       Alert.alert('Failed to add items', err?.message);
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   const toggleItem = (i: number) => {
@@ -291,209 +224,233 @@ export function ReceiptScanSheet({
     setSelected(next);
   };
 
-  // Auto-launch camera when sheet opens
-  useEffect(() => {
-    if (visible && step === 'menu') {
-      takePhoto();
-    }
-  }, [visible]);
+  const bg   = isDark ? '#13131F' : '#F8F8FC';
+  const bdr  = isDark ? '#1E2A42' : '#E5E7EB';
+  const txtP = isDark ? '#fff' : '#111';
+  const txtS = isDark ? '#aaa' : '#666';
+  const P    = BRAND.purple;
 
-  const sheetBg = isDark ? '#0D1117' : '#FFFFFF';
-  const border  = isDark ? '#1E2A42' : '#E5E7EB';
+  // Animated sheet height: page1 = compact 54%, page2 = 62–78% based on item count
+  const sheetHeight = useRef(new Animated.Value(0.54)).current;
+  useEffect(() => {
+    const targetRatio = page === 2
+      ? Math.min(0.78, 0.42 + items.length * 0.032)
+      : 0.54;
+    Animated.spring(sheetHeight, { toValue: targetRatio, useNativeDriver: false, tension: 60, friction: 12 }).start();
+  }, [page, items.length]);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: sheetBg }}>
-        {/* ── CubeAI header banner ── */}
-        <View style={{ backgroundColor: '#0D1424', borderBottomWidth: 1, borderBottomColor: '#1E2A42', paddingHorizontal: 16, paddingVertical: 12 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            {/* Bot avatar with pulse */}
-            <View style={{ width: 36, height: 36 }}>
-              <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(146,97,199,0.25)', borderWidth: 1, borderColor: 'rgba(185,142,219,0.4)', alignItems: 'center', justifyContent: 'center' }}>
-                <BotIcon c="#C4B5FD" />
-              </View>
-              <View style={{ position: 'absolute', top: -2, right: -2 }}>
-                <PulseDot />
-              </View>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
+
+          <Animated.View style={{ backgroundColor: bg, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+            height: sheetHeight.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+            paddingBottom: insets.bottom || 16 }}>
+
+            {/* ── Step progress ── */}
+            <View style={{ flexDirection: 'row', gap: 4, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 4 }}>
+              {[1, 2].map(s => (
+                <View key={s} style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: page >= s ? P : (isDark ? '#333' : '#E5E7EB') }} />
+              ))}
             </View>
-            {/* Title */}
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={{ fontSize: 13, fontWeight: '900', color: '#C4B5FD' }}>CubeAI Receipt Scanner</Text>
-                <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: 'rgba(16,185,129,0.2)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.4)' }}>
-                  <Text style={{ fontSize: 9, fontWeight: '800', color: '#10B981', letterSpacing: 0.5 }}>GEMINI</Text>
+
+            {/* ── Handle ── */}
+            <View style={{ alignItems: 'center', paddingTop: 6 }}>
+              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: isDark ? '#444' : '#DDD' }} />
+            </View>
+
+            {/* ── Header ── */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                {page === 2 && !scanning && !saving && (
+                  <TouchableOpacity onPress={() => { setPage(1); setScanError(null); }} style={{ marginRight: 4, padding: 4 }}>
+                    <BackIcon c={txtS} />
+                  </TouchableOpacity>
+                )}
+                <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: P + '20', alignItems: 'center', justifyContent: 'center' }}>
+                  <BotIcon c={BRAND.purple2} />
+                </View>
+                <View>
+                  <Text style={{ fontSize: 15, fontWeight: '900', color: txtP }}>
+                    {page === 1 ? 'Scan Receipt' : `${items.length} Items Found`}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: txtS, marginTop: 1 }}>
+                    Step {page} of 2 · {page === 1 ? (scanning ? 'Reading with AI…' : 'Choose source') : `${store || 'Unknown store'}${total > 0 ? ` · $${total.toFixed(2)}` : ''}`}
+                  </Text>
                 </View>
               </View>
-              <Text style={{ fontSize: 11, color: 'rgba(196,181,253,0.65)', marginTop: 1 }}>
-                {step === 'menu'     && 'Snap or upload a grocery receipt'}
-                {step === 'scanning' && 'Reading your receipt with AI…'}
-                {step === 'review'   && `Found ${items.length} items at ${store || 'the store'}`}
-              </Text>
+              <TouchableOpacity onPress={handleClose} style={{ padding: 4 }}>
+                <XIcon c={txtS} />
+              </TouchableOpacity>
             </View>
-            <Pressable onPress={handleClose} hitSlop={10} style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ color: '#9CA3AF', fontSize: 14, fontWeight: '700' }}>✕</Text>
-            </Pressable>
-          </View>
 
-          {/* Scanned-by attribution */}
-          {(step === 'review' || step === 'scanning') && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#1E2A42' }}>
-              <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: BRAND.purple + '40', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 10, fontWeight: '800', color: BRAND.purple2 }}>{(memberName ?? 'M')[0].toUpperCase()}</Text>
-              </View>
-              <Text style={{ fontSize: 11, color: 'rgba(196,181,253,0.6)' }}>
-                Scanned by <Text style={{ color: '#C4B5FD', fontWeight: '700' }}>{memberName ?? 'You'}</Text>
-                {receiptDate ? <Text>  ·  {receiptDate}</Text> : null}
-                {total > 0 ? <Text>  ·  <Text style={{ color: BRAND.amber, fontWeight: '700' }}>${total.toFixed(2)}</Text></Text> : null}
-              </Text>
-            </View>
-          )}
-        </View>
+            {/* ══ PAGE 1 — Source picker ══ */}
+            {page === 1 && (
+              <View style={{ paddingHorizontal: 20, paddingBottom: 24, gap: 20 }}>
 
-        {/* ── Content ── */}
-        <View style={{ flex: 1 }}>
-          {/* MENU — shown only if camera was dismissed */}
-          {step === 'menu' && (
-            <View style={{ flex: 1, padding: 20, alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-              <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: 'rgba(146,97,199,0.15)', borderWidth: 1.5, borderColor: 'rgba(185,142,219,0.3)', alignItems: 'center', justifyContent: 'center' }}>
-                <ReceiptIcon c={BRAND.purple2} />
-              </View>
-              <Text style={{ fontSize: 16, fontWeight: '800', color: isDark ? '#C4B5FD' : BRAND.purple, textAlign: 'center' }}>
-                Scan a Receipt
-              </Text>
-              <Text style={{ fontSize: 13, color: colors.textTertiary, textAlign: 'center', lineHeight: 19 }}>
-                Camera was closed. Retry or browse for a saved receipt photo.
-              </Text>
-              <Pressable onPress={takePhoto} style={{ width: '100%', paddingVertical: 15, borderRadius: 14, backgroundColor: BRAND.purple, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
-                <CameraIcon c="#fff" />
-                <Text style={{ fontSize: 15, fontWeight: '800', color: '#fff' }}>Open Camera</Text>
-              </Pressable>
-              <Pressable onPress={browsePhoto} style={{ width: '100%', paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, borderColor: isDark ? '#334155' : '#E2E8F0', alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, backgroundColor: isDark ? '#111827' : '#F9FAFB' }}>
-                <PhotoIcon c={colors.textSecondary} />
-                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>Browse Photos</Text>
-              </Pressable>
-              <Text style={{ fontSize: 11, color: colors.textTertiary, textAlign: 'center' }}>
-                Grocery & retail receipts only · Google Gemini
-              </Text>
-            </View>
-          )}
-
-          {/* SCANNING */}
-          {step === 'scanning' && (
-            <View style={{ flex: 1, padding: 20, gap: 20, alignItems: 'center', justifyContent: 'center' }}>
-              <ScanningAnimation />
-              <View style={{ alignItems: 'center', gap: 10 }}>
-                <ThinkingDots />
-                <Text style={{ fontSize: 14, fontWeight: '700', color: isDark ? '#C4B5FD' : BRAND.purple }}>
-                  Extracting items…
-                </Text>
-                <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center' }}>
-                  CubeAI is reading prices, quantities, and categories
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* REVIEW */}
-          {step === 'review' && (
-            <Animated.ScrollView
-              style={{ opacity: fadeIn }}
-              contentContainerStyle={{ padding: 16, paddingBottom: 24, gap: 8 }}
-              showsVerticalScrollIndicator={false}
-            >
-              {/* Store + total summary bar */}
-              <View style={{ backgroundColor: isDark ? '#0D1424' : '#F5F3FF', borderRadius: 14, borderWidth: 1, borderColor: isDark ? '#1E2A42' : '#DDD6FE', padding: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 4, gap: 12 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? 'rgba(196,181,253,0.5)' : '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 }}>Store</Text>
-                  <Text style={{ fontSize: 15, fontWeight: '800', color: isDark ? '#C4B5FD' : BRAND.purple }}>{store || 'Unknown'}</Text>
+                {/* Animated scan preview box */}
+                <View style={{ height: 160, borderRadius: 20, overflow: 'hidden', backgroundColor: isDark ? '#0D1424' : '#F0F4FF', borderWidth: 1.5, borderColor: P + '40', alignItems: 'center', justifyContent: 'center' }}>
+                  {scanning ? (
+                    <>
+                      {/* Corner brackets */}
+                      {[
+                        { top: 10, left: 10, rotate: '0deg' },
+                        { top: 10, right: 10, rotate: '90deg' },
+                        { bottom: 10, right: 10, rotate: '180deg' },
+                        { bottom: 10, left: 10, rotate: '270deg' },
+                      ].map((pos, i) => (
+                        <View key={i} style={{ position: 'absolute', ...(pos as any), width: 24, height: 24 }}>
+                          <Svg width={24} height={24} viewBox="0 0 24 24" style={{ transform: [{ rotate: pos.rotate }] }}>
+                            <Path d="M2 8V2h6" stroke={P} strokeWidth={2.5} strokeLinecap="round" fill="none" />
+                          </Svg>
+                        </View>
+                      ))}
+                      {/* Scan beam */}
+                      <Animated.View style={{ position: 'absolute', left: 12, right: 12, height: 2, borderRadius: 1, backgroundColor: P, opacity: 0.85,
+                        transform: [{ translateY: beamY.interpolate({ inputRange: [0, 1], outputRange: [-65, 65] }) }] }} />
+                      {/* Icon */}
+                      <Animated.View style={{ transform: [{ scale: pulseScale }] }}>
+                        <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: P + '25', alignItems: 'center', justifyContent: 'center' }}>
+                          <ScanLineIcon c={P} size={26} />
+                        </View>
+                      </Animated.View>
+                      {/* Dot loader */}
+                      <View style={{ flexDirection: 'row', gap: 6, marginTop: 14 }}>
+                        {dotOpacity.map((op, i) => (
+                          <Animated.View key={i} style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: BRAND.purple2, opacity: op }} />
+                        ))}
+                      </View>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: txtS, marginTop: 10 }}>CubeAI is reading your receipt…</Text>
+                    </>
+                  ) : (
+                    <View style={{ alignItems: 'center', gap: 8 }}>
+                      <ScanLineIcon c={isDark ? '#444' : '#CCC'} size={44} />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#555' : '#BBB' }}>Choose how to add your receipt</Text>
+                    </View>
+                  )}
                 </View>
-                {total > 0 && (
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? 'rgba(196,181,253,0.5)' : '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 }}>Total</Text>
-                    <Text style={{ fontSize: 16, fontWeight: '900', color: BRAND.amber }}>${total.toFixed(2)}</Text>
+
+                {/* Error banner */}
+                {scanError && (
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start', backgroundColor: '#EF444420', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#EF444440' }}>
+                    <Text style={{ fontSize: 12, color: '#EF4444', flex: 1, fontWeight: '600', lineHeight: 18 }}>{scanError}</Text>
                   </View>
                 )}
-              </View>
 
-              {/* Select-all row */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4, marginBottom: 4 }}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  {selected.size} of {items.length} items selected
+                {/* Source buttons */}
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  {[
+                    { label: 'Camera', sub: 'Scan now', icon: <CameraIcon c={P} />, onPress: pickCamera },
+                    { label: 'Photos', sub: 'From library', icon: <GalleryIcon c={P} />, onPress: pickLibrary },
+                    { label: 'File', sub: 'Image file', icon: <FileIcon c={P} />, onPress: pickPDF },
+                  ].map(btn => (
+                    <TouchableOpacity key={btn.label} disabled={scanning} onPress={btn.onPress}
+                      style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 18, borderRadius: 18,
+                        backgroundColor: isDark ? '#1E1E2E' : '#fff', borderWidth: 1.5, borderColor: bdr, gap: 8, opacity: scanning ? 0.45 : 1,
+                        shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
+                      {btn.icon}
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: txtP }}>{btn.label}</Text>
+                      <Text style={{ fontSize: 10, fontWeight: '600', color: txtS, marginTop: -4 }}>{btn.sub}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Attribution hint */}
+                <Text style={{ fontSize: 11, color: txtS, textAlign: 'center' }}>
+                  Scanned by <Text style={{ fontWeight: '700', color: BRAND.purple2 }}>{memberName ?? 'You'}</Text> · Grocery receipts only · Google Gemini
                 </Text>
-                <Pressable onPress={() => setSelected(selected.size === items.length ? new Set() : new Set(items.map((_, i) => i)))}>
-                  <Text style={{ fontSize: 12, fontWeight: '800', color: BRAND.purple2 }}>
-                    {selected.size === items.length ? 'Deselect all' : 'Select all'}
-                  </Text>
-                </Pressable>
               </View>
+            )}
 
-              {/* Item rows */}
-              {items.map((item, idx) => {
-                const checked = selected.has(idx);
-                const catColor = CAT_COLOR[item.category] ?? '#9CA3AF';
-                return (
-                  <Pressable key={idx} onPress={() => toggleItem(idx)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, marginBottom: 4,
-                    backgroundColor: checked ? (isDark ? 'rgba(146,97,199,0.12)' : '#F5F3FF') : (isDark ? '#111827' : '#F9FAFB'),
-                    borderWidth: 1.5, borderColor: checked ? 'rgba(146,97,199,0.4)' : border }}>
-                    {/* Checkbox */}
-                    <View style={{ width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: checked ? BRAND.purple : (isDark ? '#334155' : '#D1D5DB'), backgroundColor: checked ? BRAND.purple : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                      {checked && <CheckIcon c="#fff" />}
-                    </View>
-                    {/* Category dot */}
-                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: catColor }} />
-                    {/* Item info */}
+            {/* ══ PAGE 2 — Review items ══ */}
+            {page === 2 && (
+              <>
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20, gap: 8 }}>
+
+                  {/* Store + total summary */}
+                  <View style={{ backgroundColor: isDark ? '#0D1424' : '#F5F3FF', borderRadius: 14, borderWidth: 1, borderColor: isDark ? '#1E2A42' : '#DDD6FE', padding: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 4, gap: 12 }}>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>{item.name}</Text>
-                      <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>
-                        {item.quantity}{item.unit !== 'each' ? ` ${item.unit}` : ''} · <Text style={{ color: catColor, fontWeight: '600' }}>{item.category}</Text>
-                      </Text>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? 'rgba(196,181,253,0.5)' : '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 }}>Store</Text>
+                      <Text style={{ fontSize: 15, fontWeight: '800', color: isDark ? '#C4B5FD' : P }}>{store || 'Unknown'}</Text>
                     </View>
-                    {/* Price */}
-                    {item.totalPrice > 0 && (
-                      <Text style={{ fontSize: 14, fontWeight: '800', color: checked ? (isDark ? '#C4B5FD' : BRAND.purple) : colors.textSecondary }}>
-                        ${item.totalPrice.toFixed(2)}
-                      </Text>
+                    {total > 0 && (
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? 'rgba(196,181,253,0.5)' : '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 }}>Total</Text>
+                        <Text style={{ fontSize: 16, fontWeight: '900', color: BRAND.amber }}>${total.toFixed(2)}</Text>
+                      </View>
                     )}
-                  </Pressable>
-                );
-              })}
-            </Animated.ScrollView>
-          )}
-        </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: isDark ? 'rgba(196,181,253,0.5)' : '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5 }}>Scanned by</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#C4B5FD' : P }}>{memberName ?? 'You'}</Text>
+                    </View>
+                  </View>
 
-        {/* ── Footer ── */}
-        {step === 'review' && (
-          <View style={{ borderTopWidth: 1, borderTopColor: border, backgroundColor: sheetBg, padding: 16, gap: 10 }}>
-            {/* Receipt icon */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <ReceiptIcon c={colors.textTertiary} />
-              <Text style={{ fontSize: 12, color: colors.textTertiary, flex: 1 }}>
-                Scanned by <Text style={{ fontWeight: '700', color: colors.textSecondary }}>{memberName ?? 'You'}</Text>{receiptDate ? `  ·  ${receiptDate}` : ''}
-              </Text>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Pressable onPress={handleClose} style={{ flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: isDark ? '#1E293B' : '#F3F4F6', alignItems: 'center', borderWidth: 1, borderColor: border }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Discard</Text>
-              </Pressable>
-              <Pressable
-                onPress={addToList}
-                disabled={selected.size === 0 || saving}
-                style={{ flex: 2, paddingVertical: 13, borderRadius: 12, backgroundColor: selected.size === 0 ? '#374151' : BRAND.purple, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
-              >
-                {saving
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <>
-                      <SparkIcon c="#fff" />
-                      <Text style={{ fontSize: 14, fontWeight: '800', color: '#fff' }}>
-                        Add {selected.size} item{selected.size !== 1 ? 's' : ''} to List
+                  {/* Select-all row */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 2, marginBottom: 4 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: txtS, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      {selected.size} of {items.length} selected
+                    </Text>
+                    <TouchableOpacity onPress={() => setSelected(selected.size === items.length ? new Set() : new Set(items.map((_, i) => i)))}>
+                      <Text style={{ fontSize: 12, fontWeight: '800', color: BRAND.purple2 }}>
+                        {selected.size === items.length ? 'Deselect all' : 'Select all'}
                       </Text>
-                    </>
-                }
-              </Pressable>
-            </View>
-          </View>
-        )}
-      </SafeAreaView>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Items */}
+                  {items.map((item, idx) => {
+                    const checked = selected.has(idx);
+                    const catColor = CAT_COLOR[item.category] ?? '#9CA3AF';
+                    return (
+                      <TouchableOpacity key={idx} onPress={() => toggleItem(idx)} activeOpacity={0.75}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, marginBottom: 4,
+                          backgroundColor: checked ? (isDark ? 'rgba(146,97,199,0.12)' : '#F5F3FF') : (isDark ? '#1E1E2E' : '#F9FAFB'),
+                          borderWidth: 1.5, borderColor: checked ? P + '60' : bdr }}>
+                        <View style={{ width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: checked ? P : (isDark ? '#334155' : '#D1D5DB'), backgroundColor: checked ? P : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                          {checked && <CheckIcon c="#fff" />}
+                        </View>
+                        <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: catColor }} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: txtP }} numberOfLines={1}>{item.name}</Text>
+                          <Text style={{ fontSize: 11, color: txtS, marginTop: 1 }}>
+                            {item.quantity}{item.unit !== 'each' ? ` ${item.unit}` : ''} · <Text style={{ color: catColor, fontWeight: '600' }}>{item.category}</Text>
+                          </Text>
+                        </View>
+                        {item.totalPrice > 0 && (
+                          <Text style={{ fontSize: 14, fontWeight: '800', color: checked ? (isDark ? '#C4B5FD' : P) : txtS }}>
+                            ${item.totalPrice.toFixed(2)}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                {/* Footer */}
+                <View style={{ borderTopWidth: 1, borderTopColor: bdr, padding: 16, gap: 10, backgroundColor: bg }}>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TouchableOpacity onPress={handleClose}
+                      style={{ flex: 1, paddingVertical: 13, borderRadius: 14, backgroundColor: isDark ? '#1E293B' : '#F3F4F6', alignItems: 'center', borderWidth: 1, borderColor: bdr }}>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: txtS }}>Discard</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={addToList} disabled={selected.size === 0 || saving}
+                      style={{ flex: 2, paddingVertical: 13, borderRadius: 14, backgroundColor: selected.size === 0 ? '#374151' : P, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
+                      {saving
+                        ? <ActivityIndicator color="#fff" size="small" />
+                        : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>
+                            Add {selected.size} item{selected.size !== 1 ? 's' : ''} to List →
+                          </Text>
+                      }
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </>
+            )}
+          </Animated.View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

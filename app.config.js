@@ -91,6 +91,7 @@ const config = {
   plugins: [
     "expo-font",
     "expo-asset",
+    "react-native-document-scanner-plugin",
     "expo-router",
     "expo-secure-store",
     "expo-local-authentication",

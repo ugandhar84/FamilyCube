@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { View, Text, Pressable, Alert, TextInput, Dimensions, ScrollView } from 'react-native';
+import { View, Text, Pressable, TouchableOpacity, Alert, TextInput, Dimensions, ScrollView } from 'react-native';
+import { TYPO } from '@/constants/theme';
 import { ChevronRight } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -207,17 +208,19 @@ function GroceryModal({ visible, onClose, active, colors, isDark }: {
                 <Text style={{ fontSize: 11, color: colors.textTertiary, marginBottom: 6, fontWeight: '600' }}>
                   {name.trim() ? 'Matching — tap to fill' : 'Quick picks'}
                 </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always"
-                  contentContainerStyle={{ gap: 6, paddingBottom: 2 }}>
-                  {shown.map(s => (
-                    <Pressable key={s.name} onPress={() => { setName(s.name); setCat(s.category); }}
-                      style={{ borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 4,
-                        backgroundColor: name === s.name ? BRAND.teal + '20' : (isDark ? '#1E1E2E' : '#F0F0FA'),
-                        borderWidth: 1.5, borderColor: name === s.name ? BRAND.teal : (isDark ? '#2A2A40' : '#E0E0F0') }}>
-                      <Text style={{ fontSize: 14 }}>{s.emoji}</Text>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: name === s.name ? BRAND.teal : colors.textSecondary }}>{s.name}</Text>
-                    </Pressable>
-                  ))}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
+                  <View style={{ flexDirection: 'row', gap: 7 }}>
+                    {shown.map(s => (
+                      <TouchableOpacity key={s.name} onPress={() => { setName(s.name); setCat(s.category); }}
+                        style={{ flexDirection: 'row', alignItems: 'center', borderRadius: 20, borderWidth: 1.5,
+                          paddingHorizontal: 10, paddingVertical: 6, flexShrink: 0,
+                          backgroundColor: name === s.name ? BRAND.teal + '20' : (isDark ? colors.surface : '#F5F4FA'),
+                          borderColor: name === s.name ? BRAND.teal : (isDark ? colors.border : '#E2E8F0') }}>
+                        <Text style={{ fontSize: TYPO.label }}>{s.emoji}</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: name === s.name ? BRAND.teal : colors.textSecondary, marginLeft: 4 }} numberOfLines={1}>{s.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 </ScrollView>
               </View>
             );
@@ -399,17 +402,19 @@ function SuppliesModal({ visible, onClose, active, colors, isDark }: {
                     <Text style={{ fontSize: 11, color: colors.textTertiary, marginBottom: 5, fontWeight: '600' }}>
                       {q.length > 0 ? 'Matching — tap to fill' : 'Quick picks'}
                     </Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always"
-                      contentContainerStyle={{ gap: 5, paddingBottom: 2 }}>
-                      {filtered.map(s => (
-                        <Pressable key={s.name} onPress={() => updateItem(idx, 'name', s.name)}
-                          style={{ borderRadius: 16, paddingHorizontal: 9, paddingVertical: 5, flexDirection: 'row', alignItems: 'center', gap: 3,
-                            backgroundColor: item.name === s.name ? '#6366F120' : (isDark ? '#1E1E2E' : '#F0F0FA'),
-                            borderWidth: 1.5, borderColor: item.name === s.name ? '#6366F1' : (isDark ? '#2A2A40' : '#E0E0F0') }}>
-                          <Text style={{ fontSize: 12 }}>{s.emoji}</Text>
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: item.name === s.name ? '#6366F1' : colors.textSecondary }}>{s.name}</Text>
-                        </Pressable>
-                      ))}
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
+                      <View style={{ flexDirection: 'row', gap: 7 }}>
+                        {filtered.map(s => (
+                          <TouchableOpacity key={s.name} onPress={() => updateItem(idx, 'name', s.name)}
+                            style={{ flexDirection: 'row', alignItems: 'center', borderRadius: 20, borderWidth: 1.5,
+                              paddingHorizontal: 10, paddingVertical: 6, flexShrink: 0,
+                              backgroundColor: item.name === s.name ? '#6366F120' : (isDark ? colors.surface : '#F5F4FA'),
+                              borderColor: item.name === s.name ? '#6366F1' : (isDark ? colors.border : '#E2E8F0') }}>
+                            <Text style={{ fontSize: TYPO.label }}>{s.emoji}</Text>
+                            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: item.name === s.name ? '#6366F1' : colors.textSecondary, marginLeft: 4 }} numberOfLines={1}>{s.name}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
                     </ScrollView>
                   </View>
                 )}

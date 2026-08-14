@@ -497,8 +497,8 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
   };
 
   // Create a return quest assigned to chosen member
-  const createReturnQuest = (assigneeId: string) => {
-    const itemsToReturn = runItems.filter(ri => returnIds.has(ri.itemId));
+  const createReturnQuest = (assigneeId: string, specificItems?: typeof runItems) => {
+    const itemsToReturn = specificItems ?? runItems.filter(ri => returnIds.has(ri.itemId));
     if (itemsToReturn.length === 0) return;
     const itemList = itemsToReturn.map(ri => `• ${ri.item?.name ?? ri.itemId}${ri.item?.quantity ? ` (${ri.item.quantity})` : ''}`).join('\n');
     const assignee = members.find(m => m.id === assigneeId);
@@ -659,25 +659,32 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
 
                       {/* Actions */}
                       <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
-                        {/* Return toggle — show on checked or done items */}
+                        {/* Return — one tap, pick who, quest created instantly */}
                         {(ri.checkedInRun || isDone) && !isNotFound && (
                           <Pressable
                             onPress={() => {
-                              const next = new Set(returnIds);
-                              next.has(ri.itemId) ? next.delete(ri.itemId) : next.add(ri.itemId);
-                              setReturnIds(next);
+                              const itemName = ri.item?.name ?? ri.itemId;
+                              const qty = ri.item?.quantity ? ` (${ri.item.quantity})` : '';
+                              Alert.alert(
+                                '↩️ Return Item',
+                                `Who will return "${itemName}${qty}" to ${run?.store ?? 'the store'}?`,
+                                [
+                                  ...members.map(m => ({
+                                    text: m.name,
+                                    onPress: () => createReturnQuest(m.id, [ri]),
+                                  })),
+                                  { text: 'Cancel', style: 'cancel' },
+                                ]
+                              );
                             }}
                             hitSlop={6}
                             style={{
-                              paddingHorizontal: 7, paddingVertical: 4, borderRadius: 8,
-                              backgroundColor: returnIds.has(ri.itemId) ? '#FFF7ED' : (isDark ? '#1E293B' : '#F1F5F9'),
-                              borderWidth: 1,
-                              borderColor: returnIds.has(ri.itemId) ? '#FB923C' : (isDark ? '#334155' : '#E2E8F0'),
+                              paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
+                              backgroundColor: isDark ? '#1E293B' : '#FFF7ED',
+                              borderWidth: 1, borderColor: '#FB923C',
                             }}
                           >
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: returnIds.has(ri.itemId) ? '#EA580C' : colors.textTertiary }}>
-                              {returnIds.has(ri.itemId) ? '↩️ Return' : 'Return?'}
-                            </Text>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: '#EA580C' }}>↩️ Return</Text>
                           </Pressable>
                         )}
                         {/* Not found toggle — only on active runs */}
@@ -828,19 +835,6 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
                     </View>
                   )}
 
-                  {/* Return quest button */}
-                  {returnIds.size > 0 && (
-                    <Pressable onPress={() => setShowReturnPicker(true)}
-                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        borderWidth: 1.5, borderColor: '#FB923C', borderRadius: 10, paddingVertical: 10,
-                        backgroundColor: isDark ? '#1C1008' : '#FFF7ED' }}>
-                      <Text style={{ fontSize: 14 }}>↩️</Text>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#EA580C' }}>
-                        Create Return Quest ({returnIds.size} item{returnIds.size > 1 ? 's' : ''})
-                      </Text>
-                    </Pressable>
-                  )}
-
                   {checkedCount > 0 && (
                     <Pressable onPress={handleComplete} style={[sh.btn, { backgroundColor: colors.primary }]}>
                       <Text style={sh.btnText}>✅ Done — {checkedCount} bought{notFoundIds.size > 0 ? `, ${notFoundIds.size} skipped` : ''}</Text>
@@ -854,47 +848,6 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
       </View>
     </Modal>
 
-    {/* ── Assignee picker for Return Quest ── */}
-    <Modal visible={showReturnPicker} transparent animationType="fade" onRequestClose={() => setShowReturnPicker(false)}>
-      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}
-        onPress={() => setShowReturnPicker(false)}>
-        <Pressable onPress={e => e.stopPropagation()}>
-          <View style={{ backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 }}>
-            <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary, marginBottom: 4 }}>↩️ Create Return Quest</Text>
-            <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 16 }}>
-              Assign to someone who'll return {returnIds.size} item{returnIds.size > 1 ? 's' : ''} to {run?.store ?? 'the store'}:
-            </Text>
-            {/* Items list preview */}
-            {runItems.filter(ri => returnIds.has(ri.itemId)).map(ri => (
-              <View key={ri.itemId} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: isDark ? '#334155' : '#F1F5F9' }}>
-                <Text style={{ fontSize: 13 }}>↩️</Text>
-                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textPrimary, flex: 1 }}>{ri.item?.name ?? ri.itemId}</Text>
-                {ri.item?.quantity ? <Text style={{ fontSize: 12, color: colors.textTertiary }}>{ri.item.quantity}</Text> : null}
-              </View>
-            ))}
-            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 16, marginBottom: 10 }}>
-              Assign to
-            </Text>
-            {members.map(m => (
-              <Pressable key={m.id} onPress={() => createReturnQuest(m.id)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 14,
-                  borderRadius: 12, marginBottom: 8, backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
-                  borderWidth: 1, borderColor: isDark ? '#334155' : '#E2E8F0' }}>
-                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary + '30', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: colors.primary }}>{(m.name ?? 'M')[0].toUpperCase()}</Text>
-                </View>
-                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textPrimary, flex: 1 }}>{m.name}</Text>
-                <Text style={{ fontSize: 20 }}>→</Text>
-              </Pressable>
-            ))}
-            <Pressable onPress={() => setShowReturnPicker(false)}
-              style={{ marginTop: 4, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderWidth: 1, borderColor: isDark ? '#334155' : '#E2E8F0' }}>
-              <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
     </>
   );
 }
@@ -1861,6 +1814,14 @@ export default function GroceryScreen() {
         </View>
       </View>
 
+      {/* CubeAI banner — above cart total */}
+      <GroceryAiBanner
+        isDark={isDark} colors={colors}
+        onScan={() => setShowReceiptScan(true)}
+        onPriceCheck={() => checkPrices()}
+        pricesLoaded={pricesLoaded} priceLoading={priceLoading}
+      />
+
       {/* Cart total */}
       {cartTotal > 0 && (
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -1940,13 +1901,6 @@ export default function GroceryScreen() {
         <ActivityIndicator style={{ marginTop: 60 }} color={P} />
       ) : tab === 'list' ? (
         <>
-        {/* ── CubeAI Grocery Banner ── */}
-        <GroceryAiBanner
-          isDark={isDark} colors={colors}
-          onScan={() => setShowReceiptScan(true)}
-          onPriceCheck={() => checkPrices()}
-          pricesLoaded={pricesLoaded} priceLoading={priceLoading}
-        />
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
 
           {/* Supplies section */}

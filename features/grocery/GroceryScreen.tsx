@@ -11,6 +11,9 @@
  *  Active run card → RunDetailSheet (live check-off)
  */
 import { useEffect, useRef, useState, useCallback, useMemo, ComponentType } from 'react';
+import { ReceiptScanSheet } from './components/ReceiptScanSheet';
+import { SmartRestockBanner } from './components/SmartRestockBanner';
+import { PartnerStatusBar } from './components/PartnerStatusBar';
 import {
   View, Text, ScrollView, Pressable, StyleSheet, TextInput,
   Modal, KeyboardAvoidingView, Platform, Alert, Animated,
@@ -1138,6 +1141,7 @@ export default function GroceryScreen() {
   const [showNewRun,  setShowNewRun]    = useState(false);
   const [showAiPanel, setShowAiPanel]   = useState(false);
   const [selectedRun, setSelectedRun]  = useState<GroceryRun | null>(null);
+  const [showReceiptScan, setShowReceiptScan] = useState(false);
 
   // Price comparison state
   const [priceMap, setPriceMap]         = useState<Record<string, { price: number | null; unit: string | null; source: 'kroger' | 'estimate' | 'unknown' }>>({});
@@ -1340,6 +1344,11 @@ export default function GroceryScreen() {
                     {pricesLoaded ? 'Prices ✓' : 'Prices'}
                   </Text></>}
           </Pressable>
+          <Pressable onPress={() => setShowReceiptScan(true)}
+            style={[s.headerBtn, { borderColor: 'rgba(16,185,129,0.4)', backgroundColor: 'rgba(16,185,129,0.08)' }]}>
+            <Ionicons name="receipt-outline" size={16} color="#10B981" />
+            <Text style={[s.headerBtnText, { color: '#10B981' }]}>Scan</Text>
+          </Pressable>
           <Pressable onPress={() => setShowNewRun(true)}
             style={[s.headerBtn, { borderColor: 'rgba(124,58,237,0.3)', backgroundColor: 'transparent' }]}>
             <Ionicons name="cart-outline" size={16} color="#7C3AED" />
@@ -1389,6 +1398,31 @@ export default function GroceryScreen() {
       </View>
 
       {/* Content */}
+      {/* Partner presence & restock banners */}
+      {tab === 'list' && (
+        <>
+          <PartnerStatusBar
+            familyId={familyId}
+            currentMemberId={activeMemberId ?? ''}
+            colors={colors}
+            isDark={isDark}
+          />
+          <SmartRestockBanner
+            familyId={familyId}
+            colors={colors}
+            isDark={isDark}
+            onAddItem={(name, category) => {
+              addItem({
+                familyId,
+                addedBy: activeMemberId ?? '',
+                name,
+                category,
+              });
+            }}
+          />
+        </>
+      )}
+
       {loading ? (
         <ActivityIndicator style={{ marginTop: 60 }} color={P} />
       ) : tab === 'list' ? (
@@ -1611,6 +1645,15 @@ export default function GroceryScreen() {
       </Pressable>
 
       {/* Sheets */}
+      <ReceiptScanSheet
+        visible={showReceiptScan}
+        onClose={() => setShowReceiptScan(false)}
+        familyId={familyId}
+        memberId={activeMemberId ?? ''}
+        colors={colors}
+        isDark={isDark}
+        onSuccess={() => load(familyId)}
+      />
       <AddItemSheet
         visible={showAddItem}
         onClose={() => { setShowAddItem(false); setEditingItem(undefined); }}

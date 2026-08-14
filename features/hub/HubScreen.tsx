@@ -935,291 +935,307 @@ function KidView({ active, members, colors, isDark, onHelpRequest }: {
 
   const today = localToday();
   const myEvents = events.filter(e => e.memberId === active.id || !e.memberId);
-  const todayMyEvents = myEvents.filter(e => e.date === today).sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
+  const todayEvents = myEvents.filter(e => e.date === today).sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
 
-  const parentWorkConflict = events.find(e => e.date === today && e.category === 'Work' && e.conflict);
-  const myPendingRides   = events.filter(e => e.memberId === active.id && e.approvalPending);
-  const myDeclinedRides  = events.filter(e => e.memberId === active.id && e.helperStatus === 'rejected' && !e.approvalPending);
-  const myConfirmedRides = todayMyEvents.filter(e => e.helper && e.helperStatus === 'confirmed');
+  const myPendingRides  = events.filter(e => e.memberId === active.id && e.approvalPending);
+  const myDeclinedRides = events.filter(e => e.memberId === active.id && e.helperStatus === 'rejected' && !e.approvalPending);
+  const myConfirmedRide = todayEvents.find(e => e.helper && e.helperStatus === 'confirmed');
 
-  const myQuests   = quests.filter(q => q.assignedToId === active.id);
-  const inProgress = myQuests.filter(q => q.status === 'todo' || q.status === 'claimed').length;
-  const inReview   = myQuests.filter(q => q.status === 'pending_approval').length;
-  const available  = quests.filter(q => !q.assignedToId && q.status === 'todo').length;
+  const myQuests    = quests.filter(q =>
+    q.assignedToId === active.id ||
+    (q.assignedToIds?.length > 0 && q.assignedToIds.includes(active.id))
+  );
+  const activeQuests  = myQuests.filter(q => q.status === 'todo' || q.status === 'claimed' || q.status === 'in_progress');
+  const reviewQuests  = myQuests.filter(q => q.status === 'pending_approval');
+  const poolQuests    = quests.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask);
 
   const mainCoins = active.mainCoins ?? active.coins ?? 0;
   const gpCoins   = active.gpCoins ?? 0;
   const streak    = active.streak ?? 0;
-  const COIN_VAL  = 0.10;
-  const nextTier  = Math.ceil((mainCoins + 1) / 100) * 100;
-  const coinsToTier = nextTier - mainCoins;
-  const showMilestone = coinsToTier <= 30 && mainCoins > 0;
+  const xp        = active.xp ?? 0;
+  const level     = active.level ?? 1;
+  const xpForNext = level * 100;
+  const xpPct     = Math.min(xp % xpForNext / xpForNext, 1);
 
   const pad = { paddingHorizontal: 16 };
 
-  const ACTIONS: { Icon: any; label: string; color: string; action: () => void }[] = [
-    { Icon: MessageSquare, label: 'Parent Chat',   color: BRAND.purple, action: () => router.push('/(tabs)/chat') },
-    { Icon: Car,           label: 'Ask a Ride',    color: '#10B981',    action: () => Alert.alert('Ride Request', 'Your parent will be notified to confirm.') },
-    { Icon: BookOpen,      label: 'Ask Tutor',     color: BRAND.amber,  action: () => Alert.alert('Tutor Request', 'Requesting tutor — a parent will schedule.') },
-    { Icon: ThumbsUp,      label: 'Cheer Sibling', color: '#6366F1',    action: () => router.push('/(tabs)/quests') },
-  ];
+  // ── XP / Level Hero Banner ─────────────────────────────────────────────────
+  const heroCard = (
+    <View style={[pad, { marginBottom: 14 }]}>
+      <View style={{
+        borderRadius: 24, overflow: 'hidden',
+        backgroundColor: isDark ? '#1A0F33' : '#F3EEFF',
+        borderWidth: 1.5, borderColor: BRAND.purple + (isDark ? '50' : '30'),
+      }}>
+        {/* Top row: avatar + coins */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, paddingBottom: 12 }}>
+          <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: BRAND.purple + '25',
+            alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: BRAND.purple + '60' }}>
+            <Text style={{ fontSize: 30 }}>{active.emoji ?? '🙂'}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary }}>{active.name.split(' ')[0]}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+              <View style={{ backgroundColor: BRAND.purple + '25', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.purple }}>Lv {level}</Text>
+              </View>
+              {streak > 0 && (
+                <View style={{ backgroundColor: '#FF660020', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <Text style={{ fontSize: 11 }}>🔥</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#FF6600' }}>{streak}d streak</Text>
+                </View>
+              )}
+            </View>
+          </View>
+          {/* Coin stack */}
+          <Pressable onPress={() => router.push('/(tabs)/store' as any)}
+            style={{ alignItems: 'center', gap: 2 }}>
+            <View style={{ backgroundColor: BRAND.amber + '20', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 8,
+              borderWidth: 1.5, borderColor: BRAND.amber + '50', flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <Text style={{ fontSize: 18 }}>🪙</Text>
+              <Text style={{ fontSize: 22, fontWeight: '900', color: BRAND.amber }}>{mainCoins}</Text>
+            </View>
+            {gpCoins > 0 && (
+              <Text style={{ fontSize: 10, fontWeight: '700', color: BRAND.purple }}>+{gpCoins} ⭐ GP</Text>
+            )}
+          </Pressable>
+        </View>
+        {/* XP bar */}
+        <View style={{ paddingHorizontal: 16, paddingBottom: 14, gap: 5 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary }}>XP PROGRESS</Text>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: BRAND.teal }}>{xp % xpForNext} / {xpForNext} XP</Text>
+          </View>
+          <View style={{ height: 8, borderRadius: 4, backgroundColor: isDark ? '#2D1F55' : '#E5DAFF', overflow: 'hidden' }}>
+            <View style={{ height: 8, borderRadius: 4, width: `${Math.round(xpPct * 100)}%` as any,
+              backgroundColor: BRAND.teal }} />
+          </View>
+        </View>
+      </View>
+    </View>
+  );
 
-  const rideAlerts = myDeclinedRides.length + myPendingRides.length;
+  // ── Ride Alert Banner (if pending or declined) ─────────────────────────────
+  const rideAlert = (myDeclinedRides.length > 0 || myPendingRides.length > 0 || myConfirmedRide) ? (
+    <View style={[pad, { marginBottom: 14 }]}>
+      {myConfirmedRide && (
+        <Pressable onPress={() => router.push('/(tabs)/calendar')} style={{
+          borderRadius: 18, backgroundColor: '#064E3B', borderWidth: 1.5, borderColor: '#10B981',
+          padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8,
+        }}>
+          <Text style={{ fontSize: 24 }}>🚗</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: '#6EE7B7' }}>{myConfirmedRide.helper} is picking you up!</Text>
+            <Text style={{ fontSize: 12, color: '#34D399', marginTop: 1 }}>{myConfirmedRide.title} · {fmtTime(myConfirmedRide.time)}</Text>
+          </View>
+          <ChevronRight size={16} color="#6EE7B7" />
+        </Pressable>
+      )}
+      {myDeclinedRides.map(ev => (
+        <Pressable key={ev.id} onPress={() => router.push('/(tabs)/calendar')} style={{
+          borderRadius: 18, backgroundColor: '#450A0A', borderWidth: 1.5, borderColor: '#EF4444',
+          padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8,
+        }}>
+          <Text style={{ fontSize: 22 }}>❌</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: '#FCA5A5' }}>Ride declined: {ev.title}</Text>
+            <Text style={{ fontSize: 12, color: '#F87171', marginTop: 1 }}>{ev.declineReason ?? 'Tap to request again'}</Text>
+          </View>
+          <ChevronRight size={16} color="#FCA5A5" />
+        </Pressable>
+      ))}
+      {myPendingRides.map(ev => (
+        <View key={ev.id} style={{
+          borderRadius: 18, backgroundColor: isDark ? '#422006' : '#FFF7ED', borderWidth: 1.5, borderColor: BRAND.amber,
+          padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8,
+        }}>
+          <Text style={{ fontSize: 22 }}>⏳</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.amber }}>Waiting on ride: {ev.title}</Text>
+            <Text style={{ fontSize: 12, color: BRAND.amber, opacity: 0.8, marginTop: 1 }}>{fmtTime(ev.time)} · Parent hasn't confirmed yet</Text>
+          </View>
+        </View>
+      ))}
+    </View>
+  ) : null;
+
+  // ── Today's Schedule ───────────────────────────────────────────────────────
+  const scheduleCard = (
+    <View style={[pad, { marginBottom: 14 }]}>
+      <View style={{
+        backgroundColor: isDark ? colors.card : '#FFFFFF',
+        borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', overflow: 'hidden',
+      }}>
+        <Pressable onPress={() => router.push('/(tabs)/calendar')}
+          style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, gap: 8 }}>
+          <Text style={{ fontSize: 16 }}>📅</Text>
+          <Text style={{ flex: 1, fontSize: 13, fontWeight: '800', color: colors.textPrimary }}>Today's Schedule</Text>
+          {todayEvents.length > 0 && (
+            <View style={{ backgroundColor: BRAND.teal + '25', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.teal }}>{todayEvents.length}</Text>
+            </View>
+          )}
+          <ChevronRight size={14} color={colors.textTertiary} />
+        </Pressable>
+        {todayEvents.length === 0 ? (
+          <View style={{ paddingHorizontal: 14, paddingBottom: 16, alignItems: 'center', gap: 4 }}>
+            <Text style={{ fontSize: 26 }}>☀️</Text>
+            <Text style={{ fontSize: 12, color: colors.textTertiary, fontWeight: '600' }}>Free day — nothing scheduled</Text>
+          </View>
+        ) : todayEvents.slice(0, 4).map((ev, i) => (
+          <View key={ev.id} style={{
+            flexDirection: 'row', alignItems: 'center', gap: 12,
+            paddingHorizontal: 14, paddingVertical: 10,
+            borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#F1F5F9',
+          }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: catColor(ev.category) }} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>{ev.title}</Text>
+              {ev.time ? <Text style={{ fontSize: 11, color: colors.textTertiary }}>{fmtTime(ev.time)}{ev.location ? ` · ${ev.location}` : ''}</Text> : null}
+            </View>
+            {ev.helper && ev.helperStatus === 'confirmed' && (
+              <Text style={{ fontSize: 11, color: '#10B981', fontWeight: '700' }}>🚗 {ev.helper}</Text>
+            )}
+            {ev.approvalPending && (
+              <View style={{ backgroundColor: BRAND.amber + '25', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 10, fontWeight: '700', color: BRAND.amber }}>Pending</Text>
+              </View>
+            )}
+          </View>
+        ))}
+        {todayEvents.length > 4 && (
+          <Pressable onPress={() => router.push('/(tabs)/calendar')}
+            style={{ padding: 12, alignItems: 'center', borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#F1F5F9' }}>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: BRAND.purple }}>+{todayEvents.length - 4} more →</Text>
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+
+  // ── Quest Cards ────────────────────────────────────────────────────────────
+  const questSection = (
+    <View style={[pad, { marginBottom: 14 }]}>
+      {/* Header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+        <Text style={{ fontSize: 16 }}>🎯</Text>
+        <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textPrimary, marginLeft: 6, flex: 1 }}>My Quests</Text>
+        {reviewQuests.length > 0 && (
+          <View style={{ backgroundColor: BRAND.amber + '25', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, marginRight: 8 }}>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.amber }}>{reviewQuests.length} in review</Text>
+          </View>
+        )}
+        <Pressable onPress={() => router.push('/(tabs)/quests')}>
+          <Text style={{ fontSize: 12, fontWeight: '700', color: BRAND.purple }}>All →</Text>
+        </Pressable>
+      </View>
+
+      {/* In-review notice */}
+      {reviewQuests.map(q => (
+        <View key={q.id} style={{
+          borderRadius: 16, backgroundColor: isDark ? '#422006' : '#FFF8E8',
+          borderWidth: 1.5, borderColor: BRAND.amber + '70',
+          padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 12,
+        }}>
+          <Text style={{ fontSize: 22 }}>⏳</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.amber }}>{q.title}</Text>
+            <Text style={{ fontSize: 11, color: BRAND.amber, opacity: 0.8, marginTop: 1 }}>Waiting for parent approval · 🪙{q.coins}</Text>
+          </View>
+        </View>
+      ))}
+
+      {/* Active quests */}
+      {activeQuests.length === 0 && reviewQuests.length === 0 ? (
+        <Pressable onPress={() => router.push('/(tabs)/quests')} style={{
+          borderRadius: 20, borderWidth: 1.5, borderStyle: 'dashed', borderColor: BRAND.purple + '50',
+          backgroundColor: BRAND.purple + '08', padding: 20, alignItems: 'center', gap: 6,
+        }}>
+          <Text style={{ fontSize: 32 }}>🎉</Text>
+          <Text style={{ fontSize: 14, fontWeight: '800', color: BRAND.purple }}>All caught up!</Text>
+          <Text style={{ fontSize: 12, color: colors.textTertiary }}>Grab a bounty quest to earn more coins</Text>
+        </Pressable>
+      ) : activeQuests.map(q => {
+        const isClaimed = q.status === 'claimed' || q.status === 'in_progress';
+        return (
+          <View key={q.id} style={{
+            borderRadius: 18, backgroundColor: isDark ? colors.card : '#FFFFFF',
+            borderWidth: 1.5, borderColor: isClaimed ? BRAND.teal + '60' : isDark ? colors.border : '#E8E8F0',
+            padding: 14, marginBottom: 8,
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: isClaimed ? BRAND.teal + '20' : BRAND.purple + '15' }}>
+                <Text style={{ fontSize: 18 }}>{q.category === 'Kitchen' ? '🍽️' : q.category === 'Outdoor' ? '🌳' : q.category === 'School' ? '📚' : '⚡'}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>{q.title}</Text>
+                {q.description ? <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>{q.description}</Text> : null}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                  <View style={{ backgroundColor: BRAND.amber + '20', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.amber }}>🪙 {q.coins}</Text>
+                  </View>
+                  {q.dueDate && (
+                    <Text style={{ fontSize: 10, color: colors.textTertiary }}>Due {q.dueDate}</Text>
+                  )}
+                </View>
+              </View>
+            </View>
+            <Pressable onPress={() => submitQuest(q.id)} style={{
+              marginTop: 10, borderRadius: 12, backgroundColor: BRAND.teal,
+              paddingVertical: 10, alignItems: 'center',
+            }}>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff' }}>Mark Complete ✓</Text>
+            </Pressable>
+          </View>
+        );
+      })}
+
+      {/* Bounty pool teaser */}
+      {poolQuests.length > 0 && (
+        <Pressable onPress={() => router.push('/(tabs)/quests')} style={{
+          borderRadius: 16, backgroundColor: '#10B98115', borderWidth: 1, borderColor: '#10B98140',
+          padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10,
+        }}>
+          <Text style={{ fontSize: 22 }}>🏆</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: '#10B981' }}>{poolQuests.length} bounty quest{poolQuests.length !== 1 ? 's' : ''} available</Text>
+            <Text style={{ fontSize: 11, color: '#10B981', opacity: 0.8 }}>Grab one to earn extra coins</Text>
+          </View>
+          <ChevronRight size={16} color="#10B981" />
+        </Pressable>
+      )}
+    </View>
+  );
+
+  // ── Ask for Help Button ────────────────────────────────────────────────────
+  const helpRow = (
+    <View style={[pad, { marginBottom: 20, flexDirection: 'row', gap: 10 }]}>
+      <Pressable onPress={onHelpRequest} style={{
+        flex: 1, borderRadius: 18, backgroundColor: BRAND.purple,
+        paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8,
+      }}>
+        <HelpCircle size={18} color="#fff" />
+        <Text style={{ fontSize: 14, fontWeight: '800', color: '#fff' }}>Ask for Help</Text>
+      </Pressable>
+      <Pressable onPress={() => router.push('/(tabs)/chat')} style={{
+        flex: 1, borderRadius: 18, backgroundColor: isDark ? colors.card : '#FFFFFF',
+        paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8,
+        borderWidth: 1.5, borderColor: isDark ? colors.border : '#E8E8F0',
+      }}>
+        <MessageSquare size={18} color={BRAND.purple} />
+        <Text style={{ fontSize: 14, fontWeight: '800', color: BRAND.purple }}>Family Chat</Text>
+      </Pressable>
+    </View>
+  );
 
   return (
     <>
-      {/* ── Quick Actions 4-col ── */}
-      <View style={pad}>
-        <View style={{
-          backgroundColor: isDark ? colors.card : '#FFFFFF',
-          borderRadius: 24, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
-          padding: 12, marginBottom: 12, gap: 8,
-        }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-            <Zap size={14} color={BRAND.amber} />
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>Quick Actions</Text>
-          </View>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {ACTIONS.map(a => (
-              <Pressable key={a.label} onPress={a.action} style={{
-                flex: 1, backgroundColor: isDark ? colors.surface : '#F8FAFC',
-                borderRadius: 16, paddingVertical: 12, alignItems: 'center', gap: 5,
-                borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0',
-              }}>
-                <a.Icon size={20} color={a.color} />
-                <Text style={{ fontSize: 9, fontWeight: '700', color: isDark ? colors.textPrimary : '#334155', textAlign: 'center' }}>{a.label}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      </View>
-
-      {/* ── Ride & Conflict Alerts ── */}
-      {(parentWorkConflict || rideAlerts > 0 || myConfirmedRides.length > 0) && (
-        <View style={pad}>
-          <SectionCard icon="🚗" title="Ride Status"
-            badge={rideAlerts || undefined}
-            badgeColor={myDeclinedRides.length > 0 ? '#EF4444' : BRAND.amber}
-            colors={colors} isDark={isDark}>
-            {parentWorkConflict && (
-              <CollapsibleCard accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={false}
-                summary={
-                  <View>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.amber }}>⚠️ Parent busy during your activities</Text>
-                    <Text style={{ fontSize: TYPO.label, color: BRAND.amber, opacity: 0.75, marginTop: 2 }}>Check with Dad or Grandma for pickup</Text>
-                  </View>
-                } />
-            )}
-            {myDeclinedRides.map(ev => (
-              <CollapsibleCard key={ev.id} accent="#EF4444" colors={colors} isDark={isDark} defaultExpanded={false}
-                summary={
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ fontSize: 16 }}>❌</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#EF4444' }} numberOfLines={1}>
-                        Declined: {ev.title}
-                      </Text>
-                      <Text style={{ fontSize: TYPO.label, color: '#EF4444', opacity: 0.75 }}>
-                        {ev.declineReason ?? `Declined by ${ev.declinedBy ?? 'parent'}`}
-                      </Text>
-                    </View>
-                  </View>
-                }>
-                <Pressable onPress={() => router.push('/(tabs)/calendar')}
-                  style={{ backgroundColor: '#EF4444', borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Request Again</Text>
-                </Pressable>
-              </CollapsibleCard>
-            ))}
-            {myPendingRides.map(ev => (
-              <CollapsibleCard key={ev.id} accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={false}
-                summary={
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ fontSize: 16 }}>⏳</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.amber }} numberOfLines={1}>
-                        Pending: {ev.title}
-                      </Text>
-                      <Text style={{ fontSize: TYPO.label, color: BRAND.amber, opacity: 0.75 }}>
-                        {fmtTime(ev.time)} · Waiting for a parent
-                      </Text>
-                    </View>
-                  </View>
-                } />
-            ))}
-            {myConfirmedRides.map(ev => (
-              <CollapsibleCard key={ev.id} accent="#10B981" colors={colors} isDark={isDark}
-                summary={
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ fontSize: 16 }}>✅</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#10B981' }} numberOfLines={1}>
-                        {ev.helper} is picking you up!
-                      </Text>
-                      <Text style={{ fontSize: TYPO.label, color: '#10B981', opacity: 0.75 }}>
-                        {ev.title} · {fmtTime(ev.time)}{ev.location ? ` · ${ev.location}` : ''}
-                      </Text>
-                    </View>
-                  </View>
-                } />
-            ))}
-          </SectionCard>
-        </View>
-      )}
-
-      {/* ── Family Help Queue ── */}
-      <View style={pad}>
-        <SectionCard icon="🆘" title="Family Help Queue"
-          subtitle="Kids ask for help · parents assign or self-assign"
-          actionBtn={{ label: '+ Ask', onPress: onHelpRequest }}
-          colors={colors} isDark={isDark}>
-          <HelpQueueSection onRequestHelp={onHelpRequest} hideAskButton />
-        </SectionCard>
-      </View>
-
-      {/* ── My Quests ── */}
-      <View style={pad}>
-        <SectionCard icon="🎯" title="My Quests"
-          badge={(inProgress + inReview) || undefined} badgeColor={BRAND.purple}
-          seeAll={() => router.push('/(tabs)/quests')} seeAllLabel="All →"
-          colors={colors} isDark={isDark}>
-          {/* Status strip */}
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {[
-              { n: inProgress, label: 'In Progress', color: BRAND.purple, icon: '⚡' },
-              { n: inReview,   label: 'In Review',   color: BRAND.amber,  icon: '⏳' },
-              { n: available,  label: 'Open Tasks',  color: '#10B981',    icon: '🏆' },
-            ].map(b => (
-              <Pressable key={b.label} onPress={() => router.push('/(tabs)/quests')}
-                style={{ flex: 1, backgroundColor: b.color + '15', borderRadius: 16, borderWidth: 1, borderColor: b.color + '40', paddingVertical: 12, alignItems: 'center', gap: 2 }}>
-                <Text style={{ fontSize: 16 }}>{b.icon}</Text>
-                <Text style={{ fontSize: TYPO.subheading, fontWeight: '900', color: b.color }}>{b.n}</Text>
-                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: b.color, textAlign: 'center' }}>{b.label}</Text>
-              </Pressable>
-            ))}
-          </View>
-          {/* Streak */}
-          {streak > 0 && (
-            <SubCard colors={colors} isDark={isDark} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <Text style={{ fontSize: 22 }}>🔥</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{streak} Day Streak!</Text>
-                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Keep completing quests daily</Text>
-              </View>
-              <Text style={{ fontSize: 22 }}>🏅</Text>
-            </SubCard>
-          )}
-          {/* Milestone hint */}
-          {showMilestone && (
-            <SubCard accent={BRAND.teal} colors={colors} isDark={isDark}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.teal }}>
-                🎯 {coinsToTier} coins to your next milestone!
-              </Text>
-              <Text style={{ fontSize: TYPO.label, color: BRAND.teal, opacity: 0.8, marginTop: 2 }}>
-                Complete a quest to reach {nextTier} coins
-              </Text>
-            </SubCard>
-          )}
-          {/* Active quest list — each a CollapsibleCard */}
-          {myQuests.filter(q => q.status !== 'done').length === 0 ? (
-            <SubCard colors={colors} isDark={isDark} style={{ alignItems: 'center', paddingVertical: 16 }}>
-              <Text style={{ fontSize: 22 }}>🎉</Text>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textTertiary, marginTop: 4 }}>All done! Check for new quests.</Text>
-            </SubCard>
-          ) : myQuests.filter(q => q.status !== 'done').slice(0, 5).map(q => {
-            const isPending = q.status === 'pending_approval';
-            const isClaimed = q.status === 'claimed';
-            return (
-              <CollapsibleCard key={q.id} colors={colors} isDark={isDark}
-                summary={
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <View style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 2, alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: isPending ? BRAND.amber + '20' : isClaimed ? '#10B98120' : colors.background,
-                      borderColor: isPending ? BRAND.amber : isClaimed ? '#10B981' : colors.border }}>
-                      {isPending && <Clock size={12} color={BRAND.amber} />}
-                      {isClaimed && <Zap size={12} color="#10B981" />}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{q.title}</Text>
-                      <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
-                        {isPending ? '⏳ Awaiting approval' : isClaimed ? '✓ Submitted' : q.category ?? ''}
-                      </Text>
-                    </View>
-                    <View style={{ backgroundColor: BRAND.amber + '20', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.amber }}>🪙{q.coins}</Text>
-                    </View>
-                  </View>
-                }>
-                {!isPending && (
-                  <Pressable onPress={() => submitQuest(q.id)}
-                    style={{ backgroundColor: BRAND.teal, borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Mark Complete</Text>
-                  </Pressable>
-                )}
-              </CollapsibleCard>
-            );
-          })}
-        </SectionCard>
-      </View>
-
-      {/* ── My Wallet ── */}
-      <View style={pad}>
-        <SectionCard icon="💰" title="My Wallet" seeAll={() => router.push('/(tabs)/store' as any)} seeAllLabel="Store →" colors={colors} isDark={isDark}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <SubCard accent={BRAND.amber} colors={colors} isDark={isDark} style={{ flex: 1, gap: 4 }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.amber }}>🪙 Store Wallet</Text>
-              <Text style={{ fontSize: TYPO.hero, fontWeight: '900', color: BRAND.amber }}>{mainCoins}</Text>
-              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>${(mainCoins * COIN_VAL).toFixed(2)} value</Text>
-            </SubCard>
-            {gpCoins > 0 ? (
-              <SubCard accent={BRAND.purple} colors={colors} isDark={isDark} style={{ flex: 1, gap: 4 }}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>⭐ GP Bonus</Text>
-                <Text style={{ fontSize: TYPO.hero, fontWeight: '900', color: BRAND.purple }}>{gpCoins}</Text>
-                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>from Grandma</Text>
-              </SubCard>
-            ) : (
-              <SubCard colors={colors} isDark={isDark} style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                <Text style={{ fontSize: 26 }}>⭐</Text>
-                <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, textAlign: 'center', fontWeight: '600' }}>No GP bonus yet</Text>
-              </SubCard>
-            )}
-          </View>
-        </SectionCard>
-      </View>
-
-      {/* ── My Schedule Today ── */}
-      <View style={pad}>
-        <SectionCard icon="📅" title="My Schedule Today"
-          badge={todayMyEvents.length || undefined}
-          seeAll={() => router.push('/(tabs)/calendar')} seeAllLabel="Full →"
-          colors={colors} isDark={isDark}>
-          {todayMyEvents.length === 0 ? (
-            <SubCard colors={colors} isDark={isDark} style={{ alignItems: 'center', paddingVertical: 20 }}>
-              <Text style={{ fontSize: 22 }}>☀️</Text>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textTertiary, marginTop: 4 }}>Nothing on your calendar today</Text>
-            </SubCard>
-          ) : todayMyEvents.map(ev => (
-            <CollapsibleCard key={ev.id} colors={colors} isDark={isDark}
-              summary={
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: catColor(ev.category) }} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{ev.title}</Text>
-                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{fmtTime(ev.time)}</Text>
-                  </View>
-                </View>
-              }>
-              {ev.location && <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>📍 {ev.location}</Text>}
-              {ev.helper && ev.helperStatus === 'confirmed' && (
-                <Text style={{ fontSize: TYPO.label, color: '#10B981', fontWeight: '600' }}>🚗 {ev.helper} confirmed</Text>
-              )}
-              {ev.helper && ev.helperStatus === 'pending' && (
-                <Text style={{ fontSize: TYPO.label, color: BRAND.amber, fontWeight: '600' }}>🚗 {ev.helper} (confirming...)</Text>
-              )}
-            </CollapsibleCard>
-          ))}
-        </SectionCard>
-      </View>
+      {heroCard}
+      {rideAlert}
+      {scheduleCard}
+      {questSection}
+      {helpRow}
     </>
   );
 }

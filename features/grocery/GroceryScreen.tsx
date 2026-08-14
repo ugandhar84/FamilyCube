@@ -1099,7 +1099,7 @@ export default function GroceryScreen() {
   const isSelecting = selectedIds.size > 0;
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
-  const isKid = (activeMember as any)?.role === 'child';
+  const isKid = (activeMember as any)?.role === 'kid';
   const familyId = (activeMember as any)?.familyId ?? 'family-1';
 
   useEffect(() => {

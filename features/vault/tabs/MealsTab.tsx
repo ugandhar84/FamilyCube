@@ -600,7 +600,7 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
   const { members, activeMemberId } = useFamilyStore();
   const familyId    = (members[0] as any)?.familyId ?? 'family-1';
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
-  const isKid = (activeMember as any)?.role === 'child';
+  const isKid = (activeMember as any)?.role === 'kid';
   const curWeek     = weekOf();
   const addQuest    = useQuestStore(s => s.addQuest);
 

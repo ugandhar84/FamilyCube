@@ -11,7 +11,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
-import DocumentScanner from 'react-native-document-scanner-plugin';
 import Svg, { Path, Rect, Circle, Polyline } from 'react-native-svg';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { supabase } from '@/lib/supabase';
@@ -172,19 +171,10 @@ export function ReceiptScanSheet({
   };
 
   const pickCamera = async () => {
-    try {
-      // Native document scanner (edge detect + perspective correct)
-      const { scannedImages } = await DocumentScanner.scanDocument({ maxNumDocuments: 1 });
-      if (!scannedImages?.length) return;
-      const b64 = await FileSystem.readAsStringAsync(scannedImages[0], { encoding: 'base64' });
-      await runScan(b64);
-    } catch {
-      // Fallback to regular camera if document scanner fails/unavailable
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') { Alert.alert('Camera access needed', 'Allow camera in Settings.'); return; }
-      const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9, base64: true });
-      if (!res.canceled && res.assets[0]?.base64) await runScan(res.assets[0].base64);
-    }
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Camera access needed', 'Allow camera in Settings.'); return; }
+    const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9, base64: true, allowsEditing: true });
+    if (!res.canceled && res.assets[0]?.base64) await runScan(res.assets[0].base64);
   };
 
   const pickLibrary = async () => {

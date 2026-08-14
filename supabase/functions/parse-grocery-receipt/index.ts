@@ -22,7 +22,7 @@ interface ExtractedItem {
   category: string;
 }
 
-interface ClaudeResponse {
+interface ParsedReceipt {
   store: string;
   date: string;
   items: ExtractedItem[];
@@ -38,181 +38,198 @@ serve(async (req) => {
 
     if (!familyId || !scannedById || !imageBase64) {
       return new Response(
-        JSON.stringify({ error: "Missing required fields" }),
-        { status: 400, headers: corsHeaders }
+        JSON.stringify({ error: "Missing required fields: familyId, scannedById, imageBase64" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Call Claude Vision API
-    const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!anthropicKey) {
+    const geminiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiKey) {
       return new Response(
-        JSON.stringify({ error: "ANTHROPIC_API_KEY not set" }),
-        { status: 500, headers: corsHeaders }
+        JSON.stringify({ error: "GEMINI_API_KEY not configured" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": anthropicKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-3-5-sonnet-20241022",
-        max_tokens: 2048,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: "image/jpeg",
-                  data: imageBase64,
+    // Call Gemini Vision API
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  inline_data: {
+                    mime_type: "image/jpeg",
+                    data: imageBase64,
+                  },
                 },
-              },
-              {
-                type: "text",
-                text: `Extract from this receipt:
-1. Store name (if visible, or use provided: "${store || "Unknown"}")
-2. Date (YYYY-MM-DD format)
-3. Every line item: name, quantity, unit, unit price, total price
-4. Categorize each item: produce/dairy/meat/snacks/beverages/frozen/household/other
+                {
+                  text: `Extract all items from this grocery receipt.
+${store ? `Store hint: "${store}"` : "Also extract the store name if visible."}
 
-Format response as ONLY valid JSON (no markdown, no extra text):
+Return ONLY valid JSON, no markdown, no explanation:
 {
-  "store": "Store Name",
-  "date": "YYYY-MM-DD",
+  "store": "store name or Unknown",
+  "date": "YYYY-MM-DD or today",
   "items": [
-    { "name": "Item Name", "quantity": 1, "unit": "each", "unitPrice": 3.99, "totalPrice": 3.99, "category": "category" }
+    {
+      "name": "item name",
+      "quantity": 1,
+      "unit": "each",
+      "unitPrice": 0.00,
+      "totalPrice": 0.00,
+      "category": "produce|dairy|meat|seafood|bakery|frozen|snacks|beverages|grains|cleaning|personal_care|other"
+    }
   ]
-}`,
-              },
-            ],
+}
+
+Rules:
+- Skip tax lines, subtotals, discounts, and fee entries — only real products
+- If quantity is unclear, use 1
+- If price is unclear, use 0
+- category must be one of the listed values`,
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 2048,
           },
-        ],
-      }),
-    });
-
-    if (!claudeResponse.ok) {
-      const err = await claudeResponse.text();
-      console.error("Claude API error:", err);
-      return new Response(
-        JSON.stringify({ error: "Claude Vision API failed" }),
-        { status: 500, headers: corsHeaders }
-      );
-    }
-
-    const claudeData = await claudeResponse.json();
-    const content = claudeData.content?.[0]?.text;
-
-    if (!content) {
-      return new Response(
-        JSON.stringify({ error: "No content from Claude" }),
-        { status: 500, headers: corsHeaders }
-      );
-    }
-
-    // Parse Claude's JSON response
-    let extracted: ClaudeResponse;
-    try {
-      extracted = JSON.parse(content);
-    } catch (e) {
-      console.error("Failed to parse Claude response:", content);
-      return new Response(
-        JSON.stringify({ error: "Invalid response format from Claude" }),
-        { status: 500, headers: corsHeaders }
-      );
-    }
-
-    // Store in Supabase
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") || "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
+        }),
+      }
     );
 
-    // Insert receipt
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text();
+      console.error("Gemini API error:", errText);
+      return new Response(
+        JSON.stringify({ error: `Gemini API failed: ${geminiRes.status}` }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const geminiData = await geminiRes.json();
+    const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+
+    // Strip markdown code fences if present
+    const cleaned = rawText
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+
+    let extracted: ParsedReceipt;
+    try {
+      extracted = JSON.parse(cleaned);
+    } catch (e) {
+      console.error("Failed to parse Gemini response:", rawText);
+      return new Response(
+        JSON.stringify({ error: "Could not parse AI response as JSON", raw: rawText }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!extracted.items || !Array.isArray(extracted.items)) {
+      return new Response(
+        JSON.stringify({ error: "No items found in receipt" }),
+        { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Normalise items
+    const items: ExtractedItem[] = extracted.items.map((item) => ({
+      name: String(item.name ?? "Unknown item"),
+      quantity: Number(item.quantity) || 1,
+      unit: String(item.unit ?? "each"),
+      unitPrice: Number(item.unitPrice) || 0,
+      totalPrice: Number(item.totalPrice) || 0,
+      category: String(item.category ?? "other"),
+    }));
+
+    const receiptTotal = items.reduce((sum, i) => sum + i.totalPrice, 0);
+    const receiptStore = extracted.store || store || "Unknown Store";
+    const receiptDate = extracted.date || new Date().toISOString().split("T")[0];
+
+    // Persist to Supabase
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+    );
+
     const { data: receipt, error: receiptError } = await supabase
       .from("grocery_receipts")
       .insert({
         family_id: familyId,
         scanned_by: scannedById,
-        store: extracted.store,
-        receipt_date: extracted.date,
-        total: extracted.items.reduce((sum, item) => sum + item.totalPrice, 0),
-        image_url: null, // Store image separately if needed
-        ai_raw_json: claudeData,
+        store: receiptStore,
+        receipt_date: receiptDate,
+        total: receiptTotal,
+        ai_raw_json: geminiData,
       })
       .select("id")
       .single();
 
     if (receiptError) {
       console.error("Receipt insert error:", receiptError);
+      // Still return extracted items even if DB write fails
       return new Response(
-        JSON.stringify({ error: "Failed to store receipt" }),
-        { status: 500, headers: corsHeaders }
+        JSON.stringify({ receiptId: null, itemCount: items.length, total: receiptTotal, store: receiptStore, date: receiptDate, items }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Insert receipt items
-    const items = extracted.items.map((item) => ({
-      receipt_id: receipt.id,
-      family_id: familyId,
-      name: item.name,
-      category: item.category,
-      quantity: item.quantity,
-      unit_price: item.unitPrice,
-      total_price: item.totalPrice,
-      brand: null,
-      added_to_list: false,
-    }));
-
-    const { error: itemsError } = await supabase
-      .from("grocery_receipt_items")
-      .insert(items);
-
-    if (itemsError) {
-      console.error("Items insert error:", itemsError);
-      return new Response(
-        JSON.stringify({ error: "Failed to store items" }),
-        { status: 500, headers: corsHeaders }
-      );
+    // Insert line items
+    if (items.length > 0) {
+      const { error: itemsError } = await supabase
+        .from("grocery_receipt_items")
+        .insert(
+          items.map((item) => ({
+            receipt_id: receipt.id,
+            family_id: familyId,
+            name: item.name,
+            category: item.category,
+            quantity: item.quantity,
+            unit_price: item.unitPrice,
+            total_price: item.totalPrice,
+            added_to_list: false,
+          }))
+        );
+      if (itemsError) {
+        console.error("Items insert error:", itemsError);
+      }
     }
 
-    // Call grocery-ai-suggest to update staples
-    try {
-      await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/grocery-ai-suggest`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ familyId }),
-      });
-    } catch (e) {
-      console.warn("Failed to call grocery-ai-suggest:", e);
-      // Non-fatal; continue
-    }
+    // Async: update staples (fire-and-forget)
+    fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/grocery-ai-suggest`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ familyId }),
+    }).catch((e) => console.warn("grocery-ai-suggest fire-and-forget failed:", e));
 
     return new Response(
       JSON.stringify({
         receiptId: receipt.id,
-        itemCount: extracted.items.length,
-        total: extracted.items.reduce((sum, item) => sum + item.totalPrice, 0),
-        store: extracted.store,
-        date: extracted.date,
-        items: extracted.items,
+        itemCount: items.length,
+        total: receiptTotal,
+        store: receiptStore,
+        date: receiptDate,
+        items,
       }),
-      { status: 200, headers: corsHeaders }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (error) {
-    console.error("Unhandled error:", error);
+  } catch (err) {
+    console.error("Unhandled error:", err);
     return new Response(
-      JSON.stringify({ error: "Internal server error" }),
-      { status: 500, headers: corsHeaders }
+      JSON.stringify({ error: String(err) }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

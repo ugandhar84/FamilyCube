@@ -12,6 +12,8 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useKidRequestStore, REQUEST_META } from '@/store/kidRequestStore';
 import type { KidRequest } from '@/store/kidRequestStore';
+import { useGroceryStore } from '@/store/groceryStore';
+import { decodeGroceryRequest, GROCERY_PREFIX, SUPPLIES_PREFIX } from './KidView';
 import { BRAND } from '@/components/FamilyCubeLogo';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -102,6 +104,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
   const {
     requests, declineRequest, assignRequest, completeRequest,
   } = useKidRequestStore();
+  const { addItem: addGroceryItem } = useGroceryStore();
 
   const activeMember = members.find(m => m.id === activeMemberId);
   const isParentOrSenior = activeMember?.role === 'parent' || activeMember?.role === 'senior';
@@ -130,6 +133,60 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
   const memberName = (id: string) => members.find(m => m.id === id)?.name ?? id;
   const helperName = (id: string) => id === 'ai-tutor' ? 'AI Family Tutor' : memberName(id);
 
+  // Returns a human-readable summary for grocery/supplies delegation requests
+  const humanDetail = (req: KidRequest): string => {
+    if (req.type !== 'delegation') return req.detail;
+    if (req.detail.startsWith(GROCERY_PREFIX)) {
+      const p = decodeGroceryRequest(req.detail);
+      if (!p) return req.detail;
+      return `🛒 Grocery: ${p.name}${p.qty ? ` × ${p.qty}` : ''} [${p.category}]${p.notes ? ` — "${p.notes}"` : ''}`;
+    }
+    if (req.detail.startsWith(SUPPLIES_PREFIX)) {
+      try {
+        const p = JSON.parse(req.detail.slice(SUPPLIES_PREFIX.length)) as { items: { name: string; qty: string }[]; notes: string; urgency: string };
+        const list = p.items.map(i => `${i.name}${i.qty ? ` ×${i.qty}` : ''}`).join(', ');
+        return `📚 School Supplies: ${list}${p.notes ? ` — "${p.notes}"` : ''}`;
+      } catch { return req.detail; }
+    }
+    return req.detail;
+  };
+
+  // Auto-add grocery/supplies items to grocery store when a delegation request is approved
+  const handleGroceryApproval = (req: KidRequest, approverId: string) => {
+    if (req.type !== 'delegation') return;
+    const familyId = activeMember?.familyId ?? members[0]?.familyId ?? 'family-1';
+    const approverName = memberName(approverId);
+    const approvedNote = `Approved by ${approverName} · Requested by ${memberName(req.fromMemberId)}`;
+
+    if (req.detail.startsWith(GROCERY_PREFIX)) {
+      const parsed = decodeGroceryRequest(req.detail);
+      if (parsed) {
+        addGroceryItem({
+          familyId,
+          name: parsed.name,
+          quantity: parsed.qty || undefined,
+          category: parsed.category,
+          addedBy: req.fromMemberId,
+          notes: [approvedNote, parsed.notes].filter(Boolean).join(' · ') || undefined,
+        });
+      }
+    } else if (req.detail.startsWith(SUPPLIES_PREFIX)) {
+      try {
+        const parsed = JSON.parse(req.detail.slice(SUPPLIES_PREFIX.length)) as { items: { name: string; qty: string }[]; notes: string };
+        parsed.items.forEach(item => {
+          addGroceryItem({
+            familyId,
+            name: item.name,
+            quantity: item.qty || undefined,
+            category: 'School Supplies',
+            addedBy: req.fromMemberId,
+            notes: [approvedNote, parsed.notes].filter(Boolean).join(' · ') || undefined,
+          });
+        });
+      } catch { /* ignore parse error */ }
+    }
+  };
+
   const doDecline = async (id: string) => {
     if (processingDecline[id]) return;
     setProcessingDecline(p => ({ ...p, [id]: true }));
@@ -143,6 +200,8 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
     if (!activeMemberId || processingAssign[id]) return;
     setProcessingAssign(p => ({ ...p, [id]: true }));
     await new Promise(r => setTimeout(r, 800));
+    const req = requests.find(r => r.id === id);
+    if (req) handleGroceryApproval(req, activeMemberId);
     assignRequest(id, activeMemberId, assignNote[id]);
     setProcessingAssign(p => ({ ...p, [id]: false }));
   };
@@ -152,6 +211,8 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
     if (!hId || processingAssign[id]) return;
     setProcessingAssign(p => ({ ...p, [id]: true }));
     await new Promise(r => setTimeout(r, 800));
+    const req = requests.find(r => r.id === id);
+    if (req) handleGroceryApproval(req, hId);
     assignRequest(id, hId, assignNote[id]);
     setProcessingAssign(p => ({ ...p, [id]: false }));
     setHelperOpen(p => ({ ...p, [id]: false }));
@@ -232,7 +293,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                     </View>
                   ) : null}
                 </View>
-                <Text style={[q.reqDetail, { color: isDark ? '#E2E8F0' : '#1E293B' }]}>"{req.detail}"</Text>
+                <Text style={[q.reqDetail, { color: isDark ? '#E2E8F0' : '#1E293B' }]}>"{humanDetail(req)}"</Text>
               </View>
               {req.rewardCoins ? (
                 <View style={[q.coinBadge, { backgroundColor: BRAND.amber + '33' }]}>
@@ -422,7 +483,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
                     <Text style={[q.badgeText, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>In Progress</Text>
                   </View>
                 </View>
-                <Text style={[q.reqDetail, { color: isDark ? '#E2E8F0' : '#1E293B' }]}>"{req.detail}"</Text>
+                <Text style={[q.reqDetail, { color: isDark ? '#E2E8F0' : '#1E293B' }]}>"{humanDetail(req)}"</Text>
               </View>
             </View>
 
@@ -524,7 +585,7 @@ export default function HelpDispatchQueue({ onRequestHelpOpen }: Props) {
               <CheckCircle color="#10B981" size={14} />
               <Text style={[q.completedText, { color: isDark ? '#6EE7B7' : '#065F46' }]} numberOfLines={1}>
                 <Text style={{ fontWeight: '800' }}>{requester?.name ?? 'Member'}:</Text>
-                {' '}"{req.detail}"
+                {' '}"{humanDetail(req)}"
               </Text>
             </View>
             <Text style={[q.helperTag, { color: '#10B981' }]}>

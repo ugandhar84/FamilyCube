@@ -32,6 +32,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, FamilyEvent, EventType } from '@/store/eventStore';
 import AppHeader from '@/components/AppHeader';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import FamilyAvatar from '@/components/FamilyAvatar';
 import { TYPO } from '@/constants/theme';
 import { fmtDate, fmtDateShort, fmtTimeParts } from '@/lib/dates';
 import { AddEventModal as EventFormAdd, EditEventModal } from './EventFormModal';
@@ -39,6 +40,15 @@ import { AddEventModal as EventFormAdd, EditEventModal } from './EventFormModal'
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function toDateStr(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function isEventPast(date: string, time?: string | null): boolean {
+  const today = toDateStr(new Date());
+  if (date < today) return true;
+  if (date > today) return false;
+  if (!time) return false;
+  const [h, m] = time.split(':').map(Number);
+  const now = new Date();
+  return h < now.getHours() || (h === now.getHours() && m <= now.getMinutes());
 }
 function parseDate(s: string) {
   const [y, m, d] = s.split('-').map(Number);
@@ -493,16 +503,36 @@ function FindHelperModal({ visible, ev, members, onAssign, onClose, colors, isDa
           <Text style={[rm.title, { color: colors.textPrimary }]}>{helperLabel}</Text>
           {ev && <Text style={[rm.sub, { color: colors.textSecondary }]} numberOfLines={1}>"{ev.title}"</Text>}
           <Text style={[rm.label, { color: colors.textSecondary }]}>Pick an available adult:</Text>
-          {adults.map(m => (
-            <TouchableOpacity key={m.id} style={[rm.option, { backgroundColor: isDark ? colors.surface : '#F8FAFC', borderColor: colors.border }]}
-              onPress={() => onAssign(m.name)}>
-              <Text style={{ fontSize: 13 }}>{m.emoji ?? '👤'}</Text>
-              <Text style={[rm.optionText, { color: colors.textPrimary }]}>{m.name}</Text>
-              <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginLeft: 'auto' as any }}>
-                {m.role === 'senior' ? '👵 Senior' : '👨‍👩 Parent'}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {adults.map(m => {
+            const isDeclined = ev && (m.name === ev.helper || m.name === ev.declinedBy) && ev.helperStatus === 'rejected';
+            return (
+              <TouchableOpacity key={m.id}
+                style={[rm.option, {
+                  backgroundColor: isDeclined ? (isDark ? '#2d0a0a' : '#FEF2F2') : (isDark ? colors.surface : '#F8FAFC'),
+                  borderColor: isDeclined ? '#EF444440' : colors.border,
+                }]}
+                onPress={() => onAssign(m.name)}>
+                <View style={{ position: 'relative' }}>
+                  <Text style={{ fontSize: 22 }}>{m.emoji ?? '👤'}</Text>
+                  {isDeclined && (
+                    <View style={{ position: 'absolute', top: -3, right: -3, backgroundColor: '#EF4444', borderRadius: 7, width: 14, height: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: isDark ? colors.card : '#fff' }}>
+                      <Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>!</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[rm.optionText, { color: isDeclined ? '#EF4444' : colors.textPrimary }]}>{m.name}</Text>
+                  {isDeclined && ev.declineReason && (
+                    <Text style={{ fontSize: TYPO.micro, color: '#EF4444', fontStyle: 'italic' }} numberOfLines={1}>"{ev.declineReason}"</Text>
+                  )}
+                </View>
+                {isDeclined
+                  ? <View style={{ backgroundColor: '#EF444420', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#EF444440' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#EF4444' }}>Declined ✕</Text></View>
+                  : <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>{m.role === 'senior' ? '👵 Senior' : '👨‍👩 Parent'}</Text>
+                }
+              </TouchableOpacity>
+            );
+          })}
           <TouchableOpacity style={[rm.cancel, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={onClose}>
             <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
           </TouchableOpacity>
@@ -1170,9 +1200,9 @@ export default function CalendarScreen() {
                 const isConf = ev.conflict;
                 const assignee = members.find(m => m.id === ev.memberId);
                 const isLast = idx === dayEvents.length - 1;
-                const isPast = ev.date < toDateStr(new Date());
+                const isPast = isEventPast(ev.date, ev.time);
                 return (
-                  <View key={ev.id} style={{ flexDirection: 'row', minHeight: 56 }}>
+                  <View key={ev.id} style={{ flexDirection: 'row', minHeight: 56, opacity: isPast ? 0.45 : 1 }}>
 
                     {/* Left col: time label + connecting line */}
                     <View style={{ width: 40, alignItems: 'flex-end', paddingRight: 6 }}>
@@ -1291,7 +1321,7 @@ export default function CalendarScreen() {
                 '🤝 Organised by';
 
               // Past events: read-only except notes
-              const isPast     = ev.date < toDateStr(new Date());
+              const isPast     = isEventPast(ev.date, ev.time);
 
               // RBAC checks (all blocked for past events)
               const canApproveRequest = !isPast && isParent && ev.approvalPending;
@@ -1318,7 +1348,7 @@ export default function CalendarScreen() {
               );
 
               return (
-                <View key={ev.id} style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                <View key={ev.id} style={{ flexDirection: 'row', alignItems: 'flex-start', opacity: isPast ? 0.5 : 1 }}>
                   {/* Left: time-dot on spine */}
                   <View style={{ width: 56, alignItems: 'center', paddingTop: 10, marginLeft: -56, zIndex: 2 }}>
                     <View style={{
@@ -1441,31 +1471,48 @@ export default function CalendarScreen() {
                     )}
 
                     {/* Always-visible: helper / accompaniment */}
-                    {ev.helper && !ev.approvalPending && (
-                      <View style={[sc.driverSection, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                        <View style={{
-                          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                          backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
-                          borderRadius: 14, borderWidth: 1,
-                          borderColor: isDark ? '#1E293B' : '#E2E8F0',
-                          paddingHorizontal: 12, paddingVertical: 8,
-                        }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <I.Car c={colors.textSecondary} size={13} />
-                            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
-                              {(() => {
-                                const hl = cat === 'Medical' ? '🏥 Accompanied by' : cat === 'Study' ? '📚 Tutored by' : cat === 'Sports' ? '🚗 Drop-off by' : cat === 'Ride' ? '🚗 Driven by' : '🤝 Organised by';
-                                return hl.replace(/^[^\s]+\s/, '');
-                              })()} <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.helper}</Text>
-                            </Text>
+                    {ev.helper && !ev.approvalPending && (() => {
+                      const isRej = ev.helperStatus === 'rejected';
+                      const isPen = ev.helperStatus === 'pending';
+                      const helperMember = members.find(m => m.name === ev.helper);
+                      const helperLabel = cat === 'Medical' ? 'Accompanied by' : cat === 'Study' ? 'Tutored by' : cat === 'Sports' ? 'Dropped off by' : cat === 'Ride' ? 'Driven by' : 'Organised by';
+                      return (
+                        <View style={[sc.driverSection, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
+                          <View style={{
+                            flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                            backgroundColor: isRej ? (isDark ? '#2d0a0a' : '#FEF2F2') : isPen ? (isDark ? '#1C1700' : '#FFFBEB') : (isDark ? '#0F172A' : '#F8FAFC'),
+                            borderRadius: 14, borderWidth: 1,
+                            borderColor: isRej ? '#EF444440' : isPen ? '#FCD34D' : (isDark ? '#1E293B' : '#E2E8F0'),
+                            paddingHorizontal: 12, paddingVertical: 8, gap: 8,
+                          }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                              {/* Avatar with ! badge */}
+                              <View style={{ position: 'relative' }}>
+                                <FamilyAvatar name={ev.helper} emoji={helperMember?.emoji} avatarUrl={helperMember?.avatarUrl}
+                                  siblings={members.map(m => m.name)} size={28}
+                                  ringColor={isRej ? '#EF4444' : isPen ? '#F59E0B' : '#10B981'} ringWidth={2} />
+                                {isRej && (
+                                  <View style={{ position: 'absolute', top: -3, right: -3, backgroundColor: '#EF4444', borderRadius: 7, width: 14, height: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: isDark ? colors.card : '#fff' }}>
+                                    <Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>!</Text>
+                                  </View>
+                                )}
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{helperLabel}</Text>
+                                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: isRej ? '#EF4444' : (isDark ? colors.textPrimary : '#1E2D6B') }}>{ev.helper}</Text>
+                                {isRej && ev.declineReason && (
+                                  <Text style={{ fontSize: TYPO.micro, color: '#EF4444', fontStyle: 'italic', marginTop: 1 }}>"{ev.declineReason}"</Text>
+                                )}
+                              </View>
+                            </View>
+                            {ev.helperStatus === 'confirmed' && <View style={{ backgroundColor: isDark ? '#064E3B' : '#D1FAE5', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#6EE7B7' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>Confirmed ✓</Text></View>}
+                            {isPen && <View style={{ backgroundColor: isDark ? '#1C1700' : '#FEF3C7', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCD34D' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#D97706' }}>⏳ Pending</Text></View>}
+                            {isRej && !isPast && isParent && <TouchableOpacity onPress={() => openReassign(ev)} style={{ backgroundColor: '#F59E0B', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 }}><Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>Swap</Text></TouchableOpacity>}
+                            {isRej && (isPast || !isParent) && <View style={{ backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCA5A5' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Declined ✕</Text></View>}
                           </View>
-                          {ev.helperStatus === 'confirmed' && <View style={{ backgroundColor: isDark ? '#064E3B' : '#D1FAE5', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#6EE7B7' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>Confirmed ✓</Text></View>}
-                          {ev.helperStatus === 'pending'   && <View style={{ backgroundColor: isDark ? '#1C1700' : '#FEF3C7', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCD34D' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#D97706' }}>⏳ Pending</Text></View>}
-                          {ev.helperStatus === 'rejected' && isParent && <TouchableOpacity onPress={() => openReassign(ev)} style={{ backgroundColor: '#F59E0B', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 }}><Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>Swap Driver</Text></TouchableOpacity>}
-                          {ev.helperStatus === 'rejected' && !isParent && <View style={{ backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCA5A5' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Declined ✕</Text></View>}
                         </View>
-                      </View>
-                    )}
+                      );
+                    })()}
 
                     {/* Always-visible: notes */}
                     {ev.notes && (

@@ -1114,16 +1114,20 @@ export default function GroceryScreen() {
       .reduce((sum, i) => sum + (priceMap[i.name]?.price ?? 0), 0);
   }, [items, priceMap]);
 
-  // Group items by store preference
+  // Separate school supplies from grocery items
+  const suppliesItems = useMemo(() => items.filter(i => i.category === 'School Supplies'), [items]);
+  const groceryItems  = useMemo(() => items.filter(i => i.category !== 'School Supplies'), [items]);
+
+  // Group grocery items by store preference
   const groupedItems = useMemo(() => {
     const groups: Record<string, GroceryItem[]> = {};
-    for (const item of items) {
+    for (const item of groceryItems) {
       const key = item.storePreference || 'Any store';
       if (!groups[key]) groups[key] = [];
       groups[key].push(item);
     }
     return Object.entries(groups).sort(([a], [b]) => a === 'Any store' ? 1 : b === 'Any store' ? -1 : a.localeCompare(b));
-  }, [items]);
+  }, [groceryItems]);
 
   const activeRuns = runs.filter(r => r.status === 'active');
   const draftRuns  = runs.filter(r => r.status === 'draft');
@@ -1242,13 +1246,74 @@ export default function GroceryScreen() {
             />
           )}
 
-          {items.length === 0 ? (
+          {/* School Supplies section (approved kid requests) */}
+          {suppliesItems.length > 0 && (
+            <View style={{ marginBottom: 24 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#6366F115', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 16 }}>📚</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#6366F1', letterSpacing: 0.8 }}>SCHOOL SUPPLIES</Text>
+                  <Text style={{ fontSize: 11, color: colors.textTertiary }}>Requested by kids · needs pickup</Text>
+                </View>
+                <View style={{ borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#6366F120' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#6366F1' }}>{suppliesItems.filter(i => !i.isBought).length} pending</Text>
+                </View>
+              </View>
+              <View style={{ backgroundColor: isDark ? '#1A1F35' : '#F5F3FF', borderRadius: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: isDark ? '#6366F130' : '#DDD6FE' }}>
+                {suppliesItems.map((item, idx) => {
+                  // Parse requester and approver from notes field
+                  const notesText  = item.notes ?? '';
+                  const approverMatch  = notesText.match(/Approved by ([^·]+)/);
+                  const requesterMatch = notesText.match(/Requested by ([^·\n]+)/);
+                  const approver   = approverMatch?.[1]?.trim() ?? '';
+                  const requester  = requesterMatch?.[1]?.trim() ?? '';
+                  return (
+                    <View key={item.id}
+                      style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12,
+                        borderBottomWidth: idx < suppliesItems.length - 1 ? StyleSheet.hairlineWidth : 0,
+                        borderBottomColor: isDark ? '#6366F120' : '#DDD6FE',
+                        opacity: item.isBought ? 0.45 : 1 }}>
+                      <Pressable onPress={() => !isKid && handleBuyItem(item)}
+                        style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 2,
+                          borderColor: item.isBought ? '#6366F1' : '#A5B4FC',
+                          backgroundColor: item.isBought ? '#6366F1' : 'transparent',
+                          alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                        {item.isBought && <Text style={{ fontSize: 12, color: '#fff' }}>✓</Text>}
+                      </Pressable>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: item.isBought ? colors.textTertiary : colors.textPrimary,
+                          textDecorationLine: item.isBought ? 'line-through' : 'none' }}>
+                          {item.name}
+                          {item.quantity ? <Text style={{ fontWeight: '400', color: colors.textSecondary }}> × {item.quantity}</Text> : null}
+                        </Text>
+                        {(requester || approver) ? (
+                          <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>
+                            {requester ? `👦 ${requester}` : ''}{requester && approver ? '  ·  ' : ''}{approver ? `✅ ${approver}` : ''}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {!item.isBought && !isKid && (
+                        <Pressable onPress={() => handleBuyItem(item)}
+                          style={{ borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#6366F1' }}>
+                          <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>Got it ✓</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {groceryItems.length === 0 && suppliesItems.length === 0 ? (
             <View style={s.empty}>
               <Text style={s.emptyEmoji}>🛒</Text>
               <Text style={[s.emptyTitle, { color: colors.textPrimary }]}>Nothing on the list</Text>
               <Text style={[s.emptyDesc, { color: colors.textSecondary }]}>Tap + to add items or use ✨ AI to suggest.</Text>
             </View>
-          ) : (
+          ) : groceryItems.length > 0 ? (
             groupedItems.map(([store, storeItems]) => (
               <View key={store} style={{ marginBottom: 22 }}>
                 {/* Section header */}
@@ -1294,7 +1359,7 @@ export default function GroceryScreen() {
                 </View>
               </View>
             ))
-          )}
+          ) : null}
         </ScrollView>
 
         {/* Bulk action toolbar */}

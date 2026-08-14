@@ -425,12 +425,35 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
   };
 
   // Switch store mid-run without losing progress
-  const handleSwitchStore = () => {
-    const STORE_SUGGESTIONS = ['Costco', 'Walmart', 'Whole Foods', 'Trader Joe\'s', 'Patel Brothers', 'Aldi', 'Target', 'Kroger', 'Sprouts', 'H-E-B', 'Sam\'s Club', 'Meijer', 'Food Lion', 'Publix', 'Safeway', 'Smith\'s', 'King Soopers', 'WinCo', 'Lidl', 'Giant'];
+  const handleSwitchStore = async () => {
+    const CHAIN_DEFAULTS = ['Costco', 'Walmart', 'Whole Foods', 'Trader Joe\'s', 'Patel Brothers', 'Aldi', 'Target', 'Kroger', 'Sprouts', 'H-E-B', 'Sam\'s Club', 'Meijer', 'Food Lion', 'Publix', 'Safeway', 'Smith\'s', 'King Soopers', 'WinCo', 'Lidl', 'Giant'];
+
     const doSwitch = async (storeName: string) => {
       await supabase.from('grocery_runs').update({ store: storeName }).eq('id', run.id);
     };
-    // Let user type a custom store name
+
+    // Pull stores this family has used before (most recent first)
+    const { data: pastRows } = await supabase
+      .from('grocery_runs')
+      .select('store')
+      .eq('family_id', run.familyId)
+      .not('store', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(40);
+
+    const pastStores: string[] = [];
+    const seen = new Set<string>();
+    for (const row of pastRows ?? []) {
+      const s = (row.store as string | null)?.trim();
+      if (s && !seen.has(s)) { seen.add(s); pastStores.push(s); }
+    }
+
+    // Merge: past stores first, then chain defaults not already shown
+    const allSuggestions = [
+      ...pastStores,
+      ...CHAIN_DEFAULTS.filter(c => !seen.has(c)),
+    ].filter(s => s !== run.store).slice(0, 7);
+
     const options: any[] = [
       {
         text: '✏️ Type store name…',
@@ -438,16 +461,14 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
           Alert.prompt(
             'Store Name',
             'Enter the store you\'re heading to:',
-            async (name: string) => {
-              if (name?.trim()) await doSwitch(name.trim());
-            },
+            async (name: string) => { if (name?.trim()) await doSwitch(name.trim()); },
             'plain-text',
             run.store ?? '',
           );
         },
       },
-      ...STORE_SUGGESTIONS.filter(s => s !== run.store).slice(0, 6).map(store => ({
-        text: store,
+      ...allSuggestions.map(store => ({
+        text: pastStores.includes(store) ? `⭐ ${store}` : store,
         onPress: () => doSwitch(store),
       })),
       { text: 'Cancel', style: 'cancel' },

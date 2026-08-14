@@ -1126,6 +1126,167 @@ function mapBoughtRow(r: any): GroceryItem {
   } as GroceryItem;
 }
 
+// ─── History Tab ──────────────────────────────────────────────────────────────
+
+function HistoryTab({ familyId, colors, isDark }: { familyId: string; colors: any; isDark: boolean }) {
+  const [receipts, setReceipts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!familyId) return;
+    async function fetch() {
+      const { data } = await supabase
+        .from('grocery_receipts')
+        .select('id,store,receipt_date,total,created_at,grocery_receipt_items(name,category,quantity,total_price)')
+        .eq('family_id', familyId)
+        .order('receipt_date', { ascending: false })
+        .limit(30);
+      setReceipts(data ?? []);
+      setLoading(false);
+    }
+    fetch();
+  }, [familyId]);
+
+  const border = isDark ? '#2D2D4E' : '#E5E7EB';
+  const card = isDark ? '#1F1F38' : '#FFFFFF';
+
+  if (loading) return <ActivityIndicator style={{ marginTop: 60 }} color={colors.primary} />;
+  if (receipts.length === 0) return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60 }}>
+      <Text style={{ fontSize: 40, marginBottom: 12 }}>🧾</Text>
+      <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 }}>No receipts yet</Text>
+      <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 40 }}>Scan a receipt to track spending and learn your staples.</Text>
+    </View>
+  );
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+      {receipts.map(r => {
+        const isOpen = expanded === r.id;
+        const dateStr = r.receipt_date ? new Date(r.receipt_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown date';
+        const items: any[] = r.grocery_receipt_items ?? [];
+        return (
+          <Pressable key={r.id} onPress={() => setExpanded(isOpen ? null : r.id)}
+            style={{ backgroundColor: card, borderRadius: 14, borderWidth: 1, borderColor: isOpen ? colors.primary : border, marginBottom: 10, overflow: 'hidden' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 }}>
+              <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: isDark ? '#2D2D4E' : '#F3F4F6', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 22 }}>🧾</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>{r.store ?? 'Unknown Store'}</Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>{dateStr} · {items.length} items</Text>
+              </View>
+              <Text style={{ fontSize: 16, fontWeight: '900', color: colors.primary }}>${(r.total ?? 0).toFixed(2)}</Text>
+              <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textTertiary} />
+            </View>
+            {isOpen && items.length > 0 && (
+              <View style={{ borderTopWidth: 1, borderTopColor: border }}>
+                {items.map((item: any, idx: number) => (
+                  <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 9,
+                    borderBottomWidth: idx < items.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: border }}>
+                    <Text style={{ fontSize: 11, color: colors.textTertiary, width: 60 }}>{item.category ?? '—'}</Text>
+                    <Text style={{ flex: 1, fontSize: 13, color: colors.textPrimary, fontWeight: '500' }}>{item.name}</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary }}>${(item.total_price ?? 0).toFixed(2)}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+// ─── Insights Tab ─────────────────────────────────────────────────────────────
+
+function InsightsTab({ familyId, colors, isDark }: { familyId: string; colors: any; isDark: boolean }) {
+  const [staples, setStaples] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!familyId) return;
+    async function fetch() {
+      const { data } = await supabase
+        .from('grocery_staples')
+        .select('*')
+        .eq('family_id', familyId)
+        .order('times_bought', { ascending: false })
+        .limit(20);
+      setStaples(data ?? []);
+      setLoading(false);
+    }
+    fetch();
+  }, [familyId]);
+
+  const border = isDark ? '#2D2D4E' : '#E5E7EB';
+  const card = isDark ? '#1F1F38' : '#FFFFFF';
+
+  const daysAgo = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+
+  if (loading) return <ActivityIndicator style={{ marginTop: 60 }} color={colors.primary} />;
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+
+      {/* Header stat */}
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+        <View style={{ flex: 1, backgroundColor: card, borderRadius: 14, borderWidth: 1, borderColor: border, padding: 14 }}>
+          <Text style={{ fontSize: 24, marginBottom: 4 }}>🔮</Text>
+          <Text style={{ fontSize: 22, fontWeight: '900', color: colors.primary }}>{staples.filter(s => s.auto_suggest).length}</Text>
+          <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>Tracked staples</Text>
+        </View>
+        <View style={{ flex: 1, backgroundColor: card, borderRadius: 14, borderWidth: 1, borderColor: border, padding: 14 }}>
+          <Text style={{ fontSize: 24, marginBottom: 4 }}>📦</Text>
+          <Text style={{ fontSize: 22, fontWeight: '900', color: '#10B981' }}>{staples.reduce((s, i) => s + (i.times_bought ?? 0), 0)}</Text>
+          <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>Total purchases tracked</Text>
+        </View>
+      </View>
+
+      {/* Restock predictions */}
+      {staples.length > 0 && (
+        <>
+          <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10 }}>
+            Purchase Patterns
+          </Text>
+          <View style={{ backgroundColor: card, borderRadius: 14, borderWidth: 1, borderColor: border, overflow: 'hidden', marginBottom: 16 }}>
+            {staples.map((s, idx) => {
+              const days = s.last_bought_at ? daysAgo(s.last_bought_at) : null;
+              const overdue = days != null && s.avg_days_between && days >= s.avg_days_between;
+              const pct = days && s.avg_days_between ? Math.min(days / s.avg_days_between, 1) : 0;
+              return (
+                <View key={s.id} style={{ padding: 12, borderBottomWidth: idx < staples.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: border }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>{s.name}</Text>
+                    {overdue && <View style={{ backgroundColor: '#FEF3C7', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: '#B45309' }}>RESTOCK</Text>
+                    </View>}
+                    <Text style={{ fontSize: 12, color: colors.textSecondary, marginLeft: 8 }}>Every {Math.round(s.avg_days_between ?? 0)}d</Text>
+                  </View>
+                  {/* Progress bar */}
+                  <View style={{ height: 4, backgroundColor: isDark ? '#1E293B' : '#E2E8F0', borderRadius: 2, overflow: 'hidden' }}>
+                    <View style={{ height: '100%', width: `${pct * 100}%`, borderRadius: 2, backgroundColor: overdue ? '#F59E0B' : colors.primary }} />
+                  </View>
+                  {days != null && <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 4 }}>Last bought {days}d ago · {s.times_bought}x total</Text>}
+                </View>
+              );
+            })}
+          </View>
+        </>
+      )}
+
+      {staples.length === 0 && (
+        <View style={{ alignItems: 'center', paddingVertical: 60 }}>
+          <Text style={{ fontSize: 40, marginBottom: 12 }}>📊</Text>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 6 }}>No insights yet</Text>
+          <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 40 }}>Scan receipts to start tracking purchase patterns and get restock predictions.</Text>
+        </View>
+      )}
+    </ScrollView>
+  );
+}
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function GroceryScreen() {
@@ -1134,7 +1295,7 @@ export default function GroceryScreen() {
   const { members, activeMemberId } = useFamilyStore();
   const { items, runs, loading, load, addItem, buyItem, removeItem, deleteRun } = useGroceryStore();
 
-  const [tab, setTab]                   = useState<'list' | 'runs'>('list');
+  const [tab, setTab]                   = useState<'list' | 'runs' | 'history' | 'insights'>('list');
   const [showAddItem, setShowAddItem]   = useState(false);
   const [editingItem, setEditingItem]   = useState<GroceryItem | undefined>(undefined);
   const [detailItem,  setDetailItem]    = useState<GroceryItem | null>(null);
@@ -1386,12 +1547,17 @@ export default function GroceryScreen() {
         </Pressable>
       )}
 
-      {/* Tab bar */}
+      {/* Tab bar — 4 tabs */}
       <View style={[s.tabRow, { backgroundColor: card, borderBottomColor: border }]}>
-        {(['list', 'runs'] as const).map(t => (
-          <Pressable key={t} onPress={() => setTab(t)} style={[s.tabBtn, tab === t && { borderBottomColor: P }]}>
-            <Text style={[s.tabLabel, { color: tab === t ? P : colors.textSecondary }]}>
-              {t === 'list' ? `Shopping List${items.length ? ` (${items.length})` : ''}` : `Runs${runs.length ? ` (${runs.length})` : ''}`}
+        {([
+          { key: 'list',     label: '🛒 List',     badge: items.length },
+          { key: 'runs',     label: '🏃 Runs',     badge: runs.filter(r => r.status === 'active').length },
+          { key: 'history',  label: '🧾 History',  badge: 0 },
+          { key: 'insights', label: '📊 Insights', badge: 0 },
+        ] as const).map(t => (
+          <Pressable key={t.key} onPress={() => setTab(t.key)} style={[s.tabBtn, tab === t.key && { borderBottomColor: P }]}>
+            <Text style={[s.tabLabel, { color: tab === t.key ? P : colors.textSecondary }]} numberOfLines={1}>
+              {t.label}{t.badge > 0 ? ` (${t.badge})` : ''}
             </Text>
           </Pressable>
         ))}
@@ -1423,7 +1589,11 @@ export default function GroceryScreen() {
         </>
       )}
 
-      {loading ? (
+      {tab === 'history' ? (
+        <HistoryTab familyId={familyId} colors={colors} isDark={isDark} />
+      ) : tab === 'insights' ? (
+        <InsightsTab familyId={familyId} colors={colors} isDark={isDark} />
+      ) : loading ? (
         <ActivityIndicator style={{ marginTop: 60 }} color={P} />
       ) : tab === 'list' ? (
         <>
@@ -1670,7 +1840,7 @@ export default function GroceryScreen() {
         memberId={activeMemberId ?? ''}
         colors={colors}
         isDark={isDark}
-        onCreated={(run) => { setShowNewRun(false); setSelectedRun(run); setTab('runs'); }}
+        onCreated={(run) => { setShowNewRun(false); setSelectedRun(run); setTab('runs' as any); }}
       />
       <RunDetailSheet
         run={selectedRun}

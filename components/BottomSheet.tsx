@@ -41,17 +41,15 @@ export default function BottomSheet({ visible, onClose, onDismiss, title, titleI
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss} onDismiss={onDismiss}>
-      {/* Transparent backdrop — tapping it dismisses the sheet without darkening the screen */}
-      {/* pointerEvents="none" when hidden so the dismissal animation doesn't swallow taps behind it */}
-      <TouchableWithoutFeedback onPress={dismiss}>
-        <View style={StyleSheet.absoluteFillObject} pointerEvents={visible ? 'auto' : 'none'} />
-      </TouchableWithoutFeedback>
-
       {/* KAV owns full height so the sheet stays pinned to the keyboard */}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         pointerEvents={visible ? 'auto' : 'none'}
-        style={{ flex: 1, justifyContent: 'flex-end' }}>
+        style={{ flex: 1 }}>
+        {/* Backdrop — only the flex area ABOVE the sheet, so it never sits on top of the sheet content */}
+        <TouchableWithoutFeedback onPress={dismiss}>
+          <View style={{ flex: 1 }} />
+        </TouchableWithoutFeedback>
           <View style={[ss.sheet, {
             backgroundColor: colors.card,
             paddingBottom: Math.max(insets.bottom, extraBottom ?? 0) + 8,

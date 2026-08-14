@@ -298,10 +298,12 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
   memberId: string; pendingItems: GroceryItem[];
   colors: any; isDark: boolean;
 }) {
+  const { members } = useFamilyStore();
   const { checkRunItem, uncheckRunItem, addItemToRun, removeItemFromRun, startRun, completeRun, loadRunDetail } = useGroceryStore();
   const [runItems,         setRunItems]         = useState<GroceryRunItem[]>([]);
   const [adding,           setAdding]           = useState(false);
   const [loadingId,        setLoadingId]        = useState<string | null>(null);
+  const [notFoundIds,      setNotFoundIds]      = useState<Set<string>>(new Set());
   const [tab,              setTab]              = useState<'items' | 'add' | 'receipt'>('items');
   const [receiptUri,       setReceiptUri]       = useState<string | null>(null);
   const [receiptAnalysis,  setReceiptAnalysis]  = useState<any | null>(null);
@@ -407,10 +409,75 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
     setAdding(false);
   };
 
+  // "Not found here" — marks item unavailable at current store, keeps it on list
+  const markNotFound = (ri: GroceryRunItem) => {
+    const newSet = new Set(notFoundIds);
+    if (newSet.has(ri.itemId)) {
+      newSet.delete(ri.itemId);
+    } else {
+      newSet.add(ri.itemId);
+    }
+    setNotFoundIds(newSet);
+  };
+
+  // Switch store mid-run without losing progress
+  const handleSwitchStore = () => {
+    const STORE_SUGGESTIONS = ['Costco', 'Walmart', 'Whole Foods', 'Trader Joe\'s', 'Patel Brothers', 'Aldi', 'Target', 'Kroger', 'Sprouts', 'H-E-B', 'Sam\'s Club', 'Meijer'];
+    Alert.alert(
+      'Switch Store',
+      'Which store are you heading to?',
+      [
+        ...STORE_SUGGESTIONS.filter(s => s !== run.store).slice(0, 5).map(store => ({
+          text: store,
+          onPress: async () => {
+            await supabase.from('grocery_runs').update({ store }).eq('id', run.id);
+            Alert.alert('Store updated', `Now shopping at ${store}`);
+          },
+        })),
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  // Hand off run to another family member
+  const handleHandOff = () => {
+    const others = members.filter(m => m.id !== memberId);
+    if (others.length === 0) { Alert.alert('No other family members'); return; }
+    Alert.alert(
+      'Hand Off Run',
+      'Who is taking over this shopping run?',
+      [
+        ...others.map(m => ({
+          text: `${m.emoji ?? '👤'} ${m.name}`,
+          onPress: async () => {
+            await supabase.from('grocery_runs').update({ shopper_id: m.id }).eq('id', run.id);
+            Alert.alert('Handed off', `${m.name} is now the shopper`);
+          },
+        })),
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  // Partial complete — only checked items marked bought, unchecked stay on list
   const handleComplete = () => {
-    Alert.alert('Complete Run', `Mark all ${checkedCount} checked items as bought?`, [
+    const notFoundCount = notFoundIds.size;
+    const msg = notFoundCount > 0
+      ? `${checkedCount} items will be marked bought. ${notFoundCount} "not found" item${notFoundCount > 1 ? 's' : ''} stay on your list for next time.`
+      : `${checkedCount} items will be marked bought.`;
+
+    Alert.alert('Complete Run', msg, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Complete', style: 'default', onPress: async () => { await completeRun(run.id); onClose(); } },
+      {
+        text: 'Complete', style: 'default', onPress: async () => {
+          // Remove "not found" items from this run so they stay on the list
+          for (const itemId of notFoundIds) {
+            await removeItemFromRun(run.id, itemId);
+          }
+          await completeRun(run.id);
+          onClose();
+        },
+      },
     ]);
   };
 
@@ -476,34 +543,75 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
                   </Pressable>
                 </View>
               ) : (
-                runItems.map(ri => (
-                  <Pressable
-                    key={ri.itemId}
-                    onPress={() => !isDone && toggleCheck(ri)}
-                    style={[rd.itemRow, { backgroundColor: rowBg, borderColor: border }]}
-                  >
-                    <View style={[rd.checkbox, {
-                      borderColor: ri.checkedInRun ? checkedColor : border,
-                      backgroundColor: ri.checkedInRun ? checkedColor : 'transparent',
-                    }]}>
-                      {ri.checkedInRun && <Ionicons name="checkmark" size={14} color="#FFF" />}
-                      {loadingId === ri.itemId && <ActivityIndicator size="small" color={colors.primary} />}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[rd.itemName, { color: colors.textPrimary, textDecorationLine: ri.checkedInRun ? 'line-through' : 'none', opacity: ri.checkedInRun ? 0.5 : 1 }]}>
-                        {ri.item?.name ?? ri.itemId}
-                      </Text>
-                      {ri.item?.quantity && (
-                        <Text style={{ fontSize: 12, color: colors.textSecondary }}>{ri.item.quantity}</Text>
+                runItems.map(ri => {
+                  const isNotFound = notFoundIds.has(ri.itemId);
+                  return (
+                    <Pressable
+                      key={ri.itemId}
+                      onPress={() => !isDone && !isNotFound && toggleCheck(ri)}
+                      style={[rd.itemRow, {
+                        backgroundColor: isNotFound ? (isDark ? '#1a0a0a' : '#FEF2F2') : rowBg,
+                        borderColor: isNotFound ? '#FCA5A5' : border,
+                        opacity: isNotFound ? 0.75 : 1,
+                      }]}
+                    >
+                      {/* Checkbox */}
+                      <View style={[rd.checkbox, {
+                        borderColor: isNotFound ? '#EF4444' : ri.checkedInRun ? checkedColor : border,
+                        backgroundColor: isNotFound ? '#FEE2E2' : ri.checkedInRun ? checkedColor : 'transparent',
+                      }]}>
+                        {isNotFound
+                          ? <Text style={{ fontSize: 10 }}>✕</Text>
+                          : ri.checkedInRun
+                            ? <Ionicons name="checkmark" size={14} color="#FFF" />
+                            : loadingId === ri.itemId
+                              ? <ActivityIndicator size="small" color={colors.primary} />
+                              : null}
+                      </View>
+
+                      {/* Item info */}
+                      <View style={{ flex: 1 }}>
+                        <Text style={[rd.itemName, {
+                          color: isNotFound ? '#EF4444' : colors.textPrimary,
+                          textDecorationLine: ri.checkedInRun ? 'line-through' : 'none',
+                          opacity: ri.checkedInRun ? 0.5 : 1,
+                        }]}>
+                          {ri.item?.name ?? ri.itemId}
+                        </Text>
+                        {isNotFound
+                          ? <Text style={{ fontSize: 11, color: '#EF4444', fontWeight: '600', marginTop: 1 }}>Not found here — stays on list</Text>
+                          : ri.item?.quantity
+                            ? <Text style={{ fontSize: 12, color: colors.textSecondary }}>{ri.item.quantity}</Text>
+                            : null}
+                      </View>
+
+                      {/* Actions */}
+                      {!isDone && (
+                        <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
+                          {/* Not found toggle */}
+                          <Pressable
+                            onPress={() => markNotFound(ri)}
+                            hitSlop={6}
+                            style={{
+                              paddingHorizontal: 7, paddingVertical: 4, borderRadius: 8,
+                              backgroundColor: isNotFound ? '#FEE2E2' : (isDark ? '#1E293B' : '#F1F5F9'),
+                              borderWidth: 1,
+                              borderColor: isNotFound ? '#FCA5A5' : (isDark ? '#334155' : '#E2E8F0'),
+                            }}
+                          >
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: isNotFound ? '#EF4444' : colors.textTertiary }}>
+                              {isNotFound ? 'Undo' : 'Not here'}
+                            </Text>
+                          </Pressable>
+                          {/* Remove */}
+                          <Pressable onPress={() => removeItemFromRun(run.id, ri.itemId)} style={{ padding: 4 }}>
+                            <Ionicons name="close-circle-outline" size={18} color={colors.textMuted ?? '#9CA3AF'} />
+                          </Pressable>
+                        </View>
                       )}
-                    </View>
-                    {!isDone && (
-                      <Pressable onPress={() => removeItemFromRun(run.id, ri.itemId)} style={{ padding: 4 }}>
-                        <Ionicons name="close-circle-outline" size={18} color={colors.textMuted ?? '#9CA3AF'} />
-                      </Pressable>
-                    )}
-                  </Pressable>
-                ))
+                    </Pressable>
+                  );
+                })
               )}
               <View style={{ height: 20 }} />
             </ScrollView>
@@ -588,17 +696,49 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
           {!isDone && (
             <View style={{ gap: 8, marginTop: 12 }}>
               {run.status === 'draft' && (
-                <Pressable
-                  onPress={() => startRun(run.id, memberId)}
-                  style={[sh.btn, { backgroundColor: '#16A34A' }]}
-                >
+                <Pressable onPress={() => startRun(run.id, memberId)} style={[sh.btn, { backgroundColor: '#16A34A' }]}>
                   <Text style={sh.btnText}>🛒 Start Shopping</Text>
                 </Pressable>
               )}
-              {isActive && checkedCount > 0 && (
-                <Pressable onPress={handleComplete} style={[sh.btn, { backgroundColor: colors.primary }]}>
-                  <Text style={sh.btnText}>✅ Complete Run ({checkedCount} bought)</Text>
-                </Pressable>
+
+              {isActive && (
+                <>
+                  {/* Quick actions row */}
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <Pressable onPress={handleSwitchStore}
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        borderWidth: 1.5, borderColor: isDark ? '#334155' : '#E2E8F0',
+                        borderRadius: 10, paddingVertical: 10,
+                        backgroundColor: isDark ? '#1E293B' : '#F8FAFC' }}>
+                      <Text style={{ fontSize: 14 }}>🏪</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>Switch Store</Text>
+                    </Pressable>
+                    <Pressable onPress={handleHandOff}
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        borderWidth: 1.5, borderColor: isDark ? '#334155' : '#E2E8F0',
+                        borderRadius: 10, paddingVertical: 10,
+                        backgroundColor: isDark ? '#1E293B' : '#F8FAFC' }}>
+                      <Text style={{ fontSize: 14 }}>🤝</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>Hand Off</Text>
+                    </Pressable>
+                  </View>
+
+                  {/* Not-found summary */}
+                  {notFoundIds.size > 0 && (
+                    <View style={{ backgroundColor: isDark ? '#1a0a0a' : '#FEF2F2', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+                      borderWidth: 1, borderColor: '#FCA5A5' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#DC2626' }}>
+                        ⚠️ {notFoundIds.size} item{notFoundIds.size > 1 ? 's' : ''} not found at {run.store} — will stay on your list
+                      </Text>
+                    </View>
+                  )}
+
+                  {checkedCount > 0 && (
+                    <Pressable onPress={handleComplete} style={[sh.btn, { backgroundColor: colors.primary }]}>
+                      <Text style={sh.btnText}>✅ Done — {checkedCount} bought{notFoundIds.size > 0 ? `, ${notFoundIds.size} skipped` : ''}</Text>
+                    </Pressable>
+                  )}
+                </>
               )}
             </View>
           )}

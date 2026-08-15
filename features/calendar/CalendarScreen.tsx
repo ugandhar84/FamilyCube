@@ -888,7 +888,9 @@ export default function CalendarScreen() {
   const runAiScan = async () => {
     setIsAnalyzing(true);
     setShowAiPanel(true);
-    const result = await simulateConflictDetection(events);
+    const todayStr = toDateStr(new Date());
+    const futureEvents = events.filter(e => e.date >= todayStr);
+    const result = await simulateConflictDetection(futureEvents);
     setAiResult(result);
     setIsAnalyzing(false);
   };

@@ -261,13 +261,15 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
         </Pressable>
       </View>
 
-      {/* 4. Action Needed */}
+      {/* 4. Action Needed — ride approvals + quest reviews + kid requests unified */}
       {actionCount > 0 && (
         <View style={pad}>
           <SectionCard
             icon={<Sparkles size={16} color="#EF4444" />}
             title="Action Needed" badge={actionCount} badgeColor="#EF4444"
             colors={colors} isDark={isDark}>
+
+            {/* ── Ride requests ── */}
             {pendingRequests.map(ev => {
               const requester = ev.helperRequestedBy ?? members.find(m => m.id === ev.memberId)?.name ?? 'Kid';
               return (
@@ -310,6 +312,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
               );
             })}
 
+            {/* ── Quest approvals ── */}
             {awaitingApproval.map(q => {
               const kid = members.find(m => m.id === q.assignedToId);
               return (
@@ -346,25 +349,21 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
               );
             })}
 
-          </SectionCard>
-        </View>
-      )}
-
-      {/* 4b. Kid Requests (grocery, supplies, permission, question) */}
-      {pendingKidRequests.length > 0 && (
-        <View style={pad}>
-          <SectionCard icon={<Text style={{ fontSize: 14 }}>🔔</Text>} title="Kid Requests"
-            badge={pendingKidRequests.length} badgeColor={BRAND.amber} colors={colors} isDark={isDark}>
+            {/* ── Kid requests: checkins, questions, permissions, grocery, supplies ── */}
             {pendingKidRequests.map(req => {
               const kid = members.find(m => m.id === req.fromMemberId);
               const kidName = kid?.name.split(' ')[0] ?? 'Kid';
               const isSupplies   = req.detail.startsWith(SUPPLIES_PREFIX);
               const isGrocery    = req.type === 'delegation' && !isSupplies && (req.items?.length ?? 0) > 0;
               const isPermission = req.type === 'permission';
-              const accent = isGrocery ? '#10B981' : isSupplies ? '#3B82F6' : isPermission ? BRAND.amber : BRAND.purple;
+              const isQuestion   = req.type === 'question';
+              const isMedical    = req.type === 'medication';
+              const isCheckin    = req.type === 'checkin';
+              const accent = isMedical ? '#EF4444' : isGrocery ? '#10B981' : isSupplies ? '#6366F1' : isPermission ? BRAND.amber : isQuestion ? BRAND.purple : BRAND.teal;
               const pendingItems = (req.items ?? []).filter(it => it.status === 'pending');
-              // Checkin requests ("I'm home", "ready for pickup") — just dismiss, nothing to approve
-              if (req.type === 'checkin') {
+
+              // ── Check-in: flat dismiss row ──
+              if (isCheckin) {
                 return (
                   <View key={req.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
                     backgroundColor: isDark ? '#1e293b' : '#F8FAFC', borderRadius: 14, padding: 12,
@@ -383,19 +382,65 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                 );
               }
 
+              // ── Question / Permission / Medical: always-visible inline card ──
+              if (isQuestion || isPermission || isMedical) {
+                const typeLabel = isMedical ? '💊 Medical Alert' : isPermission ? '🔓 Permission' : '❓ Question';
+                return (
+                  <View key={req.id} style={{
+                    borderRadius: 14, borderWidth: 1.5, borderColor: accent + '35',
+                    backgroundColor: isDark ? colors.card : accent + '08',
+                    overflow: 'hidden',
+                  }}>
+                    {/* Header row */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingTop: 11, paddingBottom: 4 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: accent }}>
+                          {typeLabel} — {kidName}
+                        </Text>
+                      </View>
+                      <View style={{ backgroundColor: accent + '20', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: accent }}>Pending</Text>
+                      </View>
+                    </View>
+                    {/* Message text — always visible */}
+                    <View style={{ marginHorizontal: 12, marginBottom: 10, borderRadius: 10, padding: 10,
+                      backgroundColor: isDark ? '#1e293b' : '#fff',
+                      borderLeftWidth: 3, borderLeftColor: accent }}>
+                      <Text style={{ fontSize: TYPO.caption, color: colors.textPrimary, lineHeight: 18 }}>
+                        "{req.detail}"
+                      </Text>
+                    </View>
+                    {/* Action buttons */}
+                    <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
+                      <Pressable onPress={() => approveRequest(req.id, active.id)}
+                        style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
+                          {isPermission ? '✓ Allow' : isMedical ? '✓ Acknowledged' : '✓ Replied'}
+                        </Text>
+                      </Pressable>
+                      <Pressable onPress={() => declineRequest(req.id, active.id)}
+                        style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>
+                          {isPermission ? '✕ No' : '✕ Dismiss'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                );
+              }
+
+              // ── Grocery / Supplies: collapsible with item-level approve ──
               return (
                 <CollapsibleCard key={req.id} flat accent={accent} colors={colors} isDark={isDark} defaultExpanded={false}
                   summary={
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: 15 }}>{isGrocery ? '🛒' : isSupplies ? '📚' : isPermission ? '🔓' : '❓'}</Text>
+                      <Text style={{ fontSize: 15 }}>{isGrocery ? '🛒' : '📚'}</Text>
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: accent }} numberOfLines={1}>
-                          {isGrocery ? '🛒 Grocery' : isSupplies ? '📚 Supplies' : isPermission ? 'Permission' : 'Question'} — {kidName}
+                          {isGrocery ? 'Grocery' : 'Supplies'} — {kidName}
                         </Text>
-                        <Text style={{ fontSize: TYPO.label, color: accent, opacity: 0.8 }} numberOfLines={1}>
-                          {isGrocery || isSupplies
-                            ? `${req.items?.length ?? 0} items · ${pendingItems.length} pending`
-                            : req.detail.length > 50 ? req.detail.slice(0, 50) + '…' : req.detail}
+                        <Text style={{ fontSize: TYPO.label, color: accent, opacity: 0.8 }}>
+                          {req.items?.length ?? 0} items · {pendingItems.length} pending
                         </Text>
                       </View>
                       <View style={{ backgroundColor: accent + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
@@ -403,45 +448,37 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                       </View>
                     </View>
                   }>
-                  {(isGrocery || isSupplies) && (req.items ?? []).length > 0 && (
-                    <View style={{ gap: 6, marginBottom: 8 }}>
-                      {(req.items ?? []).map(item => (
-                        <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-                          backgroundColor: isDark ? '#1e293b' : '#F8FAFC', borderRadius: 10, padding: 10 }}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{item.name}</Text>
-                            {item.qty ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Qty: {item.qty}</Text> : null}
-                          </View>
-                          {item.status === 'pending' ? (
-                            <View style={{ flexDirection: 'row', gap: 6 }}>
-                              <Pressable onPress={() => approveItemsAndSync(req.id, [item.id], isSupplies)}
-                                style={{ backgroundColor: accent + '20', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
-                                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accent }}>✓ Add</Text>
-                              </Pressable>
-                              <Pressable onPress={() => rejectItems(req.id, [item.id], active.id)}
-                                style={{ backgroundColor: '#EF444420', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
-                                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>✕</Text>
-                              </Pressable>
-                            </View>
-                          ) : (
-                            <View style={{ backgroundColor: item.status === 'approved' ? '#10B98120' : '#EF444420', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
-                              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: item.status === 'approved' ? '#10B981' : '#EF4444' }}>
-                                {item.status === 'approved' ? '✓ Added' : '✕ No'}
-                              </Text>
-                            </View>
-                          )}
+                  <View style={{ gap: 6, marginBottom: 8 }}>
+                    {(req.items ?? []).map(item => (
+                      <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+                        backgroundColor: isDark ? '#1e293b' : '#F8FAFC', borderRadius: 10, padding: 10 }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{item.name}</Text>
+                          {item.qty ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Qty: {item.qty}</Text> : null}
                         </View>
-                      ))}
-                    </View>
-                  )}
-                  {(isPermission || req.type === 'question') && req.detail ? (
-                    <View style={{ backgroundColor: isDark ? '#1e293b' : '#FAFAFA', borderRadius: 10, padding: 10,
-                      borderLeftWidth: 3, borderLeftColor: accent, marginBottom: 8 }}>
-                      <Text style={{ fontSize: TYPO.caption, color: colors.textPrimary, fontStyle: 'italic' }}>"{req.detail}"</Text>
-                    </View>
-                  ) : null}
+                        {item.status === 'pending' ? (
+                          <View style={{ flexDirection: 'row', gap: 6 }}>
+                            <Pressable onPress={() => approveItemsAndSync(req.id, [item.id], isSupplies)}
+                              style={{ backgroundColor: accent + '20', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
+                              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accent }}>✓ Add</Text>
+                            </Pressable>
+                            <Pressable onPress={() => rejectItems(req.id, [item.id], active.id)}
+                              style={{ backgroundColor: '#EF444420', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
+                              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>✕</Text>
+                            </Pressable>
+                          </View>
+                        ) : (
+                          <View style={{ backgroundColor: item.status === 'approved' ? '#10B98120' : '#EF444420', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: item.status === 'approved' ? '#10B981' : '#EF4444' }}>
+                              {item.status === 'approved' ? '✓ Added' : '✕ No'}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    ))}
+                  </View>
                   {pendingItems.length > 1 && (
-                    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
                       <Pressable onPress={() => approveItemsAndSync(req.id, pendingItems.map(i => i.id), isSupplies)}
                         style={{ flex: 1, backgroundColor: accent + '15', borderWidth: 1, borderColor: accent + '40', paddingVertical: 8, borderRadius: 10, alignItems: 'center' }}>
                         <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accent }}>Add All</Text>
@@ -452,23 +489,10 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                       </Pressable>
                     </View>
                   )}
-                  {(isPermission || req.type === 'question') && (
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <Pressable onPress={() => approveRequest(req.id, active.id)}
-                        style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
-                          {isPermission ? '✓ Allow' : '✓ Answered'}
-                        </Text>
-                      </Pressable>
-                      <Pressable onPress={() => declineRequest(req.id, active.id)}
-                        style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>✕ No</Text>
-                      </Pressable>
-                    </View>
-                  )}
                 </CollapsibleCard>
               );
             })}
+
           </SectionCard>
         </View>
       )}

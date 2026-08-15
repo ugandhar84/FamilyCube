@@ -324,6 +324,50 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
           </Pressable>
         ))}
       </View>
+      {/* Parent replies — recent approved/declined questions & permissions */}
+      {(() => {
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        const recentReplies = myRequests.filter(r => {
+          if (!['approved', 'declined'].includes(r.status)) return false;
+          if (!['permission', 'question', 'medication'].includes(r.type)) return false;
+          if (!r.respondedAt) return false;
+          return new Date(r.respondedAt).getTime() > cutoff;
+        });
+        if (!recentReplies.length) return null;
+        return (
+          <View style={{ marginTop: 8, gap: 6 }}>
+            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary }}>PARENT REPLIED</Text>
+            {recentReplies.map(r => {
+              const approved = r.status === 'approved';
+              const typeEmoji = r.type === 'medication' ? '💊' : r.type === 'permission' ? '🔓' : '❓';
+              const accent = approved ? '#10B981' : '#EF4444';
+              return (
+                <View key={r.id} style={{
+                  flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+                  borderRadius: 14, borderWidth: 1.5, borderColor: accent + '35',
+                  backgroundColor: isDark ? colors.card : accent + '08', padding: 12,
+                }}>
+                  <Text style={{ fontSize: 20, marginTop: 1 }}>{approved ? '✅' : '❌'}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: accent, marginBottom: 2 }}>
+                      {approved ? 'Yes!' : 'No'} — {typeEmoji} {r.type === 'medication' ? 'Medical' : r.type === 'permission' ? 'Permission' : 'Question'}
+                    </Text>
+                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }} numberOfLines={2}>
+                      "{r.detail}"
+                    </Text>
+                    {r.parentNote ? (
+                      <Text style={{ fontSize: TYPO.label, color: accent, fontStyle: 'italic', marginTop: 4 }}>
+                        Parent: "{r.parentNote}"
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        );
+      })()}
+
       {/* My Requests history link */}
       <Pressable onPress={() => setHistoryModal(true)}
         style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

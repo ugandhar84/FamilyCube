@@ -7,6 +7,17 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 
+// Lazy-read family_id from familyStore (same pattern as questStore — avoids circular dep)
+const getFamilyId = (): string | null => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useFamilyStore } = require('@/store/familyStore');
+    const state = useFamilyStore.getState();
+    const active = state.members.find((m: any) => m.id === state.activeMemberId) ?? state.members[0];
+    return (active as any)?.familyId ?? null;
+  } catch { return null; }
+};
+
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
 export type RequestType   = 'ride' | 'tutor' | 'cheer' | 'emergency' | 'question' | 'permission' | 'appointment' | 'delegation' | 'checkin' | 'medication';
@@ -127,11 +138,11 @@ const save = (reqs: KidRequest[]) => AsyncStorage.setItem(KEY, JSON.stringify(re
 // Upsert a single request row to Supabase (fire-and-forget)
 async function upsertToDb(req: KidRequest) {
   try {
-    const { data: member } = await supabase.from('members').select('family_id').eq('id', req.fromMemberId).single();
-    if (!member?.family_id) return;
+    const familyId = getFamilyId();
+    if (!familyId) return;
     await supabase.from('kid_requests').upsert({
       id:             req.id,
-      family_id:      member.family_id,
+      family_id:      familyId,
       from_member_id: req.fromMemberId,
       to_member_id:   req.toMemberId ?? null,
       type:           req.type,
@@ -164,8 +175,7 @@ async function deleteFromDb(id: string) {
 
 async function notifyKidRequest(fromMemberId: string, type: string, payload: Record<string, unknown>) {
   try {
-    const { data } = await supabase.from('members').select('family_id').eq('id', fromMemberId).single();
-    const familyId = data?.family_id;
+    const familyId = getFamilyId();
     if (!familyId) return;
     supabase.functions
       .invoke('family-notifier', { body: { type, familyId, payload, persist: true } })
@@ -183,51 +193,59 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
 
   loadFromStorage: async () => {
     try {
-      // Try DB first (syncs across devices)
-      const { data: member } = await supabase.auth.getUser();
-      if (member.user) {
-        const { data: mem } = await supabase.from('members').select('family_id').eq('id', member.user.id).single();
-        if (mem?.family_id) {
-          const { data: rows } = await supabase
-            .from('kid_requests')
-            .select('*')
-            .eq('family_id', mem.family_id)
-            .order('requested_at', { ascending: false });
-          if (rows && rows.length > 0) {
-            const requests: KidRequest[] = rows.map((r: any) => ({
-              id: r.id, type: r.type, urgency: r.urgency, detail: r.detail,
-              status: r.status, fromMemberId: r.from_member_id,
-              toMemberId: r.to_member_id ?? undefined,
-              items: r.items ?? undefined,
-              requestedAt: r.requested_at, expiresAt: r.expires_at ?? undefined,
-              readAt: r.read_at ?? undefined, respondedAt: r.responded_at ?? undefined,
-              respondedBy: r.responded_by ?? undefined, parentNote: r.parent_note ?? undefined,
-              attachmentUrl: r.attachment_url ?? undefined, assignedHelper: r.assigned_helper ?? undefined,
-              rewardCoins: r.reward_coins ?? undefined, scheduledDate: r.scheduled_date ?? undefined,
-              scheduledTime: r.scheduled_time ?? undefined,
-            }));
-            set({ requests, loaded: true });
-            save(requests);
-            return;
-          }
+      // Try DB first — authoritative, syncs across devices
+      // family_id comes from familyStore (invitation-based members, not auth users)
+      const familyId = getFamilyId();
+      if (familyId) {
+        const { data: rows, error } = await supabase
+          .from('kid_requests')
+          .select('*')
+          .eq('family_id', familyId)
+          .order('requested_at', { ascending: false });
+        if (!error) {
+          // rows may be [] on a fresh family — that's valid, don't fall through to seed
+          const requests: KidRequest[] = (rows ?? []).map((r: any) => ({
+            id:             r.id,
+            type:           r.type,
+            urgency:        r.urgency,
+            detail:         r.detail,
+            status:         r.status,
+            fromMemberId:   r.from_member_id,
+            toMemberId:     r.to_member_id    ?? undefined,
+            items:          r.items           ?? undefined,
+            requestedAt:    r.requested_at,
+            expiresAt:      r.expires_at      ?? undefined,
+            readAt:         r.read_at         ?? undefined,
+            respondedAt:    r.responded_at    ?? undefined,
+            respondedBy:    r.responded_by    ?? undefined,
+            parentNote:     r.parent_note     ?? undefined,
+            attachmentUrl:  r.attachment_url  ?? undefined,
+            assignedHelper: r.assigned_helper ?? undefined,
+            rewardCoins:    r.reward_coins    ?? undefined,
+            scheduledDate:  r.scheduled_date  ?? undefined,
+            scheduledTime:  r.scheduled_time  ?? undefined,
+          }));
+          set({ requests, loaded: true });
+          save(requests);
+          return;
         }
       }
-    } catch { /* fall through to AsyncStorage */ }
-    // Fallback to local cache
+    } catch { /* network unavailable — fall through to local cache */ }
+
+    // Offline fallback: local AsyncStorage cache (no seed data — empty is correct)
     try {
-      const raw      = await AsyncStorage.getItem(KEY);
-      const requests = raw ? (JSON.parse(raw) as KidRequest[]) : SEED_REQUESTS;
-      if (!raw) save(SEED_REQUESTS);
+      const raw = await AsyncStorage.getItem(KEY);
+      const requests = raw ? (JSON.parse(raw) as KidRequest[]) : [];
       set({ requests, loaded: true });
     } catch {
-      set({ requests: SEED_REQUESTS, loaded: true });
+      set({ requests: [], loaded: true });
     }
   },
 
   sendRequest: (req) => {
     const request: KidRequest = {
       ...req,
-      id:          'req-' + Date.now(),
+      id:          crypto.randomUUID(),
       urgency:     req.urgency ?? (req.type === 'emergency' ? 'emergency' : 'normal'),
       requestedAt: new Date().toISOString(),
       status:      'pending',

@@ -744,14 +744,6 @@ export function AskModal({ visible, onClose, type, active }: {
     Alert.alert('Sent! 👋', 'Your parent has been notified.');
   };
 
-  const inp = {
-    borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 11,
-    fontSize: 14, color: colors.textPrimary,
-    backgroundColor: isDark ? colors.surface : '#F9FAFB',
-    borderColor: colors.border,
-    minHeight: 90, textAlignVertical: 'top' as const,
-  };
-
   return (
     <AppBottomSheet
       visible={visible}
@@ -759,8 +751,9 @@ export function AskModal({ visible, onClose, type, active }: {
       title={`${meta.emoji} ${meta.label}`}
       subtitle="Sent directly to your parent"
       accentColor={meta.accent}
-      minHeight="30%"
-      maxHeight="55%"
+      minHeight="50%"
+      maxHeight="70%"
+      bodyPaddingBottom={16}
       footer={
         <TouchableOpacity onPress={submit} disabled={!text.trim()}
           style={[f.submitBtn, { backgroundColor: text.trim() ? meta.accent : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
@@ -770,9 +763,21 @@ export function AskModal({ visible, onClose, type, active }: {
         </TouchableOpacity>
       }
     >
-      <TextInput value={text} onChangeText={setText} style={inp}
-        placeholder={meta.hint} placeholderTextColor={colors.textTertiary}
-        autoFocus multiline numberOfLines={4} />
+      <TextInput
+        value={text}
+        onChangeText={setText}
+        style={{
+          borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14,
+          fontSize: 15, color: colors.textPrimary,
+          backgroundColor: isDark ? colors.surface : '#F9FAFB',
+          borderColor: text.trim() ? meta.accent + '80' : colors.border,
+          minHeight: 120, textAlignVertical: 'top',
+        }}
+        placeholder={meta.hint}
+        placeholderTextColor={colors.textTertiary}
+        multiline
+        numberOfLines={5}
+      />
     </AppBottomSheet>
   );
 }

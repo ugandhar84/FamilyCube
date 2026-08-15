@@ -258,6 +258,7 @@ export function GroceryModal({ visible, onClose, active }: {
       subtitle={canSubmit ? `${validLines.length} item${validLines.length > 1 ? 's' : ''} · parent approves each one` : 'Parent approves before items are added'}
       accentColor={BRAND.teal}
       minHeight="75%"
+      bodyPaddingBottom={16}
       footer={
         <TouchableOpacity onPress={submit} disabled={!canSubmit}
           style={[f.submitBtn, { backgroundColor: canSubmit ? BRAND.teal : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
@@ -304,10 +305,11 @@ export function GroceryModal({ visible, onClose, active }: {
               ) : (
                 lines.map((line, idx) => {
                   // Identical to EventFormModal's newGroceryLines block
-                  const nameSuggs = line.name.trim().length > 0
-                    ? ALL_GROCERY_SUGGESTIONS.filter(s => s.name.toLowerCase().includes(line.name.toLowerCase()) && s.name.toLowerCase() !== line.name.toLowerCase()).slice(0, 6)
-                    : [];
-                  const showNameSuggs = focusedLineIdx === idx && focusedField === 'name' && nameSuggs.length > 0;
+                  const q = line.name.trim().toLowerCase();
+                  const nameSuggs = q
+                    ? ALL_GROCERY_SUGGESTIONS.filter(s => s.name.toLowerCase().includes(q) && s.name.toLowerCase() !== q).slice(0, 8)
+                    : ALL_GROCERY_SUGGESTIONS.filter(s => !globalCat || s.category === globalCat || globalCat === 'All').slice(0, 10);
+                  const showNameSuggs = nameSuggs.length > 0;
 
                   return (
                     <View key={idx} style={{ marginBottom: 8 }}>
@@ -331,17 +333,28 @@ export function GroceryModal({ visible, onClose, active }: {
                           <Text style={{ fontSize: 16, color: colors.textTertiary }}>✕</Text>
                         </Pressable>
                       </View>
-                      {/* Name suggestions */}
+                      {/* Name suggestions — always visible */}
                       {showNameSuggs && (
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" style={{ marginBottom: 4 }}>
-                          {nameSuggs.map(s => (
-                            <Pressable key={s.name}
-                              onPress={() => { updateLine(idx, { name: s.name, emoji: s.emoji, category: s.category }); setFocusedField(null); }}
-                              style={{ backgroundColor: BRAND.teal + '15', borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10, marginRight: 6, borderWidth: 1, borderColor: BRAND.teal + '40' }}>
-                              <Text style={{ fontSize: 12, color: BRAND.teal, fontWeight: '600' }}>{s.emoji} {s.name}</Text>
-                            </Pressable>
-                          ))}
-                        </ScrollView>
+                        <View style={{ marginBottom: 8 }}>
+                          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontWeight: '600', marginBottom: 5 }}>
+                            {q ? 'Matching — tap to fill' : 'Quick picks'}
+                          </Text>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
+                            <View style={{ flexDirection: 'row', gap: 7 }}>
+                              {nameSuggs.map(s => (
+                                <Pressable key={s.name}
+                                  onPress={() => updateLine(idx, { name: s.name, emoji: s.emoji, category: s.category })}
+                                  style={{ backgroundColor: line.name === s.name ? BRAND.teal + '20' : (isDark ? colors.surface : '#F5F4FA'),
+                                    borderRadius: 8, paddingVertical: 5, paddingHorizontal: 10, borderWidth: 1,
+                                    borderColor: line.name === s.name ? BRAND.teal : (isDark ? colors.border : '#E2E8F0') }}>
+                                  <Text style={{ fontSize: TYPO.label, color: line.name === s.name ? BRAND.teal : colors.textSecondary, fontWeight: '700' }}>
+                                    {s.emoji} {s.name}
+                                  </Text>
+                                </Pressable>
+                              ))}
+                            </View>
+                          </ScrollView>
+                        </View>
                       )}
                     </View>
                   );
@@ -351,7 +364,7 @@ export function GroceryModal({ visible, onClose, active }: {
               {/* ── Notes ── */}
               <Text style={[f.label, { color: colors.textSecondary }]}>📝 Note for parent (optional)</Text>
               <TextInput
-                style={[gInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border, minHeight: 64, textAlignVertical: 'top' }]}
+                style={[gInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border, minHeight: 44, textAlignVertical: 'top' }]}
                 placeholder="e.g. get the name-brand ones, not store brand"
                 placeholderTextColor={colors.textTertiary}
                 value={notes} onChangeText={setNotes} multiline
@@ -428,6 +441,7 @@ export function SuppliesModal({ visible, onClose, active }: {
       subtitle="Parent approves and picks these up for you"
       accentColor="#6366F1"
       minHeight="75%"
+      bodyPaddingBottom={16}
       footer={
         <TouchableOpacity onPress={submit} disabled={!canSubmit}
           style={[f.submitBtn, { backgroundColor: canSubmit ? '#6366F1' : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet, Modal,
-  TextInput, KeyboardAvoidingView, Platform, Alert,
+  View, Text, ScrollView, Pressable, StyleSheet,
+  TextInput, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useRewardStore, Reward } from '@/store/rewardStore';
 import AppHeader from '@/components/AppHeader';
+import AppBottomSheet from '@/components/AppBottomSheet';
 
 // ─── Category config ──────────────────────────────────────────────────────────
 
@@ -189,22 +190,19 @@ function PerkModal({ visible, editing, colors, onClose, onSave }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={s.overlay}>
-          <Pressable style={{ flex: 1 }} onPress={onClose} />
-          <View style={[s.sheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[s.handle, { backgroundColor: colors.border }]} />
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between',
-              alignItems: 'center', marginBottom: 16 }}>
-              <Text style={{ fontSize: 15, fontWeight: '800', color: colors.textPrimary }}>
-                {editing ? 'Edit Perk' : 'Create Custom Perk'}
-              </Text>
-              <Pressable onPress={onClose}>
-                <Ionicons name="close" size={20} color={colors.textTertiary} />
-              </Pressable>
-            </View>
-
+    <AppBottomSheet
+      visible={visible}
+      onClose={onClose}
+      title={editing ? 'Edit Perk' : 'Create Custom Perk'}
+      footer={
+        <Pressable onPress={submit}
+          style={[s.submitBtn, { backgroundColor: name.trim() ? colors.teal : colors.border }]}>
+          <Text style={{ color: '#fff', fontSize: 14, fontWeight: '800' }}>
+            {editing ? 'Save Changes' : 'Publish Perk to Family Store'}
+          </Text>
+        </Pressable>
+      }
+    >
             <Text style={[s.label, { color: colors.textSecondary }]}>PERK TITLE</Text>
             <TextInput value={name} onChangeText={setName}
               placeholder="e.g. Movie Night Choice"
@@ -257,16 +255,7 @@ function PerkModal({ visible, editing, colors, onClose, onSave }: {
               </View>
             </ScrollView>
 
-            <Pressable onPress={submit}
-              style={[s.submitBtn, { backgroundColor: name.trim() ? colors.teal : colors.border }]}>
-              <Text style={{ color: '#fff', fontSize: 14, fontWeight: '800' }}>
-                {editing ? 'Save Changes' : 'Publish Perk to Family Store'}
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </AppBottomSheet>
   );
 }
 

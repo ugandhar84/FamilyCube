@@ -19,6 +19,7 @@ import {
   Modal, KeyboardAvoidingView, Platform, Alert, Animated,
   FlatList, ActivityIndicator, Image,
 } from 'react-native';
+import AppBottomSheet from '@/components/AppBottomSheet';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -181,33 +182,24 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark, ed
     : aiSuggestions;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end' }}>
-        <Pressable style={{ flex: 1 }} onPress={onClose} />
-        <View style={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-          borderWidth: 1, borderColor: border,
-          shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 20, elevation: 20,
-          paddingHorizontal: 20, paddingBottom: 32 }}>
-          {/* Handle */}
-          <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: isDark ? '#4B5563' : '#E5E7EB',
-            alignSelf: 'center', marginTop: 12, marginBottom: 18 }} />
-
-          {/* Title row */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 18 }}>
-            <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: P + '20',
-              alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-              <Text style={{ fontSize: 18 }}>{isEdit ? '✏️' : '🛒'}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 18, fontWeight: '800', color: colors.textPrimary }}>
-                {isEdit ? 'Edit Item' : 'Add to List'}
-              </Text>
-              <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
-                {isEdit ? 'Update item details' : 'Type a name or tap a suggestion'}
-              </Text>
-            </View>
-          </View>
-
+    <AppBottomSheet
+      visible={visible}
+      onClose={onClose}
+      title={isEdit ? 'Edit Item' : 'Add to List'}
+      subtitle={isEdit ? 'Update item details' : 'Type a name or tap a suggestion'}
+      footer={
+        <Pressable onPress={handleSave} disabled={!name.trim() || saving}
+          style={{ borderRadius: 16, paddingVertical: 14, alignItems: 'center',
+            backgroundColor: (!name.trim() || saving) ? (isDark ? '#374151' : '#D1D5DB') : P,
+            shadowColor: P, shadowOpacity: name.trim() ? 0.4 : 0, shadowRadius: 10, elevation: 4 }}>
+          {saving
+            ? <ActivityIndicator color="#FFF" size="small" />
+            : <Text style={{ fontSize: 15, fontWeight: '800', color: '#FFF', letterSpacing: 0.3 }}>
+                {isEdit ? '✅ Save Changes' : '+ Add to List'}
+              </Text>}
+        </Pressable>
+      }
+    >
           {/* Name input */}
           <View style={{ backgroundColor: inputBg, borderRadius: 14, borderWidth: 1, borderColor: border,
             flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, marginBottom: 10 }}>

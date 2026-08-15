@@ -271,7 +271,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
             {pendingRequests.map(ev => {
               const requester = ev.helperRequestedBy ?? members.find(m => m.id === ev.memberId)?.name ?? 'Kid';
               return (
-                <CollapsibleCard key={ev.id} accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={false}
+                <CollapsibleCard key={ev.id} flat accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={false}
                   summary={
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Hand size={16} color={BRAND.amber} />
@@ -313,7 +313,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
             {awaitingApproval.map(q => {
               const kid = members.find(m => m.id === q.assignedToId);
               return (
-                <CollapsibleCard key={q.id} accent={BRAND.purple} colors={colors} isDark={isDark} defaultExpanded={false}
+                <CollapsibleCard key={q.id} flat accent={BRAND.purple} colors={colors} isDark={isDark} defaultExpanded={false}
                   summary={
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Camera size={16} color={BRAND.purple} />
@@ -384,7 +384,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
               }
 
               return (
-                <CollapsibleCard key={req.id} accent={accent} colors={colors} isDark={isDark} defaultExpanded={false}
+                <CollapsibleCard key={req.id} flat accent={accent} colors={colors} isDark={isDark} defaultExpanded={false}
                   summary={
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Text style={{ fontSize: 15 }}>{isGrocery ? '🛒' : isSupplies ? '📚' : isPermission ? '🔓' : '❓'}</Text>

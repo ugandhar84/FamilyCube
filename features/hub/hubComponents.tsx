@@ -3,7 +3,8 @@
  * SectionCard, CollapsibleCard, SubCard, AlertBanner, TimelineCard, EnRouteModal.
  */
 import { useState } from 'react';
-import { View, Text, Pressable, Modal, TextInput, StyleSheet, Alert, ScrollView, Platform, Linking, TouchableOpacity } from 'react-native';
+import { View, Text, Pressable, TextInput, StyleSheet, Alert, ScrollView, Platform, Linking, TouchableOpacity } from 'react-native';
+import AppBottomSheet from '@/components/AppBottomSheet';
 import {
   ChevronDown, ChevronUp, ChevronRight, Pencil, Calendar,
   MapPin, AlertOctagon, Car, Navigation, AlertTriangle, X,
@@ -81,14 +82,33 @@ export function SectionCard({
 // ─── CollapsibleCard ──────────────────────────────────────────────────────────
 
 export function CollapsibleCard({
-  summary, accent, colors, isDark, defaultExpanded = false, children,
+  summary, accent, colors, isDark, defaultExpanded = false, children, flat = false,
 }: {
   summary: React.ReactNode; accent?: string; colors: any; isDark: boolean;
-  defaultExpanded?: boolean; children?: React.ReactNode;
+  defaultExpanded?: boolean; children?: React.ReactNode; flat?: boolean;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const bg = accent ? (isDark ? accent + '18' : accent + '10') : (isDark ? colors.surface : '#F8FAFC');
   const border = accent ? accent + '40' : colors.border;
+
+  if (flat) {
+    return (
+      <View style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+        <Pressable
+          onPress={() => children && setExpanded(e => !e)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, paddingHorizontal: 4 }}>
+          <View style={{ flex: 1 }}>{summary}</View>
+          {children && (expanded
+            ? <ChevronUp size={14} color={accent ?? colors.textTertiary} />
+            : <ChevronDown size={14} color={accent ?? colors.textTertiary} />
+          )}
+        </Pressable>
+        {expanded && children && (
+          <View style={{ paddingBottom: 12, paddingHorizontal: 4, gap: 8 }}>{children}</View>
+        )}
+      </View>
+    );
+  }
 
   return (
     <View style={{ borderRadius: 16, borderWidth: 1, backgroundColor: bg, borderColor: border, overflow: 'hidden' }}>
@@ -491,18 +511,13 @@ function EventDetailSheet({ ev, members, colors, isDark, activeName, updateEvent
   const showReassign = !isPast && !isWork && (helperMissing || helperPending || helperRejected);
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose} />
-      <View style={{
-        backgroundColor: isDark ? colors.card : '#FFFFFF',
-        borderTopLeftRadius: 28, borderTopRightRadius: 28,
-        borderTopWidth: 1, borderColor: colors.border,
-        maxHeight: '82%',
-      }}>
-        {/* Handle */}
-        <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginTop: 12, marginBottom: 4 }} />
-
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, paddingBottom: 44, gap: 14 }}>
+    <AppBottomSheet
+      visible
+      onClose={onClose}
+      title={ev.title}
+      maxHeight="82%"
+    >
+        <View style={{ gap: 14 }}>
           {/* Header */}
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
             <View style={{ backgroundColor: cc + '20', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 4, borderWidth: 1, borderColor: cc + '45' }}>
@@ -700,9 +715,8 @@ function EventDetailSheet({ ev, members, colors, isDark, activeName, updateEvent
               )}
             </View>
           )}
-        </ScrollView>
-      </View>
-    </Modal>
+        </View>
+    </AppBottomSheet>
   );
 }
 
@@ -909,15 +923,23 @@ export function EnRouteModal({ visible, onClose, kids, onDispatch }: {
   const allNames = kids.map(k => k.name);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }} onPress={onClose} />
-      <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 44, borderTopWidth: 1, borderColor: colors.border }}>
-        <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 20 }} />
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-          <Car size={22} color="#10B981" />
-          <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary }}>Dispatch En Route</Text>
-        </View>
-        <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 20 }}>Notify your kids you're on the way</Text>
+    <AppBottomSheet
+      visible={visible}
+      onClose={onClose}
+      title="Dispatch En Route"
+      subtitle="Notify your kids you're on the way"
+      accentColor="#10B981"
+      footer={
+        <Pressable onPress={() => {
+          const kidName = selected ? kids.find(k => k.id === selected)?.name.split(' ')[0] ?? 'kids' : 'kids';
+          onDispatch(kidName, eta);
+          onClose();
+        }} style={{ backgroundColor: '#10B981', borderRadius: 16, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
+          <Navigation size={18} color="#fff" />
+          <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: '#fff' }}>Send En Route Ping</Text>
+        </Pressable>
+      }
+    >
         <SectionLabel label="Picking up" />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
           {kids.map(k => {
@@ -948,16 +970,7 @@ export function EnRouteModal({ visible, onClose, kids, onDispatch }: {
             </Pressable>
           ))}
         </View>
-        <Pressable onPress={() => {
-          const kidName = selected ? kids.find(k => k.id === selected)?.name.split(' ')[0] ?? 'kids' : 'kids';
-          onDispatch(kidName, eta);
-          onClose();
-        }} style={{ backgroundColor: '#10B981', borderRadius: 16, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
-          <Navigation size={18} color="#fff" />
-          <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: '#fff' }}>Send En Route Ping</Text>
-        </Pressable>
-      </View>
-    </Modal>
+    </AppBottomSheet>
   );
 }
 

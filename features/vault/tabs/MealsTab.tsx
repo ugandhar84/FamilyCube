@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator,
-  Modal, ScrollView, KeyboardAvoidingView, Platform, Animated, Alert,
+  ScrollView, Animated, Alert,
 } from 'react-native';
+import AppBottomSheet from '@/components/AppBottomSheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChefHat, Trash2, Check, X, RefreshCw, Send, MessageSquare,
@@ -297,45 +298,37 @@ function EditMealModal({ meal, visible, onClose, onSave, members, colors, isDark
   const typeColor = MEAL_TYPE_COLOR[type] ?? BRAND.amber;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        {/* Dark backdrop */}
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' }}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-
-          {/* Bottom sheet */}
-          <View style={{ borderTopLeftRadius: 28, borderTopRightRadius: 28,
-            paddingHorizontal: 20, paddingTop: 12, maxHeight: '90%',
-            backgroundColor: isDark ? colors.card : '#FAFAFA' }}>
-
-            {/* Drag handle */}
-            <View style={{ width: 44, height: 4, borderRadius: 2, backgroundColor: colors.border,
-              alignSelf: 'center', marginBottom: 14 }} />
-
-            {/* ── Fixed header (does NOT scroll) ── */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <TouchableOpacity onPress={() => setShowEmoji(!showEmoji)}
-                  style={{ width: 46, height: 46, borderRadius: 14, backgroundColor: typeColor + '20',
-                    alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: typeColor + '40' }}>
-                  <Text style={{ fontSize: 26 }}>{emoji}</Text>
-                </TouchableOpacity>
-                <View>
-                  <Text style={{ fontSize: 17, fontWeight: '900', color: colors.textPrimary }}>Edit Meal</Text>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: typeColor, textTransform: 'capitalize', marginTop: 1 }}>
-                    {type} · tap emoji to change
-                  </Text>
-                </View>
-              </View>
-              <TouchableOpacity onPress={onClose}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
-                <X size={16} color={colors.textSecondary} />
+    <AppBottomSheet
+      visible={visible}
+      onClose={onClose}
+      title="Edit Meal"
+      subtitle={`${type} · tap emoji to change`}
+      accentColor={typeColor}
+      maxHeight="90%"
+      footer={
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TouchableOpacity onPress={onClose}
+            style={{ flex: 1, borderRadius: 16, borderWidth: 1.5, paddingVertical: 14,
+              alignItems: 'center', borderColor: colors.border }}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleSave} disabled={saving}
+            style={{ flex: 2, borderRadius: 16, paddingVertical: 14, alignItems: 'center',
+              backgroundColor: BRAND.purple, flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
+            {saving
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save Changes</Text>}
+          </TouchableOpacity>
+        </View>
+      }
+    >
+              {/* Emoji picker button */}
+              <TouchableOpacity onPress={() => setShowEmoji(!showEmoji)}
+                style={{ width: 46, height: 46, borderRadius: 14, backgroundColor: typeColor + '20',
+                  alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: typeColor + '40',
+                  marginBottom: 14 }}>
+                <Text style={{ fontSize: 26 }}>{emoji}</Text>
               </TouchableOpacity>
-            </View>
-
-            {/* ── Scrollable body ── */}
-            <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 40 }}>
 
               {/* Emoji picker drawer */}
               {showEmoji && (
@@ -457,29 +450,7 @@ function EditMealModal({ meal, visible, onClose, onSave, members, colors, isDark
                 placeholderTextColor={colors.textTertiary} multiline numberOfLines={5}
                 style={[inp, { height: 120, textAlignVertical: 'top', paddingTop: 10 }]} />
 
-            </ScrollView>
-
-            {/* Footer */}
-            <View style={{ flexDirection: 'row', gap: 10, paddingVertical: 16,
-              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
-              <TouchableOpacity onPress={onClose}
-                style={{ flex: 1, borderRadius: 16, borderWidth: 1.5, paddingVertical: 14,
-                  alignItems: 'center', borderColor: colors.border }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleSave} disabled={saving}
-                style={{ flex: 2, borderRadius: 16, paddingVertical: 14, alignItems: 'center',
-                  backgroundColor: BRAND.purple, flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
-                {saving
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save Changes</Text>}
-              </TouchableOpacity>
-            </View>
-
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </AppBottomSheet>
   );
 }
 

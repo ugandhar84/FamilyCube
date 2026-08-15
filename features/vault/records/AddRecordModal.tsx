@@ -1,12 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
-  View, Text, Modal, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, StyleSheet, Platform, KeyboardAvoidingView, Alert,
+  View, Text, ScrollView, TouchableOpacity,
+  TextInput, ActivityIndicator, StyleSheet, Alert,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker    from 'expo-image-picker';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, Lock, Shield, FileText, Camera, Image, FolderOpen } from 'lucide-react-native';
+import AppBottomSheet from '@/components/AppBottomSheet';
 import { BRAND } from '../tabs/shared';
 import { RecordForm, TAGS, BLANK_FORM, memberColor, fmtSize } from './types';
 
@@ -34,8 +34,6 @@ function imageAssetToDoc(asset: ImagePicker.ImagePickerAsset): DocumentPicker.Do
 export default function AddRecordModal({
   visible, onClose, onSave, colors, isDark, members, activeMemberId,
 }: Props) {
-  const insets = useSafeAreaInsets();
-
   const [form,      setForm]      = useState<RecordForm>(BLANK_FORM);
   const [selMember, setSelMember] = useState(activeMemberId ?? members[0]?.id ?? '');
   const [file,      setFile]      = useState<DocumentPicker.DocumentPickerAsset | null>(null);
@@ -106,29 +104,26 @@ export default function AddRecordModal({
   const inp = [s.inp, { backgroundColor: isDark ? colors.surface : '#F8FAFC', borderColor: colors.border, color: colors.textPrimary }];
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={s.backdrop}>
-          {/* Tap-to-dismiss area */}
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-
-          <View style={[s.sheet, { backgroundColor: cardBg }]}>
-            {/* Handle */}
-            <View style={[s.handle, { backgroundColor: colors.border, alignSelf: 'center', marginBottom: 10 }]} />
-
-            {/* Header */}
-            <View style={s.headerRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Lock size={15} color={BRAND.teal} />
-                <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary }}>
-                  Upload Medical Record
-                </Text>
-              </View>
-              <TouchableOpacity onPress={onClose} style={s.closeBtn}>
-                <X size={16} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
+    <AppBottomSheet
+      visible={visible}
+      onClose={onClose}
+      title="Upload Medical Record"
+      footer={
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TouchableOpacity onPress={onClose} style={[s.cancelBtn, { borderColor: colors.border }]}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleSave} disabled={saving}
+            style={[s.saveBtn, { backgroundColor: BRAND.teal, opacity: saving ? 0.65 : 1 }]}>
+            {saving
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save to Vault</Text>}
+          </TouchableOpacity>
+        </View>
+      }
+      minHeight="70%"
+      maxHeight="92%"
+    >
             {/* Vault notice */}
             <View style={[s.vaultBadge, { backgroundColor: BRAND.teal + '12' }]}>
               <Shield size={12} color={BRAND.teal} />
@@ -136,11 +131,6 @@ export default function AddRecordModal({
                 Encrypted · protected by your family vault · never shared externally
               </Text>
             </View>
-
-            <ScrollView
-              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 16, gap: 14 }}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled">
 
               {/* Member picker */}
               <View>
@@ -259,24 +249,7 @@ export default function AddRecordModal({
                   placeholderTextColor={colors.textTertiary}
                   style={[inp, { height: 72, textAlignVertical: 'top', paddingTop: 10 }]} multiline />
               </View>
-            </ScrollView>
-
-            {/* Footer */}
-            <View style={[s.footer, { borderColor: colors.border, paddingBottom: Math.max(insets.bottom, 16) }]}>
-              <TouchableOpacity onPress={onClose} style={[s.cancelBtn, { borderColor: colors.border }]}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleSave} disabled={saving}
-                style={[s.saveBtn, { backgroundColor: BRAND.teal, opacity: saving ? 0.65 : 1 }]}>
-                {saving
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save to Vault</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </AppBottomSheet>
   );
 }
 

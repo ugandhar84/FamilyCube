@@ -4,6 +4,7 @@ import { format } from 'date-fns';
 import { showAlert } from '@/components/AppAlert';
 import { saveExpense, isDuplicateExpense, type ExpenseCategory } from '@/lib/db/expenses';
 import { supabase } from '@/lib/supabase';
+import { compressImage } from '@/lib/compressImage';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 import type { ScannedItem } from './expensesUtils';
 
@@ -35,12 +36,13 @@ export function useReceiptScanner({ selectedPetId, activePetId, pets, onSaved }:
       }
 
       const result = source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ base64: true, quality: 0.7, mediaTypes: ImagePicker.MediaTypeOptions.Images })
-        : await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.7, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+        ? await ImagePicker.launchCameraAsync({ base64: false, quality: 1, mediaTypes: ImagePicker.MediaTypeOptions.Images })
+        : await ImagePicker.launchImageLibraryAsync({ base64: false, quality: 1, mediaTypes: ImagePicker.MediaTypeOptions.Images });
 
-      if (result.canceled || !result.assets?.[0]?.base64) return;
+      if (result.canceled || !result.assets?.[0]) return;
 
-      const { base64, mimeType = 'image/jpeg' } = result.assets[0];
+      const { base64 } = await compressImage(result.assets[0].uri);
+      const mimeType = 'image/jpeg';
       setScanLoading(true);
 
       const { data: { session } } = await supabase.auth.getSession();

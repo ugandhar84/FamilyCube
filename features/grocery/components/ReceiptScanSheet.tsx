@@ -14,6 +14,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import Svg, { Path, Rect, Circle, Polyline } from 'react-native-svg';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { supabase } from '@/lib/supabase';
+import { compressImage } from '@/lib/compressImage';
 
 // ── SVG icons ─────────────────────────────────────────────────────────────────
 const ScanLineIcon = ({ c, size = 24 }: { c: string; size?: number }) => (
@@ -147,11 +148,22 @@ export function ReceiptScanSheet({
   const handleClose = () => { reset(); onClose(); };
 
   // ── Core scan logic ───────────────────────────────────────────────────────
-  const runScan = async (base64: string) => {
+  const runScan = async (base64: string, localUri?: string) => {
     setScanning(true); setScanError(null);
     try {
+      // Upload compressed image to storage so history can show the photo
+      let imageUrl: string | undefined;
+      if (localUri) {
+        const path = `receipts/${familyId}/${Date.now()}.jpg`;
+        const blob = await (await fetch(localUri)).blob();
+        const { error: upErr } = await supabase.storage.from('family-media').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+        if (!upErr) {
+          const { data: urlData } = supabase.storage.from('family-media').getPublicUrl(path);
+          imageUrl = urlData.publicUrl;
+        }
+      }
       const { data, error } = await supabase.functions.invoke('parse-grocery-receipt', {
-        body: { familyId, scannedById: memberId, imageBase64: base64 },
+        body: { familyId, scannedById: memberId, imageBase64: base64, imageUrl },
       });
       if (error) throw new Error(error.message);
       if (data?.error === 'not_a_receipt') throw new Error(data.message ?? 'This image doesn\'t look like a receipt.');
@@ -173,15 +185,21 @@ export function ReceiptScanSheet({
   const pickCamera = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Camera access needed', 'Allow camera in Settings.'); return; }
-    const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9, base64: true, allowsEditing: true });
-    if (!res.canceled && res.assets[0]?.base64) await runScan(res.assets[0].base64);
+    const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1, base64: false, allowsEditing: true });
+    if (!res.canceled && res.assets[0]) {
+      const { uri, base64 } = await compressImage(res.assets[0].uri);
+      await runScan(base64, uri);
+    }
   };
 
   const pickLibrary = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Photo access needed', 'Allow photo library in Settings.'); return; }
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9, base64: true });
-    if (!res.canceled && res.assets[0]?.base64) await runScan(res.assets[0].base64);
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1, base64: false });
+    if (!res.canceled && res.assets[0]) {
+      const { uri, base64 } = await compressImage(res.assets[0].uri);
+      await runScan(base64, uri);
+    }
   };
 
   const pickPDF = async () => {

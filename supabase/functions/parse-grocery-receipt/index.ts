@@ -34,7 +34,7 @@ serve(async (req) => {
   }
 
   try {
-    const { familyId, scannedById, imageBase64, store } = (await req.json()) as ParseRequest;
+    const { familyId, scannedById, imageBase64, store, imageUrl } = (await req.json()) as ParseRequest & { imageUrl?: string };
 
     if (!familyId || !scannedById || !imageBase64) {
       return new Response(
@@ -185,6 +185,33 @@ Rules for extraction:
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
+    // ── Dedup: same family + store + date + total within 30 minutes ──────────
+    const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const { data: dupReceipt } = await supabase
+      .from("grocery_receipts")
+      .select("id, total")
+      .eq("family_id", familyId)
+      .eq("store", receiptStore)
+      .eq("receipt_date", receiptDate)
+      .gte("created_at", thirtyMinsAgo)
+      .maybeSingle();
+
+    if (dupReceipt && Math.abs(dupReceipt.total - receiptTotal) < 0.02) {
+      console.log("Duplicate receipt detected, returning existing:", dupReceipt.id);
+      return new Response(
+        JSON.stringify({
+          receiptId: dupReceipt.id,
+          itemCount: items.length,
+          total: receiptTotal,
+          store: receiptStore,
+          date: receiptDate,
+          items,
+          duplicate: true,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const { data: receipt, error: receiptError } = await supabase
       .from("grocery_receipts")
       .insert({
@@ -194,6 +221,7 @@ Rules for extraction:
         receipt_date: receiptDate,
         total: receiptTotal,
         ai_raw_json: geminiData,
+        ...(imageUrl ? { image_url: imageUrl } : {}),
       })
       .select("id")
       .single();

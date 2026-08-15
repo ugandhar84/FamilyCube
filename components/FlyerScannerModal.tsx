@@ -27,6 +27,7 @@ import * as FileSystem from 'expo-file-system';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { compressImage } from '@/lib/compressImage';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
@@ -151,15 +152,10 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
   const pickFromCamera = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) { Alert.alert('Camera permission needed'); return; }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
-      base64: true,
-    });
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1, base64: false });
     if (!result.canceled && result.assets[0]) {
-      const a = result.assets[0];
-      const b64 = a.base64 ?? await uriToBase64(a.uri);
-      addImage({ uri: a.uri, base64: b64, mimeType: 'image/jpeg' });
+      const { uri, base64 } = await compressImage(result.assets[0].uri);
+      addImage({ uri, base64, mimeType: 'image/jpeg' });
     }
   };
 
@@ -168,15 +164,15 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     if (!perm.granted) { Alert.alert('Photo library permission needed'); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
-      base64: true,
+      quality: 1,
+      base64: false,
       allowsMultipleSelection: true,
       selectionLimit: 3 - images.length,
     });
     if (!result.canceled) {
       for (const a of result.assets) {
-        const b64 = a.base64 ?? await uriToBase64(a.uri);
-        addImage({ uri: a.uri, base64: b64, mimeType: 'image/jpeg' });
+        const { uri, base64 } = await compressImage(a.uri);
+        addImage({ uri, base64, mimeType: 'image/jpeg' });
       }
     }
   };

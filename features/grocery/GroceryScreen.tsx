@@ -1511,7 +1511,7 @@ function HistoryTab({ familyId, memberId, colors, isDark }: { familyId: string; 
     async function fetch() {
       const { data } = await supabase
         .from('grocery_receipts')
-        .select('id,store,receipt_date,total,created_at,grocery_receipt_items(name,category,quantity,total_price)')
+        .select('id,store,receipt_date,total,created_at,image_url,grocery_receipt_items(name,category,quantity,total_price)')
         .eq('family_id', familyId)
         .order('receipt_date', { ascending: false })
         .limit(30);
@@ -1579,12 +1579,14 @@ function HistoryTab({ familyId, memberId, colors, isDark }: { familyId: string; 
             style={{ backgroundColor: card, borderRadius: 14, borderWidth: 1, borderColor: isOpen ? colors.primary : border, marginBottom: 10, overflow: 'hidden' }}>
             {/* Receipt header row */}
             <View style={{ flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 }}>
-              {/* 🧾 avatar — tap to open full receipt detail modal */}
+              {/* Receipt avatar — tap to open full receipt detail modal */}
               <Pressable onPress={() => setDetailReceipt(r)}
-                style={{ width: 48, height: 48, borderRadius: 12,
+                style={{ width: 48, height: 48, borderRadius: 12, overflow: 'hidden',
                   backgroundColor: colors.primary + '20', borderWidth: 1.5, borderColor: colors.primary + '50',
                   alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 26 }}>🧾</Text>
+                {r.image_url
+                  ? <Image source={{ uri: r.image_url }} style={{ width: 48, height: 48 }} resizeMode="cover" />
+                  : <Text style={{ fontSize: 26 }}>🧾</Text>}
               </Pressable>
               <Pressable onPress={() => setExpanded(isOpen ? null : r.id)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <View style={{ flex: 1 }}>
@@ -1646,10 +1648,14 @@ function HistoryTab({ familyId, memberId, colors, isDark }: { familyId: string; 
                 maxHeight: '85%', paddingBottom: 24 }}>
                 <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: border, alignSelf: 'center', marginTop: 12, marginBottom: 8 }} />
                 <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 14, gap: 12 }}>
-                  <View style={{ width: 52, height: 52, borderRadius: 14, backgroundColor: colors.primary + '20',
-                    borderWidth: 1.5, borderColor: colors.primary + '50', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 28 }}>🧾</Text>
-                  </View>
+                    {dr.image_url ? (
+                    <Image source={{ uri: dr.image_url }} style={{ width: 64, height: 64, borderRadius: 12 }} resizeMode="cover" />
+                  ) : (
+                    <View style={{ width: 52, height: 52, borderRadius: 14, backgroundColor: colors.primary + '20',
+                      borderWidth: 1.5, borderColor: colors.primary + '50', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 28 }}>🧾</Text>
+                    </View>
+                  )}
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary }}>{dr.store ?? 'Unknown Store'}</Text>
                     <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>{drDate}</Text>

@@ -1489,10 +1489,12 @@ function mapBoughtRow(r: any): GroceryItem {
 
 // ─── History Tab ──────────────────────────────────────────────────────────────
 
-function HistoryTab({ familyId, colors, isDark }: { familyId: string; colors: any; isDark: boolean }) {
+function HistoryTab({ familyId, memberId, colors, isDark }: { familyId: string; memberId: string; colors: any; isDark: boolean }) {
   const [receipts, setReceipts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const { members } = useFamilyStore();
+  const addQuest = useQuestStore(s => s.addQuest);
 
   useEffect(() => {
     if (!familyId) return;
@@ -1508,6 +1510,40 @@ function HistoryTab({ familyId, colors, isDark }: { familyId: string; colors: an
     }
     fetch();
   }, [familyId]);
+
+  const handleReturnItem = (item: any, store: string) => {
+    const options = members.length > 0 ? members : [{ id: memberId, name: 'Me', emoji: '👤' }];
+    Alert.alert(
+      '↩️ Return Item',
+      `Who will return "${item.name}" to ${store || 'the store'}?`,
+      [
+        ...options.map((m: any) => ({
+          text: `${m.emoji ?? '👤'} ${m.name}`,
+          onPress: () => {
+            addQuest({
+              title: `Return ${item.name} to ${store || 'store'}`,
+              description: `Item: ${item.name}${item.quantity ? ` (${item.quantity})` : ''}\nFrom receipt scan`,
+              category: 'Shopping',
+              priority: 'medium',
+              status: 'todo',
+              assignedToId: m.id,
+              assignedToIds: [m.id],
+              dueDate: undefined,
+              coins: 10,
+              xpReward: 0,
+              recurrence: 'once',
+              isPool: false,
+              isAdultTask: false,
+              photoRequired: false,
+              isDaily: false,
+            });
+            Alert.alert('↩️ Quest Created', `${m.name} will return ${item.name}`);
+          },
+        })),
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
 
   const border = isDark ? '#2D2D4E' : '#E5E7EB';
   const card = isDark ? '#1F1F38' : '#FFFFFF';
@@ -1528,11 +1564,15 @@ function HistoryTab({ familyId, colors, isDark }: { familyId: string; colors: an
         const dateStr = r.receipt_date ? new Date(r.receipt_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown date';
         const items: any[] = r.grocery_receipt_items ?? [];
         return (
-          <Pressable key={r.id} onPress={() => setExpanded(isOpen ? null : r.id)}
+          <View key={r.id}
             style={{ backgroundColor: card, borderRadius: 14, borderWidth: 1, borderColor: isOpen ? colors.primary : border, marginBottom: 10, overflow: 'hidden' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 }}>
-              <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: isDark ? '#2D2D4E' : '#F3F4F6', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 22 }}>🧾</Text>
+            {/* Receipt header row — tap 🧾 to expand */}
+            <Pressable onPress={() => setExpanded(isOpen ? null : r.id)}
+              style={{ flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 }}>
+              <View style={{ width: isOpen ? 52 : 42, height: isOpen ? 52 : 42, borderRadius: 12,
+                backgroundColor: isOpen ? colors.primary : (isDark ? '#2D2D4E' : '#F3F4F6'),
+                alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: isOpen ? 28 : 22 }}>🧾</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>{r.store ?? 'Unknown Store'}</Text>
@@ -1540,20 +1580,40 @@ function HistoryTab({ familyId, colors, isDark }: { familyId: string; colors: an
               </View>
               <Text style={{ fontSize: 16, fontWeight: '900', color: colors.primary }}>${(r.total ?? 0).toFixed(2)}</Text>
               <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textTertiary} />
-            </View>
+            </Pressable>
+            {/* Expanded item list */}
             {isOpen && items.length > 0 && (
               <View style={{ borderTopWidth: 1, borderTopColor: border }}>
-                {items.map((item: any, idx: number) => (
-                  <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 9,
-                    borderBottomWidth: idx < items.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: border }}>
-                    <Text style={{ fontSize: 11, color: colors.textTertiary, width: 60 }}>{item.category ?? '—'}</Text>
-                    <Text style={{ flex: 1, fontSize: 13, color: colors.textPrimary, fontWeight: '500' }}>{item.name}</Text>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary }}>${(item.total_price ?? 0).toFixed(2)}</Text>
-                  </View>
-                ))}
+                {items.map((item: any, idx: number) => {
+                  const emoji = CAT_EMOJI[item.category as keyof typeof CAT_EMOJI] ?? '🛒';
+                  return (
+                    <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8,
+                      borderBottomWidth: idx < items.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: border }}>
+                      {/* Category emoji thumbnail */}
+                      <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: isDark ? '#2D2D4E' : '#F3F4F6',
+                        alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+                        <Text style={{ fontSize: 16 }}>{emoji}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, color: colors.textPrimary, fontWeight: '600' }}>{item.name}</Text>
+                        {item.quantity ? <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>{item.quantity}</Text> : null}
+                      </View>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary, marginRight: 10 }}>
+                        ${(item.total_price ?? 0).toFixed(2)}
+                      </Text>
+                      {/* Return to quest button */}
+                      <Pressable onPress={() => handleReturnItem(item, r.store ?? '')}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: isDark ? '#2D2D4E' : '#F3F4F6',
+                          alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 14 }}>↩️</Text>
+                      </Pressable>
+                    </View>
+                  );
+                })}
               </View>
             )}
-          </Pressable>
+          </View>
         );
       })}
     </ScrollView>
@@ -2058,7 +2118,7 @@ export default function GroceryScreen() {
 
         {/* Tab content */}
         {tab === 'history' ? (
-          <HistoryTab familyId={familyId} colors={colors} isDark={isDark} />
+          <HistoryTab familyId={familyId} memberId={activeMemberId ?? ''} colors={colors} isDark={isDark} />
         ) : tab === 'insights' ? (
           <InsightsTab familyId={familyId} colors={colors} isDark={isDark} />
         ) : loading ? (

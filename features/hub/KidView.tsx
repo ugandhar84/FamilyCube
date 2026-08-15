@@ -61,6 +61,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   const [askModal, setAskModal]           = useState<null | 'permission' | 'question' | 'medication'>(null);
   const [historyModal,  setHistoryModal]  = useState(false);
   const [lateNudgeSent, setLateNudgeSent] = useState<Record<string, boolean>>({});
+  const [dismissedReplies, setDismissedReplies] = useState<Set<string>>(new Set());
 
   const today       = localToday();
   const myEvents    = events.filter(e => (e.memberId === active.id || !e.memberId) && e.category !== 'Work');
@@ -331,6 +332,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
           if (!['approved', 'declined'].includes(r.status)) return false;
           if (!['permission', 'question', 'medication'].includes(r.type)) return false;
           if (!r.respondedAt) return false;
+          if (dismissedReplies.has(r.id)) return false;
           return new Date(r.respondedAt).getTime() > cutoff;
         });
         if (!recentReplies.length) return null;
@@ -343,23 +345,29 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
               const accent = approved ? '#10B981' : '#EF4444';
               return (
                 <View key={r.id} style={{
-                  flexDirection: 'row', alignItems: 'flex-start', gap: 10,
                   borderRadius: 14, borderWidth: 1.5, borderColor: accent + '35',
                   backgroundColor: isDark ? colors.card : accent + '08', padding: 12,
                 }}>
-                  <Text style={{ fontSize: 20, marginTop: 1 }}>{approved ? '✅' : '❌'}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: accent, marginBottom: 2 }}>
-                      {approved ? 'Yes!' : 'No'} — {typeEmoji} {r.type === 'medication' ? 'Medical' : r.type === 'permission' ? 'Permission' : 'Question'}
-                    </Text>
-                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }} numberOfLines={2}>
-                      "{r.detail}"
-                    </Text>
-                    {r.parentNote ? (
-                      <Text style={{ fontSize: TYPO.label, color: accent, fontStyle: 'italic', marginTop: 4 }}>
-                        Parent: "{r.parentNote}"
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                    <Text style={{ fontSize: 20, marginTop: 1 }}>{approved ? '✅' : '❌'}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: accent, marginBottom: 2 }}>
+                        {approved ? 'Yes!' : 'No'} — {typeEmoji} {r.type === 'medication' ? 'Medical' : r.type === 'permission' ? 'Permission' : 'Question'}
                       </Text>
-                    ) : null}
+                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }} numberOfLines={2}>
+                        "{r.detail}"
+                      </Text>
+                      {r.parentNote ? (
+                        <Text style={{ fontSize: TYPO.label, color: accent, fontStyle: 'italic', marginTop: 4 }}>
+                          Parent: "{r.parentNote}"
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Pressable onPress={() => setDismissedReplies(prev => new Set([...prev, r.id]))}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={{ padding: 4, borderRadius: 8, backgroundColor: isDark ? '#ffffff12' : '#00000008' }}>
+                      <Text style={{ fontSize: 12, color: colors.textTertiary }}>✕</Text>
+                    </Pressable>
                   </View>
                 </View>
               );

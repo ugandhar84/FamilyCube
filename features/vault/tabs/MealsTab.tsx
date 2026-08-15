@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator,
-  ScrollView, Animated, Alert,
+  ScrollView, Modal, KeyboardAvoidingView, Platform, Animated, Alert,
 } from 'react-native';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

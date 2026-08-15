@@ -5,6 +5,7 @@ import {
   TextInput, Modal, ScrollView, KeyboardAvoidingView, Platform, Alert, Animated, Easing, Switch,
   Image,
 } from 'react-native';
+import AppBottomSheet from '@/components/AppBottomSheet';
 import ViewShot from 'react-native-view-shot';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {
@@ -217,28 +218,28 @@ function AddMedModal({ visible, onClose, onSave, members, colors, isDark }: {
   ];
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={aStyles.backdrop}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-          <View style={[aStyles.sheet, { backgroundColor: colors.card }]}>
-            <View style={[aStyles.handle, { backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }]} />
-
-            {/* Header */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>Add Medication</Text>
-                <Text style={{ fontSize: 13, fontWeight: '700', marginTop: 2, color: catColor, textTransform: 'capitalize' }}>
-                  {form.category} · {form.frequency.replace('_', ' ')}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={handleClose} style={aStyles.closeBtn}>
-                <X size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
+    <AppBottomSheet
+      visible={visible}
+      onClose={handleClose}
+      title="Add Medication"
+      subtitle={`${form.category} · ${form.frequency.replace('_', ' ')}`}
+      accentColor={catColor}
+      footer={
+        <View style={[aStyles.saveRow, { borderColor: colors.border }]}>
+          <TouchableOpacity onPress={handleClose} style={[aStyles.cancelBtn, { borderColor: colors.border }]}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleSave}
+            style={[aStyles.saveBtn, { backgroundColor: catColor }]} disabled={saving}>
+            {saving
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save Medication</Text>}
+          </TouchableOpacity>
+        </View>
+      }
+    >
             <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 48, gap: 18 }}>
+              contentContainerStyle={{ paddingBottom: 8, gap: 18 }}>
 
               {/* ── Category chips (horizontal scroll) ── */}
               <View>
@@ -516,23 +517,7 @@ function AddMedModal({ visible, onClose, onSave, members, colors, isDark }: {
                 )}
               </View>
             </ScrollView>
-
-            {/* Footer */}
-            <View style={[aStyles.saveRow, { borderColor: colors.border }]}>
-              <TouchableOpacity onPress={handleClose} style={[aStyles.cancelBtn, { borderColor: colors.border }]}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleSave}
-                style={[aStyles.saveBtn, { backgroundColor: catColor }]} disabled={saving}>
-                {saving
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save Medication</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </AppBottomSheet>
   );
 }
 
@@ -626,28 +611,28 @@ function AddVaxModal({ visible, onClose, onSave, members, colors, isDark }: {
   ];
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={aStyles.backdrop}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-          <View style={[aStyles.sheet, { backgroundColor: colors.card }]}>
-            <View style={[aStyles.handle, { backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }]} />
-
-            {/* Header */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>Log Vaccine</Text>
-                <Text style={{ fontSize: 13, fontWeight: '700', marginTop: 2, color: BRAND.teal }}>
-                  Immunization record · {form.vaccine_type || 'all types'}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={handleClose} style={aStyles.closeBtn}>
-                <X size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
+    <AppBottomSheet
+      visible={visible}
+      onClose={handleClose}
+      title="Log Vaccine"
+      subtitle={`Immunization record · ${form.vaccine_type || 'all types'}`}
+      accentColor={BRAND.teal}
+      footer={
+        <View style={[aStyles.saveRow, { borderColor: colors.border }]}>
+          <TouchableOpacity onPress={handleClose} style={[aStyles.cancelBtn, { borderColor: colors.border }]}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleSave}
+            style={[aStyles.saveBtn, { backgroundColor: BRAND.teal }]} disabled={saving}>
+            {saving
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save Vaccine</Text>}
+          </TouchableOpacity>
+        </View>
+      }
+    >
             <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 48, gap: 18 }}>
+              contentContainerStyle={{ paddingBottom: 8, gap: 18 }}>
 
               {/* ── Vaccine name + suggestions ── */}
               <View>
@@ -876,22 +861,7 @@ function AddVaxModal({ visible, onClose, onSave, members, colors, isDark }: {
                   style={[inp, { height: 68, textAlignVertical: 'top' }]} multiline />
               </View>
             </ScrollView>
-
-            <View style={[aStyles.saveRow, { borderColor: colors.border }]}>
-              <TouchableOpacity onPress={handleClose} style={[aStyles.cancelBtn, { borderColor: colors.border }]}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleSave}
-                style={[aStyles.saveBtn, { backgroundColor: BRAND.teal }]} disabled={saving}>
-                {saving
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save Vaccine</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </AppBottomSheet>
   );
 }
 

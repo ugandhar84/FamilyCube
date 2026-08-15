@@ -15,9 +15,9 @@
 import { useState, useMemo, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  Modal, KeyboardAvoidingView, Platform, StyleSheet, Alert, Pressable,
+  StyleSheet, Alert, Pressable,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AppBottomSheet from '@/components/AppBottomSheet';
 import { useTheme } from '@/lib/ThemeContext';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
@@ -190,7 +190,6 @@ export function GroceryModal({ visible, onClose, active }: {
   visible: boolean; onClose: () => void; active: FamilyMember;
 }) {
   const { colors, isDark } = useTheme();
-  const insets = useSafeAreaInsets();
   const { sendRequest, requests, appendItems } = useKidRequestStore();
 
   const [lines,          setLines]          = useState<GroceryLine[]>([emptyLine()]);
@@ -252,29 +251,23 @@ export function GroceryModal({ visible, onClose, active }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={[f.backdrop, { backgroundColor: 'rgba(0,0,0,0.65)' }]}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-
-          <View style={[f.sheet, { backgroundColor: colors.card }]}>
-            <View style={[f.handle, { backgroundColor: colors.border }]} />
-
-            <View style={f.header}>
-              <View style={{ flex: 1 }}>
-                <Text style={[f.title, { color: colors.textPrimary }]}>🛒 Request Groceries</Text>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: BRAND.teal }}>
-                  {canSubmit ? `${validLines.length} item${validLines.length > 1 ? 's' : ''} · parent approves each one` : 'Parent approves before items are added'}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={dismiss} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
-                <Text style={{ fontSize: 14, color: colors.textSecondary }}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
+    <AppBottomSheet
+      visible={visible}
+      onClose={dismiss}
+      title="🛒 Request Groceries"
+      subtitle={canSubmit ? `${validLines.length} item${validLines.length > 1 ? 's' : ''} · parent approves each one` : 'Parent approves before items are added'}
+      accentColor={BRAND.teal}
+      footer={
+        <TouchableOpacity onPress={submit} disabled={!canSubmit}
+          style={[f.submitBtn, { backgroundColor: canSubmit ? BRAND.teal : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
+          <Text style={{ fontSize: 15, fontWeight: '900', color: canSubmit ? '#fff' : colors.textTertiary }}>
+            {canSubmit ? `Send ${validLines.length} item${validLines.length > 1 ? 's' : ''} to Parent →` : 'Add at least one item'}
+          </Text>
+        </TouchableOpacity>
+      }
+    >
             <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 24) }}>
+              contentContainerStyle={{ paddingBottom: 8 }}>
 
               {/* ── Category selector ── */}
               <Text style={[f.label, { color: colors.textSecondary }]}>Category</Text>
@@ -366,17 +359,8 @@ export function GroceryModal({ visible, onClose, active }: {
                 value={notes} onChangeText={setNotes} multiline
               />
 
-              <TouchableOpacity onPress={submit} disabled={!canSubmit}
-                style={[f.submitBtn, { marginTop: 12, backgroundColor: canSubmit ? BRAND.teal : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
-                <Text style={{ fontSize: 15, fontWeight: '900', color: canSubmit ? '#fff' : colors.textTertiary }}>
-                  {canSubmit ? `Send ${validLines.length} item${validLines.length > 1 ? 's' : ''} to Parent →` : 'Add at least one item'}
-                </Text>
-              </TouchableOpacity>
             </ScrollView>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </AppBottomSheet>
   );
 }
 
@@ -386,7 +370,6 @@ export function SuppliesModal({ visible, onClose, active }: {
   visible: boolean; onClose: () => void; active: FamilyMember;
 }) {
   const { colors, isDark } = useTheme();
-  const insets = useSafeAreaInsets();
   const { sendRequest, requests, appendItems: appendToRequest } = useKidRequestStore();
 
   const [items,   setItems]   = useState<{ name: string; qty: string }[]>([{ name: '', qty: '' }]);
@@ -441,30 +424,23 @@ export function SuppliesModal({ visible, onClose, active }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={f.backdrop}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-
-          <View style={[f.sheet, { backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 16) }]}>
-            <View style={[f.handle, { backgroundColor: colors.border }]} />
-
-            {/* Fixed header */}
-            <View style={f.header}>
-              <View style={{ flex: 1 }}>
-                <Text style={[f.title, { color: colors.textPrimary }]}>📚 School Supplies</Text>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '600', marginTop: 2, color: '#6366F1' }}>
-                  Parent approves and picks these up for you
-                </Text>
-              </View>
-              <TouchableOpacity onPress={dismiss} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? colors.surface : '#F1F5F9' }}>
-                <Text style={{ fontSize: 16, color: colors.textSecondary }}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
+    <AppBottomSheet
+      visible={visible}
+      onClose={dismiss}
+      title="📚 School Supplies"
+      subtitle="Parent approves and picks these up for you"
+      accentColor="#6366F1"
+      footer={
+        <TouchableOpacity onPress={submit} disabled={!canSubmit}
+          style={[f.submitBtn, { backgroundColor: canSubmit ? '#6366F1' : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
+          <Text style={{ fontSize: 15, fontWeight: '900', color: canSubmit ? '#fff' : colors.textTertiary }}>
+            Send to Parent ({validItems.length} item{validItems.length !== 1 ? 's' : ''}) →
+          </Text>
+        </TouchableOpacity>
+      }
+    >
             <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 16 }}>
+              contentContainerStyle={{ paddingBottom: 8 }}>
 
               {/* Urgency */}
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
@@ -543,17 +519,8 @@ export function SuppliesModal({ visible, onClose, active }: {
                 placeholder="e.g. for science project due Friday"
                 placeholderTextColor={colors.textTertiary} multiline />
 
-              <TouchableOpacity onPress={submit} disabled={!canSubmit}
-                style={[f.submitBtn, { backgroundColor: canSubmit ? '#6366F1' : (isDark ? '#2A2A3E' : '#E0E0F0'), marginTop: 12 }]}>
-                <Text style={{ fontSize: 15, fontWeight: '900', color: canSubmit ? '#fff' : colors.textTertiary }}>
-                  Send to Parent ({validItems.length} item{validItems.length !== 1 ? 's' : ''}) →
-                </Text>
-              </TouchableOpacity>
             </ScrollView>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </AppBottomSheet>
   );
 }
 
@@ -563,7 +530,6 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
   visible: boolean; onClose: () => void; active: FamilyMember;
 }) {
   const { colors, isDark } = useTheme();
-  const insets = useSafeAreaInsets();
   const members = useFamilyStore(s => s.members);
   const { requests, deleteRequest } = useKidRequestStore();
 
@@ -596,26 +562,16 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={f.backdrop}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <View style={[f.sheet, { backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 16), maxHeight: '85%' }]}>
-          <View style={[f.handle, { backgroundColor: colors.border }]} />
-          <View style={f.header}>
-            <View style={{ flex: 1 }}>
-              <Text style={[f.title, { color: colors.textPrimary }]}>📋 My Requests</Text>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '600', marginTop: 2, color: BRAND.purple }}>
-                {myRequests.length} request{myRequests.length !== 1 ? 's' : ''} · tap to see item details
-              </Text>
-            </View>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-              style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? colors.surface : '#F1F5F9' }}>
-              <Text style={{ fontSize: 16, color: colors.textSecondary }}>✕</Text>
-            </TouchableOpacity>
-          </View>
-
+    <AppBottomSheet
+      visible={visible}
+      onClose={onClose}
+      title="📋 My Requests"
+      subtitle={`${myRequests.length} request${myRequests.length !== 1 ? 's' : ''} · tap to see item details`}
+      accentColor={BRAND.purple}
+      maxHeight="85%"
+    >
           <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 16 }}>
+            contentContainerStyle={{ paddingBottom: 8 }}>
             {myRequests.length === 0 ? (
               <View style={{ alignItems: 'center', paddingVertical: 32 }}>
                 <Text style={{ fontSize: 40, marginBottom: 12 }}>🛒</Text>
@@ -754,9 +710,7 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
               );
             })}
           </ScrollView>
-        </View>
-      </View>
-    </Modal>
+    </AppBottomSheet>
   );
 }
 
@@ -773,7 +727,6 @@ export function AskModal({ visible, onClose, type, active }: {
   type: keyof typeof ASK_META; active: FamilyMember;
 }) {
   const { colors, isDark } = useTheme();
-  const insets = useSafeAreaInsets();
   const { sendRequest } = useKidRequestStore();
   const [text, setText] = useState('');
 
@@ -795,43 +748,25 @@ export function AskModal({ visible, onClose, type, active }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={f.backdrop}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
-
-          <View style={[f.sheet, { backgroundColor: colors.card, paddingBottom: Math.max(insets.bottom, 16), maxHeight: '48%' }]}>
-            <View style={[f.handle, { backgroundColor: colors.border }]} />
-
-            {/* Fixed header */}
-            <View style={f.header}>
-              <View style={{ flex: 1 }}>
-                <Text style={[f.title, { color: colors.textPrimary }]}>{meta.emoji} {meta.label}</Text>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '600', marginTop: 2, color: meta.accent }}>
-                  Sent directly to your parent
-                </Text>
-              </View>
-              <TouchableOpacity onPress={dismiss} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? colors.surface : '#F1F5F9' }}>
-                <Text style={{ fontSize: 16, color: colors.textSecondary }}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 8 }}>
-              <TextInput value={text} onChangeText={setText} style={inp}
-                placeholder={meta.hint} placeholderTextColor={colors.textTertiary}
-                autoFocus multiline numberOfLines={4} />
-              <TouchableOpacity onPress={submit} disabled={!text.trim()}
-                style={[f.submitBtn, { backgroundColor: text.trim() ? meta.accent : (isDark ? '#2A2A3E' : '#E0E0F0'), marginTop: 12 }]}>
-                <Text style={{ fontSize: 15, fontWeight: '900', color: text.trim() ? '#fff' : colors.textTertiary }}>
-                  Send to Parent →
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    <AppBottomSheet
+      visible={visible}
+      onClose={dismiss}
+      title={`${meta.emoji} ${meta.label}`}
+      subtitle="Sent directly to your parent"
+      accentColor={meta.accent}
+      maxHeight="48%"
+      footer={
+        <TouchableOpacity onPress={submit} disabled={!text.trim()}
+          style={[f.submitBtn, { backgroundColor: text.trim() ? meta.accent : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
+          <Text style={{ fontSize: 15, fontWeight: '900', color: text.trim() ? '#fff' : colors.textTertiary }}>
+            Send to Parent →
+          </Text>
+        </TouchableOpacity>
+      }
+    >
+      <TextInput value={text} onChangeText={setText} style={inp}
+        placeholder={meta.hint} placeholderTextColor={colors.textTertiary}
+        autoFocus multiline numberOfLines={4} />
+    </AppBottomSheet>
   );
 }

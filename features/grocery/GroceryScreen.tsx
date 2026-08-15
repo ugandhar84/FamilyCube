@@ -298,21 +298,7 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark, ed
               value={notes} onChangeText={setNotes} multiline
             />
           </View>
-
-          {/* Save button */}
-          <Pressable onPress={handleSave} disabled={!name.trim() || saving}
-            style={{ borderRadius: 16, paddingVertical: 14, alignItems: 'center',
-              backgroundColor: (!name.trim() || saving) ? (isDark ? '#374151' : '#D1D5DB') : P,
-              shadowColor: P, shadowOpacity: name.trim() ? 0.4 : 0, shadowRadius: 10, elevation: 4 }}>
-            {saving
-              ? <ActivityIndicator color="#FFF" size="small" />
-              : <Text style={{ fontSize: 15, fontWeight: '800', color: '#FFF', letterSpacing: 0.3 }}>
-                  {isEdit ? '✅ Save Changes' : '+ Add to List'}
-                </Text>}
-          </Pressable>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </AppBottomSheet>
   );
 }
 
@@ -350,13 +336,22 @@ function CreateRunSheet({ visible, onClose, familyId, memberId, colors, isDark, 
   const inputBg = isDark ? '#252540' : '#F9FAFB';
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end' }}>
-        <Pressable style={{ flex: 1 }} onPress={onClose} />
-        <View style={[sh.sheet, { backgroundColor: sheetBg, borderColor: border }]}>
-          <View style={sh.handle} />
-          <Text style={[sh.title, { color: colors.textPrimary }]}>New Shopping Run</Text>
-
+    <AppBottomSheet
+      visible={visible}
+      onClose={onClose}
+      title="New Shopping Run"
+      footer={
+        <Pressable
+          onPress={handleSave}
+          disabled={!store.trim() || saving}
+          style={[sh.btn, { backgroundColor: (!store.trim() || saving) ? '#9CA3AF' : colors.primary }]}
+        >
+          {saving
+            ? <ActivityIndicator color="#FFF" size="small" />
+            : <Text style={sh.btnText}>Create Run</Text>}
+        </Pressable>
+      }
+    >
           <TextInput
             style={[sh.input, { backgroundColor: inputBg, borderColor: border, color: colors.textPrimary }]}
             placeholder="Store name (e.g. Costco, Patel Brothers)"
@@ -385,19 +380,7 @@ function CreateRunSheet({ visible, onClose, familyId, memberId, colors, isDark, 
             placeholderTextColor={colors.textMuted ?? '#9CA3AF'}
             value={name} onChangeText={setName}
           />
-
-          <Pressable
-            onPress={handleSave}
-            disabled={!store.trim() || saving}
-            style={[sh.btn, { backgroundColor: (!store.trim() || saving) ? '#9CA3AF' : colors.primary }]}
-          >
-            {saving
-              ? <ActivityIndicator color="#FFF" size="small" />
-              : <Text style={sh.btnText}>Create Run</Text>}
-          </Pressable>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </AppBottomSheet>
   );
 }
 

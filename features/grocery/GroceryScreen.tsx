@@ -15,7 +15,7 @@ import { ReceiptScanSheet } from './components/ReceiptScanSheet';
 import { SmartRestockBanner } from './components/SmartRestockBanner';
 import { PartnerStatusBar } from './components/PartnerStatusBar';
 import {
-  View, Text, ScrollView, Pressable, StyleSheet, TextInput,
+  View, Text, ScrollView, Pressable, TouchableOpacity, StyleSheet, TextInput,
   Modal, KeyboardAvoidingView, Platform, Alert, Animated,
   FlatList, ActivityIndicator, Image,
 } from 'react-native';
@@ -433,10 +433,19 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
   const pickReceipt = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Permission needed'); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] as any, base64: true, quality: 0.8 });
+    // Pick at low quality — base64 only needed for AI, full res not needed
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'] as any, base64: false, quality: 1 });
     if (!result.canceled && result.assets[0]) {
-      setReceiptUri(result.assets[0].uri);
-      await analyzeReceipt(result.assets[0].base64 ?? '');
+      const uri = result.assets[0].uri;
+      setReceiptUri(uri);
+      // Compress to max 800px wide, JPEG quality 0.5 (~100-200 KB)
+      const ImageManipulator = await import('expo-image-manipulator');
+      const compressed = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 800 } }],
+        { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      );
+      await analyzeReceipt(compressed.base64 ?? '');
     }
   };
 
@@ -1493,6 +1502,7 @@ function HistoryTab({ familyId, memberId, colors, isDark }: { familyId: string; 
   const [receipts, setReceipts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [detailReceipt, setDetailReceipt] = useState<any | null>(null);
   const { members } = useFamilyStore();
   const addQuest = useQuestStore(s => s.addQuest);
 
@@ -1558,6 +1568,7 @@ function HistoryTab({ familyId, memberId, colors, isDark }: { familyId: string; 
   );
 
   return (
+    <>
     <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
       {receipts.map(r => {
         const isOpen = expanded === r.id;
@@ -1566,33 +1577,36 @@ function HistoryTab({ familyId, memberId, colors, isDark }: { familyId: string; 
         return (
           <View key={r.id}
             style={{ backgroundColor: card, borderRadius: 14, borderWidth: 1, borderColor: isOpen ? colors.primary : border, marginBottom: 10, overflow: 'hidden' }}>
-            {/* Receipt header row — tap 🧾 to expand */}
-            <Pressable onPress={() => setExpanded(isOpen ? null : r.id)}
-              style={{ flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 }}>
-              <View style={{ width: isOpen ? 52 : 42, height: isOpen ? 52 : 42, borderRadius: 12,
-                backgroundColor: isOpen ? colors.primary : (isDark ? '#2D2D4E' : '#F3F4F6'),
-                alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: isOpen ? 28 : 22 }}>🧾</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>{r.store ?? 'Unknown Store'}</Text>
-                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>{dateStr} · {items.length} items</Text>
-              </View>
-              <Text style={{ fontSize: 16, fontWeight: '900', color: colors.primary }}>${(r.total ?? 0).toFixed(2)}</Text>
-              <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textTertiary} />
-            </Pressable>
+            {/* Receipt header row */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 }}>
+              {/* 🧾 avatar — tap to open full receipt detail modal */}
+              <Pressable onPress={() => setDetailReceipt(r)}
+                style={{ width: 48, height: 48, borderRadius: 12,
+                  backgroundColor: colors.primary + '20', borderWidth: 1.5, borderColor: colors.primary + '50',
+                  alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 26 }}>🧾</Text>
+              </Pressable>
+              <Pressable onPress={() => setExpanded(isOpen ? null : r.id)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>{r.store ?? 'Unknown Store'}</Text>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>{dateStr} · {items.length} items</Text>
+                </View>
+                <Text style={{ fontSize: 16, fontWeight: '900', color: colors.primary }}>${(r.total ?? 0).toFixed(2)}</Text>
+                <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textTertiary} />
+              </Pressable>
+            </View>
             {/* Expanded item list */}
             {isOpen && items.length > 0 && (
               <View style={{ borderTopWidth: 1, borderTopColor: border }}>
                 {items.map((item: any, idx: number) => {
-                  const emoji = CAT_EMOJI[item.category as keyof typeof CAT_EMOJI] ?? '🛒';
+                  const CatIcon = CAT_ICON[item.category as keyof typeof CAT_ICON] ?? ShoppingCart;
                   return (
                     <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8,
                       borderBottomWidth: idx < items.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: border }}>
-                      {/* Category emoji thumbnail */}
+                      {/* Category SVG icon thumbnail */}
                       <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: isDark ? '#2D2D4E' : '#F3F4F6',
                         alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                        <Text style={{ fontSize: 16 }}>{emoji}</Text>
+                        <CatIcon size={16} color={colors.primary} strokeWidth={1.8} />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: 13, color: colors.textPrimary, fontWeight: '600' }}>{item.name}</Text>
@@ -1617,6 +1631,63 @@ function HistoryTab({ familyId, memberId, colors, isDark }: { familyId: string; 
         );
       })}
     </ScrollView>
+
+    {/* ── Receipt detail modal ── */}
+    <Modal visible={!!detailReceipt} transparent animationType="slide" onRequestClose={() => setDetailReceipt(null)}>
+      {detailReceipt && (() => {
+        const dr = detailReceipt;
+        const drItems: any[] = dr.grocery_receipt_items ?? [];
+        const drDate = dr.receipt_date ? new Date(dr.receipt_date).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }) : 'Unknown date';
+        return (
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+            <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+              <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setDetailReceipt(null)} />
+              <View style={{ backgroundColor: card, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+                maxHeight: '85%', paddingBottom: 24 }}>
+                <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: border, alignSelf: 'center', marginTop: 12, marginBottom: 8 }} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 14, gap: 12 }}>
+                  <View style={{ width: 52, height: 52, borderRadius: 14, backgroundColor: colors.primary + '20',
+                    borderWidth: 1.5, borderColor: colors.primary + '50', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 28 }}>🧾</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary }}>{dr.store ?? 'Unknown Store'}</Text>
+                    <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>{drDate}</Text>
+                  </View>
+                  <Text style={{ fontSize: 22, fontWeight: '900', color: colors.primary }}>${(dr.total ?? 0).toFixed(2)}</Text>
+                </View>
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+                  {drItems.map((item: any, idx: number) => {
+                    const CatIcon = CAT_ICON[item.category as keyof typeof CAT_ICON] ?? ShoppingCart;
+                    return (
+                      <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
+                        borderBottomWidth: idx < drItems.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: border, gap: 10 }}>
+                        <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: isDark ? '#2D2D4E' : '#F3F4F6',
+                          alignItems: 'center', justifyContent: 'center' }}>
+                          <CatIcon size={18} color={colors.primary} strokeWidth={1.8} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary }}>{item.name}</Text>
+                          <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>{item.category ?? ''}{item.quantity ? ` · ${item.quantity}` : ''}</Text>
+                        </View>
+                        <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>${(item.total_price ?? 0).toFixed(2)}</Text>
+                        <Pressable onPress={() => { setDetailReceipt(null); setTimeout(() => handleReturnItem(item, dr.store ?? ''), 300); }}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: isDark ? '#2D2D4E' : '#F3F4F6',
+                            alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ fontSize: 15 }}>↩️</Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        );
+      })()}
+    </Modal>
+    </>
   );
 }
 

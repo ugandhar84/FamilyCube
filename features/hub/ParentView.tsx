@@ -362,21 +362,21 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
               const accent = isMedical ? '#EF4444' : isGrocery ? '#10B981' : isSupplies ? '#6366F1' : isPermission ? BRAND.amber : isQuestion ? BRAND.purple : BRAND.teal;
               const pendingItems = (req.items ?? []).filter(it => it.status === 'pending');
 
-              // ── Check-in: flat dismiss row ──
+              // ── Check-in: acknowledgment row (not a permission) ──
               if (isCheckin) {
                 return (
                   <View key={req.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-                    backgroundColor: isDark ? '#1e293b' : '#F8FAFC', borderRadius: 14, padding: 12,
+                    backgroundColor: isDark ? '#1e293b' : '#F0FDF4', borderRadius: 14, padding: 12,
                     borderLeftWidth: 3, borderLeftColor: BRAND.teal }}>
-                    <Text style={{ fontSize: 18 }}>🎒</Text>
+                    <Text style={{ fontSize: 22 }}>{req.detail.includes('late') || req.detail.includes('Late') ? '🏃' : req.detail.includes('home') || req.detail.includes('Home') ? '🏠' : '🎒'}</Text>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.teal }}>{kidName}</Text>
                       <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }} numberOfLines={2}>{req.detail}</Text>
                     </View>
                     <Pressable onPress={() => approveRequest(req.id, active.id)}
-                      style={{ backgroundColor: BRAND.teal + '20', borderRadius: 10,
-                        paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: BRAND.teal + '40' }}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.teal }}>Dismiss</Text>
+                      style={{ backgroundColor: BRAND.teal, borderRadius: 10,
+                        paddingHorizontal: 12, paddingVertical: 8 }}>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Got it 👍</Text>
                     </Pressable>
                   </View>
                 );

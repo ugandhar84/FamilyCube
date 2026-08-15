@@ -611,7 +611,7 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: colors.textPrimary }}>
-                          {isGrocery ? '🛒 Grocery' : isSupplies ? '📚 Supplies' : req.type === 'delegation' ? '📋 Request' : '🔓 Permission'}
+                          {isGrocery ? '🛒 Grocery' : isSupplies ? '📚 Supplies' : req.type === 'delegation' ? '📋 Request' : req.type === 'checkin' ? '🎒 Check-in' : req.type === 'question' ? '❓ Question' : req.type === 'medication' ? '💊 Medical' : '🔓 Permission'}
                           {hasItems ? ` · ${req.items!.length} item${req.items!.length > 1 ? 's' : ''}` : ''}
                         </Text>
                         <View style={{ borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2,
@@ -631,14 +631,14 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
                       )}
 
                       {!hasItems && (
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>
+                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 3, lineHeight: 18 }} numberOfLines={3}>
                           {suppliesDetail}
                         </Text>
                       )}
 
-                      <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4 }}>
+                      <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 5 }}>
                         {fmtDate(req.requestedAt)}
-                        {req.respondedBy ? ` · Reviewed by ${memberName(req.respondedBy)}` : ''}
+                        {req.respondedBy ? ` · ${memberName(req.respondedBy)}` : ''}
                       </Text>
                     </View>
                     <View style={{ alignItems: 'flex-end', gap: 6 }}>
@@ -676,9 +676,9 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
                               {item.emoji ? `${item.emoji} ` : ''}{item.name}
                               {item.qty ? <Text style={{ fontWeight: '400', color: colors.textSecondary }}> × {item.qty}</Text> : null}
                             </Text>
-                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>{item.category}</Text>
+                            <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>{item.category}</Text>
                             {item.parentNote && (
-                              <Text style={{ fontSize: TYPO.micro, fontStyle: 'italic', color: statusColor(item.status), marginTop: 2 }}>
+                              <Text style={{ fontSize: TYPO.label, fontStyle: 'italic', color: statusColor(item.status), marginTop: 2 }}>
                                 "{item.parentNote}"
                               </Text>
                             )}

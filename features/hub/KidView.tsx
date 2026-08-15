@@ -331,7 +331,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
         const cutoff = Date.now() - 24 * 60 * 60 * 1000;
         const recentReplies = myRequests.filter(r => {
           if (!['approved', 'declined'].includes(r.status)) return false;
-          if (!['permission', 'question', 'medication'].includes(r.type)) return false;
+          if (!['permission', 'question', 'medication', 'checkin'].includes(r.type)) return false;
           if (!r.respondedAt) return false;
           if (dismissedReplies.has(r.id)) return false;
           return new Date(r.respondedAt).getTime() > cutoff;
@@ -342,18 +342,21 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
             <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary }}>PARENT REPLIED</Text>
             {recentReplies.map(r => {
               const approved = r.status === 'approved';
-              const typeEmoji = r.type === 'medication' ? '💊' : r.type === 'permission' ? '🔓' : '❓';
-              const accent = approved ? '#10B981' : '#EF4444';
+              const isCheckinReply = r.type === 'checkin';
+              const typeEmoji = isCheckinReply ? (r.detail.includes('late') || r.detail.includes('Late') ? '🏃' : r.detail.includes('home') || r.detail.includes('Home') ? '🏠' : '🎒') : r.type === 'medication' ? '💊' : r.type === 'permission' ? '🔓' : '❓';
+              const typeLabel = isCheckinReply ? 'Check-in' : r.type === 'medication' ? 'Medical' : r.type === 'permission' ? 'Permission' : 'Question';
+              const accent = isCheckinReply ? BRAND.teal : approved ? '#10B981' : '#EF4444';
+              const statusLabel = isCheckinReply ? 'Seen 👍' : approved ? 'Yes!' : 'No';
               return (
                 <View key={r.id} style={{
                   borderRadius: 14, borderWidth: 1.5, borderColor: accent + '35',
                   backgroundColor: isDark ? colors.card : accent + '08', padding: 12,
                 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-                    <Text style={{ fontSize: 20, marginTop: 1 }}>{approved ? '✅' : '❌'}</Text>
+                    <Text style={{ fontSize: 20, marginTop: 1 }}>{isCheckinReply ? typeEmoji : approved ? '✅' : '❌'}</Text>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: accent, marginBottom: 2 }}>
-                        {approved ? 'Yes!' : 'No'} — {typeEmoji} {r.type === 'medication' ? 'Medical' : r.type === 'permission' ? 'Permission' : 'Question'}
+                        {statusLabel} — {typeEmoji} {typeLabel}
                       </Text>
                       <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }} numberOfLines={2}>
                         "{r.detail}"

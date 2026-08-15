@@ -61,7 +61,8 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   const [askModal, setAskModal]           = useState<null | 'permission' | 'question' | 'medication'>(null);
   const [historyModal,  setHistoryModal]  = useState(false);
   const [lateNudgeSent, setLateNudgeSent] = useState<Record<string, boolean>>({});
-  const [dismissedReplies, setDismissedReplies] = useState<Set<string>>(new Set());
+  const [dismissedReplies,  setDismissedReplies]  = useState<Set<string>>(new Set());
+  const [dismissedActions,  setDismissedActions]  = useState<Set<string>>(new Set());
 
   const today       = localToday();
   const myEvents    = events.filter(e => (e.memberId === active.id || !e.memberId) && e.category !== 'Work');
@@ -924,9 +925,88 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
     </View>
   );
 
+  // ── Kid action-needed panel ────────────────────────────────────────────────
+  const kidActionItems: { id: string; emoji: string; title: string; detail: string; accent: string; onAction?: () => void; actionLabel?: string }[] = [];
+
+  // Declined rides today
+  myDeclinedRides.forEach(ev => {
+    if (!dismissedActions.has(`ride-${ev.id}`)) {
+      kidActionItems.push({
+        id: `ride-${ev.id}`,
+        emoji: '🚗',
+        accent: '#EF4444',
+        title: `No driver for "${ev.title}"`,
+        detail: `${ev.declineReason ? `"${ev.declineReason}" · ` : ''}Your parent is finding someone else.`,
+      });
+    }
+  });
+
+  // Pending ride confirmation — waiting to hear
+  myPendingRides.filter(ev => !dismissedActions.has(`pending-${ev.id}`)).forEach(ev => {
+    kidActionItems.push({
+      id: `pending-${ev.id}`,
+      emoji: '⏳',
+      accent: BRAND.amber,
+      title: `Waiting on driver for "${ev.title}"`,
+      detail: `${fmtTime(ev.time)} · Your parent hasn't confirmed yet.`,
+    });
+  });
+
+  // Declined quests — needs redo or acknowledgement
+  declinedQuests.filter(q => !dismissedActions.has(`quest-${q.id}`)).forEach(q => {
+    const note = q.history?.slice().reverse().find((h: any) => h.action === 'declined')?.note;
+    kidActionItems.push({
+      id: `quest-${q.id}`,
+      emoji: '🔄',
+      accent: BRAND.purple,
+      title: `Quest sent back — ${q.title}`,
+      detail: note ? `"${note}"` : 'Parent asked you to try again.',
+      onAction: () => { setKidTab('quests'); setDismissedActions(prev => new Set([...prev, `quest-${q.id}`])); },
+      actionLabel: 'View Quest',
+    });
+  });
+
+  const kidActionPanel = kidActionItems.length > 0 ? (
+    <View style={[pad, { marginBottom: 12 }]}>
+      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 8 }}>ACTION NEEDED</Text>
+      <View style={{ gap: 8 }}>
+        {kidActionItems.map(item => (
+          <View key={item.id} style={{
+            borderRadius: 14, borderWidth: 1.5, borderColor: item.accent + '35',
+            backgroundColor: isDark ? colors.card : item.accent + '08', padding: 12,
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+              <Text style={{ fontSize: 20, marginTop: 1 }}>{item.emoji}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: item.accent, marginBottom: 2 }}>
+                  {item.title}
+                </Text>
+                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, lineHeight: 16 }}>
+                  {item.detail}
+                </Text>
+                {item.onAction && (
+                  <Pressable onPress={item.onAction}
+                    style={{ alignSelf: 'flex-start', marginTop: 8, backgroundColor: item.accent, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 6 }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>{item.actionLabel}</Text>
+                  </Pressable>
+                )}
+              </View>
+              <Pressable onPress={() => setDismissedActions(prev => new Set([...prev, item.id]))}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={{ padding: 4, borderRadius: 8, backgroundColor: isDark ? '#ffffff12' : '#00000008' }}>
+                <Text style={{ fontSize: 12, color: colors.textTertiary }}>✕</Text>
+              </Pressable>
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+  ) : null;
+
   return (
     <>
       {heroCard}
+      {kidActionPanel}
       {tabPills}
       {askBar}
       {kidTab === 'quests'    && questsTab}

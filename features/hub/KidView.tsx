@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, Pressable, TouchableOpacity, Alert, Dimensions, ScrollView } from 'react-native';
+import { View, Text, Pressable, TouchableOpacity, Alert, Dimensions, ScrollView, TextInput } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -15,7 +15,7 @@ import { localToday, fmtTime, catColor, hoursUntilEvent } from './hubUtils';
 
 const { width: W } = Dimensions.get('window');
 
-type KidTab = 'quests' | 'schedule' | 'piggybank' | 'rewards';
+// No tabs — everything inline or navigated
 
 // ─── Ride countdown hook ──────────────────────────────────────────────────────
 function useCountdown(date?: string, time?: string) {
@@ -41,6 +41,7 @@ export { GROCERY_PREFIX, SUPPLIES_PREFIX, encodeGroceryRequest, decodeGroceryReq
 import { SUPPLIES_PREFIX } from './KidModals';
 
 import { GroceryModal, SuppliesModal, AskModal, KidRequestHistoryModal } from './KidModals';
+import AppBottomSheet from '@/components/AppBottomSheet';
 
 
 // ─── Main KidView ──────────────────────────────────────────────────────────────
@@ -55,13 +56,17 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   const { sendRequest, requests }                         = useKidRequestStore();
   const { sendMessage }                                   = useChatStore();
 
-  const [kidTab, setKidTab]           = useState<KidTab>('quests');
-  const [groceryModal,  setGroceryModal]  = useState(false);
-  const [suppliesModal, setSuppliesModal] = useState(false);
-  const [askModal, setAskModal]           = useState<null | 'permission' | 'question' | 'medication'>(null);
-  const [historyModal,  setHistoryModal]  = useState(false);
-  const [lateNudgeSent, setLateNudgeSent] = useState<Record<string, boolean>>({});
-  const [dismissedReplies,  setDismissedReplies]  = useState<Set<string>>(new Set());
+  const [groceryModal,    setGroceryModal]    = useState(false);
+  const [suppliesModal,   setSuppliesModal]   = useState(false);
+  const [askModal,        setAskModal]        = useState<null | 'permission' | 'question' | 'medication'>(null);
+  const [historyModal,    setHistoryModal]    = useState(false);
+  const [askParentSheet,  setAskParentSheet]  = useState(false);
+  const [rideSheet,       setRideSheet]       = useState(false);
+  const [rideWhere,       setRideWhere]       = useState('');
+  const [rideWhen,        setRideWhen]        = useState('');
+  const [rideExtraNote,   setRideExtraNote]   = useState('');
+  const [lateNudgeSent,   setLateNudgeSent]   = useState<Record<string, boolean>>({});
+  const [dismissedReplies, setDismissedReplies] = useState<Set<string>>(new Set());
   const [dismissedActions,  setDismissedActions]  = useState<Set<string>>(new Set());
 
   const today       = localToday();
@@ -160,13 +165,6 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
     Alert.alert('⚠️ Alert sent!', 'Your parent has been notified that your driver is late.');
   };
 
-  const TABS = [
-    { key: 'quests' as KidTab,    label: 'Quests',     icon: '🏆', color: BRAND.purple },
-    { key: 'schedule' as KidTab,  label: 'Schedule',   icon: '📅', color: BRAND.teal   },
-    { key: 'piggybank' as KidTab, label: 'Piggy Bank', icon: '🐷', color: BRAND.amber  },
-    { key: 'rewards' as KidTab,   label: 'Rewards',    icon: '🎁', color: '#EC4899'    },
-  ];
-
   // ── Hero card ───────────────────────────────────────────────────────────────
   const rideUrgent = rideCountdown !== null && rideCountdown <= 15 && rideCountdown >= 0;
   const rideHere   = rideCountdown !== null && rideCountdown <= 2 && rideCountdown >= -5;
@@ -257,55 +255,12 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
           </View>
         )}
 
-        {/* Quick actions: I'm Home / I'm Ready / Running Late */}
-        <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 14 }}>
-          <Pressable onPress={() => sendCheckin('home')}
-            style={{ flex: 1, borderRadius: 14, backgroundColor: '#10B98118', borderWidth: 1.5, borderColor: '#10B98140', paddingVertical: 10, alignItems: 'center', gap: 3 }}>
-            <Text style={{ fontSize: 18 }}>🏠</Text>
-            <Text style={{ fontSize: 10, fontWeight: '800', color: '#10B981' }}>I'm Home</Text>
-          </Pressable>
-          <Pressable onPress={() => sendCheckin('ready', confirmedRide?.title)}
-            style={{ flex: 1, borderRadius: 14, backgroundColor: BRAND.amber + '18', borderWidth: 1.5, borderColor: BRAND.amber + '40', paddingVertical: 10, alignItems: 'center', gap: 3 }}>
-            <Text style={{ fontSize: 18 }}>🎒</Text>
-            <Text style={{ fontSize: 10, fontWeight: '800', color: BRAND.amber }}>I'm Ready</Text>
-          </Pressable>
-          <Pressable onPress={() => sendCheckin('late', nextEvent?.title)}
-            style={{ flex: 1, borderRadius: 14, backgroundColor: '#EF444418', borderWidth: 1.5, borderColor: '#EF444440', paddingVertical: 10, alignItems: 'center', gap: 3 }}>
-            <Text style={{ fontSize: 18 }}>🏃</Text>
-            <Text style={{ fontSize: 10, fontWeight: '800', color: '#EF4444' }}>Running Late</Text>
-          </Pressable>
-          <Pressable onPress={() => setGroceryModal(true)}
-            style={{ flex: 1, borderRadius: 14, backgroundColor: BRAND.teal + '18', borderWidth: 1.5, borderColor: BRAND.teal + '40', paddingVertical: 10, alignItems: 'center', gap: 3 }}>
-            <Text style={{ fontSize: 18 }}>🛒</Text>
-            <Text style={{ fontSize: 10, fontWeight: '800', color: BRAND.teal }}>Grocery</Text>
-          </Pressable>
-        </View>
+        <View style={{ height: 14 }} />
       </View>
     </View>
   );
 
-  // ── Tab pills ───────────────────────────────────────────────────────────────
-  const tabPills = (
-    <View style={[pad, { marginBottom: 14 }]}>
-      <View style={{ flexDirection: 'row', gap: 6 }}>
-        {TABS.map(t => {
-          const isActive = kidTab === t.key;
-          return (
-            <Pressable key={t.key} onPress={() => setKidTab(t.key)} style={{
-              flex: 1, borderRadius: 16, paddingVertical: 9, alignItems: 'center', gap: 3,
-              backgroundColor: isActive ? t.color + '22' : (isDark ? colors.card : '#FFFFFF'),
-              borderWidth: 1.5, borderColor: isActive ? t.color + '70' : (isDark ? colors.border : '#E8E8F0'),
-            }}>
-              <Text style={{ fontSize: 16 }}>{t.icon}</Text>
-              <Text style={{ fontSize: 9, fontWeight: '800', color: isActive ? t.color : colors.textTertiary }}>{t.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
-  );
-
-  // ── Ask parent quick bar ─────────────────────────────────────────────────────
+  // ── Ask parent quick bar (legacy — replaced by askParentSheet) ──────────────
   const askBar = (
     <View style={[pad, { marginBottom: 12 }]}>
       <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 8 }}>ASK PARENT</Text>
@@ -920,7 +875,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
           <Text style={{ fontSize: 44 }}>🎁</Text>
           <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>Keep earning!</Text>
           <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center' }}>Complete quests to unlock rewards</Text>
-          <Pressable onPress={() => setKidTab('quests')} style={{ marginTop: 4, borderRadius: 12, backgroundColor: BRAND.purple, paddingHorizontal: 20, paddingVertical: 10 }}>
+          <Pressable onPress={() => router.push('/(tabs)/quests')} style={{ marginTop: 4, borderRadius: 12, backgroundColor: BRAND.purple, paddingHorizontal: 20, paddingVertical: 10 }}>
             <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff' }}>Go do Quests 🏆</Text>
           </Pressable>
         </View>
@@ -964,7 +919,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
       accent: BRAND.purple,
       title: `Quest sent back — ${q.title}`,
       detail: note ? `"${note}"` : 'Parent asked you to try again.',
-      onAction: () => { setKidTab('quests'); setDismissedActions(prev => new Set([...prev, `quest-${q.id}`])); },
+      onAction: () => { router.push('/(tabs)/quests'); setDismissedActions(prev => new Set([...prev, `quest-${q.id}`])); },
       actionLabel: 'View Quest',
     });
   });
@@ -1006,22 +961,491 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
     </View>
   ) : null;
 
+  // ── Urgent alerts (driver late + parent replies + action items) ──────────────
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const recentReplies = myRequests.filter(r =>
+    ['approved', 'declined'].includes(r.status) &&
+    ['permission', 'question', 'medication', 'checkin'].includes(r.type) &&
+    r.respondedAt && !dismissedReplies.has(r.id) &&
+    new Date(r.respondedAt).getTime() > cutoff
+  );
+
+  const urgentAlerts = (
+    <View style={[pad, { gap: 8, marginBottom: 4 }]}>
+      {/* Driver late */}
+      {confirmedRide && rideCountdown !== null && rideCountdown < -5 && (
+        <Pressable onPress={() => sendDriverLate(confirmedRide)}
+          style={{ borderRadius: 16, backgroundColor: '#450A0A', borderWidth: 2, borderColor: '#EF4444',
+            padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Text style={{ fontSize: 26 }}>⚠️</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 14, fontWeight: '900', color: '#FCA5A5' }}>Driver hasn't arrived!</Text>
+            <Text style={{ fontSize: 12, color: '#F87171' }}>{confirmedRide.helper?.split(' ')[0]} was due at {fmtTime(confirmedRide.time)}</Text>
+          </View>
+          <View style={{ backgroundColor: '#EF4444', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8 }}>
+            <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>{lateNudgeSent[confirmedRide.id] ? 'Sent ✓' : 'Alert!'}</Text>
+          </View>
+        </Pressable>
+      )}
+      {/* Declined rides */}
+      {myDeclinedRides.filter(ev => !dismissedActions.has(`ride-${ev.id}`)).map(ev => (
+        <View key={ev.id} style={{ borderRadius: 16, backgroundColor: isDark ? '#1a0000' : '#FEF2F2',
+          borderWidth: 1.5, borderColor: '#EF444450', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Text style={{ fontSize: 24 }}>❌</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: '#EF4444' }}>No driver — {ev.title}</Text>
+            <Text style={{ fontSize: 11, color: '#F87171' }}>
+              {ev.declinedBy ? `${ev.declinedBy} can't make it` : 'Your parent is finding someone'}
+            </Text>
+          </View>
+          <Pressable onPress={() => setDismissedActions(prev => new Set([...prev, `ride-${ev.id}`]))}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontSize: 14, color: colors.textTertiary }}>✕</Text>
+          </Pressable>
+        </View>
+      ))}
+      {/* Pending ride */}
+      {myPendingRides.filter(ev => !dismissedActions.has(`pending-${ev.id}`)).map(ev => (
+        <View key={ev.id} style={{ borderRadius: 16, backgroundColor: isDark ? '#1a1000' : '#FFFBEB',
+          borderWidth: 1.5, borderColor: BRAND.amber + '60', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Text style={{ fontSize: 24 }}>⏳</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.amber }}>Waiting on driver…</Text>
+            <Text style={{ fontSize: 11, color: BRAND.amber, opacity: 0.8 }}>{ev.title} · {fmtTime(ev.time)}</Text>
+          </View>
+          <Pressable onPress={() => setDismissedActions(prev => new Set([...prev, `pending-${ev.id}`]))}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontSize: 14, color: colors.textTertiary }}>✕</Text>
+          </Pressable>
+        </View>
+      ))}
+      {/* Declined quests */}
+      {declinedQuests.filter(q => !dismissedActions.has(`quest-${q.id}`)).map(q => {
+        const note = q.history?.slice().reverse().find((h: any) => h.action === 'declined')?.note;
+        return (
+          <View key={q.id} style={{ borderRadius: 16, backgroundColor: isDark ? '#12001a' : '#F5F3FF',
+            borderWidth: 1.5, borderColor: BRAND.purple + '50', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Text style={{ fontSize: 24 }}>🔄</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.purple }}>Quest sent back</Text>
+              <Text style={{ fontSize: 11, color: colors.textSecondary }} numberOfLines={1}>
+                {note ? `"${note}"` : q.title}
+              </Text>
+            </View>
+            <Pressable onPress={() => setDismissedActions(prev => new Set([...prev, `quest-${q.id}`]))}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={{ fontSize: 14, color: colors.textTertiary }}>✕</Text>
+            </Pressable>
+          </View>
+        );
+      })}
+      {/* Parent replies */}
+      {recentReplies.map(r => {
+        const approved = r.status === 'approved';
+        const isCheckin = r.type === 'checkin';
+        const accent = isCheckin ? BRAND.teal : approved ? '#10B981' : '#EF4444';
+        const icon = isCheckin ? '👍' : approved ? '✅' : '❌';
+        const label = isCheckin ? 'Seen!' : approved ? 'Yes!' : 'No';
+        const typeLabel = isCheckin ? 'Check-in' : r.type === 'medication' ? 'Medical' : r.type === 'permission' ? 'Permission' : 'Question';
+        return (
+          <View key={r.id} style={{ borderRadius: 16, backgroundColor: isDark ? colors.card : accent + '08',
+            borderWidth: 1.5, borderColor: accent + '35', padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+            <Text style={{ fontSize: 22, marginTop: 1 }}>{icon}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: '900', color: accent }}>{label} — {typeLabel}</Text>
+              <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>"{r.detail}"</Text>
+              {r.parentNote ? (
+                <Text style={{ fontSize: 11, color: accent, fontStyle: 'italic', marginTop: 4 }}>Parent: "{r.parentNote}"</Text>
+              ) : null}
+            </View>
+            <Pressable onPress={() => setDismissedReplies(prev => new Set([...prev, r.id]))}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={{ fontSize: 14, color: colors.textTertiary }}>✕</Text>
+            </Pressable>
+          </View>
+        );
+      })}
+    </View>
+  );
+
+  // ── Check In row — 3 big buttons ─────────────────────────────────────────────
+  const checkinRow = (
+    <View style={[pad, { marginBottom: 12 }]}>
+      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 8, letterSpacing: 0.5 }}>LET FAMILY KNOW</Text>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        {([
+          { label: "I'm Home!", emoji: '🏠', color: '#10B981', bg: '#10B98115', border: '#10B98140', onPress: () => sendCheckin('home') },
+          { label: "I'm Ready!", emoji: '🎒', color: BRAND.amber, bg: BRAND.amber + '15', border: BRAND.amber + '40', onPress: () => sendCheckin('ready', confirmedRide?.title) },
+          { label: 'Running Late', emoji: '🏃', color: '#EF4444', bg: '#EF444415', border: '#EF444440', onPress: () => sendCheckin('late', nextEvent?.title) },
+        ] as const).map(({ label, emoji, color, bg, border, onPress }) => (
+          <Pressable key={label} onPress={onPress}
+            style={{ flex: 1, borderRadius: 16, paddingVertical: 14, alignItems: 'center', gap: 5,
+              backgroundColor: bg, borderWidth: 1.5, borderColor: border }}>
+            <Text style={{ fontSize: 24 }}>{emoji}</Text>
+            <Text style={{ fontSize: 10, fontWeight: '900', color, textAlign: 'center' }}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+
+  // ── Ask Parent + Need a Ride — 2 big CTA buttons ─────────────────────────────
+  const actionRow = (
+    <View style={[pad, { flexDirection: 'row', gap: 10, marginBottom: 16 }]}>
+      <Pressable onPress={() => setAskParentSheet(true)}
+        style={{ flex: 1, borderRadius: 18, paddingVertical: 18, alignItems: 'center', gap: 6,
+          backgroundColor: BRAND.purple, shadowColor: BRAND.purple, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 6 }}>
+        <Text style={{ fontSize: 28 }}>💬</Text>
+        <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>Ask Parent</Text>
+      </Pressable>
+      <Pressable onPress={() => setRideSheet(true)}
+        style={{ flex: 1, borderRadius: 18, paddingVertical: 18, alignItems: 'center', gap: 6,
+          backgroundColor: isDark ? colors.card : '#fff',
+          borderWidth: 2, borderColor: BRAND.teal + '60',
+          shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
+        <Text style={{ fontSize: 28 }}>🚗</Text>
+        <Text style={{ fontSize: 13, fontWeight: '900', color: BRAND.teal }}>Need a Ride?</Text>
+      </Pressable>
+    </View>
+  );
+
+  // ── Confirmed ride banner ─────────────────────────────────────────────────────
+  const rideBanner = confirmedRide && rideCountdown !== null && rideCountdown > -10 ? (
+    <View style={[pad, { marginBottom: 12 }]}>
+      <View style={{ borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
+        backgroundColor: rideHere ? '#064E3B' : rideUrgent ? '#7C2D12' : (isDark ? '#0F2A20' : '#ECFDF5'),
+        borderWidth: 1.5, borderColor: rideHere ? '#10B981' : rideUrgent ? '#EF4444' : '#10B98150' }}>
+        <Text style={{ fontSize: 28 }}>{rideHere ? '🚨' : '🚗'}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 14, fontWeight: '900', color: rideHere ? '#6EE7B7' : rideUrgent ? '#FCA5A5' : '#10B981' }}>
+            {rideHere ? `${confirmedRide.helper?.split(' ')[0]} is HERE! 🎉`
+              : rideUrgent ? `${confirmedRide.helper?.split(' ')[0]} arrives in ${rideCountdown} min!`
+              : `${confirmedRide.helper?.split(' ')[0]} picks you up in ${rideCountdown}m`}
+          </Text>
+          <Text style={{ fontSize: 11, color: rideHere ? '#34D399' : '#34D399', marginTop: 2 }}>
+            {confirmedRide.title} · {fmtTime(confirmedRide.time)}
+          </Text>
+        </View>
+        {rideUrgent && !rideHere && (
+          <View style={{ backgroundColor: '#EF4444', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 }}>
+            <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>Get ready!</Text>
+          </View>
+        )}
+      </View>
+    </View>
+  ) : null;
+
+  // ── Inline Quests (no tab) ────────────────────────────────────────────────────
+  const inlineQuests = (
+    <View style={[pad, { marginBottom: 16 }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textPrimary }}>🏆 My Quests</Text>
+        <Pressable onPress={() => router.push('/(tabs)/quests')}>
+          <Text style={{ fontSize: 12, fontWeight: '700', color: BRAND.purple }}>All Quests →</Text>
+        </Pressable>
+      </View>
+      {reviewQuests.map(q => (
+        <View key={q.id} style={{ borderRadius: 16, backgroundColor: isDark ? '#1a1000' : '#FFFBEB',
+          borderWidth: 1.5, borderColor: BRAND.amber + '60', padding: 14,
+          flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+          <Text style={{ fontSize: 22 }}>⏳</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.amber }}>{q.title}</Text>
+            <Text style={{ fontSize: 11, color: BRAND.amber, opacity: 0.8 }}>Parent reviewing · 🪙 {q.coins} pending</Text>
+          </View>
+        </View>
+      ))}
+      {activeQuests.length === 0 && reviewQuests.length === 0 ? (
+        <Pressable onPress={() => router.push('/(tabs)/quests')}
+          style={{ borderRadius: 18, borderWidth: 1.5, borderStyle: 'dashed', borderColor: BRAND.purple + '50',
+            backgroundColor: BRAND.purple + '08', padding: 28, alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 40 }}>🏆</Text>
+          <Text style={{ fontSize: 15, fontWeight: '900', color: BRAND.purple }}>All caught up!</Text>
+          <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center' }}>
+            {poolQuests.length > 0 ? `${poolQuests.length} bounty quests up for grabs 💰` : 'Complete quests to earn coins'}
+          </Text>
+        </Pressable>
+      ) : activeQuests.slice(0, 3).map(q => {
+        const isPool = q.isPool && q.status === 'todo';
+        const isClaimed = q.status === 'claimed';
+        const catEmoji = q.category === 'Kitchen' ? '🍽️' : q.category === 'Yard' ? '🌿' : q.category === 'School' ? '📚' : q.category === 'Laundry' ? '🧺' : q.category === 'Pet' ? '🐾' : '⭐';
+        const accentColor = isPool ? '#10B981' : BRAND.purple;
+        return (
+          <View key={q.id} style={{ borderRadius: 16, backgroundColor: isDark ? colors.card : '#fff',
+            borderWidth: 1.5, borderColor: isDark ? colors.border : '#E8E8F0', padding: 14, marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: accentColor + '20', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 20 }}>{catEmoji}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>{q.title}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                  <View style={{ backgroundColor: BRAND.amber + '20', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2, flexDirection: 'row', gap: 3 }}>
+                    <Text style={{ fontSize: 11 }}>🪙</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: BRAND.amber }}>{q.coins}</Text>
+                  </View>
+                  {isPool && <View style={{ backgroundColor: '#10B98120', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}><Text style={{ fontSize: 10, fontWeight: '800', color: '#10B981' }}>BOUNTY</Text></View>}
+                </View>
+              </View>
+            </View>
+            {isPool ? (
+              <Pressable onPress={() => claimQuest(q.id, active.id)}
+                style={{ borderRadius: 12, backgroundColor: BRAND.purple, paddingVertical: 12, alignItems: 'center' }}>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>🏆 Claim Quest (+{q.coins} 🪙)</Text>
+              </Pressable>
+            ) : isClaimed ? (
+              <Pressable onPress={() => submitQuest(q.id)}
+                style={{ borderRadius: 12, backgroundColor: BRAND.teal, paddingVertical: 12, alignItems: 'center' }}>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>⚡ Start Quest</Text>
+              </Pressable>
+            ) : (
+              <Pressable onPress={() => submitQuest(q.id)}
+                style={{ borderRadius: 12, backgroundColor: '#10B981', paddingVertical: 12, alignItems: 'center' }}>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>
+                  {q.photoRequired ? '📸 Take Photo to Get Paid' : '✅ Mark Done → Get Paid'}
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        );
+      })}
+      {activeQuests.length > 3 && (
+        <Pressable onPress={() => router.push('/(tabs)/quests')}
+          style={{ borderRadius: 14, backgroundColor: BRAND.purple + '12', borderWidth: 1, borderColor: BRAND.purple + '30',
+            paddingVertical: 12, alignItems: 'center' }}>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.purple }}>+{activeQuests.length - 3} more quests →</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+
+  // ── More row: Schedule, Piggy Bank, Rewards, History ─────────────────────────
+  const moreRow = (
+    <View style={[pad, { marginBottom: 16 }]}>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        {([
+          { icon: '📅', label: 'Schedule',   color: BRAND.teal,   bg: BRAND.teal + '15',   onPress: () => router.push('/(tabs)/calendar') },
+          { icon: '🐷', label: 'Piggy Bank', color: BRAND.amber,  bg: BRAND.amber + '15',  onPress: () => router.push('/(tabs)/store' as any) },
+          { icon: '🎁', label: 'Rewards',    color: '#EC4899',    bg: '#EC489915',          onPress: () => router.push('/(tabs)/store' as any) },
+          { icon: '📋', label: 'My Requests', color: BRAND.purple, bg: BRAND.purple + '12', onPress: () => setHistoryModal(true) },
+        ] as const).map(({ icon, label, color, bg, onPress }) => (
+          <Pressable key={label} onPress={onPress}
+            style={{ flex: 1, borderRadius: 16, paddingVertical: 14, alignItems: 'center', gap: 5,
+              backgroundColor: bg, borderWidth: 1, borderColor: color + '30' }}>
+            <Text style={{ fontSize: 22 }}>{icon}</Text>
+            <Text style={{ fontSize: 9, fontWeight: '800', color, textAlign: 'center' }}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+
+  // ── Family leaderboard ────────────────────────────────────────────────────────
+  const leaderboard = siblingKids.length > 0 ? (
+    <View style={[pad, { marginBottom: 16 }]}>
+      <View style={{ borderRadius: 18, backgroundColor: isDark ? colors.card : '#fff',
+        borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', padding: 14, gap: 10 }}>
+        <Text style={{ fontSize: 13, fontWeight: '900', color: colors.textPrimary }}>🏅 Family Leaderboard</Text>
+        {allKids.map((k, i) => {
+          const isMe = k.id === active.id;
+          const kCoins = k.mainCoins ?? k.coins ?? 0;
+          const medals = ['🥇', '🥈', '🥉'];
+          return (
+            <View key={k.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 8, borderRadius: 12,
+              backgroundColor: isMe ? BRAND.purple + '18' : 'transparent', borderWidth: isMe ? 1.5 : 0, borderColor: BRAND.purple + '40' }}>
+              <Text style={{ fontSize: 18, width: 26 }}>{medals[i] ?? `${i + 1}.`}</Text>
+              <Text style={{ fontSize: 18 }}>{k.emoji ?? '👤'}</Text>
+              <Text style={{ flex: 1, fontSize: 13, fontWeight: isMe ? '900' : '700', color: isMe ? BRAND.purple : colors.textPrimary }}>
+                {k.name.split(' ')[0]}{isMe ? ' (you)' : ''}
+              </Text>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: BRAND.amber }}>🪙 {kCoins}</Text>
+              {k.streak > 0 && <Text style={{ fontSize: 11, color: '#FF6600' }}>🔥{k.streak}d</Text>}
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  ) : null;
+
+  // ── Ask Parent sheet — picker ─────────────────────────────────────────────────
+  const askParentSheetEl = (
+    <AppBottomSheet
+      visible={askParentSheet}
+      onClose={() => setAskParentSheet(false)}
+      title="💬 Ask Parent"
+      subtitle="Pick what you need help with"
+      accentColor={BRAND.purple}
+      minHeight="55%"
+      bodyPaddingBottom={16}
+    >
+      <View style={{ gap: 10 }}>
+        {([
+          { label: 'Ask Permission',   desc: 'Go somewhere, do something',     emoji: '🔓', color: BRAND.purple,  onPress: () => { setAskParentSheet(false); setTimeout(() => setAskModal('permission'), 300); } },
+          { label: 'Ask a Question',   desc: 'Something you want to know',     emoji: '❓', color: '#3B82F6',     onPress: () => { setAskParentSheet(false); setTimeout(() => setAskModal('question'), 300); } },
+          { label: 'Medication Alert', desc: "I didn't take my meds",          emoji: '💊', color: '#EF4444',     onPress: () => { setAskParentSheet(false); setTimeout(() => setAskModal('medication'), 300); } },
+          { label: 'Request Grocery',  desc: 'Add items to the shopping list', emoji: '🛒', color: BRAND.teal,    onPress: () => { setAskParentSheet(false); setTimeout(() => setGroceryModal(true), 300); } },
+          { label: 'School Supplies',  desc: 'Things I need for school',       emoji: '📚', color: '#6366F1',     onPress: () => { setAskParentSheet(false); setTimeout(() => setSuppliesModal(true), 300); } },
+        ] as const).map(({ label, desc, emoji, color, onPress }) => (
+          <Pressable key={label} onPress={onPress}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 16,
+              backgroundColor: isDark ? colors.surface : color + '08', borderWidth: 1.5, borderColor: color + '30' }}>
+            <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: color + '20', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 24 }}>{emoji}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '900', color }}>{label}</Text>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>{desc}</Text>
+            </View>
+            <ChevronRight size={18} color={color} />
+          </Pressable>
+        ))}
+      </View>
+    </AppBottomSheet>
+  );
+
+  // ── Ride request sheet ─────────────────────────────────────────────────────────
+  const rideReady = rideWhere.trim().length > 0;
+  const rideDetailStr = [
+    rideWhere.trim(),
+    rideWhen.trim() ? `at ${rideWhen.trim()}` : '',
+    rideExtraNote.trim(),
+  ].filter(Boolean).join(' · ');
+
+  const rideSheetEl = (
+    <AppBottomSheet
+      visible={rideSheet}
+      onClose={() => { setRideSheet(false); setRideWhere(''); setRideWhen(''); setRideExtraNote(''); }}
+      title="🚗 Need a Ride?"
+      subtitle="Fill in the details — your parent gets a neat card"
+      accentColor={BRAND.teal}
+      minHeight="60%"
+      maxHeight="85%"
+      bodyPaddingBottom={16}
+      footer={
+        <TouchableOpacity
+          disabled={!rideReady}
+          onPress={() => {
+            if (!rideReady) return;
+            sendRequest({ type: 'ride', fromMemberId: active.id, urgency: 'soon', detail: rideDetailStr });
+            setRideSheet(false);
+            setRideWhere(''); setRideWhen(''); setRideExtraNote('');
+            Alert.alert('🚗 Sent!', 'Your parent has been notified.');
+          }}
+          style={{ borderRadius: 16, paddingVertical: 16, alignItems: 'center',
+            backgroundColor: rideReady ? BRAND.teal : (isDark ? '#2A2A3E' : '#E0E0F0') }}>
+          <Text style={{ fontSize: 15, fontWeight: '900', color: rideReady ? '#fff' : colors.textTertiary }}>
+            Send Ride Request →
+          </Text>
+        </TouchableOpacity>
+      }
+    >
+      {/* Quick picks from today's events */}
+      {todayEvents.filter(ev => !ev.helper || ev.helperStatus === 'rejected').length > 0 && (
+        <View style={{ marginBottom: 16 }}>
+          <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 8, letterSpacing: 0.5 }}>TODAY'S EVENTS — TAP TO AUTO-FILL</Text>
+          <View style={{ gap: 6 }}>
+            {todayEvents.filter(ev => !ev.helper || ev.helperStatus === 'rejected').map(ev => {
+              const selected = rideWhere === ev.title;
+              return (
+                <Pressable key={ev.id}
+                  onPress={() => { setRideWhere(ev.title); if (ev.time) setRideWhen(fmtTime(ev.time)); }}
+                  style={{ borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10,
+                    backgroundColor: selected ? BRAND.teal + '20' : (isDark ? colors.surface : '#F8FAFC'),
+                    borderWidth: 1.5, borderColor: selected ? BRAND.teal : (isDark ? colors.border : '#E2E8F0') }}>
+                  <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: selected ? BRAND.teal + '30' : colors.border + '40', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 16 }}>📅</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: selected ? BRAND.teal : colors.textPrimary }}>{ev.title}</Text>
+                    {ev.time && <Text style={{ fontSize: 11, color: colors.textTertiary }}>{fmtTime(ev.time)}{ev.location ? ` · ${ev.location}` : ''}</Text>}
+                  </View>
+                  {selected && <Text style={{ fontSize: 16, color: BRAND.teal }}>✓</Text>}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
+      {/* Structured fields */}
+      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 10, letterSpacing: 0.5 }}>FILL IN THE DETAILS</Text>
+      <View style={{ gap: 10, marginBottom: 14 }}>
+        {/* Where / what */}
+        <View style={{ gap: 5 }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>🚩 Where / What</Text>
+          <TextInput
+            value={rideWhere}
+            onChangeText={setRideWhere}
+            placeholder="e.g. Soccer practice, Riverside Park, Maya's house…"
+            placeholderTextColor={colors.textTertiary}
+            style={{ borderRadius: 12, borderWidth: 1.5, padding: 12, fontSize: 14,
+              color: colors.textPrimary, borderColor: rideWhere.trim() ? BRAND.teal + '80' : colors.border,
+              backgroundColor: isDark ? colors.surface : '#F9FAFB' }}
+          />
+        </View>
+        {/* When */}
+        <View style={{ gap: 5 }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>🕐 When (time)</Text>
+          <TextInput
+            value={rideWhen}
+            onChangeText={setRideWhen}
+            placeholder="e.g. 3:30 PM, after school, now…"
+            placeholderTextColor={colors.textTertiary}
+            style={{ borderRadius: 12, borderWidth: 1.5, padding: 12, fontSize: 14,
+              color: colors.textPrimary, borderColor: rideWhen.trim() ? BRAND.teal + '80' : colors.border,
+              backgroundColor: isDark ? colors.surface : '#F9FAFB' }}
+          />
+        </View>
+        {/* Extra note */}
+        <View style={{ gap: 5 }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>💬 Extra note (optional)</Text>
+          <TextInput
+            value={rideExtraNote}
+            onChangeText={setRideExtraNote}
+            placeholder="Anything else your parent should know…"
+            placeholderTextColor={colors.textTertiary}
+            multiline
+            style={{ borderRadius: 12, borderWidth: 1.5, padding: 12, fontSize: 13,
+              color: colors.textPrimary, borderColor: rideExtraNote.trim() ? BRAND.teal + '60' : colors.border,
+              backgroundColor: isDark ? colors.surface : '#F9FAFB', minHeight: 60, textAlignVertical: 'top' }}
+          />
+        </View>
+      </View>
+
+      {/* Live card preview */}
+      {rideReady && (
+        <View style={{ borderRadius: 16, backgroundColor: BRAND.teal + '12', borderWidth: 1.5, borderColor: BRAND.teal + '40', padding: 14, gap: 6 }}>
+          <Text style={{ fontSize: 10, fontWeight: '800', color: BRAND.teal, letterSpacing: 0.5 }}>PREVIEW — WHAT PARENT SEES</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 4 }}>
+            <Text style={{ fontSize: 26 }}>🚗</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textPrimary }}>{active.name.split(' ')[0]} needs a ride</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: BRAND.teal, marginTop: 2 }}>{rideWhere.trim()}</Text>
+              {rideWhen.trim() ? <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>🕐 {rideWhen.trim()}</Text> : null}
+              {rideExtraNote.trim() ? <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2, fontStyle: 'italic' }}>"{rideExtraNote.trim()}"</Text> : null}
+            </View>
+          </View>
+        </View>
+      )}
+    </AppBottomSheet>
+  );
+
   return (
     <>
       {heroCard}
-      {kidActionPanel}
-      {tabPills}
-      {askBar}
-      {kidTab === 'quests'    && questsTab}
-      {kidTab === 'schedule'  && scheduleTab}
-      {kidTab === 'piggybank' && piggyBankTab}
-      {kidTab === 'rewards'   && rewardsTab}
+      {urgentAlerts}
+      {rideBanner}
+      {checkinRow}
+      {actionRow}
+      {inlineQuests}
+      {moreRow}
+      {leaderboard}
 
+      {askParentSheetEl}
+      {rideSheetEl}
       <GroceryModal  visible={groceryModal}  onClose={() => setGroceryModal(false)}  active={active} />
       <SuppliesModal visible={suppliesModal} onClose={() => setSuppliesModal(false)} active={active} />
-      {askModal && (
-        <AskModal visible={!!askModal} onClose={() => setAskModal(null)} type={askModal} active={active} />
-      )}
+      {askModal && <AskModal visible={!!askModal} onClose={() => setAskModal(null)} type={askModal} active={active} />}
       <KidRequestHistoryModal visible={historyModal} onClose={() => setHistoryModal(false)} active={active} />
     </>
   );

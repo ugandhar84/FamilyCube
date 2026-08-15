@@ -79,6 +79,23 @@ function fmtDate(iso: string) {
 
 // ─── Add Item Sheet ───────────────────────────────────────────────────────────
 
+const QUICK_SUGGESTIONS = [
+  { name: 'Milk',     cat: 'Dairy',    emoji: '🥛' },
+  { name: 'Eggs',     cat: 'Dairy',    emoji: '🥚' },
+  { name: 'Bread',    cat: 'Bakery',   emoji: '🍞' },
+  { name: 'Rice',     cat: 'Grains',   emoji: '🍚' },
+  { name: 'Onion',    cat: 'Produce',  emoji: '🧅' },
+  { name: 'Tomato',   cat: 'Produce',  emoji: '🍅' },
+  { name: 'Banana',   cat: 'Produce',  emoji: '🍌' },
+  { name: 'Butter',   cat: 'Dairy',    emoji: '🧈' },
+  { name: 'Chicken',  cat: 'Meat',     emoji: '🍗' },
+  { name: 'Pasta',    cat: 'Grains',   emoji: '🍝' },
+  { name: 'Salt',     cat: 'Spices',   emoji: '🧂' },
+  { name: 'Oil',      cat: 'Other',    emoji: '🫙' },
+  { name: 'Water',    cat: 'Beverages',emoji: '💧' },
+  { name: 'Coffee',   cat: 'Beverages',emoji: '☕' },
+];
+
 function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark, editItem }: {
   visible: boolean; onClose: () => void;
   familyId: string; memberId: string;
@@ -94,6 +111,26 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark, ed
   const [store, setStore] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<{ name: string; cat: string; emoji: string }[]>(QUICK_SUGGESTIONS);
+  const [aiLoading, setAiLoading] = useState(false);
+
+  // Load personalised AI suggestions when sheet opens
+  useEffect(() => {
+    if (!visible || isEdit || !familyId) return;
+    setAiLoading(true);
+    supabase.functions.invoke('grocery-ai-suggest', { body: { familyId, limit: 16 } })
+      .then(({ data }) => {
+        if (data?.items?.length) {
+          setAiSuggestions(data.items.map((i: any) => ({
+            name: i.name,
+            cat: i.category ?? 'Other',
+            emoji: CAT_EMOJI[i.category] ?? '🛒',
+          })));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setAiLoading(false));
+  }, [visible, familyId, isEdit]);
 
   // Populate fields when editing
   useEffect(() => {
@@ -133,73 +170,153 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark, ed
     onClose();
   };
 
-  const sheetBg = isDark ? '#1A1A2E' : '#FFFFFF';
-  const border  = isDark ? '#2D2D4E' : '#E5E7EB';
-  const inputBg = isDark ? '#252540' : '#F9FAFB';
+  const sheetBg = isDark ? '#141829' : '#FFFFFF';
+  const border  = isDark ? 'rgba(124,58,237,0.18)' : '#E5E7EB';
+  const inputBg = isDark ? '#1E2340' : '#F9FAFB';
+  const P = colors.primary ?? '#7C3AED';
+
+  // Filter suggestions by typed name
+  const filteredSuggestions = name.trim().length > 0
+    ? aiSuggestions.filter(s => s.name.toLowerCase().startsWith(name.toLowerCase()))
+    : aiSuggestions;
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end' }}>
         <Pressable style={{ flex: 1 }} onPress={onClose} />
-        <View style={[sh.sheet, { backgroundColor: sheetBg, borderColor: border }]}>
-          <View style={sh.handle} />
-          <Text style={[sh.title, { color: colors.textPrimary }]}>{isEdit ? 'Edit Item' : 'Add Item'}</Text>
+        <View style={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+          borderWidth: 1, borderColor: border,
+          shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 20, elevation: 20,
+          paddingHorizontal: 20, paddingBottom: 32 }}>
+          {/* Handle */}
+          <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: isDark ? '#4B5563' : '#E5E7EB',
+            alignSelf: 'center', marginTop: 12, marginBottom: 18 }} />
 
-          <TextInput
-            style={[sh.input, { backgroundColor: inputBg, borderColor: border, color: colors.textPrimary }]}
-            placeholder="Item name (e.g. Atta, Milk, Turmeric)"
-            placeholderTextColor={colors.textMuted ?? '#9CA3AF'}
-            value={name} onChangeText={setName} autoFocus
-          />
-          <TextInput
-            style={[sh.input, { backgroundColor: inputBg, borderColor: border, color: colors.textPrimary }]}
-            placeholder="Quantity (e.g. 2 kg, 1 dozen, 3 packets)"
-            placeholderTextColor={colors.textMuted ?? '#9CA3AF'}
-            value={qty} onChangeText={setQty}
-          />
-          <TextInput
-            style={[sh.input, { backgroundColor: inputBg, borderColor: border, color: colors.textPrimary }]}
-            placeholder="Store (e.g. Costco, Patel Brothers) — optional"
-            placeholderTextColor={colors.textMuted ?? '#9CA3AF'}
-            value={store} onChangeText={setStore}
-          />
+          {/* Title row */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 18 }}>
+            <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: P + '20',
+              alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+              <Text style={{ fontSize: 18 }}>{isEdit ? '✏️' : '🛒'}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: colors.textPrimary }}>
+                {isEdit ? 'Edit Item' : 'Add to List'}
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
+                {isEdit ? 'Update item details' : 'Type a name or tap a suggestion'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Name input */}
+          <View style={{ backgroundColor: inputBg, borderRadius: 14, borderWidth: 1, borderColor: border,
+            flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, marginBottom: 10 }}>
+            <Ionicons name="search-outline" size={16} color={colors.textSecondary} style={{ marginRight: 8 }} />
+            <TextInput
+              style={{ flex: 1, fontSize: 15, color: colors.textPrimary, paddingVertical: 12 }}
+              placeholder="Item name (e.g. Atta, Milk, Turmeric)"
+              placeholderTextColor={colors.textMuted ?? '#9CA3AF'}
+              value={name} onChangeText={setName} autoFocus
+            />
+            {name.length > 0 && (
+              <Pressable onPress={() => setName('')}>
+                <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+              </Pressable>
+            )}
+          </View>
+
+          {/* AI quick suggestions — hidden in edit mode */}
+          {!isEdit && filteredSuggestions.length > 0 && (
+            <View style={{ marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: '#C4B5FD',
+                  alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 9 }}>✨</Text>
+                </View>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.5 }}>
+                  {aiLoading ? 'Loading suggestions…' : 'QUICK ADD'}
+                </Text>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={{ flexDirection: 'row', gap: 8, paddingRight: 8 }}>
+                  {filteredSuggestions.slice(0, 14).map(s => (
+                    <Pressable key={s.name} onPress={() => { setName(s.name); setCat(s.cat); }}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                        paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
+                        backgroundColor: name === s.name ? P + '25' : (isDark ? '#1E2340' : '#F3F4F6'),
+                        borderWidth: 1, borderColor: name === s.name ? P : 'transparent' }}>
+                      <Text style={{ fontSize: 15 }}>{s.emoji}</Text>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: name === s.name ? P : colors.textPrimary }}>
+                        {s.name}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Quantity + Store row */}
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+            <View style={{ flex: 1, backgroundColor: inputBg, borderRadius: 12, borderWidth: 1, borderColor: border,
+              flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 }}>
+              <Text style={{ fontSize: 13, color: colors.textSecondary, marginRight: 6 }}>📦</Text>
+              <TextInput
+                style={{ flex: 1, fontSize: 14, color: colors.textPrimary, paddingVertical: 10 }}
+                placeholder="Qty (2 kg, 1 doz…)"
+                placeholderTextColor={colors.textMuted ?? '#9CA3AF'}
+                value={qty} onChangeText={setQty}
+              />
+            </View>
+            <View style={{ flex: 1.3, backgroundColor: inputBg, borderRadius: 12, borderWidth: 1, borderColor: border,
+              flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 }}>
+              <Text style={{ fontSize: 13, color: colors.textSecondary, marginRight: 6 }}>🏪</Text>
+              <TextInput
+                style={{ flex: 1, fontSize: 14, color: colors.textPrimary, paddingVertical: 10 }}
+                placeholder="Store (optional)"
+                placeholderTextColor={colors.textMuted ?? '#9CA3AF'}
+                value={store} onChangeText={setStore}
+              />
+            </View>
+          </View>
 
           {/* Category chips */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-            <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 2 }}>
+            <View style={{ flexDirection: 'row', gap: 7, paddingVertical: 2 }}>
               {CATEGORIES.map(c => (
-                <Pressable
-                  key={c}
-                  onPress={() => setCat(cat === c ? '' : c)}
-                  style={[sh.catChip, {
-                    backgroundColor: cat === c ? colors.primary : inputBg,
-                    borderColor: cat === c ? colors.primary : border,
-                  }]}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                    <CatIcon category={c} size={13} color={cat === c ? '#FFF' : colors.textSecondary} />
-                    <Text style={{ fontSize: 12, color: cat === c ? '#FFF' : colors.textSecondary }}>{c}</Text>
-                  </View>
+                <Pressable key={c} onPress={() => setCat(cat === c ? '' : c)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+                    paddingHorizontal: 11, paddingVertical: 6, borderRadius: 20,
+                    backgroundColor: cat === c ? P : (isDark ? '#1E2340' : '#F3F4F6'),
+                    borderWidth: 1, borderColor: cat === c ? P : 'transparent' }}>
+                  <Text style={{ fontSize: 13 }}>{CAT_EMOJI[c] ?? '📦'}</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: cat === c ? '#FFF' : colors.textSecondary }}>{c}</Text>
                 </Pressable>
               ))}
             </View>
           </ScrollView>
 
-          <TextInput
-            style={[sh.input, { backgroundColor: inputBg, borderColor: border, color: colors.textPrimary, height: 60 }]}
-            placeholder="Notes (e.g. get the organic one, only from Patel's)"
-            placeholderTextColor={colors.textMuted ?? '#9CA3AF'}
-            value={notes} onChangeText={setNotes} multiline
-          />
+          {/* Notes input */}
+          <View style={{ backgroundColor: inputBg, borderRadius: 12, borderWidth: 1, borderColor: border,
+            paddingHorizontal: 14, marginBottom: 16 }}>
+            <TextInput
+              style={{ fontSize: 14, color: colors.textPrimary, paddingVertical: 10, minHeight: 50 }}
+              placeholder="Notes — e.g. organic only, from Patel's (optional)"
+              placeholderTextColor={colors.textMuted ?? '#9CA3AF'}
+              value={notes} onChangeText={setNotes} multiline
+            />
+          </View>
 
-          <Pressable
-            onPress={handleSave}
-            disabled={!name.trim() || saving}
-            style={[sh.btn, { backgroundColor: (!name.trim() || saving) ? '#9CA3AF' : colors.primary }]}
-          >
+          {/* Save button */}
+          <Pressable onPress={handleSave} disabled={!name.trim() || saving}
+            style={{ borderRadius: 16, paddingVertical: 14, alignItems: 'center',
+              backgroundColor: (!name.trim() || saving) ? (isDark ? '#374151' : '#D1D5DB') : P,
+              shadowColor: P, shadowOpacity: name.trim() ? 0.4 : 0, shadowRadius: 10, elevation: 4 }}>
             {saving
               ? <ActivityIndicator color="#FFF" size="small" />
-              : <Text style={sh.btnText}>{isEdit ? 'Save Changes' : 'Add to List'}</Text>}
+              : <Text style={{ fontSize: 15, fontWeight: '800', color: '#FFF', letterSpacing: 0.3 }}>
+                  {isEdit ? '✅ Save Changes' : '+ Add to List'}
+                </Text>}
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -1608,7 +1725,7 @@ export default function GroceryScreen() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { members, activeMemberId } = useFamilyStore();
-  const { items, runs, loading, load, addItem, buyItem, removeItem, deleteRun } = useGroceryStore();
+  const { items, runs, loading, load, addItem, buyItem, removeItem, deleteRun, markReturning } = useGroceryStore();
 
   const [tab, setTab]                   = useState<'list' | 'runs' | 'history' | 'insights'>('list');
   const [showAddItem, setShowAddItem]   = useState(false);
@@ -1790,118 +1907,168 @@ export default function GroceryScreen() {
     ]);
   };
 
+  // ── Return mode (multi-select on bought items) ────────────────────────────
+  const [returnMode, setReturnMode] = useState(false);
+  const [returnIds, setReturnIds] = useState<Set<string>>(new Set());
+
+  const handleCreateReturn = (assigneeId: string) => {
+    const selectedItems = boughtItems.filter(i => returnIds.has(i.id));
+    if (selectedItems.length === 0) return;
+    const itemLabel = selectedItems.length === 1
+      ? `"${selectedItems[0].name}"`
+      : `${selectedItems.length} items`;
+    const quest = useQuestStore.getState().addQuest({
+      title: `↩️ Return ${itemLabel} to the store`,
+      description: selectedItems.map(i => `• ${i.name}${i.quantity ? ' (' + i.quantity + ')' : ''}`).join('\n'),
+      assignedToId: assigneeId,
+      assignedToIds: [assigneeId],
+      isPool: false,
+      category: 'Shopping',
+      priority: 'medium',
+      coins: 10,
+      xpReward: 5,
+      isDaily: false,
+      recurrence: 'once',
+      status: 'todo',
+      dueDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      photoRequired: false,
+      isAdultTask: false,
+    });
+    markReturning(Array.from(returnIds), quest.id);
+    setReturnIds(new Set());
+    setReturnMode(false);
+    setTimeout(refreshBought, 600);
+    Alert.alert('↩️ Return Quest Created', `${selectedItems.length} item${selectedItems.length !== 1 ? 's' : ''} queued for return and assigned to ${members.find(m => m.id === assigneeId)?.name ?? 'a member'}.`);
+  };
+
+  const scrollRef = useRef<ScrollView>(null);
+  const [showFab, setShowFab] = useState(false);
+  const fabOpacity = useRef(new Animated.Value(0)).current;
+  const onScroll = (e: any) => {
+    const y = e.nativeEvent.contentOffset.y;
+    const visible = y > 200;
+    if (visible !== showFab) {
+      setShowFab(visible);
+      Animated.timing(fabOpacity, { toValue: visible ? 1 : 0, duration: 200, useNativeDriver: true }).start();
+    }
+  };
+
   return (
     <View style={[s.root, { backgroundColor: bg }]}>
 
-      {/* Header */}
-      <View style={[s.header, { paddingTop: insets.top + 8, backgroundColor: card, borderBottomColor: border }]}>
+      {/* ── Fixed header + sticky tile nav ── */}
+      <View style={{ backgroundColor: card, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border,
+        paddingTop: insets.top + 8 }}>
         {/* Title row */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-          <Text style={[s.headerTitle, { color: colors.textPrimary }]}>🛒 Groceries</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, marginBottom: 10 }}>
+          <Ionicons name="cart" size={22} color={P} />
+          <Text style={[s.headerTitle, { color: colors.textPrimary, flex: 1 }]}>Groceries</Text>
           {items.length > 0 && (
-            <View style={[s.countBadge, { backgroundColor: '#7C3AED' }]}>
+            <View style={[s.countBadge, { backgroundColor: P }]}>
               <Text style={s.countText}>{items.length}</Text>
             </View>
           )}
         </View>
-        {/* Action buttons row */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Pressable onPress={() => setShowNewRun(true)}
-            style={[s.headerBtn, { borderColor: 'rgba(124,58,237,0.3)', backgroundColor: 'transparent' }]}>
-            <Ionicons name="cart-outline" size={16} color="#7C3AED" />
-            <Text style={[s.headerBtnText, { color: '#7C3AED' }]}>New Run</Text>
-          </Pressable>
+
+        {/* 1×4 sticky tile nav */}
+        <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingBottom: 12 }}>
+          {([
+            { key: 'list',     icon: 'list' as const,          label: 'List',     badge: items.filter(i => !i.isBought).length },
+            { key: 'runs',     icon: 'walk' as const,          label: 'Runs',     badge: runs.filter(r => r.status === 'active').length },
+            { key: 'history',  icon: 'receipt-outline' as const, label: 'History',  badge: 0 },
+            { key: 'insights', icon: 'bar-chart' as const,     label: 'Insights', badge: 0 },
+          ] as const).map(t => {
+            const active = tab === t.key;
+            const isRuns = t.key === 'runs';
+            return (
+              <Pressable key={t.key} onPress={() => setTab(t.key)}
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 14,
+                  backgroundColor: active ? P : (isDark ? '#1A1F35' : '#F3F4F6'),
+                  borderWidth: active ? 0 : StyleSheet.hairlineWidth,
+                  borderColor: isDark ? 'rgba(124,58,237,0.18)' : '#E5E7EB',
+                  shadowColor: P, shadowOpacity: active ? 0.35 : 0, shadowRadius: 8, elevation: active ? 4 : 0 }}>
+                <Ionicons name={t.icon} size={20} color={active ? '#FFF' : colors.textSecondary} style={{ marginBottom: 3 }} />
+                <Text style={{ fontSize: 11, fontWeight: '700', color: active ? '#FFF' : colors.textSecondary }}>
+                  {t.label}
+                </Text>
+                {t.badge > 0 && (
+                  <View style={{ position: 'absolute', top: 5, right: 5, minWidth: 16, height: 16,
+                    borderRadius: 8, backgroundColor: active ? 'rgba(255,255,255,0.35)' : P,
+                    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 }}>
+                    <Text style={{ fontSize: 9, fontWeight: '800', color: '#FFF' }}>{t.badge}</Text>
+                  </View>
+                )}
+                {isRuns && (
+                  <Pressable
+                    onPress={e => { e.stopPropagation(); setShowNewRun(true); }}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                    style={{ position: 'absolute', bottom: 5, right: 5, width: 18, height: 18,
+                      borderRadius: 9, backgroundColor: active ? 'rgba(255,255,255,0.30)' : P,
+                      alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="add" size={12} color="#FFF" />
+                  </Pressable>
+                )}
+              </Pressable>
+            );
+          })}
         </View>
       </View>
 
-      {/* CubeAI banner — above cart total */}
-      <GroceryAiBanner
-        isDark={isDark} colors={colors}
-        onScan={() => setShowReceiptScan(true)}
-        onPriceCheck={() => checkPrices()}
-        pricesLoaded={pricesLoaded} priceLoading={priceLoading}
-      />
+      {/* ── Scrollable content ── */}
+      <ScrollView
+        ref={scrollRef}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+      >
+        {/* AI banner + cart total + active run */}
+        <View>
+          <GroceryAiBanner
+            isDark={isDark} colors={colors}
+            onScan={() => setShowReceiptScan(true)}
+            onPriceCheck={() => checkPrices()}
+            pricesLoaded={pricesLoaded} priceLoading={priceLoading}
+          />
 
-      {/* Cart total */}
-      {cartTotal > 0 && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-          paddingHorizontal: 16, paddingVertical: 10,
-          backgroundColor: isDark ? '#1A1A2E' : '#F0EEFF',
-          borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border }}>
-          <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary }}>
-            🛒 Estimated cart total ({items.filter(i => !i.isBought).length} items)
-          </Text>
-          <Text style={{ fontSize: 16, fontWeight: '900', color: P }}>
-            ${cartTotal.toFixed(2)}
-          </Text>
+          {cartTotal > 0 && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              paddingHorizontal: 16, paddingVertical: 10,
+              backgroundColor: isDark ? '#1A1A2E' : '#F0EEFF',
+              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="cart-outline" size={14} color={P} />
+                <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary }}>
+                  Estimated total ({items.filter(i => !i.isBought).length} items)
+                </Text>
+              </View>
+              <Text style={{ fontSize: 16, fontWeight: '900', color: P }}>${cartTotal.toFixed(2)}</Text>
+            </View>
+          )}
+
+          {activeRuns.length > 0 && (
+            <Pressable onPress={() => setSelectedRun(activeRuns[0])}
+              style={[s.activeBanner, { backgroundColor: '#DCFCE7', borderColor: '#16A34A' }]}>
+              <View style={s.activeDot} />
+              <Text style={s.activeBannerText}>Shopping now at {activeRuns[0].store}</Text>
+              <Text style={[s.activeBannerText, { fontWeight: '600' }]}>Tap to open →</Text>
+            </Pressable>
+          )}
         </View>
-      )}
 
-      {/* Active run banner */}
-      {activeRuns.length > 0 && (
-        <Pressable
-          onPress={() => setSelectedRun(activeRuns[0])}
-          style={[s.activeBanner, { backgroundColor: '#DCFCE7', borderColor: '#16A34A' }]}
-        >
-          <View style={s.activeDot} />
-          <Text style={s.activeBannerText}>
-            Shopping now at {activeRuns[0].store}
-          </Text>
-          <Text style={[s.activeBannerText, { fontWeight: '600' }]}>Tap to open →</Text>
-        </Pressable>
-      )}
-
-      {/* Tab bar — 4 tabs */}
-      <View style={[s.tabRow, { backgroundColor: card, borderBottomColor: border }]}>
-        {([
-          { key: 'list',     label: '🛒 List',     badge: items.length },
-          { key: 'runs',     label: '🏃 Runs',     badge: runs.filter(r => r.status === 'active').length },
-          { key: 'history',  label: '🧾 History',  badge: 0 },
-          { key: 'insights', label: '📊 Insights', badge: 0 },
-        ] as const).map(t => (
-          <Pressable key={t.key} onPress={() => setTab(t.key)} style={[s.tabBtn, tab === t.key && { borderBottomColor: P }]}>
-            <Text style={[s.tabLabel, { color: tab === t.key ? P : colors.textSecondary }]} numberOfLines={1}>
-              {t.label}{t.badge > 0 ? ` (${t.badge})` : ''}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {/* Content */}
-      {/* Partner presence & restock banners */}
-      {tab === 'list' && (
+        {/* Tab content */}
+        {tab === 'history' ? (
+          <HistoryTab familyId={familyId} colors={colors} isDark={isDark} />
+        ) : tab === 'insights' ? (
+          <InsightsTab familyId={familyId} colors={colors} isDark={isDark} />
+        ) : loading ? (
+          <ActivityIndicator style={{ marginTop: 60 }} color={P} />
+        ) : tab === 'list' ? (
         <>
-          <PartnerStatusBar
-            familyId={familyId}
-            currentMemberId={activeMemberId ?? ''}
-            colors={colors}
-            isDark={isDark}
-          />
-          <SmartRestockBanner
-            familyId={familyId}
-            colors={colors}
-            isDark={isDark}
-            onAddItem={(name, category) => {
-              addItem({
-                familyId,
-                addedBy: activeMemberId ?? '',
-                name,
-                category,
-              });
-            }}
-          />
-        </>
-      )}
-
-      {tab === 'history' ? (
-        <HistoryTab familyId={familyId} colors={colors} isDark={isDark} />
-      ) : tab === 'insights' ? (
-        <InsightsTab familyId={familyId} colors={colors} isDark={isDark} />
-      ) : loading ? (
-        <ActivityIndicator style={{ marginTop: 60 }} color={P} />
-      ) : tab === 'list' ? (
-        <>
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+          <PartnerStatusBar familyId={familyId} currentMemberId={activeMemberId ?? ''} colors={colors} isDark={isDark} />
+          <SmartRestockBanner familyId={familyId} colors={colors} isDark={isDark}
+            onAddItem={(name, category) => addItem({ familyId, addedBy: activeMemberId ?? '', name, category })} />
+          <View style={{ padding: 16 }}>
 
           {/* Supplies section */}
           {categorisedItems.supplies.length > 0 && (
@@ -1988,48 +2155,111 @@ export default function GroceryScreen() {
           {/* ✅ Recently Bought */}
           {boughtItems.length > 0 && (
             <View style={{ marginTop: 8, marginBottom: 8 }}>
-              <Pressable onPress={() => setBoughtExpanded(e => !e)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 4 }}>
-                <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#10B98118', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 15 }}>✅</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#10B981', letterSpacing: 0.8 }}>RECENTLY BOUGHT</Text>
-                  <Text style={{ fontSize: 11, color: colors.textTertiary }}>Last 7 days · {boughtItems.length} items</Text>
-                </View>
-                <Text style={{ fontSize: 18, color: colors.textTertiary }}>{boughtExpanded ? '▲' : '▼'}</Text>
-              </Pressable>
+              {/* Header row: expand toggle + Return button */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 }}>
+                <Pressable onPress={() => { setBoughtExpanded(e => !e); if (returnMode) { setReturnMode(false); setReturnIds(new Set()); } }}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, flex: 1 }}>
+                  <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#10B98118', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 15 }}>✅</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#10B981', letterSpacing: 0.8 }}>RECENTLY BOUGHT</Text>
+                    <Text style={{ fontSize: 11, color: colors.textTertiary }}>Last 7 days · {boughtItems.length} items</Text>
+                  </View>
+                  <Text style={{ fontSize: 18, color: colors.textTertiary }}>{boughtExpanded ? '▲' : '▼'}</Text>
+                </Pressable>
+                {boughtExpanded && !isKid && (
+                  <Pressable onPress={() => { setBoughtExpanded(true); setReturnMode(r => !r); setReturnIds(new Set()); }}
+                    style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12,
+                      backgroundColor: returnMode ? '#EA580C20' : '#FFF7ED',
+                      borderWidth: 1, borderColor: returnMode ? '#EA580C' : '#FED7AA' }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#EA580C' }}>
+                      {returnMode ? 'Cancel' : '↩️ Return'}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+
               {boughtExpanded && (
                 <View style={{ backgroundColor: isDark ? '#0d1f14' : '#F0FDF4', borderRadius: 14, overflow: 'hidden',
                   borderWidth: 1, borderColor: isDark ? '#10B98130' : '#A7F3D0' }}>
                   {boughtItems.map((item, idx) => {
                     const buyer = members.find(m => m.id === item.boughtBy);
                     const when  = item.boughtAt ? new Date(item.boughtAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+                    const isReturning = item.isReturning;
+                    const isChecked   = returnIds.has(item.id);
                     return (
-                      <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 11,
-                        borderBottomWidth: idx < boughtItems.length - 1 ? 1 : 0,
-                        borderBottomColor: isDark ? '#10B98118' : '#D1FAE5' }}>
-                        <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                          <Text style={{ fontSize: 11, color: '#fff' }}>✓</Text>
-                        </View>
+                      <Pressable key={item.id}
+                        onPress={() => {
+                          if (!returnMode || isReturning) return;
+                          setReturnIds(prev => {
+                            const n = new Set(prev);
+                            n.has(item.id) ? n.delete(item.id) : n.add(item.id);
+                            return n;
+                          });
+                        }}
+                        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 11,
+                          borderBottomWidth: idx < boughtItems.length - 1 ? 1 : 0,
+                          borderBottomColor: isDark ? '#10B98118' : '#D1FAE5',
+                          backgroundColor: isChecked ? (isDark ? '#EA580C18' : '#FFF7ED') : 'transparent' }}>
+                        {/* Left indicator */}
+                        {returnMode && !isReturning ? (
+                          <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2,
+                            borderColor: isChecked ? '#EA580C' : (isDark ? '#4B5563' : '#D1D5DB'),
+                            backgroundColor: isChecked ? '#EA580C' : 'transparent',
+                            alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                            {isChecked && <Text style={{ fontSize: 13, color: '#fff', fontWeight: '700' }}>✓</Text>}
+                          </View>
+                        ) : (
+                          <View style={{ width: 22, height: 22, borderRadius: 11,
+                            backgroundColor: isReturning ? '#F97316' : '#10B981',
+                            alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                            <Text style={{ fontSize: 11, color: '#fff' }}>{isReturning ? '↩' : '✓'}</Text>
+                          </View>
+                        )}
                         <View style={{ flex: 1 }}>
                           <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, textDecorationLine: 'line-through' }}>
                             {item.name}{item.quantity ? ` × ${item.quantity}` : ''}
                           </Text>
-                          <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>
-                            {buyer ? `${buyer.name.split(' ')[0]} · ` : ''}{when}
+                          <Text style={{ fontSize: 11, color: isReturning ? '#EA580C' : colors.textTertiary, marginTop: 2 }}>
+                            {isReturning ? '🔄 Return pending' : `${buyer ? buyer.name.split(' ')[0] + ' · ' : ''}${when}`}
                           </Text>
                         </View>
-                      </View>
+                      </Pressable>
                     );
                   })}
                 </View>
               )}
             </View>
           )}
-        </ScrollView>
+        </View>
 
-        {/* Bulk action toolbar */}
+        {/* Return mode toolbar */}
+        {returnMode && returnIds.size > 0 && (
+          <View style={{ position: 'absolute', bottom: 90, left: 16, right: 16,
+            flexDirection: 'row', alignItems: 'center',
+            backgroundColor: '#7C2D12', borderRadius: 20,
+            paddingVertical: 12, paddingHorizontal: 16, gap: 10,
+            shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 14, elevation: 10 }}>
+            <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: '#FFF' }}>
+              {returnIds.size} item{returnIds.size !== 1 ? 's' : ''} to return
+            </Text>
+            <Pressable onPress={() => {
+              Alert.alert(
+                '↩️ Assign Return To',
+                'Who will take these items back to the store?',
+                [
+                  ...members.map(m => ({ text: m.name, onPress: () => handleCreateReturn(m.id) })),
+                  { text: 'Cancel', style: 'cancel' },
+                ]
+              );
+            }} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 14, backgroundColor: '#EA580C' }}>
+              <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }}>↩️ Create Quest</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* List-item bulk action toolbar */}
         {isSelecting && (
           <View style={{ position: 'absolute', bottom: 90, left: 16, right: 16,
             flexDirection: 'row', alignItems: 'center',
@@ -2044,14 +2274,22 @@ export default function GroceryScreen() {
               <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '600' }}>Select All</Text>
             </Pressable>
             {!isKid && (
-              <Pressable onPress={() => Alert.alert('Delete items?', `Remove ${selectedIds.size} item${selectedIds.size !== 1 ? 's' : ''} from the list?`, [
-                { text: 'Cancel', style: 'cancel' },
-                { text: `Delete (${selectedIds.size})`, style: 'destructive', onPress: () => {
-                  selectedIds.forEach(id => removeItem(id));
-                  setSelectedIds(new Set());
-                }},
-              ])}
-                style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: '#EF4444' }}>
+              <Pressable onPress={() => {
+                const deletable = Array.from(selectedIds).filter(id => {
+                  const bi = boughtItems.find(i => i.id === id);
+                  return !bi?.isReturning;
+                });
+                if (deletable.length === 0) {
+                  Alert.alert('Cannot delete', 'Items pending return cannot be deleted.'); return;
+                }
+                Alert.alert('Delete items?', `Remove ${deletable.length} item${deletable.length !== 1 ? 's' : ''} from the list?`, [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: `Delete (${deletable.length})`, style: 'destructive', onPress: () => {
+                    deletable.forEach(id => removeItem(id));
+                    setSelectedIds(new Set());
+                  }},
+                ]);
+              }} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: '#EF4444' }}>
                 <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Delete ({selectedIds.size})</Text>
               </Pressable>
             )}
@@ -2063,7 +2301,7 @@ export default function GroceryScreen() {
         )}
         </>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+        <View style={{ padding: 16 }}>
           {runs.length === 0 ? (
             <View style={s.empty}>
               <Text style={s.emptyEmoji}>🗓️</Text>
@@ -2098,10 +2336,26 @@ export default function GroceryScreen() {
               )}
             </>
           )}
-        </ScrollView>
+        </View>
       )}
 
-      {/* FAB */}
+      </ScrollView>
+
+      {/* Go-to-top FAB */}
+      <Animated.View style={{
+        position: 'absolute', bottom: insets.bottom + 144, right: 20,
+        opacity: fabOpacity, pointerEvents: showFab ? 'auto' : 'none',
+      }}>
+        <Pressable
+          onPress={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
+          style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: isDark ? '#1E293B' : '#E0E7FF',
+            alignItems: 'center', justifyContent: 'center',
+            shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, elevation: 6 }}>
+          <Ionicons name="chevron-up" size={22} color={P} />
+        </Pressable>
+      </Animated.View>
+
+      {/* Add FAB */}
       <Pressable
         onPress={() => setShowAddItem(true)}
         style={[s.fab, { backgroundColor: P, bottom: insets.bottom + 80 }]}

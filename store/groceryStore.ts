@@ -32,6 +32,8 @@ export interface GroceryItem {
   aiGenerated: boolean;
   estimatedPrice?: number;
   createdAt: string;
+  isReturning?: boolean;
+  returnQuestId?: string;
 }
 
 export interface GroceryRunItem {
@@ -81,6 +83,8 @@ function rowToItem(r: any): GroceryItem {
     aiGenerated:     r.ai_generated ?? false,
     estimatedPrice:  r.estimated_price ?? undefined,
     createdAt:       r.created_at,
+    isReturning:     r.is_returning ?? false,
+    returnQuestId:   r.return_quest_id ?? undefined,
   };
 }
 
@@ -135,9 +139,10 @@ interface GroceryState {
   cleanup: () => void;
 
   addItem:    (params: { familyId: string; name: string; quantity?: string; category?: string; storePreference?: string; addedBy: string; notes?: string; aiGenerated?: boolean }) => Promise<GroceryItem | null>;
-  removeItem: (itemId: string) => Promise<void>;
-  buyItem:    (itemId: string, memberId: string) => Promise<void>;
-  restoreItem:(itemId: string) => Promise<void>;
+  removeItem:    (itemId: string) => Promise<void>;
+  buyItem:       (itemId: string, memberId: string) => Promise<void>;
+  restoreItem:   (itemId: string) => Promise<void>;
+  markReturning: (itemIds: string[], questId: string) => Promise<void>;
 
   createRun:    (params: { familyId: string; name: string; store: string; createdBy: string; shopperId?: string; linkedEventId?: string; linkedQuestId?: string; plannedAt?: string }) => Promise<GroceryRun | null>;
   startRun:     (runId: string, shopperId: string) => Promise<void>;
@@ -338,6 +343,12 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
     // Realtime will re-add it to the list
   },
 
+  markReturning: async (itemIds, questId) => {
+    await supabase.from('grocery_items')
+      .update({ is_returning: true, return_quest_id: questId })
+      .in('id', itemIds);
+  },
+
   // ── Runs ──────────────────────────────────────────────────────────────────
 
   createRun: async (params) => {
@@ -383,23 +394,24 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
     const now = new Date().toISOString();
     set(s => ({ runs: s.runs.map(r => r.id === runId ? { ...r, status: 'done', completedAt: now } : r) }));
     await supabase.from('grocery_runs').update({ status: 'done', completed_at: now }).eq('id', runId);
-    // Mark all checked items as bought in the persistent pool
+    // Mark checked items as bought — but skip returning items (they stay on the list)
     const { data } = await supabase
       .from('grocery_run_items')
-      .select('item_id, checked_by')
+      .select('item_id, checked_by, is_returning')
       .eq('run_id', runId)
       .eq('checked_in_run', true);
-    if (data?.length) {
-      const boughtAt = now;
-      for (const ri of data) {
-        await supabase.from('grocery_items').update({ is_bought: true, bought_by: ri.checked_by, bought_at: boughtAt }).eq('id', ri.item_id);
+    const bought = (data ?? []).filter(ri => !ri.is_returning);
+    if (bought.length) {
+      for (const ri of bought) {
+        await supabase.from('grocery_items').update({ is_bought: true, bought_by: ri.checked_by, bought_at: now }).eq('id', ri.item_id);
       }
-      set(s => ({ items: s.items.filter(i => !data.find(d => d.item_id === i.id)) }));
+      set(s => ({ items: s.items.filter(i => !bought.find(d => d.item_id === i.id)) }));
     }
   },
 
   deleteRun: async (runId) => {
     set(s => ({ runs: s.runs.filter(r => r.id !== runId) }));
+    // grocery_items are never deleted here — returning items naturally stay on the list
     await supabase.from('grocery_run_items').delete().eq('run_id', runId);
     await supabase.from('grocery_runs').delete().eq('id', runId);
   },

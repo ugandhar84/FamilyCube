@@ -257,6 +257,7 @@ export function GroceryModal({ visible, onClose, active }: {
       title="🛒 Request Groceries"
       subtitle={canSubmit ? `${validLines.length} item${validLines.length > 1 ? 's' : ''} · parent approves each one` : 'Parent approves before items are added'}
       accentColor={BRAND.teal}
+      minHeight="75%"
       footer={
         <TouchableOpacity onPress={submit} disabled={!canSubmit}
           style={[f.submitBtn, { backgroundColor: canSubmit ? BRAND.teal : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
@@ -266,9 +267,6 @@ export function GroceryModal({ visible, onClose, active }: {
         </TouchableOpacity>
       }
     >
-            <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 8 }}>
-
               {/* ── Category selector ── */}
               <Text style={[f.label, { color: colors.textSecondary }]}>Category</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
@@ -359,7 +357,6 @@ export function GroceryModal({ visible, onClose, active }: {
                 value={notes} onChangeText={setNotes} multiline
               />
 
-            </ScrollView>
     </AppBottomSheet>
   );
 }
@@ -430,6 +427,7 @@ export function SuppliesModal({ visible, onClose, active }: {
       title="📚 School Supplies"
       subtitle="Parent approves and picks these up for you"
       accentColor="#6366F1"
+      minHeight="75%"
       footer={
         <TouchableOpacity onPress={submit} disabled={!canSubmit}
           style={[f.submitBtn, { backgroundColor: canSubmit ? '#6366F1' : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
@@ -439,9 +437,6 @@ export function SuppliesModal({ visible, onClose, active }: {
         </TouchableOpacity>
       }
     >
-            <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 8 }}>
-
               {/* Urgency */}
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
                 {(['normal', 'soon'] as const).map(u => (
@@ -519,7 +514,6 @@ export function SuppliesModal({ visible, onClose, active }: {
                 placeholder="e.g. for science project due Friday"
                 placeholderTextColor={colors.textTertiary} multiline />
 
-            </ScrollView>
     </AppBottomSheet>
   );
 }
@@ -570,8 +564,6 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
       accentColor={BRAND.purple}
       maxHeight="85%"
     >
-          <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 8 }}>
             {myRequests.length === 0 ? (
               <View style={{ alignItems: 'center', paddingVertical: 32 }}>
                 <Text style={{ fontSize: 40, marginBottom: 12 }}>🛒</Text>
@@ -709,7 +701,6 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
     </AppBottomSheet>
   );
 }
@@ -754,7 +745,8 @@ export function AskModal({ visible, onClose, type, active }: {
       title={`${meta.emoji} ${meta.label}`}
       subtitle="Sent directly to your parent"
       accentColor={meta.accent}
-      maxHeight="48%"
+      minHeight="30%"
+      maxHeight="55%"
       footer={
         <TouchableOpacity onPress={submit} disabled={!text.trim()}
           style={[f.submitBtn, { backgroundColor: text.trim() ? meta.accent : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>

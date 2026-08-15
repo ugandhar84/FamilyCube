@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, TextInput } from 'react-native';
 import {
   Sparkles, PlusCircle, Calendar, ShoppingCart, Navigation,
   ChevronUp, ChevronDown, Camera, Coins, Car, Hand,
+  Unlock, HelpCircle, Pill, Check, X, MessageSquare,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useTheme } from '@/lib/ThemeContext';
@@ -21,6 +22,103 @@ import {
   SectionCard, CollapsibleCard, AlertBanner, TimelineCard, InlineReassignPanel,
 } from './hubComponents';
 import { localToday, fmtHumanDate, fmtTime, hoursUntilEvent, isWorkEvent, minutesBetween } from './hubUtils';
+
+// ─── Inline reply card — question/permission/medical (collapsible) ───────────
+function InlineReplyCard({ req, kidName, isPermission, isQuestion, isMedical, accent, colors, isDark, onApprove, onDecline }: {
+  req: any; kidName: string;
+  isPermission: boolean; isQuestion: boolean; isMedical: boolean;
+  accent: string; colors: any; isDark: boolean;
+  onApprove: (reply: string) => void;
+  onDecline: (reply: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [reply, setReply] = useState('');
+  const canSubmit = !isQuestion || reply.trim().length > 0;
+
+  const TypeIcon = isMedical ? Pill : isPermission ? Unlock : HelpCircle;
+  const typeLabel = isMedical ? 'Medical Alert' : isPermission ? 'Permission' : 'Question';
+
+  return (
+    <View style={{ borderRadius: 16, borderWidth: 1.5, borderColor: accent + '40', backgroundColor: isDark ? colors.card : accent + '06', overflow: 'hidden' }}>
+      {/* Always-visible header row — tap to expand */}
+      <Pressable onPress={() => setExpanded(e => !e)}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12 }}>
+        <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: accent + '20', alignItems: 'center', justifyContent: 'center' }}>
+          <TypeIcon size={16} color={accent} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: accent }}>{typeLabel} — {kidName}</Text>
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 1 }} numberOfLines={1}>
+            {req.detail.length > 55 ? req.detail.slice(0, 55) + '…' : req.detail}
+          </Text>
+        </View>
+        <View style={{ backgroundColor: accent + '18', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, marginRight: 4 }}>
+          <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: accent }}>Pending</Text>
+        </View>
+        {expanded ? <ChevronUp size={16} color={colors.textTertiary} /> : <ChevronDown size={16} color={colors.textTertiary} />}
+      </Pressable>
+
+      {expanded && (
+        <>
+          {/* Divider */}
+          <View style={{ height: 1, backgroundColor: accent + '20', marginHorizontal: 14 }} />
+
+          {/* Full message */}
+          <View style={{ marginHorizontal: 14, marginTop: 10, borderRadius: 12, padding: 12,
+            backgroundColor: isDark ? '#1e293b' : '#fff',
+            borderLeftWidth: 3, borderLeftColor: accent }}>
+            <Text style={{ fontSize: TYPO.caption, color: colors.textPrimary, lineHeight: 19 }}>
+              "{req.detail}"
+            </Text>
+          </View>
+
+          {/* Reply input */}
+          <View style={{ marginHorizontal: 14, marginTop: 10, borderRadius: 12, borderWidth: 1.5,
+            borderColor: reply.trim() ? accent + '60' : colors.border,
+            backgroundColor: isDark ? colors.surface : '#fff',
+            flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 10 }}>
+            <MessageSquare size={14} color={reply.trim() ? accent : colors.textTertiary} style={{ marginTop: 2 }} />
+            <TextInput
+              style={{ flex: 1, fontSize: TYPO.caption, color: colors.textPrimary, minHeight: 36 }}
+              placeholder={isQuestion ? 'Type your reply… (required)' : 'Add a reply (optional)'}
+              placeholderTextColor={colors.textTertiary}
+              value={reply}
+              onChangeText={setReply}
+              multiline
+              textAlignVertical="top"
+            />
+          </View>
+
+          {/* Action buttons */}
+          <View style={{ flexDirection: 'row', gap: 8, padding: 14 }}>
+            <Pressable
+              onPress={() => onApprove(reply.trim())}
+              disabled={!canSubmit}
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                backgroundColor: canSubmit ? '#10B981' : (isDark ? '#374151' : '#D1D5DB'),
+                paddingVertical: 11, borderRadius: 12 }}>
+              <Check size={14} color="#fff" />
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
+                {isPermission ? 'Allow' : isMedical ? 'Acknowledged' : 'Reply'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => onDecline(reply.trim())}
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                backgroundColor: isDark ? '#EF444420' : '#FEF2F2',
+                borderWidth: 1.5, borderColor: '#EF444430',
+                paddingVertical: 11, borderRadius: 12 }}>
+              <X size={14} color="#EF4444" />
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>
+                {isPermission ? 'No' : 'Dismiss'}
+              </Text>
+            </Pressable>
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
 
 export function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpRequest, onEnRoute }: {
   active: FamilyMember; members: FamilyMember[];
@@ -273,7 +371,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
             {pendingRequests.map(ev => {
               const requester = ev.helperRequestedBy ?? members.find(m => m.id === ev.memberId)?.name ?? 'Kid';
               return (
-                <CollapsibleCard key={ev.id} flat accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={false}
+                <CollapsibleCard key={ev.id} flat accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={true}
                   summary={
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Hand size={16} color={BRAND.amber} />
@@ -316,7 +414,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
             {awaitingApproval.map(q => {
               const kid = members.find(m => m.id === q.assignedToId);
               return (
-                <CollapsibleCard key={q.id} flat accent={BRAND.purple} colors={colors} isDark={isDark} defaultExpanded={false}
+                <CollapsibleCard key={q.id} flat accent={BRAND.purple} colors={colors} isDark={isDark} defaultExpanded={true}
                   summary={
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Camera size={16} color={BRAND.purple} />
@@ -382,59 +480,33 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                 );
               }
 
-              // ── Question / Permission / Medical: always-visible inline card ──
+              // ── Question / Permission / Medical: inline reply card ──
               if (isQuestion || isPermission || isMedical) {
-                const typeLabel = isMedical ? '💊 Medical Alert' : isPermission ? '🔓 Permission' : '❓ Question';
                 return (
-                  <View key={req.id} style={{
-                    borderRadius: 14, borderWidth: 1.5, borderColor: accent + '35',
-                    backgroundColor: isDark ? colors.card : accent + '08',
-                    overflow: 'hidden',
-                  }}>
-                    {/* Header row */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingTop: 11, paddingBottom: 4 }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: accent }}>
-                          {typeLabel} — {kidName}
-                        </Text>
-                      </View>
-                      <View style={{ backgroundColor: accent + '20', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: accent }}>Pending</Text>
-                      </View>
-                    </View>
-                    {/* Message text — always visible */}
-                    <View style={{ marginHorizontal: 12, marginBottom: 10, borderRadius: 10, padding: 10,
-                      backgroundColor: isDark ? '#1e293b' : '#fff',
-                      borderLeftWidth: 3, borderLeftColor: accent }}>
-                      <Text style={{ fontSize: TYPO.caption, color: colors.textPrimary, lineHeight: 18 }}>
-                        "{req.detail}"
-                      </Text>
-                    </View>
-                    {/* Action buttons */}
-                    <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
-                      <Pressable onPress={() => approveRequest(req.id, active.id)}
-                        style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
-                          {isPermission ? '✓ Allow' : isMedical ? '✓ Acknowledged' : '✓ Replied'}
-                        </Text>
-                      </Pressable>
-                      <Pressable onPress={() => declineRequest(req.id, active.id)}
-                        style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>
-                          {isPermission ? '✕ No' : '✕ Dismiss'}
-                        </Text>
-                      </Pressable>
-                    </View>
-                  </View>
+                  <InlineReplyCard
+                    key={req.id}
+                    req={req}
+                    kidName={kidName}
+                    isPermission={isPermission}
+                    isQuestion={isQuestion}
+                    isMedical={isMedical}
+                    accent={accent}
+                    colors={colors}
+                    isDark={isDark}
+                    onApprove={(reply) => approveRequest(req.id, active.id, reply || undefined)}
+                    onDecline={(reply) => declineRequest(req.id, active.id, reply || undefined)}
+                  />
                 );
               }
 
               // ── Grocery / Supplies: collapsible with item-level approve ──
               return (
-                <CollapsibleCard key={req.id} flat accent={accent} colors={colors} isDark={isDark} defaultExpanded={false}
+                <CollapsibleCard key={req.id} flat accent={accent} colors={colors} isDark={isDark} defaultExpanded={true}
                   summary={
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: 15 }}>{isGrocery ? '🛒' : '📚'}</Text>
+                      <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: accent + '20', alignItems: 'center', justifyContent: 'center' }}>
+                        {isGrocery ? <ShoppingCart size={14} color={accent} /> : <Sparkles size={14} color={accent} />}
+                      </View>
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: accent }} numberOfLines={1}>
                           {isGrocery ? 'Grocery' : 'Supplies'} — {kidName}

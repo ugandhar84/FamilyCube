@@ -42,6 +42,7 @@ interface HealthTimelineProps {
   onToggleMedActive: (id: string, newActive: boolean) => Promise<void>;
   onDeleteEntry: (ev: TLEvent) => void;
   onDeleteGroup: (evs: TLEvent[], label: string) => void;
+  onEditEntry?: (ev: TLEvent) => void;
 }
 
 export const HealthTimeline = React.memo(function HealthTimeline({
@@ -49,7 +50,7 @@ export const HealthTimeline = React.memo(function HealthTimeline({
   tlDateFrom, tlDateTo, setTlDateFrom, setTlDateTo,
   tier, petName, colors, accent,
   monthsShown, setMonthsShown, aiSummaryMap, s, typeCfg,
-  onPressAppt, onPressMed, onToggleMedActive, onDeleteEntry, onDeleteGroup,
+  onPressAppt, onPressMed, onToggleMedActive, onDeleteEntry, onDeleteGroup, onEditEntry,
 }: HealthTimelineProps) {
   const [datePickerTarget, setDatePickerTarget] = useState<'from' | 'to' | null>(null);
   const hasDateFilter = !!(tlDateFrom || tlDateTo);
@@ -156,6 +157,7 @@ export const HealthTimeline = React.memo(function HealthTimeline({
               onToggleMedActive={onToggleMedActive}
               onDeleteEntry={onDeleteEntry}
               onDeleteGroup={onDeleteGroup}
+              onEditEntry={onEditEntry}
             />
             {lockedEvents.length > 0 && (
               <TeaserGate

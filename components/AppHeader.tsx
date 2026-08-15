@@ -177,14 +177,9 @@ export default function AppHeader({
     <PersonaSwitcherSheet visible={showSwitcher} onClose={() => setShowSwitcher(false)} />
     <View style={[s.bar, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
 
-      {/* LEFT: dice cube + animated brand name */}
+      {/* LEFT: cube icon + persona pill */}
       <View style={s.left}>
-        <AnimatedCubeMark size={30} />
-        <AnimatedBrandName textColor={colors.textPrimary} />
-      </View>
-
-      {/* RIGHT: persona pill + bell */}
-      <View style={s.right}>
+        <AnimatedCubeMark size={36} />
 
         <TouchableOpacity
           style={[s.pill, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -202,17 +197,17 @@ export default function AppHeader({
           </View>
           <ChevronDown color={colors.textSecondary} />
         </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[s.bell, { backgroundColor: isDark ? 'rgba(245,166,35,0.22)' : '#FEF0D3' }]}
-          onPress={onBellPress}
-          activeOpacity={0.8}
-        >
-          <BellIcon color={BRAND.amber} />
-          {notifCount > 0 && <View style={s.badge} />}
-        </TouchableOpacity>
-
       </View>
+
+      {/* RIGHT: bell only */}
+      <TouchableOpacity
+        style={[s.bell, { backgroundColor: isDark ? 'rgba(245,166,35,0.22)' : '#FEF0D3' }]}
+        onPress={onBellPress}
+        activeOpacity={0.8}
+      >
+        <BellIcon color={BRAND.amber} />
+        {notifCount > 0 && <View style={s.badge} />}
+      </TouchableOpacity>
     </View>
     </>
   );

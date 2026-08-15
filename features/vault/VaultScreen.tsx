@@ -1,13 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity } from 'react-native';
+import {
+  View, Text, ScrollView, TouchableOpacity, Alert,
+  StyleSheet,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Radio, Pill, ChefHat, Image as ImageIcon, ScrollText, Users, LogOut, FolderOpen, LucideIcon } from 'lucide-react-native';
+import {
+  Radio, Pill, ChefHat, Image as ImageIcon, ScrollText,
+  Users, LogOut, FolderOpen, Gift, ChevronRight,
+  ShoppingCart, Coins, Heart,
+} from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useAuthStore } from '@/store/authStore';
+import { useRewardStore } from '@/store/rewardStore';
 import type { MemberRole } from '@/store/familyStore';
 import AppHeader from '@/components/AppHeader';
-// Modular vault tabs
+
 import GpsTabComp      from './tabs/GpsTab';
 import HealthTabComp   from './tabs/HealthTab';
 import MealsTabComp    from './tabs/MealsTab';
@@ -15,73 +24,192 @@ import MemoriesTabComp from './tabs/MemoriesTab';
 import LedgerTabComp   from './tabs/LedgerTab';
 import RosterTabComp   from './tabs/RosterTab';
 import RecordsTabComp  from './tabs/RecordsTab';
+import GroceryScreen   from '@/features/grocery/GroceryScreen';
+import StoreScreen     from '@/features/store/StoreScreen';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Feature definitions ──────────────────────────────────────────────────────
 
-type VaultTab = 'gps' | 'health' | 'records' | 'meals' | 'memories' | 'ledger' | 'roster';
+type FeatureId = 'gps' | 'health' | 'records' | 'meals' | 'memories' | 'ledger' | 'roster' | 'grocery' | 'store';
 
-const BRAND = {
-  purple:  '#7C3AED',
-  teal:    '#14B8A6',
-  amber:   '#F59E0B',
-  emerald: '#10B981',
-  rose:    '#F43F5E',
-  blue:    '#3B82F6',
-};
+interface Feature {
+  id: FeatureId;
+  label: string;
+  subtitle: string;
+  emoji: string;       // used in sheet title only
+  Icon: any;           // lucide icon for tile
+  accent: string;
+  bg: string;
+  bgDark: string;
+  roles: MemberRole[];
+}
 
-// ─── RBAC — which tabs each role can see ────────────────────────────────────
-// Senior: read-only Memories only (parent pays, seniors are passive viewers)
-// Kid:    no Records, no Roster
-// Parent: all tabs
-
-type TabDef = { id: VaultTab; label: string; Icon: LucideIcon; roles: MemberRole[] };
-
-const SUBTABS: TabDef[] = [
-  { id: 'gps',      label: 'Radar',    Icon: Radio,      roles: ['parent', 'kid'] },
-  { id: 'health',   label: 'Health',   Icon: Pill,       roles: ['parent', 'kid'] },
-  { id: 'records',  label: 'Records',  Icon: FolderOpen, roles: ['parent'] },
-  { id: 'meals',    label: 'Meals',    Icon: ChefHat,    roles: ['parent'] },
-  { id: 'memories', label: 'Memories', Icon: ImageIcon,  roles: ['parent', 'kid', 'senior'] },
-  { id: 'ledger',   label: 'Ledger',   Icon: ScrollText, roles: ['parent', 'kid'] },
-  { id: 'roster',   label: 'Roster',   Icon: Users,      roles: ['parent'] },
+const FEATURES: Feature[] = [
+  { id: 'gps',      label: 'Radar',    subtitle: 'Live family locations',   emoji: '📡', Icon: Radio,        accent: '#14B8A6', bg: '#ECFDF5', bgDark: '#0D2E2A', roles: ['parent', 'kid'] },
+  { id: 'health',   label: 'Health',   subtitle: 'My Active Medications',    emoji: '💊', Icon: Heart,        accent: '#F43F5E', bg: '#FFF1F2', bgDark: '#2D1019', roles: ['parent', 'kid'] },
+  { id: 'grocery',  label: 'Grocery',  subtitle: 'Runs · Lists · Receipts', emoji: '🛒', Icon: ShoppingCart, accent: '#10B981', bg: '#ECFDF5', bgDark: '#0D2A1E', roles: ['parent'] },
+  { id: 'meals',    label: 'Meals',    subtitle: 'Recipes · Nutrition',     emoji: '🍽️', Icon: ChefHat,      accent: '#F59E0B', bg: '#FFFBEB', bgDark: '#2D2008', roles: ['parent'] },
+  { id: 'ledger',   label: 'Ledger',   subtitle: 'Coins · Allowance',       emoji: '🪙', Icon: Coins,        accent: '#10B981', bg: '#ECFDF5', bgDark: '#0D2A1E', roles: ['parent', 'kid'] },
+  { id: 'memories', label: 'Memories', subtitle: 'Photos · Moments',        emoji: '📸', Icon: ImageIcon,    accent: '#EC4899', bg: '#FDF2F8', bgDark: '#2D0D1F', roles: ['parent', 'kid', 'senior'] },
+  { id: 'records',  label: 'Records',  subtitle: 'Documents · Files',       emoji: '📁', Icon: FolderOpen,   accent: '#6366F1', bg: '#EEF2FF', bgDark: '#1A1A38', roles: ['parent'] },
+  { id: 'roster',   label: 'Roster',   subtitle: 'Members · Roles',         emoji: '👥', Icon: Users,        accent: '#3B82F6', bg: '#EFF6FF', bgDark: '#0D1A2D', roles: ['parent'] },
+  { id: 'store',    label: 'Perks',    subtitle: 'Rewards · Redeem',        emoji: '🎁', Icon: Gift,         accent: '#7C3AED', bg: '#F5F3FF', bgDark: '#1A1030', roles: ['parent', 'kid'] },
 ];
 
-// ─── VaultScreen ─────────────────────────────────────────────────────────────
+// ─── Feature Detail View (inline, bottom nav stays visible) ──────────────────
+
+function FeatureDetail({
+  feature, colors, isDark, role, activeMember, onClose,
+}: {
+  feature: Feature;
+  colors: any;
+  isDark: boolean;
+  role: MemberRole;
+  activeMember: any;
+  onClose: () => void;
+}) {
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* Page header — same style as main tabs */}
+      <View style={{ flexDirection: 'row', alignItems: 'center',
+        paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12,
+        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
+        backgroundColor: colors.background }}>
+        <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={{ marginRight: 12 }}>
+          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <View style={{ width: 34, height: 34, borderRadius: 10,
+          backgroundColor: feature.accent + '18', borderWidth: 1, borderColor: feature.accent + '30',
+          alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+          <feature.Icon size={17} color={feature.accent} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 22, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.3 }}>
+            {feature.label}
+          </Text>
+          <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 1 }}>
+            {role === 'kid' && feature.id === 'health' ? 'My Active Medications' : feature.subtitle}
+          </Text>
+        </View>
+        <View style={{ backgroundColor: isDark ? feature.bgDark : feature.bg,
+          borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
+          borderWidth: 1, borderColor: feature.accent + '30' }}>
+          <Text style={{ fontSize: 12, fontWeight: '800', color: feature.accent }}>
+            {activeMember?.name?.split(' ')[0] ?? 'You'}
+          </Text>
+        </View>
+      </View>
+
+      {/* Content */}
+      {feature.id === 'grocery' ? (
+        <GroceryScreen hideHeader />
+      ) : feature.id === 'store' ? (
+        <StoreScreen hideHeader />
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 80, paddingTop: 14 }}>
+          {feature.id === 'gps'      && <GpsTabComp      colors={colors} isDark={isDark} />}
+          {feature.id === 'health'   && <HealthTabComp   colors={colors} isDark={isDark} kidView={role === 'kid'} />}
+          {feature.id === 'records'  && <RecordsTabComp  colors={colors} isDark={isDark} />}
+          {feature.id === 'meals'    && <MealsTabComp    colors={colors} isDark={isDark} />}
+          {feature.id === 'memories' && <MemoriesTabComp colors={colors} isDark={isDark} readOnly={role === 'senior'} />}
+          {feature.id === 'ledger'   && <LedgerTabComp   colors={colors} isDark={isDark} />}
+          {feature.id === 'roster'   && <RosterTabComp   colors={colors} isDark={isDark} />}
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+// ─── Tile ─────────────────────────────────────────────────────────────────────
+
+function Tile({
+  feature, isDark, onPress, badge,
+}: {
+  feature: Feature;
+  isDark: boolean;
+  onPress: () => void;
+  badge?: number;
+}) {
+  const bg = isDark ? feature.bgDark : feature.bg;
+  const TIcon = feature.Icon;
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.82}
+      style={[tileS.tile, { backgroundColor: bg, borderColor: feature.accent + (isDark ? '35' : '25') }]}>
+      {badge != null && badge > 0 && (
+        <View style={[tileS.badge, { backgroundColor: feature.accent }]}>
+          <Text style={tileS.badgeText}>{badge > 99 ? '99+' : badge}</Text>
+        </View>
+      )}
+      {/* Icon circle */}
+      <View style={{ width: 52, height: 52, borderRadius: 16, marginBottom: 10,
+        backgroundColor: feature.accent + '18', borderWidth: 1.5, borderColor: feature.accent + '30',
+        alignItems: 'center', justifyContent: 'center' }}>
+        <TIcon size={24} color={feature.accent} />
+      </View>
+      <Text style={{ fontSize: 15, fontWeight: '900', color: feature.accent, letterSpacing: -0.2 }}>
+        {feature.label}
+      </Text>
+      <Text style={{ fontSize: 11, color: feature.accent + 'AA', fontWeight: '600', marginTop: 3,
+        textAlign: 'center' }} numberOfLines={2}>
+        {feature.subtitle}
+      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 10 }}>
+        <Text style={{ fontSize: 10, color: feature.accent + '80', fontWeight: '700' }}>Open</Text>
+        <ChevronRight size={10} color={feature.accent + '80'} />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ─── VaultScreen ──────────────────────────────────────────────────────────────
 
 export default function VaultScreen() {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, loaded, loadFromStorage } = useFamilyStore();
   const { signOut } = useAuthStore();
+  const rewards = useRewardStore(s => s.rewards);
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const role: MemberRole = activeMember?.role ?? 'parent';
+  const coins = activeMember?.coins ?? 0;
 
-  const visibleTabs = SUBTABS.filter(t => t.roles.includes(role));
-  const defaultTab = visibleTabs[0]?.id ?? 'memories';
-
-  const [activeTab, setActiveTab] = useState<VaultTab>(defaultTab);
-
-  const scrollRef = useRef<ScrollView>(null);
-  const prevMemberRef = useRef(activeMemberId);
-  useEffect(() => {
-    if (prevMemberRef.current === activeMemberId) return;
-    prevMemberRef.current = activeMemberId;
-    // Reset to role-appropriate default tab when member switches
-    const newRole: MemberRole = members.find(m => m.id === activeMemberId)?.role ?? 'parent';
-    const tabs = SUBTABS.filter(t => t.roles.includes(newRole));
-    setActiveTab(tabs[0]?.id ?? 'memories');
-    scrollRef.current?.scrollTo({ y: 0, animated: false });
-  }, [activeMemberId, members]);
+  const [openFeature, setOpenFeature] = useState<Feature | null>(null);
 
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
 
+  const visibleFeatures = FEATURES.filter(f => f.roles.includes(role));
+
+  // Pending rewards badge for parents
+  const pendingRewards = role === 'parent'
+    ? rewards.filter((r: any) => r.pendingApproval).length
+    : 0;
+
+  const getBadge = (id: FeatureId) => {
+    if (id === 'store') return pendingRewards;
+    return 0;
+  };
+
   const bg = isDark ? '#0B0F1A' : '#F3F0FB';
 
-  // Senior-specific: read-only flag passed to Memories tab
-  const isSenior = role === 'senior';
+  // When a feature is open, render it inline (bottom nav stays visible)
+  if (openFeature) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+        <FeatureDetail
+          feature={openFeature}
+          colors={colors}
+          isDark={isDark}
+          role={role}
+          activeMember={activeMember}
+          onClose={() => setOpenFeature(null)}
+        />
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <SafeAreaView style={[s.safe, { backgroundColor: bg }]} edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={['top']}>
       <AppHeader
         memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
         memberRole={role as 'parent' | 'kid' | 'senior'}
@@ -89,56 +217,50 @@ export default function VaultScreen() {
         onPersonaPress={() => {}}
       />
 
-      <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 52 }}>
+      <ScrollView showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 60 }}>
 
-        <View style={s.titleBar}>
+        {/* Title */}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start',
+          justifyContent: 'space-between', paddingVertical: 18 }}>
           <View>
-            <Text style={{ fontSize: 24, fontWeight: '900', color: colors.textPrimary, letterSpacing: -0.5 }}>
-              Family Vault
-            </Text>
-            <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 1 }}>
-              {isSenior ? 'Family Memories' : 'GPS · Health · Records · Meals · Memories · Ledger'}
+            <Text style={{ fontSize: 22, fontWeight: '800', color: colors.textPrimary,
+              letterSpacing: -0.3 }}>Family Vault</Text>
+            <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+              {role === 'senior' ? 'Family Memories' : `${visibleFeatures.length} features`}
             </Text>
           </View>
-          <TouchableOpacity onPress={() => Alert.alert('Sign Out', 'Sign out of Family Cube?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Sign Out', style: 'destructive', onPress: () => signOut() },
-          ])}>
-            <LogOut size={22} color={colors.textSecondary} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            {coins > 0 && (
+              <View style={{ backgroundColor: isDark ? '#2D2008' : '#FFFBEB',
+                borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
+                borderWidth: 1, borderColor: '#F59E0B40',
+                flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Coins size={13} color="#F59E0B" />
+                <Text style={{ fontSize: 13, fontWeight: '800', color: '#F59E0B' }}>{coins}</Text>
+              </View>
+            )}
+            <TouchableOpacity onPress={() => Alert.alert('Sign Out', 'Sign out of Family Cube?', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Sign Out', style: 'destructive', onPress: () => signOut() },
+            ])}>
+              <LogOut size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Horizontal pill tab bar — only shows role-permitted tabs */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}
-          contentContainerStyle={s.tabScrollContent}
-          style={{ marginHorizontal: 14, marginBottom: 14 }}>
-          {visibleTabs.map(t => {
-            const active = activeTab === t.id;
-            const TIcon = t.Icon;
-            return (
-              <TouchableOpacity key={t.id} onPress={() => setActiveTab(t.id)}
-                style={[s.tabPill, {
-                  backgroundColor: active ? BRAND.purple : isDark ? colors.surface : '#EDE9FE',
-                  borderColor: active ? BRAND.purple : isDark ? colors.border : '#DDD6FE',
-                }]}>
-                <TIcon size={15} color={active ? '#fff' : colors.textSecondary} />
-                <Text style={[s.tabPillText, { color: active ? '#fff' : colors.textSecondary }]}>
-                  {t.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        <View style={{ paddingHorizontal: 14, gap: 12 }}>
-          {activeTab === 'gps'      && <GpsTabComp      colors={colors} isDark={isDark} />}
-          {activeTab === 'health'   && <HealthTabComp   colors={colors} isDark={isDark} kidView={role === 'kid'} />}
-          {activeTab === 'records'  && <RecordsTabComp  colors={colors} isDark={isDark} />}
-          {activeTab === 'meals'    && <MealsTabComp    colors={colors} isDark={isDark} />}
-          {activeTab === 'memories' && <MemoriesTabComp colors={colors} isDark={isDark} readOnly={isSenior} />}
-          {activeTab === 'ledger'   && <LedgerTabComp   colors={colors} isDark={isDark} />}
-          {activeTab === 'roster'   && <RosterTabComp   colors={colors} isDark={isDark} />}
+        {/* Feature grid — 2 columns */}
+        <View style={gridS.grid}>
+          {visibleFeatures.map(f => (
+            <View key={f.id} style={gridS.cell}>
+              <Tile
+                feature={f}
+                isDark={isDark}
+                onPress={() => setOpenFeature(f)}
+                badge={getBadge(f.id)}
+              />
+            </View>
+          ))}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -147,108 +269,25 @@ export default function VaultScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
-  safe:     { flex: 1 },
-  titleBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-              paddingHorizontal: 16, paddingVertical: 14 },
-
-  tabScrollContent: { gap: 8, paddingRight: 4 },
-  tabPill:      { flexDirection: 'row', alignItems: 'center', gap: 6,
-                  paddingVertical: 8, paddingHorizontal: 14,
-                  borderRadius: 22, borderWidth: 1.5 },
-  tabPillText:  { fontSize: 13, fontWeight: '800' },
-
-  scard:        { borderRadius: 22, borderWidth: 1.5, padding: 16,
-                  shadowOpacity: 0.06, shadowRadius: 12,
-                  shadowOffset: { width: 0, height: 3 }, elevation: 3 },
-  sectionLabel: { fontSize: 14, fontWeight: '800' },
-
-  cardHeaderRow:     { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cardHeaderIconBox: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  cardHeaderTitle:   { fontSize: 14, fontWeight: '900', flex: 1 },
-
-  badge:         { borderRadius: 99, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
-  badgeText:     { fontSize: 11, fontWeight: '800' },
-  statusPill:    { flexDirection: 'row', alignItems: 'center', borderRadius: 99, borderWidth: 1,
-                   paddingHorizontal: 8, paddingVertical: 3 },
-  statusPillText:{ fontSize: 11, fontWeight: '800' },
-
-  row: { flexDirection: 'row', alignItems: 'center' },
-
-  // GPS
-  radarMap: { height: 190, borderRadius: 18, marginVertical: 14, backgroundColor: '#030712',
-              borderWidth: 1, borderColor: '#14B8A620', position: 'relative',
-              overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
-  radarRing:    { position: 'absolute', borderRadius: 999, borderWidth: 1 },
-  radarCrossH:  { position: 'absolute', left: 0, right: 0, height: StyleSheet.hairlineWidth,
-                  backgroundColor: '#14B8A620', top: '50%' },
-  radarCrossV:  { position: 'absolute', top: 0, bottom: 0, width: StyleSheet.hairlineWidth,
-                  backgroundColor: '#14B8A620', left: '50%' },
-  radarPin:      { position: 'absolute', alignItems: 'center' },
-  radarPinDot:   { width: 32, height: 32, borderRadius: 16, borderWidth: 1.5,
-                   alignItems: 'center', justifyContent: 'center' },
-  radarPinLabel: { backgroundColor: 'rgba(15,23,42,0.88)', borderRadius: 8,
-                   paddingHorizontal: 6, paddingVertical: 2, marginTop: 3, alignItems: 'center' },
-  radarPinName:  { fontSize: 8, fontWeight: '800', color: '#fff' },
-  radarPinBatt:  { fontSize: 7, fontWeight: '700' },
-  radarFootnoteRow: { position: 'absolute', bottom: 8, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  radarFootnote: { fontSize: 9, color: '#14B8A680', fontWeight: '700' },
-  telemetryRow:  { flexDirection: 'row', alignItems: 'center', padding: 12,
-                   borderRadius: 16, borderWidth: 1 },
-
-  // Health
-  medIconBox: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  medRow:     { flexDirection: 'row', alignItems: 'center', paddingBottom: 12,
-                borderBottomWidth: StyleSheet.hairlineWidth },
-  markBtn:    { flexDirection: 'row', alignItems: 'center', borderRadius: 12,
-                paddingVertical: 7, paddingHorizontal: 12 },
-
-  // AI Doc
-  textarea:     { borderWidth: 1.5, borderRadius: 14, padding: 12, fontSize: 14,
-                  minHeight: 80, textAlignVertical: 'top', marginBottom: 12 },
-  submitBtn:    { borderRadius: 14, paddingVertical: 13, alignItems: 'center', justifyContent: 'center' },
-  submitBtnText:{ fontSize: 14, fontWeight: '800' },
-
-  // Memories
-  memoryThumb: { width: '100%', height: 130, borderRadius: 16,
-                 alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  heartBtn:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12,
-                 paddingVertical: 8, borderRadius: 14, borderWidth: 1 },
-
-  // Ledger
-  kidLedgerCard: { borderRadius: 18, borderWidth: 1.5, padding: 14, marginTop: 14 },
-  coinBar:       { height: 6, borderRadius: 3, overflow: 'hidden', marginTop: 2 },
-  coinBarFill:   { height: '100%', borderRadius: 3 },
-  walletBtn:     { flex: 1, borderRadius: 14, paddingVertical: 10,
-                   alignItems: 'center', justifyContent: 'center' },
-  walletBtnText: { fontSize: 12, fontWeight: '800', color: '#fff' },
-
-  // Meals
-  mealIconBox:   { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  mealCard:      { flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, padding: 12 },
-  groceryInput:  { flex: 1, borderRadius: 12, borderWidth: 1, borderColor: '#334155',
-                   backgroundColor: '#0F172A', color: '#E2E8F0', fontSize: 13,
-                   paddingHorizontal: 12, paddingVertical: 9 },
-  groceryAddBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: BRAND.emerald,
-                   alignItems: 'center', justifyContent: 'center' },
-  aisleLabel:    { fontSize: 10, fontWeight: '900', color: '#64748B', letterSpacing: 1 },
-  groceryRow:    { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1,
-                   paddingHorizontal: 12, paddingVertical: 10 },
-  recipeOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.72)',
-                   justifyContent: 'center', padding: 16, zIndex: 99 },
-  recipeCard:    { borderRadius: 24, padding: 20, maxHeight: '90%' },
-  recipeSection: { fontSize: 13, fontWeight: '900', marginBottom: 8 },
-  ingPill:       { borderRadius: 20, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5 },
-  stepNum:       { width: 22, height: 22, borderRadius: 11, alignItems: 'center',
-                   justifyContent: 'center', marginRight: 10, flexShrink: 0 },
-
-  // Roster
-  inviteInput:     { flex: 1, borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13 },
-  inviteBtn:       { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  rosterRow:       { flexDirection: 'row', alignItems: 'center', borderRadius: 18, borderWidth: 1.5, padding: 12 },
-  rosterActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1,
-                     borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5 },
-  pinBox:          { marginTop: 6, borderRadius: 16, borderWidth: 1, padding: 14 },
-  pinInput:        { flex: 1, borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 12,
-                     paddingVertical: 9, fontSize: 16, letterSpacing: 4, textAlign: 'center' },
+const gridS = StyleSheet.create({
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  cell: { width: '47%' },
 });
+
+const tileS = StyleSheet.create({
+  tile: {
+    borderRadius: 24, borderWidth: 1.5, padding: 18,
+    alignItems: 'center',
+    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 }, elevation: 3,
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute', top: 10, right: 10,
+    minWidth: 20, height: 20, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  badgeText: { fontSize: 10, fontWeight: '900', color: '#fff' },
+});
+

@@ -1858,7 +1858,7 @@ function GroceryAiBanner({ isDark, colors, onScan, onPriceCheck, pricesLoaded, p
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
-export default function GroceryScreen() {
+export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boolean }) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { members, activeMemberId } = useFamilyStore();
@@ -2095,8 +2095,9 @@ export default function GroceryScreen() {
 
       {/* ── Fixed header + sticky tile nav ── */}
       <View style={{ backgroundColor: card, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: border,
-        paddingTop: insets.top + 8 }}>
+        paddingTop: hideHeader ? 8 : insets.top + 8 }}>
         {/* Title row */}
+        {!hideHeader && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, marginBottom: 10 }}>
           <Ionicons name="cart" size={22} color={P} />
           <Text style={[s.headerTitle, { color: colors.textPrimary, flex: 1 }]}>Groceries</Text>
@@ -2106,6 +2107,7 @@ export default function GroceryScreen() {
             </View>
           )}
         </View>
+        )}
 
         {/* 1×4 sticky tile nav */}
         <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingBottom: 12 }}>

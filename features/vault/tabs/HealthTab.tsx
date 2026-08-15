@@ -1506,6 +1506,7 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
     const todayStr = today();
     const now = new Date();
     return meds.filter(med => {
+      if (kidView && !med.is_active) return false;
       if (medMemberFilter.length && !medMemberFilter.includes(med.member_id)) return false;
       if (medCatFilter.length && !medCatFilter.includes(med.category)) return false;
       if (medFreqFilter.length && !medFreqFilter.includes(med.frequency)) return false;
@@ -1565,10 +1566,95 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
     </SCard>
   );
 
+  // ── Kid view: simple active-meds-only layout ─────────────────────────────
+  if (kidView) {
+    const activeMeds = meds.filter(m => m.is_active);
+    const todayStr = today();
+    return (
+      <View style={{ gap: 12 }}>
+        {loading ? (
+          <ActivityIndicator size="large" color={BRAND.purple} style={{ marginTop: 40 }} />
+        ) : activeMeds.length === 0 ? (
+          <View style={{ alignItems: 'center', paddingVertical: 48, gap: 10 }}>
+            <Pill size={40} color={BRAND.purple + '60'} />
+            <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textSecondary }}>
+              No active medications
+            </Text>
+            <Text style={{ fontSize: 13, color: colors.textTertiary, textAlign: 'center' }}>
+              A parent will add your medications here
+            </Text>
+          </View>
+        ) : activeMeds.map(med => {
+          const isTaken = med.taken_date === todayStr;
+          const catColor = CAT_COLORS[med.category] ?? BRAND.purple;
+          return (
+            <View key={med.id} style={{
+              borderRadius: 20, overflow: 'hidden',
+              borderWidth: 1.5,
+              borderColor: isTaken ? BRAND.emerald + '50' : catColor + '30',
+              backgroundColor: isDark ? colors.card : '#FFFFFF',
+            }}>
+              {/* Color stripe */}
+              <View style={{ height: 4, backgroundColor: isTaken ? BRAND.emerald : catColor }} />
+              <View style={{ padding: 16, gap: 10 }}>
+                {/* Med name + category */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 14,
+                    backgroundColor: catColor + '18', alignItems: 'center', justifyContent: 'center' }}>
+                    <Pill size={22} color={catColor} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 17, fontWeight: '900', color: colors.textPrimary, letterSpacing: -0.3 }}>
+                      {med.name}
+                    </Text>
+                    <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 1 }}>
+                      {med.dosage} {med.dosage_unit} · {FREQ_LABELS[med.frequency] ?? med.frequency}
+                    </Text>
+                  </View>
+                  {isTaken && (
+                    <View style={{ backgroundColor: BRAND.emerald + '18', borderRadius: 10,
+                      paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: BRAND.emerald + '40' }}>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.emerald }}>✓ Done</Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Instructions */}
+                {!!med.instructions && (
+                  <Text style={{ fontSize: 13, color: colors.textSecondary,
+                    backgroundColor: isDark ? colors.surface : '#F8F7FF',
+                    borderRadius: 10, padding: 10 }}>
+                    {med.instructions}
+                  </Text>
+                )}
+
+                {/* Mark taken button */}
+                <TouchableOpacity onPress={() => markTaken(med)}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    paddingVertical: 13, borderRadius: 14,
+                    backgroundColor: isTaken ? BRAND.emerald + '15' : catColor,
+                    borderWidth: isTaken ? 1.5 : 0,
+                    borderColor: isTaken ? BRAND.emerald + '50' : 'transparent',
+                  }}>
+                  <Check size={16} color={isTaken ? BRAND.emerald : '#fff'} />
+                  <Text style={{ fontSize: 15, fontWeight: '900',
+                    color: isTaken ? BRAND.emerald : '#fff' }}>
+                    {isTaken ? 'Marked as Taken' : 'Mark as Taken'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    );
+  }
+
   return (
     <>
       {/* ── AI Health Assistant — Quest-style dark collapsible banner ── */}
-      <View style={{
+      {!kidView && <View style={{
         backgroundColor: '#0D1424',
         borderRadius: 20,
         borderWidth: 1,
@@ -1745,7 +1831,7 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
             ) : null}
           </View>
         )}
-      </View>
+      </View>}
 
       {/* ── Medications + Immunizations (unified) ───── */}
       <SCard colors={colors} isDark={isDark}>

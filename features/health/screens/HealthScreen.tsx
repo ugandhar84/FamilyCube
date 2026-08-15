@@ -41,6 +41,9 @@ import { ActiveMedicationsList } from '@/features/health/components/ActiveMedica
 import { VaccineStrip } from '@/features/health/components/VaccineStrip';
 import { InsuranceList } from '@/features/health/components/InsuranceList';
 import PetHeaderChip from '@/components/PetHeaderChip';
+import { HealthAiBanner } from '@/features/health/components/HealthAiBanner';
+import { HealthRewardsSection } from '@/features/health/components/HealthRewardsSection';
+import { TimelineEditSheet } from '@/features/health/components/TimelineEditSheet';
 
 import { useHealthData } from '@/features/health/hooks/useHealthData';
 import { useAppointmentForm } from '@/features/health/hooks/useAppointmentForm';
@@ -111,6 +114,7 @@ export default function HealthScreen({ hideHeader = false }: { hideHeader?: bool
   const [weightEdit,     setWeightEdit]      = useState<any>(null);
   const [monthsShown,    setMonthsShown]     = useState(12);
   const [showReportSheet,  setShowReportSheet]  = useState(false);
+  const [editEvent,        setEditEvent]         = useState<TLEvent | null>(null);
   const [reportSections,   setReportSections]   = useState<ReportSection[]>(DEFAULT_SECTIONS);
   const [generatingReport, setGeneratingReport] = useState(false);
 
@@ -280,6 +284,19 @@ export default function HealthScreen({ hideHeader = false }: { hideHeader?: bool
           onVetReport={() => setShowReportSheet(true)}
         />
 
+        <HealthAiBanner
+          petName={pet?.name}
+          petId={activePetId}
+          overdueVax={overdueVax}
+          dueSoonVax={dueSoonVax}
+          activeMedsCount={activeMeds.length}
+          nextApptDate={nextAppt?.scheduled_at ?? null}
+          colors={colors}
+          isDark={isDark}
+        />
+
+        <HealthRewardsSection colors={colors} isDark={isDark} accent={accent} />
+
         {hd.loading
           ? <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 60 }}><PawBondLoader size={48} isDark={isDark} /></View>
           : <>
@@ -385,6 +402,7 @@ export default function HealthScreen({ hideHeader = false }: { hideHeader?: bool
               onToggleMedActive={onToggleMedActiveTimeline}
               onDeleteEntry={onDeleteEntryTimeline}
               onDeleteGroup={onDeleteGroupTimeline}
+              onEditEntry={ev => setEditEvent(ev)}
             />
           </>
         }
@@ -880,6 +898,14 @@ export default function HealthScreen({ hideHeader = false }: { hideHeader?: bool
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* ── Timeline edit sheet ── */}
+      <TimelineEditSheet
+        event={editEvent}
+        onClose={() => setEditEvent(null)}
+        onSaved={() => hd.load()}
+        onDelete={onDeleteEntryTimeline}
+      />
 
       {/* ── Weight sheet ── */}
       <WeightSheet visible={weightSheet} petId={activePetId} accent={accent} colors={colors} isDark={isDark}

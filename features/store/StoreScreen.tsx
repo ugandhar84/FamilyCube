@@ -272,7 +272,7 @@ function PerkModal({ visible, editing, colors, onClose, onSave }: {
 
 // ─── StoreScreen ──────────────────────────────────────────────────────────────
 
-export default function StoreScreen() {
+export default function StoreScreen({ hideHeader = false }: { hideHeader?: boolean }) {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, loaded, loadFromStorage } = useFamilyStore();
   const { rewards, loadFromStorage: loadRewards, addReward, updateReward, deleteReward } = useRewardStore();
@@ -322,13 +322,15 @@ export default function StoreScreen() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <AppHeader
-        memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
-        memberRole={activeMember?.role ?? 'parent'}
-        notifCount={0}
-        onPersonaPress={() => setSwitcherOpen(true)}
-      />
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
+      {!hideHeader && (
+        <AppHeader
+          memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
+          memberRole={activeMember?.role ?? 'parent'}
+          notifCount={0}
+          onPersonaPress={() => setSwitcherOpen(true)}
+        />
+      )}
 
       <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}>

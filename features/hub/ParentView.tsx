@@ -132,7 +132,15 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
   });
   const showBanner     = conflictEvents.length > 0 || urgentRejected.length > 0 ||
                          pendingNoResponse.length > 0 || unassignedUrgent.length > 0;
-  const pendingKidRequests = kidRequests.filter(r => r.status === 'pending');
+  const pendingKidRequests = kidRequests.filter(r => {
+    if (r.status !== 'pending') return false;
+    // Auto-expire checkin requests older than 2 hours — they're time-sensitive and have no actionable response
+    if (r.type === 'checkin') {
+      const ageHours = (Date.now() - new Date(r.requestedAt).getTime()) / 3_600_000;
+      if (ageHours > 2) return false;
+    }
+    return true;
+  });
   const actionCount    = pendingRequests.length + awaitingApproval.length + pendingKidRequests.length;
 
   const familyId = (active as any).familyId ?? 'family-1';
@@ -355,6 +363,26 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
               const isPermission = req.type === 'permission';
               const accent = isGrocery ? '#10B981' : isSupplies ? '#3B82F6' : isPermission ? BRAND.amber : BRAND.purple;
               const pendingItems = (req.items ?? []).filter(it => it.status === 'pending');
+              // Checkin requests ("I'm home", "ready for pickup") — just dismiss, nothing to approve
+              if (req.type === 'checkin') {
+                return (
+                  <View key={req.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                    backgroundColor: isDark ? '#1e293b' : '#F8FAFC', borderRadius: 14, padding: 12,
+                    borderLeftWidth: 3, borderLeftColor: BRAND.teal }}>
+                    <Text style={{ fontSize: 18 }}>🎒</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.teal }}>{kidName}</Text>
+                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }} numberOfLines={2}>{req.detail}</Text>
+                    </View>
+                    <Pressable onPress={() => approveRequest(req.id, active.id)}
+                      style={{ backgroundColor: BRAND.teal + '20', borderRadius: 10,
+                        paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: BRAND.teal + '40' }}>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.teal }}>Dismiss</Text>
+                    </Pressable>
+                  </View>
+                );
+              }
+
               return (
                 <CollapsibleCard key={req.id} accent={accent} colors={colors} isDark={isDark} defaultExpanded={false}
                   summary={

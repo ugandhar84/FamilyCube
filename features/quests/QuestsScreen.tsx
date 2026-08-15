@@ -18,7 +18,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  TextInput, Modal, ActivityIndicator, Alert, Platform, Image, Animated, Switch, KeyboardAvoidingView,
+  TextInput, Modal, ActivityIndicator, Alert, Platform, Image, Animated, Switch, KeyboardAvoidingView, Keyboard,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -548,11 +548,12 @@ const ALL_CATEGORIES: QuestCategory[] = ['Kitchen', 'Room', 'Yard', 'School', 'P
 
 // ─── Collapsible quest card — header always visible, body expands on tap ─────
 function CollapsibleQuestCard({
-  accentColor, cardBg, cardBord, header, children, onDoubleTap,
+  accentColor, cardBg, cardBord, header, children, onDoubleTap, onLongPress,
 }: {
   accentColor: string; cardBg: string; cardBord: string;
   header: React.ReactNode; children: React.ReactNode;
   onDoubleTap?: () => void;
+  onLongPress?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const lastTap = React.useRef(0);
@@ -569,15 +570,15 @@ function CollapsibleQuestCard({
     <View style={[s.questCard, { backgroundColor: cardBg, borderColor: cardBord }]}>
       <View style={[s.accentBar, { backgroundColor: accentColor }]} />
       <View style={{ flex: 1 }}>
-        <Pressable onPress={handlePress}
+        <Pressable onPress={handlePress} onLongPress={onLongPress}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 14, paddingBottom: expanded ? 0 : 14 }}>
           <View style={{ flex: 1 }}>{header}</View>
           {expanded ? <I.ChevronUp c={accentColor} /> : <I.ChevronDown c={accentColor} />}
         </Pressable>
         {expanded && (
-          <View style={{ padding: 14, paddingTop: 10 }}>
+          <Pressable onLongPress={onLongPress} style={{ padding: 14, paddingTop: 10 }}>
             {children}
-          </View>
+          </Pressable>
         )}
       </View>
     </View>
@@ -1673,24 +1674,64 @@ function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete, edit
   onClose: () => void;
   onSave: (id: string, patch: Partial<Quest>) => void;
   onDelete?: (id: string) => void;
-  editMode?: 'full' | 'restricted'; // restricted = assigned todo — only coins + reassign editable
+  editMode?: 'full' | 'restricted';
 }) {
   const { colors, isDark } = useTheme();
   const members = useFamilyStore(s => s.members);
-  const kids    = members.filter(m => m.role === 'kid');
 
-  const [title,      setTitle]      = useState(quest.title);
-  const [desc,       setDesc]       = useState(quest.description ?? '');
-  const [coins,      setCoins]      = useState(String(quest.coins));
-  const [bonusCoins, setBonusCoins] = useState(quest.bonusCoins > 0 ? String(quest.bonusCoins) : '');
-  const [category,   setCategory]   = useState<QuestCategory>(quest.category);
-  const [difficulty, setDifficulty] = useState<QuestDifficulty | ''>(quest.difficulty ?? '');
-  const [forceId,    setForceId]    = useState<string>(quest.assignedToId ?? '');
-  const [saving,     setSaving]     = useState(false);
+  const parseDue = () => {
+    if (quest.dueDate) {
+      const d = new Date(quest.dueDate);
+      if (quest.dueTime) {
+        const [h, m] = quest.dueTime.replace(/[^0-9:]/g, '').split(':').map(Number);
+        if (!isNaN(h)) { d.setHours(h, m || 0, 0, 0); }
+      }
+      return d;
+    }
+    const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(18, 0, 0, 0); return d;
+  };
 
-  const isForceAssign = !!forceId;
+  const [title,        setTitle]        = useState(quest.title);
+  const [desc,         setDesc]         = useState(quest.description ?? '');
+  const [coins,        setCoins]        = useState(String(quest.coins));
+  const [bonusCoins,   setBonusCoins]   = useState(quest.bonusCoins > 0 ? String(quest.bonusCoins) : '');
+  const [category,     setCategory]     = useState<QuestCategory>(quest.category);
+  const [difficulty,   setDifficulty]   = useState<QuestDifficulty | ''>(quest.difficulty ?? '');
+  const [isPool,       setIsPool]       = useState(quest.isPool ?? false);
+  const [assignIds,    setAssignIds]    = useState<string[]>(quest.assignedToId ? [quest.assignedToId] : (quest.assignedToIds ?? []));
+  const [photoReq,     setPhotoReq]     = useState(quest.photoRequired ?? false);
+  const [isAdultTask,  setIsAdultTask]  = useState(quest.isAdultTask ?? false);
+  const [dueDate,      setDueDate]      = useState<Date>(parseDue);
+  const [showDatePick, setShowDatePick] = useState(false);
+  const [showTimePick, setShowTimePick] = useState(false);
+  const [saving,       setSaving]       = useState(false);
+
   const pillBg  = isDark ? colors.surface : '#F1F5F9';
   const pillBdr = isDark ? colors.border  : '#E2E8F0';
+  const siblings = members.map(m => m.name);
+  const locked = editMode === 'restricted';
+
+  const editSuggestions = useMemo(() => {
+    const q = title.toLowerCase().trim();
+    if (!q) return QUEST_SUGGESTIONS.filter(s => s.category === category).slice(0, 8);
+    return QUEST_SUGGESTIONS.filter(s => s.title.toLowerCase().includes(q)).slice(0, 6);
+  }, [title, category]);
+
+  const applyEditSuggestion = (s: typeof QUEST_SUGGESTIONS[0]) => {
+    setTitle(s.title);
+    setDesc(s.desc);
+    setCoins(String(s.coins));
+    setCategory(s.category);
+  };
+
+  const onDateChange = (_: any, selected?: Date) => {
+    setShowDatePick(Platform.OS === 'ios');
+    if (selected) { const d = new Date(selected); d.setHours(dueDate.getHours(), dueDate.getMinutes(), 0, 0); setDueDate(d); }
+  };
+  const onTimeChange = (_: any, selected?: Date) => {
+    setShowTimePick(Platform.OS === 'ios');
+    if (selected) { const d = new Date(dueDate); d.setHours(selected.getHours(), selected.getMinutes(), 0, 0); setDueDate(d); }
+  };
 
   const save = async () => {
     if (!title.trim()) return;
@@ -1702,195 +1743,259 @@ function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete, edit
       bonusCoins: parseInt(bonusCoins) || 0,
       category,
       difficulty: difficulty || undefined,
-      assignedToId: forceId || undefined,
-      isPool: !forceId,
-      // Force-assign badge: tag in history via lastModifiedById (done by updateQuest)
+      assignedToId: !isPool && assignIds.length === 1 ? assignIds[0] : undefined,
+      assignedToIds: !isPool && assignIds.length > 1 ? assignIds : [],
+      isPool: isPool || assignIds.length === 0,
+      photoRequired: photoReq,
+      isAdultTask,
+      dueDate: localDateStr(dueDate),
+      dueTime: fmtTimeLabel(dueDate),
     };
     onSave(quest.id, patch);
     setSaving(false);
   };
 
-  const siblings = members.map(m => m.name);
-
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={aq.backdrop}>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ justifyContent: 'flex-end', flexGrow: 1 }}>
-          <View style={[aq.sheet, { backgroundColor: colors.card }]}>
-            <View style={[aq.handle, { backgroundColor: colors.border }]} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={aq.backdrop}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { Keyboard.dismiss(); onClose(); }} />
+          <View style={[aq.sheet, { backgroundColor: colors.card, minHeight: '75%', maxHeight: '92%' }]}>
 
-            {/* Header */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={[aq.title, { color: colors.textPrimary }]}>
-                  {editMode === 'restricted' ? 'Adjust Quest' : 'Edit Quest'}
-                </Text>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 1, color:
-                  editMode === 'restricted' ? '#D97706' : isForceAssign ? '#EF4444' : BRAND.purple }}>
-                  {editMode === 'restricted'
-                    ? '📋 Assigned quest — only coins & reassign editable'
-                    : isForceAssign ? '🔒 Force assigned — modified by you' : 'Editing open bounty'}
+            {/* Fixed header */}
+            <View style={[aq.handle, { backgroundColor: colors.border }]} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+              paddingHorizontal: 20, paddingBottom: 12,
+              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+              <View>
+                <Text style={[aq.title, { color: colors.textPrimary }]}>{locked ? 'Adjust Quest' : 'Edit Quest'}</Text>
+                <Text style={{ fontSize: TYPO.label, color: BRAND.purple, fontWeight: '700', marginTop: 1 }}>
+                  {locked ? 'Reassign or adjust coins' : 'Edit title, assignment & more'}
                 </Text>
               </View>
-              <TouchableOpacity
-                onPress={onClose}
-                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}
-              >
+              <TouchableOpacity onPress={onClose} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
                 <I.X c={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
-            {/* Title — locked when assigned */}
-            {editMode === 'restricted' ? (
-              <View style={{ marginBottom: 14 }}>
-                <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title <Text style={{ color: colors.textTertiary, fontWeight: '400' }}>— locked once assigned</Text></Text>
-                <View style={{ padding: 12, borderRadius: 12, borderWidth: 1, borderColor: isDark ? '#1E293B' : '#E2E8F0', backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }}>
+            {/* Scrollable body */}
+            <ScrollView keyboardShouldPersistTaps="handled" onScrollBeginDrag={Keyboard.dismiss} style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
+
+              {/* Title */}
+              <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
+              {locked ? (
+                <View style={{ padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 12,
+                  borderColor: isDark ? '#1E293B' : '#E2E8F0', backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }}>
                   <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{quest.title}</Text>
                   {quest.description ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 4 }}>{quest.description}</Text> : null}
                 </View>
-              </View>
-            ) : (
-              <>
-                <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
-                <TextInput
-                  style={[aq.input, { color: colors.textPrimary, borderColor: title.trim() ? colors.border : '#EF444480', backgroundColor: colors.surface }]}
-                  value={title} onChangeText={setTitle} returnKeyType="next"
-                />
-                {/* Description */}
-                <Text style={[aq.label, { color: colors.textSecondary }]}>Description
-                  <Text style={{ fontWeight: '400', color: colors.textTertiary }}> (what needs to be done)</Text>
-                </Text>
-                <TextInput
-                  style={[aq.input, aq.descInput, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]}
-                  value={desc} onChangeText={t => setDesc(t.slice(0, 150))}
-                  multiline numberOfLines={3} textAlignVertical="top"
-                />
-                <Text style={{ fontSize: TYPO.micro, color: desc.length > 130 ? '#EF4444' : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 12 }}>
-                  {desc.length}/150
-                </Text>
-              </>
-            )}
+              ) : (
+                <>
+                  <TextInput
+                    style={[aq.input, { color: colors.textPrimary, borderColor: title.trim() ? colors.border : '#EF444480', backgroundColor: colors.surface }]}
+                    value={title} onChangeText={setTitle} returnKeyType="next"
+                    placeholder="e.g. Wash the dishes, Take out trash…" placeholderTextColor={colors.textTertiary}
+                  />
+                  {editSuggestions.length > 0 && (
+                    <View style={{ marginTop: -6, marginBottom: 12 }}>
+                      <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 5, fontWeight: '600' }}>
+                        {title.trim() ? 'Matching suggestions' : 'Quick picks — tap to fill'}
+                      </Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
+                        <View style={{ flexDirection: 'row', gap: 7 }}>
+                          {editSuggestions.map((s, i) => (
+                            <TouchableOpacity key={i}
+                              style={[aq.suggPill, {
+                                backgroundColor: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple + '25' : colors.surface,
+                                borderColor: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple : colors.border,
+                              }]}
+                              onPress={() => applyEditSuggestion(s)}>
+                              <Text style={{ fontSize: TYPO.micro + 1, color: colors.textSecondary, fontWeight: '600' }} numberOfLines={1}>{s.title}</Text>
+                              <Text style={{ fontSize: TYPO.micro, color: BRAND.amber, fontWeight: '700', marginLeft: 5 }}>+{s.coins}🪙</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </ScrollView>
+                    </View>
+                  )}
+                  <Text style={[aq.label, { color: colors.textSecondary }]}>
+                    Description *{'  '}<Text style={{ fontWeight: '400', color: colors.textTertiary }}>what needs to be done</Text>
+                  </Text>
+                  <TextInput
+                    style={[aq.input, aq.descInput, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]}
+                    value={desc} onChangeText={t => setDesc(t.slice(0, 150))}
+                    multiline numberOfLines={3} textAlignVertical="top"
+                    placeholder="Describe exactly what's expected…" placeholderTextColor={colors.textTertiary}
+                  />
+                  <Text style={{ fontSize: TYPO.micro, color: desc.length > 130 ? '#EF4444' : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 12 }}>
+                    {desc.length}/150
+                  </Text>
+                </>
+              )}
 
-            {/* Coins + Bonus row */}
-            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 14 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={[aq.label, { color: colors.textSecondary }]}>Coins 🪙</Text>
-                <TextInput
-                  style={[aq.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface, marginBottom: 0 }]}
-                  keyboardType="number-pad" value={coins} onChangeText={setCoins}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[aq.label, { color: colors.textSecondary }]}>Bonus 🎉 <Text style={{ fontWeight: '400', color: colors.textTertiary }}>optional</Text></Text>
-                <TextInput
-                  style={[aq.input, { color: colors.textPrimary, borderColor: bonusCoins ? BRAND.amber : colors.border, backgroundColor: colors.surface, marginBottom: 0 }]}
-                  keyboardType="number-pad" placeholder="+coins" placeholderTextColor={colors.textTertiary}
-                  value={bonusCoins} onChangeText={t => setBonusCoins(t.replace(/[^0-9]/g, ''))}
-                />
-              </View>
-            </View>
-
-            {/* Hardness */}
-            <Text style={[aq.label, { color: colors.textSecondary }]}>Hardness <Text style={{ fontWeight: '400', color: colors.textTertiary }}>optional</Text></Text>
-            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-              {([
-                { key: 'easy', label: '😊 Easy', color: '#10B981' },
-                { key: 'medium', label: '💪 Medium', color: BRAND.amber },
-                { key: 'hard', label: '🔥 Hard', color: '#EF4444' },
-                { key: 'hero', label: '⚡ Hero', color: BRAND.purple },
-              ] as { key: QuestDifficulty; label: string; color: string }[]).map(d => (
-                <TouchableOpacity
-                  key={d.key}
-                  style={[aq.diffChip, { borderColor: difficulty === d.key ? d.color : pillBdr, backgroundColor: difficulty === d.key ? d.color + '22' : pillBg }]}
-                  onPress={() => setDifficulty(p => p === d.key ? '' : d.key)}
-                >
-                  <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '800', color: difficulty === d.key ? d.color : colors.textTertiary }}>{d.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Force Assign — avatar row */}
-            <Text style={[aq.label, { color: colors.textSecondary }]}>
-              Force Assign{' '}
-              <Text style={{ fontWeight: '400', color: colors.textTertiary }}>
-                {forceId ? '🔒 will badge as Force Assigned' : 'optional — leave blank to keep as open bounty'}
-              </Text>
-            </Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }} contentContainerStyle={{ flexDirection: 'row', gap: 12 }}>
-              {/* Clear / Open Bounty */}
-              <TouchableOpacity style={{ alignItems: 'center', gap: 4 }} onPress={() => setForceId('')}>
-                <View style={[aq.avatar, { backgroundColor: !forceId ? BRAND.amber + '30' : pillBg, borderColor: !forceId ? BRAND.amber : pillBdr, borderWidth: !forceId ? 2.5 : 1.5 }]}>
-                  <Text style={{ fontSize: 18 }}>⚡</Text>
-                  {!forceId && <View style={[aq.avatarCheck, { backgroundColor: BRAND.amber }]}><Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text></View>}
+              {/* Coins + Bonus */}
+              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 14 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[aq.label, { color: colors.textSecondary }]}>Coins 🪙</Text>
+                  <TextInput
+                    style={[aq.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface, marginBottom: 0 }]}
+                    keyboardType="number-pad" value={coins} onChangeText={setCoins}
+                  />
                 </View>
-                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: !forceId ? BRAND.amber : colors.textTertiary }}>Bounty</Text>
+                <View style={{ width: 90 }}>
+                  <Text style={[aq.label, { color: colors.textSecondary }]}>Bonus 🎉</Text>
+                  <TextInput
+                    style={[aq.input, { color: colors.textPrimary, borderColor: bonusCoins ? BRAND.amber : colors.border, backgroundColor: colors.surface, marginBottom: 0 }]}
+                    keyboardType="number-pad" placeholder="+coins" placeholderTextColor={colors.textTertiary}
+                    value={bonusCoins} onChangeText={t => setBonusCoins(t.replace(/[^0-9]/g, ''))}
+                  />
+                </View>
+              </View>
+
+              {/* Category */}
+              {!locked && (
+                <>
+                  <Text style={[aq.label, { color: colors.textSecondary }]}>Category</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      {ALL_CATEGORIES.map(c => (
+                        <TouchableOpacity key={c}
+                          style={[aq.catChip, { borderColor: pillBdr, backgroundColor: pillBg },
+                            category === c && { backgroundColor: BRAND.purple, borderColor: BRAND.purple }]}
+                          onPress={() => setCategory(c)}>
+                          <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '700', color: category === c ? '#fff' : colors.textSecondary }}>{c}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </>
+              )}
+
+              {/* Difficulty */}
+              <Text style={[aq.label, { color: colors.textSecondary }]}>Difficulty <Text style={{ fontWeight: '400', color: colors.textTertiary }}>optional</Text></Text>
+              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+                {([
+                  { key: 'easy',   label: '😊 Easy',   color: '#10B981' },
+                  { key: 'medium', label: '💪 Medium',  color: BRAND.amber },
+                  { key: 'hard',   label: '🔥 Hard',   color: '#EF4444' },
+                  { key: 'hero',   label: '⚡ Hero',   color: BRAND.purple },
+                ] as { key: QuestDifficulty; label: string; color: string }[]).map(d => (
+                  <TouchableOpacity key={d.key}
+                    style={[aq.diffChip, { borderColor: difficulty === d.key ? d.color : pillBdr, backgroundColor: difficulty === d.key ? d.color + '22' : pillBg }]}
+                    onPress={() => setDifficulty(p => p === d.key ? '' : d.key)}>
+                    <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '800', color: difficulty === d.key ? d.color : colors.textTertiary }}>{d.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Due Date & Time */}
+              <Text style={[aq.label, { color: colors.textSecondary }]}>Due Date & Time</Text>
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+                <TouchableOpacity style={[aq.datePill, { backgroundColor: showDatePick ? BRAND.purple + '20' : pillBg, borderColor: showDatePick ? BRAND.purple : pillBdr }]}
+                  onPress={() => { setShowDatePick(p => !p); setShowTimePick(false); }}>
+                  <Text style={{ fontSize: TYPO.label, marginRight: 4 }}>📅</Text>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showDatePick ? BRAND.purple : colors.textPrimary }}>{fmtDateLabel(dueDate)}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[aq.datePill, { backgroundColor: showTimePick ? BRAND.purple + '20' : pillBg, borderColor: showTimePick ? BRAND.purple : pillBdr }]}
+                  onPress={() => { setShowTimePick(p => !p); setShowDatePick(false); }}>
+                  <Text style={{ fontSize: TYPO.label, marginRight: 4 }}>🕐</Text>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showTimePick ? BRAND.purple : colors.textPrimary }}>{fmtTimeLabel(dueDate)}</Text>
+                </TouchableOpacity>
+              </View>
+              {(showDatePick || showTimePick) && (
+                <Modal transparent animationType="fade" visible onRequestClose={() => { setShowDatePick(false); setShowTimePick(false); }}>
+                  <TouchableOpacity style={aq.pickerOverlay} activeOpacity={1} onPress={() => { setShowDatePick(false); setShowTimePick(false); }}>
+                    <TouchableOpacity activeOpacity={1} style={[aq.pickerCard, { backgroundColor: colors.card }]}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                        <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>{showDatePick ? '📅 Pick a Date' : '🕐 Pick a Time'}</Text>
+                        <TouchableOpacity onPress={() => { setShowDatePick(false); setShowTimePick(false); }}>
+                          <Text style={{ color: BRAND.purple, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+                        </TouchableOpacity>
+                      </View>
+                      {showDatePick && <DateTimePicker value={dueDate} mode="date" display="spinner" minimumDate={new Date()} onChange={onDateChange} textColor={colors.textPrimary} style={{ height: 180, width: '100%' }} />}
+                      {showTimePick && <DateTimePicker value={dueDate} mode="time" display="spinner" is24Hour={false} onChange={onTimeChange} textColor={colors.textPrimary} style={{ height: 180, width: '100%' }} />}
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                </Modal>
+              )}
+
+              {/* Assign To */}
+              <Text style={[aq.label, { color: colors.textSecondary }]}>
+                Assign To{'  '}
+                <Text style={{ fontWeight: '400', color: colors.textTertiary }}>
+                  {isPool ? 'open bounty' : assignIds.length === 0 ? 'tap to select' : `${assignIds.length} selected`}
+                </Text>
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }} contentContainerStyle={{ flexDirection: 'row', gap: 12, paddingRight: 4 }}>
+                <TouchableOpacity style={{ alignItems: 'center', gap: 4 }} onPress={() => { setIsPool(true); setAssignIds([]); }}>
+                  <View style={{ position: 'relative' }}>
+                    <FamilyAvatar name="Bounty" emoji="⚡" size={40} ringColor={BRAND.amber} ringWidth={isPool ? 2.5 : 1} bgColor={isPool ? BRAND.amber + '30' : pillBg} />
+                    {isPool && <View style={[aq.avatarCheck, { backgroundColor: BRAND.amber }]}><Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text></View>}
+                  </View>
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: isPool ? BRAND.amber : colors.textTertiary }}>Bounty</Text>
+                </TouchableOpacity>
+                {members.filter(m => m.role === 'kid' || m.role === 'parent' || m.role === 'senior').map(m => {
+                  const sel = assignIds.includes(m.id) && !isPool;
+                  const roleColor = m.role === 'parent' ? BRAND.purple : m.role === 'senior' ? '#0EA5E9' : '#10B981';
+                  return (
+                    <TouchableOpacity key={m.id} style={{ alignItems: 'center', gap: 4 }}
+                      onPress={() => { setIsPool(false); const next = assignIds.includes(m.id) ? assignIds.filter(id => id !== m.id) : [...assignIds, m.id]; setAssignIds(next); }}>
+                      <View style={{ position: 'relative' }}>
+                        <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={siblings} size={40} ringColor={roleColor} ringWidth={sel ? 2.5 : 1} bgColor={sel ? roleColor + '25' : pillBg} />
+                        {sel && <View style={[aq.avatarCheck, { backgroundColor: roleColor }]}><Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text></View>}
+                      </View>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: sel ? roleColor : colors.textTertiary }} numberOfLines={1}>{m.name.split(' ')[0]}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Photo required toggle */}
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingVertical: 10, paddingHorizontal: 14, borderRadius: 14, marginBottom: 14,
+                  backgroundColor: photoReq ? (isDark ? '#0B2218' : '#F0FDF4') : (isDark ? colors.surface : '#F8FAFC'),
+                  borderWidth: 1.5, borderColor: photoReq ? '#10B981' : colors.border }}
+                onPress={() => setPhotoReq(p => !p)} activeOpacity={0.8}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: photoReq ? '#10B981' : colors.textPrimary }}>📸 Photo Required</Text>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>Kid must attach proof when submitting</Text>
+                </View>
+                <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: photoReq ? '#10B981' : (isDark ? '#334155' : '#CBD5E1'), justifyContent: 'center', paddingHorizontal: 3 }}>
+                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff', alignSelf: photoReq ? 'flex-end' : 'flex-start' }} />
+                </View>
               </TouchableOpacity>
 
-              {kids.map(k => {
-                const sel = forceId === k.id;
-                return (
-                  <TouchableOpacity key={k.id} style={{ alignItems: 'center', gap: 4 }} onPress={() => setForceId(sel ? '' : k.id)}>
-                    <View style={{ position: 'relative' }}>
-                      <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={(k as any).avatarUrl} siblings={siblings} size={40} ringColor="#EF4444" ringWidth={sel ? 2.5 : 1} bgColor={sel ? '#EF444425' : pillBg} />
-                      {sel && <View style={[aq.avatarCheck, { backgroundColor: '#EF4444' }]}><Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text></View>}
-                    </View>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: sel ? '#EF4444' : colors.textTertiary }} numberOfLines={1}>{k.name.split(' ')[0]}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            {/* Modified by notice */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16, paddingHorizontal: 4 }}>
-              <Text style={{ fontSize: TYPO.micro + 1, color: colors.textTertiary }}>
-                ✏️ Modified by{' '}
-                <Text style={{ fontWeight: '700', color: BRAND.purple }}>
-                  {members.find(m => m.id === activeMemberId)?.name ?? 'you'}
-                </Text>
-                {' '}· saved automatically
-              </Text>
-            </View>
-
-            {/* Actions row — Save + Delete */}
-            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'stretch' }}>
-              {onDelete && (
-                <TouchableOpacity
-                  style={{ paddingHorizontal: 18, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#FCA5A560', backgroundColor: isDark ? '#2D1515' : '#FEF2F2' }}
-                  onPress={() => Alert.alert(
-                    'Delete Quest',
-                    `Remove "${quest.title}"? This cannot be undone.`,
-                    [
+              {/* Save + Delete */}
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                {onDelete && (
+                  <TouchableOpacity
+                    style={{ paddingHorizontal: 16, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#FCA5A560', backgroundColor: isDark ? '#2D1515' : '#FEF2F2' }}
+                    onPress={() => Alert.alert('Delete Quest', `Remove "${quest.title}"? This cannot be undone.`, [
                       { text: 'Cancel', style: 'cancel' },
                       { text: 'Delete', style: 'destructive', onPress: () => { onDelete(quest.id); onClose(); } },
-                    ]
-                  )}
-                >
-                  <I.X c="#EF4444" />
-                  <Text style={{ color: '#EF4444', fontSize: TYPO.micro, fontWeight: '700', marginTop: 2 }}>Delete</Text>
+                    ])}>
+                    <I.X c="#EF4444" />
+                    <Text style={{ color: '#EF4444', fontSize: TYPO.micro, fontWeight: '700', marginTop: 2 }}>Delete</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={[aq.submitBtn, { flex: 1, backgroundColor: title.trim() ? '#059669' : colors.border, opacity: saving ? 0.6 : 1 }]}
+                  onPress={save} disabled={saving || !title.trim()}>
+                  {saving
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <>
+                        <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>Save Changes</Text>
+                        <Text style={{ color: '#A7F3D0', fontSize: TYPO.label, marginTop: 2 }}>Due {fmtDateLabel(dueDate)} at {fmtTimeLabel(dueDate)}</Text>
+                      </>}
                 </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                style={[aq.submitBtn, { flex: 1, backgroundColor: title.trim() ? (isForceAssign ? '#EF4444' : '#059669') : colors.border, opacity: saving ? 0.6 : 1 }]}
-                onPress={save} disabled={saving || !title.trim()}
-              >
-                {saving
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <>
-                      <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>
-                        {isForceAssign ? '🔒 Save & Force Assign' : '💾 Save Changes'}
-                      </Text>
-                      {isForceAssign && (
-                        <Text style={{ color: '#FECACA', fontSize: TYPO.label, marginTop: 2 }}>
-                          A "Force Assigned" badge will appear on the card
-                        </Text>
-                      )}
-                    </>}
-              </TouchableOpacity>
-            </View>
+              </View>
+
+            </ScrollView>
           </View>
-        </ScrollView>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -2369,7 +2474,7 @@ const ai = StyleSheet.create({
 export default function QuestsScreen() {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, setActiveMember } = useFamilyStore();
-  const { quests, claimQuest, submitQuest, approveQuest, declineQuest, reopenQuest, updateQuest, deleteQuest, approveParticipant, declineParticipant, reopenParticipant } = useQuestStore();
+  const { quests, claimQuest, submitQuest, approveQuest, declineQuest, reopenQuest, updateQuest, deleteQuest, approveParticipant, declineParticipant, reopenParticipant, reassignQuest } = useQuestStore();
 
   const activeMember = members.find(m => m.id === activeMemberId)
     ?? members.find(m => m.role === 'parent') ?? members[0];
@@ -2940,6 +3045,7 @@ export default function QuestsScreen() {
                   >
                   <CollapsibleQuestCard accentColor={accentColor} cardBg={cardBg} cardBord={cardBord}
                     onDoubleTap={canEdit ? () => setEditTarget(q) : undefined}
+                    onLongPress={canEdit ? () => setEditTarget(q) : undefined}
                     header={cardHeader}
                   >
                     {/* ── Expanded body — NO title/coin repeat, header already shows them ── */}
@@ -3148,18 +3254,33 @@ export default function QuestsScreen() {
                                     <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textSecondary }}>Reopen</Text>
                                   </TouchableOpacity>
                                 )}
-                                {/* Kid's own submit button */}
+                                {/* Kid's own submit + send-back buttons */}
                                 {pIsMe && (p.status === 'todo' || p.status === 'in_progress') && (
-                                  <TouchableOpacity
-                                    style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: BRAND.purple + '20', borderWidth: 1, borderColor: BRAND.purple }}
-                                    onPress={() => Alert.alert(
-                                      'Submit Quest',
-                                      `Submit "${q.title}" for review?`,
-                                      [{ text: 'Cancel', style: 'cancel' }, { text: 'Submit', onPress: () => submitQuest(q.id) }]
-                                    )}
-                                  >
-                                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.purple }}>Submit</Text>
-                                  </TouchableOpacity>
+                                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                                    <TouchableOpacity
+                                      style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: '#EF444415', borderWidth: 1, borderColor: '#EF444440' }}
+                                      onPress={() => Alert.alert(
+                                        "Can't do this?",
+                                        `Send "${q.title}" back to the family pool so a parent can reassign it?`,
+                                        [
+                                          { text: 'Keep it', style: 'cancel' },
+                                          { text: 'Send back', style: 'destructive', onPress: () => reassignQuest(q.id, undefined, activeMember?.id) },
+                                        ]
+                                      )}
+                                    >
+                                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Can't do this</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                      style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: BRAND.purple + '20', borderWidth: 1, borderColor: BRAND.purple }}
+                                      onPress={() => Alert.alert(
+                                        'Submit Quest',
+                                        `Submit "${q.title}" for review?`,
+                                        [{ text: 'Cancel', style: 'cancel' }, { text: 'Submit', onPress: () => submitQuest(q.id) }]
+                                      )}
+                                    >
+                                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.purple }}>Submit</Text>
+                                    </TouchableOpacity>
+                                  </View>
                                 )}
                               </View>
                               {/* Per-kid progress stepper */}
@@ -3246,11 +3367,17 @@ export default function QuestsScreen() {
                         </View>
                       )}
 
-                      {/* Parent: double-tap to edit hint */}
+                      {/* Parent: edit button */}
                       {canEdit && !canClaim && !isDoneCard && (
-                        <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                          <Text style={{ fontSize: TYPO.micro, color: isDark ? '#475569' : '#94A3B8', fontStyle: 'italic' }}>double-tap to edit</Text>
-                        </View>
+                        <TouchableOpacity onPress={() => setEditTarget(q)}
+                          style={{ flex: 1, alignItems: 'flex-end' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+                            backgroundColor: accentColor + '18', borderRadius: 8,
+                            paddingHorizontal: 10, paddingVertical: 5,
+                            borderWidth: 1, borderColor: accentColor + '35' }}>
+                            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: accentColor }}>✏️ Edit</Text>
+                          </View>
+                        </TouchableOpacity>
                       )}
                     </View>{/* action strip */}
                   </CollapsibleQuestCard>

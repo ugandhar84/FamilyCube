@@ -21,7 +21,6 @@ const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']
   quests:   'checkbox-outline',
   calendar: 'calendar-outline',
   chat:     'chatbubbles-outline',
-  store:    'gift-outline',
   profile:  'shield-outline',
 };
 const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
@@ -29,7 +28,6 @@ const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']>
   quests:   'checkbox',
   calendar: 'calendar',
   chat:     'chatbubbles',
-  store:    'gift',
   profile:  'shield',
 };
 
@@ -39,7 +37,6 @@ const TABS = [
   { name: 'quests',   label: 'Quests'   },
   { name: 'calendar', label: 'Schedule' },
   { name: 'chat',     label: 'Chat'     },
-  { name: 'store',    label: 'Perks'    },
   { name: 'profile',  label: 'Hearth'   },
 ] as const;
 
@@ -229,7 +226,7 @@ export default function TabLayout() {
         <Tabs.Screen name="quests"   />
         <Tabs.Screen name="calendar" />
         <Tabs.Screen name="chat"     />
-        <Tabs.Screen name="store"    />
+        <Tabs.Screen name="store"    options={{ href: null }} />
         <Tabs.Screen name="profile"  />
         {/* Hidden routes — not in tab bar */}
         <Tabs.Screen name="gps"                  options={{ href: null }} />

@@ -22,11 +22,12 @@ interface MonthAccordionTimelineProps {
   onToggleMedActive: (id: string, newActive: boolean) => void;
   onDeleteEntry: (ev: TLEvent) => void;
   onDeleteGroup: (evs: TLEvent[], label: string) => void;
+  onEditEntry?: (ev: TLEvent) => void;
 }
 
 const MonthAccordionTimeline = React.memo(function MonthAccordionTimeline({
   events, colors, accent, monthsShown, onLoadOlder, aiSummaryMap,
-  onPressAppt, onPressMed, onToggleMedActive, onDeleteEntry, onDeleteGroup,
+  onPressAppt, onPressMed, onToggleMedActive, onDeleteEntry, onDeleteGroup, onEditEntry,
 }: MonthAccordionTimelineProps) {
   const TYPE_CFG = useMemo(() => getTypeCfg(colors), [colors]);
 
@@ -81,7 +82,7 @@ const MonthAccordionTimeline = React.memo(function MonthAccordionTimeline({
         }}
         activeOpacity={tappable ? 0.7 : 1}
         onPress={() => { if (groupKey) toggleGroup(groupKey); press(ev); }}
-        onLongPress={() => onDeleteEntry(ev)}
+        onLongPress={() => onEditEntry ? onEditEntry(ev) : onDeleteEntry(ev)}
         delayLongPress={500}
       >
         <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>

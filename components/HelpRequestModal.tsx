@@ -21,6 +21,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useHelpStore, HelpCategory, HelpUrgency, RideMode } from '@/store/helpStore';
 import { TYPO } from '@/constants/theme';
+import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from '@/components/FamilyCubeLogo';
 
 // ─── Suggestion pills ─────────────────────────────────────────────────────────
@@ -70,7 +71,7 @@ function addMins(d: Date, mins: number) { return new Date(d.getTime() + mins * 6
 // ─── Shared field label ───────────────────────────────────────────────────────
 function FieldLabel({ text, required, colors }: { text: string; required?: boolean; colors: any }) {
   return (
-    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 7 }}>
+    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
       {text}{required ? <Text style={{ color: '#EF4444' }}> *</Text> : null}
     </Text>
   );
@@ -125,7 +126,7 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
   const adults = members.filter(m => m.role === 'parent' || m.role === 'senior');
 
   // ── Form state ──
-  const [onBehalfOfId, setOnBehalfOfId] = useState(kids[0]?.id ?? '');
+  const [onBehalfOfId, setOnBehalfOfId] = useState(active?.id ?? kids[0]?.id ?? '');
   const [typeText, setTypeText]         = useState('');
   const [category, setCategory]         = useState<HelpCategory>('General');
   const [description, setDescription]   = useState('');
@@ -163,6 +164,7 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
     const requester = isAdult
       ? (members.find(m => m.id === onBehalfOfId) ?? active)
       : active;
+
 
     addRequest({
       requesterName:   requester?.name ?? '',
@@ -209,7 +211,7 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
               <Text style={[s.title, { color: colors.textPrimary }]}>
                 {isAdult ? 'Request Family Help' : 'Ask Family for Help'}
               </Text>
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+              <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
                 {isAdult ? 'Assign a task or errand to any family member' : 'Parents, siblings, or grandparents can help'}
               </Text>
             </View>
@@ -223,23 +225,25 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled"
             contentContainerStyle={s.body}>
 
-            {/* Child selector — adults only */}
-            {isAdult && kids.length > 0 && (
+            {/* Who needs help — all family members, self-labelled */}
+            {isAdult && members.length > 1 && (
               <View style={{ marginBottom: 16 }}>
-                <FieldLabel text="Which kid needs help?" colors={colors} />
+                <FieldLabel text="Who needs help?" colors={colors} />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  {kids.map(k => (
-                    <Pressable key={k.id} onPress={() => setOnBehalfOfId(k.id)}
-                      style={[s.chip, {
-                        backgroundColor: onBehalfOfId === k.id ? BRAND.amber + '20' : colors.surface,
-                        borderColor: onBehalfOfId === k.id ? BRAND.amber : colors.border,
-                      }]}>
-                      <Text style={{ fontSize: TYPO.body }}>{k.emoji ?? '🧒'}</Text>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: onBehalfOfId === k.id ? BRAND.amber : colors.textSecondary }}>
-                        {k.name.split(' ')[0]}
-                      </Text>
-                    </Pressable>
-                  ))}
+                  {[...members].sort((a, b) => (a.id === active?.id ? -1 : b.id === active?.id ? 1 : 0)).map(m => {
+                    const sel = onBehalfOfId === m.id;
+                    return (
+                      <Pressable key={m.id} onPress={() => { setOnBehalfOfId(m.id); if (preferredHelper === m.id) setPref(''); }}
+                        style={{ alignItems: 'center', marginRight: 12 }}>
+                        <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={40} ringColor={sel ? BRAND.amber : colors.border} ringWidth={sel ? 2.5 : 1} bgColor={sel ? BRAND.amber + '20' : undefined} />
+                        {sel && (
+                          <View style={{ position: 'absolute', bottom: -2, right: -2, width: 14, height: 14, borderRadius: 7, backgroundColor: BRAND.amber, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.card }}>
+                            <Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text>
+                          </View>
+                        )}
+                      </Pressable>
+                    );
+                  })}
                 </ScrollView>
               </View>
             )}
@@ -262,7 +266,7 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
                       backgroundColor: sel ? BRAND.purple + '22' : (isDark ? '#1E293B' : '#F1F5F9'),
                       borderColor: sel ? BRAND.purple : (isDark ? '#334155' : '#E2E8F0'),
                     }]}>
-                    <Text style={{ fontSize: TYPO.label }}>{sg.icon}</Text>
+                    <Text style={{ fontSize: TYPO.body }}>{sg.icon}</Text>
                     <Text style={[s.pillText, { color: sel ? BRAND.purple : colors.textSecondary }]}>{sg.label}</Text>
                   </Pressable>
                 );
@@ -285,7 +289,7 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
               {URGENCY_OPTS.map(u => (
                 <Pressable key={u.key} onPress={() => setUrgency(u.key)}
                   style={[s.segBtn, { flex: 1, backgroundColor: urgency === u.key ? u.color + '18' : colors.surface, borderColor: urgency === u.key ? u.color : colors.border }]}>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: urgency === u.key ? '800' : '600', color: urgency === u.key ? u.color : colors.textSecondary }}>
+                  <Text style={{ fontSize: TYPO.body, fontWeight: urgency === u.key ? '800' : '600', color: urgency === u.key ? u.color : colors.textSecondary }}>
                     {u.label}
                   </Text>
                 </Pressable>
@@ -297,18 +301,20 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
               <>
                 <FieldLabel text={isAdult ? 'Assign helper' : 'Preferred helper (optional)'} colors={colors} />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-                  {[{ id: '', name: 'Any Available', emoji: '👥' }, ...adults].map(a => (
-                    <Pressable key={a.id} onPress={() => setPref(a.id)}
-                      style={[s.chip, {
-                        backgroundColor: preferredHelper === a.id ? BRAND.teal + '20' : colors.surface,
-                        borderColor: preferredHelper === a.id ? BRAND.teal : colors.border,
-                      }]}>
-                      <Text style={{ fontSize: TYPO.body }}>{(a as any).emoji ?? '👤'}</Text>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: preferredHelper === a.id ? BRAND.teal : colors.textSecondary }}>
-                        {a.name.split(' ')[0]}
-                      </Text>
-                    </Pressable>
-                  ))}
+                  {[{ id: '', name: 'Any', emoji: '?' } as any, ...adults.filter(a => a.id !== onBehalfOfId)].map(a => {
+                    const sel = preferredHelper === a.id;
+                    return (
+                      <Pressable key={a.id} onPress={() => setPref(a.id)}
+                        style={{ alignItems: 'center', marginRight: 12 }}>
+                        <FamilyAvatar name={a.name} emoji={a.emoji ?? '👤'} avatarUrl={a.avatarUrl} siblings={members.map(x => x.name)} size={40} ringColor={sel ? BRAND.teal : colors.border} ringWidth={sel ? 2.5 : 1} bgColor={sel ? BRAND.teal + '20' : undefined} />
+                        {sel && (
+                          <View style={{ position: 'absolute', bottom: -2, right: -2, width: 14, height: 14, borderRadius: 7, backgroundColor: BRAND.teal, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.card }}>
+                            <Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text>
+                          </View>
+                        )}
+                      </Pressable>
+                    );
+                  })}
                 </ScrollView>
               </>
             )}
@@ -318,7 +324,7 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
               <View style={{ backgroundColor: BRAND.purple + '15', borderRadius: 14, borderWidth: 1, borderColor: BRAND.purple + '35', padding: 12, marginBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.purple }}>Co-Learning Bounty</Text>
-                  <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary, marginTop: 2 }}>Both the kid and helper earn bonus coins on completion!</Text>
+                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>Both the kid and helper earn bonus coins on completion!</Text>
                 </View>
                 <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: BRAND.amber }}>+{coinBounty}🪙</Text>
               </View>
@@ -336,15 +342,15 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
                   ] as { key: RideMode; label: string; sub: string }[]).map(r => (
                     <Pressable key={r.key} onPress={() => setRideMode(r.key)}
                       style={[s.rideBtn, { flex: 1, backgroundColor: rideMode === r.key ? BRAND.teal + '20' : colors.surface, borderColor: rideMode === r.key ? BRAND.teal : colors.border }]}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: rideMode === r.key ? '800' : '600', color: rideMode === r.key ? BRAND.teal : colors.textSecondary, textAlign: 'center' }}>{r.label}</Text>
-                      <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, textAlign: 'center', marginTop: 2 }}>{r.sub}</Text>
+                      <Text style={{ fontSize: TYPO.body, fontWeight: rideMode === r.key ? '800' : '600', color: rideMode === r.key ? BRAND.teal : colors.textSecondary, textAlign: 'center' }}>{r.label}</Text>
+                      <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, textAlign: 'center', marginTop: 2 }}>{r.sub}</Text>
                     </Pressable>
                   ))}
                 </View>
                 {rideMode === 'roundtrip' && (
                   <View style={{ backgroundColor: BRAND.teal + '15', borderRadius: 12, borderWidth: 1, borderColor: BRAND.teal + '40', padding: 10, marginBottom: 14, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
                     <Ionicons name="information-circle" size={15} color={BRAND.teal} />
-                    <Text style={{ fontSize: TYPO.label, color: BRAND.teal, fontWeight: '700', flex: 1 }}>Two schedule entries will be created — drop-off and return pick-up.</Text>
+                    <Text style={{ fontSize: TYPO.caption, color: BRAND.teal, fontWeight: '700', flex: 1 }}>Two schedule entries will be created — drop-off and return pick-up.</Text>
                   </View>
                 )}
                 <DTRow label="Date" date={date} mode="date" colors={colors} isDark={isDark} open={picker === 'date'} onOpen={() => tog('date')} onPick={d => { setDate(d); setPicker(null); }} />
@@ -370,7 +376,7 @@ export default function HelpRequestModal({ visible, onClose }: Props) {
                   {DURATIONS.map(d => (
                     <Pressable key={d} onPress={() => setDuration(d)}
                       style={[s.chip, { backgroundColor: duration === d ? BRAND.amber + '20' : colors.surface, borderColor: duration === d ? BRAND.amber : colors.border }]}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: duration === d ? BRAND.amber : colors.textSecondary }}>{d}</Text>
+                      <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: duration === d ? BRAND.amber : colors.textSecondary }}>{d}</Text>
                     </Pressable>
                   ))}
                 </View>
@@ -423,13 +429,13 @@ const s = StyleSheet.create({
   handle:    { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 12 },
   hdr:       { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 20, paddingBottom: 14 },
   hdrIcon:   { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  title:     { fontSize: TYPO.caption, fontWeight: '900' },
+  title:     { fontSize: TYPO.heading, fontWeight: '900' },
   closeBtn:  { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   body:      { paddingHorizontal: 20, paddingBottom: 24 },
   input:     { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: TYPO.body, marginBottom: 14 },
   multi:     { minHeight: 88, paddingTop: 12 },
-  pill:      { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 20, borderWidth: 1, marginRight: 8 },
-  pillText:  { fontSize: TYPO.label, fontWeight: '600' },
+  pill:      { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5, marginRight: 8 },
+  pillText:  { fontSize: TYPO.caption, fontWeight: '600' },
   chip:      { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 13, paddingVertical: 8, borderRadius: 20, borderWidth: 1, marginRight: 8 },
   segBtn:    { paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   rideBtn:   { paddingVertical: 12, paddingHorizontal: 6, borderRadius: 14, borderWidth: 1.5, alignItems: 'center' },

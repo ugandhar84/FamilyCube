@@ -7,6 +7,12 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 
+const generateId = () =>
+  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+
 // Lazy-read family_id from familyStore (same pattern as questStore — avoids circular dep)
 const getFamilyId = (): string | null => {
   try {
@@ -245,7 +251,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
   sendRequest: (req) => {
     const request: KidRequest = {
       ...req,
-      id:          crypto.randomUUID(),
+      id:          generateId(),
       urgency:     req.urgency ?? (req.type === 'emergency' ? 'emergency' : 'normal'),
       requestedAt: new Date().toISOString(),
       status:      'pending',

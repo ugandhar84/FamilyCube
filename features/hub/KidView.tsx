@@ -4,6 +4,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { ChevronRight } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import FamilyAvatar from '@/components/FamilyAvatar';
 import { TYPO } from '@/constants/theme';
 import { useQuestStore } from '@/store/questStore';
 import { useEventStore } from '@/store/eventStore';
@@ -43,6 +44,7 @@ export { GROCERY_PREFIX, SUPPLIES_PREFIX, encodeGroceryRequest, decodeGroceryReq
 import { SUPPLIES_PREFIX } from './KidModals';
 
 import { GroceryModal, SuppliesModal, AskModal, KidRequestHistoryModal } from './KidModals';
+import { SchoolScheduleCard } from './SchoolScheduleModal';
 import AppBottomSheet from '@/components/AppBottomSheet';
 
 
@@ -63,14 +65,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   const [askModal,        setAskModal]        = useState<null | 'permission' | 'question' | 'medication'>(null);
   const [historyModal,    setHistoryModal]    = useState(false);
   const [askParentSheet,  setAskParentSheet]  = useState(false);
-  const [rideSheet,       setRideSheet]       = useState(false);
   const [addEventModal,   setAddEventModal]   = useState(false);
-  const [rideWhere,       setRideWhere]       = useState('');
-  const [rideDate,        setRideDate]        = useState<Date>(new Date());
-  const [rideNeedsPickup, setRideNeedsPickup] = useState(true);
-  const [rideExtraNote,   setRideExtraNote]   = useState('');
-  const [showRideDatePick, setShowRideDatePick] = useState(false);
-  const [showRideTimePick, setShowRideTimePick] = useState(false);
   const [lateNudgeSent,   setLateNudgeSent]   = useState<Record<string, boolean>>({});
   const [dismissedReplies, setDismissedReplies] = useState<Set<string>>(new Set());
   const [dismissedActions,  setDismissedActions]  = useState<Set<string>>(new Set());
@@ -470,7 +465,8 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
                 backgroundColor: isMe ? BRAND.purple + '18' : 'transparent',
                 borderWidth: isMe ? 1.5 : 0, borderColor: BRAND.purple + '40' }}>
                 <Text style={{ fontSize: 16, width: 24 }}>{medals[i] ?? `${i + 1}.`}</Text>
-                <Text style={{ fontSize: 18 }}>{k.emoji ?? '👤'}</Text>
+                <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={(k as any).avatarUrl} size={30}
+                  ringColor={BRAND.purple} ringWidth={isMe ? 2 : 0} />
                 <Text style={{ flex: 1, fontSize: 13, fontWeight: isMe ? '900' : '700', color: isMe ? BRAND.purple : colors.textPrimary }}>
                   {k.name.split(' ')[0]}{isMe ? ' (you)' : ''}
                 </Text>
@@ -614,6 +610,15 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   // ── Tab: Schedule ─────────────────────────────────────────────────────────────
   const scheduleTab = (
     <View style={[pad, { gap: 10 }]}>
+      {/* School timetable */}
+      <SchoolScheduleCard
+        memberId={active.id}
+        memberName={active.name.split(' ')[0]}
+        isParent={false}
+        colors={colors}
+        isDark={isDark}
+      />
+
       {/* Today */}
       <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderRadius: 18, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', overflow: 'hidden' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, gap: 8 }}>
@@ -1104,7 +1109,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
         <Text style={{ fontSize: 28 }}>💬</Text>
         <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>Ask Parent</Text>
       </Pressable>
-      <Pressable onPress={() => setRideSheet(true)}
+      <Pressable onPress={() => setAddEventModal(true)}
         style={{ flex: 1, borderRadius: 18, paddingVertical: 18, alignItems: 'center', gap: 6,
           backgroundColor: isDark ? colors.card : '#fff',
           borderWidth: 2, borderColor: BRAND.teal + '60',
@@ -1228,22 +1233,6 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   // ── More row: Schedule, Piggy Bank, Rewards, History ─────────────────────────
   const moreRow = (
     <View style={[pad, { marginBottom: 16, gap: 10 }]}>
-      {/* Add to schedule CTA */}
-      <Pressable onPress={() => setAddEventModal(true)}
-        style={{ borderRadius: 18, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12,
-          backgroundColor: isDark ? '#0F2A20' : '#ECFDF5', borderWidth: 1.5, borderColor: BRAND.teal + '50' }}>
-        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: BRAND.teal + '25',
-          alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontSize: 22 }}>📅</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 14, fontWeight: '900', color: BRAND.teal }}>Add to Schedule</Text>
-          <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
-            Sports, birthday, online class… — parent approves &amp; assigns ride
-          </Text>
-        </View>
-        <ChevronRight size={18} color={BRAND.teal} />
-      </Pressable>
 
       <View style={{ flexDirection: 'row', gap: 10 }}>
         {([
@@ -1277,7 +1266,8 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
             <View key={k.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 8, borderRadius: 12,
               backgroundColor: isMe ? BRAND.purple + '18' : 'transparent', borderWidth: isMe ? 1.5 : 0, borderColor: BRAND.purple + '40' }}>
               <Text style={{ fontSize: 18, width: 26 }}>{medals[i] ?? `${i + 1}.`}</Text>
-              <Text style={{ fontSize: 18 }}>{k.emoji ?? '👤'}</Text>
+              <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={(k as any).avatarUrl} size={30}
+                ringColor={BRAND.purple} ringWidth={isMe ? 2 : 0} />
               <Text style={{ flex: 1, fontSize: 13, fontWeight: isMe ? '900' : '700', color: isMe ? BRAND.purple : colors.textPrimary }}>
                 {k.name.split(' ')[0]}{isMe ? ' (you)' : ''}
               </Text>
@@ -1326,226 +1316,6 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
     </AppBottomSheet>
   );
 
-  // ── Ride request sheet ─────────────────────────────────────────────────────────
-  const rideReady = rideWhere.trim().length > 0;
-
-  const fmtRideDate = (d: Date) =>
-    d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  const fmtRideTime = (d: Date) =>
-    d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  const rideDetailStr = [
-    rideNeedsPickup ? 'Pickup needed' : 'Drop-off only',
-    rideWhere.trim(),
-    `on ${fmtRideDate(rideDate)} at ${fmtRideTime(rideDate)}`,
-    rideExtraNote.trim(),
-  ].filter(Boolean).join(' · ');
-
-  const rideSheetEl = (
-    <>
-      <AppBottomSheet
-        visible={rideSheet}
-        onClose={() => { setRideSheet(false); setRideWhere(''); setRideExtraNote(''); setRideDate(new Date()); setRideNeedsPickup(true); }}
-        title="🚗 Need a Ride?"
-        subtitle="Fill in the details — your parent gets a neat request card"
-        accentColor={BRAND.teal}
-        minHeight="65%"
-        maxHeight="90%"
-        bodyPaddingBottom={16}
-        footer={
-          <TouchableOpacity
-            disabled={!rideReady}
-            onPress={() => {
-              if (!rideReady) return;
-              sendRequest({ type: 'ride', fromMemberId: active.id, urgency: 'soon', detail: rideDetailStr });
-              setRideSheet(false);
-              setRideWhere(''); setRideExtraNote(''); setRideDate(new Date()); setRideNeedsPickup(true);
-              Alert.alert('🚗 Sent!', 'Your parent has been notified.');
-            }}
-            style={{ borderRadius: 16, paddingVertical: 16, alignItems: 'center',
-              backgroundColor: rideReady ? BRAND.teal : (isDark ? '#2A2A3E' : '#E0E0F0') }}>
-            <Text style={{ fontSize: 15, fontWeight: '900', color: rideReady ? '#fff' : colors.textTertiary }}>
-              Send Ride Request →
-            </Text>
-          </TouchableOpacity>
-        }
-      >
-        {/* Quick picks from today's events */}
-        {todayEvents.filter(ev => !ev.helper || ev.helperStatus === 'rejected').length > 0 && (
-          <View style={{ marginBottom: 16 }}>
-            <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 8, letterSpacing: 0.5 }}>TODAY'S EVENTS — TAP TO AUTO-FILL</Text>
-            <View style={{ gap: 6 }}>
-              {todayEvents.filter(ev => !ev.helper || ev.helperStatus === 'rejected').map(ev => {
-                const selected = rideWhere === ev.title;
-                return (
-                  <Pressable key={ev.id}
-                    onPress={() => {
-                      setRideWhere(ev.title);
-                      if (ev.time) {
-                        const [h, m] = ev.time.split(':').map(Number);
-                        const d = new Date(); d.setHours(h, m, 0, 0);
-                        setRideDate(d);
-                      }
-                    }}
-                    style={{ borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10,
-                      backgroundColor: selected ? BRAND.teal + '20' : (isDark ? colors.surface : '#F8FAFC'),
-                      borderWidth: 1.5, borderColor: selected ? BRAND.teal : (isDark ? colors.border : '#E2E8F0') }}>
-                    <View style={{ width: 34, height: 34, borderRadius: 17,
-                      backgroundColor: selected ? BRAND.teal + '30' : (isDark ? colors.border : '#E8F4F3'),
-                      alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 16 }}>📅</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: selected ? BRAND.teal : colors.textPrimary }}>{ev.title}</Text>
-                      {ev.time && <Text style={{ fontSize: 11, color: colors.textTertiary }}>{fmtTime(ev.time)}{ev.location ? ` · ${ev.location}` : ''}</Text>}
-                    </View>
-                    {selected && <Text style={{ fontSize: 18, color: BRAND.teal }}>✓</Text>}
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-        )}
-
-        {/* Where */}
-        <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, marginBottom: 10, letterSpacing: 0.5 }}>FILL IN THE DETAILS</Text>
-        <View style={{ gap: 12, marginBottom: 14 }}>
-          <View style={{ gap: 6 }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>🚩 Where / What</Text>
-            <TextInput
-              value={rideWhere}
-              onChangeText={setRideWhere}
-              placeholder="Soccer practice, Maya's house, Riverside Park…"
-              placeholderTextColor={colors.textTertiary}
-              style={{ borderRadius: 12, borderWidth: 1.5, padding: 12, fontSize: 14,
-                color: colors.textPrimary,
-                borderColor: rideWhere.trim() ? BRAND.teal + '80' : colors.border,
-                backgroundColor: isDark ? colors.surface : '#F9FAFB' }}
-            />
-          </View>
-
-          {/* Pickup toggle */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-            borderRadius: 12, borderWidth: 1.5, borderColor: colors.border,
-            backgroundColor: isDark ? colors.surface : '#F9FAFB', padding: 12 }}>
-            <View style={{ gap: 2 }}>
-              <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }}>
-                {rideNeedsPickup ? '🚗 Pickup needed' : '🏁 Drop-off only'}
-              </Text>
-              <Text style={{ fontSize: 11, color: colors.textSecondary }}>
-                {rideNeedsPickup ? 'Someone needs to come get me' : 'I just need to be taken there'}
-              </Text>
-            </View>
-            <Switch
-              value={rideNeedsPickup}
-              onValueChange={setRideNeedsPickup}
-              trackColor={{ false: colors.border, true: BRAND.teal + '90' }}
-              thumbColor={rideNeedsPickup ? BRAND.teal : colors.textTertiary}
-            />
-          </View>
-
-          {/* Date + Time picker buttons */}
-          <View style={{ gap: 6 }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>🗓 When</Text>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TouchableOpacity
-                onPress={() => { setShowRideDatePick(true); setShowRideTimePick(false); }}
-                style={{ flex: 1, borderRadius: 12, borderWidth: 1.5, padding: 12, alignItems: 'center',
-                  borderColor: showRideDatePick ? BRAND.teal : colors.border,
-                  backgroundColor: showRideDatePick ? BRAND.teal + '15' : (isDark ? colors.surface : '#F9FAFB') }}>
-                <Text style={{ fontSize: 11, color: colors.textTertiary, marginBottom: 3 }}>DATE</Text>
-                <Text style={{ fontSize: 14, fontWeight: '800', color: showRideDatePick ? BRAND.teal : colors.textPrimary }}>
-                  {fmtRideDate(rideDate)}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => { setShowRideTimePick(true); setShowRideDatePick(false); }}
-                style={{ flex: 1, borderRadius: 12, borderWidth: 1.5, padding: 12, alignItems: 'center',
-                  borderColor: showRideTimePick ? BRAND.teal : colors.border,
-                  backgroundColor: showRideTimePick ? BRAND.teal + '15' : (isDark ? colors.surface : '#F9FAFB') }}>
-                <Text style={{ fontSize: 11, color: colors.textTertiary, marginBottom: 3 }}>TIME</Text>
-                <Text style={{ fontSize: 14, fontWeight: '800', color: showRideTimePick ? BRAND.teal : colors.textPrimary }}>
-                  {fmtRideTime(rideDate)}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Extra note */}
-          <View style={{ gap: 6 }}>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>💬 Extra note (optional)</Text>
-            <TextInput
-              value={rideExtraNote}
-              onChangeText={setRideExtraNote}
-              placeholder="Anything else your parent should know…"
-              placeholderTextColor={colors.textTertiary}
-              multiline
-              style={{ borderRadius: 12, borderWidth: 1.5, padding: 12, fontSize: 13,
-                color: colors.textPrimary, borderColor: rideExtraNote.trim() ? BRAND.teal + '60' : colors.border,
-                backgroundColor: isDark ? colors.surface : '#F9FAFB', minHeight: 60, textAlignVertical: 'top' }}
-            />
-          </View>
-        </View>
-
-        {/* Live card preview */}
-        {rideReady && (
-          <View style={{ borderRadius: 16, backgroundColor: BRAND.teal + '12', borderWidth: 1.5, borderColor: BRAND.teal + '40', padding: 14, gap: 6 }}>
-            <Text style={{ fontSize: 10, fontWeight: '800', color: BRAND.teal, letterSpacing: 0.5 }}>PREVIEW — WHAT PARENT SEES</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 4 }}>
-              <Text style={{ fontSize: 28 }}>🚗</Text>
-              <View style={{ flex: 1, gap: 3 }}>
-                <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textPrimary }}>
-                  {active.name.split(' ')[0]} {rideNeedsPickup ? 'needs a pickup' : 'needs a drop-off'}
-                </Text>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: BRAND.teal }}>{rideWhere.trim()}</Text>
-                <Text style={{ fontSize: 12, color: colors.textSecondary }}>🗓 {fmtRideDate(rideDate)}  🕐 {fmtRideTime(rideDate)}</Text>
-                {rideExtraNote.trim() ? (
-                  <Text style={{ fontSize: 12, color: colors.textSecondary, fontStyle: 'italic' }}>"{rideExtraNote.trim()}"</Text>
-                ) : null}
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* Date / time picker — inline modal anchored inside the sheet's own Modal */}
-        {(showRideDatePick || showRideTimePick) && (
-          <Modal transparent animationType="fade" visible onRequestClose={() => { setShowRideDatePick(false); setShowRideTimePick(false); }}>
-            <TouchableOpacity
-              style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}
-              activeOpacity={1}
-              onPress={() => { setShowRideDatePick(false); setShowRideTimePick(false); }}>
-              <TouchableOpacity activeOpacity={1}
-                style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 40, backgroundColor: colors.card }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-                  paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 }}>
-                  <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary }}>
-                    {showRideDatePick ? '📅 Pick a Date' : '🕐 Pick a Time'}
-                  </Text>
-                  <TouchableOpacity onPress={() => { setShowRideDatePick(false); setShowRideTimePick(false); }}>
-                    <Text style={{ color: BRAND.teal, fontWeight: '900', fontSize: 16 }}>Done</Text>
-                  </TouchableOpacity>
-                </View>
-                {showRideDatePick && (
-                  <DateTimePicker
-                    value={rideDate} mode="date" display="spinner" minimumDate={new Date()}
-                    onChange={(_, d) => { if (d) { const m = new Date(d); m.setHours(rideDate.getHours(), rideDate.getMinutes()); setRideDate(m); } }}
-                    textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
-                  />
-                )}
-                {showRideTimePick && (
-                  <DateTimePicker
-                    value={rideDate} mode="time" display="spinner" is24Hour={false}
-                    onChange={(_, d) => { if (d) { const m = new Date(rideDate); m.setHours(d.getHours(), d.getMinutes()); setRideDate(m); } }}
-                    textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
-                  />
-                )}
-              </TouchableOpacity>
-            </TouchableOpacity>
-          </Modal>
-        )}
-      </AppBottomSheet>
-    </>
-  );
-
   return (
     <>
       {heroCard}
@@ -1554,11 +1324,19 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
       {checkinRow}
       {actionRow}
       {inlineQuests}
+      <View style={pad}>
+        <SchoolScheduleCard
+          memberId={active.id}
+          memberName={active.name.split(' ')[0]}
+          isParent={false}
+          colors={colors}
+          isDark={isDark}
+        />
+      </View>
       {moreRow}
       {leaderboard}
 
       {askParentSheetEl}
-      {rideSheetEl}
       <GroceryModal  visible={groceryModal}  onClose={() => setGroceryModal(false)}  active={active} />
       <SuppliesModal visible={suppliesModal} onClose={() => setSuppliesModal(false)} active={active} />
       {askModal && <AskModal visible={!!askModal} onClose={() => setAskModal(null)} type={askModal} active={active} />}

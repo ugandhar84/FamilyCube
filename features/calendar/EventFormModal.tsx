@@ -240,6 +240,8 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   // ── State ──────────────────────────────────────────────────────────────────
   const [category,       setCategory]       = useState<EventCategory>(isKid ? 'Sports' : 'Medical');
   const [kidRideType,    setKidRideType]    = useState<'none' | 'dropoff' | 'pickup' | 'both'>('none');
+  const [kidReturnDate,  setKidReturnDate]  = useState<Date | null>(null);
+  const [showKidReturnPick, setShowKidReturnPick] = useState(false);
   const [title,          setTitle]          = useState('');
   const [titleFocused,   setTitleFocused]   = useState(false);
   const [notes,          setNotes]          = useState('');
@@ -408,12 +410,15 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
       category,
       allDay,
       location,
-      notes:           [
-        notes.trim(),
-        isKid && kidRideType !== 'none'
-          ? `Ride needed: ${kidRideType === 'dropoff' ? 'Drop-off only' : kidRideType === 'pickup' ? 'Pickup after' : 'Drop-off + Pickup'}`
-          : '',
-      ].filter(Boolean).join(' · ') || undefined,
+      notes:           notes.trim() || undefined,
+      // Encode kid ride request as structured metadata in returnTime field
+      returnTime:      isKid && kidRideType === 'both' && kidReturnDate
+        ? `RIDE:both:${fmtTimeDisplay(kidReturnDate)}`
+        : isKid && kidRideType === 'dropoff'
+        ? 'RIDE:dropoff'
+        : isKid && kidRideType === 'pickup'
+        ? 'RIDE:pickup'
+        : returnDate ? fmtTimeDisplay(returnDate) : undefined,
       memberId:        memberIds[0],
       memberIds:       memberIds.length > 1 ? memberIds : undefined,
       // Helper
@@ -429,7 +434,6 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
       // Ride/Sports
       pickupLocation:  pickupLocation.trim() || undefined,
       dropLocation:    dropLocation.trim()   || undefined,
-      returnTime:      returnDate ? fmtTimeDisplay(returnDate) : undefined,
       // Approval flow
       approvalPending: isKid, // kids' requests go to parent approval
       conflict:        false,
@@ -592,11 +596,11 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
             {/* Suggestions */}
             {suggestions.length > 0 && (
               <View style={{ marginTop: -8, marginBottom: 14 }}>
-                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 6, fontWeight: '600' }}>
+                <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginBottom: 8, fontWeight: '700', letterSpacing: 0.4 }}>
                   {title.trim() ? 'Matching — tap to fill' : 'Quick picks'}
                 </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
-                  <View style={{ flexDirection: 'row', gap: 7 }}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
                     {suggestions.map((s, i) => (
                       <TouchableOpacity
                         key={i}
@@ -606,10 +610,10 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                           borderColor: title === s.title ? catColor : (isDark ? colors.border : '#E2E8F0'),
                         }]}
                       >
-                        <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textSecondary }} numberOfLines={1}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: title === s.title ? catColor : colors.textPrimary }} numberOfLines={1}>
                           {s.title}
                         </Text>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginLeft: 4 }}>{s.hint}</Text>
+                        {s.hint ? <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginLeft: 4 }}>{s.hint}</Text> : null}
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -1239,7 +1243,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
             )}
 
             {/* ── Helper assignment (parent only; kid sees "Parent will assign") ── */}
-            {category !== 'Work' && category !== 'Event' && (
+            {(isKid || (category !== 'Work' && category !== 'Event')) && (
               <>
                 {isKid ? (
                   <View style={{ gap: 8 }}>
@@ -1256,23 +1260,58 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                           style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
                             backgroundColor: kidRideType === opt.key ? catColor + '25' : (isDark ? colors.surface : '#F1F5F9'),
                             borderWidth: 1.5, borderColor: kidRideType === opt.key ? catColor : colors.border }}>
-                          <Text style={{ fontSize: 14 }}>{opt.emoji}</Text>
-                          <Text style={{ fontSize: 12, fontWeight: kidRideType === opt.key ? '800' : '600',
+                          <Text style={{ fontSize: TYPO.subheading }}>{opt.emoji}</Text>
+                          <Text style={{ fontSize: TYPO.body, fontWeight: kidRideType === opt.key ? '800' : '600',
                             color: kidRideType === opt.key ? catColor : colors.textSecondary }}>
                             {opt.label}
                           </Text>
                         </TouchableOpacity>
                       ))}
                     </View>
+                    {/* Return time picker — only for 'both' */}
+                    {kidRideType === 'both' && (
+                      <View style={{ gap: 6, marginTop: 4 }}>
+                        <Text style={[f.label, { color: colors.textSecondary }]}>🏁 Pickup time (when to collect you)</Text>
+                        <TouchableOpacity
+                          onPress={() => { setShowKidReturnPick(p => !p); if (!kidReturnDate) setKidReturnDate(new Date(eventDate)); }}
+                          style={[f.dateBtn, { backgroundColor: showKidReturnPick ? catColor + '20' : colors.surface,
+                            borderColor: showKidReturnPick ? catColor : (kidReturnDate ? catColor + '80' : colors.border) }]}>
+                          <Text style={{ fontSize: TYPO.body }}>🕐</Text>
+                          <Text style={{ fontSize: TYPO.body, fontWeight: '700',
+                            color: showKidReturnPick ? catColor : (kidReturnDate ? colors.textPrimary : colors.textTertiary) }}>
+                            {kidReturnDate ? fmtTimeDisplay(kidReturnDate) : 'Tap to set pickup time'}
+                          </Text>
+                        </TouchableOpacity>
+                        {showKidReturnPick && (
+                          <Modal transparent animationType="fade" visible onRequestClose={() => setShowKidReturnPick(false)}>
+                            <TouchableOpacity style={f.pickerOverlay} activeOpacity={1} onPress={() => setShowKidReturnPick(false)}>
+                              <TouchableOpacity activeOpacity={1} style={[f.pickerCard, { backgroundColor: colors.card }]}>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                                  <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>🕐 Pickup Time</Text>
+                                  <TouchableOpacity onPress={() => setShowKidReturnPick(false)}>
+                                    <Text style={{ color: catColor, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+                                  </TouchableOpacity>
+                                </View>
+                                <DateTimePicker
+                                  value={kidReturnDate ?? eventDate} mode="time" display="spinner" is24Hour={false}
+                                  onChange={(_, d) => { if (d) { const m = kidReturnDate ? new Date(kidReturnDate) : new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setKidReturnDate(m); } }}
+                                  textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
+                                />
+                              </TouchableOpacity>
+                            </TouchableOpacity>
+                          </Modal>
+                        )}
+                      </View>
+                    )}
                     <View style={[f.kidNote, { backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderColor: '#F59E0B40', marginTop: 4 }]}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#D97706' }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#D97706' }}>
                         👋 Parent will review &amp; assign a driver
                       </Text>
-                      <Text style={{ fontSize: TYPO.micro, color: '#D97706', opacity: 0.8, marginTop: 2 }}>
+                      <Text style={{ fontSize: TYPO.label, color: '#D97706', opacity: 0.8, marginTop: 2 }}>
                         {kidRideType === 'none'    ? 'No ride requested — you have your own way there.' :
-                         kidRideType === 'dropoff' ? 'You need a drop-off to the event.' :
-                         kidRideType === 'pickup'  ? 'You need a pickup after the event.' :
-                                                     'You need both a drop-off and pickup.'}
+                         kidRideType === 'dropoff' ? 'Drop-off event will be created for parent to assign.' :
+                         kidRideType === 'pickup'  ? 'Pickup event will be created for parent to assign.' :
+                                                     '2 separate events (drop-off + pickup) — parent assigns each driver.'}
                       </Text>
                     </View>
                   </View>
@@ -1638,15 +1677,15 @@ const f = StyleSheet.create({
   backdrop:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
   sheet:       { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, maxHeight: '75%' },
   handle:      { width: 44, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
-  title:       { fontSize: 17, fontWeight: '900' },
-  label:       { fontSize: TYPO.label, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6, marginTop: 8 },
-  sectionLabel:{ fontSize: TYPO.caption, fontWeight: '900', letterSpacing: 0.6, marginBottom: 10, marginTop: 4 },
-  input:       { borderWidth: 1.5, borderRadius: 14, padding: 11, fontSize: 13, marginBottom: 10 },
+  title:       { fontSize: TYPO.heading, fontWeight: '900' },
+  label:       { fontSize: TYPO.caption, fontWeight: '700', letterSpacing: 0.4, marginBottom: 6, marginTop: 10 },
+  sectionLabel:{ fontSize: TYPO.body, fontWeight: '900', letterSpacing: 0.4, marginBottom: 10, marginTop: 4 },
+  input:       { borderWidth: 1.5, borderRadius: 14, padding: 13, fontSize: TYPO.body, marginBottom: 10 },
   multiInput:  { minHeight: 72, textAlignVertical: 'top' },
   dateBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10 },
   pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   pickerCard:    { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 32 },
-  suggPill:    { flexDirection: 'row', alignItems: 'center', borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 10, paddingVertical: 6, flexShrink: 0 },
+  suggPill:    { flexDirection: 'row', alignItems: 'center', borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 8, flexShrink: 0 },
   kidNote:     { borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 12 },
   submitBtn:   { flex: 1, borderRadius: 16, paddingVertical: 14, alignItems: 'center', justifyContent: 'center',
                  flexDirection: 'row', gap: 8, backgroundColor: BRAND.purple },

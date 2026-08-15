@@ -26,6 +26,7 @@ import { Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
+import AppBottomSheet from '@/components/AppBottomSheet';
 import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/questStore';
 import type { Quest, QuestCategory, QuestDifficulty } from '@/store/questStore';
@@ -533,12 +534,12 @@ const dm = StyleSheet.create({
   sheet:       { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36 },
   handle:      { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
   title:       { fontSize: TYPO.subheading, fontWeight: '900', marginBottom: 2 },
-  sub:         { fontSize: TYPO.label, marginBottom: 14 },
-  label:       { fontSize: TYPO.label, fontWeight: '700', marginBottom: 6 },
-  preset:      { borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 7 },
-  presetText:  { fontSize: TYPO.caption, fontWeight: '600' },
-  input:       { borderWidth: 1, borderRadius: 12, padding: 10, fontSize: TYPO.caption, minHeight: 60, marginTop: 4 },
-  charCount:   { fontSize: TYPO.micro + 1, textAlign: 'right', marginTop: 2 },
+  sub:         { fontSize: TYPO.caption, marginBottom: 14 },
+  label:       { fontSize: TYPO.caption, fontWeight: '700', marginBottom: 6 },
+  preset:      { borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 7 },
+  presetText:  { fontSize: TYPO.body, fontWeight: '600' },
+  input:       { borderWidth: 1.5, borderRadius: 14, padding: 13, fontSize: TYPO.body, minHeight: 64, marginTop: 4 },
+  charCount:   { fontSize: TYPO.label, textAlign: 'right', marginTop: 2 },
   btn:         { borderRadius: 14, padding: 13, alignItems: 'center' },
 });
 
@@ -1074,30 +1075,13 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
   const pillBdr = isDark ? colors.border  : '#E2E8F0';
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={() => { reset(); onClose(); }}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={aq.backdrop}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { reset(); onClose(); }} />
-          <View style={[aq.sheet, { backgroundColor: colors.card, minHeight: '75%', maxHeight: '92%' }]}>
-
-            {/* ── Fixed: drag handle + header ── */}
-            <View style={[aq.handle, { backgroundColor: colors.border }]} />
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-              <View>
-                <Text style={[aq.title, { color: colors.textPrimary }]}>New Quest</Text>
-                <Text style={{ fontSize: TYPO.label, color: BRAND.purple, fontWeight: '700', marginTop: 1 }}>Assign a chore, bounty, or task</Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => { reset(); onClose(); }}
-                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}
-              >
-                <I.X c={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            {/* ── Scrollable body ── */}
-            <ScrollView keyboardShouldPersistTaps="always" style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
+    <AppBottomSheet
+      visible={visible}
+      onClose={() => { reset(); onClose(); }}
+      title="New Quest"
+      subtitle="Assign a chore, bounty, or task"
+      minHeight="75%"
+    >
 
             {/* Title */}
             <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
@@ -1114,11 +1098,11 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
             {/* Dynamic suggestion pills — always visible */}
             {suggestions.length > 0 && (
               <View style={{ marginTop: -6, marginBottom: 12 }}>
-                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 5, fontWeight: '600' }}>
+                <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginBottom: 8, fontWeight: '700', letterSpacing: 0.4 }}>
                   {title.trim() ? 'Matching suggestions' : 'Quick picks — tap to fill'}
                 </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
-                  <View style={{ flexDirection: 'row', gap: 7 }}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
                     {suggestions.map((s, i) => (
                       <TouchableOpacity
                         key={i}
@@ -1128,7 +1112,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                         }]}
                         onPress={() => 'coins' in s ? applySuggestion(s) : setTitle(s.title)}
                       >
-                        <Text style={{ fontSize: TYPO.micro + 1, color: colors.textSecondary, fontWeight: '600' }} numberOfLines={1}>
+                        <Text style={{ fontSize: TYPO.micro, color: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple : colors.textSecondary, fontWeight: '700' }} numberOfLines={1}>
                           {s.title}
                         </Text>
                         {'coins' in s && (
@@ -1580,7 +1564,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                         )}
                       </View>
                       <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: sel ? roleColor : colors.textTertiary }} numberOfLines={1}>
-                        {m.name.split(' ')[0]}
+                        {m.id === activeMemberId ? 'Me' : m.name.split(' ')[0]}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -1640,11 +1624,7 @@ function AddQuestModal({ visible, onClose, activeMemberId }: {
                     </Text>
                   </>}
             </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </AppBottomSheet>
   );
 }
 const aq = StyleSheet.create({
@@ -1652,15 +1632,15 @@ const aq = StyleSheet.create({
   sheet:      { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12 },
   handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
   title:      { fontSize: TYPO.subheading, fontWeight: '900' },
-  label:      { fontSize: TYPO.label, fontWeight: '700', marginBottom: 5 },
-  input:      { borderWidth: 1, borderRadius: 12, padding: 10, fontSize: TYPO.caption, marginBottom: 12 },
-  catChip:    { borderWidth: 1, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
-  toggleRow:  { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' },
+  label:      { fontSize: TYPO.caption, fontWeight: '700', marginBottom: 5 },
+  input:      { borderWidth: 1.5, borderRadius: 14, padding: 13, fontSize: TYPO.body, marginBottom: 12 },
+  catChip:    { borderWidth: 1.5, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 },
+  toggleRow:  { borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, alignItems: 'center' },
   avatarCheck:{ position: 'absolute', bottom: 0, right: 0, width: 14, height: 14, borderRadius: 7, backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#fff' },
   datePill:   { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, flex: 1 },
   pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: 20 },
   pickerCard:    { borderRadius: 20, overflow: 'hidden', paddingBottom: 12 },
-  suggPill:   { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, maxWidth: 220 },
+  suggPill:   { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, maxWidth: 220 },
   diffChip:   { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 5 },
   descInput:  { minHeight: 72, marginBottom: 4 },
   submitBtn:  { borderRadius: 14, padding: 14, alignItems: 'center' },
@@ -1756,31 +1736,13 @@ function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete, edit
   };
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={aq.backdrop}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { Keyboard.dismiss(); onClose(); }} />
-          <View style={[aq.sheet, { backgroundColor: colors.card, minHeight: '75%', maxHeight: '92%' }]}>
-
-            {/* Fixed header */}
-            <View style={[aq.handle, { backgroundColor: colors.border }]} />
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-              paddingHorizontal: 20, paddingBottom: 12,
-              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-              <View>
-                <Text style={[aq.title, { color: colors.textPrimary }]}>{locked ? 'Adjust Quest' : 'Edit Quest'}</Text>
-                <Text style={{ fontSize: TYPO.label, color: BRAND.purple, fontWeight: '700', marginTop: 1 }}>
-                  {locked ? 'Reassign or adjust coins' : 'Edit title, assignment & more'}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={onClose} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
-                <I.X c={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Scrollable body */}
-            <ScrollView keyboardShouldPersistTaps="handled" onScrollBeginDrag={Keyboard.dismiss} style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
+    <AppBottomSheet
+      visible
+      onClose={onClose}
+      title={locked ? 'Adjust Quest' : 'Edit Quest'}
+      subtitle={locked ? 'Reassign or adjust coins' : 'Edit title, assignment & more'}
+      minHeight="75%"
+    >
 
               {/* Title */}
               <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
@@ -1799,11 +1761,11 @@ function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete, edit
                   />
                   {editSuggestions.length > 0 && (
                     <View style={{ marginTop: -6, marginBottom: 12 }}>
-                      <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 5, fontWeight: '600' }}>
+                      <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginBottom: 8, fontWeight: '700', letterSpacing: 0.4 }}>
                         {title.trim() ? 'Matching suggestions' : 'Quick picks — tap to fill'}
                       </Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
-                        <View style={{ flexDirection: 'row', gap: 7 }}>
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
                           {editSuggestions.map((s, i) => (
                             <TouchableOpacity key={i}
                               style={[aq.suggPill, {
@@ -1811,7 +1773,7 @@ function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete, edit
                                 borderColor: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple : colors.border,
                               }]}
                               onPress={() => applyEditSuggestion(s)}>
-                              <Text style={{ fontSize: TYPO.micro + 1, color: colors.textSecondary, fontWeight: '600' }} numberOfLines={1}>{s.title}</Text>
+                              <Text style={{ fontSize: TYPO.micro, color: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple : colors.textSecondary, fontWeight: '700' }} numberOfLines={1}>{s.title}</Text>
                               <Text style={{ fontSize: TYPO.micro, color: BRAND.amber, fontWeight: '700', marginLeft: 5 }}>+{s.coins}🪙</Text>
                             </TouchableOpacity>
                           ))}
@@ -1945,7 +1907,7 @@ function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete, edit
                         <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={siblings} size={40} ringColor={roleColor} ringWidth={sel ? 2.5 : 1} bgColor={sel ? roleColor + '25' : pillBg} />
                         {sel && <View style={[aq.avatarCheck, { backgroundColor: roleColor }]}><Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text></View>}
                       </View>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: sel ? roleColor : colors.textTertiary }} numberOfLines={1}>{m.name.split(' ')[0]}</Text>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: sel ? roleColor : colors.textTertiary }} numberOfLines={1}>{m.id === activeMemberId ? 'Me' : m.name.split(' ')[0]}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -1992,11 +1954,7 @@ function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete, edit
                 </TouchableOpacity>
               </View>
 
-            </ScrollView>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </AppBottomSheet>
   );
 }
 
@@ -2101,16 +2059,16 @@ function AutoBalanceCard({ result, onApply, appliedActions, onClose, isDark, col
                       style={{ borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: selectedKidId === '' ? '#64748B' : (isDark ? '#1E293B' : '#E2E8F0'), borderWidth: 1.5, borderColor: selectedKidId === '' ? '#64748B' : colors.border }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: selectedKidId === '' ? '#fff' : colors.textSecondary }}>🌊</Text>
                     </TouchableOpacity>
-                    {/* Kid emoji chips */}
+                    {/* Kid avatar chips */}
                     {kids.map((k: any) => {
                       const sel = selectedKidId === k.id;
                       const isAiPick = k.id === item.recommendedKidId;
                       return (
                         <TouchableOpacity key={k.id} disabled={applied} onPress={() => setAssignEdits(p => ({ ...p, [idx]: k.id }))}
-                          style={{ borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: sel ? accent : (isDark ? '#1E293B' : '#E2E8F0'), borderWidth: 1.5, borderColor: sel ? accent : (isAiPick ? accent + '60' : colors.border) }}>
-                          <Text style={{ fontSize: 14 }}>{k.emoji ?? '👤'}</Text>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: sel ? '#fff' : colors.textSecondary }}>{k.name}</Text>
-                          {isAiPick && !sel && <Text style={{ fontSize: 10 }}>⭐</Text>}
+                          style={{ position: 'relative' }}>
+                          <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={(k as any).avatarUrl} size={36}
+                            ringColor={sel ? accent : (isAiPick ? accent : colors.border)} ringWidth={sel ? 2.5 : (isAiPick ? 1.5 : 1)} />
+                          {isAiPick && !sel && <Text style={{ position: 'absolute', top: -4, right: -4, fontSize: 10 }}>⭐</Text>}
                         </TouchableOpacity>
                       );
                     })}
@@ -2173,10 +2131,9 @@ function AutoBalanceCard({ result, onApply, appliedActions, onClose, isDark, col
                     {kids.map((k: any) => {
                       const sel = edit.kidId === k.id;
                       return (
-                        <TouchableOpacity key={k.id} disabled={applied} onPress={() => setBountyEdits(p => ({ ...p, [idx]: { ...edit, kidId: k.id } }))}
-                          style={{ borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: sel ? '#10B981' : (isDark ? '#1E293B' : '#E2E8F0'), borderWidth: 1.5, borderColor: sel ? '#10B981' : colors.border }}>
-                          <Text style={{ fontSize: 14 }}>{k.emoji ?? '👤'}</Text>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: sel ? '#fff' : colors.textSecondary }}>{k.name}</Text>
+                        <TouchableOpacity key={k.id} disabled={applied} onPress={() => setBountyEdits(p => ({ ...p, [idx]: { ...edit, kidId: k.id } }))}>
+                          <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={(k as any).avatarUrl} size={36}
+                            ringColor={sel ? '#10B981' : colors.border} ringWidth={sel ? 2.5 : 1} />
                         </TouchableOpacity>
                       );
                     })}
@@ -2323,10 +2280,10 @@ function FomoCard({ result, onApply, appliedActions, onClose, isDark, colors, ki
                       const isAiPick = k.id === pen.targetKidId;
                       return (
                         <TouchableOpacity key={k.id} disabled={applied} onPress={() => setPenEdits(p => ({ ...p, [idx]: k.id }))}
-                          style={{ borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: sel ? '#EF4444' : (isDark ? '#1E293B' : '#E2E8F0'), borderWidth: 1.5, borderColor: sel ? '#EF4444' : (isAiPick ? '#EF444460' : colors.border) }}>
-                          <Text style={{ fontSize: 14 }}>{k.emoji ?? '👤'}</Text>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: sel ? '#fff' : colors.textSecondary }}>{k.name}</Text>
-                          {isAiPick && !sel && <Text style={{ fontSize: 10 }}>⭐</Text>}
+                          style={{ position: 'relative' }}>
+                          <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={(k as any).avatarUrl} size={36}
+                            ringColor={sel ? '#EF4444' : (isAiPick ? '#EF4444' : colors.border)} ringWidth={sel ? 2.5 : (isAiPick ? 1.5 : 1)} />
+                          {isAiPick && !sel && <Text style={{ position: 'absolute', top: -4, right: -4, fontSize: 10 }}>⭐</Text>}
                         </TouchableOpacity>
                       );
                     })}

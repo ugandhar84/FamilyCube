@@ -223,6 +223,7 @@ const CAT_COLOR: Record<string, { dot: string; badge: string; text: string }> = 
   School:   { dot: '#3B82F6', badge: '#DBEAFE', text: '#1D4ED8' },
   Study:    { dot: '#3B82F6', badge: '#DBEAFE', text: '#1D4ED8' },
   Birthday: { dot: '#F59E0B', badge: '#FEF3C7', text: '#D97706' },
+  Holiday:  { dot: '#F59E0B', badge: '#FEF3C7', text: '#D97706' },
   Event:    { dot: '#10B981', badge: '#D1FAE5', text: '#059669' },
   default:  { dot: '#10B981', badge: '#D1FAE5', text: '#059669' },
 };
@@ -310,6 +311,7 @@ const CAT_DOT: Record<string, string> = {
   Ride:     '#10B981',
   Event:    '#10B981',
   Birthday: '#F59E0B',
+  Holiday:  '#F59E0B',
 };
 
 // ─── Day Strip ────────────────────────────────────────────────────────────────
@@ -359,7 +361,7 @@ function DayStrip({ selected, stripMap, colors, isDark, onSelect }: {
               </Text>
               <View style={{ flexDirection: 'row', gap: 3, minHeight: 7, alignItems: 'center' }}>
                 {dotColors.map((col, i) => (
-                  <View key={i} style={[ds.dot, { backgroundColor: isSel ? 'rgba(255,255,255,0.85)' : col }]} />
+                  <View key={i} style={[ds.dot, { backgroundColor: isSel ? 'rgba(255,255,255,0.5)' : col + '70' }]} />
                 ))}
               </View>
             </TouchableOpacity>
@@ -940,6 +942,8 @@ export default function CalendarScreen() {
   const dayEvents = useMemo(() => {
     return events
       .filter(e => e.date === selectedDate &&
+        // Holidays surface as banner only — excluded from timeline cards
+        e.category !== 'Holiday' &&
         // Kids only see their own events or family-wide events (no specific member)
         (!isKid || e.memberId === activeMemberId || !e.memberId) &&
         (!filterMember || e.memberId === filterMember || !e.memberId) &&
@@ -1172,6 +1176,20 @@ export default function CalendarScreen() {
           }}
         />
 
+        {/* ── Holiday banner — quiet amber strip, not a full card ── */}
+        {dayEvents.filter(ev => ev.category === 'Holiday').map(ev => (
+          <View key={ev.id} style={{ marginHorizontal: 14, marginTop: 10, borderRadius: 12,
+            backgroundColor: isDark ? '#451A03' : '#FEF3C7',
+            borderWidth: 1, borderColor: isDark ? '#92400E' : '#F59E0B',
+            flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, gap: 8 }}>
+            <Text style={{ fontSize: 15 }}>🎌</Text>
+            <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700',
+              color: isDark ? '#FDE68A' : '#92400E' }} numberOfLines={1}>{ev.title}</Text>
+            {ev.notes ? <Text style={{ fontSize: TYPO.micro, color: isDark ? '#FCD34D' : '#B45309' }}
+              numberOfLines={1}>{ev.notes}</Text> : null}
+          </View>
+        ))}
+
         {/* ── Timeline ── */}
         <View style={{ paddingTop: 16 }}>
         {dayLoading && dayEvents.length === 0 ? (
@@ -1251,9 +1269,7 @@ export default function CalendarScreen() {
                             <>
                               <I.User c={isDark ? '#A78BFA' : BRAND.purple} size={12} />
                               {all.map(m => (
-                                <View key={m.id} style={{ backgroundColor: BRAND.purple + '18', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}>
-                                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isDark ? '#A78BFA' : BRAND.purple }}>{m.name.split(' ')[0]}</Text>
-                                </View>
+                                <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={18} ringColor={BRAND.purple} ringWidth={1} />
                               ))}
                             </>
                           ) : null;
@@ -1405,9 +1421,7 @@ export default function CalendarScreen() {
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap', flex: 1 }}>
                               <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>{forLabel}:</Text>
                               {allAssignees.map(m => (
-                                <View key={m.id} style={{ backgroundColor: cs.dot + '18', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: cs.dot + '30' }}>
-                                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{m.name.split(' ')[0]}</Text>
-                                </View>
+                                <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={24} ringColor={cs.dot} ringWidth={1.5} />
                               ))}
                             </View>
                           ) : !isPast && isParent && pickerMembers.length > 0 ? (
@@ -1415,11 +1429,9 @@ export default function CalendarScreen() {
                               <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>{forLabel}:</Text>
                               {pickerMembers.map(k => (
                                 <TouchableOpacity key={k.id}
-                                  style={[sc.assignChip, { backgroundColor: ev.memberId === k.id ? BRAND.purple : isDark ? '#1E293B' : '#F1F5F9', borderColor: ev.memberId === k.id ? BRAND.purple : isDark ? '#334155' : '#E2E8F0' }]}
+                                  style={{ padding: 2 }}
                                   onPress={() => updateEvent(ev.id, { memberId: k.id })}>
-                                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: ev.memberId === k.id ? '#fff' : colors.textSecondary }}>
-                                    {k.emoji ?? ''} {k.name.split(' ')[0]}
-                                  </Text>
+                                  <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={(k as any).avatarUrl} siblings={pickerMembers.map(x => x.name)} size={30} ringColor={ev.memberId === k.id ? BRAND.purple : colors.border} ringWidth={ev.memberId === k.id ? 2.5 : 1} bgColor={ev.memberId === k.id ? BRAND.purple + '20' : undefined} />
                                 </TouchableOpacity>
                               ))}
                             </View>
@@ -1788,9 +1800,7 @@ export default function CalendarScreen() {
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary, minWidth: 64 }}>{forLabelDetail}:</Text>
                       {assignees.map(m => (
-                        <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: cs.dot + '15', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: cs.dot + '30' }}>
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{m.name.split(' ')[0]}</Text>
-                        </View>
+                        <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={28} ringColor={cs.dot} ringWidth={1.5} />
                       ))}
                     </View>
                   )}

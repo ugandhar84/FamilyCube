@@ -15,11 +15,11 @@
  *   "Add to Schedule" saves an event per selected kid via useEventStore
  *   Parent can tap any field to edit before confirming
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, Modal, Pressable, ScrollView, TextInput,
   StyleSheet, Image, ActivityIndicator, Alert, Platform,
-  KeyboardAvoidingView,
+  KeyboardAvoidingView, Animated,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -31,6 +31,7 @@ import { compressImage } from '@/lib/compressImage';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
+import { useSchoolStore } from '@/store/schoolStore';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -59,11 +60,40 @@ interface ExtractedEvent {
   recurrence_desc:string | null;
 }
 
-type Step = 'capture' | 'processing' | 'review';
+interface ExtractedPeriod {
+  periodName: string;
+  subject:    string;
+  teacher:    string | null;
+  room:       string | null;
+  startTime:  string | null;
+  endTime:    string | null;
+  days:       string[];
+  term?:      string | null;
+  isLunch?:   boolean;
+}
 
-const CATEGORIES = ['School', 'Sports', 'Medical', 'Work', 'Event', 'Study'];
+interface ExtractedTimetable {
+  student: string | null;
+  school:  string | null;
+  grade:   string | null;
+  periods: ExtractedPeriod[];
+}
+
+interface ExtractedCalendar {
+  school:  string | null;
+  events:  ExtractedEvent[];
+}
+
+type FlyerResult =
+  | { type: 'event';     event: ExtractedEvent }
+  | { type: 'timetable'; timetable: ExtractedTimetable }
+  | { type: 'calendar';  calendar: ExtractedCalendar };
+
+type Step = 'capture' | 'processing' | 'review' | 'timetable' | 'multi';
+
+const CATEGORIES = ['School', 'Sports', 'Medical', 'Work', 'Event', 'Study', 'Holiday'];
 const CAT_EMOJI: Record<string, string> = {
-  School: '🏫', Sports: '⚽', Medical: '🏥', Work: '💼', Event: '🎉', Study: '📚',
+  School: '🏫', Sports: '⚽', Medical: '🏥', Work: '💼', Event: '🎉', Study: '📚', Holiday: '🎌',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -120,18 +150,45 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId } = useFamilyStore();
   const { addEvent } = useEventStore();
+  const { schedules, addSchedule, updateSchedule } = useSchoolStore();
 
   const allNames = members.map(m => m.name);
   const kids     = members.filter(m => m.role === 'kid');
 
   // ── State ──
-  const [step, setStep]             = useState<Step>('capture');
-  const [images, setImages]         = useState<CapturedImage[]>([]);
-  const [errorMsg, setError]        = useState('');
-  const [event, setEvent]           = useState<ExtractedEvent | null>(null);
-  const [selectedKids, setSelKids]  = useState<string[]>([]);
+  const [step, setStep]               = useState<Step>('capture');
+  const [images, setImages]           = useState<CapturedImage[]>([]);
+  const [errorMsg, setError]          = useState('');
+  const [flyerResult, setFlyerResult] = useState<FlyerResult | null>(null);
+  const [selectedKids, setSelKids]    = useState<string[]>([]);
+  // multi-event: which events are selected for import
+  const [selectedEvents, setSelEvts]  = useState<Set<number>>(new Set());
+  // timetable: which kid to assign schedule to
+  const [timetableKidId, setTTKid]   = useState('');
+  // timetable: editable copy of extracted periods
+  const [editablePeriods, setEditablePeriods] = useState<ExtractedPeriod[]>([]);
+  const [selectedTerm, setSelectedTerm]       = useState<string | null>(null);
+  // which period row is expanded for editing
+  const [expandedPeriodIdx, setExpandedIdx] = useState<number | null>(null);
 
-  // Edit pickers
+  // Convenience accessors
+  const event    = flyerResult?.type === 'event'     ? flyerResult.event     : null;
+  const timetable= flyerResult?.type === 'timetable' ? flyerResult.timetable : null;
+  const multiCal = flyerResult?.type === 'calendar'  ? flyerResult.calendar  : null;
+
+  // ── Toast ──
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const [toastMsg, setToastMsg] = useState({ text: '', success: true });
+  const showToast = useCallback((text: string, success = true) => {
+    setToastMsg({ text, success });
+    Animated.sequence([
+      Animated.timing(toastOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.delay(2200),
+      Animated.timing(toastOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+    ]).start();
+  }, [toastOpacity]);
+
+  // Edit pickers (single event review)
   const [pickerField, setPickerField] = useState<'date' | 'time' | 'endTime' | 'rsvp' | null>(null);
   const [editingField, setEditField]  = useState<keyof ExtractedEvent | null>(null);
   const [editText, setEditText]       = useState('');
@@ -152,7 +209,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
   const pickFromCamera = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) { Alert.alert('Camera permission needed'); return; }
-    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 1, base64: false });
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1, base64: false });
     if (!result.canceled && result.assets[0]) {
       const { uri, base64 } = await compressImage(result.assets[0].uri);
       addImage({ uri, base64, mimeType: 'image/jpeg' });
@@ -163,7 +220,7 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { Alert.alert('Photo library permission needed'); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       quality: 1,
       base64: false,
       allowsMultipleSelection: true,
@@ -198,29 +255,52 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
     setStep('processing');
     setError('');
     try {
-      const { data, error } = await supabase.functions.invoke('parse-flyer', {
-        body: {
-          images: images.map(img => ({ data: img.base64, mimeType: img.mimeType })),
-        },
+      console.log('[flyer] sending', images.length, 'image(s), mimeTypes:', images.map(i => i.mimeType));
+      console.log('[flyer] base64 sizes (chars):', images.map(i => i.base64.length));
+
+      // Use raw fetch so we can read the body even on non-2xx
+      const fnUrl = process.env.EXPO_PUBLIC_SUPABASE_URL + '/functions/v1/parse-flyer';
+      const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+      const rawRes = await fetch(fnUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${anonKey}`, 'apikey': anonKey },
+        body: JSON.stringify({ images: images.map(img => ({ data: img.base64, mimeType: img.mimeType })) }),
       });
-      if (error || !data?.ok) throw new Error(data?.error ?? error?.message ?? 'Parse failed');
-      setEvent(data.event as ExtractedEvent);
-      // Pre-select all kids if only one kid, else none
+      const rawText = await rawRes.text();
+      console.log(`[flyer] HTTP ${rawRes.status} body: ${rawText.slice(0, 500)}`);
+      const data = JSON.parse(rawText);
+      if (!rawRes.ok || !data?.ok) {
+        throw new Error(data?.error ?? `HTTP ${rawRes.status}`);
+      }
+      console.log('[flyer] result type:', data.type);
+      const result = data as FlyerResult;
+      setFlyerResult(result);
       setSelKids(kids.length === 1 ? [kids[0].id] : []);
-      setStep('review');
+      if (result.type === 'timetable') {
+        setTTKid(kids.length === 1 ? kids[0].id : '');
+        setEditablePeriods(result.timetable.periods);
+        setExpandedIdx(null);
+        const firstTerm = result.timetable.periods.find(p => p.term)?.term ?? null;
+        setSelectedTerm(firstTerm);
+        setStep('timetable');
+      } else if (result.type === 'calendar') {
+        // Pre-select all events
+        setSelEvts(new Set(result.calendar.events.map((_, i) => i)));
+        setStep('multi');
+      } else {
+        setStep('review');
+      }
     } catch (e: any) {
+      console.error('[flyer] catch:', e?.message ?? e);
       setError(e.message ?? 'Something went wrong');
       setStep('capture');
     }
   };
 
-  // ── Save to schedule ──
-  const handleConfirm = () => {
+  // ── Save single event ──
+  const handleConfirmEvent = () => {
     if (!event) return;
-    if (selectedKids.length === 0) {
-      Alert.alert('Choose at least one kid for this event');
-      return;
-    }
+    if (selectedKids.length === 0) { Alert.alert('Choose at least one kid for this event'); return; }
     for (const kidId of selectedKids) {
       addEvent({
         title:    event.title,
@@ -237,18 +317,84 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
       });
     }
     const kidNames = selectedKids.map(id => members.find(m => m.id === id)?.name.split(' ')[0]).join(', ');
-    Alert.alert('Added to Schedule', `"${event.title}" added for ${kidNames}`, [{ text: 'Great!', onPress: resetAndClose }]);
+    showToast(`✓ "${event.title}" added for ${kidNames}`);
+    setTimeout(resetAndClose, 2600);
+  };
+
+  // ── Save multi calendar events ──
+  const handleConfirmMulti = () => {
+    if (!multiCal) return;
+    if (selectedKids.length === 0) { Alert.alert('Choose at least one kid'); return; }
+    const toAdd = multiCal.events.filter((_, i) => selectedEvents.has(i));
+    if (toAdd.length === 0) { Alert.alert('Select at least one event to import'); return; }
+    for (const ev of toAdd) {
+      for (const kidId of selectedKids) {
+        addEvent({
+          title:    ev.title,
+          date:     ev.date ?? dateToStr(new Date()),
+          time:     ev.time ?? undefined,
+          endTime:  ev.end_time ?? undefined,
+          category: ev.category,
+          location: ev.location ?? undefined,
+          notes:    ev.notes ?? undefined,
+          memberId: kidId,
+          type:     'event',
+          color:    BRAND.teal,
+          approvalPending: false,
+        });
+      }
+    }
+    const kidNames = selectedKids.map(id => members.find(m => m.id === id)?.name.split(' ')[0]).join(', ');
+    showToast(`✓ ${toAdd.length} event${toAdd.length !== 1 ? 's' : ''} imported for ${kidNames}`);
+    setTimeout(resetAndClose, 2600);
+  };
+
+  // ── Save timetable ──
+  const handleConfirmTimetable = () => {
+    if (!timetable) return;
+    if (!timetableKidId) { Alert.alert('Choose a kid for this schedule'); return; }
+    const kid = kids.find(k => k.id === timetableKidId);
+    if (!kid) return;
+    const periods = editablePeriods.map((p, i) => ({
+      id:        'p' + Date.now() + i,
+      period:    i + 1,
+      subject:   p.subject,
+      room:      p.room ?? '',
+      teacher:   p.teacher ?? undefined,
+      startTime: p.startTime ?? '08:00',
+      endTime:   p.endTime ?? '08:50',
+      isLunch:   p.isLunch ?? false,
+      days:      p.days.length ? p.days : ['mon','tue','wed','thu','fri'],
+      term:      p.term ?? undefined,
+    }));
+    const existing = schedules.find(s => s.memberId === timetableKidId);
+    const schedule = {
+      memberId:    timetableKidId,
+      memberName:  kid.name,
+      semester:    'Fall' as any,
+      year:        new Date().getFullYear(),
+      gradeYear:   timetable.grade ?? undefined,
+      school:      timetable.school ?? undefined,
+      lunchPeriod: 'B' as any,
+      dayType:     'Regular' as any,
+      periods,
+    };
+    if (existing) updateSchedule(timetableKidId, schedule);
+    else           addSchedule(schedule);
+    showToast(`✓ ${kid.name.split(' ')[0]}'s timetable saved`);
+    setTimeout(resetAndClose, 2600);
   };
 
   const resetAndClose = () => {
-    setStep('capture'); setImages([]); setEvent(null);
-    setSelKids([]); setError(''); setPickerField(null); setEditField(null);
+    setStep('capture'); setImages([]); setFlyerResult(null);
+    setSelKids([]); setSelEvts(new Set()); setTTKid('');
+    setError(''); setPickerField(null); setEditField(null);
     onClose();
   };
 
   // ── Event field updater ──
   const updateEvent = (field: keyof ExtractedEvent, value: any) =>
-    setEvent(prev => prev ? { ...prev, [field]: value } : prev);
+    setFlyerResult(prev => prev?.type === 'event' ? { ...prev, event: { ...prev.event, [field]: value } } : prev);
 
   // ─────────────────────────────────────────────────────────────────────────────
   return (
@@ -257,6 +403,16 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 0 }}>
         <View style={[f.sheet, { backgroundColor: isDark ? '#0D1117' : '#FFFFFF', borderColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
           <View style={[f.handle, { backgroundColor: isDark ? '#334155' : '#CBD5E1' }]} />
+
+          {/* ── TOAST ── */}
+          <Animated.View pointerEvents="none" style={{ position: 'absolute', bottom: 50, left: 20, right: 20, zIndex: 99, opacity: toastOpacity }}>
+            <View style={{ borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,
+              backgroundColor: toastMsg.success ? '#059669' : '#EF4444',
+              flexDirection: 'row', alignItems: 'center', gap: 8,
+              shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 8 }}>
+              <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: '#fff' }}>{toastMsg.text}</Text>
+            </View>
+          </Animated.View>
 
           {/* ── HEADER ── */}
           <View style={f.hdr}>
@@ -573,12 +729,12 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
 
               {/* Actions */}
               <View style={{ flexDirection: 'row', gap: 10 }}>
-                <Pressable onPress={() => { setStep('capture'); setEvent(null); }}
+                <Pressable onPress={() => { setStep('capture'); setFlyerResult(null); }}
                   style={[f.cancelBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
                   <Ionicons name="arrow-back" size={15} color={colors.textSecondary} />
                   <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>Rescan</Text>
                 </Pressable>
-                <Pressable onPress={handleConfirm}
+                <Pressable onPress={handleConfirmEvent}
                   style={[f.submitBtn, { flex: 2, backgroundColor: selectedKids.length ? BRAND.teal : colors.border }]}>
                   <Ionicons name="calendar-outline" size={16} color={selectedKids.length ? '#fff' : colors.textTertiary} />
                   <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: selectedKids.length ? '#fff' : colors.textTertiary }}>
@@ -588,6 +744,287 @@ export default function FlyerScannerModal({ visible, onClose }: Props) {
               </View>
             </ScrollView>
           )}
+          {/* ── STEP: TIMETABLE ── */}
+          {step === 'timetable' && timetable && (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={f.body} keyboardShouldPersistTaps="handled">
+
+              {/* Header */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary }}>📚 Class Schedule</Text>
+                  <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>
+                    {[timetable.school, timetable.grade].filter(Boolean).join(' · ')}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>{editablePeriods.length} periods</Text>
+              </View>
+
+              {/* Term tabs — only shown when multiple terms detected */}
+              {(() => {
+                const terms = [...new Set(editablePeriods.map(p => p.term).filter(Boolean) as string[])];
+                if (terms.length < 2) return null;
+                const ALL_TERMS = [null, ...terms]; // null = "All"
+                return (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                    style={{ marginBottom: 12 }} contentContainerStyle={{ gap: 6, paddingHorizontal: 2 }}>
+                    {ALL_TERMS.map(t => {
+                      const sel = selectedTerm === t;
+                      return (
+                        <Pressable key={t ?? 'all'} onPress={() => { setSelectedTerm(t); setExpandedIdx(null); }}
+                          style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+                            backgroundColor: sel ? BRAND.purple : (isDark ? '#1E293B' : '#F1F5F9'),
+                            borderWidth: 1.5, borderColor: sel ? BRAND.purple : colors.border }}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: sel ? '#fff' : colors.textSecondary }}>
+                            {t ?? 'All terms'}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                );
+              })()}
+
+              {/* Editable period rows */}
+              <View style={{ gap: 6, marginBottom: 14 }}>
+                {editablePeriods.map((p, i) => {
+                  // Filter by selected term (null = show all)
+                  if (selectedTerm && p.term && p.term !== selectedTerm) return null;
+                  const expanded = expandedPeriodIdx === i;
+                  const ALL_DAYS_LIST = ['mon','tue','wed','thu','fri','sat','sun'];
+                  const DAY_ABBR: Record<string,string> = { mon:'M',tue:'T',wed:'W',thu:'Th',fri:'F',sat:'Sa',sun:'Su' };
+                  const updateP = (patch: Partial<ExtractedPeriod>) =>
+                    setEditablePeriods(prev => prev.map((x, j) => j === i ? { ...x, ...patch } : x));
+
+                  return (
+                    <View key={i} style={{ borderRadius: 14, borderWidth: 1.5,
+                      borderColor: expanded ? BRAND.purple + '60' : (isDark ? colors.border : '#E8E8F0'),
+                      backgroundColor: expanded ? (isDark ? BRAND.purple + '10' : BRAND.purple + '06') : (isDark ? colors.card : '#fff'),
+                      overflow: 'hidden' }}>
+
+                      {/* Collapsed row — tap to expand */}
+                      <Pressable onPress={() => setExpandedIdx(expanded ? null : i)}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 }}>
+                        {/* Time block — primary */}
+                        <View style={{ alignItems: 'center', width: 52, backgroundColor: isDark ? '#1E293B' : '#F1F5F9',
+                          borderRadius: 10, paddingVertical: 6 }}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.purple, fontVariant: ['tabular-nums'] }}>
+                            {p.startTime ? fmtTime12(p.startTime).replace(' AM','a').replace(' PM','p') : '—'}
+                          </Text>
+                          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontVariant: ['tabular-nums'] }}>
+                            {p.endTime ? fmtTime12(p.endTime).replace(' AM','a').replace(' PM','p') : ''}
+                          </Text>
+                        </View>
+                        {/* Subject + meta */}
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: TYPO.subheading, fontWeight: '800', color: p.isLunch ? '#D97706' : colors.textPrimary }} numberOfLines={1}>
+                            {p.subject || 'Untitled'}
+                          </Text>
+                          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={1}>
+                            {[p.teacher, p.room].filter(Boolean).join(' · ') || 'Tap to edit'}
+                          </Text>
+                        </View>
+                        {/* Days + expand icon */}
+                        <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                          <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: BRAND.teal }}>
+                            {p.days.map(d => DAY_ABBR[d] ?? d[0].toUpperCase()).join('')}
+                          </Text>
+                          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textTertiary} />
+                        </View>
+                      </Pressable>
+
+                      {/* Expanded inline editor */}
+                      {expanded && (
+                        <View style={{ paddingHorizontal: 12, paddingBottom: 12, gap: 8, borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#EEF0F4' }}>
+                          {/* Subject */}
+                          <TextInput value={p.subject} onChangeText={v => updateP({ subject: v })}
+                            placeholder="Subject" placeholderTextColor={colors.textTertiary}
+                            style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary,
+                              borderBottomWidth: 1, borderBottomColor: BRAND.purple + '40', paddingVertical: 6 }} />
+
+                          {/* Teacher + Room */}
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                            <TextInput value={p.teacher ?? ''} onChangeText={v => updateP({ teacher: v || null })}
+                              placeholder="Teacher" placeholderTextColor={colors.textTertiary}
+                              style={{ flex: 1, fontSize: TYPO.body, color: colors.textPrimary, padding: 8,
+                                borderRadius: 10, borderWidth: 1.5, borderColor: colors.border }} />
+                            <TextInput value={p.room ?? ''} onChangeText={v => updateP({ room: v || null })}
+                              placeholder="Room" placeholderTextColor={colors.textTertiary}
+                              style={{ width: 90, fontSize: TYPO.body, color: colors.textPrimary, padding: 8,
+                                borderRadius: 10, borderWidth: 1.5, borderColor: colors.border }} />
+                          </View>
+
+                          {/* Times */}
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <TextInput value={p.startTime ?? ''} onChangeText={v => updateP({ startTime: v || null })}
+                              placeholder="08:20" placeholderTextColor={colors.textTertiary} keyboardType="numbers-and-punctuation"
+                              style={{ flex: 1, fontSize: TYPO.body, color: colors.textPrimary, padding: 8, textAlign: 'center',
+                                borderRadius: 10, borderWidth: 1.5, borderColor: colors.border }} />
+                            <Text style={{ color: colors.textTertiary }}>→</Text>
+                            <TextInput value={p.endTime ?? ''} onChangeText={v => updateP({ endTime: v || null })}
+                              placeholder="09:05" placeholderTextColor={colors.textTertiary} keyboardType="numbers-and-punctuation"
+                              style={{ flex: 1, fontSize: TYPO.body, color: colors.textPrimary, padding: 8, textAlign: 'center',
+                                borderRadius: 10, borderWidth: 1.5, borderColor: colors.border }} />
+                          </View>
+
+                          {/* Days */}
+                          <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap' }}>
+                            {ALL_DAYS_LIST.map(d => {
+                              const on = p.days.includes(d);
+                              return (
+                                <Pressable key={d} onPress={() => updateP({ days: on ? p.days.filter(x=>x!==d) : [...p.days,d] })}
+                                  style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+                                    backgroundColor: on ? BRAND.purple : (isDark ? '#1E293B' : '#F1F5F9'),
+                                    borderWidth: 1.5, borderColor: on ? BRAND.purple : colors.border }}>
+                                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: on ? '#fff' : colors.textSecondary }}>
+                                    {DAY_ABBR[d]}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                            <Pressable onPress={() => updateP({ isLunch: !p.isLunch })}
+                              style={{ paddingHorizontal: 10, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+                                backgroundColor: p.isLunch ? '#F59E0B' : (isDark ? '#1E293B' : '#F1F5F9'),
+                                borderWidth: 1.5, borderColor: p.isLunch ? '#F59E0B' : colors.border }}>
+                              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: p.isLunch ? '#fff' : colors.textSecondary }}>🍱 Lunch</Text>
+                            </Pressable>
+                          </View>
+
+                          {/* Delete */}
+                          <Pressable onPress={() => { setEditablePeriods(prev => prev.filter((_,j) => j !== i)); setExpandedIdx(null); }}
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-end' }}>
+                            <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                            <Text style={{ fontSize: TYPO.caption, color: '#EF4444', fontWeight: '700' }}>Remove period</Text>
+                          </Pressable>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+
+              {/* Add period */}
+              <Pressable onPress={() => {
+                const last = editablePeriods[editablePeriods.length - 1];
+                const newP: ExtractedPeriod = { periodName: '', subject: '', teacher: null, room: null,
+                  startTime: last?.endTime ?? null, endTime: null, days: ['mon','tue','wed','thu','fri'] };
+                setEditablePeriods(prev => [...prev, newP]);
+                setExpandedIdx(editablePeriods.length);
+              }} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                borderRadius: 12, paddingVertical: 12, borderWidth: 1.5, borderStyle: 'dashed',
+                borderColor: BRAND.purple + '50', marginBottom: 16 }}>
+                <Ionicons name="add" size={18} color={BRAND.purple} />
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.purple }}>Add period</Text>
+              </Pressable>
+
+              {/* Kid picker */}
+              <Text style={f.sectionLabel}>Assign to</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
+                {kids.map(k => {
+                  const sel = timetableKidId === k.id;
+                  return (
+                    <Pressable key={k.id} onPress={() => setTTKid(k.id)}
+                      style={[f.kidChip, { backgroundColor: sel ? BRAND.purple + '20' : colors.surface, borderColor: sel ? BRAND.purple : colors.border }]}>
+                      <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl} siblings={allNames} size={36} ringColor={sel ? BRAND.purple : colors.textTertiary} />
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: sel ? BRAND.purple : colors.textPrimary }}>{k.name.split(' ')[0]}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <Pressable onPress={() => setStep('capture')} style={[f.cancelBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                  <Ionicons name="arrow-back" size={15} color={colors.textSecondary} />
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>Rescan</Text>
+                </Pressable>
+                <Pressable onPress={handleConfirmTimetable}
+                  style={[f.submitBtn, { flex: 2, backgroundColor: timetableKidId ? BRAND.purple : colors.border }]}>
+                  <Ionicons name="book-outline" size={16} color={timetableKidId ? '#fff' : colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: timetableKidId ? '#fff' : colors.textTertiary }}>Save Schedule →</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          )}
+
+          {/* ── STEP: MULTI CALENDAR ── */}
+          {step === 'multi' && multiCal && (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={f.body}>
+              <View style={{ backgroundColor: BRAND.teal + '12', borderRadius: 16, padding: 14, marginBottom: 16, gap: 4 }}>
+                <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary }}>📅 School Calendar</Text>
+                {multiCal.school && <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>{multiCal.school}</Text>}
+                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4 }}>
+                  {multiCal.events.length} events found · {selectedEvents.size} selected
+                </Text>
+              </View>
+
+              {/* Toggle all */}
+              <Pressable onPress={() => setSelEvts(selectedEvents.size === multiCal.events.length ? new Set() : new Set(multiCal.events.map((_, i) => i)))}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.purple }}>
+                  {selectedEvents.size === multiCal.events.length ? 'Deselect all' : 'Select all'}
+                </Text>
+              </Pressable>
+
+              {/* Event list */}
+              <View style={{ gap: 6, marginBottom: 16 }}>
+                {multiCal.events.map((ev, i) => {
+                  const sel = selectedEvents.has(i);
+                  const isHoliday = ev.category === 'Holiday';
+                  return (
+                    <Pressable key={i} onPress={() => setSelEvts(prev => { const s = new Set(prev); sel ? s.delete(i) : s.add(i); return s; })}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                        backgroundColor: sel ? (isHoliday ? '#FEF3C7' : BRAND.teal + '10') : (isDark ? colors.card : '#F8FAFF'),
+                        borderRadius: 12, padding: 10, borderWidth: 1.5,
+                        borderColor: sel ? (isHoliday ? '#F59E0B' : BRAND.teal) : (isDark ? colors.border : '#E8E8F0') }}>
+                      <Text style={{ fontSize: 16 }}>{CAT_EMOJI[ev.category] ?? '📋'}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>{ev.title}</Text>
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
+                          {ev.date ? new Date(ev.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No date'}
+                          {ev.time ? ` · ${fmtTime12(ev.time)}` : ''}
+                        </Text>
+                      </View>
+                      <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2,
+                        borderColor: sel ? (isHoliday ? '#F59E0B' : BRAND.teal) : colors.border,
+                        backgroundColor: sel ? (isHoliday ? '#F59E0B' : BRAND.teal) : 'transparent',
+                        alignItems: 'center', justifyContent: 'center' }}>
+                        {sel && <Ionicons name="checkmark" size={13} color="#fff" />}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {/* Kid picker */}
+              <Text style={f.sectionLabel}>Add to whose schedule?</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
+                {kids.map(k => {
+                  const sel = selectedKids.includes(k.id);
+                  return (
+                    <Pressable key={k.id} onPress={() => setSelKids(prev => sel ? prev.filter(id => id !== k.id) : [...prev, k.id])}
+                      style={[f.kidChip, { backgroundColor: sel ? BRAND.teal + '20' : colors.surface, borderColor: sel ? BRAND.teal : colors.border }]}>
+                      <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl} siblings={allNames} size={36} ringColor={sel ? BRAND.teal : colors.textTertiary} />
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: sel ? BRAND.teal : colors.textPrimary }}>{k.name.split(' ')[0]}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <Pressable onPress={() => setStep('capture')} style={[f.cancelBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                  <Ionicons name="arrow-back" size={15} color={colors.textSecondary} />
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>Rescan</Text>
+                </Pressable>
+                <Pressable onPress={handleConfirmMulti}
+                  style={[f.submitBtn, { flex: 2, backgroundColor: selectedKids.length && selectedEvents.size ? BRAND.teal : colors.border }]}>
+                  <Ionicons name="calendar-outline" size={16} color={selectedKids.length && selectedEvents.size ? '#fff' : colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: selectedKids.length && selectedEvents.size ? '#fff' : colors.textTertiary }}>
+                    Import {selectedEvents.size} Event{selectedEvents.size !== 1 ? 's' : ''} →
+                  </Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          )}
+
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -617,6 +1054,7 @@ const f = StyleSheet.create({
   fieldValue: { fontSize: TYPO.caption, fontWeight: '600', flex: 1 },
   inlineInput:{ fontSize: TYPO.caption, fontWeight: '600', padding: 0 },
   kidChip:    { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 18, borderWidth: 1.5, padding: 10, paddingRight: 16 },
-  cancelBtn:  { flex: 1, flexDirection: 'row', gap: 6, borderRadius: 14, borderWidth: 1, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
-  submitBtn:  { flexDirection: 'row', gap: 6, borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
+  cancelBtn:   { flex: 1, flexDirection: 'row', gap: 6, borderRadius: 14, borderWidth: 1, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
+  submitBtn:   { flexDirection: 'row', gap: 6, borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
+  sectionLabel:{ fontSize: TYPO.label, fontWeight: '800', color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10, marginTop: 4 },
 });

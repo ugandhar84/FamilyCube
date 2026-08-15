@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Radio, Pill, ChefHat, Image as ImageIcon, ScrollText,
   Users, LogOut, FolderOpen, Gift, ChevronRight,
-  ShoppingCart, Coins, Heart,
+  ShoppingCart, Coins, Heart, BookOpen,
 } from 'lucide-react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
@@ -24,12 +24,13 @@ import MemoriesTabComp from './tabs/MemoriesTab';
 import LedgerTabComp   from './tabs/LedgerTab';
 import RosterTabComp   from './tabs/RosterTab';
 import RecordsTabComp  from './tabs/RecordsTab';
+import SchoolTabComp   from './tabs/SchoolTab';
 import GroceryScreen   from '@/features/grocery/GroceryScreen';
 import StoreScreen     from '@/features/store/StoreScreen';
 
 // ─── Feature definitions ──────────────────────────────────────────────────────
 
-type FeatureId = 'gps' | 'health' | 'records' | 'meals' | 'memories' | 'ledger' | 'roster' | 'grocery' | 'store';
+type FeatureId = 'gps' | 'school' | 'health' | 'records' | 'meals' | 'memories' | 'ledger' | 'roster' | 'grocery' | 'store';
 
 interface Feature {
   id: FeatureId;
@@ -45,6 +46,7 @@ interface Feature {
 
 const FEATURES: Feature[] = [
   { id: 'gps',      label: 'Radar',    subtitle: 'Live family locations',   emoji: '📡', Icon: Radio,        accent: '#14B8A6', bg: '#ECFDF5', bgDark: '#0D2E2A', roles: ['parent', 'kid'] },
+  { id: 'school',   label: 'School',   subtitle: 'Timetable · Terms',       emoji: '📚', Icon: BookOpen,     accent: '#9261C7', bg: '#F5F3FF', bgDark: '#1A1030', roles: ['parent', 'kid'] },
   { id: 'health',   label: 'Health',   subtitle: 'My Active Medications',    emoji: '💊', Icon: Heart,        accent: '#F43F5E', bg: '#FFF1F2', bgDark: '#2D1019', roles: ['parent', 'kid'] },
   { id: 'grocery',  label: 'Grocery',  subtitle: 'Runs · Lists · Receipts', emoji: '🛒', Icon: ShoppingCart, accent: '#10B981', bg: '#ECFDF5', bgDark: '#0D2A1E', roles: ['parent'] },
   { id: 'meals',    label: 'Meals',    subtitle: 'Recipes · Nutrition',     emoji: '🍽️', Icon: ChefHat,      accent: '#F59E0B', bg: '#FFFBEB', bgDark: '#2D2008', roles: ['parent'] },
@@ -109,6 +111,7 @@ function FeatureDetail({
         <ScrollView showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 80, paddingTop: 14 }}>
           {feature.id === 'gps'      && <GpsTabComp      colors={colors} isDark={isDark} />}
+          {feature.id === 'school'   && <SchoolTabComp   colors={colors} isDark={isDark} isKid={role === 'kid'} />}
           {feature.id === 'health'   && <HealthTabComp   colors={colors} isDark={isDark} kidView={role === 'kid'} />}
           {feature.id === 'records'  && <RecordsTabComp  colors={colors} isDark={isDark} />}
           {feature.id === 'meals'    && <MealsTabComp    colors={colors} isDark={isDark} />}

@@ -13,6 +13,8 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import type { RequestType, RequestUrgency } from '@/store/kidRequestStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import { TYPO } from '@/constants/theme';
+import FamilyAvatar from '@/components/FamilyAvatar';
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
 
@@ -120,12 +122,12 @@ function SelectField<T extends string>({
 }
 
 const sf = StyleSheet.create({
-  label:       { fontSize: 11, fontWeight: '700', marginBottom: 4 },
-  trigger:     { borderWidth: 1, borderRadius: 12, padding: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  triggerText: { fontSize: 12, fontWeight: '600', flex: 1, marginRight: 4 },
+  label:       { fontSize: TYPO.caption, fontWeight: '700', marginBottom: 4 },
+  trigger:     { borderWidth: 1.5, borderRadius: 14, padding: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  triggerText: { fontSize: TYPO.body, fontWeight: '600', flex: 1, marginRight: 4 },
   dropdown:    { borderWidth: 1, borderRadius: 12, marginTop: 4, overflow: 'hidden', position: 'absolute', top: 58, left: 0, right: 0, zIndex: 999, elevation: 10 },
-  option:      { padding: 10 },
-  optionText:  { fontSize: 12, fontWeight: '600' },
+  option:      { padding: 12 },
+  optionText:  { fontSize: TYPO.body, fontWeight: '600' },
 });
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -195,7 +197,7 @@ export default function RequestHelpModal({ visible, onClose, activeMemberId }: P
 
   const helperOptions = [
     { id: 'any',      name: '👥 Any Available Adult' },
-    ...adults.map(a => ({ id: a.id,       name: `🎓 ${a.name}${a.id === activeMemberId ? ' (Self)' : ''}` })),
+    ...adults.map(a => ({ id: a.id,       name: `🎓 ${a.id === activeMemberId ? "I'll help" : a.name}` })),
     { id: 'ai-tutor', name: '🤖 AI Family Tutor' },
   ];
 
@@ -229,18 +231,22 @@ export default function RequestHelpModal({ visible, onClose, activeMemberId }: P
               {isAdult && kids.length > 0 && (
                 <View style={m.field}>
                   <Text style={[m.label, { color: colors.textSecondary }]}>Which Child Needs Help?</Text>
-                  <View style={m.pickerRow}>
-                    {kids.map(k => (
-                      <TouchableOpacity
-                        key={k.id}
-                        style={[m.kidPill, selectedKidId === k.id && { backgroundColor: BRAND.purple + '20', borderColor: BRAND.purple }]}
-                        onPress={() => setSelectedKidId(k.id)}
-                      >
-                        <Text style={{ fontSize: 12, color: selectedKidId === k.id ? BRAND.purple : colors.textPrimary, fontWeight: '700' }}>
-                          🧒 {k.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                  <View style={[m.pickerRow, { gap: 12 }]}>
+                    {kids.map(k => {
+                      const sel = selectedKidId === k.id;
+                      return (
+                        <TouchableOpacity key={k.id} style={{ alignItems: 'center' }} onPress={() => setSelectedKidId(k.id)}>
+                          <View style={{ position: 'relative' }}>
+                            <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={(k as any).avatarUrl} siblings={kids.map(x => x.name)} size={40} ringColor={sel ? BRAND.purple : colors.border} ringWidth={sel ? 2.5 : 1} bgColor={sel ? BRAND.purple + '20' : undefined} />
+                            {sel && (
+                              <View style={{ position: 'absolute', bottom: -2, right: -2, width: 14, height: 14, borderRadius: 7, backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.card }}>
+                                <Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text>
+                              </View>
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 </View>
               )}
@@ -297,8 +303,8 @@ export default function RequestHelpModal({ visible, onClose, activeMemberId }: P
               {category === 'Homework' && (
                 <View style={[m.field, { backgroundColor: BRAND.purple + '12', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: BRAND.purple + '30' }]}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: BRAND.purple }}>Co-Learning Coin Bounty:</Text>
-                    <Text style={{ fontSize: 13, fontWeight: '900', color: BRAND.amber }}>+{rewardCoins} 🪙</Text>
+                    <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: BRAND.purple }}>Co-Learning Coin Bounty:</Text>
+                    <Text style={{ fontSize: TYPO.subheading, fontWeight: '900', color: BRAND.amber }}>+{rewardCoins} 🪙</Text>
                   </View>
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
                     {[10, 20, 30, 50].map(amt => (
@@ -307,13 +313,13 @@ export default function RequestHelpModal({ visible, onClose, activeMemberId }: P
                         style={[m.coinBtn, rewardCoins === amt && { backgroundColor: BRAND.amber, borderColor: BRAND.amber }]}
                         onPress={() => setRewardCoins(amt)}
                       >
-                        <Text style={{ fontSize: 11, fontWeight: '800', color: rewardCoins === amt ? '#fff' : colors.textSecondary }}>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: rewardCoins === amt ? '#fff' : colors.textSecondary }}>
                           +{amt}
                         </Text>
                       </TouchableOpacity>
                     ))}
                   </View>
-                  <Text style={{ fontSize: 10, color: BRAND.purple, marginTop: 6 }}>
+                  <Text style={{ fontSize: TYPO.label, color: BRAND.purple, marginTop: 6 }}>
                     Child & helper both earn bonus coins upon completion!
                   </Text>
                 </View>
@@ -352,16 +358,16 @@ const m = StyleSheet.create({
   sheet:    { borderRadius: 24, overflow: 'hidden' },
   header:   { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 16, borderBottomWidth: StyleSheet.hairlineWidth },
   iconWrap: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  title:    { fontSize: 14, fontWeight: '900' },
-  subtitle: { fontSize: 10, marginTop: 2 },
+  title:    { fontSize: TYPO.heading, fontWeight: '900' },
+  subtitle: { fontSize: TYPO.caption, marginTop: 2 },
   closeBtn: { padding: 4 },
-  body:     { padding: 16, gap: 12, paddingBottom: 24 },
+  body:     { padding: 16, gap: 14, paddingBottom: 24 },
   field:    {},
-  label:    { fontSize: 11, fontWeight: '700', marginBottom: 5 },
+  label:    { fontSize: TYPO.caption, fontWeight: '700', marginBottom: 5 },
   pickerRow:{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  kidPill:  { borderWidth: 1, borderColor: '#DDD', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
-  textarea: { borderWidth: 1, borderRadius: 16, padding: 12, fontSize: 12, minHeight: 72, fontWeight: '500' },
-  coinBtn:  { borderWidth: 1, borderColor: '#DDD', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
-  submitBtn:{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, padding: 14, marginTop: 4 },
-  submitText:{ color: '#fff', fontSize: 12, fontWeight: '900' },
+  kidPill:  { borderWidth: 1.5, borderColor: '#DDD', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
+  textarea: { borderWidth: 1.5, borderRadius: 16, padding: 13, fontSize: TYPO.body, minHeight: 80, fontWeight: '500' },
+  coinBtn:  { borderWidth: 1.5, borderColor: '#DDD', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
+  submitBtn:{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, padding: 15, marginTop: 4 },
+  submitText:{ color: '#fff', fontSize: TYPO.body, fontWeight: '900' },
 });

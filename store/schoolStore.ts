@@ -22,6 +22,8 @@ export interface ClassPeriod {
   isBreak?:   boolean;
   gradeLevel?: string;     // e.g. '7th Grade', 'AP'
   notes?:     string;
+  days?:      string[];    // ['mon','tue','wed','thu','fri'] — which days this period occurs
+  term?:      string;      // e.g. 'Q1', 'Q2', 'Fall', 'Spring' — optional term grouping
 }
 
 export interface Homework {

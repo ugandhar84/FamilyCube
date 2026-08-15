@@ -175,9 +175,9 @@ const f = StyleSheet.create({
   sheet:      { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 0, maxHeight: '75%' },
   handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 4 },
   header:     { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingTop: 12, paddingBottom: 14 },
-  title:      { fontSize: 17, fontWeight: '900' },
-  label:      { fontSize: TYPO.label, fontWeight: '700', letterSpacing: 0.4, marginBottom: 6, marginTop: 8 },
-  pill:       { flexDirection: 'row', alignItems: 'center', borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 10, paddingVertical: 6, flexShrink: 0 },
+  title:      { fontSize: TYPO.heading, fontWeight: '900' },
+  label:      { fontSize: TYPO.caption, fontWeight: '700', letterSpacing: 0.4, marginBottom: 6, marginTop: 8 },
+  pill:       { flexDirection: 'row', alignItems: 'center', borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 8, flexShrink: 0 },
   submitBtn:  { borderRadius: 16, paddingVertical: 15, alignItems: 'center', marginTop: 4 },
 });
 
@@ -336,18 +336,18 @@ export function GroceryModal({ visible, onClose, active }: {
                       {/* Name suggestions — always visible */}
                       {showNameSuggs && (
                         <View style={{ marginBottom: 8 }}>
-                          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontWeight: '600', marginBottom: 5 }}>
+                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, fontWeight: '700', marginBottom: 8, letterSpacing: 0.4 }}>
                             {q ? 'Matching — tap to fill' : 'Quick picks'}
                           </Text>
                           <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
-                            <View style={{ flexDirection: 'row', gap: 7 }}>
+                            <View style={{ flexDirection: 'row', gap: 8 }}>
                               {nameSuggs.map(s => (
                                 <Pressable key={s.name}
                                   onPress={() => updateLine(idx, { name: s.name, emoji: s.emoji, category: s.category })}
                                   style={{ backgroundColor: line.name === s.name ? BRAND.teal + '20' : (isDark ? colors.surface : '#F5F4FA'),
-                                    borderRadius: 8, paddingVertical: 5, paddingHorizontal: 10, borderWidth: 1,
+                                    borderRadius: 20, paddingVertical: 8, paddingHorizontal: 12, borderWidth: 1.5,
                                     borderColor: line.name === s.name ? BRAND.teal : (isDark ? colors.border : '#E2E8F0') }}>
-                                  <Text style={{ fontSize: TYPO.label, color: line.name === s.name ? BRAND.teal : colors.textSecondary, fontWeight: '700' }}>
+                                  <Text style={{ fontSize: TYPO.micro, color: line.name === s.name ? BRAND.teal : colors.textSecondary, fontWeight: '700' }}>
                                     {s.emoji} {s.name}
                                   </Text>
                                 </Pressable>
@@ -493,19 +493,19 @@ export function SuppliesModal({ visible, onClose, active }: {
                     </View>
                     {filtered.length > 0 && (
                       <View style={{ marginTop: 6 }}>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 6, fontWeight: '600' }}>
+                        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginBottom: 8, fontWeight: '700', letterSpacing: 0.4 }}>
                           {q ? 'Matching — tap to fill' : 'Quick picks'}
                         </Text>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
-                          <View style={{ flexDirection: 'row', gap: 7 }}>
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
                             {filtered.map(s => (
                               <TouchableOpacity key={s.name} onPress={() => updateItem(idx, 'name', s.name)}
                                 style={[f.pill, {
                                   backgroundColor: item.name === s.name ? '#6366F120' : (isDark ? colors.surface : '#F5F4FA'),
                                   borderColor: item.name === s.name ? '#6366F1' : (isDark ? colors.border : '#E2E8F0'),
                                 }]}>
-                                <Text style={{ fontSize: TYPO.label }}>{s.emoji}</Text>
-                                <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginLeft: 4,
+                                <Text style={{ fontSize: TYPO.micro }}>{s.emoji}</Text>
+                                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', marginLeft: 4,
                                   color: item.name === s.name ? '#6366F1' : colors.textSecondary }} numberOfLines={1}>{s.name}</Text>
                               </TouchableOpacity>
                             ))}

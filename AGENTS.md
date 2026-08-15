@@ -250,6 +250,58 @@ supabase functions deploy send-coupon partner-webhook
 
 ---
 
+# FamilyCubeApp — UI Typography Standard (2026-08-15)
+
+## TYPO scale (`constants/theme.ts`)
+
+```typescript
+export const TYPO = {
+  hero:       32,
+  title:      24,
+  heading:    20,
+  subheading: 17,
+  body:       15,
+  caption:    13,
+  label:      11,
+  micro:      9,
+};
+```
+
+## How to use TYPO in every form / bottom sheet
+
+Apply this scale consistently across **all** modal, sheet, and form components. Never hardcode font sizes.
+
+| Element | TYPO token | Notes |
+|---|---|---|
+| Sheet / modal title | `heading` (20) | `fontWeight: '900'` |
+| Subtitle / description | `caption` (13) | Under the title |
+| Section headers (ALL CAPS labels) | `caption` (13) | `textTransform: 'uppercase'`, `letterSpacing: 0.5` |
+| Field labels | `caption` (13) | `fontWeight: '700'` |
+| Text inputs | `body` (15) | `padding: 13`, `borderWidth: 1.5`, `borderRadius: 14` |
+| Textarea | `body` (15) | `padding: 13`, `minHeight: 80` |
+| Pill / chip text (primary) | `body` (15) | Selector chips, urgency buttons, category chips |
+| Pill / chip text (compact) | `caption` (13) | Inline suggestion pills in title field |
+| Suggestion pill header | `label` (11) | "Quick picks" / "Matching — tap to fill" |
+| Info/note text | `label` (11) | Secondary hints below inputs |
+| Micro badges, counts | `label` (11) or `caption` (13) | Never use `micro` (9) in forms |
+| Submit button text | `body` (15) | `fontWeight: '900'` |
+| Cancel button text | `body` (15) | `fontWeight: '700'` |
+
+**Rule:** `TYPO.micro` (9) is forbidden inside forms — it is only for tiny decorative labels (e.g. map pins, graph axis). Minimum readable size in any interactive element is `TYPO.label` (11).
+
+## Files where TYPO is applied
+
+| File | Key upgrades |
+|---|---|
+| `features/calendar/EventFormModal.tsx` | Full form: title→heading, labels→caption, input→body, suggestion pills→caption/label |
+| `components/HelpRequestModal.tsx` | Section headers→caption, title→heading, pill text→body, urgency buttons→body |
+| `features/hub/RequestHelpModal.tsx` | Labels→caption, inputs→body(15)/padding13, submit text→body |
+| `features/hub/KidModals.tsx` | title→heading, labels→caption, pill padding 12/8, sugg pills→caption |
+| `features/quests/QuestsScreen.tsx` | Both form StyleSheets (dm + aq): label→caption, input→body, sugg pills→caption/label |
+| `features/grocery/GroceryScreen.tsx` | AddItemSheet: consistent with above |
+
+---
+
 # FamilyCubeApp Grocery Architecture (2026-08-14)
 
 ## Overview

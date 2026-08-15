@@ -367,9 +367,47 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
             title="Action Needed" badge={actionCount} badgeColor="#EF4444"
             colors={colors} isDark={isDark}>
 
-            {/* ── Ride requests ── */}
+            {/* ── Ride / event requests ── */}
             {pendingRequests.map(ev => {
               const requester = ev.helperRequestedBy ?? members.find(m => m.id === ev.memberId)?.name ?? 'Kid';
+
+              // Parse kid ride metadata from returnTime field
+              const rideCode = ev.returnTime?.startsWith('RIDE:') ? ev.returnTime : null;
+              const isBothWays = rideCode === 'RIDE:both' || rideCode?.startsWith('RIDE:both:');
+              const isDropoff  = rideCode === 'RIDE:dropoff';
+              const isPickup   = rideCode === 'RIDE:pickup';
+              const hasRide    = isBothWays || isDropoff || isPickup;
+              const returnTimeStr = isBothWays && rideCode?.includes(':') ? rideCode.split(':')[2] : undefined;
+
+              // Fork helper: on approval split into 2 events; each starts with no driver
+              const forkAndApprove = () => {
+                // Drop-off leg — update original event, clear ride metadata
+                updateEvent(ev.id, {
+                  approvalPending: false,
+                  helperStatus:    undefined,
+                  helper:          undefined,
+                  returnTime:      undefined,
+                  title:           `${ev.title} — Drop-off`,
+                  notes:           ev.notes,
+                  color:           '#10B981',
+                });
+                // Pickup leg — new event, needs its own driver assignment
+                addEvent({
+                  title:           `${ev.title} — Pickup`,
+                  date:            ev.date,
+                  time:            returnTimeStr ?? undefined,
+                  type:            'event',
+                  category:        'Ride',
+                  allDay:          false,
+                  memberId:        ev.memberId,
+                  approvalPending: false,
+                  conflict:        false,
+                  helperStatus:    undefined,
+                  notes:           `Pickup leg for "${ev.title}"`,
+                  color:           '#6366F1',
+                });
+              };
+
               return (
                 <CollapsibleCard key={ev.id} flat accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={true}
                   summary={
@@ -377,10 +415,11 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                       <Hand size={16} color={BRAND.amber} />
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.amber }} numberOfLines={1}>
-                          Ride requested · {ev.title}
+                          {isBothWays ? '🔄 Both ways · ' : isDropoff ? '📍 Drop-off · ' : isPickup ? '🏁 Pickup · ' : '🚗 Ride · '}{ev.title}
                         </Text>
                         <Text style={{ fontSize: TYPO.label, color: BRAND.amber, opacity: 0.8 }}>
-                          {requester} · {fmtTime(ev.time)}{ev.location ? ` · ${ev.location}` : ''}
+                          {requester} · {ev.time ? fmtTime(ev.time) : 'time TBD'}{ev.location ? ` · ${ev.location}` : ''}
+                          {isBothWays && returnTimeStr ? ` · pickup ${returnTimeStr}` : ''}
                         </Text>
                       </View>
                       <View style={{ backgroundColor: BRAND.amber + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
@@ -393,39 +432,44 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                       <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{ev.notes}"</Text>
                     </View>
                   )}
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <Pressable onPress={() => {
-                      updateEvent(ev.id, { approvalPending: false, helperStatus: 'confirmed', helper: active.name });
-                      // Auto-create return ride if kid requested both drop-off + pickup
-                      if (ev.notes?.includes('Drop-off + Pickup')) {
-                        addEvent({
-                          title:        `${ev.title} — Return Ride`,
-                          date:         ev.date,
-                          time:         ev.returnTime ?? ev.time,
-                          type:         'event',
-                          category:     'Ride',
-                          allDay:       false,
-                          memberId:     ev.memberId,
-                          helper:       active.name,
-                          helperStatus: 'confirmed',
-                          approvalPending: false,
-                          conflict:     false,
-                          notes:        `Auto-created return ride for "${ev.title}"`,
-                          color:        '#10B981',
-                        });
-                      }
-                    }}
-                      style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-                      <Car size={14} color="#fff" />
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
-                    </Pressable>
-                    <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'rejected', declineReason: "Can't make it", declinedBy: active.name })}
-                      style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>Can't Do It</Text>
-                    </Pressable>
-                  </View>
-                  <InlineReassignPanel ev={ev} members={members} colors={colors} isDark={isDark}
-                    onDone={(name, note) => updateEvent(ev.id, { approvalPending: false, helper: name, helperStatus: 'pending', notes: note || undefined })} />
+
+                  {isBothWays ? (
+                    /* Both-ways: approve forks into 2 events, each gets own driver flow */
+                    <View style={{ gap: 8 }}>
+                      <View style={{ backgroundColor: isDark ? '#0f2a20' : '#ecfdf5', borderRadius: 10, padding: 10, gap: 4, borderWidth: 1, borderColor: '#10B98130' }}>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#10B981' }}>📍 Drop-off · {ev.time ? fmtTime(ev.time) : 'time TBD'}</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#6366F1', marginTop: 2 }}>🏁 Pickup · {returnTimeStr ?? 'time TBD'}</Text>
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4 }}>Approving creates 2 separate events — assign a driver to each independently.</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <Pressable onPress={forkAndApprove}
+                          style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>✅ Approve & Split</Text>
+                        </Pressable>
+                        <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'rejected', declineReason: "Can't make it", declinedBy: active.name })}
+                          style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>Decline</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ) : (
+                    /* Single-leg: standard approve + assign flow */
+                    <View style={{ gap: 8 }}>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'confirmed', helper: active.name, returnTime: undefined })}
+                          style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                          <Car size={14} color="#fff" />
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
+                        </Pressable>
+                        <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'rejected', declineReason: "Can't make it", declinedBy: active.name })}
+                          style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>Can't Do It</Text>
+                        </Pressable>
+                      </View>
+                      <InlineReassignPanel ev={ev} members={members} colors={colors} isDark={isDark}
+                        onDone={(name, note) => updateEvent(ev.id, { approvalPending: false, helper: name, helperStatus: 'pending', returnTime: undefined, notes: note || ev.notes || undefined })} />
+                    </View>
+                  )}
                 </CollapsibleCard>
               );
             })}

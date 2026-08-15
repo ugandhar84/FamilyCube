@@ -549,11 +549,7 @@ function EventDetailSheet({ ev, members, colors, isDark, activeName, updateEvent
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{forLabel}:</Text>
               {allAssignees.map(m => (
-                <View key={m.id} style={{ backgroundColor: cc + '18', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: cc + '30' }}>
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
-                    {m.emoji ? `${m.emoji} ` : ''}{m.name.split(' ')[0]}
-                  </Text>
-                </View>
+                <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} size={24} ringColor={cc} ringWidth={1.5} />
               ))}
             </View>
           )}
@@ -815,11 +811,7 @@ export function TimelineCard({ ev, members, allNames, colors, isDark, updateEven
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
               <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>{forLabel}:</Text>
               {allAssignees.length > 0 ? allAssignees.map(m => (
-                <View key={m.id} style={{ backgroundColor: cc + '18', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: cc + '30' }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
-                    {m.emoji ? `${m.emoji} ` : ''}{m.name.split(' ')[0]}
-                  </Text>
-                </View>
+                <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} size={18} ringColor={cc} ringWidth={1.5} />
               )) : (
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>—</Text>
               )}

@@ -1,7 +1,9 @@
 // FamilyCube — Edge Function: parse-flyer
-// Accepts 1-3 base64 images (or PDF pages rendered to images) of an activity
-// flyer and extracts structured event details via Gemini Vision.
-// Images are NEVER stored — processed in-memory only.
+// Accepts 1-3 base64 images/PDF of a school flyer and returns one of three
+// structured responses based on what the flyer contains:
+//   "timetable" — a class schedule / timetable
+//   "calendar"  — a school calendar with multiple events/holidays
+//   "event"     — a single activity/sports/event flyer
 //
 // Deploy: supabase functions deploy parse-flyer
 
@@ -16,44 +18,91 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
 // ── Prompt ────────────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are a family calendar assistant. You are given 1-3 images of an activity flyer or school notice.
-Extract all relevant event/activity details and return them as structured JSON.
+const SYSTEM_PROMPT = `You are a family calendar assistant. You are given 1-3 images of a school flyer, notice, or calendar.
 
-Fields to extract:
-- title: the name of the event or activity
-- category: one of School, Sports, Medical, Work, Event, Study (best fit)
-- date: "YYYY-MM-DD" — if relative ("next Monday") or unclear, return null
-- time: "HH:MM" 24-hour format, or null if not mentioned
-- end_time: "HH:MM" 24-hour format, or null
-- location: venue name and/or address, or null
-- organizer: who is hosting (school, club name, teacher name), or null
-- description: 1-2 sentences summarising key details the family should know
-- rsvp_deadline: "YYYY-MM-DD" if an RSVP or sign-up deadline is mentioned, else null
-- cost: numeric dollar amount if mentioned, else null
-- notes: any special instructions (what to bring, dress code, permission slip needed, etc.), or null
-- recurring: true if the event repeats (weekly practice, monthly meeting), false otherwise
-- recurrence_desc: plain text description of recurrence pattern if recurring, else null
+First determine what type of document this is, then extract the relevant data.
 
-Return ONLY valid JSON — no markdown fences, no explanation:
+## Types
+
+### type: "timetable"
+Use this when the document shows a student's class schedule / timetable — a grid or list of subjects with times and days.
+
+Return:
 {
-  "title": "string",
-  "category": "School",
-  "date": "YYYY-MM-DD",
-  "time": "HH:MM",
-  "end_time": "HH:MM",
-  "location": "string",
-  "organizer": "string",
-  "description": "string",
-  "rsvp_deadline": "YYYY-MM-DD",
-  "cost": 0.00,
-  "notes": "string",
-  "recurring": false,
-  "recurrence_desc": null
+  "type": "timetable",
+  "timetable": {
+    "student": "student full name if visible, else null",
+    "school": "school name if visible, else null",
+    "grade": "grade/year/class label if visible e.g. '7th Grade', else null",
+    "periods": [
+      {
+        "periodName": "period label e.g. '1', 'A', 'Homeroom' — free text",
+        "subject": "subject or class name",
+        "teacher": "teacher name or null",
+        "room": "room number/name or null",
+        "startTime": "HH:MM 24h or null",
+        "endTime": "HH:MM 24h or null",
+        "days": only the days this period occurs — an array of day keys from [mon,tue,wed,thu,fri,sat,sun]. If a subject only runs on specific days (e.g. Science on Mon/Wed/Fri), list only those days. If it runs every school day, use ["mon","tue","wed","thu","fri"],
+        "term": "term label if the schedule has multiple terms e.g. 'Q1', 'Q2', 'Q3', 'Q4', 'Fall', 'Spring', 'Term 1' — or null if no terms",
+        "isLunch": true if this is a lunch/break period
+      }
+    ]
+  }
 }
 
-If you cannot determine a field, use null. If the images contain multiple distinct events, return only the primary/most prominent one.`;
+### type: "calendar"
+Use this when the document is a school calendar, newsletter, or term planner with MULTIPLE dates/events (holidays, early release days, sports fixtures, school events, etc.).
 
-// ── Gemini vision call (multi-image) ──────────────────────────────────────────
+Return:
+{
+  "type": "calendar",
+  "calendar": {
+    "school": "school name if visible, else null",
+    "events": [
+      {
+        "title": "event name",
+        "category": one of: School, Sports, Medical, Work, Event, Study, Holiday,
+        "date": "YYYY-MM-DD or null",
+        "time": "HH:MM 24h or null",
+        "end_time": "HH:MM 24h or null",
+        "location": "venue or null",
+        "notes": "any special instructions or null",
+        "recurring": false,
+        "recurrence_desc": null
+      }
+    ]
+  }
+}
+
+### type: "event"
+Use this for a single activity flyer — one specific event (sports game, school play, fundraiser, excursion, permission slip, etc.).
+
+Return:
+{
+  "type": "event",
+  "event": {
+    "title": "event name",
+    "category": one of: School, Sports, Medical, Work, Event, Study, Holiday,
+    "date": "YYYY-MM-DD or null",
+    "time": "HH:MM 24h or null",
+    "end_time": "HH:MM 24h or null",
+    "location": "venue or null",
+    "organizer": "who is hosting or null",
+    "description": "1-2 sentence summary",
+    "rsvp_deadline": "YYYY-MM-DD or null",
+    "cost": numeric dollar amount or null,
+    "notes": "what to bring, dress code, etc. or null",
+    "recurring": true/false,
+    "recurrence_desc": "recurrence pattern or null"
+  }
+}
+
+Return ONLY valid JSON — no markdown fences, no explanation. If a field is unknown, use null.
+For timetable periods: always specify the exact days each period occurs. If a subject appears on different days in different weeks or terms, create a separate period entry per term and set the "term" field accordingly.
+For rotating/block schedules: each day-block (A/B/C etc.) gets separate period entries with the days array set to only the days that block runs.
+For calendar events: extract ALL visible events, even if there are 20+.`;
+
+// ── Gemini vision call ────────────────────────────────────────────────────────
 async function callGemini(key: string, images: { data: string; mimeType: string }[]): Promise<string> {
   const imageParts = images.map(img => ({ inlineData: { mimeType: img.mimeType, data: img.data } }));
 
@@ -63,36 +112,70 @@ async function callGemini(key: string, images: { data: string; mimeType: string 
       role: 'user',
       parts: [
         ...imageParts,
-        { text: 'Extract the event details from this flyer. Return JSON only.' },
+        { text: 'Determine the document type and extract all details. Return compact JSON only (no pretty-printing, no extra whitespace).' },
       ],
     }],
-    generationConfig: { temperature: 0.1, maxOutputTokens: 512 },
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 4096,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
   });
 
-  const models = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+  const MODELS = [
+    { name: 'gemini-2.5-flash',    thinking: true  },
+    { name: 'gemini-1.5-flash-8b', thinking: false },
+    { name: 'gemini-1.5-flash',    thinking: false },
+  ];
   let lastErr = '';
-  for (const model of models) {
+  for (const m of MODELS) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-      const res = await fetchWithTimeout(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, 18_000);
-      if (!res.ok) { lastErr = `HTTP ${res.status}`; continue; }
+      const generationConfig: Record<string, unknown> = { temperature: 0.1, maxOutputTokens: 16384 };
+      if (m.thinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+      const reqBody = JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [{
+          role: 'user',
+          parts: [
+            ...imageParts,
+            { text: 'Determine the document type and extract all details. Return compact JSON only (no pretty-printing, no extra whitespace).' },
+          ],
+        }],
+        generationConfig,
+      });
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${m.name}:generateContent?key=${key}`;
+      const res = await fetchWithTimeout(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: reqBody }, 35_000);
       const j = await res.json();
-      if (j.error) { lastErr = j.error.message; continue; }
-      return j.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      if (!res.ok || j.error) {
+        lastErr = j.error?.message ?? `HTTP ${res.status}`;
+        console.error(`[parse-flyer] ${m.name} failed: ${lastErr}`);
+        continue;
+      }
+      const text = j.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      console.log(`[parse-flyer] ${m.name} ok, length=${text.length}`);
+      return text;
     } catch (e) {
       lastErr = String(e);
+      console.error(`[parse-flyer] ${m.name} threw: ${lastErr}`);
     }
   }
   throw new Error(`Gemini failed: ${lastErr}`);
 }
 
-// ── JSON extraction from raw AI text ─────────────────────────────────────────
+// ── JSON extraction ───────────────────────────────────────────────────────────
 function extractJson(raw: string): Record<string, unknown> {
   const clean = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
   const start = clean.indexOf('{');
   const end   = clean.lastIndexOf('}');
-  if (start === -1 || end === -1) throw new Error('No JSON object in response');
-  return JSON.parse(clean.slice(start, end + 1));
+  if (start === -1 || end === -1) {
+    throw new Error(`No JSON object found. Raw (first 300): ${clean.slice(0, 300)}`);
+  }
+  try {
+    return JSON.parse(clean.slice(start, end + 1));
+  } catch (e) {
+    const snippet = clean.slice(start, start + 500);
+    throw new Error(`JSON parse failed: ${String(e)} | snippet: ${snippet}`);
+  }
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -104,24 +187,31 @@ serve(async (req) => {
     if (!geminiKey) return json({ error: 'GEMINI_API_KEY not set' }, 503);
 
     const body = await req.json();
-    // images: array of { data: base64string, mimeType: 'image/jpeg'|'image/png'|'image/webp' }
     const images: { data: string; mimeType: string }[] = body.images ?? [];
+
+    console.log(`[parse-flyer] received ${images.length} image(s), sizes: ${images.map(i => i.data.length).join(', ')} chars, mimes: ${images.map(i => i.mimeType).join(', ')}`);
 
     if (!images.length || images.length > 3) {
       return json({ error: 'Provide 1–3 images' }, 400);
     }
-
-    // Validate each image has data
     for (const img of images) {
       if (!img.data || !img.mimeType) return json({ error: 'Each image needs data and mimeType' }, 400);
     }
 
-    const raw = await callGemini(geminiKey, images);
+    const raw    = await callGemini(geminiKey, images);
+    console.log(`[parse-flyer] gemini raw (first 300): ${raw.slice(0, 300)}`);
     const parsed = extractJson(raw);
 
-    return json({ ok: true, event: parsed });
+    // Validate type field
+    const type = parsed.type as string;
+    console.log(`[parse-flyer] detected type: ${type}`);
+    if (!['timetable', 'calendar', 'event'].includes(type)) {
+      throw new Error(`Unexpected response type: ${type}`);
+    }
+
+    return json({ ok: true, type, ...parsed });
   } catch (e) {
-    console.error('parse-flyer error:', e);
+    console.error('[parse-flyer] handler error:', e);
     return json({ error: String(e) }, 500);
   }
 });

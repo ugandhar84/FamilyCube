@@ -6,6 +6,7 @@ import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import FamilyAvatar from '@/components/FamilyAvatar';
 
 export type TabStatus = 'all' | 'todo' | 'review' | 'completed';
 
@@ -72,14 +73,13 @@ export function QuestFilters({
         {!isKid && kids.map(k => (
           <TouchableOpacity
             key={k.id}
-            style={[pillBase, kidFilter === k.id
+            style={[pillBase, { paddingHorizontal: 6, paddingVertical: 4 }, kidFilter === k.id
               ? { backgroundColor: k.color ?? BRAND.amber, borderColor: k.color ?? BRAND.amber }
               : { backgroundColor: pillBg, borderColor: pillBdr }]}
             onPress={() => { onSetKidFilter(k.id); onSetTabStatus('all'); }}
           >
-            <Text style={{ fontSize: 13, fontWeight: '700', color: kidFilter === k.id ? '#fff' : colors.textSecondary }}>
-              {k.emoji ?? '🧒'} {k.name}
-            </Text>
+            <FamilyAvatar name={k.name} emoji={k.emoji} size={28}
+              ringColor={k.color ?? BRAND.amber} ringWidth={kidFilter === k.id ? 2.5 : 0} />
           </TouchableOpacity>
         ))}
 

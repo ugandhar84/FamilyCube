@@ -128,7 +128,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
   onEnRoute: () => void;
 }) {
   const { quests, approveQuest } = useQuestStore();
-  const { events, updateEvent }  = useEventStore();
+  const { events, updateEvent, addEvent }  = useEventStore();
   const { items: groceryItems, load: loadGrocery, addItem: addGroceryItem } = useGroceryStore();
   const { requests: kidRequests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests,
           approveRequest, declineRequest, approveItems, rejectItems } = useKidRequestStore();
@@ -394,7 +394,27 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                     </View>
                   )}
                   <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'confirmed', helper: active.name })}
+                    <Pressable onPress={() => {
+                      updateEvent(ev.id, { approvalPending: false, helperStatus: 'confirmed', helper: active.name });
+                      // Auto-create return ride if kid requested both drop-off + pickup
+                      if (ev.notes?.includes('Drop-off + Pickup')) {
+                        addEvent({
+                          title:        `${ev.title} — Return Ride`,
+                          date:         ev.date,
+                          time:         ev.returnTime ?? ev.time,
+                          type:         'event',
+                          category:     'Ride',
+                          allDay:       false,
+                          memberId:     ev.memberId,
+                          helper:       active.name,
+                          helperStatus: 'confirmed',
+                          approvalPending: false,
+                          conflict:     false,
+                          notes:        `Auto-created return ride for "${ev.title}"`,
+                          color:        '#10B981',
+                        });
+                      }
+                    }}
                       style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                       <Car size={14} color="#fff" />
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>

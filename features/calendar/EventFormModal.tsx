@@ -235,10 +235,11 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   const isSenior  = activeMember?.role === 'senior';
   const isKid     = activeMember?.role === 'kid';
 
-  // Kids can only request Ride or Study (allCategories computed after state is declared below)
+  // Kids can request Sports / Study / Event / Birthday / Other, with optional ride flag
 
   // ── State ──────────────────────────────────────────────────────────────────
-  const [category,       setCategory]       = useState<EventCategory>(isKid ? 'Ride' : 'Medical');
+  const [category,       setCategory]       = useState<EventCategory>(isKid ? 'Sports' : 'Medical');
+  const [kidRideType,    setKidRideType]    = useState<'none' | 'dropoff' | 'pickup' | 'both'>('none');
   const [title,          setTitle]          = useState('');
   const [titleFocused,   setTitleFocused]   = useState(false);
   const [notes,          setNotes]          = useState('');
@@ -321,7 +322,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
       .map(cc => ({ key: cc.key as EventCategory, emoji: cc.emoji, label: cc.label, color: cc.color })),
   ];
   const allowedCategories = isKid
-    ? allCategories.filter(c => c.key === 'Ride' || c.key === 'Study')
+    ? allCategories.filter(c => ['Sports', 'Study', 'Event', 'Birthday', 'Other'].includes(c.key))
     : allCategories;
 
   const suggPressing = useRef(false);
@@ -407,7 +408,12 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
       category,
       allDay,
       location,
-      notes:           notes.trim() || undefined,
+      notes:           [
+        notes.trim(),
+        isKid && kidRideType !== 'none'
+          ? `Ride needed: ${kidRideType === 'dropoff' ? 'Drop-off only' : kidRideType === 'pickup' ? 'Pickup after' : 'Drop-off + Pickup'}`
+          : '',
+      ].filter(Boolean).join(' · ') || undefined,
       memberId:        memberIds[0],
       memberIds:       memberIds.length > 1 ? memberIds : undefined,
       // Helper
@@ -1236,13 +1242,39 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
             {category !== 'Work' && category !== 'Event' && (
               <>
                 {isKid ? (
-                  <View style={[f.kidNote, { backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderColor: '#F59E0B40' }]}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#D97706' }}>
-                      👋 Parent will assign someone to help
-                    </Text>
-                    <Text style={{ fontSize: TYPO.micro, color: '#D97706', opacity: 0.8, marginTop: 2 }}>
-                      Your request is sent for approval — a parent will pick who accompanies or drives you.
-                    </Text>
+                  <View style={{ gap: 8 }}>
+                    {/* Ride type selector */}
+                    <Text style={[f.label, { color: colors.textSecondary }]}>🚗 Ride needed?</Text>
+                    <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                      {([
+                        { key: 'none',    emoji: '🚫', label: 'No ride' },
+                        { key: 'dropoff', emoji: '📍', label: 'Drop-off' },
+                        { key: 'pickup',  emoji: '🏁', label: 'Pickup after' },
+                        { key: 'both',    emoji: '🔄', label: 'Both ways' },
+                      ] as const).map(opt => (
+                        <TouchableOpacity key={opt.key} onPress={() => setKidRideType(opt.key)}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
+                            backgroundColor: kidRideType === opt.key ? catColor + '25' : (isDark ? colors.surface : '#F1F5F9'),
+                            borderWidth: 1.5, borderColor: kidRideType === opt.key ? catColor : colors.border }}>
+                          <Text style={{ fontSize: 14 }}>{opt.emoji}</Text>
+                          <Text style={{ fontSize: 12, fontWeight: kidRideType === opt.key ? '800' : '600',
+                            color: kidRideType === opt.key ? catColor : colors.textSecondary }}>
+                            {opt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <View style={[f.kidNote, { backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderColor: '#F59E0B40', marginTop: 4 }]}>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#D97706' }}>
+                        👋 Parent will review &amp; assign a driver
+                      </Text>
+                      <Text style={{ fontSize: TYPO.micro, color: '#D97706', opacity: 0.8, marginTop: 2 }}>
+                        {kidRideType === 'none'    ? 'No ride requested — you have your own way there.' :
+                         kidRideType === 'dropoff' ? 'You need a drop-off to the event.' :
+                         kidRideType === 'pickup'  ? 'You need a pickup after the event.' :
+                                                     'You need both a drop-off and pickup.'}
+                      </Text>
+                    </View>
                   </View>
                 ) : (
                   <MemberPicker

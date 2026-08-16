@@ -66,6 +66,7 @@ export interface KidRequest {
   attachmentUrl?: string;     // optional photo or document
   assignedHelper?: string;   // memberId of who is helping
   rewardCoins?:   number;    // optional coin reward for helper
+  openToGP?:      boolean;   // parent marked this as available for grandparent to handle
   scheduledDate?: string;    // "Today" / "Tomorrow" / "YYYY-MM-DD"
   scheduledTime?: string;    // "3:30 PM"
 }
@@ -97,6 +98,7 @@ interface KidRequestState {
   assignRequest:   (id: string, helperId: string, note?: string) => void;
   completeRequest: (id: string, respondedBy: string) => void;
   cancelRequest:   (id: string) => void;
+  toggleGPWelcome: (id: string, value: boolean) => void;
   markRead:        (id: string) => void;
   deleteRequest:   (id: string) => void;
   clearResolved:   () => void;
@@ -167,6 +169,7 @@ async function upsertToDb(req: KidRequest) {
       reward_coins:   req.rewardCoins ?? null,
       scheduled_date: req.scheduledDate ?? null,
       scheduled_time: req.scheduledTime ?? null,
+      open_to_gp:     req.openToGP ?? false,
     }, { onConflict: 'id' });
   } catch (e: any) {
     console.warn('[kidRequestStore] upsertToDb failed:', e?.message);
@@ -230,6 +233,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
             rewardCoins:    r.reward_coins    ?? undefined,
             scheduledDate:  r.scheduled_date  ?? undefined,
             scheduledTime:  r.scheduled_time  ?? undefined,
+            openToGP:       r.open_to_gp      ?? false,
           }));
           set({ requests, loaded: true });
           save(requests);
@@ -315,6 +319,12 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     const all = get().requests.map(r =>
       r.id === id ? { ...r, status: 'cancelled' as RequestStatus } : r
     );
+    set({ requests: all }); save(all);
+    const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
+  },
+
+  toggleGPWelcome: (id, value) => {
+    const all = get().requests.map(r => r.id === id ? { ...r, openToGP: value } : r);
     set({ requests: all }); save(all);
     const updated = all.find(r => r.id === id); if (updated) upsertToDb(updated);
   },

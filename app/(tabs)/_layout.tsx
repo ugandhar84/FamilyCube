@@ -12,7 +12,7 @@ import TravelBanner from '@/components/TravelBanner';
 import { useNotifStore } from '@/store/notifStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
-import { useQuestStore } from '@/store/questStore';
+import { useQuestStore } from '@/store/choreAdapter';
 import { useHelpStore } from '@/store/helpStore';
 
 // ── Tab icon name map ─────────────────────────────────────────────────────────

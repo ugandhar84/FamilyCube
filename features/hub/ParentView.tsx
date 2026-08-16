@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, TextInput } from 'react-native';
+import { View, Text, Pressable, TextInput, Modal, ScrollView, Alert } from 'react-native';
 import {
   Sparkles, PlusCircle, Calendar, ShoppingCart, Navigation,
   ChevronUp, ChevronDown, Camera, Coins, Car, Hand,
   Unlock, HelpCircle, Pill, Check, X, MessageSquare,
+  ClipboardList, UserPlus, ThumbsUp, Clock, AlertCircle, ArrowRightLeft, MessageCircle,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useTheme } from '@/lib/ThemeContext';
@@ -11,7 +12,7 @@ import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import HelpQueueSection from '@/components/HelpQueueSection';
-import { useQuestStore } from '@/store/questStore';
+import { useQuestStore } from '@/store/choreAdapter';
 import { useEventStore } from '@/store/eventStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
@@ -22,6 +23,12 @@ import {
   SectionCard, CollapsibleCard, AlertBanner, TimelineCard, InlineReassignPanel,
 } from './hubComponents';
 import { localToday, fmtHumanDate, fmtTime, hoursUntilEvent, isWorkEvent, minutesBetween } from './hubUtils';
+import { TodayView } from './TodayView';
+import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
+import { useChoreStore } from '@/store/choreStore';
+import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
+import AppBottomSheet from '@/components/AppBottomSheet';
+import { useChatStore } from '@/store/chatStore';
 
 // ─── Inline reply card — question/permission/medical (collapsible) ───────────
 function InlineReplyCard({ req, kidName, isPermission, isQuestion, isMedical, accent, colors, isDark, onApprove, onDecline }: {
@@ -127,14 +134,35 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
   onHelpRequest: () => void;
   onEnRoute: () => void;
 }) {
-  const { quests, approveQuest } = useQuestStore();
+  const { quests, approveQuest, updateQuest } = useQuestStore();
   const { events, updateEvent, addEvent }  = useEventStore();
   const { items: groceryItems, load: loadGrocery, addItem: addGroceryItem } = useGroceryStore();
   const { requests: kidRequests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests,
-          approveRequest, declineRequest, approveItems, rejectItems } = useKidRequestStore();
+          approveRequest, declineRequest, approveItems, rejectItems, toggleGPWelcome } = useKidRequestStore();
   const [supportExpanded, setSupportExpanded] = useState(false);
   const [showPast, setShowPast] = useState(false);
   const [noteInputs, setNoteInputs] = useState<Record<string, string>>({});
+
+  // Household Backlog / Parent Quest state
+  const {
+    parentAssignments, createAndAddParentQuest, addParentQuest,
+    respondToParentQuest, completeParentQuest, appreciationPing, getParentQuestPool,
+    getMemberBalance, getPendingCashOuts, chores, addChore, getParentReviewDeck,
+    approveGrandparentQuestAsParent, declineGrandparentQuestAsParent,
+  } = useChoreStore();
+  const pendingReviews = getParentReviewDeck();
+  const [choreReviewExpanded, setChoreReviewExpanded] = useState(() => getParentReviewDeck().length > 0);
+  const [backlogExpanded, setBacklogExpanded] = useState(true);
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDesc, setNewTaskDesc] = useState('');
+  const [newTaskMode, setNewTaskMode] = useState<'PULL' | 'DIRECT'>('PULL');
+  const [newTaskAssignTo, setNewTaskAssignTo] = useState('');
+  const [pushbackSheet, setPushbackSheet] = useState<{ assignmentId: string; choreTitle: string } | null>(null);
+  const [pushbackDetail, setPushbackDetail] = useState('');
+  const [delegateSheet, setDelegateSheet] = useState<{ choreId: string; choreTitle: string } | null>(null);
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  const toggleCard = (id: string) => setExpandedCards(prev => ({ ...prev, [id]: !prev[id] }));
 
   useEffect(() => { loadGrocery((active as any).familyId ?? 'family-1'); }, [(active as any).familyId]);
   useEffect(() => { if (!kidRequestsLoaded) loadKidRequests(); }, [kidRequestsLoaded]);
@@ -232,13 +260,21 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                          pendingNoResponse.length > 0 || unassignedUrgent.length > 0;
   const pendingKidRequests = kidRequests.filter(r => {
     if (r.status !== 'pending') return false;
-    // Auto-expire checkin requests older than 2 hours — they're time-sensitive and have no actionable response
+    // Auto-expire checkin requests older than 2 hours
     if (r.type === 'checkin') {
       const ageHours = (Date.now() - new Date(r.requestedAt).getTime()) / 3_600_000;
       if (ageHours > 2) return false;
     }
+    // Hide grocery/supplies delegation cards that have no items — nothing actionable to show
+    if (r.type === 'delegation' && (r.items?.length ?? 0) === 0) return false;
     return true;
   });
+  // Approved ride/help requests still pending a helper — parent can flag these for GP
+  const approvedRideRequests = kidRequests.filter(r =>
+    r.status === 'approved' &&
+    ['ride', 'tutor', 'cheer'].includes(r.type) &&
+    !r.assignedHelper
+  );
   const actionCount    = pendingRequests.length + awaitingApproval.length + pendingKidRequests.length;
 
   const familyId = (active as any).familyId ?? 'family-1';
@@ -261,65 +297,156 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
   };
   const pad            = { paddingHorizontal: 16 };
 
+  // Parent Quest pool (PULL mode backlog) + direct assignments pending response
+  // Merges chore-based parent_only_quest pool AND questStore isAdultTask quests
+  const chorePool        = getParentQuestPool();
+  const adultMemberIds   = new Set(members.filter(m => m.role === 'parent' || m.role === 'senior').map(m => m.id));
+  const doneStatuses     = new Set(['done', 'approved', 'archived', 'cancelled', 'completed']);
+  // Adult quests: parent_only_quest type OR directly assigned to a parent/senior
+  const adultQuests      = quests.filter(q => {
+    if (doneStatuses.has(q.status)) return false;
+    if (q.isAdultTask) return true;                                          // category_type === 'parent_only_quest'
+    if (q.assignedToId != null && adultMemberIds.has(q.assignedToId)) return true;  // directly assigned to adult
+    return false;
+  });
+
+  // Split adult quests: mine (assigned to me), others' (assigned to someone else), unassigned (pool)
+  const myAdultQuests       = adultQuests.filter(q => q.assignedToId === active.id);
+  const othersAdultQuests   = adultQuests.filter(q => q.assignedToId && q.assignedToId !== active.id);
+  const unassignedAdultQ    = adultQuests.filter(q => !q.assignedToId);
+
+  const choreIds         = new Set(chorePool.map(c => c.id));
+  // Pool = unassigned adult quests + chore-based pool (no duplicates)
+  const questPool        = [
+    ...chorePool,
+    ...unassignedAdultQ.filter(q => !choreIds.has(q.id)).map(q => ({
+      id: q.id, title: q.title, description: q.description, dueDate: q.dueDate,
+      categoryType: 'parent_only_quest' as const, category: q.category,
+      basePoints: q.coins, coinsReward: q.coins, xpReward: 0, status: 'todo' as const,
+      assignedToId: undefined, isPrivateParent: true, requiresPhotoProof: false,
+      redoCount: 0, recurrenceRule: { frequency: 'once' as const },
+      createdAt: (q as any).createdAt ?? new Date().toISOString(), _isQuestRow: true,
+      shoppingItems: (q as any).shoppingItems, shoppingStore: (q as any).shoppingStore, shoppingBudget: (q as any).shoppingBudget,
+    })),
+  ];
+  // IDs already rendered in System B (direct assignedToId) — exclude from System A (parentAssignments)
+  const systemBIds       = new Set([...myAdultQuests, ...othersAdultQuests, ...unassignedAdultQ].map(q => q.id));
+
+  const myDirectPending  = parentAssignments.filter(a =>
+    a.assignedTo === active.id && a.status === 'PENDING' && !a.isLocked && !systemBIds.has(a.choreId)
+  );
+  const myLockedItems    = parentAssignments.filter(a =>
+    a.assignedTo === active.id && a.isLocked && !systemBIds.has(a.choreId)
+  );
+  const myAccepted       = parentAssignments.filter(a =>
+    a.assignedTo === active.id && (a.status === 'ACCEPTED' || a.status === 'IN_PROGRESS') && !systemBIds.has(a.choreId)
+  );
+  // Calendar events where this parent is the assigned helper/driver — show in HB
+  const myHelperEvents = events.filter(e => {
+    if (!e.helper || e.helper !== active.name) return false;
+    if (e.helperStatus === 'rejected') return false;
+    // Only upcoming (today and future)
+    const today = new Date().toISOString().slice(0, 10);
+    return (e.date ?? '') >= today;
+  });
+
+  const parentMembers    = members.filter(m => m.role === 'parent');
+
+  // Quick Stats derivations
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+
+  // Per-event coins input for ride dispatch (keyed by event id)
+  const [rideCoinsByEvent, setRideCoinsByEvent] = useState<Record<string, string>>({});
+  const setRideCoins = (evId: string, val: string) =>
+    setRideCoinsByEvent(prev => ({ ...prev, [evId]: val }));
+
+  // Chore Management modal state
+  const [showChoreModal, setShowChoreModal] = useState(false);
+  const [choreType, setChoreType] = useState<'citizenship' | 'routine' | 'bounty'>('routine');
+  const [choreTitle, setChoreTitle] = useState('');
+  const [choreDesc, setChoreDesc] = useState('');
+  const [chorePoints, setChorePoints] = useState('50');
+  const [chorePhoto, setChorePhoto] = useState(false);
+  const [choreAssignTo, setChoreAssignTo] = useState('');
+  const [choreFreq, setChoreFreq] = useState<'daily' | 'weekly' | 'once' | 'first_come'>('daily');
+
+  const handleCreateChore = () => {
+    if (!choreTitle.trim()) return;
+    const isNew = choreType === 'bounty';
+    addChore({
+      title:            choreTitle.trim(),
+      description:      choreDesc.trim() || undefined,
+      categoryType:     choreType,
+      category:         choreType,
+      basePoints:       choreType === 'citizenship' ? 0 : parseInt(chorePoints, 10) || 50,
+      coinsReward:      0,
+      xpReward:         0,
+      status:           isNew ? 'todo' : 'todo',
+      assignedToId:     choreAssignTo || undefined,
+      createdById:      active.id,
+      requiresPhotoProof: chorePhoto,
+      recurrenceRule:   { frequency: isNew ? 'first_come' : choreFreq, durationDays: isNew ? 7 : undefined },
+    });
+    setChoreTitle('');
+    setChoreDesc('');
+    setChorePoints('50');
+    setChorePhoto(false);
+    setChoreAssignTo('');
+    setShowChoreModal(false);
+  };
+  const todayStr = new Date().toISOString().split('T')[0];
+  const reviewedToday = chores.filter(c =>
+    (c.status === 'approved' || c.status === 'auto_approved') &&
+    (c.reviewedAt ?? '').startsWith(todayStr)
+  ).length;
+  const pendingCashOuts = getPendingCashOuts();
+  const kids = members.filter(m => m.role === 'kid');
+  const avgStreak = kids.length > 0
+    ? Math.round(kids.reduce((s, k) => s + ((k as any).streak ?? 0), 0) / kids.length)
+    : 0;
+  const leaderboardKids = [...kids].sort((a, b) =>
+    ((b as any).streak ?? 0) - ((a as any).streak ?? 0)
+  );
+
+  const handleAddTask = () => {
+    if (!newTaskTitle.trim()) return;
+    createAndAddParentQuest({
+      title:       newTaskTitle.trim(),
+      description: newTaskDesc.trim() || undefined,
+      assignedTo:  newTaskMode === 'DIRECT' ? newTaskAssignTo || undefined : undefined,
+      mode:        newTaskMode,
+      createdById: active.id,
+    });
+    setNewTaskTitle('');
+    setNewTaskDesc('');
+    setNewTaskMode('PULL');
+    setNewTaskAssignTo('');
+    setShowAddTask(false);
+  };
+
+  const handlePullTask = (chore: ChoreTask) => {
+    addParentQuest(chore.id, active.id, active.id, 'PULL');
+  };
+
+  const handlePushback = (action: 'SNOOZE' | 'BLOCKER' | 'TRADE' | 'DISCUSS') => {
+    if (!pushbackSheet) return;
+    respondToParentQuest(pushbackSheet.assignmentId, { action, details: pushbackDetail.trim() || undefined });
+    setPushbackSheet(null);
+    setPushbackDetail('');
+  };
+
   return (
     <>
-      {/* 1. Today's Timeline */}
-      <View style={pad}>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
-          <View>
-            <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary }}>Today</Text>
-            <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 1 }}>{fmtHumanDate(localToday())}</Text>
-          </View>
-          <Pressable onPress={() => router.push('/(tabs)/calendar')}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>Full schedule →</Text>
-          </Pressable>
-        </View>
-
-        {(() => {
-          const upcoming = todayEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) > -0.5);
-          const past     = todayEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) <= -0.5);
-
-          if (todayEvents.length === 0) return (
-            <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderRadius: 16, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', alignItems: 'center', paddingVertical: 28, marginBottom: 12 }}>
-              <Calendar size={28} color={colors.textTertiary} />
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textTertiary, marginTop: 8 }}>All clear — no events today</Text>
-            </View>
-          );
-
-          return (
-            <>
-              {upcoming.length === 0 ? (
-                <View style={{ backgroundColor: isDark ? colors.card : '#f0fdf4', borderRadius: 14, padding: 14, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <Sparkles size={20} color="#10B981" />
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#10B981' }}>All done for today!</Text>
-                </View>
-              ) : upcoming.map((ev, idx) => (
-                <TimelineCard key={ev.id} ev={ev} members={members} allNames={allNames}
-                  colors={colors} isDark={isDark} updateEvent={updateEvent} activeName={active.name}
-                  isFirst={idx === 0} isLast={idx === upcoming.length - 1} />
-              ))}
-
-              {past.length > 0 && (
-                <>
-                  <Pressable onPress={() => setShowPast(v => !v)}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 4 }}>
-                    <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>
-                      {showPast ? 'Hide' : `${past.length} completed`} {showPast ? '▴' : '▾'}
-                    </Text>
-                    <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
-                  </Pressable>
-                  {showPast && past.map((ev, idx) => (
-                    <TimelineCard key={ev.id} ev={ev} members={members} allNames={allNames}
-                      colors={colors} isDark={isDark} updateEvent={updateEvent}
-                      isFirst={idx === 0} isLast={idx === past.length - 1} />
-                  ))}
-                </>
-              )}
-            </>
-          );
-        })()}
-      </View>
+      {/* 0. TodayView — animated header + timeline */}
+      <TodayView
+        colors={colors}
+        isDark={isDark}
+        activeMember={active}
+        members={members}
+        onAddQuest={() => router.push('/(tabs)/quests')}
+        onAddEvent={() => router.push('/(tabs)/calendar')}
+        onAddGrocery={() => router.push('/(tabs)/grocery' as any)}
+      />
 
       {/* 2. Alert Banner */}
       {showBanner && (
@@ -359,6 +486,92 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
         </Pressable>
       </View>
 
+      {/* 3b. Household Snapshot + Family Leaderboard */}
+      <View style={pad}>
+        <View style={{
+          backgroundColor: isDark ? colors.card : '#fff',
+          borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
+          overflow: 'hidden', marginBottom: 12,
+        }}>
+          {/* Stat row */}
+          <View style={{ flexDirection: 'row', borderBottomWidth: leaderboardOpen ? 1 : 0, borderBottomColor: isDark ? colors.border : '#F1F5F9' }}>
+            {[
+              { label: 'Reviewed', value: String(reviewedToday), emoji: '✅', color: '#10B981' },
+              { label: 'Avg Streak', value: `🔥${avgStreak}d`, emoji: '', color: '#F97316' },
+              { label: 'Cash-outs', value: String(pendingCashOuts.length), emoji: '💵', color: BRAND.amber },
+            ].map((s, i, arr) => (
+              <View key={s.label} style={{
+                flex: 1, alignItems: 'center', paddingVertical: 14,
+                borderRightWidth: i < arr.length - 1 ? 1 : 0,
+                borderRightColor: isDark ? colors.border : '#F1F5F9',
+              }}>
+                <Text style={{ fontSize: TYPO.title, fontWeight: '900', color: s.color }}>{s.value}</Text>
+                <Text style={{ fontSize: TYPO.micro, fontWeight: '600', color: colors.textTertiary, marginTop: 2 }}>{s.label}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Leaderboard toggle */}
+          <Pressable
+            onPress={() => setLeaderboardOpen(o => !o)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 }}>
+            <Text style={{ fontSize: 16 }}>🏆</Text>
+            <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>
+              Family Leaderboard
+            </Text>
+            {leaderboardOpen
+              ? <ChevronUp size={16} color={colors.textTertiary} />
+              : <ChevronDown size={16} color={colors.textTertiary} />}
+          </Pressable>
+
+          {leaderboardOpen && (
+            <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 6 }}>
+              {leaderboardKids.length === 0 ? (
+                <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center', paddingVertical: 10 }}>
+                  No kids added yet
+                </Text>
+              ) : leaderboardKids.map((kid, idx) => {
+                const bal = getMemberBalance(kid.id);
+                const streak = (kid as any).streak ?? 0;
+                const medals = ['🥇', '🥈', '🥉'];
+                return (
+                  <View key={kid.id} style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 10,
+                    paddingVertical: 9, paddingHorizontal: 10,
+                    backgroundColor: idx === 0
+                      ? (isDark ? BRAND.amber + '15' : BRAND.amber + '10')
+                      : (isDark ? colors.surface : '#F8FAFC'),
+                    borderRadius: 12,
+                    borderWidth: idx === 0 ? 1 : 0,
+                    borderColor: BRAND.amber + '40',
+                  }}>
+                    <Text style={{ fontSize: 18, width: 24 }}>{medals[idx] ?? '·'}</Text>
+                    <FamilyAvatar
+                      name={kid.name} emoji={(kid as any).emoji} avatarUrl={(kid as any).avatarUrl}
+                      siblings={members.map(m => m.name)} size={30}
+                      ringColor={idx === 0 ? BRAND.amber : BRAND.purple} ringWidth={1.5}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+                        {kid.name.split(' ')[0]}
+                      </Text>
+                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                        {streak > 0 ? `🔥 ${streak} day streak · ` : ''}{bal.total} pts
+                      </Text>
+                    </View>
+                    {idx === 0 && (
+                      <View style={{ backgroundColor: BRAND.amber, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>Top</Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      </View>
+
       {/* 4. Action Needed — ride approvals + quest reviews + kid requests unified */}
       {actionCount > 0 && (
         <View style={pad}>
@@ -379,34 +592,64 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
               const hasRide    = isBothWays || isDropoff || isPickup;
               const returnTimeStr = isBothWays && rideCode?.includes(':') ? rideCode.split(':')[2] : undefined;
 
-              // Fork helper: on approval split into 2 events; each starts with no driver
-              const forkAndApprove = () => {
-                // Drop-off leg — update original event, clear ride metadata
+              // Parsed coins the parent optionally set for this ride
+              const coinsStr   = rideCoinsByEvent[ev.id] ?? '';
+              const coinsVal   = coinsStr.trim() ? parseInt(coinsStr, 10) : undefined;
+              const splitCoins = coinsVal ? Math.floor(coinsVal / 2) : undefined;
+
+              // Open to ALL helpers (GP + teen) — first to claim wins
+              const openToHelpers = (rideCoins?: number) => {
                 updateEvent(ev.id, {
-                  approvalPending: false,
-                  helperStatus:    undefined,
-                  helper:          undefined,
-                  returnTime:      undefined,
-                  title:           `${ev.title} — Drop-off`,
-                  notes:           ev.notes,
-                  color:           '#10B981',
-                });
-                // Pickup leg — new event, needs its own driver assignment
-                addEvent({
-                  title:           `${ev.title} — Pickup`,
-                  date:            ev.date,
-                  time:            returnTimeStr ?? undefined,
-                  type:            'event',
-                  category:        'Ride',
-                  allDay:          false,
-                  memberId:        ev.memberId,
-                  approvalPending: false,
-                  conflict:        false,
-                  helperStatus:    undefined,
-                  notes:           `Pickup leg for "${ev.title}"`,
-                  color:           '#6366F1',
+                  approvalPending:      false,
+                  helperStatus:         undefined,
+                  returnTime:           undefined,
+                  isOpenToGrandparents: true,
+                  isOpenToTeens:        true,
+                  rideCoins:            rideCoins,
                 });
               };
+
+              // Fork both-ways ride → 2 separate event cards
+              const forkRide = (selfDrive: boolean) => {
+                // Drop-off leg: keep original event, update time slot shown in timeline
+                updateEvent(ev.id, {
+                  approvalPending:      false,
+                  helper:               selfDrive ? active.name : undefined,
+                  helperStatus:         selfDrive ? 'confirmed' : undefined,
+                  returnTime:           undefined,
+                  title:                `${ev.title} — Drop-off`,
+                  notes:                ev.notes,
+                  color:                '#10B981',
+                  isOpenToGrandparents: !selfDrive,
+                  isOpenToTeens:        !selfDrive,
+                  rideCoins:            selfDrive ? undefined : splitCoins,
+                  pickupLocation:       ev.pickupLocation,
+                  dropLocation:         ev.dropLocation,
+                });
+                // Pickup leg: new event at return time, locations reversed
+                addEvent({
+                  title:                `${ev.title} — Pickup`,
+                  date:                 ev.date,
+                  time:                 returnTimeStr ?? undefined,
+                  type:                 'event',
+                  category:             'Ride',
+                  allDay:               false,
+                  memberId:             ev.memberId,
+                  approvalPending:      false,
+                  conflict:             false,
+                  helper:               selfDrive ? active.name : undefined,
+                  helperStatus:         selfDrive ? 'confirmed' : undefined,
+                  notes:                ev.notes ? `(Return) ${ev.notes}` : `Pickup leg for "${ev.title}"`,
+                  color:                '#6366F1',
+                  isOpenToGrandparents: !selfDrive,
+                  isOpenToTeens:        !selfDrive,
+                  rideCoins:            selfDrive ? undefined : splitCoins,
+                  pickupLocation:       ev.dropLocation,   // reversed for return leg
+                  dropLocation:         ev.pickupLocation,
+                });
+              };
+
+              const forkAndApprove = () => forkRide(false);
 
               return (
                 <CollapsibleCard key={ev.id} flat accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={true}
@@ -427,47 +670,73 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                       </View>
                     </View>
                   }>
+
                   {ev.notes && (
                     <View style={{ backgroundColor: isDark ? '#1e293b' : '#fefce8', borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: BRAND.amber }}>
                       <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{ev.notes}"</Text>
                     </View>
                   )}
 
+                  {/* Optional coins for teen drivers — hidden when no teens in family */}
+                  {members.some(m => m.role === 'teen') && <View style={{ borderRadius: 10, borderWidth: 1,
+                    borderColor: isDark ? '#334155' : '#E2E8F0',
+                    backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
+                    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 6 }}>
+                    <Text style={{ fontSize: 14 }}>🪙</Text>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, flex: 1 }}>
+                      Coins for teen driver
+                      {isBothWays && coinsVal ? ` (split ${splitCoins}+${splitCoins})` : ''}
+                    </Text>
+                    <TextInput
+                      value={coinsStr}
+                      onChangeText={v => setRideCoins(ev.id, v.replace(/[^0-9]/g, ''))}
+                      keyboardType="number-pad"
+                      placeholder="optional"
+                      placeholderTextColor={colors.textTertiary}
+                      style={{ width: 72, textAlign: 'right', fontSize: TYPO.caption, fontWeight: '800',
+                        color: BRAND.amber, paddingVertical: 10 }}
+                    />
+                  </View>}
+
                   {isBothWays ? (
-                    /* Both-ways: approve forks into 2 events, each gets own driver flow */
+                    /* Both-ways: Approve & Split → 2 open cards */
                     <View style={{ gap: 8 }}>
                       <View style={{ backgroundColor: isDark ? '#0f2a20' : '#ecfdf5', borderRadius: 10, padding: 10, gap: 4, borderWidth: 1, borderColor: '#10B98130' }}>
                         <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#10B981' }}>📍 Drop-off · {ev.time ? fmtTime(ev.time) : 'time TBD'}</Text>
                         <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#6366F1', marginTop: 2 }}>🏁 Pickup · {returnTimeStr ?? 'time TBD'}</Text>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4 }}>Approving creates 2 separate events — assign a driver to each independently.</Text>
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4 }}>
+                          Creates 2 cards — GP or teen first to claim each leg wins.
+                          {splitCoins ? ` +${splitCoins} coins each leg.` : ''}
+                        </Text>
                       </View>
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         <Pressable onPress={forkAndApprove}
-                          style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                          style={{ flex: 2, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                           <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>✅ Approve & Split</Text>
                         </Pressable>
-                        <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'rejected', declineReason: "Can't make it", declinedBy: active.name })}
-                          style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>Decline</Text>
+                        <Pressable
+                          onPress={() => forkRide(true)}
+                          style={{ flex: 1, backgroundColor: '#10B98120', borderWidth: 1, borderColor: '#10B98140', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
+                          <Car size={13} color="#10B981" />
+                          <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>I'll Drive</Text>
                         </Pressable>
                       </View>
                     </View>
                   ) : (
-                    /* Single-leg: standard approve + assign flow */
-                    <View style={{ gap: 8 }}>
-                      <View style={{ flexDirection: 'row', gap: 8 }}>
-                        <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'confirmed', helper: active.name, returnTime: undefined })}
-                          style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-                          <Car size={14} color="#fff" />
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
-                        </Pressable>
-                        <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'rejected', declineReason: "Can't make it", declinedBy: active.name })}
-                          style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>Can't Do It</Text>
-                        </Pressable>
-                      </View>
-                      <InlineReassignPanel ev={ev} members={members} colors={colors} isDark={isDark}
-                        onDone={(name, note) => updateEvent(ev.id, { approvalPending: false, helper: name, helperStatus: 'pending', returnTime: undefined, notes: note || ev.notes || undefined })} />
+                    /* Single-leg: I'll Drive OR open to all helpers */
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Pressable
+                        onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'confirmed', helper: active.name, returnTime: undefined })}
+                        style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                        <Car size={14} color="#fff" />
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => openToHelpers(coinsVal)}
+                        style={{ flex: 1, backgroundColor: BRAND.amber + '20', borderWidth: 1.5, borderColor: BRAND.amber + '50', paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
+                        <Text style={{ fontSize: 13 }}>🤝</Text>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.amber }}>Open to Helpers</Text>
+                      </Pressable>
                     </View>
                   )}
                 </CollapsibleCard>
@@ -540,6 +809,75 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                         paddingHorizontal: 12, paddingVertical: 8 }}>
                       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Got it 👍</Text>
                     </Pressable>
+                  </View>
+                );
+              }
+
+              // ── Ride / Tutor / Cheer: approve + GP Welcome toggle ──
+              if (req.type === 'ride' || req.type === 'tutor' || req.type === 'cheer') {
+                const typeEmoji  = req.type === 'ride' ? '🚗' : req.type === 'tutor' ? '📚' : '🎉';
+                const typeLabel  = req.type === 'ride' ? 'Ride Request' : req.type === 'tutor' ? 'Tutor Request' : 'Cheer Request';
+                const isGPOpen   = !!req.openToGP;
+                return (
+                  <View key={req.id} style={{ borderRadius: 14, borderWidth: 1.5,
+                    borderColor: BRAND.teal + '50', backgroundColor: isDark ? '#0D2A2A' : '#F0FDFA',
+                    overflow: 'hidden' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 }}>
+                      <Text style={{ fontSize: 22 }}>{typeEmoji}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.teal }}>{kidName} — {typeLabel}</Text>
+                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 1 }} numberOfLines={2}>{req.detail}</Text>
+                        {req.scheduledDate || req.scheduledTime ? (
+                          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }}>
+                            {req.scheduledDate ?? ''}{req.scheduledTime ? ` at ${req.scheduledTime}` : ''}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </View>
+                    {/* GP Welcome toggle — parent can flag at approval time */}
+                    <Pressable onPress={() => toggleGPWelcome(req.id, !isGPOpen)}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+                        marginHorizontal: 12, marginBottom: 8, padding: 8, borderRadius: 10,
+                        backgroundColor: isGPOpen ? (isDark ? '#14291a' : '#DCFCE7') : (isDark ? colors.surface2 : '#F1F5F9'),
+                        borderWidth: 1, borderColor: isGPOpen ? '#22c55e' : (isDark ? colors.border : '#CBD5E1') }}>
+                      <Text style={{ fontSize: 14 }}>👴</Text>
+                      <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700',
+                        color: isGPOpen ? '#22c55e' : colors.textSecondary }}>
+                        {isGPOpen ? 'GP Welcome — grandparent can take this' : 'Offer to GP (grandparent can help)'}
+                      </Text>
+                      <Text style={{ fontSize: 12 }}>{isGPOpen ? '✅' : '○'}</Text>
+                    </Pressable>
+                    <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
+                      <Pressable onPress={() => approveRequest(req.id, active.id)}
+                        style={{ flex: 1, backgroundColor: BRAND.teal, borderRadius: 10,
+                          paddingVertical: 9, alignItems: 'center' }}>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>✓ Approve</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => {
+                          const kid = members.find(m => m.id === req.fromMemberId);
+                          const kidFirst = kid?.name.split(' ')[0] ?? 'your kid';
+                          Alert.prompt(
+                            'Decline Request',
+                            `Add a note for ${kidFirst} — why can't this happen?`,
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              { text: 'Send & Decline', style: 'destructive', onPress: (note: string | undefined) => {
+                                const finalNote = note?.trim() || undefined;
+                                declineRequest(req.id, active.id, finalNote);
+                                const msg = `❌ ${active.name.split(' ')[0]} declined your ${req.type} request: "${req.detail}"${finalNote ? `\n📝 "${finalNote}"` : ''}`;
+                                useChatStore.getState().sendMessage('all', active.id, msg);
+                              }},
+                            ],
+                            'plain-text',
+                            '',
+                          );
+                        }}
+                        style={{ flex: 1, backgroundColor: '#EF444415', borderWidth: 1,
+                          borderColor: '#EF444440', borderRadius: 10, paddingVertical: 9, alignItems: 'center' }}>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>✕ Decline</Text>
+                      </Pressable>
+                    </View>
                   </View>
                 );
               }
@@ -633,7 +971,866 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
         </View>
       )}
 
-      {/* 5. Dispatch En Route */}
+      {/* 4b-GP. Approved rides/help awaiting a helper — offer to GP */}
+      {approvedRideRequests.length > 0 && (
+        <View style={pad}>
+          <View style={{ backgroundColor: isDark ? colors.card : '#fff',
+            borderRadius: 18, borderWidth: 1, borderColor: isDark ? '#3b5a3b' : '#BBF7D0',
+            overflow: 'hidden' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, paddingBottom: 10,
+              borderBottomWidth: 1, borderBottomColor: isDark ? '#1a2e1a' : '#D1FAE5' }}>
+              <View style={{ width: 32, height: 32, borderRadius: 16,
+                backgroundColor: isDark ? '#14291a' : '#ECFDF5', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 16 }}>👴</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: isDark ? '#86efac' : '#166534' }}>
+                  GP Can Help
+                </Text>
+                <Text style={{ fontSize: TYPO.label, color: isDark ? '#4ade80' : '#166534', opacity: 0.8 }}>
+                  Approved requests a grandparent could handle
+                </Text>
+              </View>
+            </View>
+            <View style={{ padding: 12, gap: 8 }}>
+              {approvedRideRequests.map(req => {
+                const kid = members.find(m => m.id === req.fromMemberId);
+                const kidName = kid?.name.split(' ')[0] ?? 'Kid';
+                const typeEmoji = req.type === 'ride' ? '🚗' : req.type === 'tutor' ? '📚' : '🎉';
+                const isOpen = !!req.openToGP;
+                return (
+                  <View key={req.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                    borderRadius: 12, padding: 10,
+                    backgroundColor: isOpen
+                      ? (isDark ? '#14291a' : '#F0FDF4')
+                      : (isDark ? colors.surface : '#F8FAFC'),
+                    borderWidth: 1,
+                    borderColor: isOpen
+                      ? (isDark ? '#166534' : '#86EFAC')
+                      : (isDark ? colors.border : '#E2E8F0') }}>
+                    <Text style={{ fontSize: 20 }}>{typeEmoji}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
+                        {kidName} — {req.detail}
+                      </Text>
+                      {req.scheduledDate || req.scheduledTime ? (
+                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 1 }}>
+                          {req.scheduledDate ?? ''}{req.scheduledTime ? ` at ${req.scheduledTime}` : ''}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Pressable
+                      onPress={() => toggleGPWelcome(req.id, !isOpen)}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+                        paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
+                        backgroundColor: isOpen
+                          ? (isDark ? '#14291a' : '#DCFCE7')
+                          : (isDark ? colors.surface2 : '#F1F5F9'),
+                        borderWidth: 1,
+                        borderColor: isOpen ? '#22c55e' : (isDark ? colors.border : '#CBD5E1') }}>
+                      <Text style={{ fontSize: 11 }}>{isOpen ? '✅' : '👴'}</Text>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '800',
+                        color: isOpen ? '#22c55e' : colors.textSecondary }}>
+                        {isOpen ? 'GP Open' : 'Offer GP'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 4b. Household Backlog — Parent-only quests */}
+      <View style={pad}>
+        <View style={{
+          backgroundColor: isDark ? colors.card : '#fff',
+          borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
+          overflow: 'hidden', marginBottom: 12,
+        }}>
+          {/* Header */}
+          <Pressable onPress={() => setBacklogExpanded(e => !e)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, paddingBottom: 12 }}>
+            <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: BRAND.purple + '20', alignItems: 'center', justifyContent: 'center' }}>
+              <ClipboardList size={18} color={BRAND.purple} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>Household Backlog</Text>
+                {(questPool.length + myAdultQuests.length + othersAdultQuests.length + myHelperEvents.length) > 0 && (
+                  <View style={{ backgroundColor: BRAND.purple, borderRadius: 10, minWidth: 20, paddingHorizontal: 6, paddingVertical: 2, alignItems: 'center' }}>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>
+                      {questPool.length + myAdultQuests.length + othersAdultQuests.length + myHelperEvents.length}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 1 }}>
+                pull what you can handle
+              </Text>
+            </View>
+            <Pressable onPress={() => setShowAddTask(true)}
+              style={{ backgroundColor: BRAND.purple, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, marginRight: 6 }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>+ Add</Text>
+            </Pressable>
+            {backlogExpanded
+              ? <ChevronUp size={16} color={colors.textTertiary} />
+              : <ChevronDown size={16} color={colors.textTertiary} />}
+          </Pressable>
+
+          {backlogExpanded && (
+            <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 8 }}>
+
+              {/* My assigned adult quests (questStore) — show with Done + Delegate */}
+              {myAdultQuests.length > 0 && (
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple, marginBottom: 2 }}>
+                    Assigned to you
+                  </Text>
+                  {myAdultQuests.map(q => {
+                    const isExp = expandedCards[q.id] ?? false;
+                    return (
+                    <View key={q.id} style={{
+                      borderRadius: 14, borderWidth: 1.5, borderColor: BRAND.purple + '40',
+                      backgroundColor: isDark ? BRAND.purple + '10' : '#F5F3FF', overflow: 'hidden',
+                    }}>
+                      {/* Header row — always visible */}
+                      <Pressable onPress={() => toggleCard(q.id)}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{q.title}</Text>
+                          {q.dueDate && !isExp ? (
+                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>Due {q.dueDate}</Text>
+                          ) : null}
+                        </View>
+                        {isExp ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />}
+                      </Pressable>
+                      {/* Action buttons — always visible */}
+                      <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
+                        <Pressable onPress={() => updateQuest(q.id, { status: 'done' })}
+                          style={{ flex: 1, backgroundColor: BRAND.teal, borderRadius: 10, paddingVertical: 8, alignItems: 'center' }}>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>✓ Done</Text>
+                        </Pressable>
+                        <Pressable onPress={() => setDelegateSheet({ choreId: q.id, choreTitle: q.title })}
+                          style={{ flex: 1, borderWidth: 1.5, borderColor: BRAND.amber + '60', borderRadius: 10, paddingVertical: 8, alignItems: 'center' }}>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.amber }}>📤 Reassign</Text>
+                        </Pressable>
+                      </View>
+                      {/* Expanded detail */}
+                      {isExp && (
+                        <View style={{ borderTopWidth: 1, borderTopColor: BRAND.purple + '30', padding: 12, gap: 6 }}>
+                          {q.description ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{q.description}</Text> : null}
+                          {q.dueDate ? <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>Due {q.dueDate}</Text> : null}
+                        </View>
+                      )}
+                    </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* Others' assigned quests — readonly with Nudge + Reclaim */}
+              {othersAdultQuests.length > 0 && (
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 2 }}>
+                    Assigned to others
+                  </Text>
+                  {othersAdultQuests.map(q => {
+                    const assignee   = members.find(m => m.id === q.assignedToId);
+                    const choreData  = useChoreStore.getState().chores.find(c => c.id === q.id);
+                    const si         = choreData?.shoppingItems ?? (q as any).shoppingItems;
+                    const ss         = choreData?.shoppingStore ?? (q as any).shoppingStore;
+                    const isExp      = expandedCards[`o_${q.id}`] ?? false;
+                    const hasDetail  = q.description || si?.length > 0 || ss || q.dueDate;
+
+                    const sendNudge = () => {
+                      const msg = `👋 Hey ${assignee?.name?.split(' ')[0] ?? 'partner'}, just a nudge — "${q.title}" is still open. Need any help?`;
+                      useChatStore.getState().sendMessage('all', active.id, msg);
+                      Alert.alert('Nudge sent!', `A reminder was posted to family chat for ${assignee?.name ?? 'your partner'}.`);
+                    };
+
+                    const reclaim = () => Alert.alert(
+                      'Reclaim task',
+                      `Reassign "${q.title}" to yourself?`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Reclaim', onPress: () => updateQuest(q.id, { assignedToId: active.id }) },
+                      ]
+                    );
+
+                    return (
+                      <View key={q.id} style={{
+                        borderRadius: 14, borderWidth: 1.5,
+                        borderColor: BRAND.amber + '50',
+                        backgroundColor: isDark ? BRAND.amber + '08' : '#FFFBEB',
+                        overflow: 'hidden',
+                      }}>
+                        {/* Header row — always visible */}
+                        <Pressable onPress={() => hasDetail && toggleCard(`o_${q.id}`)}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingBottom: 8 }}>
+                          <View style={{ flex: 1 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              {si?.length > 0 && <Text style={{ fontSize: 13 }}>🛍️</Text>}
+                              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
+                                {q.title}
+                              </Text>
+                            </View>
+                            <Text style={{ fontSize: TYPO.label, color: BRAND.amber, marginTop: 2, fontWeight: '600' }}>
+                              → {assignee?.name ?? 'Partner'}{q.dueDate ? ` · Due ${q.dueDate}` : ''}
+                            </Text>
+                            {si?.length > 0 && !isExp && (
+                              <Text style={{ fontSize: TYPO.micro, color: isDark ? '#2DD4BF' : '#0D9488', marginTop: 2 }}>
+                                {si.length} item{si.length !== 1 ? 's' : ''}{ss ? ` · ${ss}` : ''}
+                              </Text>
+                            )}
+                          </View>
+                          {hasDetail ? (isExp
+                            ? <ChevronUp size={14} color={colors.textTertiary} />
+                            : <ChevronDown size={14} color={colors.textTertiary} />
+                          ) : null}
+                        </Pressable>
+
+                        {/* Expanded detail — shopping list + description */}
+                        {isExp && (
+                          <View style={{ borderTopWidth: 1, borderTopColor: BRAND.amber + '30', paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4, gap: 8 }}>
+                            {q.description ? (
+                              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{q.description}</Text>
+                            ) : null}
+                            {si?.length > 0 && (
+                              <View style={{ borderRadius: 10, borderWidth: 1,
+                                borderColor: isDark ? BRAND.teal + '40' : '#99F6E4',
+                                backgroundColor: isDark ? BRAND.teal + '10' : '#F0FDFA', overflow: 'hidden' }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                                  paddingHorizontal: 10, paddingVertical: 7,
+                                  borderBottomWidth: 1, borderBottomColor: isDark ? BRAND.teal + '30' : '#99F6E4' }}>
+                                  <Text style={{ fontSize: 12 }}>🛍️</Text>
+                                  <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#2DD4BF' : '#0D9488' }}>
+                                    {ss ? `Shop at ${ss}` : 'Shopping List'}
+                                  </Text>
+                                </View>
+                                {si.map((item: string, i: number) => (
+                                  <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+                                    paddingHorizontal: 10, paddingVertical: 6,
+                                    borderBottomWidth: i < si.length - 1 ? 1 : 0,
+                                    borderBottomColor: isDark ? BRAND.teal + '20' : '#CCFBF1' }}>
+                                    <View style={{ width: 14, height: 14, borderRadius: 7, borderWidth: 1.5,
+                                      borderColor: isDark ? '#2DD4BF' : '#0D9488' }} />
+                                    <Text style={{ fontSize: TYPO.label, color: colors.textPrimary }}>{item}</Text>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+                          </View>
+                        )}
+
+                        {/* GP Welcome toggle — GP can buy supplies / scan receipt */}
+                        {(() => {
+                          const isGPOpen = !!(choreData?.openToGP ?? (q as any).openToGP);
+                          return (
+                            <Pressable onPress={() => useChoreStore.getState().updateChore(q.id, { openToGP: !isGPOpen })}
+                              style={{ flexDirection: 'row', alignItems: 'center', gap: 7,
+                                marginHorizontal: 12, marginBottom: 6, padding: 8, borderRadius: 10,
+                                backgroundColor: isGPOpen ? (isDark ? '#14291a' : '#DCFCE7') : (isDark ? colors.surface2 : '#F8FAFC'),
+                                borderWidth: 1, borderColor: isGPOpen ? '#22c55e' : (isDark ? colors.border : '#E2E8F0') }}>
+                              <Text style={{ fontSize: 13 }}>👴</Text>
+                              <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700',
+                                color: isGPOpen ? '#22c55e' : colors.textSecondary }}>
+                                {isGPOpen ? 'GP Welcome — can buy & scan receipt' : 'Offer to GP (buy supplies + receipt scan)'}
+                              </Text>
+                              <Text style={{ fontSize: 11 }}>{isGPOpen ? '✅' : '○'}</Text>
+                            </Pressable>
+                          );
+                        })()}
+
+                        {/* Action buttons — Nudge + Reclaim always visible */}
+                        <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12, paddingTop: 4 }}>
+                          <Pressable onPress={sendNudge}
+                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+                              backgroundColor: isDark ? '#1C1000' : '#FEF3C7',
+                              borderWidth: 1.5, borderColor: BRAND.amber + '60',
+                              borderRadius: 10, paddingVertical: 8 }}>
+                            <MessageCircle size={13} color={BRAND.amber} />
+                            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.amber }}>Nudge</Text>
+                          </Pressable>
+                          <Pressable onPress={reclaim}
+                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+                              backgroundColor: BRAND.purple + '18',
+                              borderWidth: 1.5, borderColor: BRAND.purple + '50',
+                              borderRadius: 10, paddingVertical: 8 }}>
+                            <ArrowRightLeft size={13} color={BRAND.purple} />
+                            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>Reclaim</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* Direct assignments pending my response */}
+              {myDirectPending.length > 0 && (
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.amber, marginBottom: 2 }}>
+                    Assigned to you — needs response
+                  </Text>
+                  {myDirectPending.map(a => {
+                    const chore = questPool.find(c => c.id === a.choreId);
+                    if (!chore) return null;
+                    const assigner = members.find(m => m.id === a.assignedBy);
+                    const isExp = expandedCards[`dp_${a.id}`] ?? false;
+                    return (
+                      <View key={a.id} style={{
+                        borderRadius: 14, borderWidth: 1.5, borderColor: BRAND.amber + '50',
+                        backgroundColor: isDark ? BRAND.amber + '10' : BRAND.amber + '08', overflow: 'hidden',
+                      }}>
+                        {/* Header — always visible */}
+                        <Pressable onPress={() => toggleCard(`dp_${a.id}`)}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, paddingBottom: 8 }}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{chore.title}</Text>
+                            <Text style={{ fontSize: TYPO.label, color: BRAND.amber, marginTop: 2 }}>
+                              From {assigner?.name ?? 'Partner'}
+                            </Text>
+                          </View>
+                          {isExp ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />}
+                        </Pressable>
+                        {/* Action buttons — always visible */}
+                        <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
+                          <Pressable onPress={() => respondToParentQuest(a.id, { action: 'ACCEPT' })}
+                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+                              backgroundColor: '#10B981', borderRadius: 10, paddingVertical: 8 }}>
+                            <Check size={14} color="#fff" />
+                            <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Accept</Text>
+                          </Pressable>
+                          <Pressable onPress={() => setPushbackSheet({ assignmentId: a.id, choreTitle: chore.title })}
+                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+                              borderWidth: 1.5, borderColor: BRAND.amber + '60',
+                              borderRadius: 10, paddingVertical: 8 }}>
+                            <MessageCircle size={14} color={BRAND.amber} />
+                            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.amber }}>Respond</Text>
+                          </Pressable>
+                        </View>
+                        {/* Expanded detail */}
+                        {isExp && chore.description && (
+                          <View style={{ borderTopWidth: 1, borderTopColor: BRAND.amber + '30', padding: 12 }}>
+                            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{chore.description}</Text>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* Locked (Two-Bounce) items */}
+              {myLockedItems.map(a => {
+                const chore = questPool.find(c => c.id === a.choreId);
+                if (!chore) return null;
+                return (
+                  <View key={a.id} style={{
+                    borderRadius: 14, borderWidth: 1.5, borderColor: '#EF444440',
+                    backgroundColor: isDark ? '#EF444410' : '#FEF2F2', padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center',
+                  }}>
+                    <AlertCircle size={16} color="#EF4444" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{chore.title}</Text>
+                      <Text style={{ fontSize: TYPO.label, color: '#EF4444', marginTop: 2 }}>Discuss offline — bounced twice</Text>
+                    </View>
+                  </View>
+                );
+              })}
+
+              {/* Accepted / In Progress */}
+              {myAccepted.map(a => {
+                const chore = questPool.find(c => c.id === a.choreId);
+                if (!chore) return null;
+                const isExp = expandedCards[`ac_${a.id}`] ?? false;
+                const hasDetail = chore.description || (chore as any).shoppingItems?.length > 0;
+                return (
+                  <View key={a.id} style={{
+                    borderRadius: 14, borderWidth: 1.5, borderColor: BRAND.teal + '40',
+                    backgroundColor: isDark ? BRAND.teal + '10' : BRAND.teal + '08', overflow: 'hidden',
+                  }}>
+                    {/* Header — always visible */}
+                    <Pressable onPress={() => hasDetail && toggleCard(`ac_${a.id}`)}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, paddingBottom: 8 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{chore.title}</Text>
+                        <Text style={{ fontSize: TYPO.label, color: BRAND.teal, marginTop: 2 }}>You've got this one ✓</Text>
+                      </View>
+                      {hasDetail ? (isExp ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />) : null}
+                    </Pressable>
+                    {/* Done button — always visible */}
+                    <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
+                      <Pressable onPress={() => completeParentQuest(a.id, active.id)}
+                        style={{ backgroundColor: BRAND.teal, borderRadius: 10, paddingVertical: 8, alignItems: 'center' }}>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>✓ Done</Text>
+                      </Pressable>
+                    </View>
+                    {/* Expanded detail */}
+                    {isExp && (
+                      <View style={{ borderTopWidth: 1, borderTopColor: BRAND.teal + '30', padding: 12, gap: 8 }}>
+                        {chore.description ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{chore.description}</Text> : null}
+                        {(chore as any).shoppingItems?.length > 0 && (
+                          <View style={{ borderRadius: 10, borderWidth: 1,
+                            borderColor: isDark ? BRAND.teal + '40' : '#99F6E4',
+                            backgroundColor: isDark ? BRAND.teal + '08' : '#F0FDFA', overflow: 'hidden' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7,
+                              borderBottomWidth: 1, borderBottomColor: isDark ? BRAND.teal + '30' : '#99F6E4' }}>
+                              <Text style={{ fontSize: 13 }}>🛍️</Text>
+                              <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#2DD4BF' : '#0D9488' }}>
+                                {(chore as any).shoppingStore ? `Shop at ${(chore as any).shoppingStore}` : 'Shopping List'}
+                              </Text>
+                              {(chore as any).shoppingBudget != null && (
+                                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: isDark ? '#6EE7B7' : '#065F46' }}>
+                                  Budget ${(chore as any).shoppingBudget}
+                                </Text>
+                              )}
+                            </View>
+                            {(chore as any).shoppingItems.map((item: string, i: number) => (
+                              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 6,
+                                borderBottomWidth: i < (chore as any).shoppingItems.length - 1 ? 1 : 0,
+                                borderBottomColor: isDark ? BRAND.teal + '20' : '#CCFBF1' }}>
+                                <View style={{ width: 14, height: 14, borderRadius: 7, borderWidth: 1.5, borderColor: isDark ? '#2DD4BF' : '#0D9488' }} />
+                                <Text style={{ fontSize: TYPO.label, color: colors.textPrimary }}>{item}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+                        <Pressable onPress={() => appreciationPing(a.id, active.id, 'Thanks for handling that!')}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <ThumbsUp size={13} color={BRAND.teal} />
+                          <Text style={{ fontSize: TYPO.label, color: BRAND.teal }}>Send appreciation ping</Text>
+                        </Pressable>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+
+              {/* PULL pool — unassigned tasks */}
+              {questPool.filter(c =>
+                !systemBIds.has(c.id) &&
+                !parentAssignments.find(a => a.choreId === c.id && a.status !== 'COMPLETED' && a.status !== 'DECLINED')
+              ).map(chore => {
+                const isDisabled = (chore as any).isDisabled ?? false;
+                const isExp = expandedCards[`pool_${chore.id}`] ?? false;
+                const hasDetail = chore.description || chore.dueDate || (chore as any).shoppingItems?.length > 0;
+                return (
+                <View key={chore.id} style={{
+                  borderRadius: 14, borderWidth: 1,
+                  borderColor: isDisabled ? (isDark ? '#334155' : '#CBD5E1') : (isDark ? colors.border : '#E2E8F0'),
+                  backgroundColor: isDisabled ? (isDark ? '#0F172A' : '#F1F5F9') : (isDark ? colors.surface : '#F8FAFC'),
+                  opacity: isDisabled ? 0.55 : 1, overflow: 'hidden',
+                }}>
+                  {/* Header row — always visible */}
+                  <Pressable onPress={() => hasDetail && toggleCard(`pool_${chore.id}`)}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingBottom: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textPrimary }}>{chore.title}</Text>
+                      {(chore as any).shoppingItems?.length > 0 && !isExp ? (
+                        <Text style={{ fontSize: TYPO.micro, color: isDark ? '#2DD4BF' : '#0D9488', marginTop: 2 }}>
+                          🛍️ {(chore as any).shoppingItems.length} item{(chore as any).shoppingItems.length !== 1 ? 's' : ''}
+                          {(chore as any).shoppingStore ? ` · ${(chore as any).shoppingStore}` : ''}
+                        </Text>
+                      ) : chore.dueDate && !isExp ? (
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }}>Due {chore.dueDate}</Text>
+                      ) : null}
+                    </View>
+                    {/* Enable / Disable toggle */}
+                    <Pressable onPress={() => { const { updateChore } = useChoreStore.getState(); updateChore(chore.id, { isPrivateParent: !isDisabled } as any); }}
+                      style={{ padding: 6 }}>
+                      <Text style={{ fontSize: 15 }}>{isDisabled ? '🔒' : '✅'}</Text>
+                    </Pressable>
+                    {hasDetail ? (isExp ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />) : null}
+                  </Pressable>
+                  {/* Action buttons — always visible */}
+                  {!isDisabled && (
+                    <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
+                      <Pressable onPress={() => {
+                        if ((chore as any)._isQuestRow) {
+                          updateQuest(chore.id, { assignedToId: active.id, status: 'in_progress' } as any);
+                          useChoreStore.getState().updateChore(chore.id, { isPool: false });
+                        } else {
+                          handlePullTask(chore as any);
+                        }
+                      }}
+                        style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+                          backgroundColor: BRAND.purple, borderRadius: 10, paddingVertical: 7 }}>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>✋ Take It</Text>
+                      </Pressable>
+                      <Pressable onPress={() => setDelegateSheet({ choreId: chore.id, choreTitle: chore.title })}
+                        style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+                          borderWidth: 1.5, borderColor: BRAND.teal + '80',
+                          borderRadius: 10, paddingVertical: 7 }}>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.teal }}>📤 Delegate</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                  {/* Expanded detail */}
+                  {isExp && (
+                    <View style={{ borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#E2E8F0', padding: 12, gap: 8 }}>
+                      {chore.description ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{chore.description}</Text> : null}
+                      {chore.dueDate ? <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>Due {chore.dueDate}</Text> : null}
+                      {(chore as any).shoppingItems?.length > 0 && (
+                        <View style={{ borderRadius: 10, borderWidth: 1,
+                          borderColor: isDark ? BRAND.teal + '40' : '#99F6E4',
+                          backgroundColor: isDark ? BRAND.teal + '10' : '#F0FDFA', overflow: 'hidden' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6,
+                            borderBottomWidth: 1, borderBottomColor: isDark ? BRAND.teal + '30' : '#99F6E4' }}>
+                            <Text style={{ fontSize: 12 }}>🛍️</Text>
+                            <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#2DD4BF' : '#0D9488' }}>
+                              {(chore as any).shoppingStore ?? 'Shopping List'}
+                            </Text>
+                            {(chore as any).shoppingBudget != null && (
+                              <Text style={{ fontSize: TYPO.micro, color: isDark ? '#6EE7B7' : '#065F46' }}>
+                                Budget ${(chore as any).shoppingBudget}
+                              </Text>
+                            )}
+                          </View>
+                          {(chore as any).shoppingItems.map((item: string, i: number) => (
+                            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 5,
+                              borderBottomWidth: i < (chore as any).shoppingItems.length - 1 ? 1 : 0,
+                              borderBottomColor: isDark ? BRAND.teal + '20' : '#CCFBF1' }}>
+                              <View style={{ width: 12, height: 12, borderRadius: 6, borderWidth: 1.5, borderColor: isDark ? '#2DD4BF' : '#0D9488' }} />
+                              <Text style={{ fontSize: TYPO.label, color: colors.textPrimary }}>{item}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
+                );
+              })}
+
+              {/* Calendar events assigned to this parent as driver/helper */}
+              {myHelperEvents.length > 0 && (
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.teal, marginBottom: 2 }}>
+                    🚗 You're the driver / helper
+                  </Text>
+                  {myHelperEvents.map(ev => {
+                    const catEmoji = ev.category === 'Sports' ? '🏅' : ev.category === 'Medical' ? '🏥' : ev.category === 'Study' ? '📚' : ev.category === 'Ride' ? '🚗' : '📅';
+                    const kidName = members.find(m => m.id === ev.memberId)?.name.split(' ')[0] ?? '';
+                    return (
+                      <View key={ev.id} style={{ borderRadius: 14, borderWidth: 1,
+                        borderColor: BRAND.teal + '40', backgroundColor: isDark ? '#0D2020' : '#F0FDFA',
+                        padding: 12, gap: 4 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text style={{ fontSize: 16 }}>{catEmoji}</Text>
+                          <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{ev.title}</Text>
+                          <View style={{ backgroundColor: ev.helperStatus === 'confirmed' ? '#22c55e20' : '#F59E0B20',
+                            borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                            <Text style={{ fontSize: TYPO.micro, fontWeight: '700',
+                              color: ev.helperStatus === 'confirmed' ? '#22c55e' : '#D97706' }}>
+                              {ev.helperStatus === 'confirmed' ? '✓ Confirmed' : '⏳ Pending'}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginLeft: 24 }}>
+                          {ev.date}{ev.time ? ` · ${ev.time}` : ''}
+                          {kidName ? ` · for ${kidName}` : ''}
+                          {ev.pickupLocation ? ` · From: ${ev.pickupLocation}` : ''}
+                          {ev.dropLocation ? ` → ${ev.dropLocation}` : ev.location ? ` → ${ev.location}` : ''}
+                        </Text>
+                        {ev.notes ? (
+                          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginLeft: 24 }} numberOfLines={1}>
+                            📝 {ev.notes}
+                          </Text>
+                        ) : null}
+                        {/* Any parent can reassign if helper hasn't confirmed yet */}
+                        {ev.helperStatus !== 'confirmed' && (
+                          <View style={{ flexDirection: 'row', gap: 8, marginTop: 6, marginLeft: 24 }}>
+                            {ev.helper !== active.name && (
+                              <Pressable
+                                onPress={() => {
+                                  Alert.alert(
+                                    'Take Over',
+                                    `Reassign this from ${ev.helper} to yourself?`,
+                                    [
+                                      { text: 'Cancel', style: 'cancel' },
+                                      { text: "Yes, I'll do it", onPress: () => {
+                                        updateEvent(ev.id, { helper: active.name, helperStatus: 'confirmed' });
+                                        const msg = `✅ ${active.name.split(' ')[0]} has taken over "${ev.title}" — you're off the hook.`;
+                                        useChatStore.getState().sendMessage('all', active.id, msg);
+                                      }},
+                                    ]
+                                  );
+                                }}
+                                style={{ backgroundColor: BRAND.teal + '20', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12,
+                                  borderWidth: 1, borderColor: BRAND.teal + '40' }}>
+                                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.teal }}>🔄 Take Over</Text>
+                              </Pressable>
+                            )}
+                            {ev.helper === active.name && (
+                              <Pressable
+                                onPress={() => updateEvent(ev.id, { helperStatus: 'confirmed' })}
+                                style={{ backgroundColor: '#22c55e20', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12,
+                                  borderWidth: 1, borderColor: '#22c55e40' }}>
+                                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#22c55e' }}>{"✓ Confirm I'll do it"}</Text>
+                              </Pressable>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {questPool.length === 0 && myDirectPending.length === 0 && myAccepted.length === 0 && myHelperEvents.length === 0 && (
+                <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center', paddingVertical: 12 }}>
+                  Backlog is clear 🎉
+                </Text>
+              )}
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* Pushback bottom sheet modal */}
+      <AppBottomSheet
+        visible={!!pushbackSheet}
+        onClose={() => { setPushbackSheet(null); setPushbackDetail(''); }}
+        title={`Respond: ${pushbackSheet?.choreTitle ?? ''}`}
+        subtitle="2 bounces locks this task for an offline chat"
+        accentColor={BRAND.amber}
+        minHeight="45%"
+        maxHeight="75%">
+        <View style={{ gap: 16 }}>
+          <TextInput
+            style={{
+              borderRadius: 12, borderWidth: 1.5, borderColor: colors.border,
+              backgroundColor: isDark ? colors.surface : '#F8FAFC',
+              padding: 12, fontSize: TYPO.caption, color: colors.textPrimary,
+              minHeight: 60,
+            }}
+            placeholder="Add details (optional)…"
+            placeholderTextColor={colors.textTertiary}
+            value={pushbackDetail}
+            onChangeText={setPushbackDetail}
+            multiline
+          />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+            {([
+              { action: 'SNOOZE',  label: '⏰ Snooze 48h',   color: '#8B5CF6' },
+              { action: 'BLOCKER', label: '🚧 Blocker',       color: '#EF4444' },
+              { action: 'TRADE',   label: '🔄 Trade tasks',   color: BRAND.amber },
+              { action: 'DISCUSS', label: '💬 Discuss later', color: BRAND.teal },
+            ] as const).map(({ action, label, color }) => (
+              <Pressable key={action} onPress={() => handlePushback(action)}
+                style={{
+                  flex: 1, minWidth: '45%', borderRadius: 14, paddingVertical: 14,
+                  alignItems: 'center', borderWidth: 1.5,
+                  borderColor: color + '50', backgroundColor: color + '12',
+                }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color }}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      </AppBottomSheet>
+
+      {/* Add Task modal */}
+      <Modal visible={showAddTask} transparent animationType="slide" onRequestClose={() => setShowAddTask(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: '#00000060' }} onPress={() => setShowAddTask(false)} />
+        <View style={{
+          backgroundColor: isDark ? colors.card : '#fff',
+          borderTopLeftRadius: 28, borderTopRightRadius: 28,
+          padding: 24, gap: 14,
+        }}>
+          <Text style={{ fontSize: TYPO.heading, fontWeight: '800', color: colors.textPrimary }}>Add Household Task</Text>
+          <TextInput
+            style={{ borderRadius: 12, borderWidth: 1.5, borderColor: colors.border,
+              backgroundColor: isDark ? colors.surface : '#F8FAFC',
+              padding: 12, fontSize: TYPO.caption, color: colors.textPrimary }}
+            placeholder="Task title…"
+            placeholderTextColor={colors.textTertiary}
+            value={newTaskTitle}
+            onChangeText={setNewTaskTitle}
+          />
+          <TextInput
+            style={{ borderRadius: 12, borderWidth: 1.5, borderColor: colors.border,
+              backgroundColor: isDark ? colors.surface : '#F8FAFC',
+              padding: 12, fontSize: TYPO.caption, color: colors.textPrimary, minHeight: 56 }}
+            placeholder="Description (optional)…"
+            placeholderTextColor={colors.textTertiary}
+            value={newTaskDesc}
+            onChangeText={setNewTaskDesc}
+            multiline
+          />
+          {/* Mode toggle */}
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            {(['PULL', 'DIRECT'] as const).map(mode => (
+              <Pressable key={mode} onPress={() => setNewTaskMode(mode)}
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: newTaskMode === mode ? BRAND.purple : colors.border,
+                  backgroundColor: newTaskMode === mode ? BRAND.purple + '15' : 'transparent' }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '700',
+                  color: newTaskMode === mode ? BRAND.purple : colors.textSecondary }}>
+                  {mode === 'PULL' ? '📋 Add to Backlog' : '👤 Assign Directly'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {newTaskMode === 'DIRECT' && parentMembers.length > 1 && (
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Assign to</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {parentMembers.filter(m => m.id !== active.id).map(m => (
+                  <Pressable key={m.id} onPress={() => setNewTaskAssignTo(m.id)}
+                    style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1.5,
+                      borderColor: newTaskAssignTo === m.id ? BRAND.purple : colors.border,
+                      backgroundColor: newTaskAssignTo === m.id ? BRAND.purple + '15' : 'transparent' }}>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '600',
+                      color: newTaskAssignTo === m.id ? BRAND.purple : colors.textPrimary }}>
+                      {m.name.split(' ')[0]}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          )}
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+            <Pressable onPress={() => setShowAddTask(false)}
+              style={{ flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
+                borderWidth: 1.5, borderColor: colors.border }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+            </Pressable>
+            <Pressable onPress={handleAddTask}
+              style={{ flex: 2, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
+                backgroundColor: newTaskTitle.trim() ? BRAND.purple : (isDark ? '#374151' : '#D1D5DB') }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Add Task</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 5. Chore Review Deck */}
+      <View style={pad}>
+        <View style={{
+          backgroundColor: isDark ? colors.card : '#fff',
+          borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
+          overflow: 'hidden', marginBottom: 12,
+        }}>
+          <Pressable
+            onPress={() => setChoreReviewExpanded(e => !e)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
+            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: BRAND.teal + '20', alignItems: 'center', justifyContent: 'center' }}>
+              <ClipboardList size={20} color={BRAND.teal} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>Chore Reviews</Text>
+                {pendingReviews.length > 0 && (
+                  <View style={{ backgroundColor: BRAND.teal, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 }}>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>{pendingReviews.length}</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+                {pendingReviews.length > 0 ? `${pendingReviews.length} pending approval` : 'All caught up ✓'}
+              </Text>
+            </View>
+            {choreReviewExpanded ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
+          </Pressable>
+          {choreReviewExpanded && (
+            <View style={{ paddingBottom: 8 }}>
+              {/* Grandparent-proposed quests awaiting parent safety gate */}
+              {(() => {
+                const gpPending = chores.filter(c =>
+                  c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval'
+                );
+                if (!gpPending.length) return null;
+                const sponsors = members.filter(m => m.role === 'senior');
+                return (
+                  <View style={{ marginHorizontal: 14, marginBottom: 12, gap: 8 }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                      textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                      👴 Grandparent Quests — Safety Review
+                    </Text>
+                    {gpPending.map(c => {
+                      const sponsor = sponsors.find(s => s.id === c.sponsorUserId);
+                      const targetKid = members.find(m => m.id === c.assignedToId);
+                      const pts = c.basePoints;
+                      return (
+                        <View key={c.id} style={{ borderRadius: 16, overflow: 'hidden',
+                          borderWidth: 1.5, borderColor: BRAND.teal + '40',
+                          backgroundColor: isDark ? BRAND.teal + '08' : BRAND.teal + '06' }}>
+                          <View style={{ backgroundColor: BRAND.teal, paddingHorizontal: 14, paddingVertical: 8,
+                            flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Text style={{ fontSize: 16 }}>{c.questMode === 'virtual' ? '💻' : '🌿'}</Text>
+                            <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>
+                              {c.questMode === 'virtual' ? 'Virtual' : 'In-Person'} Quest · {pts} pts
+                            </Text>
+                            <Text style={{ fontSize: TYPO.micro, color: '#fff', opacity: 0.8 }}>
+                              from {sponsor?.name.split(' ')[0] ?? 'Grandparent'}
+                            </Text>
+                          </View>
+                          <View style={{ padding: 14, gap: 8 }}>
+                            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
+                            {c.description ? (
+                              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, lineHeight: 18 }}>{c.description}</Text>
+                            ) : null}
+                            {targetKid && (
+                              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                                For: {targetKid.name.split(' ')[0]}
+                              </Text>
+                            )}
+                            {/* 50/40/10 split preview */}
+                            <View style={{ flexDirection: 'row', gap: 6 }}>
+                              {[
+                                { label: '💸 Spend', val: Math.floor(pts * 0.5), color: BRAND.amber },
+                                { label: '🏦 Save',  val: Math.floor(pts * 0.4), color: '#10B981' },
+                                { label: '🤲 Give',  val: pts - Math.floor(pts * 0.5) - Math.floor(pts * 0.4), color: BRAND.purple },
+                              ].map(j => (
+                                <View key={j.label} style={{ flex: 1, alignItems: 'center', borderRadius: 8,
+                                  backgroundColor: j.color + '12', paddingVertical: 6,
+                                  borderWidth: 1, borderColor: j.color + '20' }}>
+                                  <Text style={{ fontSize: TYPO.micro }}>{j.label}</Text>
+                                  <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: j.color }}>{j.val}</Text>
+                                </View>
+                              ))}
+                            </View>
+                            <View style={{ flexDirection: 'row', gap: 8 }}>
+                              <Pressable
+                                onPress={() => declineGrandparentQuestAsParent(c.id, active.id, 'Not suitable')}
+                                style={{ flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 12,
+                                  borderWidth: 1.5, borderColor: isDark ? colors.border : '#E2E8F0' }}>
+                                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Decline</Text>
+                              </Pressable>
+                              <Pressable
+                                onPress={() => approveGrandparentQuestAsParent(c.id, active.id)}
+                                style={{ flex: 2, alignItems: 'center', paddingVertical: 11, borderRadius: 12,
+                                  backgroundColor: BRAND.teal }}>
+                                <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>
+                                  ✓ Approve & Publish to Kid
+                                </Text>
+                              </Pressable>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })()}
+
+              <ParentReviewDeck
+                parent={active}
+                members={members}
+                colors={colors}
+                isDark={isDark}
+              />
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* 6. Dispatch En Route */}
       <View style={pad}>
         <View style={{
           backgroundColor: isDark ? '#0D2B1F' : '#ECFDF5',
@@ -682,6 +1879,42 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
           )}
         </View>
       </View>
+
+      {/* Delegate sheet — AppBottomSheet */}
+      <AppBottomSheet
+        visible={!!delegateSheet}
+        onClose={() => setDelegateSheet(null)}
+        title={`Delegate: ${delegateSheet?.choreTitle ?? ''}`}
+        subtitle="Assign to a parent · GPs self-claim"
+        accentColor={BRAND.teal}
+        minHeight="40%"
+        maxHeight="70%">
+        <View style={{ gap: 10 }}>
+          {members.filter(m => m.role === 'parent').map(m => (
+            <Pressable key={m.id} onPress={() => {
+              if (delegateSheet) {
+                const isQRow = questPool.find(c => c.id === delegateSheet.choreId && (c as any)._isQuestRow);
+                if (isQRow) {
+                  updateQuest(delegateSheet.choreId, { assignedToId: m.id, status: 'todo' });
+                } else {
+                  addParentQuest(delegateSheet.choreId, active.id, m.id, 'DIRECT');
+                }
+                setDelegateSheet(null);
+              }
+            }} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14,
+              borderRadius: 16, borderWidth: 1.5, borderColor: colors.border,
+              backgroundColor: isDark ? colors.surface : '#F8FAFC' }}>
+              <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl}
+                siblings={members.map(x => x.name)} size={44} ringColor={BRAND.purple} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{m.name}</Text>
+                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Parent</Text>
+              </View>
+              <Text style={{ fontSize: TYPO.caption, color: BRAND.teal, fontWeight: '800' }}>Assign →</Text>
+            </Pressable>
+          ))}
+        </View>
+      </AppBottomSheet>
     </>
   );
 }

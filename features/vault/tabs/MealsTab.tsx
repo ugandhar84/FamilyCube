@@ -15,7 +15,7 @@ import { supabase } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
 import { useChatStore } from '@/store/chatStore';
 import { useGroceryStore } from '@/store/groceryStore';
-import { useQuestStore } from '@/store/questStore';
+import { useQuestStore } from '@/store/choreAdapter';
 import { SCard, CardHeader, AddBtn, EmptyState, BRAND } from './shared';
 import { localDateStr } from '@/lib/dates';
 
@@ -573,7 +573,7 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const isKid = (activeMember as any)?.role === 'kid';
   const curWeek     = weekOf();
-  const addQuest    = useQuestStore(s => s.addQuest);
+  const addQuest    = useQuestStore().addQuest;
 
   const [meals, setMeals]       = useState<Meal[]>([]);
   const [loading, setLoading]   = useState(true);

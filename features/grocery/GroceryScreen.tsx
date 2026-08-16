@@ -32,7 +32,9 @@ import {
 } from 'lucide-react-native';
 import { useFamilyStore } from '@/store/familyStore';
 import { useGroceryStore, GroceryItem, GroceryRun, GroceryRunItem } from '@/store/groceryStore';
-import { useQuestStore } from '@/store/questStore';
+// import { useQuestStore } from '@/store/questStore';
+import { useQuestStore, choreToQuest } from '@/store/choreAdapter';
+import { useChoreStore } from '@/store/choreStore';
 import { TYPO, RADIUS } from '@/constants/theme';
 
 // ─── Category suggestions ─────────────────────────────────────────────────────
@@ -393,7 +395,7 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
 }) {
   const { members } = useFamilyStore();
   const { checkRunItem, uncheckRunItem, addItemToRun, removeItemFromRun, startRun, completeRun, loadRunDetail } = useGroceryStore();
-  const addQuest = useQuestStore(s => s.addQuest);
+  const addQuest = useQuestStore().addQuest;
   const [runItems,         setRunItems]         = useState<GroceryRunItem[]>([]);
   const [adding,           setAdding]           = useState(false);
   const [loadingId,        setLoadingId]        = useState<string | null>(null);
@@ -1479,7 +1481,7 @@ function HistoryTab({ familyId, memberId, colors, isDark }: { familyId: string; 
   const [expanded, setExpanded] = useState<string | null>(null);
   const [detailReceipt, setDetailReceipt] = useState<any | null>(null);
   const { members } = useFamilyStore();
-  const addQuest = useQuestStore(s => s.addQuest);
+  const addQuest = useQuestStore().addQuest;
 
   useEffect(() => {
     if (!familyId) return;

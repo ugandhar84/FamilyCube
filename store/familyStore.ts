@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 
-export type MemberRole = 'parent' | 'kid' | 'senior';
+export type MemberRole = 'parent' | 'kid' | 'teen' | 'senior';
 
 export interface FamilyMember {
   id: string;
@@ -26,15 +26,27 @@ export interface FamilyMember {
   pin?: string;
   pinEnabled?: boolean;
   familyId?: string;
+  // Teen-specific profile fields
+  hasCar?: boolean;           // Opts teen into ride/pickup dispatch pool
+  rideEarningsPerRun?: number; // Parent-configured coins per pickup run
+  groceryEarningsPerRun?: number; // Parent-configured coins per grocery run
+  // Senior / GP availability prefs (persisted so they survive app restart)
+  gpCheerleaderMode?: boolean;        // Hides all driving requests
+  gpDriveWindowDays?: number[];       // 0=Sun … 6=Sat
+  gpDriveWindowStart?: string;        // 'HH:MM' 24h
+  gpDriveWindowEnd?: string;          // 'HH:MM' 24h
+  gpWeeklyRideCap?: number;           // Max rides they'll take per calendar week
 }
 
 interface FamilyState {
   members: FamilyMember[];
   activeMemberId: string | null;
   loaded: boolean;
+  familyName: string;
 
   setMembers: (members: FamilyMember[]) => void;
   setActiveMember: (id: string) => void;
+  setFamilyName: (name: string) => void;
   addMember: (member: Omit<FamilyMember, 'id'>) => Promise<void>;
   updateMember: (id: string, updates: Partial<FamilyMember>) => Promise<void>;
   removeMember: (id: string) => Promise<void>;
@@ -55,6 +67,7 @@ const SEED_MEMBERS: FamilyMember[] = [
   { id: 'kid-1',    name: 'Leo',         role: 'kid',    emoji: '🦁', coins: 108, mainCoins: 108, gpCoins: 45, xp: 320, streak: 4, level: 3, questsCompleted: 12, questsPending: 2 },
   { id: 'kid-2',    name: 'Maya',        role: 'kid',    emoji: '🌸', coins: 75,  mainCoins: 75,  gpCoins: 30, xp: 210, streak: 2, level: 2, questsCompleted: 8,  questsPending: 1 },
   { id: 'kid-3',    name: 'Sam',         role: 'kid',    emoji: '👶', coins: 40,  mainCoins: 40,  gpCoins: 20, xp: 90,  streak: 1, level: 1, questsCompleted: 4,  questsPending: 1 },
+  { id: 'teen-1',   name: 'Jordan',       role: 'teen',   emoji: '🎧', coins: 60,  mainCoins: 60,  gpCoins: 0, xp: 180, streak: 3, level: 2, questsCompleted: 6,  questsPending: 1, hasCar: false, rideEarningsPerRun: 50, groceryEarningsPerRun: 30 },
   { id: 'senior-1', name: 'Grandma Mary', role: 'senior', emoji: '👵', coins: 0, mainCoins: 0,  gpCoins: 0,  xp: 0,   streak: 0, level: 1, questsCompleted: 0,  questsPending: 0 },
 ];
 
@@ -65,7 +78,7 @@ function fromRow(row: any): FamilyMember {
   return {
     id:              String(row.id),
     name:            row.name,
-    role:            row.role === 'child' ? 'kid' : row.role === 'grandparent' ? 'senior' : row.role as MemberRole,
+    role:            row.role === 'child' ? 'kid' : row.role === 'grandparent' ? 'senior' : row.role === 'teenager' ? 'teen' : row.role as MemberRole,
     subRole:         row.sub_role ?? undefined,
     emoji:           isUrl ? undefined : (row.avatar ?? undefined),
     avatarUrl:       isUrl ? row.avatar : undefined,
@@ -80,6 +93,14 @@ function fromRow(row: any): FamilyMember {
     questsPending:   row.quests_pending ?? 0,
     pin:             row.pin ?? undefined,
     pinEnabled:      Boolean(row.pin),
+    hasCar:          row.has_car ?? false,
+    rideEarningsPerRun:    row.ride_earnings_per_run ?? 50,
+    groceryEarningsPerRun: row.grocery_earnings_per_run ?? 30,
+    gpCheerleaderMode:  row.gp_cheerleader_mode  ?? false,
+    gpDriveWindowDays:  row.gp_drive_window_days  ?? [2, 4],
+    gpDriveWindowStart: row.gp_drive_window_start ?? '14:00',
+    gpDriveWindowEnd:   row.gp_drive_window_end   ?? '17:30',
+    gpWeeklyRideCap:    row.gp_weekly_ride_cap    ?? 2,
   };
 }
 
@@ -88,7 +109,7 @@ function toRow(m: FamilyMember) {
   return {
     id:       m.id,
     name:     m.name,
-    role:     m.role === 'kid' ? 'child' : m.role,   // DB: 'child', 'parent', 'grandparent'
+    role:     m.role === 'kid' ? 'child' : m.role === 'teen' ? 'teenager' : m.role,
     sub_role: m.subRole ?? null,
     avatar: m.avatarUrl ?? m.emoji ?? '👤',
     coins: m.coins,
@@ -100,6 +121,14 @@ function toRow(m: FamilyMember) {
     quests_completed: m.questsCompleted,
     quests_pending:   m.questsPending,
     pin:   m.pin ?? null,
+    has_car: m.hasCar ?? false,
+    ride_earnings_per_run: m.rideEarningsPerRun ?? 50,
+    grocery_earnings_per_run: m.groceryEarningsPerRun ?? 30,
+    gp_cheerleader_mode:  m.gpCheerleaderMode  ?? false,
+    gp_drive_window_days: m.gpDriveWindowDays  ?? [2, 4],
+    gp_drive_window_start: m.gpDriveWindowStart ?? '14:00',
+    gp_drive_window_end:   m.gpDriveWindowEnd   ?? '17:30',
+    gp_weekly_ride_cap:    m.gpWeeklyRideCap    ?? 2,
   };
 }
 
@@ -114,6 +143,9 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   members: [],
   activeMemberId: null,
   loaded: false,
+  familyName: 'Our Family',
+
+  setFamilyName: (name) => set({ familyName: name }),
 
   setMembers: (members) => {
     set({ members });

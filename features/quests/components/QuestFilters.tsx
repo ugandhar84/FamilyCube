@@ -17,7 +17,7 @@ const ThumbsUpIcon = ({ c }: { c: string }) => (
   </Svg>
 );
 
-interface Member { id: string; name: string; emoji?: string | null; role: string; color?: string }
+interface Member { id: string; name: string; emoji?: string | null; role: string; color?: string | null }
 
 interface Props {
   kidFilter: string;
@@ -78,8 +78,8 @@ export function QuestFilters({
               : { backgroundColor: pillBg, borderColor: pillBdr }]}
             onPress={() => { onSetKidFilter(k.id); onSetTabStatus('all'); }}
           >
-            <FamilyAvatar name={k.name} emoji={k.emoji} size={28}
-              ringColor={k.color ?? BRAND.amber} ringWidth={kidFilter === k.id ? 2.5 : 0} />
+            <FamilyAvatar name={k.name} emoji={k.emoji ?? undefined} size={28}
+              ringColor={k.color != null ? k.color : BRAND.amber} ringWidth={kidFilter === k.id ? 2.5 : 0} />
           </TouchableOpacity>
         ))}
 

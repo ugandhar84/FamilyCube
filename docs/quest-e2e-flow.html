@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FamilyCube — Quest E2E Flow Trace</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a; --border: #2e3250;
+    --text: #e2e8f0; --muted: #8892b0;
+    --purple: #7c3aed; --amber: #f59e0b; --teal: #0d9488;
+    --red: #ef4444; --blue: #3b82f6; --green: #22c55e;
+    --todo: #334155; --inprog: #1e3a5f; --pending: #3b1f1f;
+    --approved: #14291a; --declined: #2d1515; --conn: #4a5580;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; font-size: 13px; padding: 20px; }
+  h1 { font-size: 18px; font-weight: 800; color: var(--text); margin-bottom: 4px; }
+  .subtitle { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; padding: 10px 14px; background: var(--surface2); border-radius: 10px; border: 1px solid var(--border); }
+  .leg { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
+  .leg-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 600; transition: all .15s; user-select: none; }
+  .tab:hover { border-color: var(--purple); color: var(--text); }
+  .tab.active { background: var(--purple); border-color: var(--purple); color: #fff; }
+
+  .flow-wrap { overflow-x: auto; }
+  .flow { display: none; min-width: 900px; }
+  .flow.active { display: block; }
+
+  .lanes { display: grid; grid-template-columns: 90px 1fr 1fr 1fr 1fr; gap: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .lane-header { font-size: 10px; font-weight: 800; text-align: center; padding: 8px 6px; border-bottom: 2px solid var(--border); border-right: 1px solid var(--border); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; background: var(--surface2); }
+  .lane-header:last-child { border-right: none; }
+
+  .state-label { background: var(--surface2); border-right: 2px solid var(--border); border-bottom: 1px solid var(--border); padding: 14px 8px; display: flex; align-items: center; justify-content: center; }
+  .state-pill { font-size: 9px; font-weight: 900; letter-spacing: .06em; padding: 4px 8px; border-radius: 20px; text-align: center; text-transform: uppercase; white-space: nowrap; }
+  .s-todo     { background: var(--todo);     color: #94a3b8; border: 1px solid #475569; }
+  .s-inprog   { background: var(--inprog);   color: #60a5fa; border: 1px solid #1d4ed8; }
+  .s-pending  { background: var(--pending);  color: #fca5a5; border: 1px solid #991b1b; }
+  .s-approved { background: var(--approved); color: #86efac; border: 1px solid #166534; }
+  .s-declined { background: var(--declined); color: #fca5a5; border: 1px solid #7f1d1d; }
+
+  .cell { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 10px 10px; min-height: 90px; vertical-align: top; }
+  .cell:last-child { border-right: none; }
+  .where { font-size: 9px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+  .what { font-size: 11px; color: var(--text); margin-bottom: 6px; line-height: 1.5; }
+  .btns { display: flex; flex-wrap: wrap; gap: 3px; }
+  .btn { font-size: 9px; font-weight: 800; padding: 2px 8px; border-radius: 6px; display: inline-block; }
+  .btn-p { background: #5b21b620; color: #a78bfa; border: 1px solid #5b21b650; }
+  .btn-a { background: #f59e0b20; color: #fbbf24; border: 1px solid #f59e0b50; }
+  .btn-t { background: #0d948820; color: #2dd4bf; border: 1px solid #0d948850; }
+  .btn-r { background: #ef444420; color: #fca5a5; border: 1px solid #ef444450; }
+  .btn-g { background: #22c55e20; color: #86efac; border: 1px solid #22c55e50; }
+  .empty { color: var(--border); font-size: 11px; padding-top: 8px; }
+  .chip { display: inline-block; font-size: 9px; font-weight: 800; padding: 2px 7px; border-radius: 10px; margin-right: 3px; }
+  .chip-blue   { background: #1e3a5f; color: #60a5fa; }
+  .chip-amber  { background: #78350f30; color: #fbbf24; border: 1px solid #f59e0b40; }
+  .chip-teal   { background: #042f2e;  color: #2dd4bf; border: 1px solid #0d948840; }
+  .chip-red    { background: #2d1515;  color: #fca5a5; }
+  .chip-green  { background: #14291a;  color: #86efac; }
+  .chip-grey   { background: #1e293b;  color: #94a3b8; border: 1px solid #475569; }
+  .note { font-size: 9px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+  .hidden-msg { color: #ef4444; font-size: 11px; font-weight: 700; margin-top: 8px; }
+
+  .event-row { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 5px 10px; background: #1a1d27; border-bottom: 1px solid var(--border); }
+  .event-label-wrap { font-size: 9px; color: var(--muted); font-weight: 700; width: 60px; flex-shrink: 0; }
+  .event-pill { background: var(--surface2); border: 1px solid var(--amber); border-radius: 6px; padding: 3px 10px; font-size: 10px; color: var(--amber); font-weight: 700; }
+  .branch-pill-green { background: #14291a; border: 1px solid #166534; border-radius: 6px; padding: 3px 10px; font-size: 10px; color: #86efac; font-weight: 700; }
+  .branch-pill-red   { background: #2d1515; border: 1px solid #7f1d1d;  border-radius: 6px; padding: 3px 10px; font-size: 10px; color: #fca5a5; font-weight: 700; }
+  .or { font-size: 10px; color: var(--muted); }
+
+  .sub-flow { grid-column: 1 / -1; padding: 12px; background: var(--surface2); border-top: 2px solid var(--border); }
+  .sub-title { font-size: 10px; font-weight: 800; color: var(--amber); margin-bottom: 6px; }
+  .sub-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 11px; color: var(--muted); }
+
+  .warning-box { margin-top: 12px; padding: 12px; background: #1a0a0a; border-radius: 8px; border: 1px solid #7f1d1d; }
+  .warning-title { font-size: 12px; font-weight: 800; color: #fca5a5; margin-bottom: 6px; }
+  .code-block { font-family: monospace; font-size: 11px; color: #fbbf24; background: #0f1117; padding: 10px; border-radius: 6px; margin-top: 6px; line-height: 1.6; }
+  .code-fix { color: #86efac; }
+
+  .gap-table { width: 100%; border-collapse: collapse; }
+  .gap-table th { font-size: 10px; font-weight: 800; color: var(--muted); text-align: left; padding: 6px 10px; border-bottom: 2px solid var(--border); text-transform: uppercase; letter-spacing: .04em; }
+  .gap-table td { font-size: 11px; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .g-ok      { color: #86efac; font-weight: 800; }
+  .g-warn    { color: #fbbf24; font-weight: 800; }
+  .g-bug     { color: #fca5a5; font-weight: 800; }
+  .g-unknown { color: #94a3b8; }
+  .gap-table tr:hover td { background: var(--surface2); }
+
+  .button-matrix { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  .button-matrix th { font-size: 10px; font-weight: 800; color: var(--muted); text-align: left; padding: 6px 10px; border-bottom: 2px solid var(--border); text-transform: uppercase; }
+  .button-matrix td { font-size: 11px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  .button-matrix tr:hover td { background: var(--surface2); }
+</style>
+</head>
+<body>
+
+<h1>FamilyCube — Quest E2E Flow Trace</h1>
+<p class="subtitle">One tab per quest type · Columns = roles · Rows = states · Cells show Hub section / QS tab / buttons at each step</p>
+
+<div class="legend">
+  <div class="leg"><div class="leg-dot" style="background:#94a3b8"></div> todo</div>
+  <div class="leg"><div class="leg-dot" style="background:#60a5fa"></div> in_progress</div>
+  <div class="leg"><div class="leg-dot" style="background:#fca5a5"></div> pending_approval</div>
+  <div class="leg"><div class="leg-dot" style="background:#86efac"></div> approved</div>
+  <div class="leg"><div class="leg-dot" style="background:#f87171"></div> declined / redo</div>
+  <span style="color:var(--border)">|</span>
+  <div class="leg"><span class="btn btn-p" style="font-size:10px">🟣 Purple btn</span></div>
+  <div class="leg"><span class="btn btn-a" style="font-size:10px">🟡 Amber btn</span></div>
+  <div class="leg"><span class="btn btn-t" style="font-size:10px">🟢 Teal btn</span></div>
+  <div class="leg"><span class="btn btn-r" style="font-size:10px">🔴 Red btn</span></div>
+  <div class="leg"><span class="btn btn-g" style="font-size:10px">💚 Green btn</span></div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="show('citizenship',this)">1 · Citizenship / Routine</div>
+  <div class="tab" onclick="show('bounty',this)">2 · Bounty (Pool)</div>
+  <div class="tab" onclick="show('shopping',this)">3 · Shopping Run</div>
+  <div class="tab" onclick="show('gp',this)">4 · GP Quest</div>
+  <div class="tab" onclick="show('adult',this)">5 · Adult Task</div>
+  <div class="tab" onclick="show('buttons',this)">6 · All Buttons</div>
+  <div class="tab" onclick="show('gaps',this)" style="border-color:#f59e0b40;color:#fbbf24">⚠ Gaps</div>
+</div>
+
+<div class="flow-wrap">
+
+<!-- ══════════════════════════════════════════════
+     1. CITIZENSHIP / ROUTINE
+════════════════════════════════════════════════ -->
+<div class="flow active" id="flow-citizenship">
+<div class="lanes">
+  <div class="lane-header">State</div>
+  <div class="lane-header">😤 Parent (creator)</div>
+  <div class="lane-header">⭐/💡 Kid/Teen (assignee)</div>
+  <div class="lane-header">⭐/💡 Others (non-assignee)</div>
+  <div class="lane-header">😎 Grandparent</div>
+
+  <!-- TODO -->
+  <div class="state-label"><div class="state-pill s-todo">todo</div></div>
+  <div class="cell">
+    <div class="where">Hub: QS All tab</div>
+    <div class="what">Card · assignee chip · due date · coins</div>
+    <div class="btns">
+      <span class="btn btn-p">Edit (long-press)</span>
+      <span class="btn btn-r">Delete</span>
+      <span class="btn btn-a">Delegate</span>
+    </div>
+    <div class="note">Schedule: appears on due date</div>
+  </div>
+  <div class="cell">
+    <div class="where">Hub → My Quests · QS My Quests tab</div>
+    <div class="what"><span class="chip chip-blue">CITIZENSHIP</span> card · 🪙 coins · due chip</div>
+    <div class="btns"><span class="btn btn-t">Start</span></div>
+    <div class="note">Schedule: own task on due date</div>
+  </div>
+  <div class="cell"><div class="empty">Not visible (direct-assign only)</div></div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+
+  <!-- EVENT -->
+  <div class="event-row">
+    <div class="event-label-wrap">EVENT</div>
+    <div class="event-pill">Kid/Teen taps Start → status: in_progress</div>
+  </div>
+
+  <!-- IN PROGRESS -->
+  <div class="state-label"><div class="state-pill s-inprog">in_progress</div></div>
+  <div class="cell">
+    <div class="where">QS All tab (awareness)</div>
+    <div class="what">Card · <span class="chip chip-blue">IN PROGRESS</span> chip</div>
+    <div class="btns"><span class="btn btn-a">Reassign</span></div>
+    <div class="note">No Action Needed yet — parent waits for submission</div>
+  </div>
+  <div class="cell">
+    <div class="where">Hub → My Quests · QS My Quests</div>
+    <div class="what"><span class="chip chip-blue">IN PROGRESS</span> badge</div>
+    <div class="btns"><span class="btn btn-t">Submit Proof</span></div>
+    <div class="note">Opens note + photo sheet. Photo required only if photoRequired=true.</div>
+  </div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+
+  <!-- EVENT -->
+  <div class="event-row">
+    <div class="event-label-wrap">EVENT</div>
+    <div class="event-pill">Kid/Teen submits note + photo → status: pending_approval</div>
+  </div>
+
+  <!-- PENDING -->
+  <div class="state-label"><div class="state-pill s-pending">pending</div></div>
+  <div class="cell">
+    <div class="where">Hub → Action Needed (NEEDS REVIEW) · QS Review tab</div>
+    <div class="what">Card · kid name · photo preview · submission note</div>
+    <div class="btns">
+      <span class="btn btn-g">Approve</span>
+      <span class="btn btn-r">Decline</span>
+      <span class="btn btn-a">View Photo</span>
+    </div>
+    <div class="note">Review tab badge count +1</div>
+  </div>
+  <div class="cell">
+    <div class="where">Hub → My Quests · QS Submitted tab</div>
+    <div class="what"><span class="chip chip-amber">SUBMITTED</span> 🔒 coins locked</div>
+    <div class="btns"><em style="font-size:9px;color:var(--muted)">No action — waiting for parent</em></div>
+  </div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+  <div class="cell">
+    <div class="where">(Only if inviteGrandparents=true)</div>
+    <div class="what">QS Cheer tab</div>
+    <div class="btns"><span class="btn btn-g">Approve</span><span class="btn btn-a">Cheer</span></div>
+  </div>
+
+  <!-- BRANCH -->
+  <div class="event-row">
+    <div class="event-label-wrap">BRANCH</div>
+    <div class="branch-pill-green">Parent Approve → approved</div>
+    <div class="or">OR</div>
+    <div class="branch-pill-red">Parent Decline → redo_requested</div>
+  </div>
+
+  <!-- APPROVED -->
+  <div class="state-label"><div class="state-pill s-approved">approved</div></div>
+  <div class="cell">
+    <div class="where">Hub Snapshot · QS Done tab</div>
+    <div class="what">Reviewed today +1 · streak increments</div>
+    <div class="btns"><span class="btn btn-p">Archive</span></div>
+  </div>
+  <div class="cell">
+    <div class="where">Hub → Completed · QS Done tab</div>
+    <div class="what">🪙 Coins awarded animation · XP gained</div>
+    <div class="btns"><span class="btn btn-a">Share</span></div>
+  </div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+
+  <!-- DECLINED -->
+  <div class="state-label"><div class="state-pill s-declined">redo</div></div>
+  <div class="cell">
+    <div class="where">QS All tab</div>
+    <div class="what">Clears from Action Needed · <span class="chip chip-red">REDO</span> chip</div>
+    <div class="btns"><span class="btn btn-p">Reopen</span></div>
+    <div class="note">Reopen → status back to todo</div>
+  </div>
+  <div class="cell">
+    <div class="where">Hub → My Quests · QS My Quests</div>
+    <div class="what"><span class="chip chip-red">REDO NEEDED</span> · decline reason shown</div>
+    <div class="btns"><span class="btn btn-t">Resubmit</span></div>
+    <div class="note">Resubmit → back to in_progress</div>
+  </div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     2. BOUNTY (POOL)
+════════════════════════════════════════════════ -->
+<div class="flow" id="flow-bounty">
+<div class="lanes">
+  <div class="lane-header">State</div>
+  <div class="lane-header">😤 Parent (creator)</div>
+  <div class="lane-header">💡 Teen</div>
+  <div class="lane-header">⭐ Kid</div>
+  <div class="lane-header">😎 GP</div>
+
+  <!-- TODO POOL -->
+  <div class="state-label"><div class="state-pill s-todo">todo pool</div></div>
+  <div class="cell">
+    <div class="where">Hub → Backlog Pool section · QS All + Pool tab</div>
+    <div class="what"><span class="chip chip-amber">OPEN BOUNTY</span> · coins · due date</div>
+    <div class="btns">
+      <span class="btn btn-t">I'll do this</span>
+      <span class="btn btn-a">Assign</span>
+      <span class="btn btn-p">Edit</span>
+      <span class="btn btn-r">Delete</span>
+    </div>
+    <div class="note">"I'll do this" → self-claim → approved directly (skips kid submission flow)</div>
+  </div>
+  <div class="cell">
+    <div class="where">Hub → Bounty section · QS Pool tab</div>
+    <div class="what"><span class="chip chip-amber">BOUNTY</span> card · coins · description</div>
+    <div class="btns"><span class="btn btn-t">Claim</span></div>
+    <div class="note">Claim → assignedToId=teen · isPool=false · in_progress</div>
+  </div>
+  <div class="cell">
+    <div class="where">Hub → Bounty section · QS Pool tab</div>
+    <div class="what"><span class="chip chip-amber">BOUNTY</span> card · coins</div>
+    <div class="btns"><span class="btn btn-t">Claim</span></div>
+    <div class="note">Same claim flow as teen</div>
+  </div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+
+  <!-- EVENT -->
+  <div class="event-row">
+    <div class="event-label-wrap">EVENT</div>
+    <div class="event-pill">Kid/Teen claims → isPool: false · assignedToId = claimant · status: in_progress</div>
+  </div>
+
+  <!-- IN PROGRESS -->
+  <div class="state-label"><div class="state-pill s-inprog">in_progress</div></div>
+  <div class="cell">
+    <div class="where">QS All tab</div>
+    <div class="what">Card updated · assignee chip · removed from Pool tab</div>
+    <div class="btns"><span class="btn btn-a">Reassign</span></div>
+  </div>
+  <div class="cell">
+    <div class="where">Hub → My Quests · QS My Quests</div>
+    <div class="what"><span class="chip chip-blue">IN PROGRESS</span></div>
+    <div class="btns"><span class="btn btn-t">Submit Proof</span></div>
+  </div>
+  <div class="cell">
+    <div class="where">Hub → My Quests</div>
+    <div class="what"><span class="chip chip-blue">IN PROGRESS</span></div>
+    <div class="btns"><span class="btn btn-t">Submit Proof</span></div>
+  </div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+
+  <!-- EVENT -->
+  <div class="event-row">
+    <div class="event-label-wrap">EVENT</div>
+    <div class="event-pill">Submit proof → pending_approval (same flow as Citizenship from here)</div>
+  </div>
+
+  <!-- PENDING -->
+  <div class="state-label"><div class="state-pill s-pending">pending</div></div>
+  <div class="cell">
+    <div class="where">Hub Action Needed · QS Review tab</div>
+    <div class="what">Review card</div>
+    <div class="btns"><span class="btn btn-g">Approve</span><span class="btn btn-r">Decline</span></div>
+  </div>
+  <div class="cell">
+    <div class="where">QS Submitted tab</div>
+    <div class="what"><span class="chip chip-amber">SUBMITTED</span> 🔒</div>
+    <div class="btns"><em style="font-size:9px;color:var(--muted)">Waiting</em></div>
+  </div>
+  <div class="cell">
+    <div class="where">QS Submitted tab</div>
+    <div class="what"><span class="chip chip-amber">SUBMITTED</span> 🔒</div>
+    <div class="btns"><em style="font-size:9px;color:var(--muted)">Waiting</em></div>
+  </div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+
+  <!-- APPROVED -->
+  <div class="state-label"><div class="state-pill s-approved">approved</div></div>
+  <div class="cell">
+    <div class="where">Snapshot · QS Done</div>
+    <div class="what">Reviewed +1</div>
+  </div>
+  <div class="cell">
+    <div class="where">Completed · QS Done</div>
+    <div class="what">🪙 Coins earned</div>
+  </div>
+  <div class="cell">
+    <div class="where">Completed · QS Done</div>
+    <div class="what">🪙 Coins earned</div>
+  </div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+
+  <!-- Alternate path: parent self-claim -->
+  <div class="sub-flow">
+    <div class="sub-title">Alternate path — Parent self-claim ("I'll do this")</div>
+    <div class="sub-grid">
+      <div><strong style="color:var(--text)">Parent does it themselves:</strong><br>
+        taps "I'll do this" on pool card →<br>
+        <code style="color:var(--teal)">assignedToId = parent.id</code> · <code style="color:var(--teal)">isPool = false</code> · status → <span class="chip chip-green">approved</span> directly<br>
+        <span style="color:var(--muted);font-size:10px">No pending_approval step. Backlog → moves to Done.</span>
+      </div>
+      <div><strong style="color:var(--text)">Kid/Teen see:</strong><br>
+        Quest disappears from Pool tab<br>
+        <span style="color:var(--muted);font-size:10px">Cannot see or claim after parent self-claims</span>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="warning-box">
+  <div class="warning-title">⚠ BUG G6 — isPool not cleared on claim</div>
+  <div style="font-size:11px;color:#94a3b8">choreAdapter.ts <code>claimQuest</code> does not set <code>isPool: false</code>. After a kid claims, the quest stays visible in the Pool tab. Fix:</div>
+  <div class="code-block">// choreAdapter.ts — claimQuest<br>
+store.updateChore(id, { status: 'in_progress', assignedToId: memberId<span class="code-fix">, isPool: false</span> });</div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     3. SHOPPING RUN
+════════════════════════════════════════════════ -->
+<div class="flow" id="flow-shopping">
+<div class="lanes">
+  <div class="lane-header">State</div>
+  <div class="lane-header">😤 Parent-A (creator)</div>
+  <div class="lane-header">😤 Parent-B (assignee)</div>
+  <div class="lane-header">💡 Teen (assignee)</div>
+  <div class="lane-header">⭐ Kid / 😎 GP</div>
+
+  <!-- TODO assigned to partner -->
+  <div class="state-label"><div class="state-pill s-todo">todo</div></div>
+  <div class="cell">
+    <div class="where">Hub → Backlog "Assigned to others" (amber border)</div>
+    <div class="what">🛍️ title · partner name · item count + store in header<br>Expand → shopping item checklist teal block</div>
+    <div class="btns">
+      <span class="btn btn-a">Nudge</span>
+      <span class="btn btn-p">Reclaim</span>
+    </div>
+    <div class="note">Nudge → chat msg to P-B + Alert<br>Reclaim → assignedToId = P-A, card moves to "Assigned to me"</div>
+  </div>
+  <div class="cell">
+    <div class="where">Hub → Backlog "Assigned to me" · QS All</div>
+    <div class="what">🛍️ card · item list in expanded view · store · budget badge</div>
+    <div class="btns"><span class="btn btn-g">Mark Done</span></div>
+    <div class="note">Mark Done → approved directly (adult — no kid review)</div>
+  </div>
+  <div class="cell">
+    <div class="where">Hub → My Quests · QS My Quests</div>
+    <div class="what"><span class="chip chip-teal">SHOPPING</span> · item list · store · photo required badge</div>
+    <div class="btns"><span class="btn btn-t">Start</span></div>
+  </div>
+  <div class="cell"><div class="hidden-msg">🚫 Not visible</div><div class="note">Kids/GPs never see shopping adult tasks</div></div>
+
+  <!-- EVENT -->
+  <div class="event-row">
+    <div class="event-label-wrap">EVENT</div>
+    <div class="event-pill">Teen taps Start → in_progress &nbsp;|&nbsp; Parent-B taps Mark Done → approved (skip to bottom)</div>
+  </div>
+
+  <!-- IN PROGRESS (teen path) -->
+  <div class="state-label"><div class="state-pill s-inprog">in_progress</div></div>
+  <div class="cell">
+    <div class="where">QS All: awareness</div>
+    <div class="what">Card · IN PROGRESS chip</div>
+    <div class="btns"><span class="btn btn-a">Reassign</span></div>
+  </div>
+  <div class="cell"><div class="empty">Not involved (teen path)</div></div>
+  <div class="cell">
+    <div class="where">Hub → My Quests</div>
+    <div class="what"><span class="chip chip-blue">IN PROGRESS</span> · item checkboxes (check off as shopping)</div>
+    <div class="btns"><span class="btn btn-t">Submit Proof</span></div>
+    <div class="note">Photo = receipt (forced). Note optional. Opens sheet.</div>
+  </div>
+  <div class="cell"><div class="hidden-msg">🚫 Not visible</div></div>
+
+  <!-- EVENT -->
+  <div class="event-row">
+    <div class="event-label-wrap">EVENT</div>
+    <div class="event-pill">Teen submits receipt photo → status: pending_approval</div>
+  </div>
+
+  <!-- PENDING -->
+  <div class="state-label"><div class="state-pill s-pending">pending</div></div>
+  <div class="cell">
+    <div class="where">Hub Action Needed · QS Review tab</div>
+    <div class="what">Review card · receipt photo · items summary</div>
+    <div class="btns"><span class="btn btn-g">Approve</span><span class="btn btn-r">Decline</span></div>
+  </div>
+  <div class="cell"><div class="empty">Not involved</div></div>
+  <div class="cell">
+    <div class="where">QS Submitted tab</div>
+    <div class="what"><span class="chip chip-amber">SUBMITTED</span> 🔒</div>
+    <div class="btns"><em style="font-size:9px;color:var(--muted)">Waiting</em></div>
+  </div>
+  <div class="cell"><div class="hidden-msg">🚫 Not visible</div></div>
+
+  <!-- APPROVED -->
+  <div class="state-label"><div class="state-pill s-approved">approved</div></div>
+  <div class="cell">
+    <div class="where">Snapshot · QS Done</div>
+    <div class="what">+1 reviewed · grocery_runs record written (if integrated)</div>
+  </div>
+  <div class="cell">
+    <div class="where">QS Done (if self-completed)</div>
+    <div class="what">✓ Done card</div>
+  </div>
+  <div class="cell">
+    <div class="where">Completed · QS Done</div>
+    <div class="what">🪙 Coins earned (teen only)</div>
+  </div>
+  <div class="cell"><div class="hidden-msg">🚫 Not visible</div></div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     4. GRANDPARENT QUEST
+════════════════════════════════════════════════ -->
+<div class="flow" id="flow-gp">
+<div class="lanes">
+  <div class="lane-header">State</div>
+  <div class="lane-header">😤 Parent</div>
+  <div class="lane-header">😎 GP (claimant)</div>
+  <div class="lane-header">⭐ Kid (beneficiary)</div>
+  <div class="lane-header">💡 Teen</div>
+
+  <!-- TODO unassigned -->
+  <div class="state-label"><div class="state-pill s-todo">todo</div></div>
+  <div class="cell">
+    <div class="where">Hub → Backlog Pool (GP tag) · QS All tab</div>
+    <div class="what"><span class="chip chip-blue">GP QUEST</span> · NO 🪙 badge · description</div>
+    <div class="btns"><span class="btn btn-p">Edit</span><span class="btn btn-a">Assign</span></div>
+    <div class="note">Coins badge must be suppressed (coinsDisabled=true)</div>
+  </div>
+  <div class="cell">
+    <div class="where">GP Hub → Open Quests panel · QS GP/Cheer tab</div>
+    <div class="what">Card with description · <span class="chip chip-amber">OPEN</span> badge</div>
+    <div class="btns"><span class="btn btn-t">Claim</span></div>
+    <div class="note">Claim → assignedToId=GP · isPool=false · in_progress</div>
+  </div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+
+  <!-- EVENT -->
+  <div class="event-row">
+    <div class="event-label-wrap">EVENT</div>
+    <div class="event-pill">GP claims → status: in_progress · assignedToId = GP.id</div>
+  </div>
+
+  <!-- IN PROGRESS -->
+  <div class="state-label"><div class="state-pill s-inprog">in_progress</div></div>
+  <div class="cell">
+    <div class="where">QS All: assigned to GP name</div>
+    <div class="what">Awareness only</div>
+    <div class="btns"><span class="btn btn-a">Reassign</span></div>
+  </div>
+  <div class="cell">
+    <div class="where">GP Hub → My Quests</div>
+    <div class="what"><span class="chip chip-blue">CLAIMED</span> card</div>
+    <div class="btns"><span class="btn btn-g">Submit</span></div>
+    <div class="note">Opens note + optional photo</div>
+  </div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+
+  <!-- EVENT -->
+  <div class="event-row">
+    <div class="event-label-wrap">EVENT</div>
+    <div class="event-pill">GP submits → status: pending_approval</div>
+  </div>
+
+  <!-- PENDING -->
+  <div class="state-label"><div class="state-pill s-pending">pending</div></div>
+  <div class="cell">
+    <div class="where">Hub Action Needed · QS Review</div>
+    <div class="what">Review card · GP submission</div>
+    <div class="btns"><span class="btn btn-g">Approve</span><span class="btn btn-r">Decline</span></div>
+  </div>
+  <div class="cell">
+    <div class="where">GP Hub Submitted</div>
+    <div class="what"><span class="chip chip-amber">SUBMITTED</span> waiting</div>
+    <div class="btns"><span class="btn btn-a">Cheer</span><em style="font-size:9px;color:var(--muted);margin-left:4px">(on other kids' quests)</em></div>
+  </div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+
+  <!-- BRANCH -->
+  <div class="event-row">
+    <div class="event-label-wrap">BRANCH</div>
+    <div class="branch-pill-green">Parent Approve → approved</div>
+    <div class="or">OR</div>
+    <div class="branch-pill-red">Parent Decline → redo</div>
+  </div>
+
+  <!-- APPROVED -->
+  <div class="state-label"><div class="state-pill s-approved">approved</div></div>
+  <div class="cell">
+    <div class="where">Snapshot · QS Done</div>
+    <div class="what">+1 reviewed · reimbursement flow triggered</div>
+  </div>
+  <div class="cell">
+    <div class="where">GP Hub → Kids Progress Summary</div>
+    <div class="what">Quest shown as ✓ done · NO 🪙 coins (zeroed)</div>
+  </div>
+  <div class="cell">
+    <div class="where">Kid hub (if beneficiary shown)</div>
+    <div class="what">GP did something for you! ❤️</div>
+  </div>
+  <div class="cell"><div class="empty">Not visible</div></div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     5. ADULT TASK (parent_only)
+════════════════════════════════════════════════ -->
+<div class="flow" id="flow-adult">
+<div class="lanes">
+  <div class="lane-header">State</div>
+  <div class="lane-header">😤 Parent-A (self-assigned)</div>
+  <div class="lane-header">😤 Parent-B (if delegated)</div>
+  <div class="lane-header">⭐ Kid</div>
+  <div class="lane-header">💡 Teen / 😎 GP</div>
+
+  <!-- TODO self -->
+  <div class="state-label"><div class="state-pill s-todo">todo</div></div>
+  <div class="cell">
+    <div class="where">Hub → Backlog "Assigned to me" · QS All (grey badge)</div>
+    <div class="what"><span class="chip chip-grey">ADULT</span> card · NO 🪙 badge · grey style</div>
+    <div class="btns">
+      <span class="btn btn-g">Mark Done</span>
+      <span class="btn btn-p">Edit</span>
+      <span class="btn btn-a">Delegate</span>
+    </div>
+    <div class="note">Mark Done → approved directly. No pending_approval. No kid review.</div>
+  </div>
+  <div class="cell">
+    <div class="where">(If P-A delegates to P-B)</div>
+    <div class="what">Hub → Assigned to me section · <span class="chip chip-grey">ADULT</span> badge</div>
+    <div class="btns"><span class="btn btn-g">Mark Done</span></div>
+  </div>
+  <div class="cell">
+    <div class="hidden-msg">🚫 HIDDEN EVERYWHERE</div>
+    <div class="note">isAdultTask=true must be invisible on kid hub, kid QS all tabs, kid schedule</div>
+  </div>
+  <div class="cell">
+    <div class="hidden-msg">🚫 HIDDEN EVERYWHERE</div>
+    <div class="note">Same rule for teen and GP — never surfaces on their screens</div>
+  </div>
+
+  <!-- Sub-flow: P-A delegates to P-B -->
+  <div class="sub-flow">
+    <div class="sub-title">Sub-flow — Parent-A delegates to Parent-B</div>
+    <div class="sub-grid">
+      <div>
+        <strong style="color:var(--text)">P-A (creator/delegator) sees:</strong><br>
+        Hub → Backlog "Assigned to others" · amber border · <span class="chip chip-grey">ADULT</span><br>
+        Buttons: <span class="btn btn-a">Nudge</span> <span class="btn btn-p">Reclaim</span><br>
+        <span style="color:var(--muted);font-size:10px">Nudge → chat msg to P-B. Reclaim → self-reassign.</span>
+      </div>
+      <div>
+        <strong style="color:var(--text)">P-B (assignee) sees:</strong><br>
+        Hub → Backlog "Assigned to me" · ADULT badge<br>
+        Button: <span class="btn btn-g">Mark Done</span><br>
+        <span style="color:var(--muted);font-size:10px">Mark Done → approved. P-A sees it in Done tab.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- EVENT -->
+  <div class="event-row">
+    <div class="event-label-wrap">EVENT</div>
+    <div class="branch-pill-green">Mark Done → approved directly (no pending_approval)</div>
+  </div>
+
+  <!-- APPROVED -->
+  <div class="state-label"><div class="state-pill s-approved">approved</div></div>
+  <div class="cell">
+    <div class="where">Snapshot counter · QS Done tab</div>
+    <div class="what">+1 Reviewed today · done card with ✓</div>
+  </div>
+  <div class="cell">
+    <div class="where">QS Done tab</div>
+    <div class="what">Done card (if they completed it)</div>
+  </div>
+  <div class="cell"><div class="hidden-msg">🚫 HIDDEN</div></div>
+  <div class="cell"><div class="hidden-msg">🚫 HIDDEN</div></div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     6. ALL BUTTONS
+════════════════════════════════════════════════ -->
+<div class="flow" id="flow-buttons" style="min-width:700px">
+<table class="button-matrix">
+  <tr><th>Button</th><th>Who sees it</th><th>Condition</th><th>Action</th></tr>
+  <tr><td><span class="btn btn-t">Claim</span></td><td>⭐ K / 💡 T / 😎 G (GP quests only)</td><td>isPool=true · status=todo</td><td>claimQuest(id, me) → assignedToId=me · isPool=false · in_progress</td></tr>
+  <tr><td><span class="btn btn-t">I'll do this</span></td><td>😤 P</td><td>isPool=true · status=todo · isParent</td><td>self-assign → approved directly</td></tr>
+  <tr><td><span class="btn btn-t">Start</span></td><td>⭐ K / 💡 T</td><td>assignedToId=me · status=todo</td><td>status → in_progress</td></tr>
+  <tr><td><span class="btn btn-t">Submit Proof</span></td><td>⭐ K / 💡 T / 😎 G</td><td>assignedToId=me · status=in_progress</td><td>Opens note+photo sheet → pending_approval</td></tr>
+  <tr><td><span class="btn btn-g">Mark Done</span></td><td>😤 P</td><td>isAdultTask OR assignedToId=me(parent)</td><td>status → approved (skips pending)</td></tr>
+  <tr><td><span class="btn btn-g">Approve</span></td><td>😤 P / 😎 G</td><td>status=pending_approval</td><td>approveQuest(id, me) → coins released</td></tr>
+  <tr><td><span class="btn btn-r">Decline</span></td><td>😤 P</td><td>status=pending_approval · isParent</td><td>Opens DeclineModal → redo_requested</td></tr>
+  <tr><td><span class="btn btn-t">Resubmit</span></td><td>⭐ K / 💡 T</td><td>status=declined · assignedToId=me</td><td>status → in_progress</td></tr>
+  <tr><td><span class="btn btn-p">Reopen</span></td><td>😤 P</td><td>status=declined · isParent</td><td>reopenQuest(id, me) → todo</td></tr>
+  <tr><td><span class="btn btn-p">Edit (long-press)</span></td><td>😤 P</td><td>status=todo OR isPool · isParent</td><td>Opens EditModal</td></tr>
+  <tr><td><span class="btn btn-r">Delete (long-press)</span></td><td>😤 P</td><td>isParent</td><td>Alert confirm → deleteQuest(id)</td></tr>
+  <tr><td><span class="btn btn-a">Delegate / Reassign</span></td><td>😤 P</td><td>isParent</td><td>Opens DelegateSheet → updateQuest(id, {assignedToId})</td></tr>
+  <tr><td><span class="btn btn-a">Nudge</span></td><td>😤 P</td><td>assigned to OTHER parent</td><td>chatStore.sendMessage → Alert confirmation</td></tr>
+  <tr><td><span class="btn btn-p">Reclaim</span></td><td>😤 P</td><td>assigned to OTHER parent</td><td>Alert confirm → updateQuest(id, {assignedToId: me})</td></tr>
+  <tr><td><span class="btn btn-a">Cheer</span></td><td>😎 G</td><td>status=pending_approval (others' kids)</td><td>Reaction only — no state change</td></tr>
+  <tr><td><span class="btn btn-a">High Five</span></td><td>😎 G</td><td>status=approved (others' kids)</td><td>Reaction only — no state change</td></tr>
+  <tr><td><span class="btn btn-g">GP Claim</span></td><td>😎 G</td><td>questType=grandparent_quest · status=todo · !assignedToId</td><td>claimQuest(id, GP.id)</td></tr>
+  <tr><td><span class="btn btn-g">GP Submit</span></td><td>😎 G</td><td>questType=grandparent_quest · assignedToId=me</td><td>Opens submit sheet → pending_approval</td></tr>
+</table>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     GAPS
+════════════════════════════════════════════════ -->
+<div class="flow" id="flow-gaps" style="min-width:700px">
+<table class="gap-table">
+  <tr><th>#</th><th>Gap / Check</th><th>File</th><th>Status</th></tr>
+  <tr><td style="color:#ef4444;font-weight:800">G6</td><td><strong>claimQuest does NOT clear isPool=false — quest stays in Pool tab after claim</strong></td><td>choreAdapter.ts claimQuest</td><td class="g-bug">🔴 Bug confirmed</td></tr>
+  <tr><td>G1</td><td>Recurring citizenship/routine: new todo auto-generated after approved</td><td>choreStore.ts</td><td class="g-unknown">❓ Unverified</td></tr>
+  <tr><td>G2</td><td>Parent self-complete (adult task / self-assigned) bypasses pending_approval → approved directly</td><td>ParentView.tsx handlePullTask / Mark Done</td><td class="g-unknown">❓ Unverified</td></tr>
+  <tr><td>G3</td><td>Shopping "Assigned to others": item block + Nudge + Reclaim rendered correctly</td><td>ParentView.tsx ~L1160</td><td class="g-ok">✅ Fixed this session</td></tr>
+  <tr><td>G4</td><td>GP Hub: "Kids' progress summary" shows GP quest done after approval</td><td>GPView.tsx</td><td class="g-unknown">❓ Unverified</td></tr>
+  <tr><td>G5</td><td>GP quest coins badge suppressed everywhere (coinsDisabled=true check on card)</td><td>QuestsScreen, ChildChoreBoard</td><td class="g-unknown">❓ Unverified</td></tr>
+  <tr><td>G7</td><td>QS Pool tab filter: pool quest disappears after kid claims it (needs G6 fix)</td><td>QuestsScreen pool filter</td><td class="g-warn">⚠ Blocked on G6</td></tr>
+  <tr><td>G8</td><td>Backlog count badge updates reactively after claim / reclaim / nudge</td><td>ParentView.tsx header badge</td><td class="g-unknown">❓ Unverified</td></tr>
+  <tr><td>G9</td><td>Schedule: overdue kid tasks highlighted red</td><td>ScheduleScreen.tsx</td><td class="g-unknown">❓ Unverified</td></tr>
+  <tr><td>G10</td><td>DeclineModal reason presets populated correctly</td><td>QuestsScreen DeclineModal</td><td class="g-unknown">❓ Unverified</td></tr>
+  <tr><td>G11</td><td>Adult task invisible on kid/teen QS (all tabs), kid Hub, teen Hub, GP screens</td><td>QuestsScreen filters, KidView, TeenView</td><td class="g-unknown">❓ Unverified</td></tr>
+  <tr><td>G12</td><td>isPool cleared on parent self-claim ("I'll do this" button)</td><td>ParentView handlePullTask</td><td class="g-unknown">❓ Unverified</td></tr>
+</table>
+
+<div class="warning-box">
+  <div class="warning-title">Fix G6 now — 1-line change in choreAdapter.ts</div>
+  <div style="font-size:11px;color:#94a3b8;margin-bottom:6px">After this fix G7 also resolves (Pool tab removes claimed quest automatically).</div>
+  <div class="code-block">// choreAdapter.ts — claimQuest function<br>
+claimQuest: (id: string, memberId: string) => {<br>
+&nbsp;&nbsp;store.updateChore(id, { status: 'in_progress', assignedToId: memberId<span class="code-fix">, isPool: false</span> });<br>
+},</div>
+</div>
+</div>
+
+</div><!-- flow-wrap -->
+
+<script>
+function show(id, el) {
+  document.querySelectorAll('.flow').forEach(f => f.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('flow-' + id).classList.add('active');
+  el.classList.add('active');
+}
+</script>
+</body>
+</html>

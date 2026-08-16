@@ -104,7 +104,7 @@ export default function NearbyScreen() {
   // Proposal sheet
   const [proposalTarget,   setProposalTarget]   = useState<NearbyPet | null>(null);
   const [proposalVisible,  setProposalVisible]  = useState(false);
-  const [proposalDate,     setProposalDate]     = useState<Date>(() => () => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); return d; });
+  const [proposalDate,     setProposalDate]     = useState<Date>(() => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); return d; });
   const [proposalEndDate,  setProposalEndDate]  = useState<Date>(() => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); d.setHours(d.getHours() + 1); return d; });
   const [proposalLocation, setProposalLocation] = useState('');
   const [proposalMessage,  setProposalMessage]  = useState('');

@@ -6,7 +6,8 @@ import { router } from 'expo-router';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { TYPO } from '@/constants/theme';
-import { useQuestStore } from '@/store/questStore';
+import { useQuestStore } from '@/store/choreAdapter';
+import type { Quest } from '@/store/questStore';
 import { useEventStore } from '@/store/eventStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useFamilyStore } from '@/store/familyStore';
@@ -46,6 +47,7 @@ import { SUPPLIES_PREFIX } from './KidModals';
 import { GroceryModal, SuppliesModal, AskModal, KidRequestHistoryModal } from './KidModals';
 import { SchoolScheduleCard } from './SchoolScheduleModal';
 import AppBottomSheet from '@/components/AppBottomSheet';
+import { ChildChoreBoard } from '@/features/chores/ChildChoreBoard';
 
 
 // ─── Main KidView ──────────────────────────────────────────────────────────────
@@ -121,7 +123,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   const reviewQuests   = myQuests.filter(q => q.status === 'pending_approval');
   const declinedQuests = myQuests.filter(q => q.status === 'declined');
   const doneToday      = myQuests.filter(q => ['approved','done'].includes(q.status)).length;
-  const questGoal      = Math.max(myQuests.length, 3);
+  const questGoal      = Math.max(myQuests.filter(q => (q.status as string) !== 'pending_parent_approval').length, 3);
   const questPct       = Math.min(doneToday / questGoal, 1);
 
   const siblingKids       = members.filter(m => m.role === 'kid' && m.id !== active.id);
@@ -509,10 +511,11 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
               )}
             </View>
           </View>
-          <Pressable onPress={() => reopenQuest(q.id, active.id)}
-            style={{ borderRadius: 10, backgroundColor: BRAND.purple, paddingVertical: 9, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-            <Text style={{ fontSize: 14 }}>🔄</Text>
-            <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>Try Again</Text>
+          <Pressable
+            onPress={() => sendRequest({ type: 'permission', fromMemberId: active.id, detail: `I'd like to try "${q.title}" again — please give me another chance!`, urgency: 'normal' })}
+            style={{ borderRadius: 10, backgroundColor: BRAND.purple + '20', borderWidth: 1.5, borderColor: BRAND.purple + '60', paddingVertical: 9, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+            <Text style={{ fontSize: 14 }}>🙏</Text>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: BRAND.purple }}>Ask to Retry</Text>
           </Pressable>
         </View>
       ))}
@@ -598,6 +601,27 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
           <ChevronRight size={16} color="#10B981" />
         </Pressable>
       )}
+
+      {/* ── Chore Board section ── */}
+      <View style={{
+        borderRadius: 20, borderWidth: 1,
+        borderColor: isDark ? colors.border : '#E8E8F0',
+        backgroundColor: isDark ? colors.card : '#fff',
+        overflow: 'hidden', marginBottom: 12, minHeight: 120,
+      }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, paddingBottom: 8 }}>
+          <Text style={{ fontSize: 20 }}>🌱</Text>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>
+            Chores & Points
+          </Text>
+        </View>
+        <ChildChoreBoard
+          member={active}
+          members={members}
+          colors={colors}
+          isDark={isDark}
+        />
+      </View>
 
       <Pressable onPress={() => router.push('/(tabs)/chat')}
         style={{ borderRadius: 16, backgroundColor: isDark ? colors.card : '#fff', paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 7, borderWidth: 1.5, borderColor: isDark ? colors.border : '#E8E8F0' }}>

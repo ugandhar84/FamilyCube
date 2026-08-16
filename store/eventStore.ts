@@ -47,6 +47,10 @@ export interface FamilyEvent {
   coachName?: string;
   conflict?: boolean;
   approvalPending?: boolean;
+  isOpenToGrandparents?: boolean;
+  grandparentPassedIds?: string[];  // seniors who tapped Pass — hidden from their feed
+  isOpenToTeens?: boolean;          // parent flag — shows in teen Junior Dispatch pool
+  rideCoins?: number;               // optional coins reward set by parent — visible to teens only, never GPs
 }
 
 export type StripMap = Record<string, string[]>;   // date → unique category[]
@@ -150,8 +154,12 @@ function fromRow(row: any): FamilyEvent {
     coachName:         row.coach_name ?? undefined,
     pickupLocation:    row.pickup_location ?? undefined,
     dropLocation:      row.drop_location ?? undefined,
-    approvalPending:   row.approval_pending ?? false,
-    conflict:          row.conflict ?? false,
+    approvalPending:        row.approval_pending ?? false,
+    conflict:               row.conflict ?? false,
+    isOpenToGrandparents:   row.is_open_to_grandparents ?? false,
+    grandparentPassedIds:   row.grandparent_passed_ids ?? [],
+    isOpenToTeens:          row.is_open_to_teens ?? false,
+    rideCoins:              row.ride_coins ?? undefined,
   };
 }
 
@@ -181,8 +189,12 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     coach_name:            ev.coachName ?? null,
     pickup_location:       ev.pickupLocation ?? null,
     drop_location:         ev.dropLocation ?? null,
-    approval_pending:      ev.approvalPending ?? false,
-    conflict:              ev.conflict ?? false,
+    approval_pending:           ev.approvalPending ?? false,
+    conflict:                   ev.conflict ?? false,
+    is_open_to_grandparents:    ev.isOpenToGrandparents ?? false,
+    grandparent_passed_ids:     ev.grandparentPassedIds ?? [],
+    is_open_to_teens:           ev.isOpenToTeens ?? false,
+    ride_coins:                 ev.rideCoins ?? null,
   };
 }
 

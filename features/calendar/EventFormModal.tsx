@@ -234,14 +234,25 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   const isParent  = activeMember?.role === 'parent';
   const isSenior  = activeMember?.role === 'senior';
   const isKid     = activeMember?.role === 'kid';
+  const isTeen    = activeMember?.role === 'teen';
 
   // Kids can request Sports / Study / Event / Birthday / Other, with optional ride flag
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [category,       setCategory]       = useState<EventCategory>(isKid ? 'Sports' : 'Medical');
-  const [kidRideType,    setKidRideType]    = useState<'none' | 'dropoff' | 'pickup' | 'both'>('none');
-  const [kidReturnDate,  setKidReturnDate]  = useState<Date | null>(null);
-  const [showKidReturnPick, setShowKidReturnPick] = useState(false);
+  const [kidRideNeeded,    setKidRideNeeded]    = useState(false);
+  const [kidDropoffOn,     setKidDropoffOn]     = useState(false);
+  const [kidPickupOn,      setKidPickupOn]      = useState(false);
+  const [kidDropoffDate,   setKidDropoffDate]   = useState<Date | null>(null);
+  const [kidPickupDate,    setKidPickupDate]     = useState<Date | null>(null);
+  const [showKidDropDate,  setShowKidDropDate]  = useState(false);
+  const [showKidDropTime,  setShowKidDropTime]  = useState(false);
+  const [showKidPickDate,  setShowKidPickDate]  = useState(false);
+  const [showKidPickTime,  setShowKidPickTime]  = useState(false);
+  // Legacy — kept for submit encoding
+  const kidRideType: 'none' | 'dropoff' | 'pickup' | 'both' =
+    !kidRideNeeded ? 'none' : kidDropoffOn && kidPickupOn ? 'both' : kidDropoffOn ? 'dropoff' : kidPickupOn ? 'pickup' : 'none';
+  const kidReturnDate = kidPickupDate;
   const [title,          setTitle]          = useState('');
   const [titleFocused,   setTitleFocused]   = useState(false);
   const [notes,          setNotes]          = useState('');
@@ -277,6 +288,9 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   const [workType,       setWorkType]       = useState('');
   const [workLocation,   setWorkLocation]   = useState('');
   const [generalLocation,setGeneralLocation]= useState('');
+  const [openToGrandparents, setOpenToGrandparents] = useState(false);
+  const [openToTeens,        setOpenToTeens]        = useState(false);
+  const [rideCoinsTeen,      setRideCoinsTeen]      = useState('');
   const [customSuggestions,  setCustomSuggestions]  = useState<{ title: string; hint: string }[]>([]);
   const [customCategories,   setCustomCategories]   = useState<CustomCategory[]>([]);
 
@@ -325,6 +339,10 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   ];
   const allowedCategories = isKid
     ? allCategories.filter(c => ['Sports', 'Study', 'Event', 'Birthday', 'Other'].includes(c.key))
+    : isTeen
+    ? allCategories.filter(c => ['Sports', 'Study', 'Event', 'Birthday', 'Ride', 'Other'].includes(c.key))
+    : isSenior
+    ? allCategories.filter(c => ['Medical', 'Work', 'Event', 'Other'].includes(c.key))
     : allCategories;
 
   const suggPressing = useRef(false);
@@ -379,8 +397,13 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
     setWorkType(''); setWorkLocation(''); setGeneralLocation('');
     setShowDatePick(false); setShowTimePick(false);
     setShowReturnDatePick(false); setShowReturnTimePick(false);
+    setKidRideNeeded(false); setKidDropoffOn(false); setKidPickupOn(false);
+    setKidDropoffDate(null); setKidPickupDate(null);
+    setShowKidDropDate(false); setShowKidDropTime(false);
+    setShowKidPickDate(false); setShowKidPickTime(false);
     setLinkGroceries(false); setGroceryItems([]); setSelectedItemIds(new Set()); setNewGroceryLines([]);
     setFocusedLineIdx(null); setFocusedField(null);
+    setOpenToGrandparents(false); setOpenToTeens(false); setRideCoinsTeen('');
   };
 
   // ── Validation ─────────────────────────────────────────────────────────────
@@ -404,20 +427,20 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
 
     addEvent({
       title:           finalTitle,
-      date:            localDateStr(eventDate),
-      time:            allDay ? undefined : fmtTime(eventDate),
+      date:            isKid && kidRideNeeded && kidDropoffOn && kidDropoffDate ? localDateStr(kidDropoffDate) : localDateStr(eventDate),
+      time:            allDay ? undefined : (isKid && kidRideNeeded && kidDropoffOn && kidDropoffDate ? fmtTime(kidDropoffDate) : fmtTime(eventDate)),
       type:            (category === 'Birthday' ? 'birthday' : category === 'Medical' ? 'appointment' : 'event') as EventType,
       category,
       allDay,
       location,
       notes:           notes.trim() || undefined,
       // Encode kid ride request as structured metadata in returnTime field
-      returnTime:      isKid && kidRideType === 'both' && kidReturnDate
-        ? `RIDE:both:${fmtTimeDisplay(kidReturnDate)}`
+      returnTime:      isKid && kidRideType === 'both' && kidPickupDate
+        ? `RIDE:both:${fmtTimeDisplay(kidPickupDate)}`
         : isKid && kidRideType === 'dropoff'
         ? 'RIDE:dropoff'
-        : isKid && kidRideType === 'pickup'
-        ? 'RIDE:pickup'
+        : isKid && kidRideType === 'pickup' && kidPickupDate
+        ? `RIDE:pickup:${fmtTimeDisplay(kidPickupDate)}`
         : returnDate ? fmtTimeDisplay(returnDate) : undefined,
       memberId:        memberIds[0],
       memberIds:       memberIds.length > 1 ? memberIds : undefined,
@@ -435,9 +458,12 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
       pickupLocation:  pickupLocation.trim() || undefined,
       dropLocation:    dropLocation.trim()   || undefined,
       // Approval flow
-      approvalPending: isKid, // kids' requests go to parent approval
-      conflict:        false,
-      color:           CATEGORIES.find(c => c.key === category)?.color,
+      approvalPending:      isKid || isTeen,
+      conflict:             false,
+      color:                CATEGORIES.find(c => c.key === category)?.color,
+      isOpenToGrandparents: !isKid && !isTeen && openToGrandparents,
+      isOpenToTeens:        !isKid && !isTeen && openToTeens,
+      rideCoins:            (!isKid && !isTeen && openToTeens && rideCoinsTeen) ? parseInt(rideCoinsTeen, 10) : undefined,
     });
 
     // Persist custom title so it appears in future suggestions for this family
@@ -826,7 +852,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
                           <TouchableOpacity
                             style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                            onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); }}
+                            onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
                           >
                             <Text style={{ fontSize: 13 }}>📅</Text>
                             <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
@@ -873,7 +899,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                 <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
                   <TouchableOpacity
                     style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                    onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); }}
+                    onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
                   >
                     <Text style={{ fontSize: 13 }}>📅</Text>
                     <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
@@ -925,6 +951,76 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                     </TouchableOpacity>
                   </Modal>
                 )}
+
+                {/* ── GP + Teen toggles always shown for Ride (parent/senior only) ── */}
+                {!isKid && !isTeen && (
+                  <View style={{ gap: 10, marginTop: 4, marginBottom: 14 }}>
+                    {/* Grandparents Welcome */}
+                    <TouchableOpacity
+                      onPress={() => setOpenToGrandparents(g => !g)}
+                      activeOpacity={0.8}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                        paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14,
+                        borderWidth: 1.5,
+                        borderColor: openToGrandparents ? '#F59E0B' : (isDark ? colors.border : '#E2E8F0'),
+                        backgroundColor: openToGrandparents ? (isDark ? '#2D1800' : '#FFFBEB') : (isDark ? colors.surface : '#F9FAFB'),
+                      }}>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: openToGrandparents ? '#92400E' : colors.textPrimary }}>
+                          👴👵 Grandparents Welcome
+                        </Text>
+                        <Text style={{ fontSize: TYPO.label, color: openToGrandparents ? '#B45309' : colors.textSecondary }}>
+                          {openToGrandparents ? 'GPs can claim this ride or pass, no pressure' : 'Off · only visible to parents'}
+                        </Text>
+                      </View>
+                      <View style={{ width: 44, height: 26, borderRadius: 13,
+                        backgroundColor: openToGrandparents ? '#F59E0B' : (isDark ? '#334155' : '#CBD5E1'),
+                        justifyContent: 'center', paddingHorizontal: 3 }}>
+                        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
+                          alignSelf: openToGrandparents ? 'flex-end' : 'flex-start' }} />
+                      </View>
+                    </TouchableOpacity>
+
+                    {/* Teen driver — only if teens exist in family */}
+                    {members.some(m => m.role === 'teen') && (
+                      <TouchableOpacity
+                        onPress={() => setOpenToTeens(t => !t)}
+                        activeOpacity={0.8}
+                        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                          paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14,
+                          borderWidth: 1.5,
+                          borderColor: openToTeens ? '#6366F1' : (isDark ? colors.border : '#E2E8F0'),
+                          backgroundColor: openToTeens ? (isDark ? '#1E1B4B' : '#EEF2FF') : (isDark ? colors.surface : '#F9FAFB'),
+                        }}>
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: openToTeens ? '#3730A3' : colors.textPrimary }}>
+                            🚗 Teen Driver Welcome
+                          </Text>
+                          <Text style={{ fontSize: TYPO.label, color: openToTeens ? '#4338CA' : colors.textSecondary }}>
+                            {openToTeens ? 'Teen can drive · set coins below' : 'Off · teen driver not offered'}
+                          </Text>
+                        </View>
+                        <View style={{ width: 44, height: 26, borderRadius: 13,
+                          backgroundColor: openToTeens ? '#6366F1' : (isDark ? '#334155' : '#CBD5E1'),
+                          justifyContent: 'center', paddingHorizontal: 3 }}>
+                          <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
+                            alignSelf: openToTeens ? 'flex-end' : 'flex-start' }} />
+                        </View>
+                      </TouchableOpacity>
+                    )}
+                    {openToTeens && members.some(m => m.role === 'teen') && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 }}>
+                        <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, flex: 1 }}>🪙 Coins for teen driver</Text>
+                        <TextInput
+                          style={[f.input, { flex: 0, width: 80, textAlign: 'center', color: colors.textPrimary, backgroundColor: colors.surface, borderColor: '#6366F1' }]}
+                          keyboardType="numeric" maxLength={4}
+                          placeholder="0" placeholderTextColor={colors.textTertiary}
+                          value={rideCoinsTeen} onChangeText={setRideCoinsTeen}
+                        />
+                      </View>
+                    )}
+                  </View>
+                )}
               </>
             )}
 
@@ -962,7 +1058,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                     <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
                       <TouchableOpacity
                         style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                        onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); }}
+                        onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
                       >
                         <Text style={{ fontSize: 13 }}>📅</Text>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
@@ -996,7 +1092,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                 <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
                   <TouchableOpacity
                     style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                    onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); }}
+                    onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
                   >
                     <Text style={{ fontSize: 13 }}>📅</Text>
                     <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
@@ -1246,72 +1342,194 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
             {(isKid || (category !== 'Work' && category !== 'Event')) && (
               <>
                 {isKid ? (
-                  <View style={{ gap: 8 }}>
-                    {/* Ride type selector */}
-                    <Text style={[f.label, { color: colors.textSecondary }]}>🚗 Ride needed?</Text>
-                    <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-                      {([
-                        { key: 'none',    emoji: '🚫', label: 'No ride' },
-                        { key: 'dropoff', emoji: '📍', label: 'Drop-off' },
-                        { key: 'pickup',  emoji: '🏁', label: 'Pickup after' },
-                        { key: 'both',    emoji: '🔄', label: 'Both ways' },
-                      ] as const).map(opt => (
-                        <TouchableOpacity key={opt.key} onPress={() => setKidRideType(opt.key)}
-                          style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
-                            backgroundColor: kidRideType === opt.key ? catColor + '25' : (isDark ? colors.surface : '#F1F5F9'),
-                            borderWidth: 1.5, borderColor: kidRideType === opt.key ? catColor : colors.border }}>
-                          <Text style={{ fontSize: TYPO.subheading }}>{opt.emoji}</Text>
-                          <Text style={{ fontSize: TYPO.body, fontWeight: kidRideType === opt.key ? '800' : '600',
-                            color: kidRideType === opt.key ? catColor : colors.textSecondary }}>
-                            {opt.label}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                    {/* Return time picker — only for 'both' */}
-                    {kidRideType === 'both' && (
-                      <View style={{ gap: 6, marginTop: 4 }}>
-                        <Text style={[f.label, { color: colors.textSecondary }]}>🏁 Pickup time (when to collect you)</Text>
+                  <View style={{ gap: 10 }}>
+                    {/* ── Ride needed toggle ── */}
+                    <TouchableOpacity
+                      onPress={() => { setKidRideNeeded(r => !r); if (kidRideNeeded) { setKidDropoffOn(false); setKidPickupOn(false); } }}
+                      activeOpacity={0.8}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                        paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
+                        borderColor: kidRideNeeded ? catColor : (isDark ? colors.border : '#E2E8F0'),
+                        backgroundColor: kidRideNeeded ? catColor + '18' : (isDark ? colors.surface : '#F9FAFB') }}>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: kidRideNeeded ? catColor : colors.textPrimary }}>
+                          🚗 Ride needed?
+                        </Text>
+                        <Text style={{ fontSize: TYPO.label, color: kidRideNeeded ? catColor : colors.textSecondary }}>
+                          {kidRideNeeded ? 'Yes — set drop-off / pickup below' : 'Off · I have my own way there'}
+                        </Text>
+                      </View>
+                      <View style={{ width: 44, height: 26, borderRadius: 13,
+                        backgroundColor: kidRideNeeded ? catColor : (isDark ? '#334155' : '#CBD5E1'),
+                        justifyContent: 'center', paddingHorizontal: 3 }}>
+                        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
+                          alignSelf: kidRideNeeded ? 'flex-end' : 'flex-start' }} />
+                      </View>
+                    </TouchableOpacity>
+
+                    {kidRideNeeded && (
+                      <View style={{ gap: 10, paddingLeft: 8 }}>
+
+                        {/* ── Drop-off toggle + date/time ── */}
                         <TouchableOpacity
-                          onPress={() => { setShowKidReturnPick(p => !p); if (!kidReturnDate) setKidReturnDate(new Date(eventDate)); }}
-                          style={[f.dateBtn, { backgroundColor: showKidReturnPick ? catColor + '20' : colors.surface,
-                            borderColor: showKidReturnPick ? catColor : (kidReturnDate ? catColor + '80' : colors.border) }]}>
-                          <Text style={{ fontSize: TYPO.body }}>🕐</Text>
-                          <Text style={{ fontSize: TYPO.body, fontWeight: '700',
-                            color: showKidReturnPick ? catColor : (kidReturnDate ? colors.textPrimary : colors.textTertiary) }}>
-                            {kidReturnDate ? fmtTimeDisplay(kidReturnDate) : 'Tap to set pickup time'}
+                          onPress={() => { setKidDropoffOn(d => !d); if (kidDropoffOn) setKidDropoffDate(null); }}
+                          activeOpacity={0.8}
+                          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                            paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5,
+                            borderColor: kidDropoffOn ? '#10B981' : (isDark ? colors.border : '#E2E8F0'),
+                            backgroundColor: kidDropoffOn ? '#10B98112' : (isDark ? colors.surface : '#F9FAFB') }}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: kidDropoffOn ? '#059669' : colors.textPrimary }}>
+                            📍 Drop-off needed
                           </Text>
+                          <View style={{ width: 40, height: 24, borderRadius: 12,
+                            backgroundColor: kidDropoffOn ? '#10B981' : (isDark ? '#334155' : '#CBD5E1'),
+                            justifyContent: 'center', paddingHorizontal: 3 }}>
+                            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
+                              alignSelf: kidDropoffOn ? 'flex-end' : 'flex-start' }} />
+                          </View>
                         </TouchableOpacity>
-                        {showKidReturnPick && (
-                          <Modal transparent animationType="fade" visible onRequestClose={() => setShowKidReturnPick(false)}>
-                            <TouchableOpacity style={f.pickerOverlay} activeOpacity={1} onPress={() => setShowKidReturnPick(false)}>
-                              <TouchableOpacity activeOpacity={1} style={[f.pickerCard, { backgroundColor: colors.card }]}>
-                                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
-                                  <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>🕐 Pickup Time</Text>
-                                  <TouchableOpacity onPress={() => setShowKidReturnPick(false)}>
-                                    <Text style={{ color: catColor, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
-                                  </TouchableOpacity>
-                                </View>
-                                <DateTimePicker
-                                  value={kidReturnDate ?? eventDate} mode="time" display="spinner" is24Hour={false}
-                                  onChange={(_, d) => { if (d) { const m = kidReturnDate ? new Date(kidReturnDate) : new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setKidReturnDate(m); } }}
-                                  textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
-                                />
+
+                        {kidDropoffOn && (
+                          <View style={{ gap: 6, paddingLeft: 6 }}>
+                            <Text style={[f.label, { color: colors.textSecondary }]}>📅 Drop-off date &amp; time</Text>
+                            <View style={{ flexDirection: 'row', gap: 8 }}>
+                              <TouchableOpacity
+                                onPress={() => { setShowKidDropDate(p => !p); setShowKidDropTime(false); setShowKidPickDate(false); setShowKidPickTime(false); if (!kidDropoffDate) setKidDropoffDate(new Date(eventDate)); }}
+                                style={[f.dateBtn, { flex: 3, borderColor: showKidDropDate ? '#10B981' : (kidDropoffDate ? '#10B98180' : colors.border), backgroundColor: showKidDropDate ? '#10B98115' : colors.surface }]}>
+                                <Text style={{ fontSize: 13 }}>📅</Text>
+                                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidDropDate ? '#059669' : (kidDropoffDate ? colors.textPrimary : colors.textTertiary) }}>
+                                  {kidDropoffDate ? fmtDisplay(kidDropoffDate) : 'Pick date'}
+                                </Text>
                               </TouchableOpacity>
-                            </TouchableOpacity>
-                          </Modal>
+                              <TouchableOpacity
+                                onPress={() => { setShowKidDropTime(p => !p); setShowKidDropDate(false); setShowKidPickDate(false); setShowKidPickTime(false); if (!kidDropoffDate) setKidDropoffDate(new Date(eventDate)); }}
+                                style={[f.dateBtn, { flex: 2, borderColor: showKidDropTime ? '#10B981' : (kidDropoffDate ? '#10B98180' : colors.border), backgroundColor: showKidDropTime ? '#10B98115' : colors.surface }]}>
+                                <Text style={{ fontSize: 13 }}>🕐</Text>
+                                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidDropTime ? '#059669' : (kidDropoffDate ? colors.textPrimary : colors.textTertiary) }}>
+                                  {kidDropoffDate ? fmtTimeDisplay(kidDropoffDate) : 'Time'}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                            {(showKidDropDate || showKidDropTime) && (
+                              <Modal transparent animationType="fade" visible onRequestClose={() => { setShowKidDropDate(false); setShowKidDropTime(false); }}>
+                                <TouchableOpacity style={f.pickerOverlay} activeOpacity={1} onPress={() => { setShowKidDropDate(false); setShowKidDropTime(false); }}>
+                                  <TouchableOpacity activeOpacity={1} style={[f.pickerCard, { backgroundColor: colors.card }]}>
+                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                                      <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>
+                                        {showKidDropDate ? '📅 Drop-off Date' : '🕐 Drop-off Time'}
+                                      </Text>
+                                      <TouchableOpacity onPress={() => { setShowKidDropDate(false); setShowKidDropTime(false); }}>
+                                        <Text style={{ color: '#10B981', fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                    {showKidDropDate && (
+                                      <DateTimePicker
+                                        value={kidDropoffDate ?? eventDate} mode="date" display="spinner"
+                                        minimumDate={new Date()}
+                                        onChange={(_, d) => { if (d) { const m = kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate); m.setFullYear(d.getFullYear(), d.getMonth(), d.getDate()); setKidDropoffDate(m); } }}
+                                        textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
+                                      />
+                                    )}
+                                    {showKidDropTime && (
+                                      <DateTimePicker
+                                        value={kidDropoffDate ?? eventDate} mode="time" display="spinner" is24Hour={false}
+                                        onChange={(_, d) => { if (d) { const m = kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setKidDropoffDate(m); } }}
+                                        textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
+                                      />
+                                    )}
+                                  </TouchableOpacity>
+                                </TouchableOpacity>
+                              </Modal>
+                            )}
+                          </View>
+                        )}
+
+                        {/* ── Pickup toggle + date/time ── */}
+                        <TouchableOpacity
+                          onPress={() => { setKidPickupOn(p => !p); if (kidPickupOn) setKidPickupDate(null); }}
+                          activeOpacity={0.8}
+                          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                            paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5,
+                            borderColor: kidPickupOn ? '#6366F1' : (isDark ? colors.border : '#E2E8F0'),
+                            backgroundColor: kidPickupOn ? '#6366F112' : (isDark ? colors.surface : '#F9FAFB') }}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: kidPickupOn ? '#4F46E5' : colors.textPrimary }}>
+                            🏁 Pickup needed
+                          </Text>
+                          <View style={{ width: 40, height: 24, borderRadius: 12,
+                            backgroundColor: kidPickupOn ? '#6366F1' : (isDark ? '#334155' : '#CBD5E1'),
+                            justifyContent: 'center', paddingHorizontal: 3 }}>
+                            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
+                              alignSelf: kidPickupOn ? 'flex-end' : 'flex-start' }} />
+                          </View>
+                        </TouchableOpacity>
+
+                        {kidPickupOn && (
+                          <View style={{ gap: 6, paddingLeft: 6 }}>
+                            <Text style={[f.label, { color: colors.textSecondary }]}>📅 Pickup date &amp; time</Text>
+                            <View style={{ flexDirection: 'row', gap: 8 }}>
+                              <TouchableOpacity
+                                onPress={() => { setShowKidPickDate(p => !p); setShowKidPickTime(false); setShowKidDropDate(false); setShowKidDropTime(false); if (!kidPickupDate) setKidPickupDate(kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate)); }}
+                                style={[f.dateBtn, { flex: 3, borderColor: showKidPickDate ? '#6366F1' : (kidPickupDate ? '#6366F180' : colors.border), backgroundColor: showKidPickDate ? '#6366F115' : colors.surface }]}>
+                                <Text style={{ fontSize: 13 }}>📅</Text>
+                                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidPickDate ? '#4F46E5' : (kidPickupDate ? colors.textPrimary : colors.textTertiary) }}>
+                                  {kidPickupDate ? fmtDisplay(kidPickupDate) : 'Pick date'}
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={() => { setShowKidPickTime(p => !p); setShowKidPickDate(false); setShowKidDropDate(false); setShowKidDropTime(false); if (!kidPickupDate) setKidPickupDate(kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate)); }}
+                                style={[f.dateBtn, { flex: 2, borderColor: showKidPickTime ? '#6366F1' : (kidPickupDate ? '#6366F180' : colors.border), backgroundColor: showKidPickTime ? '#6366F115' : colors.surface }]}>
+                                <Text style={{ fontSize: 13 }}>🕐</Text>
+                                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidPickTime ? '#4F46E5' : (kidPickupDate ? colors.textPrimary : colors.textTertiary) }}>
+                                  {kidPickupDate ? fmtTimeDisplay(kidPickupDate) : 'Time'}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                            {(showKidPickDate || showKidPickTime) && (
+                              <Modal transparent animationType="fade" visible onRequestClose={() => { setShowKidPickDate(false); setShowKidPickTime(false); }}>
+                                <TouchableOpacity style={f.pickerOverlay} activeOpacity={1} onPress={() => { setShowKidPickDate(false); setShowKidPickTime(false); }}>
+                                  <TouchableOpacity activeOpacity={1} style={[f.pickerCard, { backgroundColor: colors.card }]}>
+                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                                      <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>
+                                        {showKidPickDate ? '📅 Pickup Date' : '🕐 Pickup Time'}
+                                      </Text>
+                                      <TouchableOpacity onPress={() => { setShowKidPickDate(false); setShowKidPickTime(false); }}>
+                                        <Text style={{ color: '#6366F1', fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                    {showKidPickDate && (
+                                      <DateTimePicker
+                                        value={kidPickupDate ?? (kidDropoffDate ?? eventDate)} mode="date" display="spinner"
+                                        minimumDate={new Date()}
+                                        onChange={(_, d) => { if (d) { const m = kidPickupDate ? new Date(kidPickupDate) : (kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate)); m.setFullYear(d.getFullYear(), d.getMonth(), d.getDate()); setKidPickupDate(m); } }}
+                                        textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
+                                      />
+                                    )}
+                                    {showKidPickTime && (
+                                      <DateTimePicker
+                                        value={kidPickupDate ?? (kidDropoffDate ?? eventDate)} mode="time" display="spinner" is24Hour={false}
+                                        onChange={(_, d) => { if (d) { const m = kidPickupDate ? new Date(kidPickupDate) : (kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate)); m.setHours(d.getHours(), d.getMinutes()); setKidPickupDate(m); } }}
+                                        textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
+                                      />
+                                    )}
+                                  </TouchableOpacity>
+                                </TouchableOpacity>
+                              </Modal>
+                            )}
+                          </View>
                         )}
                       </View>
                     )}
+
                     <View style={[f.kidNote, { backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderColor: '#F59E0B40', marginTop: 4 }]}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#D97706' }}>
                         👋 Parent will review &amp; assign a driver
                       </Text>
                       <Text style={{ fontSize: TYPO.label, color: '#D97706', opacity: 0.8, marginTop: 2 }}>
-                        {kidRideType === 'none'    ? 'No ride requested — you have your own way there.' :
-                         kidRideType === 'dropoff' ? 'Drop-off event will be created for parent to assign.' :
-                         kidRideType === 'pickup'  ? 'Pickup event will be created for parent to assign.' :
-                                                     '2 separate events (drop-off + pickup) — parent assigns each driver.'}
+                        {!kidRideNeeded        ? 'No ride requested — you have your own way there.' :
+                         kidDropoffOn && kidPickupOn ? '2 events will be created (drop-off + pickup) — parent assigns each.' :
+                         kidDropoffOn          ? 'A drop-off event will be created for parent to assign.' :
+                         kidPickupOn           ? 'A pickup event will be created for parent to assign.' :
+                                                'Toggle drop-off or pickup below.'}
                       </Text>
                     </View>
                   </View>
@@ -1344,6 +1562,39 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                   />
                 )}
               </>
+            )}
+
+            {/* ── Grandparents Welcome toggle (parents only, non-Ride — Ride has inline toggles) ── */}
+            {!isKid && !isTeen && category !== 'Ride' && (
+              <TouchableOpacity
+                onPress={() => setOpenToGrandparents(g => !g)}
+                activeOpacity={0.8}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, marginBottom: 14,
+                  borderWidth: 1.5,
+                  borderColor: openToGrandparents ? '#F59E0B' : (isDark ? colors.border : '#E2E8F0'),
+                  backgroundColor: openToGrandparents
+                    ? (isDark ? '#2D1800' : '#FFFBEB')
+                    : (isDark ? colors.surface : '#F9FAFB'),
+                }}>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800',
+                    color: openToGrandparents ? '#92400E' : colors.textPrimary }}>
+                    👴👵 Grandparents Welcome
+                  </Text>
+                  <Text style={{ fontSize: TYPO.label, color: openToGrandparents ? '#B45309' : colors.textSecondary }}>
+                    {openToGrandparents
+                      ? 'Enters voluntary pool — grandparents can claim or pass, no pressure'
+                      : 'Off · private between parents only'}
+                  </Text>
+                </View>
+                <View style={{ width: 44, height: 26, borderRadius: 13,
+                  backgroundColor: openToGrandparents ? '#F59E0B' : (isDark ? '#334155' : '#CBD5E1'),
+                  justifyContent: 'center', paddingHorizontal: 3 }}>
+                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
+                    alignSelf: openToGrandparents ? 'flex-end' : 'flex-start' }} />
+                </View>
+              </TouchableOpacity>
             )}
 
             {/* ── Notes ── */}
@@ -1434,7 +1685,10 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const [editMemberIds, setEditMemberIds] = useState<string[]>(
     event.memberIds?.length ? event.memberIds : event.memberId ? [event.memberId] : []
   );
-  const [saving,     setSaving]     = useState(false);
+  const [saving,        setSaving]        = useState(false);
+  const [editGPOpen,    setEditGPOpen]    = useState(event.isOpenToGrandparents ?? false);
+  const [editTeenOpen,  setEditTeenOpen]  = useState(event.isOpenToTeens ?? false);
+  const [editRideCoins, setEditRideCoins] = useState(event.rideCoins != null ? String(event.rideCoins) : '');
 
   const catColor = CATEGORIES.find(c => c.key === event.category)?.color ?? BRAND.purple;
   const catEmoji = CATEGORIES.find(c => c.key === event.category)?.emoji ?? '📅';
@@ -1458,6 +1712,12 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       if (JSON.stringify(editMemberIds) !== JSON.stringify(origIds)) {
         patch.memberIds = editMemberIds.length > 1 ? editMemberIds : undefined;
         patch.memberId  = editMemberIds[0];
+      }
+      if (event.category === 'Ride') {
+        if (editGPOpen !== (event.isOpenToGrandparents ?? false)) patch.isOpenToGrandparents = editGPOpen;
+        if (editTeenOpen !== (event.isOpenToTeens ?? false)) patch.isOpenToTeens = editTeenOpen;
+        const newCoins = editTeenOpen && editRideCoins ? parseInt(editRideCoins, 10) : undefined;
+        if (newCoins !== event.rideCoins) patch.rideCoins = newCoins;
       }
     } else if (isOwnPending) {
       // Kid can only update notes on their own pending request
@@ -1618,6 +1878,72 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                       value={helperName}
                       onChangeText={t => setHelperName(t)}
                     />
+                  )}
+                </View>
+              )}
+
+              {/* GP + Teen toggles for Ride (parent only, not past) */}
+              {isParent && !isPast && event.category === 'Ride' && (
+                <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => setEditGPOpen(g => !g)}
+                    activeOpacity={0.8}
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                      paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
+                      borderColor: editGPOpen ? '#F59E0B' : (isDark ? colors.border : '#E2E8F0'),
+                      backgroundColor: editGPOpen ? (isDark ? '#2D1800' : '#FFFBEB') : (isDark ? colors.surface : '#F9FAFB'),
+                    }}>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: editGPOpen ? '#92400E' : colors.textPrimary }}>
+                        👴👵 Grandparents Welcome
+                      </Text>
+                      <Text style={{ fontSize: TYPO.label, color: editGPOpen ? '#B45309' : colors.textSecondary }}>
+                        {editGPOpen ? 'GPs can claim this ride or pass, no pressure' : 'Off · only visible to parents'}
+                      </Text>
+                    </View>
+                    <View style={{ width: 44, height: 26, borderRadius: 13,
+                      backgroundColor: editGPOpen ? '#F59E0B' : (isDark ? '#334155' : '#CBD5E1'),
+                      justifyContent: 'center', paddingHorizontal: 3 }}>
+                      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
+                        alignSelf: editGPOpen ? 'flex-end' : 'flex-start' }} />
+                    </View>
+                  </TouchableOpacity>
+
+                  {members.some(m => m.role === 'teen') && (
+                    <TouchableOpacity
+                      onPress={() => setEditTeenOpen(t => !t)}
+                      activeOpacity={0.8}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                        paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
+                        borderColor: editTeenOpen ? '#6366F1' : (isDark ? colors.border : '#E2E8F0'),
+                        backgroundColor: editTeenOpen ? (isDark ? '#1E1B4B' : '#EEF2FF') : (isDark ? colors.surface : '#F9FAFB'),
+                      }}>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: editTeenOpen ? '#3730A3' : colors.textPrimary }}>
+                          🚗 Teen Driver Welcome
+                        </Text>
+                        <Text style={{ fontSize: TYPO.label, color: editTeenOpen ? '#4338CA' : colors.textSecondary }}>
+                          {editTeenOpen ? 'Teen can drive · set coins below' : 'Off · teen driver not offered'}
+                        </Text>
+                      </View>
+                      <View style={{ width: 44, height: 26, borderRadius: 13,
+                        backgroundColor: editTeenOpen ? '#6366F1' : (isDark ? '#334155' : '#CBD5E1'),
+                        justifyContent: 'center', paddingHorizontal: 3 }}>
+                        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
+                          alignSelf: editTeenOpen ? 'flex-end' : 'flex-start' }} />
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                  {editTeenOpen && members.some(m => m.role === 'teen') && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 }}>
+                      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, flex: 1 }}>🪙 Coins for teen driver</Text>
+                      <TextInput
+                        style={[f.input, { flex: 0, width: 80, textAlign: 'center', color: colors.textPrimary, backgroundColor: colors.surface, borderColor: '#6366F1' }]}
+                        keyboardType="numeric" maxLength={4}
+                        placeholder="0" placeholderTextColor={colors.textTertiary}
+                        value={editRideCoins} onChangeText={setEditRideCoins}
+                      />
+                    </View>
                   )}
                 </View>
               )}

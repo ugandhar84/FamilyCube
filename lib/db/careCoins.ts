@@ -13,7 +13,7 @@
 
 import { awardCoins } from './rewards';
 import { supabase } from '@/lib/supabase';
-import { todayLocal } from '@/lib/dates';
+import { todayLocal, localDateStr } from '@/lib/dates';
 
 type CareAction = 'care_meal' | 'care_mood' | 'care_walk' | 'care_groom' | 'care_day_complete';
 

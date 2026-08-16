@@ -144,9 +144,10 @@ export default function RequestHelpModal({ visible, onClose, activeMemberId }: P
   const sendRequest = useKidRequestStore(s => s.sendRequest);
 
   const activeMember = members.find(m => m.id === activeMemberId);
-  const isAdult = activeMember?.role === 'parent' || activeMember?.role === 'senior';
+  const isAdult  = activeMember?.role === 'parent' || activeMember?.role === 'senior';
+  const isSenior = activeMember?.role === 'senior';
 
-  const kids   = members.filter(m => m.role === 'kid');
+  const kids   = members.filter(m => m.role === 'kid' || m.role === 'teen');
   const adults = members.filter(m => m.role === 'parent' || m.role === 'senior');
 
   const [selectedKidId, setSelectedKidId] = useState(kids[0]?.id ?? '');
@@ -187,7 +188,8 @@ export default function RequestHelpModal({ visible, onClose, activeMemberId }: P
       urgency:       reqUrgency,
       assignedHelper,
       rewardCoins:   category === 'Homework' ? rewardCoins : 15,
-      status:        (isAdult && assignedHelper) ? 'approved' : 'pending',
+      // Seniors can't self-approve Ride or Chore tasks — those need parent review
+      status:        (isAdult && assignedHelper && !(isSenior && ['Ride', 'ChoreAssist'].includes(category))) ? 'approved' : 'pending',
     } as any);
 
     setSubmitting(false);

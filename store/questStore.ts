@@ -41,6 +41,27 @@ export type QuestRecurrence = 'once' | 'daily' | 'weekdays' | 'weekly' | 'biweek
 export type QuestPriority   = 'low' | 'medium' | 'high' | 'urgent';
 export type QuestDifficulty = 'easy' | 'medium' | 'hard' | 'hero';
 
+// Spec §2: chore_definitions.category
+export type QuestType =
+  | 'citizenship'      // non-negotiable, 0 pts, required for streak
+  | 'routine'          // standard recurring
+  | 'bounty'           // high-effort, first-come
+  | 'shopping'         // errand / shopping run with item list + optional receipt
+  | 'grandparent_quest'// intergenerational, funded by grandparent
+  | 'parent_only'      // adult-only, private, 0 pts
+  | 'general';         // default (existing quests)
+
+// Spec §8: actionable pushback for parent-only quests
+export type PushbackType = 'snooze' | 'blocker' | 'trade' | 'discuss';
+
+export interface QuestPushback {
+  type:       PushbackType;
+  details:    string;
+  by:         string;   // memberId who pushed back
+  at:         string;   // ISO timestamp
+  snoozeUntil?: string; // for type=snooze
+}
+
 export interface QuestHistoryEntry {
   at:      string;
   action:  'created' | 'assigned' | 'claimed' | 'submitted' | 'approved' | 'declined' | 'reassigned' | 'reopened' | 'cancelled' | 'archived';
@@ -123,6 +144,9 @@ export interface Quest {
   declineReasonCode?: string;
 
   linkedGroceryIds: string[];
+  shoppingItems?:   string[];
+  shoppingStore?:   string;
+  shoppingBudget?:  number;
   linkedStore?:     string;
 
   tags:             string[];
@@ -131,6 +155,17 @@ export interface Quest {
   lastModifiedById?: string;
 
   isAdultTask:      boolean;  // true = only visible to parent/senior; hidden from kids/grandparents
+  inviteGrandparents?: boolean; // true = grandparents can also see/claim this adult task
+
+  // Spec §2 / §8: parent-only quest extensions
+  questType:        QuestType;
+  assignmentMode:   'pull' | 'direct'; // pull = household backlog; direct = assigned to partner
+  bounceCount:      number;            // Two-Bounce Rule tracker
+  isLocked:         boolean;           // true after 2 bounces → move to unassigned pool
+  pushbacks:        QuestPushback[];   // actionable pushback history
+  autoApproveAt?:   string;            // ISO — set when submitted; cron approves after 24h
+  appreciationSent: boolean;           // co-parent sent appreciation ping after completion
+  snoozedUntil?:    string;            // ISO — if pushback type=snooze
 }
 
 // ─── Cache + realtime state ───────────────────────────────────────────────────
@@ -152,7 +187,7 @@ interface QuestState {
   loadFromStorage:  () => Promise<void>;
   syncFromDB:       () => Promise<void>;
 
-  addQuest:         (q: Omit<Quest, 'id' | 'createdAt' | 'history' | 'tags' | 'photoUrls' | 'linkedGroceryIds' | 'recurrenceDays' | 'bonusCoins' | 'difficulty' | 'isMultiAssign' | 'maxClaimants' | 'participants'> & Partial<Pick<Quest, 'tags' | 'difficulty'>>) => Quest;
+  addQuest:         (q: Omit<Quest, 'id' | 'createdAt' | 'history' | 'tags' | 'photoUrls' | 'linkedGroceryIds' | 'recurrenceDays' | 'bonusCoins' | 'difficulty' | 'isMultiAssign' | 'maxClaimants' | 'participants' | 'questType' | 'assignmentMode' | 'bounceCount' | 'isLocked' | 'pushbacks' | 'appreciationSent'> & Partial<Pick<Quest, 'tags' | 'difficulty' | 'questType' | 'assignmentMode'>>) => Quest;
   updateQuest:      (id: string, updates: Partial<Omit<Quest, 'id' | 'history'>>, by?: string) => void;
   deleteQuest:      (id: string) => void;
 
@@ -172,6 +207,12 @@ interface QuestState {
   archiveDoneQuests: () => void;
 
   duplicateQuest:   (id: string) => Quest | null;
+
+  // Spec §8: parent-only quest actions
+  pullTask:          (id: string, memberId: string) => void;           // claim from household backlog
+  pushbackTask:      (id: string, pb: QuestPushback) => void;         // actionable pushback
+  appreciateTask:    (id: string, fromMemberId: string) => void;       // post-completion appreciation ping
+  lockTask:          (id: string) => void;                             // two-bounce lock → unassigned pool
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -380,12 +421,22 @@ export const useQuestStore = create<QuestState>((set, get) => ({
       assignedToIds:    [],
       photoUrls:        [],
       linkedGroceryIds: [],
+      shoppingItems:    (q as any).shoppingItems ?? undefined,
+      shoppingStore:    (q as any).shoppingStore ?? undefined,
+      shoppingBudget:   (q as any).shoppingBudget ?? undefined,
       recurrenceDays:   [],
       bonusCoins:       0,
       isMultiAssign:    false,
       maxClaimants:     1,
       participants:     [],
-      isAdultTask:      (q as any).isAdultTask ?? false,
+      isAdultTask:        (q as any).isAdultTask ?? false,
+      inviteGrandparents: (q as any).inviteGrandparents ?? false,
+      questType:        (q as any).questType ?? 'general',
+      assignmentMode:   (q as any).assignmentMode ?? 'direct',
+      bounceCount:      0,
+      isLocked:         false,
+      pushbacks:        [],
+      appreciationSent: false,
       createdAt:        new Date().toISOString(),
       isPool:           q.isPool ?? !q.assignedToId,
       history:          [
@@ -783,6 +834,78 @@ export const useQuestStore = create<QuestState>((set, get) => ({
     );
     set({ quests: next }); save(next);
   },
+
+  // ── Spec §8: Pull from household backlog ──────────────────────────────────
+  pullTask: (id, memberId) => {
+    const now = new Date().toISOString();
+    const next = get().quests.map(q => {
+      if (q.id !== id || q.assignmentMode !== 'pull') return q;
+      return {
+        ...q,
+        status:       'claimed' as QuestStatus,
+        assignedToId: memberId,
+        isPool:       false,
+        claimedAt:    now,
+        history:      [...q.history, histEntry('claimed', memberId)],
+      };
+    });
+    set({ quests: next }); save(next);
+    dbUpdate(id, { status: 'claimed', assigned_to_id: memberId, is_pool: false, claimed_at: now });
+    const q = next.find(x => x.id === id);
+    if (q) notifyQuestEvent(id, 'quest_claimed', { questTitle: q.title, assigneeId: memberId, triggeredById: memberId });
+  },
+
+  // ── Spec §8: Actionable Pushback ──────────────────────────────────────────
+  pushbackTask: (id, pb) => {
+    const next = get().quests.map(q => {
+      if (q.id !== id) return q;
+      const newBounce = q.bounceCount + 1;
+      const locked    = newBounce >= 2;
+      return {
+        ...q,
+        bounceCount:  newBounce,
+        isLocked:     locked,
+        pushbacks:    [...q.pushbacks, pb],
+        snoozedUntil: pb.type === 'snooze' ? pb.snoozeUntil : q.snoozedUntil,
+        // Two-Bounce: after lock, release to unassigned pool
+        ...(locked ? { assignedToId: undefined, isPool: true, status: 'todo' as QuestStatus } : {}),
+        history: [...q.history, histEntry('assigned', pb.by, `pushback:${pb.type}`)],
+      };
+    });
+    set({ quests: next }); save(next);
+    const q = next.find(x => x.id === id);
+    if (!q) return;
+    dbUpdate(id, {
+      bounce_count:  q.bounceCount,
+      is_locked:     q.isLocked,
+      pushbacks:     q.pushbacks,
+      snoozed_until: q.snoozedUntil ?? null,
+      ...(q.isLocked ? { assigned_to_id: null, is_pool: true, status: 'todo' } : {}),
+      history:       q.history,
+    });
+  },
+
+  // ── Spec §8: Appreciation Ping ────────────────────────────────────────────
+  appreciateTask: (id, fromMemberId) => {
+    const next = get().quests.map(q =>
+      q.id === id ? { ...q, appreciationSent: true } : q
+    );
+    set({ quests: next }); save(next);
+    dbUpdate(id, { appreciation_sent: true });
+    const q = next.find(x => x.id === id);
+    if (q) notifyQuestEvent(id, 'appreciation_sent', { questTitle: q.title, triggeredById: fromMemberId });
+  },
+
+  // ── Two-Bounce Rule: manual lock ─────────────────────────────────────────
+  lockTask: (id) => {
+    const next = get().quests.map(q =>
+      q.id === id
+        ? { ...q, isLocked: true, assignedToId: undefined, isPool: true, status: 'todo' as QuestStatus }
+        : q
+    );
+    set({ quests: next }); save(next);
+    dbUpdate(id, { is_locked: true, assigned_to_id: null, is_pool: true, status: 'todo' });
+  },
 }));
 
 // ─── DB row → Quest ───────────────────────────────────────────────────────────
@@ -925,13 +1048,26 @@ function fromRow(row: any): Quest {
     declineReasonCode: row.decline_reason_code ?? undefined,
 
     linkedGroceryIds: row.linked_grocery_ids ?? [],
+    shoppingItems:    Array.isArray(row.shopping_items) ? row.shopping_items : undefined,
+    shoppingStore:    row.shopping_store ?? undefined,
+    shoppingBudget:   row.shopping_budget ?? undefined,
     linkedStore:      row.linked_store ?? undefined,
 
     tags:             row.tags ?? [],
     history:          Array.isArray(row.history) ? row.history : [],
     createdById:      row.created_by_id ? String(row.created_by_id) : undefined,
     lastModifiedById: row.last_modified_by_id ? String(row.last_modified_by_id) : undefined,
-    isAdultTask:      Boolean(row.is_adult_task),
+    isAdultTask:        Boolean(row.is_adult_task),
+    inviteGrandparents: Boolean(row.invite_grandparents),
+
+    questType:        (row.quest_type as QuestType) ?? 'general',
+    assignmentMode:   (row.assignment_mode as 'pull' | 'direct') ?? 'direct',
+    bounceCount:      row.bounce_count ?? 0,
+    isLocked:         Boolean(row.is_locked),
+    pushbacks:        Array.isArray(row.pushbacks) ? row.pushbacks : [],
+    autoApproveAt:    row.auto_approve_at ?? undefined,
+    appreciationSent: Boolean(row.appreciation_sent),
+    snoozedUntil:     row.snoozed_until ?? undefined,
   };
 }
 
@@ -989,13 +1125,26 @@ function toRow(q: Quest & { createdAt?: string }) {
     decline_reason_code: q.declineReasonCode ?? null,
 
     linked_grocery_ids: q.linkedGroceryIds ?? [],
+    shopping_items:     q.shoppingItems ?? null,
+    shopping_store:     q.shoppingStore ?? null,
+    shopping_budget:    q.shoppingBudget ?? null,
     linked_store:       q.linkedStore ?? null,
 
     tags:               q.tags ?? [],
     history:            q.history ?? [],
     created_by_id:      q.createdById ?? null,
     last_modified_by_id: q.lastModifiedById ?? null,
-    is_adult_task:      q.isAdultTask ?? false,
+    is_adult_task:       q.isAdultTask ?? false,
+    invite_grandparents: q.inviteGrandparents ?? false,
+
+    quest_type:         q.questType ?? 'general',
+    assignment_mode:    q.assignmentMode ?? 'direct',
+    bounce_count:       q.bounceCount ?? 0,
+    is_locked:          q.isLocked ?? false,
+    pushbacks:          q.pushbacks ?? [],
+    auto_approve_at:    q.autoApproveAt ?? null,
+    appreciation_sent:  q.appreciationSent ?? false,
+    snoozed_until:      q.snoozedUntil ?? null,
 
     created_at:         q.createdAt ?? new Date().toISOString(),
   };

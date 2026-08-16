@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Car, X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
-import { useQuestStore } from '@/store/questStore';
+import { useQuestStore } from '@/store/choreAdapter';
 import { useEventStore } from '@/store/eventStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { TYPO } from '@/constants/theme';
@@ -17,6 +17,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { ParentView } from './ParentView';
 import { KidView } from './KidView';
 import { SeniorView } from './SeniorView';
+import { TeenView } from './TeenView';
 import { EnRouteModal } from './hubComponents';
 import { fmtClock } from './hubUtils';
 
@@ -56,7 +57,8 @@ export default function HubScreen() {
   const active   = members.find(m => m.id === activeMemberId) ?? members[0];
   const isParent = active?.role === 'parent';
   const isSenior = active?.role === 'senior';
-  const isKid    = !isParent && !isSenior;
+  const isTeen   = active?.role === 'teen';
+  const isKid    = !isParent && !isSenior && !isTeen;
 
   if (!active) return null;
 
@@ -104,6 +106,11 @@ export default function HubScreen() {
           <KidView
             active={active} members={members} colors={colors} isDark={isDark}
             onHelpRequest={() => setHelpModal(true)}
+          />
+        )}
+        {isTeen && (
+          <TeenView
+            active={active} members={members} colors={colors} isDark={isDark}
           />
         )}
         {isSenior && (

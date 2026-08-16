@@ -12,10 +12,12 @@
 --   - auth.uid() is always checked against members.id (the parent's member record)
 
 -- ── Drop old broken policies ──────────────────────────────────────────────────
-DROP POLICY IF EXISTS "kid insert own requests"         ON public.kid_requests;
-DROP POLICY IF EXISTS "kid delete own pending requests" ON public.kid_requests;
-DROP POLICY IF EXISTS "family members read kid_requests"   ON public.kid_requests;
-DROP POLICY IF EXISTS "family members update kid_requests" ON public.kid_requests;
+DROP POLICY IF EXISTS "kid insert own requests"              ON public.kid_requests;
+DROP POLICY IF EXISTS "kid delete own pending requests"      ON public.kid_requests;
+DROP POLICY IF EXISTS "family members read kid_requests"     ON public.kid_requests;
+DROP POLICY IF EXISTS "family members update kid_requests"   ON public.kid_requests;
+DROP POLICY IF EXISTS "family members insert kid_requests"   ON public.kid_requests;
+DROP POLICY IF EXISTS "family members delete kid_requests"   ON public.kid_requests;
 
 -- ── Recreate all four policies cleanly ───────────────────────────────────────
 

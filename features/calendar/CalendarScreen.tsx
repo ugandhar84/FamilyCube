@@ -19,7 +19,7 @@
  */
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, Pressable,
   TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
   Animated, PanResponder, Linking,
 } from 'react-native';
@@ -824,6 +824,7 @@ export default function CalendarScreen() {
     ?? members.find(m => m.role === 'parent') ?? members[0];
   const isParent         = activeMember?.role === 'parent';
   const isSenior         = activeMember?.role === 'senior';
+  const isTeen           = activeMember?.role === 'teen';
   const isKid            = activeMember?.role === 'kid';
   const isParentOrSenior = isParent || isSenior;
   const activeMemberName = activeMember?.name ?? '';
@@ -942,14 +943,23 @@ export default function CalendarScreen() {
   const dayEvents = useMemo(() => {
     return events
       .filter(e => e.date === selectedDate &&
-        // Holidays surface as banner only — excluded from timeline cards
         e.category !== 'Holiday' &&
-        // Kids only see their own events or family-wide events (no specific member)
+        // Kid: only their own events or family-wide
         (!isKid || e.memberId === activeMemberId || !e.memberId) &&
+        // Teen: sees all family events (like parent) — full schedule awareness
+        // Senior: only events they're the helper on, or family-wide with no assigned member
+        (!isSenior || (
+          (e.helper && (e.helper.includes(activeMemberName) || activeMemberName.includes(e.helper.split(' ')[0]))) ||
+          (!e.memberId && !e.helper) ||
+          !(e as any).isPrivate
+        )) &&
         (!filterMember || e.memberId === filterMember || !e.memberId) &&
         isInRange(e.date))
       .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
-  }, [events, selectedDate, filterMember, rangeStart, rangeEnd, isKid, activeMemberId]);
+  }, [events, selectedDate, filterMember, rangeStart, rangeEnd, isKid, isSenior, activeMemberId, activeMemberName]);
+
+  // Events where senior can volunteer as helper (has a pending/no helper, dated today or future)
+  // seniorOpenRides removed — ride volunteering now lives in Hub > Helper Dispatch
 
   const selectedDateLabel = fmtDate(selectedDate);
 
@@ -1190,6 +1200,8 @@ export default function CalendarScreen() {
           </View>
         ))}
 
+        {/* Senior ride volunteering lives in the Hub > Helper Dispatch section, not here */}
+
         {/* ── Timeline ── */}
         <View style={{ paddingTop: 16 }}>
         {dayLoading && dayEvents.length === 0 ? (
@@ -1207,7 +1219,8 @@ export default function CalendarScreen() {
             </Text>
             <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center' }}>
               {isKid ? 'Tap "+ Ask Help / Ride" above to request parent assistance.'
-                     : 'Tap "+ Event" to add one for the family.'}
+                : isSenior ? 'No rides or events assigned to you today.'
+                : 'Tap "+ Event" to add one for the family.'}
             </Text>
           </View>
         ) : (

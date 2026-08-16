@@ -143,6 +143,7 @@ function AnimatedBrandName({ textColor }: { textColor: string }) {
 const ROLE_CONFIG = {
   parent: { label: 'PARENT MODE', color: BRAND.teal },
   kid:    { label: 'KID MODE',    color: BRAND.amber },
+  teen:   { label: 'TEEN MODE',   color: BRAND.amber },
   senior: { label: 'SENIOR MODE', color: BRAND.purple },
 } as const;
 
@@ -150,7 +151,7 @@ const ROLE_CONFIG = {
 
 interface AppHeaderProps {
   memberName?:     string;
-  memberRole?:     'parent' | 'kid' | 'senior';
+  memberRole?:     'parent' | 'kid' | 'teen' | 'senior';
   notifCount?:     number;
   onPersonaPress?: () => void;
   onBellPress?:    () => void;

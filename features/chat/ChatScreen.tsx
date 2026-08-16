@@ -562,12 +562,14 @@ const BUBBLE_SM = 4;  // tail corner (last in group)
 
 function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, senderEmoji,
   senderColor, activeMemberId, memberMap, searchQuery, colors, isDark, highlighted,
-  onLongPress, onDoubleTap, onSwipeRight, onQuoteTap }: {
+  onLongPress, onDoubleTap, onSwipeRight, onQuoteTap, onOpenImage, onOpenVideo }: {
   msg: ChatMessage; isMe: boolean; isGroupFirst: boolean; isGroupLast: boolean;
   senderName: string; senderEmoji: string; senderColor: string;
   activeMemberId: string; memberMap: Record<string, any>;
   highlighted?: boolean;
   onQuoteTap?: () => void;
+  onOpenImage?: (uri: string) => void;
+  onOpenVideo?: (uri: string) => void;
   searchQuery: string; colors: any; isDark: boolean;
   onLongPress: () => void; onDoubleTap: () => void; onSwipeRight: () => void;
 }) {
@@ -733,7 +735,7 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
                       scrollEnabled={false} zoomEnabled={false}
                       pitchEnabled={false} rotateEnabled={false}
                       pointerEvents="none"
-                      legalLabelInsets={{ bottom: -999, right: -999 }}
+                      legalLabelInsets={{ top: 0, left: 0, bottom: -999, right: -999 }}
                     >
                       <Marker coordinate={{ latitude: msg.locationPin.lat, longitude: msg.locationPin.lng }} />
                     </MapView>
@@ -777,7 +779,7 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
                 {/* Image / video */}
                 {msg.imageUri && (
                   <Pressable
-                    onPress={() => msg.mediaType === 'video' ? setVideoLightboxUri(msg.imageUri!) : setLightboxUri(msg.imageUri!)}
+                    onPress={() => msg.mediaType === 'video' ? onOpenVideo?.(msg.imageUri!) : onOpenImage?.(msg.imageUri!)}
                     style={{ marginBottom: msg.text ? 6 : 0, borderRadius: 12, overflow: 'hidden' }}>
                     <Image source={{ uri: msg.imageUri }} style={{ width: 210, height: 158 }} resizeMode="cover" />
                     {msg.mediaType === 'video' && (
@@ -1536,6 +1538,8 @@ export default function ChatScreen() {
                     onDoubleTap={() => setQuickEmojiFor(msg)}
                     onSwipeRight={() => { setReplyingTo(msg); inputRef.current?.focus(); }}
                     onQuoteTap={msg.replyTo ? () => scrollToQuotedMsg(msg.replyTo!.id) : undefined}
+                    onOpenImage={setLightboxUri}
+                    onOpenVideo={setVideoLightboxUri}
                   />
                 );
               }}

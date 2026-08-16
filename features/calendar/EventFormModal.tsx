@@ -136,6 +136,9 @@ function localDateStr(d: Date): string {
 function fmtTime(d: Date): string {
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
+function fmtLocalDateTimeStamp(d: Date): string {
+  return `${localDateStr(d)}T${fmtTime(d)}`;
+}
 function fmtDisplay(d: Date): string {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
@@ -166,11 +169,13 @@ function Chip({ label, active, color, onPress, small }: {
 }
 
 // ─── Multi-select member picker ────────────────────────────────────────────────
-function MemberPicker({ label, selectedIds, members, onToggle, onSelectAll, colors, isDark, siblings }: {
+function MemberPicker({ label, selectedIds, members, onToggle, onSelectAll, colors, isDark, siblings, lockedIds }: {
   label: string; selectedIds: string[];
   members: any[]; onToggle: (id: string) => void; onSelectAll?: () => void;
   colors: any; isDark: boolean; siblings: string[];
+  lockedIds?: string[];  // IDs that cannot be deselected
 }) {
+  const locked = lockedIds ?? [];
   const allSelected = members.length > 0 && members.every(m => selectedIds.includes(m.id));
   return (
     <View style={{ marginBottom: 14 }}>
@@ -188,8 +193,14 @@ function MemberPicker({ label, selectedIds, members, onToggle, onSelectAll, colo
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: 'row', gap: 12 }}>
         {members.map(m => {
           const sel = selectedIds.includes(m.id);
+          const isLocked = locked.includes(m.id);
           return (
-            <TouchableOpacity key={m.id} style={{ alignItems: 'center', gap: 4 }} onPress={() => onToggle(m.id)}>
+            <TouchableOpacity
+              key={m.id}
+              style={{ alignItems: 'center', gap: 4, opacity: isLocked ? 1 : 1 }}
+              onPress={() => !isLocked && onToggle(m.id)}
+              disabled={isLocked}
+            >
               <View style={{ position: 'relative' }}>
                 <FamilyAvatar
                   name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl}
@@ -198,7 +209,12 @@ function MemberPicker({ label, selectedIds, members, onToggle, onSelectAll, colo
                   ringWidth={sel ? 2.5 : 0}
                   bgColor={sel ? BRAND.purple + '20' : (isDark ? '#1E293B' : '#F1F5F9')}
                 />
-                {sel && (
+                {isLocked && sel && (
+                  <View style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: 8, backgroundColor: '#F59E0B', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 9, color: '#fff', fontWeight: '900' }}>🔒</Text>
+                  </View>
+                )}
+                {!isLocked && sel && (
                   <View style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: 8, backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ fontSize: 9, color: '#fff', fontWeight: '900' }}>✓</Text>
                   </View>
@@ -207,6 +223,9 @@ function MemberPicker({ label, selectedIds, members, onToggle, onSelectAll, colo
               <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: sel ? BRAND.purple : colors.textTertiary }} numberOfLines={1}>
                 {m.name.split(' ')[0]}
               </Text>
+              {isLocked && (
+                <Text style={{ fontSize: 8, color: '#F59E0B', fontWeight: '800', marginTop: -2 }}>Locked</Text>
+              )}
             </TouchableOpacity>
           );
         })}
@@ -285,6 +304,15 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   const [meetingUrl,     setMeetingUrl]     = useState('');
   const [pickupLocation, setPickupLocation] = useState('');
   const [dropLocation,   setDropLocation]   = useState('');
+  // Drive assignment — separate from the tutor/escort/coach name above, for
+  // when an external tutor is set but transport is still a parent decision.
+  const [driverId,       setDriverId]       = useState<string | undefined>();
+  const [driverName,     setDriverName]     = useState('');
+  const handleDriverSelect = (id: string) => {
+    const m = members.find(x => x.id === id);
+    setDriverId(id);
+    setDriverName(m?.name ?? '');
+  };
   const [workType,       setWorkType]       = useState('');
   const [workLocation,   setWorkLocation]   = useState('');
   const [generalLocation,setGeneralLocation]= useState('');
@@ -415,6 +443,14 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
     if (!canSubmit) return;
     setSaving(true);
 
+    const primaryKidRideDate = isKid && kidRideNeeded
+      ? (kidDropoffOn && kidDropoffDate
+          ? kidDropoffDate
+          : kidPickupOn && kidPickupDate
+            ? kidPickupDate
+            : eventDate)
+      : eventDate;
+
     const location =
       category === 'Medical'  ? clinicLocation || undefined
       : category === 'Sports' ? venueLocation  || undefined
@@ -423,12 +459,16 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
       : category === 'Work'   ? workLocation   || undefined
       : generalLocation       || undefined;
 
-    const helper = helperName.trim() || undefined;
+    // Study's dedicated "Tutor name" field is the source of truth when no
+    // family tutor was picked — helperName alone would silently drop it.
+    const helper = category === 'Study'
+      ? (helperId ? helperName.trim() : tutorName.trim()) || undefined
+      : helperName.trim() || undefined;
 
     addEvent({
       title:           finalTitle,
-      date:            isKid && kidRideNeeded && kidDropoffOn && kidDropoffDate ? localDateStr(kidDropoffDate) : localDateStr(eventDate),
-      time:            allDay ? undefined : (isKid && kidRideNeeded && kidDropoffOn && kidDropoffDate ? fmtTime(kidDropoffDate) : fmtTime(eventDate)),
+      date:            localDateStr(primaryKidRideDate),
+      time:            allDay ? undefined : fmtTime(primaryKidRideDate),
       type:            (category === 'Birthday' ? 'birthday' : category === 'Medical' ? 'appointment' : 'event') as EventType,
       category,
       allDay,
@@ -436,11 +476,11 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
       notes:           notes.trim() || undefined,
       // Encode kid ride request as structured metadata in returnTime field
       returnTime:      isKid && kidRideType === 'both' && kidPickupDate
-        ? `RIDE:both:${fmtTimeDisplay(kidPickupDate)}`
+        ? `RIDE:both:${fmtLocalDateTimeStamp(kidPickupDate)}`
         : isKid && kidRideType === 'dropoff'
         ? 'RIDE:dropoff'
         : isKid && kidRideType === 'pickup' && kidPickupDate
-        ? `RIDE:pickup:${fmtTimeDisplay(kidPickupDate)}`
+        ? `RIDE:pickup:${fmtLocalDateTimeStamp(kidPickupDate)}`
         : returnDate ? fmtTimeDisplay(returnDate) : undefined,
       memberId:        memberIds[0],
       memberIds:       memberIds.length > 1 ? memberIds : undefined,
@@ -464,6 +504,10 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
       isOpenToGrandparents: !isKid && !isTeen && openToGrandparents,
       isOpenToTeens:        !isKid && !isTeen && openToTeens,
       rideCoins:            (!isKid && !isTeen && openToTeens && rideCoinsTeen) ? parseInt(rideCoinsTeen, 10) : undefined,
+      // Drive assignment — distinct from `helper` (tutor/escort/coach)
+      rideRequired:    !isKid && !!driverName.trim(),
+      driverName:      !isKid ? (driverName.trim() || undefined) : undefined,
+      driverStatus:    !isKid && driverName.trim() ? 'pending' : undefined,
     });
 
     // Persist custom title so it appears in future suggestions for this family
@@ -848,6 +892,26 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                               value={dropLocation} onChangeText={setDropLocation} />
                           </View>
                         </View>
+                        {!isKid && (
+                          <View style={{ marginBottom: 14, gap: 8 }}>
+                            <MemberPicker
+                              label="🚗 Drive Assignment"
+                              selectedIds={driverId ? [driverId] : []}
+                              members={adults}
+                              onToggle={handleDriverSelect}
+                              colors={colors} isDark={isDark} siblings={siblings}
+                            />
+                            {!driverId && (
+                              <TextInput
+                                style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                                placeholder="Or type a name (e.g. external driver)"
+                                placeholderTextColor={colors.textTertiary}
+                                value={driverName}
+                                onChangeText={t => { setDriverName(t); if (!t) setDriverId(undefined); }}
+                              />
+                            )}
+                          </View>
+                        )}
                         <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Return pickup (optional)</Text>
                         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
                           <TouchableOpacity
@@ -1537,7 +1601,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                   <MemberPicker
                     label={
                       category === 'Medical'  ? '🏥 Accompanied by (adult)' :
-                      category === 'Study'    ? '📚 Tutored by (pick from family or type name)' :
+                      category === 'Study'    ? '📚 Or pick a family tutor' :
                       category === 'Sports'   ? '🚗 Drop-off by (adult)' :
                       category === 'Birthday' ? '🚗 Driven by / accompanying' :
                       '🚗 Driven by (adult)'
@@ -1548,14 +1612,13 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                     colors={colors} isDark={isDark} siblings={siblings}
                   />
                 )}
-                {/* Manual name entry for external helpers (tutors, coaches, etc.) */}
-                {!isKid && (
+                {/* Manual name entry for external helpers (coaches, escorts, etc.) —
+                    Study skips this: its dedicated "Tutor name" field above is the
+                    single source of truth, synced into `helper` at submit time. */}
+                {!isKid && category !== 'Study' && (
                   <TextInput
                     style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border, marginTop: -8 }]}
-                    placeholder={
-                      category === 'Study' ? 'Or type tutor name (e.g. Mr. Kumar)'
-                      : 'Or type name (e.g. Grandma Mary)'
-                    }
+                    placeholder="Or type name (e.g. Grandma Mary)"
                     placeholderTextColor={colors.textTertiary}
                     value={helperName}
                     onChangeText={t => { setHelperName(t); if (!t) setHelperId(undefined); }}
@@ -1677,6 +1740,12 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const isParentApproved = !event.approvalPending;
   const restricted     = isPast || (isKid && isParentApproved); // past or kid approved → read-only
 
+  // Original requester — if this was a kid request, lock that kid from being removed
+  const originalRequesterId = event.helperRequestedBy
+    ? members.find(m => event.helperRequestedBy?.includes(m.name))?.id
+    : undefined;
+  const lockedMemberIds = originalRequesterId ? [originalRequesterId] : [];
+
   const [notes,      setNotes]      = useState(event.notes ?? '');
   const [helperName, setHelperName] = useState('');
   const [helperId,   setHelperId]   = useState<string | undefined>(
@@ -1689,6 +1758,23 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const [editGPOpen,    setEditGPOpen]    = useState(event.isOpenToGrandparents ?? false);
   const [editTeenOpen,  setEditTeenOpen]  = useState(event.isOpenToTeens ?? false);
   const [editRideCoins, setEditRideCoins] = useState(event.rideCoins != null ? String(event.rideCoins) : '');
+
+  // Drive assignment — separate from the tutor/escort/coach (`helper`) once
+  // that's already filled in (e.g. by the kid naming an external tutor).
+  const [editRideRequired, setEditRideRequired] = useState(event.rideRequired ?? false);
+  const [editDriverName,   setEditDriverName]   = useState(event.driverName ?? '');
+  const [editDriverId,     setEditDriverId]     = useState<string | undefined>(
+    members.find((m: any) => m.name === event.driverName)?.id
+  );
+  const handleDriverSelect = (id: string) => {
+    const m = members.find(x => x.id === id);
+    setEditDriverId(id);
+    setEditDriverName(m?.name ?? '');
+  };
+  // Categories where `helper` means a role (tutor/escort/coach), not the driver —
+  // Ride keeps `helper` as the driver directly, unchanged.
+  const ROLE_HELPER_CATEGORIES = ['Medical', 'Study', 'Sports'];
+  const helperIsRoleFilled = ROLE_HELPER_CATEGORIES.includes(event.category ?? '') && !!event.helper;
 
   const catColor = CATEGORIES.find(c => c.key === event.category)?.color ?? BRAND.purple;
   const catEmoji = CATEGORIES.find(c => c.key === event.category)?.emoji ?? '📅';
@@ -1713,11 +1799,20 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
         patch.memberIds = editMemberIds.length > 1 ? editMemberIds : undefined;
         patch.memberId  = editMemberIds[0];
       }
-      if (event.category === 'Ride') {
+      if (event.category === 'Ride' || event.category === 'Study') {
         if (editGPOpen !== (event.isOpenToGrandparents ?? false)) patch.isOpenToGrandparents = editGPOpen;
+      }
+      if (event.category === 'Ride') {
         if (editTeenOpen !== (event.isOpenToTeens ?? false)) patch.isOpenToTeens = editTeenOpen;
         const newCoins = editTeenOpen && editRideCoins ? parseInt(editRideCoins, 10) : undefined;
         if (newCoins !== event.rideCoins) patch.rideCoins = newCoins;
+      }
+      if (helperIsRoleFilled) {
+        if (editRideRequired !== (event.rideRequired ?? false)) patch.rideRequired = editRideRequired;
+        if (editDriverName !== (event.driverName ?? '')) {
+          patch.driverName = editDriverName.trim() || undefined;
+          patch.driverStatus = editDriverName.trim() ? 'pending' : undefined;
+        }
       }
     } else if (isOwnPending) {
       // Kid can only update notes on their own pending request
@@ -1814,6 +1909,13 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   </Text>
                 </View>
               )}
+              {event.helperRequestedBy && (
+                <View style={{ backgroundColor: '#EEF2FF', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#C7D2FE' }}>
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#4338CA' }}>
+                    🙋 Requested by {event.helperRequestedBy}
+                  </Text>
+                </View>
+              )}
               {restricted && (
                 <View style={{ backgroundColor: '#FEF3C715', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
                   <Text style={{ fontSize: TYPO.micro, color: '#D97706', fontWeight: '700' }}>🔒 Read-only</Text>
@@ -1830,6 +1932,11 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
               {/* Change who it's for */}
               {isParent && !['Work', 'Event'].includes(event.category ?? '') && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 8 }}>
+                  {lockedMemberIds.length > 0 && (
+                    <Text style={{ fontSize: TYPO.micro, color: '#F59E0B', fontWeight: '700', marginBottom: 4 }}>
+                      🔒 Original requester cannot be removed • add siblings if needed
+                    </Text>
+                  )}
                   <MemberPicker
                     label={
                       event.category === 'Medical'  ? '🩺 Change patient(s)' :
@@ -1838,19 +1945,30 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                       event.category === 'Ride'     ? '🚗 Passenger(s)' : '👤 For'
                     }
                     selectedIds={editMemberIds}
-                    members={event.category === 'Work' ? adults : kids}
-                    onToggle={id => setEditMemberIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}
+                    members={['Medical', 'Sports', 'Study', 'Ride'].includes(event.category ?? '') ? kids : members}
+                    onToggle={id => {
+                      if (lockedMemberIds.includes(id)) return; // locked kid cannot be removed
+                      setEditMemberIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+                    }}
                     onSelectAll={() => {
-                      const pool = event.category === 'Work' ? adults : kids;
-                      setEditMemberIds(editMemberIds.length === pool.length ? [] : pool.map(m => m.id));
+                      // Birthday/Errand/Other aren't kid-specific — a parent can run an
+                      // errand or throw their own party, so the pool isn't kids-only there.
+                      const pool = ['Medical', 'Sports', 'Study', 'Ride'].includes(event.category ?? '') ? kids : members;
+                      // Select all but preserve locked kids
+                      const allIds = pool.map(m => m.id);
+                      setEditMemberIds(editMemberIds.length === pool.length ? lockedMemberIds : allIds);
                     }}
                     colors={colors} isDark={isDark} siblings={siblings}
+                    lockedIds={lockedMemberIds}
                   />
                 </View>
               )}
 
-              {/* Helper reassignment */}
-              {isParent && !['Work', 'Event'].includes(event.category ?? '') && (
+              {/* Helper/tutor/escort/coach reassignment — Ride always shows this (helper IS
+                  the driver there). For Medical/Study/Sports it only shows until a
+                  role-helper name is filled in; once set, Drive Assignment below takes
+                  over since the remaining question is transport, not who tutors. */}
+              {isParent && !['Work', 'Event'].includes(event.category ?? '') && !helperIsRoleFilled && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 8 }}>
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>
                     {event.category === 'Medical' ? '🏥 Reassign escort' :
@@ -1882,8 +2000,66 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                 </View>
               )}
 
-              {/* GP + Teen toggles for Ride (parent only, not past) */}
-              {isParent && !isPast && event.category === 'Ride' && (
+              {/* Drive Assignment — Medical/Study/Sports once the tutor/escort/coach is
+                  already set (e.g. by the kid). Transport is a separate, parent-decided
+                  need from who's running the actual session. */}
+              {isParent && helperIsRoleFilled && (
+                <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 10 }}>
+                  <View style={{ backgroundColor: isDark ? colors.surface : '#F8FAFC', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
+                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                      {event.category === 'Medical' ? '🏥' : event.category === 'Study' ? '📚' : '🏅'}{' '}
+                      {event.category === 'Medical' ? 'Escort' : event.category === 'Study' ? 'Tutor' : 'Coach'}:{' '}
+                      <Text style={{ fontWeight: '800', color: colors.textPrimary }}>{event.helper}</Text> — already set
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setEditRideRequired(v => !v)}
+                    activeOpacity={0.8}
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                      paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
+                      borderColor: editRideRequired ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
+                      backgroundColor: editRideRequired ? (isDark ? '#0D2A2A' : '#ECFDF5') : (isDark ? colors.surface : '#F9FAFB'),
+                    }}>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: editRideRequired ? BRAND.teal : colors.textPrimary }}>
+                        🚗 Ride Needed?
+                      </Text>
+                      <Text style={{ fontSize: TYPO.label, color: editRideRequired ? BRAND.teal : colors.textSecondary }}>
+                        {editRideRequired ? 'Assign who drives below' : 'Off · no ride tracked for this event'}
+                      </Text>
+                    </View>
+                    <View style={{ width: 40, height: 24, borderRadius: 12,
+                      backgroundColor: editRideRequired ? BRAND.teal : (isDark ? '#334155' : '#CBD5E1'),
+                      justifyContent: 'center', paddingHorizontal: 3 }}>
+                      <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
+                        alignSelf: editRideRequired ? 'flex-end' : 'flex-start' }} />
+                    </View>
+                  </TouchableOpacity>
+                  {editRideRequired && (
+                    <View style={{ gap: 8 }}>
+                      <MemberPicker
+                        label="🚗 Drive Assignment"
+                        selectedIds={editDriverId ? [editDriverId] : []}
+                        members={adults}
+                        onToggle={handleDriverSelect}
+                        colors={colors} isDark={isDark} siblings={siblings}
+                      />
+                      {!editDriverId && (
+                        <TextInput
+                          style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                          placeholder="Or type a name (e.g. external driver)"
+                          placeholderTextColor={colors.textTertiary}
+                          value={editDriverName}
+                          onChangeText={setEditDriverName}
+                        />
+                      )}
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* GP + Teen toggles for Ride/Study (parent only, not past) */}
+              {isParent && !isPast && (event.category === 'Ride' || event.category === 'Study') && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 10 }}>
                   <TouchableOpacity
                     onPress={() => setEditGPOpen(g => !g)}
@@ -1898,7 +2074,11 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                         👴👵 Grandparents Welcome
                       </Text>
                       <Text style={{ fontSize: TYPO.label, color: editGPOpen ? '#B45309' : colors.textSecondary }}>
-                        {editGPOpen ? 'GPs can claim this ride or pass, no pressure' : 'Off · only visible to parents'}
+                        {editGPOpen
+                          ? (event.category === 'Study'
+                              ? 'GP can help with tutoring/escort, or pass'
+                              : 'GPs can claim this ride or pass, no pressure')
+                          : 'Off · only visible to parents'}
                       </Text>
                     </View>
                     <View style={{ width: 44, height: 26, borderRadius: 13,
@@ -1909,7 +2089,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     </View>
                   </TouchableOpacity>
 
-                  {members.some(m => m.role === 'teen') && (
+                  {event.category === 'Ride' && members.some(m => m.role === 'teen') && (
                     <TouchableOpacity
                       onPress={() => setEditTeenOpen(t => !t)}
                       activeOpacity={0.8}
@@ -1934,7 +2114,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                       </View>
                     </TouchableOpacity>
                   )}
-                  {editTeenOpen && members.some(m => m.role === 'teen') && (
+                  {event.category === 'Ride' && editTeenOpen && members.some(m => m.role === 'teen') && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 }}>
                       <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, flex: 1 }}>🪙 Coins for teen driver</Text>
                       <TextInput

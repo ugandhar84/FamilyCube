@@ -29,6 +29,7 @@ import type { ThemeMode } from '@/lib/ThemeContext';
 import { usePreferenceStore } from '@/store/preferenceStore';
 import { usePetStore } from '@/store/petStore';
 import { useShallow } from 'zustand/react/shallow';
+import { fmtDateTime } from '@/lib/dates';
 import LazyImage from '@/components/LazyImage';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
 import { useFeatureFlag } from '@/lib/hooks/useAppSettings';
@@ -374,7 +375,7 @@ export default function ProfileScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: TYPO.subheading, fontWeight: '600', color: colors.textPrimary }}>Terms & Conditions</Text>
                       <Text style={{ fontSize: TYPO.body, color: colors.textSecondary, marginTop: 2 }}>
-                        ✅ Accepted v{profile.terms_version ?? '1.0'} · {profile.terms_accepted_at ? new Date(profile.terms_accepted_at).toLocaleDateString() : ''}
+                        ✅ Accepted v{profile.terms_version ?? '1.0'} · {profile.terms_accepted_at ? fmtDateTime(profile.terms_accepted_at) : ''}
                       </Text>
                     </View>
                   </View>

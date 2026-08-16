@@ -166,6 +166,16 @@ export interface Quest {
   autoApproveAt?:   string;            // ISO — set when submitted; cron approves after 24h
   appreciationSent: boolean;           // co-parent sent appreciation ping after completion
   snoozedUntil?:    string;            // ISO — if pushback type=snooze
+
+  // Cheer Squad — GP/sibling reactions on a completed quest
+  cheers?:          QuestCheer[];
+}
+
+export interface QuestCheer {
+  memberId: string;   // who sent the cheer
+  at:       string;   // ISO
+  coins?:   number;   // optional kudos coins gifted alongside (GP only)
+  note?:    string;   // optional kudos text note
 }
 
 // ─── Cache + realtime state ───────────────────────────────────────────────────

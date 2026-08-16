@@ -50,6 +50,40 @@ function isEventPast(date: string, time?: string | null): boolean {
   const now = new Date();
   return h < now.getHours() || (h === now.getHours() && m <= now.getMinutes());
 }
+// Minutes until a today-dated event starts; Infinity for other days / no time set
+function minutesUntilEvent(date: string, time?: string | null): number {
+  const today = toDateStr(new Date());
+  if (date !== today || !time) return Infinity;
+  const [h, m] = time.split(':').map(Number);
+  const target = new Date();
+  target.setHours(h, m, 0, 0);
+  return Math.round((target.getTime() - Date.now()) / 60000);
+}
+
+// ─── Urgency pulse — gradient glow that breathes for time-sensitive cards ──────
+function UrgentPulse() {
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 900, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.9] });
+  return (
+    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { opacity, borderRadius: 16 }]}>
+      <LinearGradient
+        colors={['#F59E0B', '#EF4444']}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+        style={{ flex: 1, borderRadius: 16, opacity: 0.16 }}
+      />
+    </Animated.View>
+  );
+}
 function parseDate(s: string) {
   const [y, m, d] = s.split('-').map(Number);
   return new Date(y, m - 1, d);
@@ -830,6 +864,12 @@ export default function CalendarScreen() {
   const activeMemberName = activeMember?.name ?? '';
 
   const [selectedDate, setSelectedDate] = useState(toDateStr(new Date()));
+  const todayStr = toDateStr(new Date());
+  const goToToday = () => {
+    setSelectedDate(todayStr);
+    storeSelectDate(todayStr);
+    loadStrip(get15Days(todayStr));
+  };
 
   // On mount: load today's events + strip for visible 15-day window
   React.useEffect(() => {
@@ -839,6 +879,9 @@ export default function CalendarScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [filterMember, setFilterMember] = useState<string | null>(null);
+  // Parents keep the pre-existing behavior — see everyone by default, filter
+  // per family member. My Schedule/All is only a kid/teen/senior concept.
+  const [scheduleFilter, setScheduleFilter] = useState<'mine' | 'all'>(isParent ? 'all' : 'mine');
   const [showAdd,       setShowAdd]       = useState(false);
   const [showAskHelp,   setShowAskHelp]   = useState(false);
   const [showReassign,  setShowReassign]  = useState(false);
@@ -851,6 +894,8 @@ export default function CalendarScreen() {
     if (prevCalMemberRef.current === activeMemberId) return;
     prevCalMemberRef.current = activeMemberId;
     setFilterMember(null);
+    setScheduleFilter(isParent ? 'all' : 'mine');
+    setCompact(isKid);
     setShowAdd(false);
     setShowAskHelp(false);
     setShowReassign(false);
@@ -862,7 +907,7 @@ export default function CalendarScreen() {
   }, [activeMemberId]);
   const [showRange,     setShowRange]     = useState(false);
   const weekBounds = useMemo(() => currentWeekBounds(), []);
-  const [compact,       setCompact]       = useState(false);
+  const [compact,       setCompact]       = useState(isKid);
   const [detailEv,      setDetailEv]      = useState<FamilyEvent | null>(null);
   const [rangeStart,    setRangeStart]    = useState('');  // no default filter
   const [rangeEnd,      setRangeEnd]      = useState('');
@@ -953,10 +998,12 @@ export default function CalendarScreen() {
           (!e.memberId && !e.helper) ||
           !(e as any).isPrivate
         )) &&
+        // My Schedule / All tabs (kid/teen/senior only — parents always see all)
+        (isParent || scheduleFilter === 'all' || e.memberId === activeMemberId || !e.memberId) &&
         (!filterMember || e.memberId === filterMember || !e.memberId) &&
         isInRange(e.date))
       .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
-  }, [events, selectedDate, filterMember, rangeStart, rangeEnd, isKid, isSenior, activeMemberId, activeMemberName]);
+  }, [events, selectedDate, filterMember, scheduleFilter, rangeStart, rangeEnd, isKid, isSenior, isParent, activeMemberId, activeMemberName]);
 
   // Events where senior can volunteer as helper (has a pending/no helper, dated today or future)
   // seniorOpenRides removed — ride volunteering now lives in Hub > Helper Dispatch
@@ -987,16 +1034,32 @@ export default function CalendarScreen() {
               <Text style={[sc.title, { color: isDark ? colors.textPrimary : '#1E2D6B' }]}>
                 {isKid ? 'My Schedule' : 'Family Schedule'}
               </Text>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple, marginTop: 1 }}>
-                {rangeStart || rangeEnd ? `${rangeStart || '…'} → ${rangeEnd || '…'}` : selectedDateLabel}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 1 }}>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>
+                  {rangeStart || rangeEnd ? `${rangeStart || '…'} → ${rangeEnd || '…'}` : selectedDateLabel}
+                </Text>
+                {selectedDate !== todayStr && !rangeStart && !rangeEnd && (
+                  <TouchableOpacity onPress={goToToday}
+                    style={{ borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: BRAND.purple + '15' }}>
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.purple }}>Today</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
               {isKid ? (
-                <TouchableOpacity style={[sc.headerBtn, { backgroundColor: BRAND.amber }]} onPress={() => setShowAskHelp(true)}>
-                  <I.HelpCircle c="#0F172A" size={14} />
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>+ Ask Help</Text>
-                </TouchableOpacity>
+                <>
+                  {/* List view toggle — defaults on for kids */}
+                  <TouchableOpacity
+                    onPress={() => setCompact(v => !v)}
+                    style={[sc.headerBtnOutline, { borderColor: compact ? BRAND.purple : colors.border, backgroundColor: compact ? BRAND.purple + '15' : 'transparent' }]}>
+                    <I.List c={compact ? BRAND.purple : colors.textTertiary} size={14} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[sc.headerBtn, { backgroundColor: BRAND.amber }]} onPress={() => setShowAskHelp(true)}>
+                    <I.HelpCircle c="#0F172A" size={14} />
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>+ Ask Help</Text>
+                  </TouchableOpacity>
+                </>
               ) : (
                 <>
                   {rangeStart || rangeEnd ? (
@@ -1151,24 +1214,40 @@ export default function CalendarScreen() {
           )}
         </View>
 
-        {/* [1] Sticky: Member filter */}
+        {/* [1] Sticky: My Schedule / All (kid/teen/senior) + member filter */}
         <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderBottomWidth: 1, borderBottomColor: colors.border }}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 14, gap: 8, paddingVertical: 10 }}>
-            <TouchableOpacity
-              style={[sc.pill, !filterMember ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple } : { backgroundColor: isDark ? colors.surface : '#F5F4FA', borderColor: isDark ? colors.border : 'rgba(146,97,199,0.2)' }]}
-              onPress={() => setFilterMember(null)}>
-              <Text style={[sc.pillText, { color: !filterMember ? '#fff' : colors.textSecondary }]}>All Members</Text>
-            </TouchableOpacity>
-            {members.map(m => (
-              <TouchableOpacity key={m.id}
-                style={[sc.pill, filterMember === m.id ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple } : { backgroundColor: isDark ? colors.surface : '#F5F4FA', borderColor: isDark ? colors.border : 'rgba(146,97,199,0.2)' }]}
-                onPress={() => setFilterMember(filterMember === m.id ? null : m.id)}>
-                <Text style={{ fontSize: 13 }}>{m.emoji ?? '👤'}</Text>
-                <Text style={[sc.pillText, { color: filterMember === m.id ? '#fff' : colors.textSecondary }]}>{m.name.split(' ')[0]}</Text>
+          {!isParent && (
+            <View style={{ flexDirection: 'row', marginHorizontal: 14, marginTop: 10, marginBottom: 10,
+              backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 12, padding: 3 }}>
+              {([{ key: 'mine', label: 'My Schedule' }, { key: 'all', label: 'All' }] as const).map(t => (
+                <TouchableOpacity key={t.key}
+                  onPress={() => { setScheduleFilter(t.key); if (t.key === 'mine') setFilterMember(null); }}
+                  style={{ flex: 1, borderRadius: 9, paddingVertical: 8, alignItems: 'center',
+                    backgroundColor: scheduleFilter === t.key ? BRAND.purple : 'transparent' }}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800',
+                    color: scheduleFilter === t.key ? '#fff' : colors.textSecondary }}>{t.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          {(isParent || scheduleFilter === 'all') && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 14, gap: 8, paddingVertical: 10 }}>
+              <TouchableOpacity
+                style={[sc.pill, !filterMember ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple } : { backgroundColor: isDark ? colors.surface : '#F5F4FA', borderColor: isDark ? colors.border : 'rgba(146,97,199,0.2)' }]}
+                onPress={() => setFilterMember(null)}>
+                <Text style={[sc.pillText, { color: !filterMember ? '#fff' : colors.textSecondary }]}>All Members</Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
+              {members.map(m => (
+                <TouchableOpacity key={m.id}
+                  style={[sc.pill, filterMember === m.id ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple } : { backgroundColor: isDark ? colors.surface : '#F5F4FA', borderColor: isDark ? colors.border : 'rgba(146,97,199,0.2)' }]}
+                  onPress={() => setFilterMember(filterMember === m.id ? null : m.id)}>
+                  <Text style={{ fontSize: 13 }}>{m.emoji ?? '👤'}</Text>
+                  <Text style={[sc.pillText, { color: filterMember === m.id ? '#fff' : colors.textSecondary }]}>{m.name.split(' ')[0]}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
         </View>
 
         {/* Day strip (scrolls with content) */}
@@ -1234,6 +1313,16 @@ export default function CalendarScreen() {
                 const assignee = members.find(m => m.id === ev.memberId);
                 const isLast = idx === dayEvents.length - 1;
                 const isPast = isEventPast(ev.date, ev.time);
+                // Helper role reads by event category — a tutor isn't "the ride"
+                const helperEmoji =
+                  ev.category === 'Medical' ? '🏥' :
+                  ev.category === 'Study'   ? '📚' :
+                  ev.category === 'Ride' || ev.category === 'Sports' ? '🚗' : '🤝';
+                // Time-sensitive: starting within the hour and still unresolved —
+                // pulses a gradient glow instead of a static amber border
+                const minsUntil = minutesUntilEvent(ev.date, ev.time);
+                const isUrgent = !isPast && minsUntil >= 0 && minsUntil <= 60 &&
+                  (isConf || (!!ev.helper && ev.helperStatus !== 'confirmed') || (!!ev.rideRequired && (!ev.driverName || ev.driverStatus !== 'confirmed')));
                 return (
                   <View key={ev.id} style={{ flexDirection: 'row', minHeight: 56, opacity: isPast ? 0.45 : 1 }}>
 
@@ -1257,58 +1346,50 @@ export default function CalendarScreen() {
                       onPress={() => setDetailEv(ev)}
                       onLongPress={() => setEditEv(ev)}
                       style={{
-                        flex: 1, marginBottom: isLast ? 0 : 8,
-                        backgroundColor: cardBg, borderRadius: 14,
-                        borderWidth: 1, borderColor: isConf ? '#F59E0B55' : cardBord,
-                        borderLeftWidth: 3, borderLeftColor: isConf ? '#F59E0B' : cs.dot,
-                        paddingHorizontal: 12, paddingVertical: 9, gap: 4,
+                        flex: 1, marginBottom: isLast ? 0 : 8, position: 'relative', overflow: 'hidden',
+                        backgroundColor: cardBg, borderRadius: 16,
+                        borderWidth: isUrgent ? 1.5 : 1, borderColor: isUrgent ? '#EF444490' : isConf ? '#F59E0B55' : cardBord,
+                        borderLeftWidth: 4, borderLeftColor: isUrgent ? '#EF4444' : isConf ? '#F59E0B' : cs.dot,
+                        paddingHorizontal: 14, paddingVertical: 12, gap: 8,
                       }}>
-                      {/* Row 1: title + category + status */}
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={1}>
+                      {isUrgent && <UrgentPulse />}
+                      {/* Row 1: title + category */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={{ flex: 1, fontSize: TYPO.heading - 2, fontWeight: '900', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={1}>
                           {ev.title}
                         </Text>
-                        {/* Category chip — always shown on right */}
-                        <View style={{ backgroundColor: cs.dot + '1A', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: cs.dot + '44' }}>
-                          <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: cs.dot }}>{isPast ? '✓ Done' : ev.category}</Text>
+                        {isConf && <I.AlertTriangle c="#F59E0B" size={15} />}
+                        <View style={{ backgroundColor: cs.dot + '1A', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: cs.dot + '44' }}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: cs.dot }}>{isPast ? '✓ Done' : ev.category}</Text>
                         </View>
-                        {isConf && <I.AlertTriangle c="#F59E0B" size={12} />}
                       </View>
-                      {/* Row 2: For (patient chips) + location */}
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        {(() => {
-                          const all = ev.memberIds?.length ? members.filter(m => ev.memberIds!.includes(m.id)) : assignee ? [assignee] : [];
-                          return all.length > 0 ? (
-                            <>
-                              <I.User c={isDark ? '#A78BFA' : BRAND.purple} size={12} />
-                              {all.map(m => (
-                                <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={18} ringColor={BRAND.purple} ringWidth={1} />
-                              ))}
-                            </>
-                          ) : null;
-                        })()}
-                        {ev.location ? (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                            <I.MapPin c={isDark ? '#34D399' : '#059669'} size={12} />
-                            <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.caption} fontWeight="600" />
-                          </View>
-                        ) : null}
-                      </View>
-                      {/* Row 3: accompanying person + status */}
-                      {ev.helper ? (() => {
-                        const stColor = ev.helperStatus === 'confirmed' ? '#10B981' : ev.helperStatus === 'rejected' ? '#EF4444' : '#D97706';
-                        const stLabel = ev.helperStatus === 'confirmed' ? 'confirmed' : ev.helperStatus === 'rejected' ? 'declined' : 'pending';
-                        return (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <I.Car c={isDark ? '#FBBF24' : '#D97706'} size={12} />
-                            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isDark ? '#FBBF24' : '#D97706' }}>{ev.helper.split(' ')[0]}</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                              <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: stColor }} />
-                              <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: stColor }}>{stLabel}</Text>
+                      {/* Row 2: person/location (left) ↔ helper/status (right) — spread across the full width */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
+                          {(() => {
+                            const all = ev.memberIds?.length ? members.filter(m => ev.memberIds!.includes(m.id)) : assignee ? [assignee] : [];
+                            return all.length > 0 ? all.map(m => (
+                              <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={24} ringColor={BRAND.purple} ringWidth={1.5} />
+                            )) : null;
+                          })()}
+                          {ev.location ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 }}>
+                              <I.MapPin c={isDark ? '#34D399' : '#059669'} size={15} />
+                              <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.body} fontWeight="700" />
                             </View>
-                          </View>
-                        );
-                      })() : null}
+                          ) : null}
+                        </View>
+                        {ev.helper ? (() => {
+                          const stColor = ev.helperStatus === 'confirmed' ? '#10B981' : ev.helperStatus === 'rejected' ? '#EF4444' : '#D97706';
+                          return (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: stColor + '15', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 }}>
+                              <Text style={{ fontSize: 12 }}>{helperEmoji}</Text>
+                              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: isDark ? '#FBBF24' : '#D97706' }}>{ev.helper.split(' ')[0]}</Text>
+                              <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: stColor }} />
+                            </View>
+                          );
+                        })() : null}
+                      </View>
                     </TouchableOpacity>
                   </View>
                 );
@@ -1763,10 +1844,10 @@ export default function CalendarScreen() {
             const cat = ev.category ?? 'Event';
 
             const helperLabelDetail =
-              cat === 'Medical' ? 'Accompanied by' :
-              cat === 'Study'   ? 'Tutored by'     :
-              cat === 'Sports'  ? 'Drop-off'        :
-              cat === 'Ride'    ? 'Driver'          : 'Organised by';
+              cat === 'Medical' ? '🏥 Accompanied by' :
+              cat === 'Study'   ? '📚 Tutored by'     :
+              cat === 'Sports'  ? '🚗 Drop-off'        :
+              cat === 'Ride'    ? '🚗 Driver'          : '🤝 Organised by';
 
             const forLabelDetail =
               cat === 'Medical' ? 'Patient'   :
@@ -1870,7 +1951,6 @@ export default function CalendarScreen() {
                       paddingHorizontal: 14, paddingVertical: 10,
                     }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <I.Car c={isDark ? '#FBBF24' : '#D97706'} size={14} />
                         <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
                           {helperLabelDetail}:{' '}
                           <Text style={{ fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.helper}</Text>
@@ -1879,6 +1959,33 @@ export default function CalendarScreen() {
                       {ev.helperStatus === 'confirmed' && <View style={{ backgroundColor: isDark ? '#064E3B' : '#D1FAE5', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#6EE7B7' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>Confirmed ✓</Text></View>}
                       {ev.helperStatus === 'pending'   && <View style={{ backgroundColor: isDark ? '#1C1700' : '#FEF3C7', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCD34D' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#D97706' }}>⏳ Pending</Text></View>}
                       {ev.helperStatus === 'rejected'  && <View style={{ backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCA5A5' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Declined ✕</Text></View>}
+                    </View>
+                  )}
+
+                  {/* Drive assignment — separate from the tutor/escort/coach above */}
+                  {ev.rideRequired && ev.driverName && (
+                    <View style={{
+                      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                      backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
+                      borderRadius: 14, borderWidth: 1, borderColor: isDark ? '#1E293B' : '#E8E8F0',
+                      paddingHorizontal: 14, paddingVertical: 10,
+                    }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <I.Car c={isDark ? '#FBBF24' : '#D97706'} size={14} />
+                        <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
+                          Driven by:{' '}
+                          <Text style={{ fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.driverName}</Text>
+                        </Text>
+                      </View>
+                      {ev.driverStatus === 'confirmed' && <View style={{ backgroundColor: isDark ? '#064E3B' : '#D1FAE5', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#6EE7B7' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>Confirmed ✓</Text></View>}
+                      {ev.driverStatus === 'pending'   && <View style={{ backgroundColor: isDark ? '#1C1700' : '#FEF3C7', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCD34D' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#D97706' }}>⏳ Pending</Text></View>}
+                      {ev.driverStatus === 'rejected'  && <View style={{ backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCA5A5' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Declined ✕</Text></View>}
+                    </View>
+                  )}
+                  {ev.rideRequired && !ev.driverName && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: '#F59E0B44' }}>
+                      <I.Car c="#D97706" size={13} />
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#D97706' }}>Ride needed — no driver assigned yet</Text>
                     </View>
                   )}
 

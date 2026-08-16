@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Pressable, TouchableOpacity, Alert, Dimensions, ScrollView, TextInput, Modal, Switch } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { ChevronRight } from 'lucide-react-native';
+import { ChevronRight, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -16,6 +17,7 @@ import { useKidRequestStore } from '@/store/kidRequestStore';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
 import { useChatStore } from '@/store/chatStore';
 import { localToday, fmtTime, catColor, hoursUntilEvent } from './hubUtils';
+import { fmtDateTime } from '@/lib/dates';
 
 const { width: W } = Dimensions.get('window');
 
@@ -48,6 +50,8 @@ import { GroceryModal, SuppliesModal, AskModal, KidRequestHistoryModal } from '.
 import { SchoolScheduleCard } from './SchoolScheduleModal';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import { ChildChoreBoard } from '@/features/chores/ChildChoreBoard';
+import CelebrationBurst from '@/components/CelebrationBurst';
+import { CollapsibleCard } from './hubComponents';
 
 
 // ─── Main KidView ──────────────────────────────────────────────────────────────
@@ -56,21 +60,48 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   colors: any; isDark: boolean;
   onHelpRequest: () => void;
 }) {
-  const { quests, submitQuest, claimQuest, reopenQuest } = useQuestStore();
+  const { quests, submitQuest, claimQuest, reopenQuest, cheerQuest } = useQuestStore();
   const { events }                                        = useEventStore();
   const { rewards, redeemReward, getEligibleRewards }    = useRewardStore();
-  const { sendRequest, requests }                         = useKidRequestStore();
+  const { sendRequest, requests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
   const { sendMessage }                                   = useChatStore();
 
   const [groceryModal,    setGroceryModal]    = useState(false);
   const [suppliesModal,   setSuppliesModal]   = useState(false);
   const [askModal,        setAskModal]        = useState<null | 'permission' | 'question' | 'medication'>(null);
   const [historyModal,    setHistoryModal]    = useState(false);
+  const [piggyBankModal,  setPiggyBankModal]  = useState(false);
   const [askParentSheet,  setAskParentSheet]  = useState(false);
   const [addEventModal,   setAddEventModal]   = useState(false);
   const [lateNudgeSent,   setLateNudgeSent]   = useState<Record<string, boolean>>({});
   const [dismissedReplies, setDismissedReplies] = useState<Set<string>>(new Set());
   const [dismissedActions,  setDismissedActions]  = useState<Set<string>>(new Set());
+  const [myQuestsExpanded, setMyQuestsExpanded] = useState(true);
+
+  // KidView can render without ParentView ever having mounted this session
+  // (e.g. app opened straight into Kid Mode), so it must hydrate the kid
+  // request store itself instead of relying on ParentView to have done it.
+  useEffect(() => {
+    if (!kidRequestsLoaded) loadKidRequests();
+  }, [kidRequestsLoaded]);
+
+  // Persist dismissed state
+  useEffect(() => {
+    AsyncStorage.getItem(`dismissed_replies_${active.id}`).then(val => {
+      if (val) setDismissedReplies(new Set(JSON.parse(val)));
+    });
+    AsyncStorage.getItem(`dismissed_actions_${active.id}`).then(val => {
+      if (val) setDismissedActions(new Set(JSON.parse(val)));
+    });
+  }, [active.id]);
+
+  useEffect(() => {
+    AsyncStorage.setItem(`dismissed_replies_${active.id}`, JSON.stringify([...dismissedReplies]));
+  }, [dismissedReplies, active.id]);
+
+  useEffect(() => {
+    AsyncStorage.setItem(`dismissed_actions_${active.id}`, JSON.stringify([...dismissedActions]));
+  }, [dismissedActions, active.id]);
 
   const today       = localToday();
   const myEvents    = events.filter(e => (e.memberId === active.id || !e.memberId) && e.category !== 'Work');
@@ -120,14 +151,27 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   const myQuests       = quests.filter(q => q.assignedToId === active.id || q.assignedToIds?.includes(active.id));
   const poolQuests     = quests.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask);
   const activeQuests   = myQuests.filter(q => ['todo','claimed','in_progress'].includes(q.status));
+  const todoQuests      = myQuests.filter(q => q.status === 'todo' && !q.isPool);
+  const inProgressQuests = myQuests.filter(q => ['claimed', 'in_progress'].includes(q.status));
   const reviewQuests   = myQuests.filter(q => q.status === 'pending_approval');
   const declinedQuests = myQuests.filter(q => q.status === 'declined');
+  const approvedQuests = myQuests.filter(q => ['approved', 'done'].includes(q.status));
+  const cancelledQuests = myQuests.filter(q => q.status === 'cancelled');
   const doneToday      = myQuests.filter(q => ['approved','done'].includes(q.status)).length;
   const questGoal      = Math.max(myQuests.filter(q => (q.status as string) !== 'pending_parent_approval').length, 3);
   const questPct       = Math.min(doneToday / questGoal, 1);
 
   const siblingKids       = members.filter(m => m.role === 'kid' && m.id !== active.id);
   const allKids           = [active, ...siblingKids].sort((a, b) => (b.mainCoins ?? b.coins ?? 0) - (a.mainCoins ?? a.coins ?? 0));
+
+  // Cheer Squad — siblings' recently completed quests I can cheer for
+  const siblingCheerable = quests.filter(q =>
+    ['approved', 'done'].includes(q.status) && !q.isAdultTask &&
+    q.assignedToId && siblingKids.some(s => s.id === q.assignedToId)
+  ).slice(0, 5);
+
+  // Cheers landed on my own completed quests — surfaced as a celebration banner
+  const cheersForMe = myQuests.flatMap(q => (q.cheers ?? []).map(c => ({ quest: q, cheer: c })));
   const eligibleRewards   = getEligibleRewards(active.id);
   const mainCoins  = active.mainCoins ?? active.coins ?? 0;
   const gpCoins    = active.gpCoins ?? 0;
@@ -305,6 +349,18 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
               const typeLabel = isCheckinReply ? 'Check-in' : r.type === 'medication' ? 'Medical' : r.type === 'permission' ? 'Permission' : 'Question';
               const accent = isCheckinReply ? BRAND.teal : approved ? '#10B981' : '#EF4444';
               const statusLabel = isCheckinReply ? 'Seen 👍' : approved ? 'Yes!' : 'No';
+              
+              // Who replied and when
+              const responder = r.respondedBy ? members.find(m => m.id === r.respondedBy) : null;
+              const responderName = responder ? responder.name.split(' ')[0] : 'Parent';
+              let timeAgo = '';
+              if (r.respondedAt) {
+                const diffMins = Math.floor((Date.now() - new Date(r.respondedAt).getTime()) / 60000);
+                if (diffMins < 60) timeAgo = `${diffMins}m ago`;
+                else if (diffMins < 1440) timeAgo = `${Math.floor(diffMins / 60)}h ago`;
+                else timeAgo = `${Math.floor(diffMins / 1440)}d ago`;
+              }
+              
               return (
                 <View key={r.id} style={{
                   borderRadius: 14, borderWidth: 1.5, borderColor: accent + '35',
@@ -315,6 +371,9 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: accent, marginBottom: 2 }}>
                         {statusLabel} — {typeEmoji} {typeLabel}
+                      </Text>
+                      <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: 4 }}>
+                        {responderName}{timeAgo && ` · ${timeAgo}`}
                       </Text>
                       <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }} numberOfLines={2}>
                         "{r.detail}"
@@ -762,52 +821,59 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
     </View>
   );
 
-  // ── Tab: Piggy Bank ───────────────────────────────────────────────────────────
-  const piggyBankTab = (
-    <View style={[pad, { gap: 12 }]}>
-      <View style={{ borderRadius: 24, padding: 24, alignItems: 'center', gap: 8, backgroundColor: isDark ? '#1A1000' : '#FFF8E8', borderWidth: 1.5, borderColor: BRAND.amber + '50' }}>
-        <Text style={{ fontSize: 52 }}>🐷</Text>
-        <Text style={{ fontSize: 52, fontWeight: '900', color: BRAND.amber, lineHeight: 60 }}>{mainCoins}</Text>
-        <Text style={{ fontSize: 13, color: colors.textTertiary, fontWeight: '600' }}>Main Store Coins</Text>
+  // ── Piggy Bank sheet ──────────────────────────────────────────────────────────
+  const piggyBankSheet = (
+    <AppBottomSheet
+      visible={piggyBankModal}
+      onClose={() => setPiggyBankModal(false)}
+      title="🐷 Piggy Bank"
+      subtitle="Your coin balance & cash-out value"
+      accentColor={BRAND.amber}
+      minHeight="55%">
+    <View style={{ gap: 10 }}>
+      <View style={{ borderRadius: 18, padding: 14, alignItems: 'center', gap: 4, backgroundColor: isDark ? '#1A1000' : '#FFF8E8', borderWidth: 1.5, borderColor: BRAND.amber + '50' }}>
+        <Text style={{ fontSize: 32 }}>🐷</Text>
+        <Text style={{ fontSize: 34, fontWeight: '900', color: BRAND.amber, lineHeight: 38 }}>{mainCoins}</Text>
+        <Text style={{ fontSize: 11, color: colors.textTertiary, fontWeight: '600' }}>Main Store Coins</Text>
         {gpCoins > 0 && (
-          <View style={{ backgroundColor: BRAND.purple + '20', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 6, marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Text style={{ fontSize: 13 }}>⭐</Text>
-            <Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.purple }}>+{gpCoins} Grandparent Bonus</Text>
+          <View style={{ backgroundColor: BRAND.purple + '20', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, marginTop: 2, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Text style={{ fontSize: 11 }}>⭐</Text>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.purple }}>+{gpCoins} Grandparent Bonus</Text>
           </View>
         )}
       </View>
 
-      <View style={{ borderRadius: 16, padding: 16, backgroundColor: isDark ? colors.card : '#fff', borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', gap: 10 }}>
+      <View style={{ borderRadius: 14, padding: 12, backgroundColor: isDark ? colors.card : '#fff', borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', gap: 7 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 12, color: colors.textSecondary }}>Main coins</Text>
-          <Text style={{ fontSize: 16, fontWeight: '900', color: '#10B981' }}>${(mainCoins * COIN_VAL).toFixed(2)}</Text>
+          <Text style={{ fontSize: 11, color: colors.textSecondary }}>Main coins</Text>
+          <Text style={{ fontSize: 13, fontWeight: '900', color: '#10B981' }}>${(mainCoins * COIN_VAL).toFixed(2)}</Text>
         </View>
         {gpCoins > 0 && (
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ fontSize: 12, color: colors.textSecondary }}>GP bonus</Text>
-            <Text style={{ fontSize: 14, fontWeight: '800', color: BRAND.purple }}>${(gpCoins * COIN_VAL).toFixed(2)}</Text>
+            <Text style={{ fontSize: 11, color: colors.textSecondary }}>GP bonus</Text>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: BRAND.purple }}>${(gpCoins * COIN_VAL).toFixed(2)}</Text>
           </View>
         )}
         <View style={{ height: 1, backgroundColor: isDark ? colors.border : '#F1F5F9' }} />
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>Total 💰</Text>
-          <Text style={{ fontSize: 20, fontWeight: '900', color: BRAND.amber }}>${((mainCoins + gpCoins) * COIN_VAL).toFixed(2)}</Text>
+          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textPrimary }}>Total 💰</Text>
+          <Text style={{ fontSize: 15, fontWeight: '900', color: BRAND.amber }}>${((mainCoins + gpCoins) * COIN_VAL).toFixed(2)}</Text>
         </View>
       </View>
 
       {almostAffordable.length > 0 && (
-        <View style={{ borderRadius: 16, padding: 14, backgroundColor: isDark ? colors.card : '#fff', borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', gap: 10 }}>
-          <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary }}>🎯 Almost there!</Text>
+        <View style={{ borderRadius: 14, padding: 12, backgroundColor: isDark ? colors.card : '#fff', borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', gap: 8 }}>
+          <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textPrimary }}>🎯 Almost there!</Text>
           {almostAffordable.slice(0, 2).map(r => {
             const pct = Math.min(mainCoins / r.cost, 1);
             return (
               <View key={r.id} style={{ gap: 4 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>{r.emoji} {r.title}</Text>
-                  <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.amber }}>Need {r.cost - mainCoins} more 🪙</Text>
+                  <Text style={{ fontSize: 11, color: colors.textSecondary }}>{r.emoji} {r.title}</Text>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: BRAND.amber }}>Need {r.cost - mainCoins} more 🪙</Text>
                 </View>
-                <View style={{ height: 6, borderRadius: 3, backgroundColor: isDark ? colors.surface : '#F1F5F9', overflow: 'hidden' }}>
-                  <View style={{ height: 6, borderRadius: 3, width: `${Math.round(pct * 100)}%` as any, backgroundColor: BRAND.amber }} />
+                <View style={{ height: 5, borderRadius: 3, backgroundColor: isDark ? colors.surface : '#F1F5F9', overflow: 'hidden' }}>
+                  <View style={{ height: 5, borderRadius: 3, width: `${Math.round(pct * 100)}%` as any, backgroundColor: BRAND.amber }} />
                 </View>
               </View>
             );
@@ -815,29 +881,30 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
         </View>
       )}
 
-      <View style={{ flexDirection: 'row', gap: 10 }}>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
         {[
           { icon: '✅', value: doneToday,    label: 'Done Today', color: '#10B981' },
           { icon: '🔥', value: streak,       label: 'Day Streak', color: '#FF6600' },
           { icon: '⚡', value: `Lv ${level}`, label: 'Level',     color: BRAND.purple },
         ].map(({ icon, value, label, color }) => (
-          <View key={label} style={{ flex: 1, borderRadius: 14, padding: 14, backgroundColor: isDark ? colors.card : '#fff', borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', alignItems: 'center', gap: 4 }}>
-            <Text style={{ fontSize: 22 }}>{icon}</Text>
-            <Text style={{ fontSize: 18, fontWeight: '900', color }}>{value}</Text>
-            <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary }}>{label}</Text>
+          <View key={label} style={{ flex: 1, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 4, backgroundColor: isDark ? colors.card : '#fff', borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', alignItems: 'center', gap: 2 }}>
+            <Text style={{ fontSize: 16 }}>{icon}</Text>
+            <Text style={{ fontSize: 14, fontWeight: '900', color }}>{value}</Text>
+            <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textTertiary }}>{label}</Text>
           </View>
         ))}
       </View>
 
-      <View style={{ borderRadius: 16, padding: 14, backgroundColor: BRAND.teal + '12', borderWidth: 1, borderColor: BRAND.teal + '40' }}>
-        <Text style={{ fontSize: 12, fontWeight: '800', color: BRAND.teal, marginBottom: 4 }}>💡 How cash-outs work</Text>
-        <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 18 }}>
+      <View style={{ borderRadius: 14, padding: 12, backgroundColor: BRAND.teal + '12', borderWidth: 1, borderColor: BRAND.teal + '40' }}>
+        <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.teal, marginBottom: 3 }}>💡 How cash-outs work</Text>
+        <Text style={{ fontSize: 11, color: colors.textSecondary, lineHeight: 16 }}>
           10 Coins = $1.00 real allowance! Ask at{' '}
           <Text style={{ fontWeight: '700', color: colors.textPrimary }}>Friday Family Dinner</Text>
           {' '}to cash out.
         </Text>
       </View>
     </View>
+    </AppBottomSheet>
   );
 
   // ── Tab: Rewards ──────────────────────────────────────────────────────────────
@@ -1058,7 +1125,9 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
       {declinedQuests.filter(q => !dismissedActions.has(`quest-${q.id}`)).map(q => {
         const note = q.history?.slice().reverse().find((h: any) => h.action === 'declined')?.note;
         return (
-          <View key={q.id} style={{ borderRadius: 16, backgroundColor: isDark ? '#12001a' : '#F5F3FF',
+          <Pressable key={q.id}
+            onPress={() => { router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); setDismissedActions(prev => new Set([...prev, `quest-${q.id}`])); }}
+            style={{ borderRadius: 16, backgroundColor: isDark ? '#12001a' : '#F5F3FF',
             borderWidth: 1.5, borderColor: BRAND.purple + '50', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <Text style={{ fontSize: 24 }}>🔄</Text>
             <View style={{ flex: 1 }}>
@@ -1067,9 +1136,57 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
                 {note ? `"${note}"` : q.title}
               </Text>
             </View>
-            <Pressable onPress={() => setDismissedActions(prev => new Set([...prev, `quest-${q.id}`]))}
+            <Pressable
+              onPress={event => { event.stopPropagation(); setDismissedActions(prev => new Set([...prev, `quest-${q.id}`])); }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={{ fontSize: 14, color: colors.textTertiary }}>✕</Text>
+              <Text style={{ fontSize: TYPO.body, color: colors.textTertiary }}>✕</Text>
+            </Pressable>
+          </Pressable>
+        );
+      })}
+      {/* Parent-approved quests — acknowledge once, then jump to the result */}
+      {approvedQuests.filter(q => !dismissedActions.has(`quest-approved-${q.id}`)).map(q => (
+        <Pressable key={`approved-${q.id}`}
+          onPress={() => { router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); setDismissedActions(prev => new Set([...prev, `quest-approved-${q.id}`])); }}
+          style={{ borderRadius: 16, backgroundColor: isDark ? '#052E20' : '#ECFDF5',
+            borderWidth: 1.5, borderColor: '#10B98155', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Text style={{ fontSize: 24 }}>🎉</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#059669' }}>Quest approved!</Text>
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }} numberOfLines={1}>{q.title} · +{q.coins} coins</Text>
+          </View>
+          <Pressable
+            onPress={event => { event.stopPropagation(); setDismissedActions(prev => new Set([...prev, `quest-approved-${q.id}`])); }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={{ fontSize: TYPO.body, color: colors.textTertiary }}>✕</Text>
+          </Pressable>
+        </Pressable>
+      ))}
+      {/* Cheer Squad reactions — celebratory banner with a confetti burst */}
+      {cheersForMe.filter(({ quest, cheer }) => !dismissedActions.has(`cheer-${quest.id}-${cheer.memberId}`)).map(({ quest, cheer }) => {
+        const cheerer = members.find(m => m.id === cheer.memberId);
+        const dismissKey = `cheer-${quest.id}-${cheer.memberId}`;
+        return (
+          <View key={dismissKey} style={{ position: 'relative' }}>
+            <CelebrationBurst visible />
+            <Pressable
+              onPress={() => setDismissedActions(prev => new Set([...prev, dismissKey]))}
+              style={{ borderRadius: 16, backgroundColor: isDark ? '#2D1B69' : '#F5F3FF',
+                borderWidth: 1.5, borderColor: BRAND.purple + '55', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Text style={{ fontSize: 24 }}>🥳</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: BRAND.purple }}>
+                  {cheerer?.name?.split(' ')[0] ?? 'Someone'} cheered for you!
+                </Text>
+                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }} numberOfLines={1}>
+                  {quest.title}{cheer.coins ? ` · +${cheer.coins} bonus 🪙` : ''}
+                </Text>
+              </View>
+              <Pressable
+                onPress={event => { event.stopPropagation(); setDismissedActions(prev => new Set([...prev, dismissKey])); }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={{ fontSize: TYPO.body, color: colors.textTertiary }}>✕</Text>
+              </Pressable>
             </Pressable>
           </View>
         );
@@ -1082,12 +1199,27 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
         const icon = isCheckin ? '👍' : approved ? '✅' : '❌';
         const label = isCheckin ? 'Seen!' : approved ? 'Yes!' : 'No';
         const typeLabel = isCheckin ? 'Check-in' : r.type === 'medication' ? 'Medical' : r.type === 'permission' ? 'Permission' : 'Question';
+        
+        // Who replied and when
+        const responder = r.respondedBy ? members.find(m => m.id === r.respondedBy) : null;
+        const responderName = responder ? responder.name.split(' ')[0] : 'Parent';
+        let timeAgo = '';
+        if (r.respondedAt) {
+          const diffMins = Math.floor((Date.now() - new Date(r.respondedAt).getTime()) / 60000);
+          if (diffMins < 60) timeAgo = `${diffMins}m ago`;
+          else if (diffMins < 1440) timeAgo = `${Math.floor(diffMins / 60)}h ago`;
+          else timeAgo = `${Math.floor(diffMins / 1440)}d ago`;
+        }
+        
         return (
           <View key={r.id} style={{ borderRadius: 16, backgroundColor: isDark ? colors.card : accent + '08',
             borderWidth: 1.5, borderColor: accent + '35', padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
             <Text style={{ fontSize: 22, marginTop: 1 }}>{icon}</Text>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 13, fontWeight: '900', color: accent }}>{label} — {typeLabel}</Text>
+              <Text style={{ fontSize: 10, color: colors.textTertiary, marginTop: 2 }}>
+                {responderName}{timeAgo && ` · ${timeAgo}`}
+              </Text>
               <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>"{r.detail}"</Text>
               {r.parentNote ? (
                 <Text style={{ fontSize: 11, color: accent, fontStyle: 'italic', marginTop: 4 }}>Parent: "{r.parentNote}"</Text>
@@ -1171,86 +1303,139 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   ) : null;
 
   // ── Inline Quests (no tab) ────────────────────────────────────────────────────
+  // My Quests is ordered by what needs the kid's attention, not chronology:
+  // todo → in progress → submitted (waiting on parent) → bounty pool to claim →
+  // approved/cancelled last, since those need no action — just a record.
+  const MY_QUESTS_VISIBLE = 6;
+  // Approved/cancelled quests only stick around for the day they happened —
+  // otherwise this list would keep growing forever with old resolved quests.
+  const approvedQuestsToday  = approvedQuests.filter(q => (q.approvedAt ?? q.completedAt ?? '').startsWith(today));
+  const cancelledQuestsToday = cancelledQuests.filter(q => (q.cancelledAt ?? '').startsWith(today));
+  const myQuestsCombined: Quest[] = [
+    ...todoQuests,
+    ...inProgressQuests,
+    ...reviewQuests,
+    ...poolQuests,
+    ...approvedQuestsToday,
+    ...cancelledQuestsToday,
+  ];
+  const myQuestsVisible = myQuestsCombined.slice(0, MY_QUESTS_VISIBLE);
+  const myQuestsOverflow = myQuestsCombined.length - myQuestsVisible.length;
+
+  const questStatusMeta = (q: Quest) => {
+    const isPool = q.isPool && q.status === 'todo';
+    if (q.status === 'pending_approval') return { icon: '⏳', label: 'IN REVIEW',  color: BRAND.amber };
+    if (q.status === 'approved' || q.status === 'done') return { icon: '✅', label: 'APPROVED',  color: '#10B981' };
+    if (q.status === 'cancelled') return { icon: '🚫', label: 'CANCELLED', color: '#EF4444' };
+    if (q.status === 'in_progress') return { icon: '⚡', label: 'IN PROGRESS', color: BRAND.teal };
+    if (q.status === 'claimed') return { icon: '⚡', label: 'CLAIMED', color: BRAND.teal };
+    if (isPool) return { icon: '💰', label: 'BOUNTY', color: '#10B981' };
+    return { icon: '📋', label: 'TO DO', color: BRAND.purple };
+  };
+
   const inlineQuests = (
-    <View style={[pad, { marginBottom: 16 }]}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textPrimary }}>🏆 My Quests</Text>
-        <Pressable onPress={() => router.push('/(tabs)/quests')}>
-          <Text style={{ fontSize: 12, fontWeight: '700', color: BRAND.purple }}>All Quests →</Text>
-        </Pressable>
-      </View>
-      {reviewQuests.map(q => (
-        <View key={q.id} style={{ borderRadius: 16, backgroundColor: isDark ? '#1a1000' : '#FFFBEB',
-          borderWidth: 1.5, borderColor: BRAND.amber + '60', padding: 14,
-          flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-          <Text style={{ fontSize: 22 }}>⏳</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.amber }}>{q.title}</Text>
-            <Text style={{ fontSize: 11, color: BRAND.amber, opacity: 0.8 }}>Parent reviewing · 🪙 {q.coins} pending</Text>
+    <View style={pad}>
+      <View style={{ borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
+        backgroundColor: isDark ? colors.card : '#fff', overflow: 'hidden', marginBottom: 16 }}>
+        {/* Header — same model as "Who Needs Help?" in the parent Hub */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
+          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: BRAND.purple + '20', alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 18 }}>🏆</Text>
           </View>
+          <Pressable onPress={() => setMyQuestsExpanded(e => !e)} style={{ flex: 1 }}>
+            <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>My Quests</Text>
+            <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+              {myQuestsCombined.length > 0 ? `${myQuestsCombined.length} quest${myQuestsCombined.length !== 1 ? 's' : ''} — what to do first, approved last` : 'All caught up'}
+            </Text>
+          </Pressable>
+          <Pressable onPress={() => router.push('/(tabs)/quests')}>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: BRAND.purple }}>All Quests →</Text>
+          </Pressable>
+          <Pressable onPress={() => setMyQuestsExpanded(e => !e)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            {myQuestsExpanded ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
+          </Pressable>
         </View>
-      ))}
-      {activeQuests.length === 0 && reviewQuests.length === 0 ? (
-        <Pressable onPress={() => router.push('/(tabs)/quests')}
-          style={{ borderRadius: 18, borderWidth: 1.5, borderStyle: 'dashed', borderColor: BRAND.purple + '50',
-            backgroundColor: BRAND.purple + '08', padding: 28, alignItems: 'center', gap: 8 }}>
-          <Text style={{ fontSize: 40 }}>🏆</Text>
-          <Text style={{ fontSize: 15, fontWeight: '900', color: BRAND.purple }}>All caught up!</Text>
-          <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center' }}>
-            {poolQuests.length > 0 ? `${poolQuests.length} bounty quests up for grabs 💰` : 'Complete quests to earn coins'}
-          </Text>
-        </Pressable>
-      ) : activeQuests.slice(0, 3).map(q => {
-        const isPool = q.isPool && q.status === 'todo';
-        const isClaimed = q.status === 'claimed';
-        const catEmoji = q.category === 'Kitchen' ? '🍽️' : q.category === 'Yard' ? '🌿' : q.category === 'School' ? '📚' : q.category === 'Laundry' ? '🧺' : q.category === 'Pet' ? '🐾' : '⭐';
-        const accentColor = isPool ? '#10B981' : BRAND.purple;
-        return (
-          <View key={q.id} style={{ borderRadius: 16, backgroundColor: isDark ? colors.card : '#fff',
-            borderWidth: 1.5, borderColor: isDark ? colors.border : '#E8E8F0', padding: 14, marginBottom: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: accentColor + '20', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 20 }}>{catEmoji}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>{q.title}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                  <View style={{ backgroundColor: BRAND.amber + '20', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2, flexDirection: 'row', gap: 3 }}>
-                    <Text style={{ fontSize: 11 }}>🪙</Text>
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: BRAND.amber }}>{q.coins}</Text>
-                  </View>
-                  {isPool && <View style={{ backgroundColor: '#10B98120', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}><Text style={{ fontSize: 10, fontWeight: '800', color: '#10B981' }}>BOUNTY</Text></View>}
-                </View>
-              </View>
-            </View>
-            {isPool ? (
-              <Pressable onPress={() => claimQuest(q.id, active.id)}
-                style={{ borderRadius: 12, backgroundColor: BRAND.purple, paddingVertical: 12, alignItems: 'center' }}>
-                <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>🏆 Claim Quest (+{q.coins} 🪙)</Text>
-              </Pressable>
-            ) : isClaimed ? (
-              <Pressable onPress={() => submitQuest(q.id)}
-                style={{ borderRadius: 12, backgroundColor: BRAND.teal, paddingVertical: 12, alignItems: 'center' }}>
-                <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>⚡ Start Quest</Text>
-              </Pressable>
-            ) : (
-              <Pressable onPress={() => submitQuest(q.id)}
-                style={{ borderRadius: 12, backgroundColor: '#10B981', paddingVertical: 12, alignItems: 'center' }}>
-                <Text style={{ fontSize: 13, fontWeight: '900', color: '#fff' }}>
-                  {q.photoRequired ? '📸 Take Photo to Get Paid' : '✅ Mark Done → Get Paid'}
+
+        {myQuestsExpanded && (
+          <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 8 }}>
+            {myQuestsCombined.length === 0 ? (
+              <Pressable onPress={() => router.push('/(tabs)/quests')}
+                style={{ borderRadius: 18, borderWidth: 1.5, borderStyle: 'dashed', borderColor: BRAND.purple + '50',
+                  backgroundColor: BRAND.purple + '08', padding: 28, alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontSize: 40 }}>🏆</Text>
+                <Text style={{ fontSize: 15, fontWeight: '900', color: BRAND.purple }}>All caught up!</Text>
+                <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center' }}>
+                  {poolQuests.length > 0 ? `${poolQuests.length} bounty quests up for grabs 💰` : 'Complete quests to earn coins'}
                 </Text>
+              </Pressable>
+            ) : myQuestsVisible.map(q => {
+              const isPool = q.isPool && q.status === 'todo';
+              const isClaimed = q.status === 'claimed';
+              const isActionable = ['todo', 'claimed', 'in_progress'].includes(q.status);
+              const meta = questStatusMeta(q);
+              return (
+                <CollapsibleCard key={q.id} accent={meta.color} colors={colors} isDark={isDark} defaultExpanded={false}
+                  summary={
+                    <View style={{ gap: 6 }}>
+                      <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{q.title}</Text>
+                      <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                        <View style={{ backgroundColor: BRAND.amber + '20', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, flexDirection: 'row', gap: 3, alignItems: 'center' }}>
+                          <Text style={{ fontSize: 10 }}>🪙</Text>
+                          <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.amber }}>{q.coins}</Text>
+                        </View>
+                        <View style={{ backgroundColor: meta.color + '20', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: 10, fontWeight: '800', color: meta.color }}>{meta.icon} {meta.label}</Text>
+                        </View>
+                        {(q.status === 'approved' || q.status === 'done') && q.approvedAt && (
+                          <Text style={{ fontSize: 11, color: colors.textTertiary }}>{fmtDateTime(q.approvedAt)}</Text>
+                        )}
+                        {q.status === 'cancelled' && q.cancelledAt && (
+                          <Text style={{ fontSize: 11, color: colors.textTertiary }}>{fmtDateTime(q.cancelledAt)}</Text>
+                        )}
+                      </View>
+                    </View>
+                  }>
+                  {q.description ? (
+                    <Text style={{ fontSize: TYPO.body, color: colors.textSecondary, fontStyle: 'italic', lineHeight: 18 }}>"{q.description}"</Text>
+                  ) : null}
+                  {q.status === 'pending_approval' && (
+                    <Text style={{ fontSize: TYPO.body, color: BRAND.amber }}>Waiting on a parent to review this quest.</Text>
+                  )}
+                  {isActionable && (
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      {isPool ? (
+                        <Pressable onPress={() => claimQuest(q.id, active.id)}
+                          style={{ flex: 1, borderRadius: 10, backgroundColor: BRAND.purple, paddingVertical: 10, alignItems: 'center' }}>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>🏆 Claim (+{q.coins} 🪙)</Text>
+                        </Pressable>
+                      ) : isClaimed ? (
+                        <Pressable onPress={() => submitQuest(q.id)}
+                          style={{ flex: 1, borderRadius: 10, backgroundColor: BRAND.teal, paddingVertical: 10, alignItems: 'center' }}>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>⚡ Start Quest</Text>
+                        </Pressable>
+                      ) : (
+                        <Pressable onPress={() => submitQuest(q.id)}
+                          style={{ flex: 1, borderRadius: 10, backgroundColor: '#10B981', paddingVertical: 10, alignItems: 'center' }}>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>
+                            {q.photoRequired ? '📸 Take Photo to Get Paid' : '✅ Mark Done → Get Paid'}
+                          </Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  )}
+                </CollapsibleCard>
+              );
+            })}
+            {myQuestsOverflow > 0 && (
+              <Pressable onPress={() => router.push('/(tabs)/quests')}
+                style={{ borderRadius: 14, backgroundColor: BRAND.purple + '12', borderWidth: 1, borderColor: BRAND.purple + '30',
+                  paddingVertical: 12, alignItems: 'center' }}>
+                <Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.purple }}>+{myQuestsOverflow} more quests →</Text>
               </Pressable>
             )}
           </View>
-        );
-      })}
-      {activeQuests.length > 3 && (
-        <Pressable onPress={() => router.push('/(tabs)/quests')}
-          style={{ borderRadius: 14, backgroundColor: BRAND.purple + '12', borderWidth: 1, borderColor: BRAND.purple + '30',
-            paddingVertical: 12, alignItems: 'center' }}>
-          <Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.purple }}>+{activeQuests.length - 3} more quests →</Text>
-        </Pressable>
-      )}
+        )}
+      </View>
     </View>
   );
 
@@ -1260,7 +1445,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
 
       <View style={{ flexDirection: 'row', gap: 10 }}>
         {([
-          { icon: '🐷', label: 'Piggy Bank',   color: BRAND.amber,  bg: BRAND.amber + '15',  onPress: () => router.push('/(tabs)/store' as any) },
+          { icon: '🐷', label: 'Piggy Bank',   color: BRAND.amber,  bg: BRAND.amber + '15',  onPress: () => setPiggyBankModal(true) },
           { icon: '🎁', label: 'Rewards',      color: '#EC4899',    bg: '#EC489915',          onPress: () => router.push('/(tabs)/store' as any) },
           { icon: '📋', label: 'My Requests',  color: BRAND.purple, bg: BRAND.purple + '12', onPress: () => setHistoryModal(true) },
           { icon: '🗓', label: 'Full Calendar', color: BRAND.teal,   bg: BRAND.teal + '12',   onPress: () => router.push('/(tabs)/calendar') },
@@ -1297,6 +1482,40 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
               </Text>
               <Text style={{ fontSize: 14, fontWeight: '800', color: BRAND.amber }}>🪙 {kCoins}</Text>
               {k.streak > 0 && <Text style={{ fontSize: 11, color: '#FF6600' }}>🔥{k.streak}d</Text>}
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  ) : null;
+
+  // ── Cheer Squad — cheer siblings' recently completed quests ──────────────────
+  const cheerSquad = siblingCheerable.length > 0 ? (
+    <View style={[pad, { marginBottom: 16 }]}>
+      <View style={{ borderRadius: 18, backgroundColor: isDark ? colors.card : '#fff',
+        borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', padding: 14, gap: 10 }}>
+        <Text style={{ fontSize: 13, fontWeight: '900', color: colors.textPrimary }}>🎉 Cheer Squad</Text>
+        {siblingCheerable.map(q => {
+          const sib = siblingKids.find(s => s.id === q.assignedToId);
+          const alreadyCheered = (q.cheers ?? []).some(c => c.memberId === active.id);
+          return (
+            <View key={q.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14,
+              backgroundColor: isDark ? '#052E16' : '#F0FDF4', borderWidth: 1, borderColor: '#10B98130', padding: 10 }}>
+              <FamilyAvatar name={sib?.name ?? 'Kid'} emoji={sib?.emoji} avatarUrl={(sib as any)?.avatarUrl} size={30}
+                ringColor="#10B981" ringWidth={0} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>{q.title}</Text>
+                <Text style={{ fontSize: 10, color: '#10B981' }}>{sib?.name?.split(' ')[0] ?? 'They'} finished it! ✅</Text>
+              </View>
+              <Pressable
+                disabled={alreadyCheered}
+                onPress={() => cheerQuest(q.id, active.id)}
+                style={{ borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6,
+                  backgroundColor: alreadyCheered ? (isDark ? colors.surface : '#E2E8F0') : '#10B981' }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: alreadyCheered ? colors.textTertiary : '#fff' }}>
+                  {alreadyCheered ? 'Cheered ✓' : '🎉 Cheer'}
+                </Text>
+              </Pressable>
             </View>
           );
         })}
@@ -1359,12 +1578,14 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
       </View>
       {moreRow}
       {leaderboard}
+      {cheerSquad}
 
       {askParentSheetEl}
       <GroceryModal  visible={groceryModal}  onClose={() => setGroceryModal(false)}  active={active} />
       <SuppliesModal visible={suppliesModal} onClose={() => setSuppliesModal(false)} active={active} />
       {askModal && <AskModal visible={!!askModal} onClose={() => setAskModal(null)} type={askModal} active={active} />}
       <KidRequestHistoryModal visible={historyModal} onClose={() => setHistoryModal(false)} active={active} />
+      {piggyBankSheet}
       <AddEventModal visible={addEventModal} onClose={() => setAddEventModal(false)} activeMemberId={active.id} />
     </>
   );

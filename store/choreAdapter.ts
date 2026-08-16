@@ -23,6 +23,11 @@ function choreStatusToQuestStatus(s: ChoreTask['status']): QuestStatus {
     case 'approved':                     return 'approved';
     case 'auto_approved':                return 'approved';
     case 'redo_requested':               return 'declined';
+    // Without these, terminal statuses fall through to 'todo' and finished
+    // tasks reappear in the Household Backlog forever.
+    case 'completed':                    return 'done';
+    case 'declined':                     return 'cancelled';
+    case 'expired':                      return 'archived';
     default:                             return 'todo';
   }
 }
@@ -106,8 +111,9 @@ export function choreToQuest(c: ChoreTask): Quest {
     createdById:      c.createdById,
     lastModifiedById: undefined,
 
-    // isAdultTask: derive from categoryType (parent_only_quest) since is_private_parent col absent in DB
-    isAdultTask:      c.isPrivateParent || c.categoryType === 'parent_only_quest',
+    // isAdultTask: derive from categoryType (parent_only_quest OR shopping) since is_private_parent col absent in DB
+    // Shopping runs MUST be adult-only (kids never see grocery shopping tasks per spec)
+    isAdultTask:      c.isPrivateParent || c.categoryType === 'parent_only_quest' || c.categoryType === 'shopping',
     inviteGrandparents: c.inviteGrandparents ?? false,
     questType:        categoryTypeToQuestType(c.categoryType),
     assignmentMode:   c.assignedToId ? 'direct' : 'pull',
@@ -117,6 +123,7 @@ export function choreToQuest(c: ChoreTask): Quest {
     autoApproveAt:    c.approvalWindowExpiresAt,
     appreciationSent: false,
     snoozedUntil:     undefined,
+    cheers:           c.cheers ?? [],
   };
 }
 
@@ -175,7 +182,11 @@ export function useQuestStore() {
     },
 
     submitQuest: (id: string, opts?: { note?: string; photoUrl?: string }) => {
-      store.submitChore(id, opts);
+      const chore = store.chores.find(c => c.id === id);
+      // A parent decline maps to redo_requested in choreStore. Route the next
+      // kid/teen submission through the dedicated resubmission transition.
+      if (chore?.status === 'redo_requested') store.resubmitChore(id, opts);
+      else store.submitChore(id, opts);
     },
 
     approveQuest: (id: string, approverId: string) => {
@@ -222,6 +233,10 @@ export function useQuestStore() {
 
     reassignQuest: (id: string, memberId: string, _by: string) => {
       store.updateChore(id, { assignedToId: memberId });
+    },
+
+    cheerQuest: (id: string, fromMemberId: string, opts?: { coins?: number; note?: string }) => {
+      store.cheerChore(id, fromMemberId, opts);
     },
 
     // Boot / hydration — delegate to choreStore

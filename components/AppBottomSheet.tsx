@@ -12,10 +12,11 @@
  *           ScrollView body                            ← keyboard-aware
  *           [optional sticky footer]
  */
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, StyleSheet, Platform, Keyboard,
+  KeyboardAvoidingView, StyleSheet, Platform, Keyboard, Dimensions,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
@@ -58,6 +59,22 @@ export default function AppBottomSheet({
 
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
 
+  // Percentage minHeight/maxHeight can't coexist with a flex:1 ScrollView the
+  // way CSS min/max-height would — Yoga has no content-driven size to lean on,
+  // so it always collapses to minHeight. Instead we measure the actual chrome
+  // (handle+header), footer, and scroll content heights and pick an explicit
+  // pixel height between the min/max bounds — that's what lets the sheet grow
+  // with its content while still pinning the optional footer to the bottom.
+  const screenHeight = Dimensions.get('window').height;
+  const toPx = (pct: string) => (parseFloat(pct) / 100) * screenHeight;
+  const minPx = toPx(minHeight);
+  const maxPx = toPx(maxHeight);
+
+  const [chromeHeight, setChromeHeight] = useState(0);
+  const [footerHeight, setFooterHeight] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
+  const sheetHeight = Math.min(Math.max(chromeHeight + contentHeight + footerHeight, minPx), maxPx);
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
@@ -67,31 +84,34 @@ export default function AppBottomSheet({
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
 
           {/* Sheet panel */}
-          <View style={[s.sheet, { backgroundColor: colors.card, minHeight: minHeight as any, maxHeight: maxHeight as any }]}>
+          <View style={[s.sheet, { backgroundColor: colors.card, height: sheetHeight, maxHeight: maxPx }]}>
 
-            {/* Drag handle */}
-            <View style={[s.handle, { backgroundColor: colors.border }]} />
+            <View onLayout={(e: LayoutChangeEvent) => setChromeHeight(e.nativeEvent.layout.height)}>
+              {/* Drag handle */}
+              <View style={[s.handle, { backgroundColor: colors.border }]} />
 
-            {/* Fixed header */}
-            <View style={[s.header, { borderBottomColor: colors.border }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={[s.title, { color: colors.textPrimary }]}>{title}</Text>
-                {subtitle ? (
-                  <Text style={[s.subtitle, { color: accent }]}>{subtitle}</Text>
-                ) : null}
+              {/* Fixed header */}
+              <View style={[s.header, { borderBottomColor: colors.border }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.title, { color: colors.textPrimary }]}>{title}</Text>
+                  {subtitle ? (
+                    <Text style={[s.subtitle, { color: accent }]}>{subtitle}</Text>
+                  ) : null}
+                </View>
+                <TouchableOpacity
+                  onPress={dismiss}
+                  hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                  style={[s.closeBtn, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
+                  <Ionicons name="close" size={18} color={colors.textSecondary} />
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                onPress={dismiss}
-                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={[s.closeBtn, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                <Ionicons name="close" size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
             </View>
 
             {/* Scrollable body */}
             <ScrollView
               keyboardShouldPersistTaps="handled"
               onScrollBeginDrag={Keyboard.dismiss}
+              onContentSizeChange={(_w, h) => setContentHeight(h)}
               style={{ flex: 1 }}
               contentContainerStyle={{ padding: 20, paddingBottom: bodyPaddingBottom }}
               showsVerticalScrollIndicator={false}>
@@ -100,7 +120,8 @@ export default function AppBottomSheet({
 
             {/* Optional sticky footer */}
             {footer ? (
-              <View style={[s.footer, { borderTopColor: colors.border }]}>
+              <View onLayout={(e: LayoutChangeEvent) => setFooterHeight(e.nativeEvent.layout.height)}
+                style={[s.footer, { borderTopColor: colors.border }]}>
                 {footer}
               </View>
             ) : null}

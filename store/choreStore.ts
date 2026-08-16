@@ -92,11 +92,19 @@ export interface ChoreTask {
   receiptNote?: string;
   receiptSubmittedAt?: string;
   receiptReimbursedAt?: string; // parent taps "Reimbursed" to acknowledge
+  cheers?: ChoreCheer[];        // Cheer Squad — GP/sibling reactions on a completed chore
   submittedAt?: string;
   approvedAt?: string;
   reviewedAt?: string;
   declinedAt?: string;
   createdAt: string;
+}
+
+export interface ChoreCheer {
+  memberId: string;   // who sent the cheer
+  at:       string;   // ISO
+  coins?:   number;   // optional kudos coins gifted alongside (GP only)
+  note?:    string;   // optional kudos text note
 }
 
 export interface RecurrenceRule {
@@ -271,6 +279,7 @@ const CACHE_KEY_CHORES       = '@familycube_chores_v1';
 const CACHE_KEY_TRANSACTIONS = '@familycube_transactions_v1';
 const CACHE_KEY_BADGES       = '@familycube_badges_v1';
 const CACHE_KEY_SETTINGS     = '@familycube_household_settings_v1';
+const CACHE_KEY_ASSIGNMENTS  = '@familycube_parent_assignments_v1';
 const CACHE_TTL = 5 * 60_000;
 
 let _fetchedAt = 0;
@@ -346,6 +355,7 @@ function choreFromRow(row: any): ChoreTask {
     receiptNote:             row.receipt_note ?? undefined,
     receiptSubmittedAt:      row.receipt_submitted_at ?? undefined,
     receiptReimbursedAt:     row.receipt_reimbursed_at ?? undefined,
+    cheers:                  Array.isArray(row.cheered_by) ? row.cheered_by : [],
   };
 }
 
@@ -376,6 +386,24 @@ function badgeFromRow(row: any): UserBadge {
     visualUrl:       row.visual_url ?? undefined,
     bonusPerkActive: row.bonus_perk_active ?? true,
     createdAt:       row.created_at ?? new Date().toISOString(),
+  };
+}
+
+function parentAssignmentFromRow(row: any): ParentQuestAssignment {
+  return {
+    id:                  String(row.id),
+    choreId:             String(row.chore_id),
+    assignedBy:          String(row.assigned_by),
+    assignedTo:          String(row.assigned_to),
+    status:              (row.status ?? 'PENDING') as ParentQuestAssignment['status'],
+    snoozeUntil:         row.snooze_until ?? undefined,
+    bounceCount:         row.bounce_count ?? 0,
+    isLocked:            row.is_locked ?? false,
+    actionablePushback:  row.actionable_pushback ?? undefined,
+    pushbackDetails:     row.pushback_details ?? undefined,
+    completedAt:         row.completed_at ?? undefined,
+    createdAt:           row.created_at ?? new Date().toISOString(),
+    updatedAt:           row.updated_at ?? new Date().toISOString(),
   };
 }
 
@@ -433,6 +461,9 @@ interface ChoreState {
   // ── Parent review ──────────────────────────────────────────────────────────
   approveChore:                    (choreId: string, reviewerId: string) => void;
   requestRedo:                     (choreId: string, reviewerId: string, reason: string, presetKey?: string) => void;
+
+  // ── Cheer Squad — GP/sibling reactions on a completed chore ─────────────────
+  cheerChore:                      (choreId: string, fromMemberId: string, opts?: { coins?: number; note?: string }) => void;
   approveGrandparentQuestAsParent: (choreId: string, parentId: string) => void;
   declineGrandparentQuestAsParent: (choreId: string, parentId: string, reason: string) => void;
   scanAndAutoApprove:              () => void;
@@ -501,15 +532,19 @@ const DEFAULT_SETTINGS: HouseholdSettings = {
 
 function dbUpdate(table: string, id: string, patch: Record<string, unknown>) {
   _fetchedAt = 0;
+  console.log(`[choreStore] → DB update ${table}/${id}`, patch);
   supabase.from(table).update(patch).eq('id', id).then(({ error }) => {
-    if (error) console.warn(`[choreStore] DB update ${table}`, id, error.message);
+    if (error) console.warn(`[choreStore] ✗ DB update ${table}/${id} FAILED`, error.message);
+    else console.log(`[choreStore] ✓ DB update ${table}/${id} ok`);
   });
 }
 
 function dbInsert(table: string, row: Record<string, unknown>) {
   _fetchedAt = 0;
+  console.log(`[choreStore] → DB insert ${table}`, row);
   supabase.from(table).insert(row).then(({ error }) => {
-    if (error) console.warn(`[choreStore] DB insert ${table}`, error.message);
+    if (error) console.warn(`[choreStore] ✗ DB insert ${table} FAILED`, error.message, '| row:', row);
+    else console.log(`[choreStore] ✓ DB insert ${table} ok (id=${row.id})`);
   });
 }
 
@@ -520,38 +555,64 @@ function ensureRealtime(
   setState: (s: Partial<ChoreState>) => void,
   getState: () => ChoreState,
 ) {
-  if (_rtFamilyId === familyId && _rtChannel) return;
-  if (_rtChannel) { supabase.removeChannel(_rtChannel); _rtChannel = null; }
+  if (_rtFamilyId === familyId && _rtChannel) {
+    console.log(`[choreStore] ensureRealtime — already subscribed to chores:${familyId}, skipping`);
+    return;
+  }
+  if (_rtChannel) {
+    console.log(`[choreStore] ensureRealtime — removing previous channel (was family=${_rtFamilyId})`);
+    supabase.removeChannel(_rtChannel);
+    _rtChannel = null;
+  }
+  // Dev-mode hot reload resets this module's `let` state, but the Supabase
+  // client is a persisted singleton whose socket can still hold a channel
+  // under this exact topic name — calling .on() on a fresh channel object
+  // with a name collision throws "cannot add callbacks ... after subscribe()".
+  // Sweep any live channel with the same topic before creating a new one.
+  const staleTopic = `realtime:chores:${familyId}`;
+  const stale = supabase.getChannels().filter(c => c.topic === staleTopic);
+  if (stale.length > 0) {
+    console.log(`[choreStore] ensureRealtime — found ${stale.length} stale channel(s) for ${staleTopic} (likely hot-reload), removing`);
+    stale.forEach(c => supabase.removeChannel(c));
+  }
   _rtFamilyId = familyId;
 
-  _rtChannel = supabase
-    .channel(`chores:${familyId}`)
-    .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: 'chore_tasks',
-      filter: `family_id=eq.${familyId}`,
-    }, ({ eventType, new: newRow, old: oldRow }) => {
-      const state = getState();
-      if (eventType === 'INSERT') {
-        const chore = choreFromRow(newRow);
-        // Hide parent-only quests from non-parents
-        const role = getActiveMemberRole();
-        if (chore.isPrivateParent && role !== 'parent') return;
-        // Skip if already added optimistically by addChore
-        if (state.chores.some(c => c.id === chore.id)) return;
-        setState({ chores: [chore, ...state.chores] });
-      } else if (eventType === 'UPDATE') {
-        setState({
-          chores: state.chores.map(c =>
-            c.id === String(newRow.id) ? choreFromRow(newRow) : c
-          ),
-        });
-      } else if (eventType === 'DELETE') {
-        setState({ chores: state.chores.filter(c => c.id !== String(oldRow.id)) });
-      }
-    })
-    .subscribe();
+  console.log(`[choreStore] ensureRealtime — subscribing to chores:${familyId}`);
+  try {
+    _rtChannel = supabase
+      .channel(`chores:${familyId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'chore_tasks',
+        filter: `family_id=eq.${familyId}`,
+      }, ({ eventType, new: newRow, old: oldRow }) => {
+        console.log(`[choreStore] realtime chore_tasks ${eventType}`, (newRow as any)?.id ?? (oldRow as any)?.id);
+        const state = getState();
+        if (eventType === 'INSERT') {
+          const chore = choreFromRow(newRow);
+          // Hide parent-only quests from non-parents
+          const role = getActiveMemberRole();
+          if (chore.isPrivateParent && role !== 'parent') return;
+          // Skip if already added optimistically by addChore
+          if (state.chores.some(c => c.id === chore.id)) return;
+          setState({ chores: [chore, ...state.chores] });
+        } else if (eventType === 'UPDATE') {
+          setState({
+            chores: state.chores.map(c =>
+              c.id === String(newRow.id) ? choreFromRow(newRow) : c
+            ),
+          });
+        } else if (eventType === 'DELETE') {
+          setState({ chores: state.chores.filter(c => c.id !== String(oldRow.id)) });
+        }
+      })
+      .subscribe((status) => {
+        console.log(`[choreStore] realtime chores:${familyId} subscribe status=${status}`);
+      });
+  } catch (e: any) {
+    console.warn('[choreStore] ensureRealtime subscribe failed', e?.message ?? e);
+  }
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -571,11 +632,12 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
   loadFromStorage: async () => {
     try {
-      const [rawChores, rawTx, rawBadges, rawSettings] = await Promise.all([
+      const [rawChores, rawTx, rawBadges, rawSettings, rawAssignments] = await Promise.all([
         AsyncStorage.getItem(CACHE_KEY_CHORES),
         AsyncStorage.getItem(CACHE_KEY_TRANSACTIONS),
         AsyncStorage.getItem(CACHE_KEY_BADGES),
         AsyncStorage.getItem(CACHE_KEY_SETTINGS),
+        AsyncStorage.getItem(CACHE_KEY_ASSIGNMENTS),
       ]);
       const rawParsed: ChoreTask[] = rawChores ? JSON.parse(rawChores) : [];
       // Deduplicate by id — guards against stale duplicates written before this fix
@@ -586,6 +648,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         transactions:     rawTx       ? JSON.parse(rawTx)       : [],
         badges:           rawBadges   ? JSON.parse(rawBadges)   : [],
         householdSettings: rawSettings ? { ...DEFAULT_SETTINGS, ...JSON.parse(rawSettings) } : DEFAULT_SETTINGS,
+        parentAssignments: rawAssignments ? JSON.parse(rawAssignments) : [],
         loaded: true,
       });
     } catch (e) {
@@ -613,7 +676,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         choreQuery = choreQuery.neq('category_type', 'parent_only_quest');
       }
 
-      const [{ data: choresData }, { data: txData }, { data: badgesData }] = await Promise.all([
+      const [{ data: choresData }, { data: txData }, { data: badgesData }, { data: assignmentsData }] = await Promise.all([
         choreQuery,
         supabase
           .from('point_transactions')
@@ -624,19 +687,26 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           .from('user_badges')
           .select('*')
           .order('created_at', { ascending: false }),
+        // RLS scopes this to the family via its chore_tasks join — no family_id column on the table itself
+        supabase
+          .from('parent_quest_assignments')
+          .select('*')
+          .order('created_at', { ascending: false }),
       ]);
 
       const chores       = (choresData ?? []).map(choreFromRow);
       const transactions = (txData     ?? []).map(txFromRow);
       const badges       = (badgesData ?? []).map(badgeFromRow);
+      const parentAssignments = (assignmentsData ?? []).map(parentAssignmentFromRow);
 
       _fetchedAt = Date.now();
-      set({ chores, transactions, badges, loaded: true });
+      set({ chores, transactions, badges, parentAssignments, loaded: true });
 
       await Promise.all([
         AsyncStorage.setItem(CACHE_KEY_CHORES,       JSON.stringify(chores)),
         AsyncStorage.setItem(CACHE_KEY_TRANSACTIONS,  JSON.stringify(transactions)),
         AsyncStorage.setItem(CACHE_KEY_BADGES,        JSON.stringify(badges)),
+        AsyncStorage.setItem(CACHE_KEY_ASSIGNMENTS,   JSON.stringify(parentAssignments)),
       ]);
 
       ensureRealtime(familyId, set, get);
@@ -742,6 +812,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (updates.reviewedAt         !== undefined) patch.reviewed_at              = updates.reviewedAt;
     if (updates.declinedAt         !== undefined) patch.declined_at              = updates.declinedAt;
     if (updates.redoCount          !== undefined) patch.redo_count               = updates.redoCount;
+    if (updates.cheers             !== undefined) patch.cheered_by               = updates.cheers;
     if (Object.keys(patch).length > 0) dbUpdate('chore_tasks', id, patch);
   },
 
@@ -954,6 +1025,21 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       reviewedAt:      new Date().toISOString(),
       redoCount:       newRedoCount,
     });
+  },
+
+  cheerChore: (choreId, fromMemberId, opts) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore) return;
+    if ((chore.cheers ?? []).some(c => c.memberId === fromMemberId)) return; // one cheer per person
+    const entry: ChoreCheer = {
+      memberId: fromMemberId, at: new Date().toISOString(),
+      ...(opts?.coins ? { coins: opts.coins } : {}),
+      ...(opts?.note?.trim() ? { note: opts.note.trim() } : {}),
+    };
+    get().updateChore(choreId, { cheers: [...(chore.cheers ?? []), entry] });
+    supabase.functions.invoke('quest-event-notifier', {
+      body: { event: 'chore_cheered', choreId, fromId: fromMemberId, coins: opts?.coins ?? 0, note: entry.note ?? null },
+    }).catch(e => console.warn('[choreStore] cheerChore notify', e?.message));
   },
 
   approveGrandparentQuestAsParent: (choreId, parentId) => {
@@ -1174,17 +1260,30 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // ─────────────────────────────────────────────────────────────────────────
 
   addParentQuest: (choreId, assignedBy, assignedTo, mode = 'PULL') => {
+    console.log(`[choreStore] addParentQuest called — choreId=${choreId} assignedBy=${assignedBy} assignedTo=${assignedTo ?? '(self)'} mode=${mode}`);
     const chore = get().chores.find(c => c.id === choreId);
-    if (!chore || chore.categoryType !== 'parent_only_quest') return null;
+    if (!chore) {
+      console.warn(`[choreStore] addParentQuest ABORTED — no chore found with id=${choreId}`);
+      return null;
+    }
+    // Household Backlog's pool mixes real parent_only_quest chores with
+    // shopping-type quests (both flagged isAdultTask upstream and rendered as
+    // pseudo parent_only_quest rows) — this guard only accepted the former,
+    // so "Take It" silently no-op'd for every grocery run.
+    if (!['parent_only_quest', 'shopping'].includes(chore.categoryType)) {
+      console.warn(`[choreStore] addParentQuest ABORTED — chore "${chore.title}" has categoryType="${chore.categoryType}", not parent_only_quest/shopping`);
+      return null;
+    }
 
     const now = new Date().toISOString();
+    const finalAssignedTo = assignedTo ?? assignedBy;
     // PULL mode: person self-claims from backlog (assignedTo = themselves)
     // DIRECT mode: explicitly assigned to partner, status starts PENDING
     const assignment: ParentQuestAssignment = {
       id:                genId(),
       choreId,
       assignedBy,
-      assignedTo:        assignedTo ?? assignedBy,
+      assignedTo:        finalAssignedTo,
       status:            mode === 'DIRECT' ? 'PENDING' : 'ACCEPTED', // pull = self-accept
       bounceCount:       0,
       isLocked:          false,
@@ -1197,20 +1296,42 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       id:          assignment.id,
       chore_id:    choreId,
       assigned_by: assignedBy,
-      assigned_to: assignment.assignedTo,
-      status:      'PENDING',
+      assigned_to: finalAssignedTo,
+      status:      assignment.status,
       bounce_count: 0,
       is_locked:   false,
       created_at:  now,
       updated_at:  now,
     });
 
+    // The Household Backlog pool/mine/theirs split is computed from the chore's
+    // OWN assignedToId (Household Backlog reads `quests`, not parentAssignments),
+    // so the claim must land there too — otherwise the chore never leaves the
+    // pool and "Take It" reappears every time the list reloads.
+    // DIRECT stays unassigned on the chore until the delegate accepts — otherwise
+    // it lands in their "Assigned to you" list with a Done button and the
+    // Accept/Respond card never gets a chance to render.
+    if (mode === 'PULL') {
+      console.log(`[choreStore] addParentQuest → assignment ${assignment.id} created (ACCEPTED); syncing chore ${choreId} → assignedToId=${finalAssignedTo} status=in_progress`);
+      get().updateChore(choreId, { assignedToId: finalAssignedTo, status: 'in_progress' });
+    } else {
+      console.log(`[choreStore] addParentQuest → assignment ${assignment.id} created (PENDING); chore ${choreId} left unassigned until accepted`);
+    }
+
     return assignment;
   },
 
   respondToParentQuest: (assignmentId, response) => {
+    console.log(`[choreStore] respondToParentQuest called — assignmentId=${assignmentId} action=${response.action}`);
     const assignment = get().parentAssignments.find(a => a.id === assignmentId);
-    if (!assignment || assignment.isLocked) return;
+    if (!assignment) {
+      console.warn(`[choreStore] respondToParentQuest ABORTED — no assignment found with id=${assignmentId}`);
+      return;
+    }
+    if (assignment.isLocked) {
+      console.warn(`[choreStore] respondToParentQuest ABORTED — assignment ${assignmentId} is locked (two-bounce rule)`);
+      return;
+    }
 
     const now = new Date().toISOString();
     let newStatus: ParentQuestAssignment['status'] = 'PENDING';
@@ -1238,6 +1359,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         break;
     }
 
+    console.log(`[choreStore] respondToParentQuest → assignment ${assignmentId}: status=${newStatus} bounceCount=${newBounceCount} locked=${newIsLocked}`);
     set(s => ({
       parentAssignments: s.parentAssignments.map(a =>
         a.id === assignmentId
@@ -1255,6 +1377,15 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       ),
     }));
 
+    // Keep the chore row in step — the backlog's pool/mine/theirs split reads the
+    // chore, not the assignment. A bounced task must lose its assignee or it sits
+    // on the refuser's list forever and nobody else can pick it up.
+    if (newStatus === 'ACCEPTED') {
+      get().updateChore(assignment.choreId, { assignedToId: assignment.assignedTo, status: 'in_progress' });
+    } else if (newStatus === 'PARKED') {
+      get().updateChore(assignment.choreId, { assignedToId: undefined, status: 'todo' });
+    }
+
     dbUpdate('parent_quest_assignments', assignmentId, {
       status:               newStatus,
       snooze_until:         snoozeUntil,
@@ -1267,7 +1398,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   completeParentQuest: (assignmentId, completedBy) => {
+    console.log(`[choreStore] completeParentQuest called — assignmentId=${assignmentId} completedBy=${completedBy}`);
     const now = new Date().toISOString();
+    const assignment = get().parentAssignments.find(a => a.id === assignmentId);
+    if (!assignment) {
+      console.warn(`[choreStore] completeParentQuest ABORTED — no assignment found with id=${assignmentId}`);
+      return;
+    }
     set(s => ({
       parentAssignments: s.parentAssignments.map(a =>
         a.id === assignmentId
@@ -1280,11 +1417,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       completed_at: now,
       updated_at:   now,
     });
-    // Update chore status
-    const assignment = get().parentAssignments.find(a => a.id === assignmentId);
-    if (assignment) {
-      get().updateChore(assignment.choreId, { status: 'completed' });
-    }
+    console.log(`[choreStore] completeParentQuest → syncing chore ${assignment.choreId} status=completed`);
+    get().updateChore(assignment.choreId, { status: 'completed' });
   },
 
   appreciationPing: (assignmentId, fromId, message) => {
@@ -1516,8 +1650,9 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   getParentQuestPool: () => {
+    const done = new Set<ChoreStatus>(['approved', 'auto_approved', 'completed', 'declined', 'expired']);
     return get().chores
-      .filter(c => c.categoryType === 'parent_only_quest')
+      .filter(c => c.categoryType === 'parent_only_quest' && !c.assignedToId && !done.has(c.status))
       .sort((a, b) => a.createdAt < b.createdAt ? 1 : -1);
   },
 

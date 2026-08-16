@@ -24,9 +24,12 @@ import { Swipeable } from 'react-native-gesture-handler';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
+import { useLocalSearchParams } from 'expo-router';
 import AppBottomSheet from '@/components/AppBottomSheet';
+import CelebrationBurst from '@/components/CelebrationBurst';
 import { useFamilyStore } from '@/store/familyStore';
 // questStore commented out — chores system is the single source of truth
 // import { useQuestStore } from '@/store/questStore';
@@ -36,7 +39,7 @@ import AppHeader from '@/components/AppHeader';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
-import { fmtDateShort, todayLocal, localDateStr } from '@/lib/dates';
+import { fmtDateShort, todayLocal, localDateStr, fmtDateTime } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
 import { useChatStore } from '@/store/chatStore';
 import { fetchCustomCategories, fetchCustomSuggestions, recordCustomSuggestion, CustomCategory } from '@/lib/familyCustomCategories';
@@ -552,14 +555,15 @@ const ALL_CATEGORIES: QuestCategory[] = ['Kitchen', 'Room', 'Yard', 'School', 'P
 
 // ─── Collapsible quest card — header always visible, body expands on tap ─────
 function CollapsibleQuestCard({
-  accentColor, cardBg, cardBord, header, children, onDoubleTap, onLongPress,
+  accentColor, cardBg, cardBord, header, children, onDoubleTap, onLongPress, initiallyExpanded = false,
 }: {
   accentColor: string; cardBg: string; cardBord: string;
   header: React.ReactNode; children: React.ReactNode;
   onDoubleTap?: () => void;
   onLongPress?: () => void;
+  initiallyExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const lastTap = React.useRef(0);
   const handlePress = () => {
     const now = Date.now();
@@ -857,7 +861,7 @@ function QuestStepper({ claimedAt, submittedAt, approvedAt, declinedAt, declineR
   );
 }
 
-function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestType }: {
+export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestType }: {
   visible: boolean; onClose: () => void; activeMemberId: string; defaultQuestType?: QuestType;
 }) {
   const { colors, isDark } = useTheme();
@@ -2826,8 +2830,9 @@ const ai = StyleSheet.create({
 
 export default function QuestsScreen() {
   const { colors, isDark } = useTheme();
-  const { members, activeMemberId, setActiveMember } = useFamilyStore();
-  const { quests, claimQuest, submitQuest, approveQuest, declineQuest, reopenQuest, updateQuest, deleteQuest, approveParticipant, declineParticipant, reopenParticipant, reassignQuest } = useQuestStore();
+  const { questId } = useLocalSearchParams<{ questId?: string }>();
+  const { members, activeMemberId, setActiveMember, awardCoins } = useFamilyStore();
+  const { quests, claimQuest, submitQuest, approveQuest, declineQuest, reopenQuest, updateQuest, deleteQuest, approveParticipant, declineParticipant, reopenParticipant, reassignQuest, cheerQuest } = useQuestStore();
 
   const activeMember = members.find(m => m.id === activeMemberId)
     ?? members.find(m => m.role === 'parent') ?? members[0];
@@ -2860,6 +2865,56 @@ export default function QuestsScreen() {
   const [showAddModal,   setShowAddModal]   = useState(false);
   const [showSponsorModal, setShowSponsorModal] = useState(false);
   const [delegateTarget, setDelegateTarget] = useState<{ id: string; title: string } | null>(null);
+  const [kudosTarget,    setKudosTarget]    = useState<Quest | null>(null);
+  const [kudosNote,      setKudosNote]      = useState('');
+  const [kudosIncludeCoins, setKudosIncludeCoins] = useState(false);
+  const [kudosCoinAmount,   setKudosCoinAmount]   = useState(10);
+  const [kudosCustomCoins,  setKudosCustomCoins]  = useState(false);
+  const [kudosCustomText,   setKudosCustomText]   = useState('');
+  const [celebratingId, setCelebratingId] = useState<string | null>(null);
+  const [submitTarget, setSubmitTarget] = useState<Quest | null>(null);
+  const [submissionPhotoUri, setSubmissionPhotoUri] = useState<string | null>(null);
+  const [submissionNote, setSubmissionNote] = useState('');
+  const [proofPhotoViewerUri, setProofPhotoViewerUri] = useState<string | null>(null);
+
+  const closeSubmitSheet = () => {
+    setSubmitTarget(null);
+    setSubmissionPhotoUri(null);
+    setSubmissionNote('');
+  };
+
+  const openSubmitSheet = (quest: Quest) => {
+    setSubmitTarget(quest);
+    setSubmissionPhotoUri(null);
+    setSubmissionNote('');
+  };
+
+  const selectProofPhoto = async (fromCamera: boolean) => {
+    const permission = fromCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permission.status !== 'granted') {
+      Alert.alert('Permission needed', `Allow ${fromCamera ? 'camera' : 'photo library'} access to attach proof.`);
+      return;
+    }
+    const result = fromCamera
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [4, 3], quality: 0.7 })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [4, 3], quality: 0.7 });
+    if (!result.canceled && result.assets[0]) setSubmissionPhotoUri(result.assets[0].uri);
+  };
+
+  const submitWithProof = () => {
+    if (!submitTarget) return;
+    if (submitTarget.photoRequired && !submissionPhotoUri) {
+      Alert.alert('📸 Photo required', 'Add a photo before submitting this quest for review.');
+      return;
+    }
+    submitQuest(submitTarget.id, {
+      photoUrl: submissionPhotoUri ?? undefined,
+      note: submissionNote.trim() || undefined,
+    });
+    closeSubmitSheet();
+  };
 
   // Scroll ref — used to reset position on persona switch
   const scrollRef = useRef<ScrollView>(null);
@@ -3073,10 +3128,12 @@ export default function QuestsScreen() {
     if (kidFilter !== 'cheer' && tabStatus !== 'all') {
       if (tabStatus === 'todo')      list = list.filter(q => q.status === 'todo' || q.status === 'claimed');
       else if (tabStatus === 'review')    list = list.filter(q => q.status === 'pending_approval');
-      else if (tabStatus === 'completed') list = list.filter(q => q.status === 'approved' || q.status === 'done' || q.status === 'declined');
+      else if (tabStatus === 'completed') list = list.filter(q => q.status === 'approved' || q.status === 'done');
     }
+    // Hub decision banners can open one specific quest for the kid to review.
+    if (questId) list = list.filter(q => q.id === questId);
     return list;
-  }, [quests, kidFilter, tabStatus, isKidOrTeen, activeMember]);
+  }, [quests, kidFilter, tabStatus, isKidOrTeen, activeMember, questId]);
 
   // ── Kid grouped sections (spec §4 dashboard layout) ───────────────────────────
   const kidSections = React.useMemo(() => {
@@ -3094,16 +3151,50 @@ export default function QuestsScreen() {
     return { citizenship, routines, bountyBoard, grandparent, other };
   }, [filteredQuests, isKidOrTeen, tabStatus]);
 
-  // ── Grandparent: kudos feed + sponsored quests ───────────────────────────────
+  // ── Grandparent: sponsored quests (GP-only) ───────────────────────────────────
   const grandparentData = React.useMemo(() => {
     if (!isSenior) return null;
-    const kudos = quests
-      .filter(q => (q.status === 'done' || q.status === 'approved') && !q.isAdultTask)
+    const sponsored = quests.filter(q => q.questType === 'grandparent_quest' && q.createdById === myId);
+    return { sponsored };
+  }, [quests, isSenior, myId]);
+
+  // ── Family Kudos — today's completed quests from kids, cheerable by GP.
+  // Kid/teen siblings get the same job done by the dedicated "Sibling Cheer"
+  // tab below (with its own animation + own-quest filtering) — showing both
+  // here too would be redundant for them.
+  const todaysKudos = React.useMemo(() => {
+    if (!isSenior) return [];
+    const today = todayLocal();
+    return quests
+      .filter(q =>
+        (q.status === 'done' || q.status === 'approved') && !q.isAdultTask &&
+        q.assignedToId !== myId &&  // never show my own completed quests — I can't cheer myself
+        (q.completedAt ?? q.approvedAt ?? '').startsWith(today) &&
+        !(q.cheers ?? []).some(c => c.memberId === myId)
+      )
       .sort((a, b) => (b.completedAt ?? b.approvedAt ?? '').localeCompare(a.completedAt ?? a.approvedAt ?? ''))
       .slice(0, 10);
-    const sponsored = quests.filter(q => q.questType === 'grandparent_quest' && q.createdById === myId);
-    return { kudos, sponsored };
   }, [quests, isSenior, myId]);
+
+  const handleKudosTap = (q: Quest) => {
+    setKudosTarget(q);
+    setKudosNote('');
+    setKudosIncludeCoins(false);
+    setKudosCoinAmount(10);
+    setKudosCustomCoins(false);
+    setKudosCustomText('');
+  };
+
+  const closeKudosSheet = () => setKudosTarget(null);
+
+  const handleSendKudos = () => {
+    if (!kudosTarget) return;
+    const resolvedAmount = kudosCustomCoins ? (parseInt(kudosCustomText, 10) || 0) : kudosCoinAmount;
+    const coins = isSenior && kudosIncludeCoins && resolvedAmount > 0 ? resolvedAmount : undefined;
+    cheerQuest(kudosTarget.id, myId ?? '', { note: kudosNote.trim() || undefined, coins });
+    if (coins && kudosTarget.assignedToId) awardCoins(kudosTarget.assignedToId, coins, 'gpCoins');
+    closeKudosSheet();
+  };
 
   // ── Action handlers ───────────────────────────────────────────────────────────
   const handleClaim = async (id: string) => {
@@ -3195,31 +3286,37 @@ export default function QuestsScreen() {
           />
         )}
 
-        {/* ── Grandparent: Kudos Feed + Sponsored Quests ── */}
+        {/* ── Family Kudos — today's completed quests, tap to cheer ── */}
+        {todaysKudos.length > 0 && (
+          <View style={{ marginHorizontal: 14, marginBottom: 12 }}>
+            <View style={{ backgroundColor: isDark ? '#0D2E2A' : '#ECFDF5', borderRadius: 20, borderWidth: 1, borderColor: '#00BBA430', padding: 14 }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#00BBA4', marginBottom: 2 }}>🎉 Family Kudos</Text>
+              <Text style={{ fontSize: TYPO.micro, color: '#059669', marginBottom: 10 }}>
+                {isSenior ? 'Tap a quest to cheer — with a note, or bonus coins' : 'Tap a quest to send a kudos note'}
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
+                <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 4 }}>
+                  {todaysKudos.map(q => {
+                    const kid = members.find(m => m.id === q.assignedToId);
+                    return (
+                      <TouchableOpacity key={q.id} onPress={() => handleKudosTap(q)}
+                        style={{ backgroundColor: isDark ? '#0F3A35' : '#D1FAE5', borderRadius: 16, padding: 10, width: 130, gap: 4 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#059669' }}>✅ Done</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isDark ? '#fff' : '#064E3B' }} numberOfLines={2}>{q.title}</Text>
+                        <Text style={{ fontSize: TYPO.micro, color: '#059669' }}>{kid?.emoji ?? '🧒'} {kid?.name ?? 'Kid'}</Text>
+                        {q.coins > 0 && <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#F59E0B' }}>+{q.coins} coins</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            </View>
+          </View>
+        )}
+
+        {/* ── Grandparent: Sponsored Quests ── */}
         {isSenior && grandparentData && (
           <View style={{ marginHorizontal: 14, marginBottom: 12, gap: 10 }}>
-            {/* Kudos Feed */}
-            {grandparentData.kudos.length > 0 && (
-              <View style={{ backgroundColor: isDark ? '#0D2E2A' : '#ECFDF5', borderRadius: 20, borderWidth: 1, borderColor: '#00BBA430', padding: 14 }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#00BBA4', marginBottom: 10 }}>🎉 Family Kudos</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
-                  <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 4 }}>
-                    {grandparentData.kudos.map(q => {
-                      const kid = members.find(m => m.id === q.assignedToId);
-                      return (
-                        <View key={q.id} style={{ backgroundColor: isDark ? '#0F3A35' : '#D1FAE5', borderRadius: 16, padding: 10, width: 130, gap: 4 }}>
-                          <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#059669' }}>✅ Done</Text>
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isDark ? '#fff' : '#064E3B' }} numberOfLines={2}>{q.title}</Text>
-                          <Text style={{ fontSize: TYPO.micro, color: '#059669' }}>{kid?.emoji ?? '🧒'} {kid?.name ?? 'Kid'}</Text>
-                          {q.coins > 0 && <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#F59E0B' }}>+{q.coins} coins</Text>}
-                        </View>
-                      );
-                    })}
-                  </View>
-                </ScrollView>
-              </View>
-            )}
-            {/* My Sponsored Quests */}
             {grandparentData.sponsored.length > 0 && (
               <View style={{ backgroundColor: isDark ? '#0D1A2D' : '#EFF6FF', borderRadius: 20, borderWidth: 1, borderColor: '#3B82F620', padding: 14 }}>
                 <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#3B82F6', marginBottom: 8 }}>👴 My Sponsored Quests</Text>
@@ -3240,7 +3337,7 @@ export default function QuestsScreen() {
                 })}
               </View>
             )}
-            {grandparentData.sponsored.length === 0 && grandparentData.kudos.length === 0 && (
+            {grandparentData.sponsored.length === 0 && todaysKudos.length === 0 && (
               <View style={[s.seniorBanner, { marginHorizontal: 0 }]}>
                 <Text style={s.seniorBannerText}>👴 Tap "Sponsor Quest" to fund a special quest for the grandkids!</Text>
               </View>
@@ -3291,11 +3388,15 @@ export default function QuestsScreen() {
             {(() => {
               const pendingKidQuests = quests.filter(q =>
                 q.status === 'pending_approval' && !q.isAdultTask &&
-                q.assignedToId && !members.find(m => m.id === q.assignedToId && (m.role === 'parent' || m.role === 'senior'))
+                q.assignedToId && q.assignedToId !== myId &&
+                !members.find(m => m.id === q.assignedToId && (m.role === 'parent' || m.role === 'senior')) &&
+                !(q.cheers ?? []).some(c => c.memberId === myId)
               );
               const doneKidQuests = quests.filter(q =>
                 (q.status === 'approved' || q.status === 'done') && !q.isAdultTask &&
-                q.assignedToId && !members.find(m => m.id === q.assignedToId && (m.role === 'parent' || m.role === 'senior'))
+                q.assignedToId && q.assignedToId !== myId &&
+                !members.find(m => m.id === q.assignedToId && (m.role === 'parent' || m.role === 'senior')) &&
+                !(q.cheers ?? []).some(c => c.memberId === myId)
               ).slice(0, 5);
 
               return (
@@ -3315,25 +3416,27 @@ export default function QuestsScreen() {
                       {pendingKidQuests.map(q => {
                         const kid = members.find(m => m.id === q.assignedToId);
                         return (
-                          <View key={q.id} style={[s.cheerRow, { backgroundColor: isDark ? '#1E1B4B' : '#F5F3FF', borderColor: BRAND.purple + '30' }]}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
-                                {kid?.emoji ?? '🧒'} {q.title}
-                              </Text>
-                              <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>
-                                {kid?.name ?? 'Kid'} submitted · {q.coins > 0 ? `${q.coins}🪙` : ''}
-                              </Text>
+                          <View key={q.id} style={{ position: 'relative' }}>
+                            {/* Cheer fires after the burst finishes — the store update removes
+                                this row from the list, so it must outlive the animation. */}
+                            <CelebrationBurst visible={celebratingId === q.id}
+                              onDone={() => { cheerQuest(q.id, myId ?? ''); setCelebratingId(null); }} />
+                            <View style={[s.cheerRow, { backgroundColor: isDark ? '#1E1B4B' : '#F5F3FF', borderColor: BRAND.purple + '30' }]}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
+                                  {kid?.emoji ?? '🧒'} {q.title}
+                                </Text>
+                                <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>
+                                  {kid?.name ?? 'Kid'} submitted · {q.coins > 0 ? `${q.coins}🪙` : ''}
+                                </Text>
+                              </View>
+                              <TouchableOpacity disabled={celebratingId === q.id}
+                                style={{ backgroundColor: BRAND.purple, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, marginLeft: 8, opacity: celebratingId === q.id ? 0.6 : 1 }}
+                                onPress={() => setCelebratingId(q.id)}
+                              >
+                                <Text style={{ color: '#fff', fontSize: TYPO.caption, fontWeight: '800' }}>🎉 Cheer!</Text>
+                              </TouchableOpacity>
                             </View>
-                            <TouchableOpacity
-                              style={{ backgroundColor: BRAND.purple, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, marginLeft: 8 }}
-                              onPress={() => {
-                                const msg = `🎉 ${activeMember?.name ?? 'Someone'} cheered for ${kid?.name ?? 'you'} on "${q.title}"!`;
-                                useChatStore.getState().sendMessage('all', activeMember?.id ?? '', msg);
-                                Alert.alert('🎉 Cheered!', `You encouraged ${kid?.name ?? 'them'} for "${q.title}"!`);
-                              }}
-                            >
-                              <Text style={{ color: '#fff', fontSize: TYPO.caption, fontWeight: '800' }}>🎉 Cheer!</Text>
-                            </TouchableOpacity>
                           </View>
                         );
                       })}
@@ -3349,25 +3452,28 @@ export default function QuestsScreen() {
                       {doneKidQuests.map(q => {
                         const kid = members.find(m => m.id === q.assignedToId);
                         return (
-                          <View key={q.id} style={[s.cheerRow, { backgroundColor: isDark ? '#052E16' : '#F0FDF4', borderColor: '#10B98130' }]}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
-                                {kid?.emoji ?? '🧒'} {q.title}
-                              </Text>
-                              <Text style={{ fontSize: TYPO.caption, color: '#10B981', marginTop: 2 }}>
-                                ✅ {kid?.name ?? 'Kid'} earned {q.coins > 0 ? `+${q.coins}🪙` : 'it'}!
-                              </Text>
+                          <View key={q.id} style={{ position: 'relative' }}>
+                            <CelebrationBurst visible={celebratingId === q.id}
+                              onDone={() => { cheerQuest(q.id, myId ?? ''); setCelebratingId(null); }} />
+                            <View style={[s.cheerRow, { backgroundColor: isDark ? '#052E16' : '#F0FDF4', borderColor: '#10B98130' }]}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
+                                  {kid?.emoji ?? '🧒'} {q.title}
+                                </Text>
+                                <Text style={{ fontSize: TYPO.caption, color: '#10B981', marginTop: 2 }}>
+                                  ✅ {kid?.name ?? 'Kid'} earned {q.coins > 0 ? `+${q.coins}🪙` : 'it'}!
+                                </Text>
+                                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>
+                                  {fmtDateTime(q.approvedAt ?? q.completedAt)}
+                                </Text>
+                              </View>
+                              <TouchableOpacity disabled={celebratingId === q.id}
+                                style={{ backgroundColor: '#10B981', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, marginLeft: 8, opacity: celebratingId === q.id ? 0.6 : 1 }}
+                                onPress={() => setCelebratingId(q.id)}
+                              >
+                                <Text style={{ color: '#fff', fontSize: TYPO.caption, fontWeight: '800' }}>🖐️ High Five!</Text>
+                              </TouchableOpacity>
                             </View>
-                            <TouchableOpacity
-                              style={{ backgroundColor: '#10B981', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, marginLeft: 8 }}
-                              onPress={() => {
-                                const msg = `🖐️ High five from ${activeMember?.name ?? 'Someone'} for ${kid?.name ?? 'you'} completing "${q.title}"! Great job! 🌟`;
-                                useChatStore.getState().sendMessage('all', activeMember?.id ?? '', msg);
-                                Alert.alert('🖐️ High Five!', `Great job cheer for ${kid?.name ?? 'them'}!`);
-                              }}
-                            >
-                              <Text style={{ color: '#fff', fontSize: TYPO.caption, fontWeight: '800' }}>🖐️ High Five!</Text>
-                            </TouchableOpacity>
                           </View>
                         );
                       })}
@@ -3486,6 +3592,9 @@ export default function QuestsScreen() {
                 const canClaim   = isKidOrTeen && isPoolCard;
                 // Submit: kid/teen and it's their own quest
                 const canSubmit  = isKidOrTeen && isTodoCard && !!myId && isAssignedTo(q, myId);
+                // A declined chore is represented as redo_requested by the
+                // chore adapter. The assignee can correct it and submit again.
+                const canResubmit = isKidOrTeen && isDeclined && !!myId && isAssignedTo(q, myId);
                 // Kid can refuse — teens CANNOT decline (no decline authority)
                 const canKidDecline = isKid && isTodoCard && !q.isPool && !!myId && isAssignedTo(q, myId);
                 // Approve/Decline: parent or senior, quest in review
@@ -3655,6 +3764,7 @@ export default function QuestsScreen() {
                   <CollapsibleQuestCard accentColor={accentColor} cardBg={cardBg} cardBord={cardBord}
                     onDoubleTap={canEdit ? () => setEditTarget(q) : undefined}
                     onLongPress={canEdit ? () => setEditTarget(q) : undefined}
+                    initiallyExpanded={q.id === questId}
                     header={cardHeader}
                   >
                     {/* ── Expanded body — NO title/coin repeat, header already shows them ── */}
@@ -3731,9 +3841,7 @@ export default function QuestsScreen() {
                                 {assignee?.name ?? 'Kid'} submitted for review
                               </Text>
                               <Text style={{ fontSize: TYPO.micro + 1, color: isDark ? '#818CF8' : '#6366F1' }}>
-                                {new Date(q.submittedAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                                {' · '}
-                                {new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                                {fmtDateTime(q.submittedAt)}
                               </Text>
                             </View>
                             {q.photoRequired && !q.photoUrl && (
@@ -3744,7 +3852,7 @@ export default function QuestsScreen() {
                           </View>
                           {/* Photo thumbnail */}
                           {q.photoUrl ? (
-                            <TouchableOpacity onPress={() => Alert.alert('Photo Proof', `"${q.title}" was submitted with photo proof.`)}>
+                            <TouchableOpacity onPress={() => setProofPhotoViewerUri(q.photoUrl!)}>
                               <Image
                                 source={{ uri: q.photoUrl }}
                                 style={{ width: '100%', height: 160, backgroundColor: isDark ? '#1E293B' : '#E2E8F0' }}
@@ -3920,11 +4028,7 @@ export default function QuestsScreen() {
                                     </TouchableOpacity>
                                     <TouchableOpacity
                                       style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: BRAND.purple + '20', borderWidth: 1, borderColor: BRAND.purple }}
-                                      onPress={() => Alert.alert(
-                                        'Submit Quest',
-                                        `Submit "${q.title}" for review?`,
-                                        [{ text: 'Cancel', style: 'cancel' }, { text: 'Submit', onPress: () => submitQuest(q.id) }]
-                                      )}
+                                      onPress={() => openSubmitSheet(q)}
                                     >
                                       <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.purple }}>Submit</Text>
                                     </TouchableOpacity>
@@ -3972,13 +4076,19 @@ export default function QuestsScreen() {
                       {canSubmit && q.participants.length <= 1 && (
                         <TouchableOpacity
                           style={[s.actionBtn, { backgroundColor: BRAND.purple }]}
-                          onPress={() => Alert.alert(
-                            'Submit Quest',
-                            `Submit "${q.title}" for review?`,
-                            [{ text: 'Cancel', style: 'cancel' }, { text: 'Submit', onPress: () => submitQuest(q.id) }]
-                          )}
+                          onPress={() => openSubmitSheet(q)}
                         >
                           <Text style={[s.actionBtnText, { color: '#fff' }]}>Submit for Review</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {/* Kid / teen: revise a parent-declined quest and send it back */}
+                      {canResubmit && (
+                        <TouchableOpacity
+                          style={[s.actionBtn, { backgroundColor: BRAND.purple }]}
+                          onPress={() => openSubmitSheet(q)}
+                        >
+                          <Text style={[s.actionBtnText, { color: '#fff' }]}>↩ Revise & Resubmit</Text>
                         </TouchableOpacity>
                       )}
 
@@ -4070,11 +4180,7 @@ export default function QuestsScreen() {
                       {isSenior && q.questType === 'grandparent_quest' && isTodoCard && q.assignedToId === activeMember?.id && (
                         <TouchableOpacity
                           style={[s.actionBtn, { backgroundColor: BRAND.teal }]}
-                          onPress={() => Alert.alert(
-                            'Mark Done',
-                            `Submit "${q.title}" as done?`,
-                            [{ text: 'Cancel', style: 'cancel' }, { text: 'Submit', onPress: () => submitQuest(q.id) }]
-                          )}
+                          onPress={() => openSubmitSheet(q)}
                         >
                           <Text style={[s.actionBtnText, { color: '#fff' }]}>Done · Submit</Text>
                         </TouchableOpacity>
@@ -4111,6 +4217,102 @@ export default function QuestsScreen() {
           </>
         )}
       </ScrollView>
+
+      <AppBottomSheet
+        visible={!!submitTarget}
+        onClose={closeSubmitSheet}
+        title="Submit quest"
+        subtitle={submitTarget?.photoRequired ? 'A photo is required for this quest.' : 'Add a completion note or photo if helpful.'}
+        accentColor={BRAND.purple}
+        minHeight="75%"
+        maxHeight="75%"
+        footer={
+          <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: colors.border }}>
+            <TouchableOpacity
+              onPress={submitWithProof}
+              disabled={submitTarget?.photoRequired && !submissionPhotoUri}
+              style={{ alignItems: 'center', borderRadius: 14, paddingVertical: 14,
+                backgroundColor: submitTarget?.photoRequired && !submissionPhotoUri ? colors.border : BRAND.purple }}>
+              <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: submitTarget?.photoRequired && !submissionPhotoUri ? colors.textTertiary : '#fff' }}>
+                Submit for review
+              </Text>
+            </TouchableOpacity>
+          </View>
+        }>
+        <View style={{ gap: 14 }}>
+          <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>
+            {submitTarget?.title}
+          </Text>
+
+          <View>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
+              Completion note (optional)
+            </Text>
+            <TextInput
+              value={submissionNote}
+              onChangeText={setSubmissionNote}
+              placeholder="Tell your family what you finished…"
+              placeholderTextColor={colors.textTertiary}
+              multiline
+              style={{ minHeight: 80, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
+                backgroundColor: isDark ? colors.surface : '#F8FAFC', padding: 13,
+                fontSize: TYPO.body, color: colors.textPrimary, textAlignVertical: 'top' }}
+            />
+          </View>
+
+          <View>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
+              Photo proof {submitTarget?.photoRequired ? '(required)' : '(optional)'}
+            </Text>
+            {submissionPhotoUri ? (
+              <View style={{ borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: colors.border }}>
+                <Image source={{ uri: submissionPhotoUri }} style={{ width: '100%', height: 180 }} resizeMode="cover" />
+                <TouchableOpacity onPress={() => setSubmissionPhotoUri(null)}
+                  style={{ alignItems: 'center', paddingVertical: 10, backgroundColor: isDark ? colors.surface : '#F8FAFC' }}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.purple }}>Remove photo</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={{ borderRadius: 14, padding: 13, borderWidth: 1.5, borderStyle: 'dashed', borderColor: submitTarget?.photoRequired ? '#F59E0B' : colors.border,
+                backgroundColor: submitTarget?.photoRequired ? '#FEF3C710' : 'transparent' }}>
+                <Text style={{ fontSize: TYPO.label, color: submitTarget?.photoRequired ? '#D97706' : colors.textTertiary, textAlign: 'center' }}>
+                  {submitTarget?.photoRequired ? 'Attach a photo to unlock submission.' : 'No photo attached yet.'}
+                </Text>
+              </View>
+            )}
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+              <TouchableOpacity onPress={() => selectProofPhoto(true)}
+                style={{ flex: 1, alignItems: 'center', borderWidth: 1.5, borderColor: colors.border, borderRadius: 14, paddingVertical: 12 }}>
+                <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>📷 Camera</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => selectProofPhoto(false)}
+                style={{ flex: 1, alignItems: 'center', borderWidth: 1.5, borderColor: colors.border, borderRadius: 14, paddingVertical: 12 }}>
+                <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>🖼️ Gallery</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </AppBottomSheet>
+
+      {/* Full-screen review of a submitted photo proof */}
+      <Modal
+        visible={!!proofPhotoViewerUri}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setProofPhotoViewerUri(null)}>
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setProofPhotoViewerUri(null)}
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.94)', justifyContent: 'center', alignItems: 'center' }}>
+          {proofPhotoViewerUri && (
+            <Image source={{ uri: proofPhotoViewerUri }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
+          )}
+          <View style={{ position: 'absolute', top: 56, right: 20, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#fff' }}>Close ✕</Text>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Parent-only: Add Quest modal */}
       {isParent && (
@@ -4201,6 +4403,95 @@ export default function QuestsScreen() {
             </Pressable>
           ))}
         </View>
+      </AppBottomSheet>
+
+      {/* Kudos sheet — note + (GP-only) optional bonus coins.
+          Save button lives inside the scroll body (not a sticky footer) to
+          match AddQuestModal/EditQuestModal — that's the pattern AppBottomSheet
+          keyboard-avoids correctly; a fixed footer fights the keyboard instead. */}
+      <AppBottomSheet
+        visible={!!kudosTarget}
+        onClose={closeKudosSheet}
+        title={`🎉 Kudos for ${members.find(m => m.id === kudosTarget?.assignedToId)?.name?.split(' ')[0] ?? 'them'}`}
+        subtitle={kudosTarget?.title}
+        accentColor="#00BBA4"
+        minHeight="45%">
+        <Text style={[aq.label, { color: colors.textSecondary }]}>Kudos note (optional)</Text>
+        <TextInput
+          value={kudosNote}
+          onChangeText={setKudosNote}
+          placeholder="Great job on this one!"
+          placeholderTextColor={colors.textTertiary}
+          multiline maxLength={140}
+          style={[aq.input, { color: colors.textPrimary, borderColor: colors.border,
+            backgroundColor: colors.surface, minHeight: 80, textAlignVertical: 'top' }]}
+        />
+
+        {isSenior && (
+          <>
+            <Pressable onPress={() => setKudosIncludeCoins(v => !v)}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                padding: 12, borderRadius: 14, borderWidth: 1.5, marginBottom: 12,
+                borderColor: kudosIncludeCoins ? '#F59E0B' : colors.border,
+                backgroundColor: kudosIncludeCoins ? '#F59E0B18' : 'transparent' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: kudosIncludeCoins ? '#F59E0B' : colors.textPrimary }}>
+                  🪙 Include bonus coins
+                </Text>
+                <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary, marginTop: 1 }}>Optional — paid from your GP wallet</Text>
+              </View>
+              <View style={{ width: 40, height: 24, borderRadius: 12,
+                backgroundColor: kudosIncludeCoins ? '#F59E0B' : (isDark ? '#334155' : '#CBD5E1'),
+                justifyContent: 'center', paddingHorizontal: 3 }}>
+                <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
+                  alignSelf: kudosIncludeCoins ? 'flex-end' : 'flex-start' }} />
+              </View>
+            </Pressable>
+            {kudosIncludeCoins && (
+              <View style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {([5, 10, 20] as const).map(amt => (
+                    <Pressable key={amt} onPress={() => { setKudosCoinAmount(amt); setKudosCustomCoins(false); }}
+                      style={{ flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center',
+                        borderWidth: 1.5,
+                        borderColor: !kudosCustomCoins && kudosCoinAmount === amt ? '#F59E0B' : colors.border,
+                        backgroundColor: !kudosCustomCoins && kudosCoinAmount === amt ? '#F59E0B' : 'transparent' }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '900',
+                        color: !kudosCustomCoins && kudosCoinAmount === amt ? '#fff' : colors.textSecondary }}>+{amt} 🪙</Text>
+                    </Pressable>
+                  ))}
+                  <Pressable onPress={() => setKudosCustomCoins(true)}
+                    style={{ flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center',
+                      borderWidth: 1.5,
+                      borderColor: kudosCustomCoins ? '#F59E0B' : colors.border,
+                      backgroundColor: kudosCustomCoins ? '#F59E0B' : 'transparent' }}>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '900',
+                      color: kudosCustomCoins ? '#fff' : colors.textSecondary }}>Custom</Text>
+                  </Pressable>
+                </View>
+                {kudosCustomCoins && (
+                  <TextInput
+                    style={[aq.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface, marginTop: 10, marginBottom: 0 }]}
+                    keyboardType="number-pad"
+                    placeholder="Enter coin amount"
+                    placeholderTextColor={colors.textTertiary}
+                    value={kudosCustomText}
+                    onChangeText={t => setKudosCustomText(t.replace(/[^0-9]/g, ''))}
+                    autoFocus
+                  />
+                )}
+              </View>
+            )}
+          </>
+        )}
+
+        <TouchableOpacity onPress={handleSendKudos}
+          style={{ backgroundColor: '#00BBA4', borderRadius: 14, paddingVertical: 13, alignItems: 'center' }}>
+          <Text style={{ color: '#fff', fontSize: TYPO.body, fontWeight: '900' }}>
+            Send Kudos {isSenior && kudosIncludeCoins && (kudosCustomCoins ? kudosCustomText : kudosCoinAmount)
+              ? `· +${kudosCustomCoins ? (parseInt(kudosCustomText, 10) || 0) : kudosCoinAmount} 🪙` : '🎉'}
+          </Text>
+        </TouchableOpacity>
       </AppBottomSheet>
     </SafeAreaView>
   );

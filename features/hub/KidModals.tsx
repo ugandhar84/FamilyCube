@@ -25,6 +25,7 @@ import { useKidRequestStore } from '@/store/kidRequestStore';
 import type { KidRequestItem } from '@/store/kidRequestStore';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
+import { fmtDateTime, parseDbTime } from '@/lib/dates';
 
 // ─── Encoding helpers (re-exported so HelpDispatchQueue can import them) ──────
 
@@ -541,10 +542,28 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
   const members = useFamilyStore(s => s.members);
   const { requests, deleteRequest } = useKidRequestStore();
 
-  const myRequests = useMemo(
-    () => requests.filter(r => r.fromMemberId === active.id).sort((a, b) => b.requestedAt.localeCompare(a.requestedAt)),
-    [requests, active.id]
-  );
+  // Last 7 days only — older requests fall off automatically
+  const myRequestsRecent = useMemo(() => {
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return requests
+      .filter(r => r.fromMemberId === active.id && parseDbTime(r.requestedAt).getTime() > cutoff)
+      .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+  }, [requests, active.id]);
+
+  const HISTORY_FILTERS = [
+    { key: 'all',      label: 'All' },
+    { key: 'pending',  label: '⏳ Pending' },
+    { key: 'approved', label: '✅ Approved' },
+    { key: 'declined', label: '❌ Declined' },
+  ] as const;
+  type HistoryFilter = typeof HISTORY_FILTERS[number]['key'];
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
+
+  const myRequests = useMemo(() => {
+    if (historyFilter === 'all') return myRequestsRecent;
+    if (historyFilter === 'declined') return myRequestsRecent.filter(r => r.status === 'declined');
+    return myRequestsRecent.filter(r => r.status === historyFilter);
+  }, [myRequestsRecent, historyFilter]);
 
   const memberName = (id?: string) => members.find(m => m.id === id)?.name ?? id ?? '—';
 
@@ -564,9 +583,11 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
     return next;
   });
 
-  const fmtDate = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+  const formatTimeAgo = (respondedAt: string) => {
+    const diffMins = Math.floor((Date.now() - new Date(respondedAt).getTime()) / 60000);
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
+    return `${Math.floor(diffMins / 1440)}d ago`;
   };
 
   return (
@@ -574,16 +595,33 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
       visible={visible}
       onClose={onClose}
       title="📋 My Requests"
-      subtitle={`${myRequests.length} request${myRequests.length !== 1 ? 's' : ''} · tap to see item details`}
+      subtitle={`${myRequestsRecent.length} request${myRequestsRecent.length !== 1 ? 's' : ''} in the last 7 days · tap to see item details`}
       accentColor={BRAND.purple}
-      maxHeight="85%"
+      maxHeight="75%"
     >
+            {/* Quick filter pills */}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+              {HISTORY_FILTERS.map(f => (
+                <TouchableOpacity key={f.key} onPress={() => setHistoryFilter(f.key)}
+                  style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5,
+                    backgroundColor: historyFilter === f.key ? BRAND.purple : (isDark ? colors.surface : '#F1F5F9'),
+                    borderColor: historyFilter === f.key ? BRAND.purple : (isDark ? colors.border : '#E2E8F0') }}>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700',
+                    color: historyFilter === f.key ? '#fff' : colors.textSecondary }}>{f.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             {myRequests.length === 0 ? (
               <View style={{ alignItems: 'center', paddingVertical: 32 }}>
                 <Text style={{ fontSize: 40, marginBottom: 12 }}>🛒</Text>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>No requests yet</Text>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>
+                  {historyFilter === 'all' ? 'No requests yet' : `No ${historyFilter} requests`}
+                </Text>
                 <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4 }}>
-                  Use the Grocery or Supplies buttons to ask for things!
+                  {historyFilter === 'all'
+                    ? 'Use the Grocery or Supplies buttons to ask for things!'
+                    : 'in the last 7 days'}
                 </Text>
               </View>
             ) : myRequests.map(req => {
@@ -643,8 +681,7 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
                       )}
 
                       <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 5 }}>
-                        {fmtDate(req.requestedAt)}
-                        {req.respondedBy ? ` · ${memberName(req.respondedBy)}` : ''}
+                        {fmtDateTime(req.requestedAt)}
                       </Text>
                     </View>
                     <View style={{ alignItems: 'flex-end', gap: 6 }}>
@@ -666,6 +703,28 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
                       )}
                     </View>
                   </View>
+
+                  {/* Parent reply section */}
+                  {req.respondedAt && (req.respondedBy || req.parentNote) && (
+                    <View style={{ borderTopWidth: 1, borderTopColor: statusColor(req.status) + '30', paddingHorizontal: 12, paddingTop: 10, paddingBottom: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: isDark ? colors.surface : '#fff', borderRadius: 10, padding: 10, borderLeftWidth: 3, borderLeftColor: statusColor(req.status) }}>
+                        <Text style={{ fontSize: 18, marginTop: 1 }}>{req.status === 'approved' ? '✅' : req.status === 'declined' ? '❌' : '💬'}</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: statusColor(req.status), marginBottom: 2 }}>
+                            Parent Reply {req.respondedBy && `· ${memberName(req.respondedBy)}`}
+                          </Text>
+                          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginBottom: req.parentNote ? 4 : 0 }}>
+                            {req.status === 'approved' ? '✓ Approved' : req.status === 'declined' ? '✗ Declined' : 'Replied'} · {formatTimeAgo(req.respondedAt)}
+                          </Text>
+                          {req.parentNote && (
+                            <Text style={{ fontSize: TYPO.caption, color: colors.textPrimary, lineHeight: 18, fontStyle: 'italic' }}>
+                              "{req.parentNote}"
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+                    </View>
+                  )}
 
                   {/* Per-item detail — expandable */}
                   {isExpanded && req.items && (
@@ -691,13 +750,13 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
                             {item.approvedBy && (
                               <Text style={{ fontSize: TYPO.micro, color: '#10B981', marginTop: 2 }}>
                                 Approved by {memberName(item.approvedBy)}
-                                {item.approvedAt ? ` · ${fmtDate(item.approvedAt)}` : ''}
+                                {item.approvedAt ? ` · ${fmtDateTime(item.approvedAt)}` : ''}
                               </Text>
                             )}
                             {item.rejectedBy && (
                               <Text style={{ fontSize: TYPO.micro, color: '#EF4444', marginTop: 2 }}>
                                 Rejected by {memberName(item.rejectedBy)}
-                                {item.rejectedAt ? ` · ${fmtDate(item.rejectedAt)}` : ''}
+                                {item.rejectedAt ? ` · ${fmtDateTime(item.rejectedAt)}` : ''}
                               </Text>
                             )}
                           </View>

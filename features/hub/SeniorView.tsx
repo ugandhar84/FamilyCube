@@ -5,24 +5,38 @@ import * as Calendar from 'expo-calendar';
 import * as ImagePicker from 'expo-image-picker';
 import {
   AlertOctagon, Car, ChevronDown, ChevronUp, Hand, Star,
-  Pill, CheckCircle, Leaf, Camera, Heart, MapPin, Coins,
+  Pill, CheckCircle, Camera, Heart, MapPin, Coins,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import HelpQueueSection from '@/components/HelpQueueSection';
 import { useEventStore } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useChoreStore } from '@/store/choreStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
-import { useGroceryStore } from '@/store/groceryStore';
-import { ShoppingCart } from 'lucide-react-native';
 import type { FamilyMember } from '@/store/familyStore';
 import { SectionCard, CollapsibleCard, SubCard } from './hubComponents';
 import { localToday, fmtTime, isWorkEvent, hoursUntilEvent } from './hubUtils';
 
+// Elderly-friendly type scale. The shared TYPO steps bottom out at 11px
+// (label) and 9px (micro) — fine on a kid's screen, too small here — so the
+// Senior Hub reads off its own floor instead.
+const GP = { title: 18, body: 16, sub: 14, tiny: 12 };
+
 const DECLINE_PRESETS = ['Schedule conflict', 'Vehicle unavailable', 'Feeling unwell', 'Work commitment'];
+
+// Four plain-language bands break the Senior Hub into Today / Help Out /
+// My Grandkids / Memories, so there's one obvious place to look for each thing.
+function GroupBand({ label, color, colors }: { label: string; color: string; colors: any }) {
+  return (
+    <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <View style={{ width: 5, height: 22, borderRadius: 3, backgroundColor: color }} />
+      <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary, letterSpacing: 0.3 }}>{label}</Text>
+      <View style={{ flex: 1, height: 1.5, backgroundColor: color + '30', borderRadius: 1 }} />
+    </View>
+  );
+}
 
 export function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute }: {
   active: FamilyMember; members: FamilyMember[];
@@ -35,9 +49,9 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const {
     chores, updateChore, grandparentMatches, grandparentApproveAndCheer, createGrandparentQuest,
     addGrandparentMatch, startGrandparentQuest, submitGrandparentQuest,
-    claimGPErrand, submitGPErrandReceipt, acknowledgeGPReimbursement,
+    claimGPErrand, submitGPErrandReceipt, acknowledgeGPReimbursement, cheerChore,
   } = useChoreStore();
-  const { requests: kidRequests, assignRequest } = useKidRequestStore();
+  const { requests: kidRequests, assignRequest, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
   const gpWelcomeRequests = kidRequests.filter(r =>
     r.openToGP && r.status === 'approved' && !r.assignedHelper
   );
@@ -50,6 +64,17 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const allNames = members.map(m => m.name);
   const today   = localToday();
 
+  // Cheer Squad — today's finished grandkid chores that still need a cheer from
+  // me. Cheered ones drop off the list; the point of the section is the pending
+  // action, not a history feed.
+  const kidsCheerable = chores.filter(c => {
+    if (!['approved', 'auto_approved', 'completed'].includes(c.status)) return false;
+    if (!c.assignedToId || !kids.some(k => k.id === c.assignedToId)) return false;
+    if ((c.cheers ?? []).some(ch => ch.memberId === active.id)) return false;
+    const when = c.approvedAt ?? c.reviewedAt ?? c.createdAt;
+    return !!when && when.slice(0, 10) === today;
+  });
+
   const [sosActive, setSosActive]   = useState(false);
   const [declineId,  setDeclineId]  = useState<string | null>(null);
   const [declineText, setDeclineText] = useState('');
@@ -61,6 +86,12 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const [meds, setMeds] = useState<{ id: string; name: string; time: string }[]>([]);
   const MEDS_KEY = `@familycube_meds_${active.id}`;
   const MEDS_TAKEN_KEY = `@familycube_meds_taken_${active.id}_${today}`;
+
+  // SeniorView can render without ParentView ever having mounted this session,
+  // so it must hydrate the kid request store itself (GP Welcome requests etc.)
+  useEffect(() => {
+    if (!kidRequestsLoaded) loadKidRequests();
+  }, [kidRequestsLoaded]);
 
   useEffect(() => {
     AsyncStorage.multiGet([MEDS_KEY, MEDS_TAKEN_KEY]).then(([[, medsJson], [, takenJson]]) => {
@@ -82,13 +113,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       return updated;
     });
   }, [MEDS_TAKEN_KEY]);
-
-  // Grandparent chore actions
-  const { items: groceryItems, load: loadGrocery, addItem: addGroceryItem } = useGroceryStore();
-  const familyId = (active as any).familyId ?? 'family-1';
-  useEffect(() => { loadGrocery(familyId); }, [familyId]);
-  const [newGroceryItem, setNewGroceryItem] = useState('');
-  const [groceryExpanded, setGroceryExpanded] = useState(false);
 
   const pendingGpApproval = chores.filter(c => c.status === 'pending_grandparent_approval' && c.sponsorUserId === active.id);
   const [cheerSticker, setCheerSticker] = useState('⭐');
@@ -190,6 +214,15 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     return evMins >= startH * 60 + startM && evMins <= endH * 60 + endM;
   }, [driveWindowDays, driveWindowStart, driveWindowEnd]);
 
+  // A ride whose slot has already passed must not keep offering "I'll drive" /
+  // "Pass" — dispatch is a to-do list, not a log.
+  const isPastEvent = useCallback((e: { date?: string; time?: string }): boolean => {
+    if (!e.date) return false;
+    if (e.date < today) return true;
+    if (e.date > today) return false;
+    return e.time ? hoursUntilEvent(e.date, e.time) < 0 : false;
+  }, [today]);
+
   // Events open to grandparents that this senior hasn't passed, hasn't claimed,
   // and fall within their configured availability window
   const openRides = events.filter(e =>
@@ -197,6 +230,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     e.helperStatus !== 'confirmed' &&
     !(e.grandparentPassedIds ?? []).includes(active.id) &&
     !cheerleaderMode &&
+    !isPastEvent(e) &&
     withinDriveWindow(e)
   );
 
@@ -206,6 +240,9 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     e.helper && (e.helper.includes(active.name) || active.name.includes(e.helper.split(' ')[0])) &&
     e.helperStatus === 'confirmed'
   );
+  // Weekly cap counts everything claimed this week, past included; the list
+  // shown in dispatch only carries what's still ahead.
+  const upcomingClaimedRides = myClaimedRides.filter(e => !isPastEvent(e));
 
   // Weekly claim count (current calendar week)
   const weekStart = (() => {
@@ -216,10 +253,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   })();
   const ridesThisWeek = myClaimedRides.filter(e => e.date >= weekStart && e.date <= weekEnd).length;
   const atWeeklyCap   = ridesThisWeek >= weeklyRideCap;
-
-  // Expand Helper Dispatch when there's anything actionable
-  const hasDispatchItems = (openRides.length > 0 || gpInvitations.filter(c => !passedInvitations.includes(c.id)).length > 0) && !cheerleaderMode;
-  const [helperDispatchExpanded, setHelperDispatchExpanded] = useState(hasDispatchItems);
+  const [helperDispatchExpanded, setHelperDispatchExpanded] = useState(false);
 
   // Adds the ride to the GP's device calendar (best-effort, silent on failure)
   const addToDeviceCalendar = useCallback(async (ev: typeof events[0]) => {
@@ -309,16 +343,16 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
   const myDrivingToday = events.filter(e =>
     e.date === today && e.helper === active.name &&
-    e.helperStatus === 'confirmed' && !isWorkEvent(e)
+    e.helperStatus === 'confirmed' && !isWorkEvent(e) && !isPastEvent(e)
   );
   // Assigned to me but I haven't replied yet — not Work events
   const myPendingAssignments = events.filter(e =>
     e.date === today && e.helper === active.name &&
-    e.helperStatus === 'pending' && !e.approvalPending && !isWorkEvent(e)
+    e.helperStatus === 'pending' && !e.approvalPending && !isWorkEvent(e) && !isPastEvent(e)
   );
   // Kid-initiated requests that need a volunteer (no helper yet, family approval pending) — not Work
   const openRequests = events.filter(e =>
-    e.date === today && e.approvalPending && !e.helper && !isWorkEvent(e)
+    e.date === today && e.approvalPending && !e.helper && !isWorkEvent(e) && !isPastEvent(e)
   );
   // Urgent pending: I still haven't replied and < 1 hr to go
   const urgentPending = myPendingAssignments.filter(e =>
@@ -349,7 +383,36 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   });
 
   const pad = { paddingHorizontal: 16 };
-  const driveAlerts = myDrivingToday.length + myPendingAssignments.length + openRequests.length + volunteerPool.length;
+
+  // Driving Duty was a separate section from Helper Dispatch but drew from the
+  // same events, so the same ride could show twice under different framing.
+  // Both are now one "Helper Dispatch" section — dedupe by event id, most
+  // specific/urgent framing wins (today + personally-assigned first).
+  const shownRideIds = new Set<string>();
+  const dedupe = <T extends { id: string }>(list: T[]): T[] => {
+    const out = list.filter(e => !shownRideIds.has(e.id));
+    out.forEach(e => shownRideIds.add(e.id));
+    return out;
+  };
+  const dedupMyPendingAssignments = dedupe(myPendingAssignments);
+  const dedupMyDrivingToday       = dedupe(myDrivingToday);
+  const dedupOpenRequests         = dedupe(openRequests);
+  const dedupVolunteerPool        = dedupe(volunteerPool);
+  const dedupOpenRides            = dedupe(openRides);
+  const dedupMyClaimedRides       = dedupe(upcomingClaimedRides);
+
+  // Rides already on GP's plate moved to the Today group, so Help Out counts
+  // only what still needs a volunteer.
+  const driveAlerts = dedupOpenRequests.length + dedupVolunteerPool.length
+    + gpWelcomeRequests.length + gpWelcomeChores.length;
+
+  // Expand Helper Dispatch on first load when there's anything actionable
+  const hasDispatchItems = (
+    dedupOpenRides.length > 0 ||
+    gpInvitations.filter(c => !passedInvitations.includes(c.id)).length > 0 ||
+    driveAlerts > 0
+  ) && !cheerleaderMode;
+  useEffect(() => { if (hasDispatchItems) setHelperDispatchExpanded(true); }, []);
 
   const handleSendBonus = () => {
     if (!gpKid) return;
@@ -360,6 +423,9 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
   return (
     <>
+      {/* ══ TODAY ══ */}
+      <GroupBand label="Today" color={BRAND.teal} colors={colors} />
+
       {/* Emergency SOS */}
       <View style={[pad, { marginBottom: 14 }]}>
         {sosActive ? (
@@ -375,10 +441,10 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
               Parents have been notified with your location. Help is on the way.{'\n'}Stay where you are.
             </Text>
             <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Pressable onPress={() => router.push('/(tabs)/chat')} style={{ flex: 1, borderRadius: 12, backgroundColor: '#EF4444', paddingVertical: 11, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+              <Pressable onPress={() => router.push('/(tabs)/chat')} style={{ flex: 1, borderRadius: 12, backgroundColor: '#EF4444', paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                 <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff' }}>Call Family</Text>
               </Pressable>
-              <Pressable onPress={() => setSosActive(false)} style={{ flex: 1, borderRadius: 12, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', paddingVertical: 11, alignItems: 'center' }}>
+              <Pressable onPress={() => setSosActive(false)} style={{ flex: 1, borderRadius: 12, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', paddingVertical: 14, alignItems: 'center' }}>
                 <Text style={{ fontSize: 13, fontWeight: '800', color: '#F87171' }}>I'm OK Now</Text>
               </Pressable>
             </View>
@@ -403,7 +469,228 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         )}
       </View>
 
-      {/* ── Helper Dispatch — Voluntary Assistance Pool ── */}
+      {/* Today's rides — what GP is driving, and what still needs a yes/no. */}
+      {(dedupMyPendingAssignments.length > 0 || dedupMyDrivingToday.length > 0 || dedupMyClaimedRides.length > 0) && (
+        <View style={pad}>
+          <SectionCard
+          large
+            icon={<Car size={18} color={BRAND.teal} />}
+            title="Your Rides"
+            subtitle={dedupMyPendingAssignments.length > 0
+              ? `${dedupMyPendingAssignments.length} need${dedupMyPendingAssignments.length === 1 ? 's' : ''} your answer`
+              : `${dedupMyDrivingToday.length + dedupMyClaimedRides.length} coming up`}
+            badge={dedupMyPendingAssignments.length || undefined} badgeColor="#EF4444"
+            colors={colors} isDark={isDark}>
+            <View style={{ gap: 10 }}>
+              {dedupMyPendingAssignments.map(ev => {
+                const kid = members.find(m => m.id === ev.memberId);
+                const isUrgent = urgentPending.some(u => u.id === ev.id);
+                return (
+                  <CollapsibleCard key={ev.id} accent={isUrgent ? '#EF4444' : BRAND.amber} colors={colors} isDark={isDark} defaultExpanded
+                    summary={
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Car size={16} color={BRAND.amber} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: GP.body, fontWeight: '800', color: BRAND.amber }} numberOfLines={1}>{ev.title}</Text>
+                          <Text style={{ fontSize: GP.sub, color: BRAND.amber, opacity: 0.75 }}>{kid?.name.split(' ')[0] ?? 'Kid'} · {fmtTime(ev.time)}</Text>
+                        </View>
+                        <View style={{ backgroundColor: (isUrgent ? '#EF4444' : BRAND.amber) + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                          <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: isUrgent ? '#EF4444' : BRAND.amber }}>
+                            {isUrgent ? '🚨 Urgent' : 'Needs Reply'}
+                          </Text>
+                        </View>
+                      </View>
+                    }>
+                    {ev.location && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                        <MapPin size={12} color={colors.textSecondary} />
+                        <Text style={{ fontSize: GP.sub, color: colors.textSecondary }}>{ev.location}</Text>
+                      </View>
+                    )}
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Pressable onPress={() => updateEvent(ev.id, { helperStatus: 'confirmed' })}
+                        style={{ flex: 1, backgroundColor: '#10B981', borderRadius: 12, paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                        <Car size={14} color="#fff" />
+                        <Text style={{ fontSize: GP.body, fontWeight: '700', color: '#fff' }}>Accept Drive</Text>
+                      </Pressable>
+                      <Pressable onPress={() => { setDeclineId(ev.id); setDeclineText(''); }}
+                        style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                        <Text style={{ fontSize: GP.body, fontWeight: '700', color: '#EF4444' }}>Decline</Text>
+                      </Pressable>
+                    </View>
+                    {declineId === ev.id && (
+                      <View style={{ marginTop: 10, gap: 8 }}>
+                        <Text style={{ fontSize: GP.sub, fontWeight: '800', color: '#EF4444' }}>Reason for declining *</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                          {DECLINE_PRESETS.map(p => (
+                            <Pressable key={p} onPress={() => setDeclineText(p)}
+                              style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1,
+                                backgroundColor: declineText === p ? '#EF4444' : (isDark ? colors.card : '#fff'),
+                                borderColor: declineText === p ? '#EF4444' : '#FCA5A5' }}>
+                              <Text style={{ fontSize: GP.sub, fontWeight: '700', color: declineText === p ? '#fff' : '#EF4444' }}>{p}</Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                        <TextInput value={declineText} onChangeText={setDeclineText} maxLength={120} multiline
+                          placeholder="Or type your reason…" placeholderTextColor={colors.textTertiary}
+                          style={{ borderWidth: 1, borderColor: declineText.trim() ? '#EF444460' : colors.border,
+                            borderRadius: 10, padding: 10, fontSize: GP.sub, color: colors.textPrimary,
+                            backgroundColor: isDark ? colors.card : '#FEF2F2', minHeight: 36 }} />
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          <Pressable onPress={() => setDeclineId(null)}
+                            style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                            <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+                          </Pressable>
+                          <Pressable
+                            disabled={!declineText.trim()}
+                            onPress={() => {
+                              updateEvent(ev.id, { helperStatus: 'rejected', declinedBy: active.name, declineReason: declineText.trim() });
+                              setDeclineId(null); setDeclineText('');
+                            }}
+                            style={{ flex: 2, backgroundColor: declineText.trim() ? '#EF4444' : colors.border,
+                              borderRadius: 12, paddingVertical: 13, alignItems: 'center', opacity: declineText.trim() ? 1 : 0.5 }}>
+                            <Text style={{ fontSize: GP.sub, fontWeight: '900', color: '#fff' }}>Confirm Decline</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    )}
+                  </CollapsibleCard>
+                );
+              })}
+              {dedupMyDrivingToday.map(ev => {
+                const kid = members.find(m => m.id === ev.memberId);
+                return (
+                  <CollapsibleCard key={ev.id} accent="#10B981" colors={colors} isDark={isDark} defaultExpanded={false}
+                    summary={
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Car size={16} color="#10B981" />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#10B981' }} numberOfLines={1}>{ev.title}</Text>
+                          <Text style={{ fontSize: GP.sub, color: '#10B981', opacity: 0.75 }}>{kid?.name.split(' ')[0] ?? 'Kid'} · {fmtTime(ev.time)}</Text>
+                        </View>
+                        <View style={{ backgroundColor: '#10B98120', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                          <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: '#10B981' }}>Assigned</Text>
+                        </View>
+                      </View>
+                    }>
+                    {ev.location && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <MapPin size={12} color={colors.textSecondary} />
+                        <Text style={{ fontSize: GP.sub, color: colors.textSecondary }}>{ev.location}</Text>
+                      </View>
+                    )}
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Pressable onPress={onEnRoute} style={{ flex: 1, backgroundColor: '#10B981', borderRadius: 12, paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                        <Car size={14} color="#fff" />
+                        <Text style={{ fontSize: GP.body, fontWeight: '700', color: '#fff' }}>I'm En Route</Text>
+                      </Pressable>
+                      <Pressable onPress={() => { setDeclineId(ev.id); setDeclineText(''); }}
+                        style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                        <Text style={{ fontSize: GP.body, fontWeight: '700', color: '#EF4444' }}>Can't Make It</Text>
+                      </Pressable>
+                    </View>
+                    {declineId === ev.id && (
+                      <View style={{ marginTop: 10, gap: 8 }}>
+                        <Text style={{ fontSize: GP.sub, fontWeight: '800', color: '#EF4444' }}>Reason for declining *</Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                          {DECLINE_PRESETS.map(p => (
+                            <Pressable key={p} onPress={() => setDeclineText(p)}
+                              style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1,
+                                backgroundColor: declineText === p ? '#EF4444' : (isDark ? colors.card : '#fff'),
+                                borderColor: declineText === p ? '#EF4444' : '#FCA5A5' }}>
+                              <Text style={{ fontSize: GP.sub, fontWeight: '700', color: declineText === p ? '#fff' : '#EF4444' }}>{p}</Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                        <TextInput value={declineText} onChangeText={setDeclineText} maxLength={120} multiline
+                          placeholder="Or type your reason…" placeholderTextColor={colors.textTertiary}
+                          style={{ borderWidth: 1, borderColor: declineText.trim() ? '#EF444460' : colors.border,
+                            borderRadius: 10, padding: 10, fontSize: GP.sub, color: colors.textPrimary,
+                            backgroundColor: isDark ? colors.card : '#FEF2F2', minHeight: 36 }} />
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          <Pressable onPress={() => setDeclineId(null)}
+                            style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                            <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+                          </Pressable>
+                          <Pressable
+                            disabled={!declineText.trim()}
+                            onPress={() => {
+                              updateEvent(ev.id, { helperStatus: 'rejected', declinedBy: active.name, declineReason: declineText.trim() });
+                              setDeclineId(null); setDeclineText('');
+                            }}
+                            style={{ flex: 2, backgroundColor: declineText.trim() ? '#EF4444' : colors.border,
+                              borderRadius: 12, paddingVertical: 13, alignItems: 'center', opacity: declineText.trim() ? 1 : 0.5 }}>
+                            <Text style={{ fontSize: GP.sub, fontWeight: '900', color: '#fff' }}>Confirm Decline</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    )}
+                  </CollapsibleCard>
+                );
+              })}
+              {dedupMyClaimedRides.map(ev => {
+                const kid = members.find(m => m.id === ev.memberId);
+                const evDay = ev.date ? new Date(ev.date + 'T12:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) : ev.date;
+                return (
+                  <View key={ev.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
+                    padding: 14, borderRadius: 14,
+                    backgroundColor: isDark ? BRAND.teal + '15' : BRAND.teal + '12',
+                    borderWidth: 1.5, borderColor: BRAND.teal + '40' }}>
+                    <CheckCircle size={22} color={BRAND.teal} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary }}>
+                        {ev.title}
+                      </Text>
+                      <Text style={{ fontSize: 15, color: colors.textSecondary, marginTop: 2 }}>
+                        {kid?.name.split(' ')[0] ?? 'Child'} · {evDay}{ev.time ? ` at ${fmtTime(ev.time)}` : ''}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </SectionCard>
+        </View>
+      )}
+
+      {/* Medication Tracker */}
+      <View style={pad}>
+        <SectionCard
+          large
+          icon={<Pill size={18} color="#EF4444" />}
+          title="Today's Medications"
+          badge={meds.filter(m => !medsTaken[m.id]).length || undefined} badgeColor="#EF4444"
+          colors={colors} isDark={isDark}>
+          {meds.map((med, i) => {
+            const taken = !!medsTaken[med.id];
+            return (
+              <View key={med.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: i < meds.length - 1 ? 1 : 0, borderBottomColor: isDark ? colors.border : '#F1F5F9' }}>
+                <Pill size={22} color={taken ? colors.textTertiary : BRAND.teal} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: taken ? colors.textTertiary : colors.textPrimary, textDecorationLine: taken ? 'line-through' : 'none' }}>{med.name}</Text>
+                  <Text style={{ fontSize: 11, color: colors.textTertiary }}>{med.time}</Text>
+                </View>
+                <Pressable onPress={() => toggleMed(med.id)} style={{ borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: taken ? '#10B98120' : BRAND.teal, borderWidth: taken ? 1 : 0, borderColor: '#10B98140' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: taken ? '#10B981' : '#fff' }}>
+                    {taken ? 'Taken' : 'Mark Taken'}
+                  </Text>
+                </Pressable>
+              </View>
+            );
+          })}
+          {meds.length > 0 && meds.every(m => medsTaken[m.id]) && (
+            <View style={{ alignItems: 'center', paddingVertical: 13, gap: 4 }}>
+              <CheckCircle size={26} color="#10B981" />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#10B981' }}>All done for today!</Text>
+            </View>
+          )}
+        </SectionCard>
+      </View>
+
+      {/* ══ HELP OUT ══ */}
+      <GroupBand label="Help Out" color={BRAND.amber} colors={colors} />
+
+      {/* ── Lend a Hand — the volunteer pool (rides GP already owns are in Today) ── */}
       <View style={pad}>
         <View style={{
           backgroundColor: isDark ? colors.card : '#fff',
@@ -421,30 +708,39 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
             </View>
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>
-                  Helper Dispatch
+                <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary }}>
+                  Lend a Hand
                 </Text>
                 {hasDispatchItems && (
                   <View style={{ backgroundColor: '#F59E0B', borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 }}>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>
-                      {openRides.length + gpInvitations.filter(c => !passedInvitations.includes(c.id)).length}
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>
+                      {dedupOpenRides.length + gpInvitations.filter(c => !passedInvitations.includes(c.id)).length + driveAlerts}
                     </Text>
                   </View>
                 )}
                 {cheerleaderMode && (
                   <View style={{ backgroundColor: BRAND.purple + '20', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: BRAND.purple + '40' }}>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.purple }}>Cheerleader Mode</Text>
+                    <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: BRAND.purple }}>Cheerleader Mode</Text>
                   </View>
                 )}
               </View>
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+              <Text style={{ fontSize: 15, color: colors.textSecondary, marginTop: 3 }}>
                 {cheerleaderMode
-                  ? 'Driving requests hidden — enjoy the cheer feed'
+                  ? 'Driving requests are hidden for now'
                   : hasDispatchItems
-                  ? `${ridesThisWeek}/${weeklyRideCap} rides claimed this week`
-                  : 'No open requests right now'}
+                  ? `You've taken ${ridesThisWeek} of ${weeklyRideCap} rides this week`
+                  : 'Nothing needs you right now'}
               </Text>
             </View>
+            {/* GP can raise their own request here — the standalone Help Queue
+                section was removed, this is the one entry point left. */}
+            <Pressable onPress={(e) => { e.stopPropagation(); onHelpRequest(); }}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+                backgroundColor: BRAND.amber, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9 }}>
+              <Hand size={14} color="#fff" />
+              <Text style={{ fontSize: 15, fontWeight: '800', color: '#fff' }}>Ask</Text>
+            </Pressable>
             <Pressable onPress={(e) => { e.stopPropagation(); setAvailSettingsOpen(o => !o); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               {availSettingsOpen ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
             </Pressable>
@@ -463,11 +759,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                   borderColor: cheerleaderMode ? BRAND.purple : (isDark ? colors.border : '#E2E8F0'),
                   backgroundColor: cheerleaderMode ? BRAND.purple + '12' : 'transparent' }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '800',
+                  <Text style={{ fontSize: GP.sub, fontWeight: '800',
                     color: cheerleaderMode ? BRAND.purple : colors.textPrimary }}>
                     🎉 Cheerleader Mode
                   </Text>
-                  <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary, marginTop: 2 }}>
+                  <Text style={{ fontSize: GP.tiny, color: colors.textSecondary, marginTop: 2 }}>
                     Hide all driving requests — I only want the celebration feed
                   </Text>
                 </View>
@@ -483,7 +779,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
               {!cheerleaderMode && (
                 <>
                   <View>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 8 }}>
+                    <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 8 }}>
                       Drive Days
                     </Text>
                     <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -496,7 +792,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                             borderWidth: 1.5,
                             borderColor: driveWindowDays.includes(i) ? '#F59E0B' : (isDark ? colors.border : '#E2E8F0'),
                             backgroundColor: driveWindowDays.includes(i) ? '#FEF3C7' : 'transparent' }}>
-                          <Text style={{ fontSize: TYPO.micro, fontWeight: '800',
+                          <Text style={{ fontSize: GP.tiny, fontWeight: '800',
                             color: driveWindowDays.includes(i) ? '#92400E' : colors.textSecondary }}>{d}</Text>
                         </Pressable>
                       ))}
@@ -505,22 +801,22 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
                   {/* Time window */}
                   <View>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 8 }}>
+                    <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 8 }}>
                       Available Hours
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                       <TextInput
                         style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, padding: 9, textAlign: 'center',
-                          fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary,
+                          fontSize: GP.body, fontWeight: '700', color: colors.textPrimary,
                           borderColor: isDark ? colors.border : '#E2E8F0',
                           backgroundColor: isDark ? colors.card : '#fff' }}
                         value={driveWindowStart} onChangeText={setDriveWindowStart}
                         placeholder="14:00" placeholderTextColor={colors.textTertiary}
                       />
-                      <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, fontWeight: '700' }}>to</Text>
+                      <Text style={{ fontSize: GP.sub, color: colors.textTertiary, fontWeight: '700' }}>to</Text>
                       <TextInput
                         style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, padding: 9, textAlign: 'center',
-                          fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary,
+                          fontSize: GP.body, fontWeight: '700', color: colors.textPrimary,
                           borderColor: isDark ? colors.border : '#E2E8F0',
                           backgroundColor: isDark ? colors.card : '#fff' }}
                         value={driveWindowEnd} onChangeText={setDriveWindowEnd}
@@ -531,7 +827,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
                   {/* Weekly cap */}
                   <View>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 8 }}>
+                    <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 8 }}>
                       Max Rides / Week ({ridesThisWeek} taken this week)
                     </Text>
                     <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -541,7 +837,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                             borderWidth: 1.5,
                             borderColor: weeklyRideCap === n ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
                             backgroundColor: weeklyRideCap === n ? BRAND.teal + '18' : 'transparent' }}>
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '900',
+                          <Text style={{ fontSize: GP.sub, fontWeight: '900',
                             color: weeklyRideCap === n ? BRAND.teal : colors.textSecondary }}>{n}</Text>
                         </Pressable>
                       ))}
@@ -556,9 +852,9 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           {helperDispatchExpanded && <>
 
           {/* Open ride requests */}
-          {!cheerleaderMode && openRides.length > 0 && (
+          {!cheerleaderMode && dedupOpenRides.length > 0 && (
             <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
-              {openRides.map(ev => {
+              {dedupOpenRides.map(ev => {
                 const kid = members.find(m => m.id === ev.memberId);
                 const evDay = ev.date ? new Date(ev.date + 'T12:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ev.date;
                 return (
@@ -568,19 +864,19 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                     overflow: 'hidden' }}>
                     {/* Header */}
                     <View style={{ backgroundColor: atWeeklyCap ? '#6B7280' : '#F59E0B',
-                      paddingHorizontal: 14, paddingVertical: 10,
+                      paddingHorizontal: 14, paddingVertical: 13,
                       flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Text style={{ fontSize: 15 }}>🚗</Text>
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>
+                        <Text style={{ fontSize: GP.sub, fontWeight: '900', color: '#fff' }}>
                           {evDay}{ev.time ? ` · ${ev.time}` : ''}
                         </Text>
-                        <Text style={{ fontSize: TYPO.micro, color: '#ffffffCC', marginTop: 1 }}>
+                        <Text style={{ fontSize: GP.tiny, color: '#ffffffCC', marginTop: 1 }}>
                           {atWeeklyCap ? 'Weekly cap reached · update settings to accept' : 'First to claim wins 🏁'}
                         </Text>
                       </View>
                       <View style={{ backgroundColor: '#fff3', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }}>Open</Text>
+                        <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: '#fff' }}>Open</Text>
                       </View>
                     </View>
                     {/* Content */}
@@ -592,17 +888,17 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
                           backgroundColor: isDark ? '#2D1800' : '#FEF3C7', borderRadius: 8, padding: 8 }}>
                           <MapPin size={12} color="#F59E0B" />
-                          <Text style={{ fontSize: TYPO.label, color: isDark ? '#FCD34D' : '#92400E', fontWeight: '600', flex: 1 }}>
+                          <Text style={{ fontSize: GP.sub, color: isDark ? '#FCD34D' : '#92400E', fontWeight: '600', flex: 1 }}>
                             {[ev.pickupLocation, ev.dropLocation].filter(Boolean).join(' → ')}
                           </Text>
                         </View>
                       )}
                       {ev.notes && (
-                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>
+                        <Text style={{ fontSize: GP.sub, color: colors.textSecondary, fontStyle: 'italic' }}>
                           "{ev.notes}"
                         </Text>
                       )}
-                      <Text style={{ fontSize: TYPO.micro, color: '#F59E0B', fontWeight: '700' }}>
+                      <Text style={{ fontSize: GP.tiny, color: '#F59E0B', fontWeight: '700' }}>
                         👴👵 Grandparents Welcome · no obligation to accept
                       </Text>
                     </View>
@@ -613,11 +909,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                         disabled={atWeeklyCap}
                         style={{ flex: 2, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', gap: 2,
                           backgroundColor: atWeeklyCap ? (isDark ? '#374151' : '#E5E7EB') : '#F59E0B' }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '900',
+                        <Text style={{ fontSize: GP.body, fontWeight: '900',
                           color: atWeeklyCap ? (isDark ? '#9CA3AF' : '#6B7280') : '#fff' }}>
                           ✋ I'll Drive
                         </Text>
-                        <Text style={{ fontSize: TYPO.micro, color: atWeeklyCap ? '#9CA3AF' : '#ffffffCC' }}>
+                        <Text style={{ fontSize: GP.tiny, color: atWeeklyCap ? '#9CA3AF' : '#ffffffCC' }}>
                           {atWeeklyCap ? 'cap reached' : 'syncs to your calendar'}
                         </Text>
                       </Pressable>
@@ -625,10 +921,10 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                       <Pressable
                         onPress={() => handlePassRide(ev.id)}
                         style={{ flex: 1, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', gap: 2 }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>
+                        <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textSecondary }}>
                           Pass
                         </Text>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>no guilt 💙</Text>
+                        <Text style={{ fontSize: GP.tiny, color: colors.textTertiary }}>no guilt 💙</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -637,34 +933,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
             </View>
           )}
 
-          {/* My confirmed rides */}
-          {myClaimedRides.length > 0 && (
-            <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 8 }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
-                textTransform: 'uppercase', letterSpacing: 0.8 }}>My Confirmed Rides</Text>
-              {myClaimedRides.map(ev => {
-                const kid = members.find(m => m.id === ev.memberId);
-                const evDay = ev.date ? new Date(ev.date + 'T12:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ev.date;
-                return (
-                  <View key={ev.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-                    padding: 10, borderRadius: 12,
-                    backgroundColor: isDark ? BRAND.teal + '15' : BRAND.teal + '12',
-                    borderWidth: 1, borderColor: BRAND.teal + '30' }}>
-                    <CheckCircle size={16} color={BRAND.teal} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>
-                        {kid?.name.split(' ')[0] ?? 'Child'} · {ev.title}
-                      </Text>
-                      <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>
-                        {evDay}{ev.time ? ` · ${ev.time}` : ''}
-                      </Text>
-                    </View>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: BRAND.teal }}>Confirmed</Text>
-                  </View>
-                );
-              })}
-            </View>
-          )}
 
           {/* Grandparent Quest Invitations (Workflow 2 — parent proposed) */}
           {!cheerleaderMode && (() => {
@@ -672,7 +940,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
             if (!visibleInvites.length) return null;
             return (
               <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple,
+                <Text style={{ fontSize: GP.sub, fontWeight: '800', color: BRAND.purple,
                   textTransform: 'uppercase', letterSpacing: 0.8 }}>Quest Invitations</Text>
                 {visibleInvites.map(c => {
                   const kid = members.find(m => m.id === c.assignedToId);
@@ -684,11 +952,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                       <View style={{ backgroundColor: BRAND.purple, paddingHorizontal: 14, paddingVertical: 8,
                         flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <Text style={{ fontSize: 14 }}>👴👵</Text>
-                        <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>
+                        <Text style={{ flex: 1, fontSize: GP.sub, fontWeight: '900', color: '#fff' }}>
                           QUEST INVITATION
                         </Text>
                         <View style={{ backgroundColor: '#fff3', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                          <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }}>+{c.basePoints} pts</Text>
+                          <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: '#fff' }}>+{c.basePoints} pts</Text>
                         </View>
                       </View>
                       <View style={{ padding: 14, gap: 4 }}>
@@ -696,14 +964,14 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                           {c.title}
                         </Text>
                         {kid && (
-                          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                          <Text style={{ fontSize: GP.sub, color: colors.textSecondary }}>
                             For {kid.name.split(' ')[0]}
                           </Text>
                         )}
                         {c.description && (
-                          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>{c.description}</Text>
+                          <Text style={{ fontSize: GP.sub, color: colors.textSecondary, marginTop: 2 }}>{c.description}</Text>
                         )}
-                        <Text style={{ fontSize: TYPO.micro, color: BRAND.purple, fontWeight: '700', marginTop: 4 }}>
+                        <Text style={{ fontSize: GP.tiny, color: BRAND.purple, fontWeight: '700', marginTop: 4 }}>
                           Invited by parent · no pressure to accept
                         </Text>
                       </View>
@@ -719,7 +987,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                           }}
                           style={({ pressed }) => ({ flex: 2, paddingVertical: 14, alignItems: 'center',
                             backgroundColor: BRAND.purple, opacity: pressed ? 0.8 : 1 })}>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
+                          <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>
                             ❤️ I'd Love To Help
                           </Text>
                         </Pressable>
@@ -727,10 +995,10 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                         <Pressable
                           onPress={() => setPassedInvitations(p => [...p, c.id])}
                           style={({ pressed }) => ({ flex: 1, paddingVertical: 14, alignItems: 'center', opacity: pressed ? 0.7 : 1 })}>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>
+                          <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textSecondary }}>
                             Pass
                           </Text>
-                          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>No guilt 💙</Text>
+                          <Text style={{ fontSize: GP.tiny, color: colors.textTertiary }}>No guilt 💙</Text>
                         </Pressable>
                       </View>
                     </View>
@@ -743,26 +1011,26 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           {/* My active errands (GP claimed, in progress) */}
           {myActiveErrands.length > 0 && (
             <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.teal,
+              <Text style={{ fontSize: GP.sub, fontWeight: '800', color: BRAND.teal,
                 textTransform: 'uppercase', letterSpacing: 0.8 }}>My Active Errands 🛍️</Text>
               {myActiveErrands.map(c => (
                 <View key={c.id} style={{ borderRadius: 16, borderWidth: 1.5,
                   borderColor: BRAND.teal + '40',
                   backgroundColor: isDark ? BRAND.teal + '10' : '#ECFDF5',
                   overflow: 'hidden' }}>
-                  <View style={{ backgroundColor: BRAND.teal, paddingHorizontal: 14, paddingVertical: 10,
+                  <View style={{ backgroundColor: BRAND.teal, paddingHorizontal: 14, paddingVertical: 13,
                     flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Text style={{ fontSize: 16 }}>🛒</Text>
-                    <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>
+                    <Text style={{ flex: 1, fontSize: GP.sub, fontWeight: '900', color: '#fff' }}>
                       {c.title}
                     </Text>
                     <View style={{ backgroundColor: '#fff3', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }}>In Progress</Text>
+                      <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: '#fff' }}>In Progress</Text>
                     </View>
                   </View>
                   {c.description ? (
                     <View style={{ paddingHorizontal: 14, paddingTop: 10 }}>
-                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{c.description}</Text>
+                      <Text style={{ fontSize: GP.sub, color: colors.textSecondary }}>{c.description}</Text>
                     </View>
                   ) : null}
                   <Pressable
@@ -771,7 +1039,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                       paddingVertical: 13, alignItems: 'center', flexDirection: 'row',
                       justifyContent: 'center', gap: 8 }}>
                     <Text style={{ fontSize: 16 }}>✅</Text>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
+                    <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>
                       Done · Submit Receipt
                     </Text>
                     <Text style={{ fontSize: 16 }}>📷</Text>
@@ -781,20 +1049,293 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
             </View>
           )}
 
+          {/* Anything the family still needs a volunteer for. Rides already on
+              GP's plate live under Today, so they're no longer duplicated here. */}
+          {(dedupOpenRequests.length > 0 || gpWelcomeRequests.length > 0 ||
+            gpWelcomeChores.length > 0 || dedupVolunteerPool.length > 0) && (
+            <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
+              <Text style={{ fontSize: 15, fontWeight: '800', color: colors.textSecondary }}>
+                The family could use a hand
+              </Text>
+              {dedupOpenRequests.map(ev => {
+                const kid = members.find(m => m.id === ev.memberId);
+                return (
+                  <CollapsibleCard key={ev.id} accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={false}
+                    summary={
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Hand size={16} color={BRAND.amber} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: GP.body, fontWeight: '700', color: BRAND.amber }} numberOfLines={1}>{ev.title}</Text>
+                          <Text style={{ fontSize: GP.sub, color: BRAND.amber, opacity: 0.75 }}>{fmtTime(ev.time)}{ev.location ? ` · ${ev.location}` : ''}</Text>
+                        </View>
+                        <View style={{ backgroundColor: BRAND.amber + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                          <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: BRAND.amber }}>Open</Text>
+                        </View>
+                      </View>
+                    }>
+                    {kid && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl} siblings={allNames} size={26} ringColor={BRAND.amber} />
+                        <Text style={{ fontSize: GP.sub, color: colors.textSecondary }}>For <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{kid.name.split(' ')[0]}</Text></Text>
+                      </View>
+                    )}
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, helper: active.name, helperStatus: 'confirmed' })}
+                        style={{ flex: 1, backgroundColor: BRAND.purple, paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                        <Car size={14} color="#fff" />
+                        <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
+                      </Pressable>
+                      <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false })}
+                        style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                        <Text style={{ fontSize: GP.body, fontWeight: '700', color: '#EF4444' }}>Pass</Text>
+                      </Pressable>
+                    </View>
+                  </CollapsibleCard>
+                );
+              })}
+              {/* Parent-flagged requests GP can take */}
+              {gpWelcomeRequests.map(req => {
+                const kid = members.find(m => m.id === req.fromMemberId);
+                const typeEmoji = req.type === 'ride' ? '🚗' : req.type === 'tutor' ? '📚' : '🎉';
+                return (
+                  <CollapsibleCard key={`gp-${req.id}`} accent="#22c55e" colors={colors} isDark={isDark} defaultExpanded={true}
+                    summary={
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={{ fontSize: 16 }}>{typeEmoji}</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: GP.body, fontWeight: '700', color: '#22c55e' }} numberOfLines={1}>
+                            {kid?.name.split(' ')[0] ?? 'Kid'} — {req.detail}
+                          </Text>
+                          {req.scheduledDate || req.scheduledTime ? (
+                            <Text style={{ fontSize: GP.sub, color: '#22c55e', opacity: 0.75 }}>
+                              {req.scheduledDate ?? ''}{req.scheduledTime ? ` at ${req.scheduledTime}` : ''}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <View style={{ backgroundColor: '#22c55e30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                          <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: '#22c55e' }}>GP Invited</Text>
+                        </View>
+                      </View>
+                    }>
+                    {kid && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                        <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl} siblings={allNames} size={26} ringColor="#22c55e" />
+                        <Text style={{ fontSize: GP.sub, color: colors.textSecondary }}>For <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{kid.name.split(' ')[0]}</Text></Text>
+                      </View>
+                    )}
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Pressable onPress={() => { assignRequest(req.id, active.id); }}
+                        style={{ flex: 1, backgroundColor: '#22c55e', paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                        <Hand size={14} color="#fff" />
+                        <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Help</Text>
+                      </Pressable>
+                      <Pressable onPress={() => {/* just close/ignore — GP passes */ }}
+                        style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                        <Text style={{ fontSize: GP.body, fontWeight: '700', color: '#EF4444' }}>Pass</Text>
+                      </Pressable>
+                    </View>
+                  </CollapsibleCard>
+                );
+              })}
+
+              {/* Partner chores flagged for GP — buy supplies + scan receipt */}
+              {gpWelcomeChores.map(c => {
+                const assignee = members.find(m => m.id === c.assignedToId);
+                const si = c.shoppingItems;
+                return (
+                  <CollapsibleCard key={`gpc-${c.id}`} accent="#22c55e" colors={colors} isDark={isDark} defaultExpanded={true}
+                    summary={
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={{ fontSize: 16 }}>{si?.length ? '🛍️' : '📋'}</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: GP.body, fontWeight: '700', color: '#22c55e' }} numberOfLines={1}>{c.title}</Text>
+                          <Text style={{ fontSize: GP.sub, color: '#22c55e', opacity: 0.75 }}>
+                            {assignee ? `Assigned to ${assignee.name.split(' ')[0]}` : 'Unassigned'}{si?.length ? ` · ${si.length} items` : ''}{c.shoppingStore ? ` · ${c.shoppingStore}` : ''}
+                          </Text>
+                        </View>
+                        <View style={{ backgroundColor: '#22c55e30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                          <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: '#22c55e' }}>GP Welcome</Text>
+                        </View>
+                      </View>
+                    }>
+                    {si && si.length > 0 && (
+                      <View style={{ marginBottom: 10, gap: 4 }}>
+                        {si.map((item, i) => (
+                          <Text key={i} style={{ fontSize: GP.sub, color: colors.textSecondary }}>• {item}</Text>
+                        ))}
+                        {c.shoppingBudget != null && (
+                          <Text style={{ fontSize: GP.sub, color: '#22c55e', fontWeight: '700', marginTop: 4 }}>Budget: ${c.shoppingBudget}</Text>
+                        )}
+                      </View>
+                    )}
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Pressable onPress={() => updateChore(c.id, { assignedToId: active.id, status: 'in_progress', openToGP: false })}
+                        style={{ flex: 1, backgroundColor: '#22c55e', paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                        <Hand size={14} color="#fff" />
+                        <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Handle It</Text>
+                      </Pressable>
+                    </View>
+                  </CollapsibleCard>
+                );
+              })}
+
+              {dedupVolunteerPool.map(ev => {
+                const kid = members.find(m => m.id === ev.memberId);
+                const hrs = hoursUntilEvent(ev.date, ev.time);
+                const isReallyUrgent = hrs < 1;
+                return (
+                  <CollapsibleCard key={`vol-${ev.id}`} accent={isReallyUrgent ? '#EF4444' : BRAND.teal}
+                    colors={colors} isDark={isDark} defaultExpanded={isReallyUrgent}
+                    summary={
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Car size={16} color={isReallyUrgent ? '#EF4444' : BRAND.teal} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: GP.body, fontWeight: '800', color: isReallyUrgent ? '#EF4444' : BRAND.teal }} numberOfLines={1}>
+                            {ev.title}
+                          </Text>
+                          <Text style={{ fontSize: GP.sub, color: isReallyUrgent ? '#EF4444' : BRAND.teal, opacity: 0.75 }}>
+                            {kid?.name.split(' ')[0] ?? 'Kid'} · {fmtTime(ev.time)} · {ev.helper} hasn't replied
+                          </Text>
+                        </View>
+                        <View style={{ backgroundColor: (isReallyUrgent ? '#EF4444' : BRAND.teal) + '25', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                          <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: isReallyUrgent ? '#EF4444' : BRAND.teal }}>
+                            {isReallyUrgent ? '🚨 Step In' : 'Volunteer?'}
+                          </Text>
+                        </View>
+                      </View>
+                    }>
+                    {ev.location && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                        <MapPin size={12} color={colors.textSecondary} />
+                        <Text style={{ fontSize: GP.sub, color: colors.textSecondary }}>{ev.location}</Text>
+                      </View>
+                    )}
+                    <View style={{ backgroundColor: isDark ? '#1e2540' : '#F8FAFC', borderRadius: 10, padding: 10, marginBottom: 8 }}>
+                      <Text style={{ fontSize: GP.sub, color: colors.textSecondary }}>
+                        <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{ev.helper}</Text> was asked but hasn't replied.
+                        {' '}If you step in, they'll be notified they're no longer needed.
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={() =>
+                        Alert.alert(
+                          'Step In as Driver?',
+                          `You'll replace ${ev.helper} and be confirmed immediately. ${ev.helper} will be notified they're off the hook.`,
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: "Yes, I'll Drive",
+                              onPress: () => updateEvent(ev.id, {
+                                helper: active.name,
+                                helperStatus: 'confirmed',
+                              }),
+                            },
+                          ]
+                        )
+                      }
+                      style={{ backgroundColor: BRAND.teal, borderRadius: 12, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                      <Car size={15} color="#fff" />
+                      <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Step In — Confirm Drive</Text>
+                    </Pressable>
+                  </CollapsibleCard>
+                );
+              })}
+            </View>
+          )}
+
           </> /* end helperDispatchExpanded */}
         </View>
+      </View>
+
+      {/* ══ MY GRANDKIDS ══ */}
+      <GroupBand label="My Grandkids" color={BRAND.purple} colors={colors} />
+
+      {/* ── Cheer Squad — today's un-cheered grandkid wins.
+             Replaces the old read-only "Family Kudos Feed", which listed the
+             same completions without the one thing GP actually does here. ── */}
+      <View style={pad}>
+        <SectionCard
+          large
+          icon={<Text style={{ fontSize: 18 }}>🎉</Text>}
+          title="Cheer Your Grandkids"
+          subtitle={kidsCheerable.length === 0
+            ? 'Nothing new today'
+            : `${kidsCheerable.length} finished a chore today`}
+          badge={kidsCheerable.length || undefined} badgeColor={BRAND.teal}
+          collapsible defaultExpanded={false}
+          colors={colors} isDark={isDark}>
+          {kidsCheerable.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 20, gap: 8 }}>
+              <Text style={{ fontSize: 32 }}>🌱</Text>
+              <Text style={{ fontSize: 16, color: colors.textSecondary, textAlign: 'center' }}>
+                No chores finished yet today.
+              </Text>
+            </View>
+          ) : (
+            <View style={{ gap: 12 }}>
+              {kidsCheerable.map(c => {
+                const kid = kids.find(k => k.id === c.assignedToId);
+                const firstName = kid?.name?.split(' ')[0] ?? 'They';
+                return (
+                  <View key={c.id} style={{
+                    borderRadius: 16, borderWidth: 1.5, borderColor: BRAND.teal + '40',
+                    backgroundColor: isDark ? BRAND.teal + '10' : '#F0FDFA',
+                    padding: 14, gap: 12,
+                  }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <FamilyAvatar name={kid?.name ?? 'Kid'} emoji={kid?.emoji} avatarUrl={(kid as any)?.avatarUrl}
+                        siblings={allNames} size={46} ringColor={BRAND.teal} ringWidth={2} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary }}>
+                          {firstName}
+                        </Text>
+                        <Text style={{ fontSize: 16, color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>
+                          finished “{c.title}”
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Big primary action — a cheer with no coins attached */}
+                    <Pressable onPress={() => cheerChore(c.id, active.id)}
+                      style={{ borderRadius: 14, paddingVertical: 16, alignItems: 'center', backgroundColor: BRAND.teal }}>
+                      <Text style={{ fontSize: 18, fontWeight: '900', color: '#fff' }}>🎉 Send a Cheer</Text>
+                    </Pressable>
+
+                    {/* Optional coins — spelled out, not a bare number */}
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {[5, 10, 20].map(amt => (
+                        <Pressable key={amt}
+                          onPress={() => { cheerChore(c.id, active.id, { coins: amt }); if (c.assignedToId) awardCoins(c.assignedToId, amt, 'gpCoins'); }}
+                          style={{ flex: 1, borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+                            backgroundColor: isDark ? BRAND.amber + '18' : '#FFF8E8',
+                            borderWidth: 1.5, borderColor: BRAND.amber + '60' }}>
+                          <Text style={{ fontSize: 17, fontWeight: '900', color: BRAND.amber }}>+{amt}</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: BRAND.amber }}>coins</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </SectionCard>
       </View>
 
       {/* GP Bonus Dispenser */}
       <View style={pad}>
         <SectionCard
+          large
           icon={<Star size={16} color={BRAND.purple} />}
           title="Send Grandparent Bonus"
-          badge={kids.length || undefined} badgeColor={BRAND.purple}
+          subtitle={kids.length === 0
+            ? 'No grandchildren added yet'
+            : `Tap to send coins to ${kids.map(k => k.name.split(' ')[0]).join(', ')}`}
+          collapsible defaultExpanded={false}
           colors={colors} isDark={isDark}>
           {kids.length === 0 ? (
             <SubCard colors={colors} isDark={isDark} style={{ alignItems: 'center', paddingVertical: 16 }}>
-              <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>No grandchildren added yet.</Text>
+              <Text style={{ fontSize: GP.body, color: colors.textTertiary }}>No grandchildren added yet.</Text>
             </SubCard>
           ) : gpSent ? (
             <View style={{ alignItems: 'center', paddingVertical: 24, gap: 8 }}>
@@ -804,28 +1345,28 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
             </View>
           ) : (
             <>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>Select grandchild</Text>
+              <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>Select grandchild</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
                 {kids.map(kid => (
                   <Pressable key={kid.id} onPress={() => setGpKid(gpKid?.id === kid.id ? null : kid)}
                     style={{ borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: gpKid?.id === kid.id ? BRAND.purple : (isDark ? colors.surface : '#F5F0FF'), borderWidth: 1.5, borderColor: gpKid?.id === kid.id ? BRAND.purple : BRAND.purple + '30' }}>
                     <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl} siblings={allNames} size={26} ringColor={gpKid?.id === kid.id ? '#fff' : BRAND.purple} ringWidth={1} />
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: gpKid?.id === kid.id ? '#fff' : BRAND.purple }}>
+                    <Text style={{ fontSize: GP.body, fontWeight: '700', color: gpKid?.id === kid.id ? '#fff' : BRAND.purple }}>
                       {kid.name.split(' ')[0]}
                     </Text>
                   </Pressable>
                 ))}
               </View>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>Amount</Text>
+              <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>Amount</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
                 {([15, 25, 50] as const).map(amt => (
-                  <Pressable key={amt} onPress={() => setGpAmount(amt)} style={{ flex: 1, borderRadius: 14, paddingVertical: 11, alignItems: 'center', backgroundColor: gpAmount === amt ? BRAND.amber : (isDark ? colors.surface : '#FFF8E8'), borderWidth: 1.5, borderColor: gpAmount === amt ? BRAND.amber : BRAND.amber + '40' }}>
+                  <Pressable key={amt} onPress={() => setGpAmount(amt)} style={{ flex: 1, borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: gpAmount === amt ? BRAND.amber : (isDark ? colors.surface : '#FFF8E8'), borderWidth: 1.5, borderColor: gpAmount === amt ? BRAND.amber : BRAND.amber + '40' }}>
                     <Text style={{ fontSize: 15, fontWeight: '900', color: gpAmount === amt ? '#0C0B14' : BRAND.amber }}>{amt}</Text>
                     <Text style={{ fontSize: 10, color: gpAmount === amt ? '#0C0B14' : colors.textTertiary, fontWeight: '600' }}>${(amt * 0.10).toFixed(2)}</Text>
                   </Pressable>
                 ))}
               </View>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>Add a note (optional)</Text>
+              <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>Add a note (optional)</Text>
               <View style={{ borderRadius: 12, borderWidth: 1.5, borderColor: isDark ? colors.border : '#E8E8F0', backgroundColor: isDark ? colors.surface : '#FAFAFA', paddingHorizontal: 12, paddingVertical: 8, marginBottom: 14 }}>
                 <TextInput value={gpNote} onChangeText={setGpNote} placeholder="Great job on your test!" placeholderTextColor={colors.textTertiary} style={{ fontSize: 13, color: colors.textPrimary, minHeight: 36 }} multiline />
               </View>
@@ -840,546 +1381,31 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         </SectionCard>
       </View>
 
-      {/* Medication Tracker */}
-      <View style={pad}>
-        <SectionCard
-          icon={<Pill size={16} color="#EF4444" />}
-          title="Today's Medications"
-          badge={meds.filter(m => !medsTaken[m.id]).length || undefined} badgeColor="#EF4444"
-          colors={colors} isDark={isDark}>
-          {meds.map((med, i) => {
-            const taken = !!medsTaken[med.id];
-            return (
-              <View key={med.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, borderBottomWidth: i < meds.length - 1 ? 1 : 0, borderBottomColor: isDark ? colors.border : '#F1F5F9' }}>
-                <Pill size={22} color={taken ? colors.textTertiary : BRAND.teal} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: taken ? colors.textTertiary : colors.textPrimary, textDecorationLine: taken ? 'line-through' : 'none' }}>{med.name}</Text>
-                  <Text style={{ fontSize: 11, color: colors.textTertiary }}>{med.time}</Text>
-                </View>
-                <Pressable onPress={() => toggleMed(med.id)} style={{ borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: taken ? '#10B98120' : BRAND.teal, borderWidth: taken ? 1 : 0, borderColor: '#10B98140' }}>
-                  <Text style={{ fontSize: 12, fontWeight: '800', color: taken ? '#10B981' : '#fff' }}>
-                    {taken ? 'Taken' : 'Mark Taken'}
-                  </Text>
-                </Pressable>
-              </View>
-            );
-          })}
-          {meds.length > 0 && meds.every(m => medsTaken[m.id]) && (
-            <View style={{ alignItems: 'center', paddingVertical: 10, gap: 4 }}>
-              <CheckCircle size={26} color="#10B981" />
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#10B981' }}>All done for today!</Text>
-            </View>
-          )}
-        </SectionCard>
-      </View>
-
-      {/* Grocery List */}
-      <View style={pad}>
-        <SectionCard
-          icon={<ShoppingCart size={16} color={BRAND.teal} />}
-          title="Family Grocery List"
-          badge={groceryItems.length || undefined} badgeColor={BRAND.teal}
-          colors={colors} isDark={isDark}>
-          <Pressable onPress={() => setGroceryExpanded(v => !v)}
-            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: groceryExpanded ? 10 : 0 }}>
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-              {groceryItems.length === 0 ? 'List is empty' : `${groceryItems.length} item${groceryItems.length !== 1 ? 's' : ''} needed`}
-            </Text>
-            {groceryItems.length > 0 && (groceryExpanded ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />)}
-          </Pressable>
-          {groceryExpanded && groceryItems.map((item, i) => (
-            <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7,
-              borderTopWidth: i === 0 ? 1 : 0, borderTopColor: isDark ? colors.border : '#F1F5F9' }}>
-              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: BRAND.teal }} />
-              <Text style={{ flex: 1, fontSize: TYPO.label, color: colors.textPrimary }}>{item.name}</Text>
-              {item.quantity ? <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>{item.quantity}</Text> : null}
-            </View>
-          ))}
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-            <TextInput
-              style={{ flex: 1, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
-                backgroundColor: isDark ? colors.surface : '#F8FAFC', paddingHorizontal: 10,
-                paddingVertical: 7, fontSize: TYPO.label, color: colors.textPrimary }}
-              placeholder="Add item…" placeholderTextColor={colors.textTertiary}
-              value={newGroceryItem} onChangeText={setNewGroceryItem}
-              returnKeyType="done"
-              onSubmitEditing={() => {
-                if (newGroceryItem.trim()) {
-                  addGroceryItem({ name: newGroceryItem.trim(), familyId, addedBy: active.id });
-                  setNewGroceryItem('');
-                }
-              }}
-            />
-            <Pressable
-              onPress={() => {
-                if (newGroceryItem.trim()) {
-                  addGroceryItem({ name: newGroceryItem.trim(), familyId, addedBy: active.id });
-                  setNewGroceryItem('');
-                }
-              }}
-              style={{ backgroundColor: BRAND.teal, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 7, justifyContent: 'center' }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Add</Text>
-            </Pressable>
-          </View>
-        </SectionCard>
-      </View>
-
-      {/* Driving Duty */}
-      <View style={pad}>
-        <SectionCard
-          icon={<Car size={16} color="#10B981" />}
-          title="Driving Duty"
-          badge={driveAlerts || undefined} badgeColor="#10B981"
-          colors={colors} isDark={isDark}>
-          {myPendingAssignments.map(ev => {
-            const kid = members.find(m => m.id === ev.memberId);
-            const isUrgent = urgentPending.some(u => u.id === ev.id);
-            return (
-              <CollapsibleCard key={ev.id} accent={isUrgent ? '#EF4444' : BRAND.amber} colors={colors} isDark={isDark} defaultExpanded
-                summary={
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Car size={16} color={BRAND.amber} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.amber }} numberOfLines={1}>{ev.title}</Text>
-                      <Text style={{ fontSize: TYPO.label, color: BRAND.amber, opacity: 0.75 }}>{kid?.name.split(' ')[0] ?? 'Kid'} · {fmtTime(ev.time)}</Text>
-                    </View>
-                    <View style={{ backgroundColor: (isUrgent ? '#EF4444' : BRAND.amber) + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isUrgent ? '#EF4444' : BRAND.amber }}>
-                        {isUrgent ? '🚨 Urgent' : 'Needs Reply'}
-                      </Text>
-                    </View>
-                  </View>
-                }>
-                {ev.location && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
-                    <MapPin size={12} color={colors.textSecondary} />
-                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{ev.location}</Text>
-                  </View>
-                )}
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable onPress={() => updateEvent(ev.id, { helperStatus: 'confirmed' })}
-                    style={{ flex: 1, backgroundColor: '#10B981', borderRadius: 12, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-                    <Car size={14} color="#fff" />
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#fff' }}>Accept Drive</Text>
-                  </Pressable>
-                  <Pressable onPress={() => { setDeclineId(ev.id); setDeclineText(''); }}
-                    style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>Decline</Text>
-                  </Pressable>
-                </View>
-                {declineId === ev.id && (
-                  <View style={{ marginTop: 10, gap: 8 }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>Reason for declining *</Text>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                      {DECLINE_PRESETS.map(p => (
-                        <Pressable key={p} onPress={() => setDeclineText(p)}
-                          style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1,
-                            backgroundColor: declineText === p ? '#EF4444' : (isDark ? colors.card : '#fff'),
-                            borderColor: declineText === p ? '#EF4444' : '#FCA5A5' }}>
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: declineText === p ? '#fff' : '#EF4444' }}>{p}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                    <TextInput value={declineText} onChangeText={setDeclineText} maxLength={120} multiline
-                      placeholder="Or type your reason…" placeholderTextColor={colors.textTertiary}
-                      style={{ borderWidth: 1, borderColor: declineText.trim() ? '#EF444460' : colors.border,
-                        borderRadius: 10, padding: 10, fontSize: TYPO.label, color: colors.textPrimary,
-                        backgroundColor: isDark ? colors.card : '#FEF2F2', minHeight: 36 }} />
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <Pressable onPress={() => setDeclineId(null)}
-                        style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-                      </Pressable>
-                      <Pressable
-                        disabled={!declineText.trim()}
-                        onPress={() => {
-                          updateEvent(ev.id, { helperStatus: 'rejected', declinedBy: active.name, declineReason: declineText.trim() });
-                          setDeclineId(null); setDeclineText('');
-                        }}
-                        style={{ flex: 2, backgroundColor: declineText.trim() ? '#EF4444' : colors.border,
-                          borderRadius: 12, paddingVertical: 10, alignItems: 'center', opacity: declineText.trim() ? 1 : 0.5 }}>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Confirm Decline</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                )}
-              </CollapsibleCard>
-            );
-          })}
-          {myDrivingToday.map(ev => {
-            const kid = members.find(m => m.id === ev.memberId);
-            return (
-              <CollapsibleCard key={ev.id} accent="#10B981" colors={colors} isDark={isDark} defaultExpanded={false}
-                summary={
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Car size={16} color="#10B981" />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#10B981' }} numberOfLines={1}>{ev.title}</Text>
-                      <Text style={{ fontSize: TYPO.label, color: '#10B981', opacity: 0.75 }}>{kid?.name.split(' ')[0] ?? 'Kid'} · {fmtTime(ev.time)}</Text>
-                    </View>
-                    <View style={{ backgroundColor: '#10B98120', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>Assigned</Text>
-                    </View>
-                  </View>
-                }>
-                {ev.location && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <MapPin size={12} color={colors.textSecondary} />
-                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{ev.location}</Text>
-                  </View>
-                )}
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable onPress={onEnRoute} style={{ flex: 1, backgroundColor: '#10B981', borderRadius: 12, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-                    <Car size={14} color="#fff" />
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#fff' }}>I'm En Route</Text>
-                  </Pressable>
-                  <Pressable onPress={() => { setDeclineId(ev.id); setDeclineText(''); }}
-                    style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>Can't Make It</Text>
-                  </Pressable>
-                </View>
-                {declineId === ev.id && (
-                  <View style={{ marginTop: 10, gap: 8 }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>Reason for declining *</Text>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                      {DECLINE_PRESETS.map(p => (
-                        <Pressable key={p} onPress={() => setDeclineText(p)}
-                          style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1,
-                            backgroundColor: declineText === p ? '#EF4444' : (isDark ? colors.card : '#fff'),
-                            borderColor: declineText === p ? '#EF4444' : '#FCA5A5' }}>
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: declineText === p ? '#fff' : '#EF4444' }}>{p}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                    <TextInput value={declineText} onChangeText={setDeclineText} maxLength={120} multiline
-                      placeholder="Or type your reason…" placeholderTextColor={colors.textTertiary}
-                      style={{ borderWidth: 1, borderColor: declineText.trim() ? '#EF444460' : colors.border,
-                        borderRadius: 10, padding: 10, fontSize: TYPO.label, color: colors.textPrimary,
-                        backgroundColor: isDark ? colors.card : '#FEF2F2', minHeight: 36 }} />
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <Pressable onPress={() => setDeclineId(null)}
-                        style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-                      </Pressable>
-                      <Pressable
-                        disabled={!declineText.trim()}
-                        onPress={() => {
-                          updateEvent(ev.id, { helperStatus: 'rejected', declinedBy: active.name, declineReason: declineText.trim() });
-                          setDeclineId(null); setDeclineText('');
-                        }}
-                        style={{ flex: 2, backgroundColor: declineText.trim() ? '#EF4444' : colors.border,
-                          borderRadius: 12, paddingVertical: 10, alignItems: 'center', opacity: declineText.trim() ? 1 : 0.5 }}>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Confirm Decline</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                )}
-              </CollapsibleCard>
-            );
-          })}
-          {openRequests.map(ev => {
-            const kid = members.find(m => m.id === ev.memberId);
-            return (
-              <CollapsibleCard key={ev.id} accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={false}
-                summary={
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Hand size={16} color={BRAND.amber} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.amber }} numberOfLines={1}>{ev.title}</Text>
-                      <Text style={{ fontSize: TYPO.label, color: BRAND.amber, opacity: 0.75 }}>{fmtTime(ev.time)}{ev.location ? ` · ${ev.location}` : ''}</Text>
-                    </View>
-                    <View style={{ backgroundColor: BRAND.amber + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.amber }}>Open</Text>
-                    </View>
-                  </View>
-                }>
-                {kid && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                    <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl} siblings={allNames} size={26} ringColor={BRAND.amber} />
-                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>For <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{kid.name.split(' ')[0]}</Text></Text>
-                  </View>
-                )}
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, helper: active.name, helperStatus: 'confirmed' })}
-                    style={{ flex: 1, backgroundColor: BRAND.purple, paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-                    <Car size={14} color="#fff" />
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
-                  </Pressable>
-                  <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false })}
-                    style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>Pass</Text>
-                  </Pressable>
-                </View>
-              </CollapsibleCard>
-            );
-          })}
-          {/* Parent-flagged requests GP can take */}
-          {gpWelcomeRequests.map(req => {
-            const kid = members.find(m => m.id === req.fromMemberId);
-            const typeEmoji = req.type === 'ride' ? '🚗' : req.type === 'tutor' ? '📚' : '🎉';
-            return (
-              <CollapsibleCard key={`gp-${req.id}`} accent="#22c55e" colors={colors} isDark={isDark} defaultExpanded={true}
-                summary={
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ fontSize: 16 }}>{typeEmoji}</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#22c55e' }} numberOfLines={1}>
-                        {kid?.name.split(' ')[0] ?? 'Kid'} — {req.detail}
-                      </Text>
-                      {req.scheduledDate || req.scheduledTime ? (
-                        <Text style={{ fontSize: TYPO.label, color: '#22c55e', opacity: 0.75 }}>
-                          {req.scheduledDate ?? ''}{req.scheduledTime ? ` at ${req.scheduledTime}` : ''}
-                        </Text>
-                      ) : null}
-                    </View>
-                    <View style={{ backgroundColor: '#22c55e30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#22c55e' }}>GP Invited</Text>
-                    </View>
-                  </View>
-                }>
-                {kid && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                    <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl} siblings={allNames} size={26} ringColor="#22c55e" />
-                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>For <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{kid.name.split(' ')[0]}</Text></Text>
-                  </View>
-                )}
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable onPress={() => { assignRequest(req.id, active.id); }}
-                    style={{ flex: 1, backgroundColor: '#22c55e', paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-                    <Hand size={14} color="#fff" />
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Help</Text>
-                  </Pressable>
-                  <Pressable onPress={() => {/* just close/ignore — GP passes */ }}
-                    style={{ flex: 1, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF444440', borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>Pass</Text>
-                  </Pressable>
-                </View>
-              </CollapsibleCard>
-            );
-          })}
-
-          {/* Partner chores flagged for GP — buy supplies + scan receipt */}
-          {gpWelcomeChores.map(c => {
-            const assignee = members.find(m => m.id === c.assignedToId);
-            const si = c.shoppingItems;
-            return (
-              <CollapsibleCard key={`gpc-${c.id}`} accent="#22c55e" colors={colors} isDark={isDark} defaultExpanded={true}
-                summary={
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ fontSize: 16 }}>{si?.length ? '🛍️' : '📋'}</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#22c55e' }} numberOfLines={1}>{c.title}</Text>
-                      <Text style={{ fontSize: TYPO.label, color: '#22c55e', opacity: 0.75 }}>
-                        {assignee ? `Assigned to ${assignee.name.split(' ')[0]}` : 'Unassigned'}{si?.length ? ` · ${si.length} items` : ''}{c.shoppingStore ? ` · ${c.shoppingStore}` : ''}
-                      </Text>
-                    </View>
-                    <View style={{ backgroundColor: '#22c55e30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#22c55e' }}>GP Welcome</Text>
-                    </View>
-                  </View>
-                }>
-                {si && si.length > 0 && (
-                  <View style={{ marginBottom: 10, gap: 4 }}>
-                    {si.map((item, i) => (
-                      <Text key={i} style={{ fontSize: TYPO.label, color: colors.textSecondary }}>• {item}</Text>
-                    ))}
-                    {c.shoppingBudget != null && (
-                      <Text style={{ fontSize: TYPO.label, color: '#22c55e', fontWeight: '700', marginTop: 4 }}>Budget: ${c.shoppingBudget}</Text>
-                    )}
-                  </View>
-                )}
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable onPress={() => updateChore(c.id, { assignedToId: active.id, status: 'in_progress', openToGP: false })}
-                    style={{ flex: 1, backgroundColor: '#22c55e', paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-                    <Hand size={14} color="#fff" />
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Handle It</Text>
-                  </Pressable>
-                </View>
-              </CollapsibleCard>
-            );
-          })}
-
-          {volunteerPool.map(ev => {
-            const kid = members.find(m => m.id === ev.memberId);
-            const hrs = hoursUntilEvent(ev.date, ev.time);
-            const isReallyUrgent = hrs < 1;
-            return (
-              <CollapsibleCard key={`vol-${ev.id}`} accent={isReallyUrgent ? '#EF4444' : BRAND.teal}
-                colors={colors} isDark={isDark} defaultExpanded={isReallyUrgent}
-                summary={
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Car size={16} color={isReallyUrgent ? '#EF4444' : BRAND.teal} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: isReallyUrgent ? '#EF4444' : BRAND.teal }} numberOfLines={1}>
-                        {ev.title}
-                      </Text>
-                      <Text style={{ fontSize: TYPO.label, color: isReallyUrgent ? '#EF4444' : BRAND.teal, opacity: 0.75 }}>
-                        {kid?.name.split(' ')[0] ?? 'Kid'} · {fmtTime(ev.time)} · {ev.helper} hasn't replied
-                      </Text>
-                    </View>
-                    <View style={{ backgroundColor: (isReallyUrgent ? '#EF4444' : BRAND.teal) + '25', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isReallyUrgent ? '#EF4444' : BRAND.teal }}>
-                        {isReallyUrgent ? '🚨 Step In' : 'Volunteer?'}
-                      </Text>
-                    </View>
-                  </View>
-                }>
-                {ev.location && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
-                    <MapPin size={12} color={colors.textSecondary} />
-                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{ev.location}</Text>
-                  </View>
-                )}
-                <View style={{ backgroundColor: isDark ? '#1e2540' : '#F8FAFC', borderRadius: 10, padding: 10, marginBottom: 8 }}>
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                    <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{ev.helper}</Text> was asked but hasn't replied.
-                    {' '}If you step in, they'll be notified they're no longer needed.
-                  </Text>
-                </View>
-                <Pressable
-                  onPress={() =>
-                    Alert.alert(
-                      'Step In as Driver?',
-                      `You'll replace ${ev.helper} and be confirmed immediately. ${ev.helper} will be notified they're off the hook.`,
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: "Yes, I'll Drive",
-                          onPress: () => updateEvent(ev.id, {
-                            helper: active.name,
-                            helperStatus: 'confirmed',
-                          }),
-                        },
-                      ]
-                    )
-                  }
-                  style={{ backgroundColor: BRAND.teal, borderRadius: 12, paddingVertical: 11, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-                  <Car size={15} color="#fff" />
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Step In — Confirm Drive</Text>
-                </Pressable>
-              </CollapsibleCard>
-            );
-          })}
-
-          {myDrivingToday.length === 0 && myPendingAssignments.length === 0 && openRequests.length === 0 && volunteerPool.length === 0 && (
-            <SubCard colors={colors} isDark={isDark} style={{ alignItems: 'center', paddingVertical: 20 }}>
-              <Leaf size={26} color={colors.textTertiary} />
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textTertiary, marginTop: 8 }}>No driving duties today</Text>
-            </SubCard>
-          )}
-        </SectionCard>
-      </View>
-
-      {/* Family Help Queue */}
-      <View style={pad}>
-        <SectionCard
-          icon={<Hand size={16} color={BRAND.amber} />}
-          title="Family Help Queue"
-          subtitle="Kids ask for help · parents assign or self-assign"
-          actionBtn={{ label: '+ Ask', onPress: onHelpRequest }}
-          colors={colors} isDark={isDark}>
-          <HelpQueueSection onRequestHelp={onHelpRequest} hideAskButton />
-        </SectionCard>
-      </View>
-
-      {/* Family Kudos Feed */}
-      <View style={pad}>
-        <SectionCard
-          icon={<Heart size={16} color="#F04E98" />}
-          title="Family Kudos Feed"
-          subtitle="Your grandkids' recent wins"
-          colors={colors} isDark={isDark}>
-          {(() => {
-            const kidTeenIds = new Set(members.filter(m => m.role === 'kid' || m.role === 'teen').map(m => m.id));
-            const recentWins = chores
-              .filter(c => !c.isPrivateParent &&
-                ['approved', 'auto_approved', 'completed'].includes(c.status) &&
-                c.assignedToId && kidTeenIds.has(c.assignedToId))
-              .sort((a, b) => (b.approvedAt ?? b.reviewedAt ?? b.createdAt)
-                .localeCompare(a.approvedAt ?? a.reviewedAt ?? a.createdAt))
-              .slice(0, 8);
-
-            if (recentWins.length === 0) {
-              return (
-                <View style={{ alignItems: 'center', paddingVertical: 16, gap: 6 }}>
-                  <Text style={{ fontSize: 28 }}>🌱</Text>
-                  <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center' }}>
-                    No completions yet — quests will appear here!
-                  </Text>
-                </View>
-              );
-            }
-
-            return (
-              <View style={{ gap: 8 }}>
-                {recentWins.map(chore => {
-                  const kid = kids.find(k => k.id === chore.assignedToId);
-                  const isGP = chore.categoryType === 'grandparent_quest';
-                  const isAuto = chore.status === 'auto_approved';
-                  const when = chore.approvedAt ?? chore.reviewedAt ?? chore.createdAt;
-                  const daysAgo = Math.floor((Date.now() - new Date(when).getTime()) / 86400000);
-                  const whenLabel = daysAgo === 0 ? 'Today' : daysAgo === 1 ? 'Yesterday' : `${daysAgo}d ago`;
-
-                  const accentColor = isGP ? BRAND.teal : chore.categoryType === 'bounty' ? BRAND.amber : '#059669';
-
-                  return (
-                    <View key={chore.id} style={{
-                      flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-                      paddingVertical: 10, paddingHorizontal: 12,
-                      backgroundColor: isDark ? colors.surface : '#FAFAFE',
-                      borderRadius: 12, borderWidth: 1, borderColor: accentColor + '30',
-                    }}>
-                      {kid && (
-                        <FamilyAvatar
-                          name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl}
-                          siblings={allNames} size={32}
-                          ringColor={accentColor} ringWidth={1.5}
-                        />
-                      )}
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
-                          {chore.title}
-                        </Text>
-                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-                          {kid?.name.split(' ')[0] ?? 'Grandchild'}
-                          {chore.basePoints > 0 ? ` · +${chore.basePoints} pts` : ''}
-                          {isAuto ? ' · auto-approved' : ''}
-                        </Text>
-                      </View>
-                      <View style={{ alignItems: 'flex-end', gap: 3 }}>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>{whenLabel}</Text>
-                        <Text style={{ fontSize: 16 }}>
-                          {isGP ? '⭐' : chore.categoryType === 'bounty' ? '💎' : '✅'}
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            );
-          })()}
-        </SectionCard>
-      </View>
 
       {/* ── Grandparent Quest Hub ── */}
       <View style={pad}>
         <SectionCard
-          icon={<Star size={16} color={BRAND.teal} />}
-          title="Sponsor & Connect Hub"
+          large
+          icon={<Star size={18} color={BRAND.teal} />}
+          title="Quests I Sponsor"
+          subtitle={pendingGpApproval.length > 0
+            ? `${pendingGpApproval.length} waiting for you to check`
+            : 'Set up a quest or a savings match'}
           badge={(pendingGpApproval.length) || undefined} badgeColor={BRAND.teal}
           actionBtn={{ label: '✨ New Quest', onPress: () => setShowCreateQuestModal(true) }}
+          collapsible defaultExpanded={pendingGpApproval.length > 0}
           colors={colors} isDark={isDark}>
 
           {/* Match Setup shortcut */}
           <Pressable onPress={() => setShowMatchModal(true)}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11,
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14,
               borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : '#F1F5F9', marginBottom: 4 }}>
             <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: BRAND.purple + '20', alignItems: 'center', justifyContent: 'center' }}>
               <Coins size={16} color={BRAND.purple} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>Set up Savings Match</Text>
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Match a % or fixed amount when kids save</Text>
+              <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textPrimary }}>Set up Savings Match</Text>
+              <Text style={{ fontSize: GP.sub, color: colors.textSecondary }}>Match a % or fixed amount when kids save</Text>
             </View>
             <ChevronDown size={14} color={colors.textTertiary} />
           </Pressable>
@@ -1390,7 +1416,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
             if (myMatches.length === 0) return null;
             return (
               <View style={{ marginBottom: 10, gap: 6 }}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 2 }}>
+                <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 2 }}>
                   Your active match rules
                 </Text>
                 {myMatches.map(m => {
@@ -1406,7 +1432,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                     }}>
                       <Text style={{ fontSize: 18 }}>💜</Text>
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+                        <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textPrimary }}>
                           {kid?.name.split(' ')[0] ?? 'Grandchild'} ·{' '}
                           {m.matchType === 'FIXED_PERCENTAGE'
                             ? `${m.matchValue}% match`
@@ -1418,7 +1444,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                             <View style={{ height: 4, backgroundColor: BRAND.purple + '30', borderRadius: 2, overflow: 'hidden', marginTop: 4 }}>
                               <View style={{ height: '100%', width: `${pctUsed}%`, backgroundColor: BRAND.purple, borderRadius: 2 }} />
                             </View>
-                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }}>
+                            <Text style={{ fontSize: GP.tiny, color: colors.textTertiary, marginTop: 2 }}>
                               {m.monthlyContributedYtd} of {m.maxMonthlyContribution} pts this month
                             </Text>
                           </>
@@ -1441,7 +1467,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
             if (!awaitingParent.length) return null;
             return (
               <View style={{ gap: 8, marginBottom: 12 }}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textTertiary,
                   textTransform: 'uppercase', letterSpacing: 0.8 }}>Awaiting Parent Approval</Text>
                 {awaitingParent.map(c => (
                   <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -1450,11 +1476,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                     borderWidth: 1, borderColor: '#F59E0B40' }}>
                     <Text style={{ fontSize: 18 }}>{c.questMode === 'virtual' ? '💻' : '🌿'}</Text>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
-                      <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>{c.basePoints} pts · sent to parents for review</Text>
+                      <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
+                      <Text style={{ fontSize: GP.tiny, color: colors.textSecondary }}>{c.basePoints} pts · sent to parents for review</Text>
                     </View>
                     <View style={{ backgroundColor: '#F59E0B20', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#92400E' }}>Pending</Text>
+                      <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: '#92400E' }}>Pending</Text>
                     </View>
                   </View>
                 ))}
@@ -1472,7 +1498,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
             if (!approved.length) return null;
             return (
               <View style={{ gap: 8, marginBottom: 12 }}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textTertiary,
                   textTransform: 'uppercase', letterSpacing: 0.8 }}>Waiting for Kid to Claim</Text>
                 {approved.map(c => {
                   const kid = kids.find(k => k.id === c.assignedToId);
@@ -1483,13 +1509,13 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                       borderWidth: 1, borderColor: BRAND.purple + '30' }}>
                       <Text style={{ fontSize: 18 }}>{c.questMode === 'virtual' ? '💻' : '🌿'}</Text>
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>
+                        <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
+                        <Text style={{ fontSize: GP.tiny, color: colors.textSecondary }}>
                           {kid ? kid.name.split(' ')[0] : 'Any grandchild'} · {c.basePoints} pts
                         </Text>
                       </View>
                       <View style={{ backgroundColor: BRAND.purple + '20', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
-                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.purple }}>Approved ✓</Text>
+                        <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: BRAND.purple }}>Approved ✓</Text>
                       </View>
                     </View>
                   );
@@ -1508,7 +1534,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
             if (!inProg.length) return null;
             return (
               <View style={{ gap: 8, marginBottom: 12 }}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textTertiary,
                   textTransform: 'uppercase', letterSpacing: 0.8 }}>In Progress 🔥</Text>
                 {inProg.map(c => {
                   const kid = kids.find(k => k.id === c.assignedToId);
@@ -1519,15 +1545,15 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                       borderWidth: 1, borderColor: '#10B98130' }}>
                       <Text style={{ fontSize: 18 }}>{c.questMode === 'virtual' ? '💻' : '🌿'}</Text>
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>
+                        <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
+                        <Text style={{ fontSize: GP.tiny, color: colors.textSecondary }}>
                           {kid?.name.split(' ')[0] ?? 'Grandchild'} is working on it · {c.basePoints} pts
                         </Text>
                       </View>
                       {c.questMode === 'virtual' && (
                         <Pressable style={{ backgroundColor: '#10B981', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}
                           onPress={() => router.push('/(tabs)/chat')}>
-                          <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>📞 Join</Text>
+                          <Text style={{ fontSize: GP.tiny, fontWeight: '900', color: '#fff' }}>📞 Join</Text>
                         </Pressable>
                       )}
                     </View>
@@ -1540,7 +1566,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           {/* Pending grandparent verification (child submitted photo) */}
           {pendingGpApproval.length > 0 && (
             <View style={{ gap: 10, marginBottom: 12 }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+              <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textTertiary,
                 textTransform: 'uppercase', letterSpacing: 0.8 }}>Verify & Cheer 🎉</Text>
               {/* Sticker picker */}
               <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -1569,21 +1595,21 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                   }}>
                     <View style={{ backgroundColor: BRAND.teal, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <Text style={{ fontSize: 16 }}>📸</Text>
-                      <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>
+                      <Text style={{ flex: 1, fontSize: GP.sub, fontWeight: '900', color: '#fff' }}>
                         {chore.title}
                       </Text>
                     </View>
                     <View style={{ padding: 14, gap: 8 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <FamilyAvatar name={kid?.name ?? '?'} emoji={kid?.emoji} avatarUrl={kid?.avatarUrl} siblings={allNames} size={30} />
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+                        <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textPrimary }}>
                           {kid?.name.split(' ')[0] ?? 'Grandchild'} submitted for your review
                         </Text>
                       </View>
                       {chore.submissionNote ? (
                         <View style={{ borderRadius: 10, backgroundColor: isDark ? '#1e293b' : '#fff',
                           padding: 10, borderLeftWidth: 3, borderLeftColor: BRAND.teal }}>
-                          <Text style={{ fontSize: TYPO.label, color: colors.textPrimary, fontStyle: 'italic' }}>
+                          <Text style={{ fontSize: GP.sub, color: colors.textPrimary, fontStyle: 'italic' }}>
                             "{chore.submissionNote}"
                           </Text>
                         </View>
@@ -1598,8 +1624,8 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                           <View key={j.label} style={{ flex: 1, alignItems: 'center', borderRadius: 10,
                             borderWidth: 1, borderColor: j.color + '30',
                             backgroundColor: j.color + '10', paddingVertical: 8 }}>
-                            <Text style={{ fontSize: TYPO.label }}>{j.label}</Text>
-                            <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: j.color }}>{j.val}</Text>
+                            <Text style={{ fontSize: GP.sub }}>{j.label}</Text>
+                            <Text style={{ fontSize: GP.body, fontWeight: '900', color: j.color }}>{j.val}</Text>
                           </View>
                         ))}
                       </View>
@@ -1607,7 +1633,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                         style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
                           backgroundColor: BRAND.teal, borderRadius: 12, paddingVertical: 13 }}>
                         <Text style={{ fontSize: 20 }}>{cheerSticker}</Text>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
+                        <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>
                           APPROVE & CHEER · {pts} pts
                         </Text>
                       </Pressable>
@@ -1628,7 +1654,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
             if (!done.length) return null;
             return (
               <View style={{ gap: 8, marginBottom: 12 }}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textTertiary,
                   textTransform: 'uppercase', letterSpacing: 0.8 }}>Completed ✅</Text>
                 {done.map(c => {
                   const kid = kids.find(k => k.id === c.assignedToId);
@@ -1639,13 +1665,13 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                       borderWidth: 1, borderColor: '#22c55e40' }}>
                       <Text style={{ fontSize: 18 }}>🏅</Text>
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>
+                        <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
+                        <Text style={{ fontSize: GP.tiny, color: colors.textSecondary }}>
                           {kid?.name.split(' ')[0] ?? 'Grandchild'} completed it
                         </Text>
                       </View>
                       <View style={{ backgroundColor: '#22c55e20', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
-                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#22c55e' }}>Done ✓</Text>
+                        <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: '#22c55e' }}>Done ✓</Text>
                       </View>
                     </View>
                   );
@@ -1658,8 +1684,8 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           {chores.filter(c => c.categoryType === 'grandparent_quest' && c.sponsorUserId === active.id).length === 0 && (
             <View style={{ alignItems: 'center', paddingVertical: 18, gap: 8 }}>
               <Text style={{ fontSize: 32 }}>🌟</Text>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>Sponsor a Connection Quest</Text>
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>
+              <Text style={{ fontSize: GP.body, fontWeight: '800', color: colors.textPrimary }}>Sponsor a Connection Quest</Text>
+              <Text style={{ fontSize: GP.sub, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>
                 Create in-person or virtual quests — cook together, tell family stories, quiz them before exams.
               </Text>
             </View>
@@ -1672,19 +1698,19 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         <Pressable style={{ flex: 1, backgroundColor: '#00000060' }} onPress={() => setShowMatchModal(false)} />
         <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, gap: 14 }}>
           <Text style={{ fontSize: TYPO.heading, fontWeight: '800', color: colors.textPrimary }}>Set Up Savings Match</Text>
-          <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
+          <Text style={{ fontSize: GP.body, color: colors.textSecondary }}>
             You'll automatically add a match to their Save Jar when they earn points.
           </Text>
           {/* Kid selector */}
           <View>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>For grandchild</Text>
+            <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>For grandchild</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
               {kids.map(k => (
                 <Pressable key={k.id} onPress={() => setMatchKidId(k.id)}
                   style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5,
                     borderColor: matchKidId === k.id ? BRAND.purple : colors.border,
                     backgroundColor: matchKidId === k.id ? BRAND.purple + '15' : 'transparent' }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: matchKidId === k.id ? BRAND.purple : colors.textPrimary }}>
+                  <Text style={{ fontSize: GP.body, fontWeight: '600', color: matchKidId === k.id ? BRAND.purple : colors.textPrimary }}>
                     {k.name.split(' ')[0]}
                   </Text>
                 </Pressable>
@@ -1695,10 +1721,10 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           <View style={{ flexDirection: 'row', gap: 10 }}>
             {(['FIXED_PERCENTAGE', 'FIXED_AMOUNT'] as const).map(t => (
               <Pressable key={t} onPress={() => setMatchType(t)}
-                style={{ flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center', borderWidth: 1.5,
+                style={{ flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: 'center', borderWidth: 1.5,
                   borderColor: matchType === t ? BRAND.purple : colors.border,
                   backgroundColor: matchType === t ? BRAND.purple + '12' : 'transparent' }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: matchType === t ? BRAND.purple : colors.textSecondary }}>
+                <Text style={{ fontSize: GP.body, fontWeight: '700', color: matchType === t ? BRAND.purple : colors.textSecondary }}>
                   {t === 'FIXED_PERCENTAGE' ? '% Match' : 'Fixed Amount'}
                 </Text>
               </Pressable>
@@ -1713,19 +1739,19 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
               value={matchValue}
               onChangeText={setMatchValue}
             />
-            <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
+            <Text style={{ fontSize: GP.body, color: colors.textSecondary }}>
               {matchType === 'FIXED_PERCENTAGE' ? '% of each earn' : 'pts per earn'}
             </Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <Pressable onPress={() => setShowMatchModal(false)}
               style={{ flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+              <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
             </Pressable>
             <Pressable onPress={handleSaveMatch}
               style={{ flex: 2, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
                 backgroundColor: matchKidId ? BRAND.purple : (isDark ? '#374151' : '#D1D5DB') }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Save Match Rule</Text>
+              <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>Save Match Rule</Text>
             </Pressable>
           </View>
         </View>
@@ -1739,7 +1765,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
             <Text style={{ fontSize: TYPO.heading, fontWeight: '800', color: colors.textPrimary, flex: 1 }}>
               ✨ Sponsor a Quest
             </Text>
-            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>→ Parent reviews → Kid claims</Text>
+            <Text style={{ fontSize: GP.tiny, color: colors.textTertiary }}>→ Parent reviews → Kid claims</Text>
           </View>
 
           {/* Mode: Local vs Virtual */}
@@ -1756,7 +1782,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                   ...(isDark && newQuestMode === key && { backgroundColor: key === 'local' ? '#0a2018' : BRAND.purple + '20' }),
                 }}>
                 <Text style={{ fontSize: 20, marginBottom: 2 }}>{emoji}</Text>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '900',
+                <Text style={{ fontSize: GP.sub, fontWeight: '900',
                   color: newQuestMode === key ? (key === 'local' ? '#059669' : BRAND.purple) : colors.textSecondary }}>
                   {label}
                 </Text>
@@ -1770,7 +1796,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           <TextInput
             style={{ borderRadius: 12, borderWidth: 1.5, borderColor: newQuestTitle.trim() ? colors.border : '#EF444460',
               backgroundColor: isDark ? colors.surface : '#F8FAFC',
-              padding: 12, fontSize: TYPO.caption, color: colors.textPrimary }}
+              padding: 12, fontSize: GP.body, color: colors.textPrimary }}
             placeholder={newQuestMode === 'local'
               ? 'e.g. Help weed the flower garden, Paneer recipe together…'
               : 'e.g. 15-min bedtime story call, State capitals quiz…'}
@@ -1781,7 +1807,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           <TextInput
             style={{ borderRadius: 12, borderWidth: 1.5, borderColor: colors.border,
               backgroundColor: isDark ? colors.surface : '#F8FAFC',
-              padding: 12, fontSize: TYPO.caption, color: colors.textPrimary, minHeight: 56 }}
+              padding: 12, fontSize: GP.body, color: colors.textPrimary, minHeight: 56 }}
             placeholder="Describe what the child will do step by step (optional)…"
             placeholderTextColor={colors.textTertiary}
             value={newQuestDesc}
@@ -1792,7 +1818,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           {/* Points + photo row */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
+              <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
                 Points you're sponsoring
               </Text>
               <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -1802,7 +1828,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                       borderWidth: 1.5,
                       borderColor: newQuestPoints === p ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
                       backgroundColor: newQuestPoints === p ? BRAND.teal + '18' : 'transparent' }}>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '900',
+                    <Text style={{ fontSize: GP.tiny, fontWeight: '900',
                       color: newQuestPoints === p ? BRAND.teal : colors.textSecondary }}>{p}</Text>
                   </Pressable>
                 ))}
@@ -1823,8 +1849,8 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                   <View key={j.label} style={{ flex: 1, alignItems: 'center', borderRadius: 10,
                     borderWidth: 1, borderColor: j.color + '30',
                     backgroundColor: j.color + '10', paddingVertical: 8 }}>
-                    <Text style={{ fontSize: TYPO.label }}>{j.label}</Text>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: j.color }}>{j.val}</Text>
+                    <Text style={{ fontSize: GP.sub }}>{j.label}</Text>
+                    <Text style={{ fontSize: GP.body, fontWeight: '900', color: j.color }}>{j.val}</Text>
                   </View>
                 ))}
               </View>
@@ -1834,7 +1860,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           {/* Kid selector */}
           {kids.length > 1 && (
             <View>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
+              <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
                 For (blank = all grandkids)
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -1843,7 +1869,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                     style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5,
                       borderColor: newQuestKidId === k.id ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
                       backgroundColor: newQuestKidId === k.id ? BRAND.teal + '15' : 'transparent' }}>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '600',
+                    <Text style={{ fontSize: GP.body, fontWeight: '600',
                       color: newQuestKidId === k.id ? BRAND.teal : colors.textPrimary }}>
                       {k.name.split(' ')[0]}
                     </Text>
@@ -1862,7 +1888,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
               alignItems: 'center', justifyContent: 'center' }}>
               {newQuestPhoto && <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900' }}>✓</Text>}
             </View>
-            <Text style={{ fontSize: TYPO.caption, color: colors.textPrimary }}>
+            <Text style={{ fontSize: GP.body, color: colors.textPrimary }}>
               📸 Child must submit photo proof
             </Text>
           </Pressable>
@@ -1871,12 +1897,12 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
             <Pressable onPress={() => setShowCreateQuestModal(false)}
               style={{ flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
                 borderWidth: 1.5, borderColor: isDark ? colors.border : '#E2E8F0' }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+              <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
             </Pressable>
             <Pressable onPress={handleCreateQuest}
               style={{ flex: 2, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
                 backgroundColor: newQuestTitle.trim() ? BRAND.teal : (isDark ? '#374151' : '#D1D5DB') }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
+              <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>
                 Send to Parent for Review
               </Text>
             </Pressable>
@@ -1896,7 +1922,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
               <Text style={{ fontSize: 22 }}>🧾</Text>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>Submit Receipt</Text>
-                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+                <Text style={{ fontSize: GP.sub, color: colors.textSecondary, marginTop: 2 }}>
                   Snap or upload your receipt — parents will reimburse you
                 </Text>
               </View>
@@ -1912,7 +1938,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                 <Pressable onPress={() => setReceiptPhotoUri(null)}
                   style={{ position: 'absolute', top: 8, right: 8, backgroundColor: '#000a', borderRadius: 20,
                     paddingHorizontal: 12, paddingVertical: 5 }}>
-                  <Text style={{ color: '#fff', fontSize: TYPO.label, fontWeight: '700' }}>Change</Text>
+                  <Text style={{ color: '#fff', fontSize: GP.sub, fontWeight: '700' }}>Change</Text>
                 </Pressable>
               </View>
             ) : (
@@ -1922,23 +1948,23 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                     borderColor: BRAND.teal + '60', paddingVertical: 20, alignItems: 'center', gap: 6,
                     backgroundColor: isDark ? BRAND.teal + '10' : '#F0FDF4' }}>
                   <Text style={{ fontSize: 24 }}>📷</Text>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.teal }}>Camera</Text>
-                  <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>Scan receipt</Text>
+                  <Text style={{ fontSize: GP.sub, fontWeight: '700', color: BRAND.teal }}>Camera</Text>
+                  <Text style={{ fontSize: GP.tiny, color: colors.textTertiary }}>Scan receipt</Text>
                 </Pressable>
                 <Pressable onPress={pickReceiptFromGallery}
                   style={{ flex: 1, borderRadius: 14, borderWidth: 1.5, borderStyle: 'dashed',
                     borderColor: BRAND.teal + '40', paddingVertical: 20, alignItems: 'center', gap: 6,
                     backgroundColor: isDark ? BRAND.teal + '08' : '#F0FDF4' }}>
                   <Text style={{ fontSize: 24 }}>🖼️</Text>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.teal }}>Gallery</Text>
-                  <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>From photos</Text>
+                  <Text style={{ fontSize: GP.sub, fontWeight: '700', color: BRAND.teal }}>Gallery</Text>
+                  <Text style={{ fontSize: GP.tiny, color: colors.textTertiary }}>From photos</Text>
                 </Pressable>
               </View>
             )}
 
             {/* Amount */}
             <View>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
+              <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
                 Amount spent (optional)
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1.5,
@@ -1958,7 +1984,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
             {/* Note */}
             <View>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
+              <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
                 Note for parents (optional)
               </Text>
               <TextInput
@@ -1969,7 +1995,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                 multiline numberOfLines={2}
                 style={{ borderRadius: 12, borderWidth: 1.5, borderColor: isDark ? '#334155' : '#E2E8F0',
                   backgroundColor: isDark ? '#0F172A' : '#F8FAFC', padding: 12,
-                  fontSize: TYPO.label, color: colors.textPrimary, minHeight: 72, textAlignVertical: 'top' }}
+                  fontSize: GP.sub, color: colors.textPrimary, minHeight: 72, textAlignVertical: 'top' }}
               />
             </View>
 
@@ -1981,12 +2007,12 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                 opacity: (!receiptPhotoUri && !receiptAmountStr.trim()) ? 0.5 : 1 }}
               disabled={!receiptPhotoUri && !receiptAmountStr.trim()}>
               <Text style={{ fontSize: 16 }}>📤</Text>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
+              <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>
                 Send to Parents
                 {receiptAmountStr.trim() ? ` · $${receiptAmountStr}` : ''}
               </Text>
             </Pressable>
-            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, textAlign: 'center' }}>
+            <Text style={{ fontSize: GP.tiny, color: colors.textTertiary, textAlign: 'center' }}>
               At least a photo or amount is required
             </Text>
 
@@ -1994,16 +2020,19 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         </Pressable>
       </Modal>
 
+      {/* ══ MEMORIES ══ */}
+      <GroupBand label="Memories" color={BRAND.pink} colors={colors} />
+
       {/* Family Memories */}
       <View style={pad}>
-        <SectionCard icon={<Camera size={16} color={BRAND.pink} />} title="Family Memories" colors={colors} isDark={isDark}>
+        <SectionCard large icon={<Camera size={18} color={BRAND.pink} />} title="Family Memories" colors={colors} isDark={isDark}>
           <View style={{ alignItems: 'center', paddingVertical: 16, gap: 8 }}>
             <Heart size={32} color={BRAND.pink} />
-            <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, textAlign: 'center', fontStyle: 'italic' }}>
+            <Text style={{ fontSize: GP.sub, color: colors.textTertiary, textAlign: 'center', fontStyle: 'italic' }}>
               Share photos with the family to see them here
             </Text>
           </View>
-          <Pressable onPress={() => router.push('/(tabs)/chat')} style={{ borderRadius: 12, backgroundColor: BRAND.pink, paddingVertical: 11, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
+          <Pressable onPress={() => router.push('/(tabs)/chat')} style={{ borderRadius: 12, backgroundColor: BRAND.pink, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
             <Camera size={15} color="#fff" />
             <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff' }}>Share in Family Chat</Text>
           </Pressable>

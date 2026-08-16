@@ -129,6 +129,18 @@ export function parseTimeInput(raw: string): string | null {
 }
 
 /**
+ * Format a full timestamp for display: "Apr 25, 2026, 2:30 PM".
+ * Use for records — submitted/approved/created/cancelled/accepted timestamps,
+ * history rows, activity logs — not for compact scheduling chips, calendar
+ * day headers, or countdowns (use fmtDate/fmtDateShort/fmtTime there).
+ */
+export function fmtDateTime(ts: string | null | undefined, tz?: string | null, fallback = '—'): string {
+  if (!ts) return fallback;
+  const out = formatInTz(ts, tz, { dateStyle: 'medium', timeStyle: 'short' });
+  return out || fallback;
+}
+
+/**
  * Format a UTC DB timestamp for display in the given IANA timezone.
  * Falls back to the device's local timezone when tz is null/undefined/invalid.
  *

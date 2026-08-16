@@ -10,6 +10,7 @@ import { useHelpStore, HelpRequest, HelpStatus } from '@/store/helpStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import { fmtDateTime } from '@/lib/dates';
 
 // ─── Date picker (simple inline, no external lib) ────────────────────────────
 
@@ -76,7 +77,7 @@ function CatChip({ cat }: { cat: string }) {
 
 function HistoryRow({ req, colors, isDark }: { req: HelpRequest; colors: any; isDark: boolean }) {
   const [expanded, setExpanded] = useState(false);
-  const date = new Date(req.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const date = fmtDateTime(req.createdAt);
 
   return (
     <Pressable

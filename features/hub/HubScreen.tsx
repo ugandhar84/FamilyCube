@@ -98,7 +98,6 @@ export default function HubScreen() {
           <ParentView
             active={active} members={members} colors={colors} isDark={isDark}
             onScanFlyer={() => setFlyerVisible(true)}
-            onHelpRequest={() => setHelpModal(true)}
             onEnRoute={() => setEnRouteVisible(true)}
           />
         )}

@@ -31,27 +31,38 @@ export function SectionLabel({ label }: { label: string }) {
 
 export function SectionCard({
   icon, title, subtitle, badge, badgeColor, seeAll, seeAllLabel, actionBtn, children, colors, isDark,
+  collapsible = false, defaultExpanded = true, large = false,
 }: {
   icon: React.ReactNode; title: string; subtitle?: string; badge?: number; badgeColor?: string;
   seeAll?: () => void; seeAllLabel?: string;
   actionBtn?: { label: string; onPress: () => void; color?: string };
+  collapsible?: boolean; defaultExpanded?: boolean;
+  /** Senior Hub sizing — bigger header type, roomier tap area. */
+  large?: boolean;
   children: React.ReactNode; colors: any; isDark: boolean;
 }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const open = !collapsible || expanded;
+  const Header = collapsible ? Pressable : View;
+
   return (
     <View style={{
       borderRadius: 24, borderWidth: 1, borderColor: colors.border,
       backgroundColor: isDark ? colors.card : '#FFFFFF',
       overflow: 'hidden', marginBottom: 12,
     }}>
-      <View style={{
-        flexDirection: 'row', alignItems: 'center', gap: 8,
-        padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border,
+      <Header
+        onPress={collapsible ? () => setExpanded(v => !v) : undefined}
+        style={{
+        flexDirection: 'row', alignItems: 'center', gap: large ? 10 : 8,
+        padding: large ? 16 : 14,
+        borderBottomWidth: open ? 1 : 0, borderBottomColor: colors.border,
       }}>
         {icon}
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{title}</Text>
+          <Text style={{ fontSize: large ? 18 : TYPO.caption, fontWeight: large ? '900' : '800', color: colors.textPrimary }}>{title}</Text>
           {subtitle && (
-            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>{subtitle}</Text>
+            <Text style={{ fontSize: large ? 14 : TYPO.micro, color: large ? colors.textSecondary : colors.textTertiary, marginTop: large ? 3 : 1 }}>{subtitle}</Text>
           )}
         </View>
         {badge !== undefined && badge > 0 && (
@@ -59,7 +70,7 @@ export function SectionCard({
             backgroundColor: badgeColor ?? BRAND.purple, borderRadius: 10,
             paddingHorizontal: 8, paddingVertical: 2, minWidth: 22, alignItems: 'center',
           }}>
-            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }}>{badge}</Text>
+            <Text style={{ fontSize: large ? 14 : TYPO.micro, fontWeight: '800', color: '#fff' }}>{badge}</Text>
           </View>
         )}
         {actionBtn && (
@@ -73,8 +84,13 @@ export function SectionCard({
             <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>{seeAllLabel ?? 'See All →'}</Text>
           </Pressable>
         )}
-      </View>
-      <View style={{ padding: 10, gap: 8 }}>{children}</View>
+        {collapsible && (
+          open
+            ? <ChevronUp size={16} color={colors.textTertiary} />
+            : <ChevronDown size={16} color={colors.textTertiary} />
+        )}
+      </Header>
+      {open && <View style={{ padding: 10, gap: 8 }}>{children}</View>}
     </View>
   );
 }

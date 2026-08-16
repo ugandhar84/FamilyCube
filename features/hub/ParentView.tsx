@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, Pressable, TextInput, Modal, ScrollView, Alert } from 'react-native';
+import { View, Text, Pressable, TextInput, Modal, ScrollView, Alert, Image, TouchableOpacity } from 'react-native';
 import {
   Sparkles, PlusCircle, Calendar, ShoppingCart, Navigation,
   ChevronUp, ChevronDown, Camera, Coins, Car, Hand,
@@ -11,12 +11,12 @@ import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import HelpQueueSection from '@/components/HelpQueueSection';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useEventStore } from '@/store/eventStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
-import { SUPPLIES_PREFIX } from '@/features/hub/KidModals';
+import { SUPPLIES_PREFIX, GROCERY_PREFIX, decodeGroceryRequest } from '@/features/hub/KidModals';
+import { AddQuestModal } from '@/features/quests/QuestsScreen';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import {
@@ -127,19 +127,17 @@ function InlineReplyCard({ req, kidName, isPermission, isQuestion, isMedical, ac
   );
 }
 
-export function ParentView({ active, members, colors, isDark, onScanFlyer, onHelpRequest, onEnRoute }: {
+export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnRoute }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   onScanFlyer: () => void;
-  onHelpRequest: () => void;
   onEnRoute: () => void;
 }) {
-  const { quests, approveQuest, updateQuest } = useQuestStore();
+  const { quests, approveQuest, declineQuest, updateQuest } = useQuestStore();
   const { events, updateEvent, addEvent }  = useEventStore();
   const { items: groceryItems, load: loadGrocery, addItem: addGroceryItem } = useGroceryStore();
   const { requests: kidRequests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests,
           approveRequest, declineRequest, approveItems, rejectItems, toggleGPWelcome } = useKidRequestStore();
-  const [supportExpanded, setSupportExpanded] = useState(false);
   const [showPast, setShowPast] = useState(false);
   const [noteInputs, setNoteInputs] = useState<Record<string, string>>({});
 
@@ -149,15 +147,12 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
     respondToParentQuest, completeParentQuest, appreciationPing, getParentQuestPool,
     getMemberBalance, getPendingCashOuts, chores, addChore, getParentReviewDeck,
     approveGrandparentQuestAsParent, declineGrandparentQuestAsParent,
+    loadFromStorage: loadChores, syncFromDB: syncChores,
   } = useChoreStore();
   const pendingReviews = getParentReviewDeck();
   const [choreReviewExpanded, setChoreReviewExpanded] = useState(() => getParentReviewDeck().length > 0);
   const [backlogExpanded, setBacklogExpanded] = useState(true);
   const [showAddTask, setShowAddTask] = useState(false);
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskDesc, setNewTaskDesc] = useState('');
-  const [newTaskMode, setNewTaskMode] = useState<'PULL' | 'DIRECT'>('PULL');
-  const [newTaskAssignTo, setNewTaskAssignTo] = useState('');
   const [pushbackSheet, setPushbackSheet] = useState<{ assignmentId: string; choreTitle: string } | null>(null);
   const [pushbackDetail, setPushbackDetail] = useState('');
   const [delegateSheet, setDelegateSheet] = useState<{ choreId: string; choreTitle: string } | null>(null);
@@ -166,6 +161,19 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
 
   useEffect(() => { loadGrocery((active as any).familyId ?? 'family-1'); }, [(active as any).familyId]);
   useEffect(() => { if (!kidRequestsLoaded) loadKidRequests(); }, [kidRequestsLoaded]);
+  // This must run even when the review section starts collapsed. Otherwise a
+  // parent who opens the Hub after a grandparent creates a quest never joins
+  // the chore realtime channel and cannot see the safety-review request.
+  useEffect(() => {
+    loadChores().then(() => { void syncChores(); });
+  }, [loadChores, syncChores]);
+
+  const gpPendingCount = chores.filter(c =>
+    c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval'
+  ).length;
+  useEffect(() => {
+    if (gpPendingCount > 0) setChoreReviewExpanded(true);
+  }, [gpPendingCount]);
 
   const allNames  = members.map(m => m.name);
   const today     = localToday();
@@ -280,19 +288,28 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
   const familyId = (active as any).familyId ?? 'family-1';
 
   const approveItemsAndSync = async (reqId: string, itemIds: string[], isSuppliesReq: boolean) => {
+    console.log(`[ParentView] approveItemsAndSync called — reqId=${reqId} itemIds=${JSON.stringify(itemIds)} supplies=${isSuppliesReq}`);
     const req = kidRequests.find(r => r.id === reqId);
+    if (!req) {
+      console.warn(`[ParentView] approveItemsAndSync ABORTED — no kid request found with id=${reqId}`);
+      return;
+    }
     approveItems(reqId, itemIds, active.id);
-    if (req?.items) {
+    if (req.items) {
       const approved = req.items.filter(it => itemIds.includes(it.id));
+      console.log(`[ParentView] approveItemsAndSync → adding ${approved.length} item(s) to groceryStore:`, approved.map(i => i.name));
       for (const item of approved) {
-        await addGroceryItem({
+        const created = await addGroceryItem({
           familyId,
           name: item.name,
           quantity: item.qty || undefined,
           category: isSuppliesReq ? 'Supplies' : (item.category ?? 'Other'),
           addedBy: req.fromMemberId,
         });
+        console.log(`[ParentView] approveItemsAndSync → "${item.name}" ${created ? 'added ✓ id=' + created.id : 'FAILED to add ✗'}`);
       }
+    } else {
+      console.log('[ParentView] approveItemsAndSync — request has no items[] to sync');
     }
   };
   const pad            = { paddingHorizontal: 16 };
@@ -302,18 +319,62 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
   const chorePool        = getParentQuestPool();
   const adultMemberIds   = new Set(members.filter(m => m.role === 'parent' || m.role === 'senior').map(m => m.id));
   const doneStatuses     = new Set(['done', 'approved', 'archived', 'cancelled', 'completed']);
+  // DEBUG: Log all shopping quests to inspect their fields
+  const shoppingQuests = quests.filter(q => q.categoryType === 'shopping' || (q as any).shoppingItems);
+  if (shoppingQuests.length > 0) {
+    console.log('🛒 DEBUG: Shopping quests found:', shoppingQuests.length);
+    shoppingQuests.forEach(q => {
+      console.log('  Quest:', {
+        id: q.id.slice(0, 8),
+        title: q.title,
+        categoryType: q.categoryType,
+        questType: q.questType,
+        isAdultTask: q.isAdultTask,  // ← Should now be TRUE after choreAdapter.ts fix
+        assignedToId: q.assignedToId?.slice(0, 8),
+        status: q.status,
+        hasShoppingItems: !!(q as any).shoppingItems,
+      });
+    });
+  }
+  
+  console.log('🔍 DEBUG: Total quests:', quests.length, '| Adult members:', adultMemberIds.size);
+  console.log('🔍 DEBUG: Adult member IDs:', Array.from(adultMemberIds).map(id => id.slice(0, 8)));
+
   // Adult quests: parent_only_quest type OR directly assigned to a parent/senior
+  // EXCLUDE ride/pickup/dropoff tasks (category === 'Ride') — GP ride tasks go to calendar, not Household Backlog
   const adultQuests      = quests.filter(q => {
     if (doneStatuses.has(q.status)) return false;
-    if (q.isAdultTask) return true;                                          // category_type === 'parent_only_quest'
-    if (q.assignedToId != null && adultMemberIds.has(q.assignedToId)) return true;  // directly assigned to adult
+    
+    // Filter out ride tasks (identified by category field)
+    if (q.category === 'Ride') {
+      console.log('🚗 DEBUG: Excluding ride task from Household Backlog:', q.title.slice(0, 40), '| category:', q.category);
+      return false;
+    }
+    
+    if (q.isAdultTask) return true;                                          // category_type === 'parent_only_quest' or shopping
+    if (q.assignedToId != null && adultMemberIds.has(q.assignedToId)) return true;  // directly assigned to adult (parent/GP)
     return false;
   });
+  
+  console.log('✅ DEBUG: adultQuests matched:', adultQuests.length);
+  if (adultQuests.length > 0) {
+    adultQuests.forEach(q => {
+      console.log('  Adult quest:', {
+        id: q.id.slice(0, 8),
+        title: q.title.slice(0, 30),
+        isAdultTask: q.isAdultTask,
+        assignedTo: q.assignedToId?.slice(0, 8) || 'unassigned',
+        status: q.status,
+      });
+    });
+  }
 
   // Split adult quests: mine (assigned to me), others' (assigned to someone else), unassigned (pool)
   const myAdultQuests       = adultQuests.filter(q => q.assignedToId === active.id);
   const othersAdultQuests   = adultQuests.filter(q => q.assignedToId && q.assignedToId !== active.id);
   const unassignedAdultQ    = adultQuests.filter(q => !q.assignedToId);
+  
+  console.log('📊 DEBUG: Split adult quests - Mine:', myAdultQuests.length, '| Others:', othersAdultQuests.length, '| Unassigned:', unassignedAdultQ.length);
 
   const choreIds         = new Set(chorePool.map(c => c.id));
   // Pool = unassigned adult quests + chore-based pool (no duplicates)
@@ -329,11 +390,20 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
       shoppingItems: (q as any).shoppingItems, shoppingStore: (q as any).shoppingStore, shoppingBudget: (q as any).shoppingBudget,
     })),
   ];
+  
+  console.log('🎯 DEBUG: questPool size:', questPool.length, '| chorePool:', chorePool.length, '| unassignedAdultQ added:', unassignedAdultQ.filter(q => !choreIds.has(q.id)).length);
+  
   // IDs already rendered in System B (direct assignedToId) — exclude from System A (parentAssignments)
-  const systemBIds       = new Set([...myAdultQuests, ...othersAdultQuests, ...unassignedAdultQ].map(q => q.id));
+  // ONLY include myAdultQuests + othersAdultQuests (direct assignments), NOT unassignedAdultQ (they go to pool)
+  const systemBIds       = new Set([...myAdultQuests, ...othersAdultQuests].map(q => q.id));
 
+  // A SNOOZED assignment is rendered nowhere, so once its 48h window lapses it
+  // has to fall back into the pending list or the task is lost for good.
+  const nowIso           = new Date().toISOString();
   const myDirectPending  = parentAssignments.filter(a =>
-    a.assignedTo === active.id && a.status === 'PENDING' && !a.isLocked && !systemBIds.has(a.choreId)
+    a.assignedTo === active.id && !a.isLocked && !systemBIds.has(a.choreId) &&
+    (a.status === 'PENDING' ||
+     (a.status === 'SNOOZED' && (!a.snoozeUntil || a.snoozeUntil <= nowIso)))
   );
   const myLockedItems    = parentAssignments.filter(a =>
     a.assignedTo === active.id && a.isLocked && !systemBIds.has(a.choreId)
@@ -341,10 +411,12 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
   const myAccepted       = parentAssignments.filter(a =>
     a.assignedTo === active.id && (a.status === 'ACCEPTED' || a.status === 'IN_PROGRESS') && !systemBIds.has(a.choreId)
   );
-  // Calendar events where this parent is the assigned helper/driver — show in HB
+  // Calendar events where this parent is the assigned helper/driver — show in HB.
+  // Backlog is for things still needing action: once confirmed, it's a settled
+  // commitment (visible in Schedule instead), not something to pull off a backlog.
   const myHelperEvents = events.filter(e => {
     if (!e.helper || e.helper !== active.name) return false;
-    if (e.helperStatus === 'rejected') return false;
+    if (e.helperStatus === 'rejected' || e.helperStatus === 'confirmed') return false;
     // Only upcoming (today and future)
     const today = new Date().toISOString().slice(0, 10);
     return (e.date ?? '') >= today;
@@ -359,6 +431,50 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
   const [rideCoinsByEvent, setRideCoinsByEvent] = useState<Record<string, string>>({});
   const setRideCoins = (evId: string, val: string) =>
     setRideCoinsByEvent(prev => ({ ...prev, [evId]: val }));
+
+  const to24HourTime = (raw: string): string | undefined => {
+    const normalized = raw.trim();
+    if (/^\d{2}:\d{2}$/.test(normalized)) return normalized;
+    const m = normalized.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!m) return undefined;
+    let hour = parseInt(m[1], 10);
+    const minute = parseInt(m[2], 10);
+    const meridiem = m[3].toUpperCase();
+    if (hour === 12) hour = 0;
+    if (meridiem === 'PM') hour += 12;
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  };
+
+  const parseRideMeta = (encoded: string | undefined, fallbackDate?: string) => {
+    const rideCode = encoded?.startsWith('RIDE:') ? encoded : null;
+    const isBothWays = rideCode === 'RIDE:both' || rideCode?.startsWith('RIDE:both:');
+    const isDropoff  = rideCode === 'RIDE:dropoff';
+    const isPickup   = rideCode === 'RIDE:pickup' || rideCode?.startsWith('RIDE:pickup:');
+    let pickupDate = fallbackDate;
+    let pickupTime: string | undefined;
+
+    if (rideCode?.startsWith('RIDE:both:') || rideCode?.startsWith('RIDE:pickup:')) {
+      const payload = rideCode.slice(rideCode.indexOf(':', 5) + 1).trim();
+      // New format: YYYY-MM-DDTHH:mm
+      const localStamp = payload.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/);
+      if (localStamp) {
+        pickupDate = localStamp[1];
+        pickupTime = localStamp[2];
+      } else {
+        // Legacy format: h:mm AM/PM
+        pickupTime = to24HourTime(payload);
+      }
+    }
+
+    return {
+      isBothWays,
+      isDropoff,
+      isPickup,
+      pickupDate,
+      pickupTime,
+      pickupLabel: pickupTime ? fmtTime(pickupTime) : undefined,
+    };
+  };
 
   // Chore Management modal state
   const [showChoreModal, setShowChoreModal] = useState(false);
@@ -407,22 +523,6 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
   const leaderboardKids = [...kids].sort((a, b) =>
     ((b as any).streak ?? 0) - ((a as any).streak ?? 0)
   );
-
-  const handleAddTask = () => {
-    if (!newTaskTitle.trim()) return;
-    createAndAddParentQuest({
-      title:       newTaskTitle.trim(),
-      description: newTaskDesc.trim() || undefined,
-      assignedTo:  newTaskMode === 'DIRECT' ? newTaskAssignTo || undefined : undefined,
-      mode:        newTaskMode,
-      createdById: active.id,
-    });
-    setNewTaskTitle('');
-    setNewTaskDesc('');
-    setNewTaskMode('PULL');
-    setNewTaskAssignTo('');
-    setShowAddTask(false);
-  };
 
   const handlePullTask = (chore: ChoreTask) => {
     addParentQuest(chore.id, active.id, active.id, 'PULL');
@@ -572,6 +672,26 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
         </View>
       </View>
 
+      {/* 3c. Dispatch En Route */}
+      <View style={pad}>
+        <View style={{
+          backgroundColor: isDark ? '#0D2B1F' : '#ECFDF5',
+          borderRadius: 24, borderWidth: 1, borderColor: isDark ? '#10B98140' : '#A7F3D0',
+          padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 12,
+        }}>
+          <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? '#10B98130' : '#D1FAE5', alignItems: 'center', justifyContent: 'center' }}>
+            <Navigation size={22} color="#059669" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: isDark ? '#34D399' : '#065F46' }}>Start Pickup / Trip</Text>
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>Broadcast "En Route" with ETA to family chat</Text>
+          </View>
+          <Pressable onPress={onEnRoute} style={{ backgroundColor: '#10B981', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 9 }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>En Route</Text>
+          </Pressable>
+        </View>
+      </View>
+
       {/* 4. Action Needed — ride approvals + quest reviews + kid requests unified */}
       {actionCount > 0 && (
         <View style={pad}>
@@ -583,14 +703,11 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
             {/* ── Ride / event requests ── */}
             {pendingRequests.map(ev => {
               const requester = ev.helperRequestedBy ?? members.find(m => m.id === ev.memberId)?.name ?? 'Kid';
-
-              // Parse kid ride metadata from returnTime field
-              const rideCode = ev.returnTime?.startsWith('RIDE:') ? ev.returnTime : null;
-              const isBothWays = rideCode === 'RIDE:both' || rideCode?.startsWith('RIDE:both:');
-              const isDropoff  = rideCode === 'RIDE:dropoff';
-              const isPickup   = rideCode === 'RIDE:pickup';
-              const hasRide    = isBothWays || isDropoff || isPickup;
-              const returnTimeStr = isBothWays && rideCode?.includes(':') ? rideCode.split(':')[2] : undefined;
+              const rideMeta = parseRideMeta(ev.returnTime, ev.date);
+              const isBothWays = rideMeta.isBothWays;
+              const isDropoff  = rideMeta.isDropoff;
+              const isPickup   = rideMeta.isPickup;
+              const returnTimeStr = rideMeta.pickupLabel;
 
               // Parsed coins the parent optionally set for this ride
               const coinsStr   = rideCoinsByEvent[ev.id] ?? '';
@@ -629,8 +746,8 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                 // Pickup leg: new event at return time, locations reversed
                 addEvent({
                   title:                `${ev.title} — Pickup`,
-                  date:                 ev.date,
-                  time:                 returnTimeStr ?? undefined,
+                  date:                 rideMeta.pickupDate ?? ev.date,
+                  time:                 rideMeta.pickupTime ?? ev.time,
                   type:                 'event',
                   category:             'Ride',
                   allDay:               false,
@@ -771,11 +888,52 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                       </View>
                     </View>
                   }>
-                  <Pressable onPress={() => approveQuest(q.id, active.id)}
-                    style={{ backgroundColor: BRAND.purple, paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
-                    <Coins size={14} color="#fff" />
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Approve & Pay {q.coins} Coins</Text>
-                  </Pressable>
+                  {/* Submitted proof — photo + note, so the parent can actually review before paying */}
+                  {q.photoUrl ? (
+                    <TouchableOpacity
+                      onPress={() => router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any)}
+                      style={{ borderRadius: 12, overflow: 'hidden', marginBottom: 10 }}>
+                      <Image
+                        source={{ uri: q.photoUrl }}
+                        style={{ width: '100%', height: 140, backgroundColor: isDark ? '#1E293B' : '#E2E8F0' }}
+                        resizeMode="cover"
+                      />
+                      <View style={{ position: 'absolute', bottom: 8, right: 8, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.6)' }}>
+                        <Text style={{ fontSize: TYPO.micro, color: '#fff', fontWeight: '700' }}>Tap to enlarge</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ) : q.photoRequired ? (
+                    <View style={{ borderRadius: 12, marginBottom: 10, padding: 10, alignItems: 'center', gap: 4,
+                      backgroundColor: isDark ? '#1C1200' : '#FFF7ED', borderWidth: 1, borderColor: '#FCD34D60' }}>
+                      <Text style={{ fontSize: TYPO.label, color: '#D97706', fontWeight: '700' }}>⚠️ Photo proof missing</Text>
+                    </View>
+                  ) : null}
+                  {q.completionNote ? (
+                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic', marginBottom: 10 }}>
+                      "{q.completionNote}"
+                    </Text>
+                  ) : null}
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <Pressable
+                      onPress={() => Alert.prompt(
+                        'Decline Quest',
+                        `Let ${kid?.name.split(' ')[0] ?? 'them'} know why "${q.title}" needs another try.`,
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Decline', style: 'destructive', onPress: (reason: string | undefined) => declineQuest(q.id, active.id, reason?.trim() || 'Needs another try') },
+                        ],
+                        'plain-text',
+                      )}
+                      style={{ flex: 1, backgroundColor: '#EF444415', borderWidth: 1, borderColor: '#EF444440',
+                        paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#EF4444' }}>✕ Decline</Text>
+                    </Pressable>
+                    <Pressable onPress={() => approveQuest(q.id, active.id)}
+                      style={{ flex: 2, backgroundColor: BRAND.purple, paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
+                      <Coins size={14} color="#fff" />
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Approve & Pay {q.coins} Coins</Text>
+                    </Pressable>
+                  </View>
                 </CollapsibleCard>
               );
             })}
@@ -902,8 +1060,17 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
               }
 
               // ── Grocery / Supplies: collapsible with item-level approve ──
+              // Same rounded-card model as the old "Who Needs Help" cards — not the
+              // flat divider style, so each request reads as its own distinct card.
+              const hasItems = (req.items ?? []).length > 0;
+              // Legacy single-item encoding (no items[]) — decode instead of showing raw JSON
+              const decodedGrocery = !hasItems && req.detail.startsWith(GROCERY_PREFIX) ? decodeGroceryRequest(req.detail) : null;
+              const rawDetailText = !hasItems && !decodedGrocery && req.detail && req.detail !== SUPPLIES_PREFIX && req.detail !== GROCERY_PREFIX
+                ? req.detail.replace(SUPPLIES_PREFIX, '').trim()
+                : null;
               return (
-                <CollapsibleCard key={req.id} flat accent={accent} colors={colors} isDark={isDark} defaultExpanded={true}
+                <CollapsibleCard key={req.id} accent={accent} colors={colors} isDark={isDark}
+                  defaultExpanded={isGrocery} // Grocery expanded by default, Supplies collapsed
                   summary={
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: accent + '20', alignItems: 'center', justifyContent: 'center' }}>
@@ -922,44 +1089,88 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                       </View>
                     </View>
                   }>
-                  <View style={{ gap: 6, marginBottom: 8 }}>
-                    {(req.items ?? []).map(item => (
-                      <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-                        backgroundColor: isDark ? '#1e293b' : '#F8FAFC', borderRadius: 10, padding: 10 }}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{item.name}</Text>
-                          {item.qty ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Qty: {item.qty}</Text> : null}
-                        </View>
-                        {item.status === 'pending' ? (
-                          <View style={{ flexDirection: 'row', gap: 6 }}>
-                            <Pressable onPress={() => approveItemsAndSync(req.id, [item.id], isSupplies)}
-                              style={{ backgroundColor: accent + '20', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
-                              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accent }}>✓ Add</Text>
-                            </Pressable>
-                            <Pressable onPress={() => rejectItems(req.id, [item.id], active.id)}
-                              style={{ backgroundColor: '#EF444420', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
-                              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>✕</Text>
-                            </Pressable>
+                  {/* Request detail — only for legacy requests with no items[] to list instead */}
+                  {decodedGrocery && (
+                    <View style={{ marginBottom: 10, borderRadius: 12, padding: 12,
+                      backgroundColor: isDark ? '#1e293b' : '#fff',
+                      borderLeftWidth: 3, borderLeftColor: accent }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+                        {decodedGrocery.name}{decodedGrocery.qty ? ` × ${decodedGrocery.qty}` : ''}
+                      </Text>
+                      {decodedGrocery.notes ? (
+                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>"{decodedGrocery.notes}"</Text>
+                      ) : null}
+                    </View>
+                  )}
+                  {rawDetailText && (
+                    <View style={{ marginBottom: 10, borderRadius: 12, padding: 12,
+                      backgroundColor: isDark ? '#1e293b' : '#fff',
+                      borderLeftWidth: 3, borderLeftColor: accent }}>
+                      <Text style={{ fontSize: TYPO.caption, color: colors.textPrimary }}>
+                        "{rawDetailText}"
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Item list */}
+                  {(req.items ?? []).length > 0 ? (
+                    <>
+                      <View style={{ gap: 6, marginBottom: 8 }}>
+                        {req.items.map(item => (
+                          <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+                            backgroundColor: isDark ? '#1e293b' : '#F8FAFC', borderRadius: 10, padding: 10 }}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{item.name}</Text>
+                              {item.qty ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Qty: {item.qty}</Text> : null}
+                            </View>
+                            {item.status === 'pending' ? (
+                              <View style={{ flexDirection: 'row', gap: 6 }}>
+                                <Pressable onPress={() => approveItemsAndSync(req.id, [item.id], isSupplies)}
+                                  style={{ backgroundColor: accent + '20', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
+                                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accent }}>✓ Add</Text>
+                                </Pressable>
+                                <Pressable onPress={() => rejectItems(req.id, [item.id], active.id)}
+                                  style={{ backgroundColor: '#EF444420', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
+                                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>✕</Text>
+                                </Pressable>
+                              </View>
+                            ) : (
+                              <View style={{ backgroundColor: item.status === 'approved' ? '#10B98120' : '#EF444420', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                                <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: item.status === 'approved' ? '#10B981' : '#EF4444' }}>
+                                  {item.status === 'approved' ? '✓ Added' : '✕ No'}
+                                </Text>
+                              </View>
+                            )}
                           </View>
-                        ) : (
-                          <View style={{ backgroundColor: item.status === 'approved' ? '#10B98120' : '#EF444420', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
-                            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: item.status === 'approved' ? '#10B981' : '#EF4444' }}>
-                              {item.status === 'approved' ? '✓ Added' : '✕ No'}
-                            </Text>
-                          </View>
-                        )}
+                        ))}
                       </View>
-                    ))}
-                  </View>
-                  {pendingItems.length > 1 && (
+                      {pendingItems.length > 1 && (
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          <Pressable onPress={() => approveItemsAndSync(req.id, pendingItems.map(i => i.id), isSupplies)}
+                            style={{ flex: 1, backgroundColor: accent + '15', borderWidth: 1, borderColor: accent + '40', paddingVertical: 8, borderRadius: 10, alignItems: 'center' }}>
+                            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accent }}>Add All</Text>
+                          </Pressable>
+                          <Pressable onPress={() => rejectItems(req.id, pendingItems.map(i => i.id), active.id)}
+                            style={{ flex: 1, backgroundColor: '#EF444415', borderWidth: 1, borderColor: '#EF444430', paddingVertical: 8, borderRadius: 10, alignItems: 'center' }}>
+                            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>Reject All</Text>
+                          </Pressable>
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    /* No items — show overall approve/decline buttons */
                     <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <Pressable onPress={() => approveItemsAndSync(req.id, pendingItems.map(i => i.id), isSupplies)}
-                        style={{ flex: 1, backgroundColor: accent + '15', borderWidth: 1, borderColor: accent + '40', paddingVertical: 8, borderRadius: 10, alignItems: 'center' }}>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accent }}>Add All</Text>
+                      <Pressable onPress={() => approveRequest(req.id, active.id)}
+                        style={{ flex: 1, backgroundColor: accent, borderRadius: 10,
+                          paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                        <Check size={14} color="#fff" />
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Approve</Text>
                       </Pressable>
-                      <Pressable onPress={() => rejectItems(req.id, pendingItems.map(i => i.id), active.id)}
-                        style={{ flex: 1, backgroundColor: '#EF444415', borderWidth: 1, borderColor: '#EF444430', paddingVertical: 8, borderRadius: 10, alignItems: 'center' }}>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>Reject All</Text>
+                      <Pressable onPress={() => declineRequest(req.id, active.id)}
+                        style={{ flex: 1, backgroundColor: '#EF444415', borderWidth: 1,
+                          borderColor: '#EF444440', borderRadius: 10, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                        <X size={14} color="#EF4444" />
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#EF4444' }}>Decline</Text>
                       </Pressable>
                     </View>
                   )}
@@ -1108,7 +1319,13 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                       </Pressable>
                       {/* Action buttons — always visible */}
                       <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
-                        <Pressable onPress={() => updateQuest(q.id, { status: 'done' })}
+                        <Pressable onPress={() => {
+                          // A pulled/delegated chore has both a chore row and an assignment row.
+                          // Finish them together, or the assignment resurfaces its own Done card.
+                          const a = parentAssignments.find(x => x.choreId === q.id && x.status !== 'COMPLETED' && x.status !== 'DECLINED');
+                          if (a) completeParentQuest(a.id, active.id);
+                          else updateQuest(q.id, { status: 'done' });
+                        }}
                           style={{ flex: 1, backgroundColor: BRAND.teal, borderRadius: 10, paddingVertical: 8, alignItems: 'center' }}>
                           <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>✓ Done</Text>
                         </Pressable>
@@ -1417,6 +1634,24 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                 const isDisabled = (chore as any).isDisabled ?? false;
                 const isExp = expandedCards[`pool_${chore.id}`] ?? false;
                 const hasDetail = chore.description || chore.dueDate || (chore as any).shoppingItems?.length > 0;
+                
+                // Get creator info
+                const creatorId = (chore as any).createdById;
+                const creator = creatorId ? members.find(m => m.id === creatorId) : null;
+                const creatorName = creator ? creator.name.split(' ')[0] : 'Someone';
+                
+                // Format relative time
+                const createdAt = (chore as any).createdAt;
+                let timeAgo = '';
+                if (createdAt) {
+                  const now = Date.now();
+                  const created = new Date(createdAt).getTime();
+                  const diffMins = Math.floor((now - created) / 60000);
+                  if (diffMins < 60) timeAgo = `${diffMins}m ago`;
+                  else if (diffMins < 1440) timeAgo = `${Math.floor(diffMins / 60)}h ago`;
+                  else timeAgo = `${Math.floor(diffMins / 1440)}d ago`;
+                }
+                
                 return (
                 <View key={chore.id} style={{
                   borderRadius: 14, borderWidth: 1,
@@ -1429,13 +1664,29 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingBottom: 8 }}>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textPrimary }}>{chore.title}</Text>
+                      {/* Creator and time */}
+                      {(creatorName || timeAgo) && (
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }}>
+                          {creatorName && `By ${creatorName}`}
+                          {creatorName && timeAgo && ' · '}
+                          {timeAgo}
+                        </Text>
+                      )}
                       {(chore as any).shoppingItems?.length > 0 && !isExp ? (
                         <Text style={{ fontSize: TYPO.micro, color: isDark ? '#2DD4BF' : '#0D9488', marginTop: 2 }}>
                           🛍️ {(chore as any).shoppingItems.length} item{(chore as any).shoppingItems.length !== 1 ? 's' : ''}
                           {(chore as any).shoppingStore ? ` · ${(chore as any).shoppingStore}` : ''}
+                          {(chore as any).openToGP && ' · 😊 GP Welcome'}
                         </Text>
                       ) : chore.dueDate && !isExp ? (
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }}>Due {chore.dueDate}</Text>
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }}>
+                          Due {chore.dueDate}
+                          {(chore as any).openToGP && ' · 😊 GP Welcome'}
+                        </Text>
+                      ) : (chore as any).openToGP && !isExp ? (
+                        <Text style={{ fontSize: TYPO.micro, color: '#8B5CF6', marginTop: 2 }}>
+                          😊 GP Welcome
+                        </Text>
                       ) : null}
                     </View>
                     {/* Enable / Disable toggle */}
@@ -1498,6 +1749,39 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
                             </View>
                           ))}
                         </View>
+                      )}
+                      
+                      {/* GP Welcome Toggle - for shopping and other adult tasks */}
+                      {(chore as any).shoppingItems?.length > 0 && (
+                        <Pressable
+                          onPress={() => {
+                            const { updateChore } = useChoreStore.getState();
+                            updateChore(chore.id, { openToGP: !(chore as any).openToGP } as any);
+                          }}
+                          style={{
+                            flexDirection: 'row', alignItems: 'center', gap: 8,
+                            borderRadius: 10, borderWidth: 1.5,
+                            borderColor: (chore as any).openToGP ? '#8B5CF6' : (isDark ? '#475569' : '#CBD5E1'),
+                            backgroundColor: (chore as any).openToGP ? '#8B5CF620' : 'transparent',
+                            padding: 10
+                          }}>
+                          <View style={{
+                            width: 20, height: 20, borderRadius: 10,
+                            borderWidth: 2, borderColor: (chore as any).openToGP ? '#8B5CF6' : (isDark ? '#64748B' : '#94A3B8'),
+                            backgroundColor: (chore as any).openToGP ? '#8B5CF6' : 'transparent',
+                            alignItems: 'center', justifyContent: 'center'
+                          }}>
+                            {(chore as any).openToGP && <Text style={{ fontSize: 12, color: '#fff' }}>✓</Text>}
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+                              😊 GP Welcome
+                            </Text>
+                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
+                              Grandparents can see and claim this task
+                            </Text>
+                          </View>
+                        </Pressable>
                       )}
                     </View>
                   )}
@@ -1634,80 +1918,11 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
       </AppBottomSheet>
 
       {/* Add Task modal */}
-      <Modal visible={showAddTask} transparent animationType="slide" onRequestClose={() => setShowAddTask(false)}>
-        <Pressable style={{ flex: 1, backgroundColor: '#00000060' }} onPress={() => setShowAddTask(false)} />
-        <View style={{
-          backgroundColor: isDark ? colors.card : '#fff',
-          borderTopLeftRadius: 28, borderTopRightRadius: 28,
-          padding: 24, gap: 14,
-        }}>
-          <Text style={{ fontSize: TYPO.heading, fontWeight: '800', color: colors.textPrimary }}>Add Household Task</Text>
-          <TextInput
-            style={{ borderRadius: 12, borderWidth: 1.5, borderColor: colors.border,
-              backgroundColor: isDark ? colors.surface : '#F8FAFC',
-              padding: 12, fontSize: TYPO.caption, color: colors.textPrimary }}
-            placeholder="Task title…"
-            placeholderTextColor={colors.textTertiary}
-            value={newTaskTitle}
-            onChangeText={setNewTaskTitle}
-          />
-          <TextInput
-            style={{ borderRadius: 12, borderWidth: 1.5, borderColor: colors.border,
-              backgroundColor: isDark ? colors.surface : '#F8FAFC',
-              padding: 12, fontSize: TYPO.caption, color: colors.textPrimary, minHeight: 56 }}
-            placeholder="Description (optional)…"
-            placeholderTextColor={colors.textTertiary}
-            value={newTaskDesc}
-            onChangeText={setNewTaskDesc}
-            multiline
-          />
-          {/* Mode toggle */}
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            {(['PULL', 'DIRECT'] as const).map(mode => (
-              <Pressable key={mode} onPress={() => setNewTaskMode(mode)}
-                style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12,
-                  borderWidth: 1.5,
-                  borderColor: newTaskMode === mode ? BRAND.purple : colors.border,
-                  backgroundColor: newTaskMode === mode ? BRAND.purple + '15' : 'transparent' }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700',
-                  color: newTaskMode === mode ? BRAND.purple : colors.textSecondary }}>
-                  {mode === 'PULL' ? '📋 Add to Backlog' : '👤 Assign Directly'}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          {newTaskMode === 'DIRECT' && parentMembers.length > 1 && (
-            <View style={{ gap: 6 }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Assign to</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {parentMembers.filter(m => m.id !== active.id).map(m => (
-                  <Pressable key={m.id} onPress={() => setNewTaskAssignTo(m.id)}
-                    style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1.5,
-                      borderColor: newTaskAssignTo === m.id ? BRAND.purple : colors.border,
-                      backgroundColor: newTaskAssignTo === m.id ? BRAND.purple + '15' : 'transparent' }}>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '600',
-                      color: newTaskAssignTo === m.id ? BRAND.purple : colors.textPrimary }}>
-                      {m.name.split(' ')[0]}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          )}
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-            <Pressable onPress={() => setShowAddTask(false)}
-              style={{ flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
-                borderWidth: 1.5, borderColor: colors.border }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-            </Pressable>
-            <Pressable onPress={handleAddTask}
-              style={{ flex: 2, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
-                backgroundColor: newTaskTitle.trim() ? BRAND.purple : (isDark ? '#374151' : '#D1D5DB') }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Add Task</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      <AddQuestModal
+        visible={showAddTask}
+        onClose={() => setShowAddTask(false)}
+        activeMemberId={active.id}
+      />
 
       {/* 5. Chore Review Deck */}
       <View style={pad}>
@@ -1830,89 +2045,94 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onHel
         </View>
       </View>
 
-      {/* 6. Dispatch En Route */}
-      <View style={pad}>
-        <View style={{
-          backgroundColor: isDark ? '#0D2B1F' : '#ECFDF5',
-          borderRadius: 24, borderWidth: 1, borderColor: isDark ? '#10B98140' : '#A7F3D0',
-          padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 12,
-        }}>
-          <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? '#10B98130' : '#D1FAE5', alignItems: 'center', justifyContent: 'center' }}>
-            <Navigation size={22} color="#059669" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: isDark ? '#34D399' : '#065F46' }}>Start Pickup / Trip</Text>
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>Broadcast "En Route" with ETA to family chat</Text>
-          </View>
-          <Pressable onPress={onEnRoute} style={{ backgroundColor: '#10B981', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 9 }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>En Route</Text>
-          </Pressable>
-        </View>
-      </View>
-
-      {/* 6. Family Support */}
-      <View style={pad}>
-        <View style={{
-          backgroundColor: isDark ? colors.card : '#fff',
-          borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
-          overflow: 'hidden', marginBottom: 12,
-        }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: BRAND.purple + '20', alignItems: 'center', justifyContent: 'center' }}>
-              <Hand size={20} color={BRAND.purple} />
-            </View>
-            <Pressable onPress={() => setSupportExpanded(e => !e)} style={{ flex: 1 }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>Who Needs Help?</Text>
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>Claim or assign open family requests</Text>
-            </Pressable>
-            <Pressable onPress={onHelpRequest} style={{ backgroundColor: BRAND.purple, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6 }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Ask for Help</Text>
-            </Pressable>
-            <Pressable onPress={() => setSupportExpanded(e => !e)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              {supportExpanded ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
-            </Pressable>
-          </View>
-          {supportExpanded && (
-            <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
-              <HelpQueueSection onRequestHelp={onHelpRequest} hideAskButton />
-            </View>
-          )}
-        </View>
-      </View>
-
       {/* Delegate sheet — AppBottomSheet */}
       <AppBottomSheet
         visible={!!delegateSheet}
         onClose={() => setDelegateSheet(null)}
         title={`Delegate: ${delegateSheet?.choreTitle ?? ''}`}
-        subtitle="Assign to a parent · GPs self-claim"
+        subtitle="Assign to a parent"
         accentColor={BRAND.teal}
         minHeight="40%"
         maxHeight="70%">
         <View style={{ gap: 10 }}>
-          {members.filter(m => m.role === 'parent').map(m => (
-            <Pressable key={m.id} onPress={() => {
-              if (delegateSheet) {
-                const isQRow = questPool.find(c => c.id === delegateSheet.choreId && (c as any)._isQuestRow);
-                if (isQRow) {
-                  updateQuest(delegateSheet.choreId, { assignedToId: m.id, status: 'todo' });
-                } else {
-                  addParentQuest(delegateSheet.choreId, active.id, m.id, 'DIRECT');
+          {/* Parent emojis side by side */}
+          <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
+            {members.filter(m => m.role === 'parent').map(m => (
+              <Pressable key={m.id} onPress={() => {
+                if (delegateSheet) {
+                  const isQRow = questPool.find(c => c.id === delegateSheet.choreId && (c as any)._isQuestRow);
+                  if (isQRow) {
+                    updateQuest(delegateSheet.choreId, { assignedToId: m.id, status: 'todo' });
+                  } else {
+                    addParentQuest(delegateSheet.choreId, active.id, m.id, 'DIRECT');
+                  }
+                  setDelegateSheet(null);
                 }
-                setDelegateSheet(null);
+              }} style={{
+                alignItems: 'center', gap: 6,
+                paddingVertical: 12, paddingHorizontal: 16,
+                borderRadius: 16, borderWidth: 1.5, borderColor: colors.border,
+                backgroundColor: isDark ? colors.surface : '#F8FAFC'
+              }}>
+                <Text style={{ fontSize: 40 }}>{m.emoji || '👤'}</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{m.name}</Text>
+              </Pressable>
+            ))}
+          </View>
+          
+          {/* GP Welcome Toggle */}
+          <Pressable
+            onPress={() => {
+              if (delegateSheet) {
+                const currentChore = questPool.find(c => c.id === delegateSheet.choreId);
+                const { updateChore } = useChoreStore.getState();
+                updateChore(delegateSheet.choreId, { openToGP: !(currentChore as any)?.openToGP } as any);
               }
-            }} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14,
-              borderRadius: 16, borderWidth: 1.5, borderColor: colors.border,
-              backgroundColor: isDark ? colors.surface : '#F8FAFC' }}>
-              <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl}
-                siblings={members.map(x => x.name)} size={44} ringColor={BRAND.purple} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{m.name}</Text>
-                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Parent</Text>
-              </View>
-              <Text style={{ fontSize: TYPO.caption, color: BRAND.teal, fontWeight: '800' }}>Assign →</Text>
-            </Pressable>
-          ))}
+            }}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14,
+              marginTop: 6,
+              borderRadius: 16, borderWidth: 1.5,
+              borderColor: (() => {
+                const currentChore = delegateSheet ? questPool.find(c => c.id === delegateSheet.choreId) : null;
+                return (currentChore as any)?.openToGP ? '#8B5CF6' : (isDark ? '#475569' : '#CBD5E1');
+              })(),
+              backgroundColor: (() => {
+                const currentChore = delegateSheet ? questPool.find(c => c.id === delegateSheet.choreId) : null;
+                return (currentChore as any)?.openToGP ? '#8B5CF620' : (isDark ? colors.surface : '#F8FAFC');
+              })()
+            }}>
+            <View style={{
+              width: 44, height: 44, borderRadius: 22,
+              borderWidth: 2,
+              borderColor: (() => {
+                const currentChore = delegateSheet ? questPool.find(c => c.id === delegateSheet.choreId) : null;
+                return (currentChore as any)?.openToGP ? '#8B5CF6' : (isDark ? '#64748B' : '#94A3B8');
+              })(),
+              backgroundColor: (() => {
+                const currentChore = delegateSheet ? questPool.find(c => c.id === delegateSheet.choreId) : null;
+                return (currentChore as any)?.openToGP ? '#8B5CF6' : 'transparent';
+              })(),
+              alignItems: 'center', justifyContent: 'center'
+            }}>
+              {(() => {
+                const currentChore = delegateSheet ? questPool.find(c => c.id === delegateSheet.choreId) : null;
+                return (currentChore as any)?.openToGP ? (
+                  <Text style={{ fontSize: 20, color: '#fff' }}>✓</Text>
+                ) : (
+                  <Text style={{ fontSize: 20 }}>😊</Text>
+                );
+              })()}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+                😊 GP Welcome
+              </Text>
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                Grandparents can see and claim this task
+              </Text>
+            </View>
+          </Pressable>
         </View>
       </AppBottomSheet>
     </>

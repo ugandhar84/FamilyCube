@@ -1987,16 +1987,35 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
 
   const groceryItems = categorisedItems.groceries;
 
-  // Group grocery items by store preference
+  // Items a kid asked for get their own group, separate from the store-grouped
+  // list below — easy to see who originated a request and grab their whole
+  // batch at once (e.g. right before a run) instead of hunting through by store.
+  const kidGroceryGroups = useMemo(() => {
+    const groups: Record<string, { kid: any; items: GroceryItem[] }> = {};
+    for (const item of groceryItems) {
+      const requester = members.find(m => m.id === item.addedBy);
+      if (requester?.role !== 'kid') continue;
+      if (!groups[requester.id]) groups[requester.id] = { kid: requester, items: [] };
+      groups[requester.id].items.push(item);
+    }
+    return Object.values(groups).sort((a, b) => a.kid.name.localeCompare(b.kid.name));
+  }, [groceryItems, members]);
+  const kidGroceryItemIds = useMemo(
+    () => new Set(kidGroceryGroups.flatMap(g => g.items.map(i => i.id))),
+    [kidGroceryGroups]
+  );
+
+  // Group the remaining (non-kid-requested) grocery items by store preference
   const groupedItems = useMemo(() => {
     const groups: Record<string, GroceryItem[]> = {};
     for (const item of groceryItems) {
+      if (kidGroceryItemIds.has(item.id)) continue;
       const key = item.storePreference || 'Any store';
       if (!groups[key]) groups[key] = [];
       groups[key].push(item);
     }
     return Object.entries(groups).sort(([a], [b]) => a === 'Any store' ? 1 : b === 'Any store' ? -1 : a.localeCompare(b));
-  }, [groceryItems]);
+  }, [groceryItems, kidGroceryItemIds]);
 
   const activeRuns = runs.filter(r => r.status === 'active');
   const draftRuns  = runs.filter(r => r.status === 'draft');
@@ -2198,6 +2217,79 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
             <CategorySection label="Clothing" emoji="👕" color="#F59E0B"
               items={categorisedItems.clothing} isDark={isDark} colors={colors}
               isKid={isKid} onBuy={handleBuyItem} members={members} />
+          )}
+
+          {/* Kids' Requests — grouped by who asked, separate from the store-grouped list below */}
+          {kidGroceryGroups.length > 0 && (
+            <View style={{ marginBottom: 22 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: '#F59E0B18', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 16 }}>🧒</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#F59E0B', letterSpacing: 0.8 }}>KIDS' REQUESTS</Text>
+                </View>
+                <View style={{ borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#F59E0B20' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#F59E0B' }}>
+                    {kidGroceryGroups.reduce((n, g) => n + g.items.filter(i => !i.isBought).length, 0)} left
+                  </Text>
+                </View>
+              </View>
+              {kidGroceryGroups.map(({ kid, items: kidItems }) => (
+                <View key={kid.id} style={{ marginBottom: 16 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, paddingHorizontal: 4 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                      <Text style={{ fontSize: 13 }}>{kid.emoji ?? '🧒'}</Text>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#F59E0B', textTransform: 'uppercase', letterSpacing: 0.7 }}>
+                        {kid.name.split(' ')[0]}'s Requests
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      {!isKid && (
+                        <Pressable onPress={() => setSelectedIds(prev => {
+                          const n = new Set(prev);
+                          kidItems.forEach(i => { if (!i.isBought) n.add(i.id); });
+                          return n;
+                        })}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#F59E0B' }}>Select All</Text>
+                        </Pressable>
+                      )}
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#475569' : '#94A3B8' }}>
+                        {kidItems.filter(i => !i.isBought).length} left
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={{ backgroundColor: isDark ? '#1A1F35' : '#FFFFFF', borderRadius: 16, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: isDark ? 'rgba(245,158,11,0.25)' : '#FDE68A' }}>
+                    {kidItems.map((item, idx) => (
+                      <ItemCard
+                        key={item.id}
+                        item={item}
+                        members={members}
+                        selected={selectedIds.has(item.id)}
+                        selecting={isSelecting}
+                        isLast={idx === kidItems.length - 1}
+                        priceInfo={priceMap[item.name]}
+                        onPress={() => setDetailItem(item)}
+                        onBuy={() => handleBuyItem(item)}
+                        onLongPress={() => setSelectedIds(prev => { const n = new Set(prev); n.add(item.id); return n; })}
+                        onToggleSelect={() => setSelectedIds(prev => {
+                          const n = new Set(prev);
+                          n.has(item.id) ? n.delete(item.id) : n.add(item.id);
+                          return n;
+                        })}
+                        onEdit={() => { setDetailItem(null); setEditingItem(item); setShowAddItem(true); }}
+                        onDelete={isKid ? undefined : () => Alert.alert('Remove item?', `"${item.name}"`, [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Remove', style: 'destructive', onPress: () => removeItem(item.id) },
+                        ])}
+                        colors={colors}
+                        isDark={isDark}
+                      />
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
           )}
 
           {groceryItems.length === 0 && categorisedItems.supplies.length === 0 && categorisedItems.clothing.length === 0 ? (

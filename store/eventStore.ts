@@ -51,6 +51,13 @@ export interface FamilyEvent {
   grandparentPassedIds?: string[];  // seniors who tapped Pass — hidden from their feed
   isOpenToTeens?: boolean;          // parent flag — shows in teen Junior Dispatch pool
   rideCoins?: number;               // optional coins reward set by parent — visible to teens only, never GPs
+
+  // Drive assignment — separate from `helper` (tutor/escort/coach) for events
+  // where an external tutor/escort/coach can be set while transport is a
+  // distinct, parent-decided need (e.g. Ms. Rao tutors, Dad drives).
+  rideRequired?: boolean;
+  driverName?: string;
+  driverStatus?: HelperStatus;
 }
 
 export type StripMap = Record<string, string[]>;   // date → unique category[]
@@ -160,6 +167,9 @@ function fromRow(row: any): FamilyEvent {
     grandparentPassedIds:   row.grandparent_passed_ids ?? [],
     isOpenToTeens:          row.is_open_to_teens ?? false,
     rideCoins:              row.ride_coins ?? undefined,
+    rideRequired:           row.ride_required ?? false,
+    driverName:             row.driver_name ?? undefined,
+    driverStatus:           row.driver_status ?? undefined,
   };
 }
 
@@ -195,6 +205,9 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     grandparent_passed_ids:     ev.grandparentPassedIds ?? [],
     is_open_to_teens:           ev.isOpenToTeens ?? false,
     ride_coins:                 ev.rideCoins ?? null,
+    ride_required:              ev.rideRequired ?? false,
+    driver_name:                ev.driverName ?? null,
+    driver_status:              ev.driverStatus ?? null,
   };
 }
 

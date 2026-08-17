@@ -39,7 +39,7 @@ import AppHeader from '@/components/AppHeader';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
-import { fmtDateShort, todayLocal, localDateStr, fmtDateTime } from '@/lib/dates';
+import { fmtDateShort, todayLocal, localDateStr, fmtDateTime, parseLocalDate } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
 import { useChatStore } from '@/store/chatStore';
 import { fetchCustomCategories, fetchCustomSuggestions, recordCustomSuggestion, CustomCategory } from '@/lib/familyCustomCategories';
@@ -322,7 +322,7 @@ function buildFomoResult(quests: any[], kids: any[]) {
     const expiresAt   = new Date(now + hoursLeft * 3600_000).toISOString();
     const alreadyHasBonus = q.bonusCoins > 0 && q.bonusExpiresAt && new Date(q.bonusExpiresAt) > new Date();
     const daysOverdue = q.dueDate
-      ? Math.max(0, Math.floor((now - new Date(q.dueDate).getTime()) / 86400_000))
+      ? Math.max(0, Math.floor((now - parseLocalDate(q.dueDate).getTime()) / 86400_000))
       : 0;
     const fomoMessage = q.isPool
       ? `⚡ Nobody has claimed this yet — +${rawBonus}🪙 flash bonus expires in ${hoursLeft}h!`
@@ -347,7 +347,7 @@ function buildFomoResult(quests: any[], kids: any[]) {
     const currentAssignee = kids.find((k: any) => k.id === q.assignedToId);
     const reassignTarget  = penaltyKids.find((k: any) => k.id !== currentAssignee?.id) ?? penaltyKids[0];
     const daysOver = q.dueDate
-      ? Math.max(0, Math.floor((now - new Date(q.dueDate).getTime()) / 86400_000))
+      ? Math.max(0, Math.floor((now - parseLocalDate(q.dueDate).getTime()) / 86400_000))
       : 0;
     const isGhosted = q.status === 'claimed';
     return {
@@ -1955,7 +1955,7 @@ function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelete, edit
 
   const parseDue = () => {
     if (quest.dueDate) {
-      const d = new Date(quest.dueDate);
+      const d = parseLocalDate(quest.dueDate);
       if (quest.dueTime) {
         const [h, m] = quest.dueTime.replace(/[^0-9:]/g, '').split(':').map(Number);
         if (!isNaN(h)) { d.setHours(h, m || 0, 0, 0); }
@@ -3100,13 +3100,16 @@ export default function QuestsScreen() {
       });
     }
 
-    // Non-parents (seniors): only see their own quests or pool quests, not other adults' work
+    // GP scope: their own quests, the quests they've sponsored for grandkids,
+    // and pool quests (visible only via the Bounty tab below, same as kids).
+    // The old `!q.isAdultTask` catch-all showed every kid's regular household
+    // chore — noise that had nothing to do with what a GP actually manages.
     // Teens behave like kids for filtering (handled by isKidOrTeen above)
     if (!isParent && !isKidOrTeen) {
       list = list.filter(q =>
         q.isPool ||
         (myId ? isAssignedTo(q, myId) : false) ||
-        (!q.isAdultTask)
+        (q.questType === 'grandparent_quest' && q.sponsorUserId === myId)
       );
     }
 
@@ -3154,9 +3157,19 @@ export default function QuestsScreen() {
   // ── Grandparent: sponsored quests (GP-only) ───────────────────────────────────
   const grandparentData = React.useMemo(() => {
     if (!isSenior) return null;
-    const sponsored = quests.filter(q => q.questType === 'grandparent_quest' && q.createdById === myId);
+    // The full card for a quest already renders in the list below. This strip is
+    // a roll-up for the ones the current filter/tab hides — listing everything
+    // showed each sponsored quest twice.
+    // createGrandparentQuest never sets createdById (only sponsorUserId) — this
+    // strip matched on the wrong field and has been silently empty for every GP.
+    const visibleBelow = new Set(filteredQuests.map(q => q.id));
+    const sponsored = quests.filter(q =>
+      q.questType === 'grandparent_quest' &&
+      q.sponsorUserId === myId &&
+      !visibleBelow.has(q.id)
+    );
     return { sponsored };
-  }, [quests, isSenior, myId]);
+  }, [quests, filteredQuests, isSenior, myId]);
 
   // ── Family Kudos — today's completed quests from kids, cheerable by GP.
   // Kid/teen siblings get the same job done by the dedicated "Sibling Cheer"
@@ -3219,6 +3232,20 @@ export default function QuestsScreen() {
     setDeclineTarget(null);
     setIsDeclining(p => ({ ...p, [id]: true }));
     await new Promise(r => setTimeout(r, 300));
+    // A kid turning down a grandparent quest releases it back to the family
+    // pool rather than killing it — siblings can still pick it up.
+    const chore = useChoreStore.getState().chores.find(c => c.id === id);
+    if (!memberId && isKid && chore?.categoryType === 'grandparent_quest' && chore.status === 'todo') {
+      useChoreStore.getState().declineGrandparentQuest(id, activeMember?.id ?? '', reason);
+      // Match the Hub's decline flow: chat is where both the parent and the
+      // sponsoring GP will actually see it — the chore's rejectionReason
+      // alone (surfaced only in each Hub's own review section) isn't a nudge.
+      const sponsorName = members.find(m => m.id === chore.sponsorUserId)?.name.split(' ')[0];
+      useChatStore.getState().sendMessage('all', activeMember?.id ?? '',
+        `🙏 ${activeMember?.name.split(' ')[0]} can't take "${chore.title}"${sponsorName ? ` from ${sponsorName}` : ''} — "${reason}"`);
+      setIsDeclining(p => ({ ...p, [id]: false }));
+      return;
+    }
     if (memberId) {
       // Per-participant decline
       declineParticipant(id, memberId, activeMember?.id ?? '', reason, 'custom');
@@ -3319,7 +3346,7 @@ export default function QuestsScreen() {
           <View style={{ marginHorizontal: 14, marginBottom: 12, gap: 10 }}>
             {grandparentData.sponsored.length > 0 && (
               <View style={{ backgroundColor: isDark ? '#0D1A2D' : '#EFF6FF', borderRadius: 20, borderWidth: 1, borderColor: '#3B82F620', padding: 14 }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#3B82F6', marginBottom: 8 }}>👴 My Sponsored Quests</Text>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#3B82F6', marginBottom: 8 }}>👴 My Sponsored Quests · elsewhere</Text>
                 {grandparentData.sponsored.map(q => {
                   const kid = members.find(m => m.id === q.assignedToId);
                   const statusColor = q.status === 'done' ? '#059669' : q.status === 'pending_approval' ? '#F5A623' : '#6366F1';
@@ -3374,6 +3401,7 @@ export default function QuestsScreen() {
           tabStatus={tabStatus}
           isKid={isKid}
           isParentOrSenior={isParentOrSenior}
+          isSenior={isSenior}
           kids={kids as any[]}
           isDark={isDark}
           colors={colors}
@@ -3381,8 +3409,8 @@ export default function QuestsScreen() {
           onSetTabStatus={setTabStatus}
         />
 
-        {/* ── Sibling Cheer Panel ── */}
-        {kidFilter === 'cheer' ? (
+        {/* ── Sibling Cheer Panel — kid/teen only, see QuestFilters ── */}
+        {kidFilter === 'cheer' && !isParentOrSenior ? (
           <View style={{ paddingHorizontal: 14, gap: 10 }}>
             {/* Submitted quests waiting for approval — GP/siblings can encourage */}
             {(() => {
@@ -3597,6 +3625,9 @@ export default function QuestsScreen() {
                 const canResubmit = isKidOrTeen && isDeclined && !!myId && isAssignedTo(q, myId);
                 // Kid can refuse — teens CANNOT decline (no decline authority)
                 const canKidDecline = isKid && isTodoCard && !q.isPool && !!myId && isAssignedTo(q, myId);
+                // GP quest sitting at todo — the kid accepts it before it counts as started
+                const canAcceptGp = isKid && !!myId && isAssignedTo(q, myId) &&
+                  choreData?.categoryType === 'grandparent_quest' && choreData?.status === 'todo';
                 // Approve/Decline: parent or senior, quest in review
                 const canApprove = isParentOrSenior && isReview;
                 // Reopen: parent or senior, quest was declined
@@ -3607,8 +3638,9 @@ export default function QuestsScreen() {
                 const canEditRestricted = isParent && !isDoneCard && !isDeclined &&
                   (q.status === 'in_progress' || q.status === 'pending_approval' || (q.status === 'todo' && !!q.assignedToId));
                 const canEdit           = isParent && !isDoneCard && !isDeclined;
-                // Delete: parent always, but requires a note/reason when quest is active
-                const canDelete  = isParent && !isDoneCard;
+                // Delete: parent always; GP too, but only their own sponsorship
+                // and only before it's done — a kid's completed/paid work isn't theirs to erase.
+                const canDelete  = (isParent || (isSenior && q.questType === 'grandparent_quest' && q.sponsorUserId === myId)) && !isDoneCard;
 
                 // Accent colour by status
                 const accentColor =
@@ -3629,7 +3661,7 @@ export default function QuestsScreen() {
                 const stackW    = claimants.length > 0 ? AVSIZE + (claimants.length - 1) * AVOVERLAP : 0;
 
                 // Due date chip — urgency coloring
-                const dueMsRaw    = q.dueDate ? new Date(q.dueDate).getTime() : null;
+                const dueMsRaw    = q.dueDate ? parseLocalDate(q.dueDate).getTime() : null;
                 const todayEnd    = new Date(); todayEnd.setHours(23, 59, 59, 999);
                 const tomorrowEnd = new Date(todayEnd); tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
                 const isOverdue   = !!dueMsRaw && dueMsRaw < Date.now() && !isDoneCard && !isDeclined;
@@ -4072,8 +4104,18 @@ export default function QuestsScreen() {
                         </TouchableOpacity>
                       )}
 
+                      {/* Kid: opt in to a grandparent quest before working it */}
+                      {canAcceptGp && (
+                        <TouchableOpacity
+                          style={[s.actionBtn, { backgroundColor: '#10B981' }]}
+                          onPress={() => useChoreStore.getState().startGrandparentQuest(q.id, myId ?? '')}
+                        >
+                          <Text style={[s.actionBtnText, { color: '#fff' }]}>🙌 I'll take it</Text>
+                        </TouchableOpacity>
+                      )}
+
                       {/* Kid: Submit single-assign quest (multi-assign submits via participant row) */}
-                      {canSubmit && q.participants.length <= 1 && (
+                      {canSubmit && !canAcceptGp && q.participants.length <= 1 && (
                         <TouchableOpacity
                           style={[s.actionBtn, { backgroundColor: BRAND.purple }]}
                           onPress={() => openSubmitSheet(q)}
@@ -4092,13 +4134,14 @@ export default function QuestsScreen() {
                         </TouchableOpacity>
                       )}
 
-                      {/* Kid: Decline / refuse an assigned quest */}
+                      {/* Kid: Decline / refuse an assigned quest — same label as the Hub's
+                          GP-quest card ("Decline") when this is that same choice */}
                       {canKidDecline && (
                         <TouchableOpacity
                           style={[s.actionBtn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#EF4444' }]}
                           onPress={() => setDeclineTarget({ id: q.id, title: q.title, memberId: undefined })}
                         >
-                          <Text style={[s.actionBtnText, { color: '#EF4444' }]}>Can't do this</Text>
+                          <Text style={[s.actionBtnText, { color: '#EF4444' }]}>{canAcceptGp ? 'Decline' : "Can't do this"}</Text>
                         </TouchableOpacity>
                       )}
 

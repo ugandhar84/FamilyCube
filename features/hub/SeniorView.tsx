@@ -18,6 +18,7 @@ import { useKidRequestStore } from '@/store/kidRequestStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { SectionCard, CollapsibleCard, SubCard } from './hubComponents';
 import { localToday, fmtTime, isWorkEvent, hoursUntilEvent } from './hubUtils';
+import { fmtDateTime } from '@/lib/dates';
 
 // Elderly-friendly type scale. The shared TYPO steps bottom out at 11px
 // (label) and 9px (micro) — fine on a kid's screen, too small here — so the
@@ -124,7 +125,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const [newQuestTitle,  setNewQuestTitle]  = useState('');
   const [newQuestDesc,   setNewQuestDesc]   = useState('');
   const [newQuestPoints, setNewQuestPoints] = useState('350');
-  const [newQuestKidId,  setNewQuestKidId]  = useState('');
+  const [newQuestKidIds, setNewQuestKidIds] = useState<string[]>([]);
   const [newQuestMode,   setNewQuestMode]   = useState<'local' | 'virtual'>('local');
   const [newQuestPhoto,  setNewQuestPhoto]  = useState(true);
 
@@ -326,7 +327,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       title:         newQuestTitle.trim(),
       description:   newQuestDesc.trim() || undefined,
       basePoints:    parseInt(newQuestPoints, 10) || 350,
-      childIds:      newQuestKidId ? [newQuestKidId] : kids.map(k => k.id),
+      // Store semantics (approveGrandparentQuestAsParent): 0 kids → bounty pool,
+      // 1 kid → assigned directly, 2+ kids → team job. Picking 0 used to fan
+      // out to every grandchild, silently turning a single-kid quest into an
+      // unwanted team job — see the label above the picker for what each choice does.
+      childIds:      newQuestKidIds,
       sponsorId:     active.id,
       mode:          newQuestMode,
       requiresPhoto: newQuestPhoto,
@@ -334,7 +339,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     setNewQuestTitle('');
     setNewQuestDesc('');
     setNewQuestPoints('350');
-    setNewQuestKidId('');
+    setNewQuestKidIds([]);
     setNewQuestMode('local');
     setNewQuestPhoto(true);
     setShowCreateQuestModal(false);
@@ -480,6 +485,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
               ? `${dedupMyPendingAssignments.length} need${dedupMyPendingAssignments.length === 1 ? 's' : ''} your answer`
               : `${dedupMyDrivingToday.length + dedupMyClaimedRides.length} coming up`}
             badge={dedupMyPendingAssignments.length || undefined} badgeColor="#EF4444"
+            collapsible defaultExpanded
             colors={colors} isDark={isDark}>
             <View style={{ gap: 10 }}>
               {dedupMyPendingAssignments.map(ev => {
@@ -660,6 +666,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           icon={<Pill size={18} color="#EF4444" />}
           title="Today's Medications"
           badge={meds.filter(m => !medsTaken[m.id]).length || undefined} badgeColor="#EF4444"
+          collapsible defaultExpanded={meds.some(m => !medsTaken[m.id])}
           colors={colors} isDark={isDark}>
           {meds.map((med, i) => {
             const taken = !!medsTaken[med.id];
@@ -1482,8 +1489,66 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                     <View style={{ backgroundColor: '#F59E0B20', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
                       <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: '#92400E' }}>Pending</Text>
                     </View>
+                    {/* Still their own quest, nobody's acted on it yet — safe to pull back. */}
+                    <Pressable onPress={() => Alert.alert(
+                      'Cancel this quest?',
+                      `"${c.title}" will be removed before a parent even reviews it.`,
+                      [{ text: 'Keep it', style: 'cancel' },
+                       { text: 'Cancel Quest', style: 'destructive', onPress: () => useChoreStore.getState().deleteChore(c.id) }],
+                    )}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Text style={{ fontSize: 16, color: '#EF4444' }}>✕</Text>
+                    </Pressable>
                   </View>
                 ))}
+              </View>
+            );
+          })()}
+
+          {/* Turned down by the grandchild — GP sees the reason in their own words */}
+          {(() => {
+            const turnedDown = chores.filter(c =>
+              c.categoryType === 'grandparent_quest' &&
+              c.sponsorUserId === active.id &&
+              c.status === 'declined'
+            );
+            if (!turnedDown.length) return null;
+            return (
+              <View style={{ gap: 8, marginBottom: 12 }}>
+                <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textTertiary,
+                  textTransform: 'uppercase', letterSpacing: 0.8 }}>Turned Down</Text>
+                {turnedDown.map(c => {
+                  const kid = members.find(m => m.id === c.assignedToId);
+                  return (
+                    <View key={c.id} style={{ padding: 14, borderRadius: 14, gap: 8,
+                      backgroundColor: isDark ? '#EF444410' : '#FEF2F2',
+                      borderWidth: 1.5, borderColor: '#EF444430' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <Text style={{ fontSize: 18 }}>🙏</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: GP.body, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
+                          <Text style={{ fontSize: GP.sub, color: colors.textSecondary, marginTop: 2 }}>
+                            {kid?.name.split(' ')[0] ?? 'Your grandchild'} can't take this one
+                          </Text>
+                        </View>
+                      </View>
+                      {c.rejectionReason ? (
+                        <Text style={{ fontSize: GP.body, color: colors.textPrimary, fontStyle: 'italic' }}>
+                          "{c.rejectionReason}"
+                        </Text>
+                      ) : null}
+                      <Pressable onPress={() => updateChore(c.id, {
+                        status: 'todo', isPool: true, assignedToId: undefined,
+                        targetChildIds: [], rejectionReason: undefined,
+                      })}
+                        style={{ borderRadius: 12, paddingVertical: 13, alignItems: 'center', backgroundColor: BRAND.teal }}>
+                        <Text style={{ fontSize: GP.sub, fontWeight: '900', color: '#fff' }}>
+                          Open it to any grandchild
+                        </Text>
+                      </Pressable>
+                    </View>
+                  );
+                })}
               </View>
             );
           })()}
@@ -1581,85 +1646,175 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                 ))}
               </View>
 
-              {pendingGpApproval.map(chore => {
-                const kid = kids.find(k => chore.assignedToId === k.id) ?? kids[0];
-                const pts = chore.basePoints;
-                const spend = Math.floor(pts * 0.50);
-                const save  = Math.floor(pts * 0.40);
-                const give  = pts - spend - save;
-                return (
-                  <View key={chore.id} style={{
-                    borderRadius: 16, borderWidth: 1.5, borderColor: BRAND.teal + '40',
-                    backgroundColor: isDark ? BRAND.teal + '10' : BRAND.teal + '06',
-                    overflow: 'hidden',
-                  }}>
-                    <View style={{ backgroundColor: BRAND.teal, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: 16 }}>📸</Text>
-                      <Text style={{ flex: 1, fontSize: GP.sub, fontWeight: '900', color: '#fff' }}>
-                        {chore.title}
-                      </Text>
-                    </View>
-                    <View style={{ padding: 14, gap: 8 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <FamilyAvatar name={kid?.name ?? '?'} emoji={kid?.emoji} avatarUrl={kid?.avatarUrl} siblings={allNames} size={30} />
-                        <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textPrimary }}>
-                          {kid?.name.split(' ')[0] ?? 'Grandchild'} submitted for your review
+              {(() => {
+                // A team quest clones one chore per kid — reviewing them as N
+                // separate full cards repeats the same title/points/sticker
+                // chrome N times. Render each team once: one header, one
+                // roster with each kid's own status/photo/timestamp, one
+                // shared payout preview.
+                const seenTeams = new Set<string>();
+                const cards = pendingGpApproval.filter(c => {
+                  if (!c.teamGroupId) return true;
+                  if (seenTeams.has(c.teamGroupId)) return false;
+                  seenTeams.add(c.teamGroupId);
+                  return true;
+                });
+                const rowMeta = (status: string) => {
+                  switch (status) {
+                    case 'pending_grandparent_approval': return { label: 'Ready to review', color: BRAND.teal, icon: '📸' };
+                    case 'in_progress':                  return { label: 'Working on it',    color: BRAND.amber, icon: '🔨' };
+                    case 'approved': case 'auto_approved': case 'completed':
+                                                          return { label: 'Verified',         color: '#22c55e', icon: '✅' };
+                    case 'declined':                      return { label: 'Declined',         color: '#EF4444', icon: '🙅' };
+                    default:                              return { label: 'Not started',      color: colors.textTertiary, icon: '⏳' };
+                  }
+                };
+                return cards.map(chore => {
+                  const team = chore.teamGroupId
+                    ? chores.filter(c => c.teamGroupId === chore.teamGroupId)
+                    : [chore];
+                  const pts = chore.basePoints;
+                  const spend = Math.floor(pts * 0.50);
+                  const save  = Math.floor(pts * 0.40);
+                  const give  = pts - spend - save;
+                  const readyCount = team.filter(c => c.status === 'pending_grandparent_approval').length;
+                  const verifiedCount = team.filter(c => ['approved', 'auto_approved', 'completed'].includes(c.status)).length;
+                  return (
+                    <View key={chore.teamGroupId ?? chore.id} style={{
+                      borderRadius: 16, borderWidth: 1.5, borderColor: BRAND.teal + '40',
+                      backgroundColor: isDark ? BRAND.teal + '10' : BRAND.teal + '06',
+                      overflow: 'hidden',
+                    }}>
+                      <View style={{ backgroundColor: BRAND.teal, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={{ fontSize: 16 }}>📸</Text>
+                        <Text style={{ flex: 1, fontSize: GP.sub, fontWeight: '900', color: '#fff' }}>
+                          {chore.title}
                         </Text>
-                      </View>
-                      {chore.submissionNote ? (
-                        <View style={{ borderRadius: 10, backgroundColor: isDark ? '#1e293b' : '#fff',
-                          padding: 10, borderLeftWidth: 3, borderLeftColor: BRAND.teal }}>
-                          <Text style={{ fontSize: GP.sub, color: colors.textPrimary, fontStyle: 'italic' }}>
-                            "{chore.submissionNote}"
-                          </Text>
-                        </View>
-                      ) : null}
-                      {/* Points split preview */}
-                      <View style={{ flexDirection: 'row', gap: 6 }}>
-                        {[
-                          { label: '💸 Spend', val: spend, color: BRAND.amber },
-                          { label: '🏦 Save',  val: save,  color: '#10B981' },
-                          { label: '🤲 Give',  val: give,  color: BRAND.purple },
-                        ].map(j => (
-                          <View key={j.label} style={{ flex: 1, alignItems: 'center', borderRadius: 10,
-                            borderWidth: 1, borderColor: j.color + '30',
-                            backgroundColor: j.color + '10', paddingVertical: 8 }}>
-                            <Text style={{ fontSize: GP.sub }}>{j.label}</Text>
-                            <Text style={{ fontSize: GP.body, fontWeight: '900', color: j.color }}>{j.val}</Text>
+                        {chore.teamGroupId && (
+                          <View style={{ backgroundColor: '#ffffff30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                            <Text style={{ fontSize: GP.tiny, fontWeight: '900', color: '#fff' }}>
+                              🤝 {verifiedCount}/{team.length} verified
+                            </Text>
                           </View>
-                        ))}
+                        )}
                       </View>
-                      <Pressable onPress={() => handleApproveAndCheer(chore.id)}
-                        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                          backgroundColor: BRAND.teal, borderRadius: 12, paddingVertical: 13 }}>
-                        <Text style={{ fontSize: 20 }}>{cheerSticker}</Text>
-                        <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>
-                          APPROVE & CHEER · {pts} pts
-                        </Text>
-                      </Pressable>
+                      <View style={{ padding: 14, gap: 10 }}>
+                        {/* Roster — one row per kid, own status/photo/note/timestamp */}
+                        <View style={{ gap: 8 }}>
+                          {team.map(member => {
+                            const kid = kids.find(k => k.id === member.assignedToId);
+                            const meta = rowMeta(member.status);
+                            const when = member.submittedAt ?? member.approvedAt;
+                            return (
+                              <View key={member.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                                padding: 8, borderRadius: 12,
+                                backgroundColor: isDark ? colors.surface : '#fff',
+                                borderWidth: 1, borderColor: meta.color + '30' }}>
+                                {member.submissionPhotoUrl ? (
+                                  <Image source={{ uri: member.submissionPhotoUrl }}
+                                    style={{ width: 44, height: 44, borderRadius: 10 }} resizeMode="cover" />
+                                ) : (
+                                  <FamilyAvatar name={kid?.name ?? '?'} emoji={kid?.emoji} avatarUrl={kid?.avatarUrl} siblings={allNames} size={38} />
+                                )}
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ fontSize: GP.body, fontWeight: '800', color: colors.textPrimary }}>
+                                    {kid?.name.split(' ')[0] ?? 'Grandchild'}
+                                  </Text>
+                                  <Text style={{ fontSize: GP.tiny, fontWeight: '700', color: meta.color }}>
+                                    {meta.icon} {meta.label}{when ? ` · ${fmtDateTime(when)}` : ''}
+                                  </Text>
+                                  {member.submissionNote ? (
+                                    <Text style={{ fontSize: GP.tiny, color: colors.textSecondary, fontStyle: 'italic', marginTop: 2 }} numberOfLines={2}>
+                                      "{member.submissionNote}"
+                                    </Text>
+                                  ) : null}
+                                </View>
+                                {/* Team quests approve per-kid inline (payout waits for the group);
+                                    a single-kid quest uses the one big button below instead. */}
+                                {member.status === 'pending_grandparent_approval' && chore.teamGroupId && (
+                                  <Pressable onPress={() => handleApproveAndCheer(member.id)}
+                                    style={{ backgroundColor: BRAND.teal, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 }}>
+                                    <Text style={{ fontSize: GP.tiny, fontWeight: '900', color: '#fff' }}>{cheerSticker} Approve</Text>
+                                  </Pressable>
+                                )}
+                              </View>
+                            );
+                          })}
+                        </View>
+
+                        {/* Full reward each — not a shared pool. One kid declining
+                            never reduces what the others earn. */}
+                        {chore.teamGroupId && (
+                          <Text style={{ fontSize: GP.tiny, fontWeight: '700', color: colors.textTertiary, textAlign: 'center' }}>
+                            {pts} pts to EACH kid who finishes — independently
+                          </Text>
+                        )}
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          {[
+                            { label: '💸 Spend', val: spend, color: BRAND.amber },
+                            { label: '🏦 Save',  val: save,  color: '#10B981' },
+                            { label: '🤲 Give',  val: give,  color: BRAND.purple },
+                          ].map(j => (
+                            <View key={j.label} style={{ flex: 1, alignItems: 'center', borderRadius: 10,
+                              borderWidth: 1, borderColor: j.color + '30',
+                              backgroundColor: j.color + '10', paddingVertical: 8 }}>
+                              <Text style={{ fontSize: GP.sub }}>{j.label}</Text>
+                              <Text style={{ fontSize: GP.body, fontWeight: '900', color: j.color }}>{j.val}</Text>
+                            </View>
+                          ))}
+                        </View>
+
+                        {chore.teamGroupId ? (
+                          readyCount > 0 && (
+                            <Text style={{ fontSize: GP.tiny, color: colors.textTertiary, textAlign: 'center' }}>
+                              Approve each kid above — pays them right away
+                            </Text>
+                          )
+                        ) : (
+                          <Pressable onPress={() => handleApproveAndCheer(chore.id)}
+                            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                              backgroundColor: BRAND.teal, borderRadius: 12, paddingVertical: 13 }}>
+                            <Text style={{ fontSize: 20 }}>{cheerSticker}</Text>
+                            <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>
+                              APPROVE & CHEER · {pts} pts
+                            </Text>
+                          </Pressable>
+                        )}
+                      </View>
                     </View>
-                  </View>
-                );
-              })}
+                  );
+                });
+              })()}
             </View>
           )}
 
-          {/* G4 — Completed: kid did it and parent approved */}
+          {/* G4 — Completed: kid did it and it's verified */}
           {(() => {
+            // grandparentApproveAndCheer sets 'completed', not 'approved' — this
+            // filter only matched the parent-reviewed statuses, so a GP's own
+            // verified quests never showed up here at all.
             const done = chores.filter(c =>
               c.categoryType === 'grandparent_quest' &&
               c.sponsorUserId === active.id &&
-              (c.status === 'approved' || c.status === 'auto_approved')
+              ['approved', 'auto_approved', 'completed'].includes(c.status)
             );
             if (!done.length) return null;
+            const seenTeams = new Set<string>();
+            const cards = done.filter(c => {
+              if (!c.teamGroupId) return true;
+              if (seenTeams.has(c.teamGroupId)) return false;
+              seenTeams.add(c.teamGroupId);
+              return true;
+            });
             return (
               <View style={{ gap: 8, marginBottom: 12 }}>
                 <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textTertiary,
                   textTransform: 'uppercase', letterSpacing: 0.8 }}>Completed ✅</Text>
-                {done.map(c => {
-                  const kid = kids.find(k => k.id === c.assignedToId);
+                {cards.map(c => {
+                  const team = c.teamGroupId ? chores.filter(x => x.teamGroupId === c.teamGroupId) : [c];
+                  const teamKids = team.map(m => kids.find(k => k.id === m.assignedToId)).filter(Boolean) as typeof kids;
                   return (
-                    <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                    <View key={c.teamGroupId ?? c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
                       padding: 12, borderRadius: 12,
                       backgroundColor: isDark ? '#14291a' : '#F0FDF4',
                       borderWidth: 1, borderColor: '#22c55e40' }}>
@@ -1667,9 +1822,21 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
                         <Text style={{ fontSize: GP.tiny, color: colors.textSecondary }}>
-                          {kid?.name.split(' ')[0] ?? 'Grandchild'} completed it
+                          {team.length > 1
+                            ? `${teamKids.map(k => k.name.split(' ')[0]).join(' & ')} completed it together`
+                            : `${teamKids[0]?.name.split(' ')[0] ?? 'Grandchild'} completed it`}
                         </Text>
                       </View>
+                      {team.length > 1 && (
+                        <View style={{ flexDirection: 'row' }}>
+                          {teamKids.map((k, i) => (
+                            <View key={k.id} style={{ marginLeft: i > 0 ? -10 : 0 }}>
+                              <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={k.avatarUrl} siblings={allNames} size={26}
+                                ringColor={isDark ? '#14291a' : '#F0FDF4'} ringWidth={2} />
+                            </View>
+                          ))}
+                        </View>
+                      )}
                       <View style={{ backgroundColor: '#22c55e20', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
                         <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: '#22c55e' }}>Done ✓</Text>
                       </View>
@@ -1857,24 +2024,35 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
             );
           })()}
 
-          {/* Kid selector */}
+          {/* Kid selector — pick none, one, or several; each means something different */}
           {kids.length > 1 && (
             <View>
-              <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
-                For (blank = all grandkids)
+              <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 2 }}>
+                Who's this for?
+              </Text>
+              <Text style={{ fontSize: GP.tiny, color: colors.textTertiary, marginBottom: 6 }}>
+                {newQuestKidIds.length === 0
+                  ? 'Nobody picked — goes to the bounty pool, first to claim it wins'
+                  : newQuestKidIds.length === 1
+                  ? `Goes straight to ${kids.find(k => k.id === newQuestKidIds[0])?.name.split(' ')[0]}`
+                  : `Bounty for ${newQuestKidIds.length} — each of them earns the full ${newQuestPoints || 350} pts, independently`}
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {kids.map(k => (
-                  <Pressable key={k.id} onPress={() => setNewQuestKidId(newQuestKidId === k.id ? '' : k.id)}
-                    style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5,
-                      borderColor: newQuestKidId === k.id ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
-                      backgroundColor: newQuestKidId === k.id ? BRAND.teal + '15' : 'transparent' }}>
-                    <Text style={{ fontSize: GP.body, fontWeight: '600',
-                      color: newQuestKidId === k.id ? BRAND.teal : colors.textPrimary }}>
-                      {k.name.split(' ')[0]}
-                    </Text>
-                  </Pressable>
-                ))}
+                {kids.map(k => {
+                  const picked = newQuestKidIds.includes(k.id);
+                  return (
+                    <Pressable key={k.id}
+                      onPress={() => setNewQuestKidIds(ids => picked ? ids.filter(id => id !== k.id) : [...ids, k.id])}
+                      style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5,
+                        borderColor: picked ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
+                        backgroundColor: picked ? BRAND.teal + '15' : 'transparent' }}>
+                      <Text style={{ fontSize: GP.body, fontWeight: '600',
+                        color: picked ? BRAND.teal : colors.textPrimary }}>
+                        {picked ? '✓ ' : ''}{k.name.split(' ')[0]}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
             </View>
           )}
@@ -2025,7 +2203,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
       {/* Family Memories */}
       <View style={pad}>
-        <SectionCard large icon={<Camera size={18} color={BRAND.pink} />} title="Family Memories" colors={colors} isDark={isDark}>
+        <SectionCard large icon={<Camera size={18} color={BRAND.pink} />} title="Family Memories" collapsible defaultExpanded={false} colors={colors} isDark={isDark}>
           <View style={{ alignItems: 'center', paddingVertical: 16, gap: 8 }}>
             <Heart size={32} color={BRAND.pink} />
             <Text style={{ fontSize: GP.sub, color: colors.textTertiary, textAlign: 'center', fontStyle: 'italic' }}>

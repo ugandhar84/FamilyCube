@@ -200,7 +200,15 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     set({ members: next });
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     const updated = next.find(m => m.id === memberId);
-    if (updated) supabase.from('members').update(toRow(updated)).eq('id', memberId);
+    // Column-only patch, not a full-row toRow() push — a full row would
+    // overwrite coins/xp with whatever stale value this device last cached,
+    // clobbering the RPC-driven awards other devices made in the meantime.
+    if (updated) {
+      supabase.from('members')
+        .update({ [wallet === 'mainCoins' ? 'main_coins' : 'gp_coins']: updated[wallet] })
+        .eq('id', memberId)
+        .then(({ error }) => { if (error) console.warn('[familyStore] awardCoins', error.message); });
+    }
   },
 
   deductCoins: (memberId, amount, wallet) => {
@@ -210,7 +218,12 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     set({ members: next });
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     const updated = next.find(m => m.id === memberId);
-    if (updated) supabase.from('members').update(toRow(updated)).eq('id', memberId);
+    if (updated) {
+      supabase.from('members')
+        .update({ [wallet === 'mainCoins' ? 'main_coins' : 'gp_coins']: updated[wallet] })
+        .eq('id', memberId)
+        .then(({ error }) => { if (error) console.warn('[familyStore] deductCoins', error.message); });
+    }
   },
 
   setMemberPin: async (id, pin) => {

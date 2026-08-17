@@ -376,6 +376,7 @@ export function TeenView({ active, members, colors, isDark }: {
           icon={<BookOpen size={16} color={BRAND.purple} />}
           title="Tutor a Sibling"
           badge={undefined}
+          collapsible defaultExpanded={false}
           colors={colors} isDark={isDark}>
 
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginBottom: 12 }}>
@@ -442,6 +443,7 @@ export function TeenView({ active, members, colors, isDark }: {
             icon={<ShoppingCart size={16} color={BRAND.teal} />}
             title="Errand Bounties"
             badge={errandChores.length} badgeColor={BRAND.teal}
+            collapsible defaultExpanded={errandChores.length > 0}
             colors={colors} isDark={isDark}>
             <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginBottom: 10 }}>
               Parent-posted paid errands you can claim
@@ -554,6 +556,7 @@ export function TeenView({ active, members, colors, isDark }: {
           icon={<ShoppingCart size={16} color={BRAND.teal} />}
           title="Family Grocery List"
           badge={groceryItems.length || undefined} badgeColor={BRAND.teal}
+          collapsible defaultExpanded={false}
           colors={colors} isDark={isDark}>
           {groceryItems.length === 0 ? (
             <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>List is empty — parent will add items</Text>
@@ -695,6 +698,7 @@ export function TeenView({ active, members, colors, isDark }: {
           icon={<Star size={16} color={BRAND.amber} />}
           title="Cash Out Earnings"
           badge={undefined}
+          collapsible defaultExpanded={false}
           colors={colors} isDark={isDark}>
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginBottom: 12 }}>
             Request a payout for completed errands. Parent approves before transfer.

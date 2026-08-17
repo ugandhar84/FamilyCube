@@ -169,6 +169,10 @@ export interface Quest {
 
   // Cheer Squad — GP/sibling reactions on a completed quest
   cheers?:          QuestCheer[];
+  /** GP team job: quests sharing this id pay out only when all are approved. */
+  teamGroupId?:     string;
+  /** GP quest: who sponsored/created it (undefined for regular chores). */
+  sponsorUserId?:   string;
 }
 
 export interface QuestCheer {

@@ -40,6 +40,28 @@ export function decodeGroceryRequest(detail: string): { name: string; qty: strin
   try { return JSON.parse(detail.slice(GROCERY_PREFIX.length)); } catch { return null; }
 }
 
+// "My driver hasn't arrived" — carries the ride's details so the parent's Action
+// Needed card can show the situation at a glance instead of a bare sentence.
+export const RIDE_LATE_PREFIX = 'RIDE_LATE:';
+
+export interface RideLatePayload {
+  eventId:   string;
+  title:     string;
+  time?:     string;   // scheduled pickup, "15:30"
+  driver?:   string;   // assigned helper name
+  location?: string;
+  dropLocation?: string;
+  sentAt:    string;   // ISO — how long the kid has been waiting
+}
+
+export function encodeRideLate(p: RideLatePayload) {
+  return `${RIDE_LATE_PREFIX}${JSON.stringify(p)}`;
+}
+export function decodeRideLate(detail: string): RideLatePayload | null {
+  if (!detail?.startsWith(RIDE_LATE_PREFIX)) return null;
+  try { return JSON.parse(detail.slice(RIDE_LATE_PREFIX.length)); } catch { return null; }
+}
+
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
 const GROCERY_CATEGORIES = ['Snacks', 'Produce', 'Dairy & Eggs', 'Pantry', 'Frozen', 'Bakery', 'Household', 'Other'];

@@ -20,6 +20,7 @@ import {
   useChoreStore, BADGE_DEFINITIONS, type ChoreTask, type ChoreCategoryType,
 } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
+import { parseLocalDate } from '@/lib/dates';
 
 // ─── Category metadata ────────────────────────────────────────────────────────
 
@@ -138,7 +139,7 @@ function BountyCard({ task, childId, members, colors, isDark, onAction }: {
   const expiryDays = (() => {
     if (!task.recurrenceRule?.durationDays && !task.dueDate) return null;
     const expiryMs = task.dueDate
-      ? new Date(task.dueDate).getTime()
+      ? parseLocalDate(task.dueDate).getTime()
       : new Date(task.createdAt).getTime() + (task.recurrenceRule.durationDays ?? 7) * 86_400_000;
     const daysLeft = (expiryMs - Date.now()) / 86_400_000;
     return Math.max(0, daysLeft);
@@ -224,7 +225,9 @@ function GPQuestCard({ task, childId, members, colors, isDark, onStart, onSubmit
   const sponsor = members.find(m => m.id === task.sponsorUserId);
   const isPendingGP = task.status === 'pending_grandparent_approval';
   const isInProgress = task.status === 'in_progress' && task.assignedToId === childId;
-  const isMyTodo = task.status === 'todo' && (!task.assignedToId || task.assignedToId === childId);
+  // Bounty Pool: any grandchild can grab it first-come (no assignedToId)
+  const isPooled = task.status === 'todo' && !task.assignedToId;
+  const isMyTodo = task.status === 'todo' && (task.assignedToId === childId || isPooled);
 
   return (
     <View style={{
@@ -260,7 +263,7 @@ function GPQuestCard({ task, childId, members, colors, isDark, onStart, onSubmit
       )}
       {task.dueDate && (
         <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginBottom: 6 }}>
-          Due {new Date(task.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          Due {parseLocalDate(task.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
         </Text>
       )}
 
@@ -281,7 +284,7 @@ function GPQuestCard({ task, childId, members, colors, isDark, onStart, onSubmit
               padding: 10, alignItems: 'center', opacity: pressed ? 0.8 : 1,
             })}
           >
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444' }}>Decline</Text>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444' }}>Not Now</Text>
           </Pressable>
           <Pressable
             onPress={() => onStart(task)}
@@ -290,7 +293,9 @@ function GPQuestCard({ task, childId, members, colors, isDark, onStart, onSubmit
               padding: 10, alignItems: 'center', opacity: pressed ? 0.8 : 1,
             })}
           >
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>▶ Start Quest</Text>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>
+              {isPooled ? '🙋 I\'ll Take It' : '▶ Start Quest'}
+            </Text>
           </Pressable>
         </View>
       )}

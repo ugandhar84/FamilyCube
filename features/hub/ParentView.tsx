@@ -15,7 +15,7 @@ import { useQuestStore } from '@/store/choreAdapter';
 import { useEventStore } from '@/store/eventStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
-import { SUPPLIES_PREFIX, GROCERY_PREFIX, decodeGroceryRequest } from '@/features/hub/KidModals';
+import { SUPPLIES_PREFIX, GROCERY_PREFIX, decodeGroceryRequest, decodeRideLate } from '@/features/hub/KidModals';
 import { AddQuestModal } from '@/features/quests/QuestsScreen';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
@@ -145,13 +145,16 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
   const {
     parentAssignments, createAndAddParentQuest, addParentQuest,
     respondToParentQuest, completeParentQuest, appreciationPing, getParentQuestPool,
-    getMemberBalance, getPendingCashOuts, chores, addChore, getParentReviewDeck,
+    getPendingCashOuts, chores, addChore, getParentReviewDeck,
     approveGrandparentQuestAsParent, declineGrandparentQuestAsParent,
     loadFromStorage: loadChores, syncFromDB: syncChores,
   } = useChoreStore();
   const pendingReviews = getParentReviewDeck();
-  const [choreReviewExpanded, setChoreReviewExpanded] = useState(() => getParentReviewDeck().length > 0);
-  const [backlogExpanded, setBacklogExpanded] = useState(true);
+  // Every Hub section defaults collapsed — Action Needed and Household Backlog
+  // are the only two that auto-open, and only when there's something pending
+  // on this parent specifically (see the effect below).
+  const [choreReviewExpanded, setChoreReviewExpanded] = useState(false);
+  const [backlogExpanded, setBacklogExpanded] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
   const [pushbackSheet, setPushbackSheet] = useState<{ assignmentId: string; choreTitle: string } | null>(null);
   const [pushbackDetail, setPushbackDetail] = useState('');
@@ -171,9 +174,6 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
   const gpPendingCount = chores.filter(c =>
     c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval'
   ).length;
-  useEffect(() => {
-    if (gpPendingCount > 0) setChoreReviewExpanded(true);
-  }, [gpPendingCount]);
 
   const allNames  = members.map(m => m.name);
   const today     = localToday();
@@ -424,6 +424,15 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
 
   const parentMembers    = members.filter(m => m.role === 'parent');
 
+  // Household Backlog auto-opens only when there's something pending on THIS
+  // parent — their own claimed items, the open pool, or a helper request —
+  // not just because someone else's spouse has a task sitting there.
+  const myBacklogPendingCount = questPool.length + myAdultQuests.length + myHelperEvents.length
+    + myDirectPending.length + myAccepted.length + myLockedItems.length;
+  useEffect(() => {
+    if (myBacklogPendingCount > 0) setBacklogExpanded(true);
+  }, [myBacklogPendingCount > 0]);
+
   // Quick Stats derivations
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
 
@@ -619,6 +628,11 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
             <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>
               Family Leaderboard
             </Text>
+            {leaderboardKids.length > 0 && (
+              <View style={{ backgroundColor: BRAND.purple, borderRadius: 10, minWidth: 20, paddingHorizontal: 6, paddingVertical: 2, alignItems: 'center' }}>
+                <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>{leaderboardKids.length}</Text>
+              </View>
+            )}
             {leaderboardOpen
               ? <ChevronUp size={16} color={colors.textTertiary} />
               : <ChevronDown size={16} color={colors.textTertiary} />}
@@ -631,13 +645,16 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
                   No kids added yet
                 </Text>
               ) : leaderboardKids.map((kid, idx) => {
-                const bal = getMemberBalance(kid.id);
+                // Same field Kid Hub reads (mainCoins ?? coins) — this used to
+                // read a separately-derived ledger total that could show a
+                // different number than what the kid saw on their own device.
+                const kidCoins = (kid as any).mainCoins ?? (kid as any).coins ?? 0;
                 const streak = (kid as any).streak ?? 0;
                 const medals = ['🥇', '🥈', '🥉'];
                 return (
                   <View key={kid.id} style={{
                     flexDirection: 'row', alignItems: 'center', gap: 10,
-                    paddingVertical: 9, paddingHorizontal: 10,
+                    paddingVertical: 10, paddingHorizontal: 10,
                     backgroundColor: idx === 0
                       ? (isDark ? BRAND.amber + '15' : BRAND.amber + '10')
                       : (isDark ? colors.surface : '#F8FAFC'),
@@ -655,15 +672,20 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
                         {kid.name.split(' ')[0]}
                       </Text>
-                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                        {streak > 0 ? `🔥 ${streak} day streak · ` : ''}{bal.total} pts
-                      </Text>
+                      {streak > 0 && (
+                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>🔥 {streak} day streak</Text>
+                      )}
                     </View>
                     {idx === 0 && (
                       <View style={{ backgroundColor: BRAND.amber, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
                         <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>Top</Text>
                       </View>
                     )}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3,
+                      backgroundColor: BRAND.amber + '18', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5 }}>
+                      <Text style={{ fontSize: 12 }}>🪙</Text>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: BRAND.amber }}>{kidCoins}</Text>
+                    </View>
                   </View>
                 );
               })}
@@ -698,6 +720,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
           <SectionCard
             icon={<Sparkles size={16} color="#EF4444" />}
             title="Action Needed" badge={actionCount} badgeColor="#EF4444"
+            collapsible defaultExpanded
             colors={colors} isDark={isDark}>
 
             {/* ── Ride / event requests ── */}
@@ -968,6 +991,104 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
                       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Got it 👍</Text>
                     </Pressable>
                   </View>
+                );
+              }
+
+              // ── "My driver hasn't arrived" — a stranded kid, not an approval ──
+              // Without this branch an emergency request falls through to the
+              // grocery/supplies fallback and renders as "Supplies — 0 items".
+              const rideLate = decodeRideLate(req.detail)
+                // Requests raised before the structured payload existed carry a
+                // plain sentence — still show the alert card, just thinner.
+                ?? (req.type === 'emergency'
+                  ? { eventId: '', title: req.detail.replace(/^My driver.*?for /i, '').replace(/^"|"$/g, '') || 'a ride',
+                      time: undefined, driver: undefined, location: req.location,
+                      dropLocation: undefined, sentAt: req.requestedAt }
+                  : null);
+              if (rideLate) {
+                const ev = events.find(e => e.id === rideLate.eventId);
+                const waitedMin = Math.max(0, Math.round((Date.now() - new Date(rideLate.sentAt).getTime()) / 60000));
+                const lateBy = (() => {
+                  if (!rideLate.time) return null;
+                  const [h, m] = rideLate.time.split(':').map(Number);
+                  const due = new Date(); due.setHours(h, m, 0, 0);
+                  const mins = Math.round((Date.now() - due.getTime()) / 60000);
+                  return mins > 0 ? mins : null;
+                })();
+                const driverName = rideLate.driver ?? ev?.helper;
+                const pickup     = rideLate.location ?? ev?.pickupLocation ?? ev?.location;
+                const dropOff    = rideLate.dropLocation ?? ev?.dropLocation;
+                const resolve = (note: string, chat: string) => {
+                  approveRequest(req.id, active.id, note);
+                  useChatStore.getState().sendMessage('all', active.id, chat);
+                };
+                return (
+                  <CollapsibleCard key={req.id} accent="#EF4444" colors={colors} isDark={isDark} defaultExpanded
+                    summary={
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <Text style={{ fontSize: 22 }}>🚨</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#EF4444' }}>
+                            {kidName} is still waiting
+                          </Text>
+                          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 1 }} numberOfLines={1}>
+                            {rideLate.title}{rideLate.time ? ` · was ${fmtTime(rideLate.time)}` : ''}
+                          </Text>
+                        </View>
+                        <View style={{ backgroundColor: '#EF444420', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                          <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#EF4444' }}>
+                            {lateBy ? `${lateBy}m late` : `${waitedMin}m ago`}
+                          </Text>
+                        </View>
+                      </View>
+                    }>
+                    {/* Everything the parent needs to judge the situation at a glance */}
+                    <View style={{ borderRadius: 12, padding: 10, gap: 6,
+                      backgroundColor: isDark ? colors.surface : '#FEF2F2',
+                      borderWidth: 1, borderColor: '#EF444425' }}>
+                      {[
+                        ['🚗', 'Driver', driverName ?? 'Nobody assigned'],
+                        ['📍', 'Pickup', pickup ?? '—'],
+                        ...(dropOff ? [['🏁', 'Drop-off', dropOff]] : []),
+                        ['🕒', 'Scheduled', rideLate.time ? fmtTime(rideLate.time) : '—'],
+                        ['⏱️', 'Waiting', `${waitedMin} min since ${kidName} raised it`],
+                      ].map(([icon, label, value]) => (
+                        <View key={label} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text style={{ fontSize: 13 }}>{icon}</Text>
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary, width: 68 }}>{label}</Text>
+                          <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }} numberOfLines={2}>{value}</Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Pressable onPress={() => resolve(
+                        "On my way",
+                        `🚗 ${active.name.split(' ')[0]} is on the way to ${kidName} for "${rideLate.title}" — hang tight!`)}
+                        style={{ flex: 1, backgroundColor: '#10B981', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>🚗 I'm on my way</Text>
+                      </Pressable>
+                      <Pressable onPress={() => router.push('/(tabs)/chat')}
+                        style={{ borderWidth: 1.5, borderColor: BRAND.teal + '60', borderRadius: 10,
+                          paddingVertical: 10, paddingHorizontal: 14, alignItems: 'center' }}>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.teal }}>💬 Message</Text>
+                      </Pressable>
+                    </View>
+                    {/* No driver, or the assigned one is unreachable — open it up */}
+                    {ev && (
+                      <Pressable onPress={() => {
+                        updateEvent(ev.id, { isOpenToGrandparents: true, isOpenToTeens: true, helperStatus: undefined });
+                        resolve('Opened to other helpers',
+                          `🆘 ${kidName} needs a ride for "${rideLate.title}" — can anyone pick this up?`);
+                      }}
+                        style={{ borderWidth: 1.5, borderColor: BRAND.amber + '60', borderRadius: 10,
+                          paddingVertical: 10, alignItems: 'center' }}>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.amber }}>
+                          🙋 Ask someone else to go
+                        </Text>
+                      </Pressable>
+                    )}
+                  </CollapsibleCard>
                 );
               }
 
@@ -1940,14 +2061,14 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>Chore Reviews</Text>
-                {pendingReviews.length > 0 && (
+                {(pendingReviews.length + gpPendingCount) > 0 && (
                   <View style={{ backgroundColor: BRAND.teal, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 }}>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>{pendingReviews.length}</Text>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>{pendingReviews.length + gpPendingCount}</Text>
                   </View>
                 )}
               </View>
               <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-                {pendingReviews.length > 0 ? `${pendingReviews.length} pending approval` : 'All caught up ✓'}
+                {(pendingReviews.length + gpPendingCount) > 0 ? `${pendingReviews.length + gpPendingCount} pending approval` : 'All caught up ✓'}
               </Text>
             </View>
             {choreReviewExpanded ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
@@ -1969,7 +2090,12 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
                     </Text>
                     {gpPending.map(c => {
                       const sponsor = sponsors.find(s => s.id === c.sponsorUserId);
-                      const targetKid = members.find(m => m.id === c.assignedToId);
+                      // Before approval nothing is assigned yet — targetChildIds is the
+                      // only record of who this was meant for. A 2+ target quest becomes
+                      // a bounty (full points each, independent) once approved.
+                      const targetKids = (c.targetChildIds?.length ? c.targetChildIds : c.assignedToId ? [c.assignedToId] : [])
+                        .map(id => members.find(m => m.id === id))
+                        .filter((m): m is FamilyMember => !!m);
                       const pts = c.basePoints;
                       return (
                         <View key={c.id} style={{ borderRadius: 16, overflow: 'hidden',
@@ -1990,12 +2116,17 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
                             {c.description ? (
                               <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, lineHeight: 18 }}>{c.description}</Text>
                             ) : null}
-                            {targetKid && (
+                            {targetKids.length > 0 ? (
                               <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                                For: {targetKid.name.split(' ')[0]}
+                                For: {targetKids.map(k => k.name.split(' ')[0]).join(', ')}
+                                {targetKids.length > 1 ? ` — ${pts} pts each, independently` : ''}
+                              </Text>
+                            ) : (
+                              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                                No kid picked — goes to the bounty pool
                               </Text>
                             )}
-                            {/* 50/40/10 split preview */}
+                            {/* 50/40/10 split preview — per kid when there are several targets */}
                             <View style={{ flexDirection: 'row', gap: 6 }}>
                               {[
                                 { label: '💸 Spend', val: Math.floor(pts * 0.5), color: BRAND.amber },
@@ -2027,6 +2158,75 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
                               </Pressable>
                             </View>
                           </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })()}
+
+              {/* Grandparent quest a kid turned down — GP sees this too (their own
+                  Hub), shown here so the parent isn't relying on chat alone to
+                  notice and can reassign or open it up without leaving the Hub. */}
+              {(() => {
+                const declined = chores.filter(c =>
+                  c.categoryType === 'grandparent_quest' && c.status === 'declined'
+                );
+                if (!declined.length) return null;
+                const otherKids = (c: typeof declined[0]) => members.filter(m => m.role === 'kid' && m.id !== c.assignedToId);
+                return (
+                  <View style={{ marginHorizontal: 14, marginBottom: 12, gap: 8 }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                      textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                      🙏 Grandparent Quests — Turned Down
+                    </Text>
+                    {declined.map(c => {
+                      const sponsor = members.find(m => m.id === c.sponsorUserId);
+                      const kid = members.find(m => m.id === c.assignedToId);
+                      const expanded = expandedCards[`gpd_${c.id}`] ?? false;
+                      return (
+                        <View key={c.id} style={{ borderRadius: 14, padding: 12, gap: 8,
+                          backgroundColor: isDark ? '#EF444410' : '#FEF2F2',
+                          borderWidth: 1.5, borderColor: '#EF444430' }}>
+                          <View>
+                            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
+                            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+                              {kid?.name.split(' ')[0] ?? 'Kid'} can't take this{sponsor ? ` · from ${sponsor.name.split(' ')[0]}` : ''}
+                            </Text>
+                          </View>
+                          {c.rejectionReason ? (
+                            <Text style={{ fontSize: TYPO.label, color: colors.textPrimary, fontStyle: 'italic' }}>"{c.rejectionReason}"</Text>
+                          ) : null}
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                            <Pressable onPress={() => toggleCard(`gpd_${c.id}`)}
+                              style={{ flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center',
+                                borderWidth: 1.5, borderColor: BRAND.amber + '60' }}>
+                              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.amber }}>Reassign</Text>
+                            </Pressable>
+                            <Pressable onPress={() => useChoreStore.getState().updateChore(c.id, {
+                              status: 'todo', isPool: true, assignedToId: undefined,
+                              targetChildIds: [], rejectionReason: undefined,
+                            })}
+                              style={{ flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center', backgroundColor: BRAND.teal }}>
+                              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Open to Any Kid</Text>
+                            </Pressable>
+                          </View>
+                          {expanded && (
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingTop: 2 }}>
+                              {otherKids(c).map(k => (
+                                <Pressable key={k.id} onPress={() => {
+                                  useChoreStore.getState().updateChore(c.id, {
+                                    status: 'todo', isPool: false, assignedToId: k.id,
+                                    targetChildIds: [k.id], rejectionReason: undefined,
+                                  });
+                                }}
+                                  style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+                                    borderWidth: 1.5, borderColor: BRAND.amber + '50', backgroundColor: BRAND.amber + '10' }}>
+                                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.amber }}>{k.name.split(' ')[0]}</Text>
+                                </Pressable>
+                              ))}
+                            </View>
+                          )}
                         </View>
                       );
                     })}

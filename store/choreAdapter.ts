@@ -124,6 +124,8 @@ export function choreToQuest(c: ChoreTask): Quest {
     appreciationSent: false,
     snoozedUntil:     undefined,
     cheers:           c.cheers ?? [],
+    teamGroupId:      c.teamGroupId,
+    sponsorUserId:    c.sponsorUserId,
   };
 }
 
@@ -183,9 +185,14 @@ export function useQuestStore() {
 
     submitQuest: (id: string, opts?: { note?: string; photoUrl?: string }) => {
       const chore = store.chores.find(c => c.id === id);
+      // A GP-sponsored quest is the grandparent's to review, not the parent's —
+      // submitChore always routed to pending_approval (parent review deck)
+      // regardless of category, so every GP quest submission was landing in
+      // front of the wrong person.
+      if (chore?.categoryType === 'grandparent_quest') store.submitGrandparentQuest(id, opts);
       // A parent decline maps to redo_requested in choreStore. Route the next
       // kid/teen submission through the dedicated resubmission transition.
-      if (chore?.status === 'redo_requested') store.resubmitChore(id, opts);
+      else if (chore?.status === 'redo_requested') store.resubmitChore(id, opts);
       else store.submitChore(id, opts);
     },
 

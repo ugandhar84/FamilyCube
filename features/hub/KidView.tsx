@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, Pressable, TouchableOpacity, Alert, Dimensions, ScrollView, TextInput, Modal, Switch } from 'react-native';
+import { View, Text, Pressable, TouchableOpacity, Alert, Dimensions, ScrollView, TextInput, Modal, Switch, Image } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ChevronRight, ChevronDown, ChevronUp } from 'lucide-react-native';
@@ -8,6 +8,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { TYPO } from '@/constants/theme';
 import { useQuestStore } from '@/store/choreAdapter';
+import { useChoreStore } from '@/store/choreStore';
 import type { Quest } from '@/store/questStore';
 import { useEventStore } from '@/store/eventStore';
 import { useRewardStore } from '@/store/rewardStore';
@@ -44,11 +45,12 @@ function useCountdown(date?: string, time?: string) {
 
 // Encoding helpers and modals live in KidModals.tsx
 export { GROCERY_PREFIX, SUPPLIES_PREFIX, encodeGroceryRequest, decodeGroceryRequest } from './KidModals';
-import { SUPPLIES_PREFIX } from './KidModals';
+import { SUPPLIES_PREFIX, encodeRideLate } from './KidModals';
 
 import { GroceryModal, SuppliesModal, AskModal, KidRequestHistoryModal } from './KidModals';
 import { SchoolScheduleCard } from './SchoolScheduleModal';
 import AppBottomSheet from '@/components/AppBottomSheet';
+import * as ImagePicker from 'expo-image-picker';
 import { ChildChoreBoard } from '@/features/chores/ChildChoreBoard';
 import CelebrationBurst from '@/components/CelebrationBurst';
 import { CollapsibleCard } from './hubComponents';
@@ -61,6 +63,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   onHelpRequest: () => void;
 }) {
   const { quests, submitQuest, claimQuest, reopenQuest, cheerQuest } = useQuestStore();
+  const { startGrandparentQuest, declineGrandparentQuest } = useChoreStore();
   const { events }                                        = useEventStore();
   const { rewards, redeemReward, getEligibleRewards }    = useRewardStore();
   const { sendRequest, requests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
@@ -76,7 +79,16 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   const [lateNudgeSent,   setLateNudgeSent]   = useState<Record<string, boolean>>({});
   const [dismissedReplies, setDismissedReplies] = useState<Set<string>>(new Set());
   const [dismissedActions,  setDismissedActions]  = useState<Set<string>>(new Set());
-  const [myQuestsExpanded, setMyQuestsExpanded] = useState(true);
+  const [declineQuest,    setDeclineQuest]    = useState<{ id: string; title: string } | null>(null);
+  const [declineNote,     setDeclineNote]     = useState('');
+  // Submitting a photo-required quest — "Take Photo to Get Paid" must not pay
+  // out on a bare tap; the photo IS the proof, so collect it before submitting.
+  const [submitProofQuest, setSubmitProofQuest] = useState<Quest | null>(null);
+  const [submitProofUri,   setSubmitProofUri]   = useState<string | null>(null);
+  const [submitProofNote,  setSubmitProofNote]  = useState('');
+  // My Quests is the kid's own "Action Needed" — collapsed by default like
+  // every Hub section, but auto-opens the moment there's something to do.
+  const [myQuestsExpanded, setMyQuestsExpanded] = useState(false);
 
   // KidView can render without ParentView ever having mounted this session
   // (e.g. app opened straight into Kid Mode), so it must hydrate the kid
@@ -155,6 +167,10 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   const inProgressQuests = myQuests.filter(q => ['claimed', 'in_progress'].includes(q.status));
   const reviewQuests   = myQuests.filter(q => q.status === 'pending_approval');
   const declinedQuests = myQuests.filter(q => q.status === 'declined');
+  const myActionableCount = todoQuests.length + inProgressQuests.length + reviewQuests.length;
+  useEffect(() => {
+    if (myActionableCount > 0) setMyQuestsExpanded(true);
+  }, [myActionableCount > 0]);
   const approvedQuests = myQuests.filter(q => ['approved', 'done'].includes(q.status));
   const cancelledQuests = myQuests.filter(q => q.status === 'cancelled');
   const doneToday      = myQuests.filter(q => ['approved','done'].includes(q.status)).length;
@@ -164,11 +180,16 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   const siblingKids       = members.filter(m => m.role === 'kid' && m.id !== active.id);
   const allKids           = [active, ...siblingKids].sort((a, b) => (b.mainCoins ?? b.coins ?? 0) - (a.mainCoins ?? a.coins ?? 0));
 
-  // Cheer Squad — siblings' recently completed quests I can cheer for
-  const siblingCheerable = quests.filter(q =>
-    ['approved', 'done'].includes(q.status) && !q.isAdultTask &&
-    q.assignedToId && siblingKids.some(s => s.id === q.assignedToId)
-  ).slice(0, 5);
+  // Cheer Squad — today's sibling wins that still need a cheer from me.
+  // Once cheered (or once the day passes) it drops off — this is a to-do list
+  // of pending cheers, not a history feed.
+  const siblingCheerable = quests.filter(q => {
+    if (!['approved', 'done'].includes(q.status) || q.isAdultTask) return false;
+    if (!q.assignedToId || !siblingKids.some(s => s.id === q.assignedToId)) return false;
+    if ((q.cheers ?? []).some(c => c.memberId === active.id)) return false;
+    const when = q.approvedAt ?? q.completedAt;
+    return !!when && when.slice(0, 10) === today;
+  }).slice(0, 5);
 
   // Cheers landed on my own completed quests — surfaced as a celebration banner
   const cheersForMe = myQuests.flatMap(q => (q.cheers ?? []).map(c => ({ quest: q, cheer: c })));
@@ -205,8 +226,22 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
       Alert.alert('Already sent', 'You already notified your parent about this.');
       return;
     }
-    sendRequest({ type: 'emergency', fromMemberId: active.id, urgency: 'urgent',
-      detail: `My driver ${ev.helper ?? ''} hasn't arrived yet for "${ev.title}" (was ${fmtTime(ev.time)})` });
+    sendRequest({
+      type: 'emergency', fromMemberId: active.id, urgency: 'urgent',
+      // Structured so the parent's Action Needed card can show the ride itself,
+      // not just a sentence — see decodeRideLate in KidModals.
+      detail: encodeRideLate({
+        eventId:      ev.id,
+        title:        ev.title,
+        time:         ev.time,
+        driver:       ev.helper,
+        location:     ev.pickupLocation ?? ev.location,
+        dropLocation: ev.dropLocation,
+        sentAt:       new Date().toISOString(),
+      }),
+      location:      ev.pickupLocation ?? ev.location,
+      scheduledTime: ev.time ? fmtTime(ev.time) : undefined,
+    });
     sendMessage('all', active.id, `⚠️ ${active.name.split(' ')[0]}: My driver hasn't arrived yet for "${ev.title}"! Can someone check?`);
     setLateNudgeSent(p => ({ ...p, [ev.id]: true }));
     Alert.alert('⚠️ Alert sent!', 'Your parent has been notified that your driver is late.');
@@ -591,6 +626,12 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
         const isPool = q.isPool && q.status === 'todo';
         const isClaimed = q.status === 'claimed';
         const isInProgress = q.status === 'in_progress';
+        const isGp = q.questType === 'grandparent_quest';
+        // Bounty offered to a shortlist of siblings — each earns the full coins
+        // independently; nobody's payout depends on the others finishing.
+        const teamMates = q.teamGroupId
+          ? quests.filter(t => t.teamGroupId === q.teamGroupId && t.id !== q.id)
+          : [];
         const accentColor = isPool ? '#10B981' : BRAND.purple;
         const catEmoji = q.category === 'Kitchen' ? '🍽️' : q.category === 'Yard' ? '🌿' : q.category === 'School' ? '📚' : q.category === 'Laundry' ? '🧺' : q.category === 'Bathroom' ? '🧹' : q.category === 'Pet' ? '🐾' : q.category === 'Cooking' ? '🍳' : '⭐';
         return (
@@ -607,7 +648,13 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
                   {isInProgress && <View style={{ backgroundColor: BRAND.teal + '25', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}><Text style={{ fontSize: 9, fontWeight: '800', color: BRAND.teal }}>IN PROGRESS</Text></View>}
                   {isClaimed    && <View style={{ backgroundColor: BRAND.teal + '18', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}><Text style={{ fontSize: 9, fontWeight: '800', color: BRAND.teal }}>CLAIMED</Text></View>}
                   {isPool       && <View style={{ backgroundColor: '#10B98120', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}><Text style={{ fontSize: 9, fontWeight: '800', color: '#10B981' }}>BOUNTY</Text></View>}
+                  {q.teamGroupId && <View style={{ backgroundColor: BRAND.amber + '20', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}><Text style={{ fontSize: 9, fontWeight: '800', color: BRAND.amber }}>🎯 BOUNTY</Text></View>}
                 </View>
+                {q.teamGroupId && teamMates.length > 0 && (
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.amber, marginTop: 3 }}>
+                    Also offered to {teamMates.map(t => members.find(m => m.id === t.assignedToId)?.name.split(' ')[0] ?? 'a sibling').join(' & ')} — everyone who finishes gets the full {q.coins} 🪙
+                  </Text>
+                )}
                 {q.description && <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>{q.description}</Text>}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
                   <View style={{ backgroundColor: BRAND.amber + '20', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -623,7 +670,21 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
                 </View>
               </View>
             </View>
-            {isPool ? (
+            {isGp && q.status === 'todo' && !isPool ? (
+              /* Grandparent quest the parent just approved — the kid opts in or
+                 sends it back with a note, per the GP → parent → kid flow. */
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <Pressable onPress={() => startGrandparentQuest(q.id, active.id)}
+                  style={{ flex: 2, borderRadius: 12, backgroundColor: '#10B981', paddingVertical: 11, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 14 }}>🙌</Text>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff' }}>I'll take it</Text>
+                </Pressable>
+                <Pressable onPress={() => { setDeclineQuest({ id: q.id, title: q.title }); setDeclineNote(''); }}
+                  style={{ flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: '#EF444450', paddingVertical: 11, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: '#EF4444' }}>Decline</Text>
+                </Pressable>
+              </View>
+            ) : isPool ? (
               <Pressable onPress={() => claimQuest(q.id, active.id)}
                 style={{ borderRadius: 12, backgroundColor: BRAND.purple, paddingVertical: 11, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                 <Text style={{ fontSize: 14 }}>🏆</Text>
@@ -636,7 +697,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
                 <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff' }}>Start Quest</Text>
               </Pressable>
             ) : (
-              <Pressable onPress={() => submitQuest(q.id)}
+              <Pressable onPress={() => handleSubmitTap(q)}
                 style={{ borderRadius: 12, backgroundColor: '#10B981', paddingVertical: 11, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                 <Text style={{ fontSize: 14 }}>{q.photoRequired ? '📸' : '✅'}</Text>
                 <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff' }}>
@@ -1307,16 +1368,16 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   // todo → in progress → submitted (waiting on parent) → bounty pool to claim →
   // approved/cancelled last, since those need no action — just a record.
   const MY_QUESTS_VISIBLE = 6;
-  // Approved/cancelled quests only stick around for the day they happened —
-  // otherwise this list would keep growing forever with old resolved quests.
-  const approvedQuestsToday  = approvedQuests.filter(q => (q.approvedAt ?? q.completedAt ?? '').startsWith(today));
+  // Once a parent approves it there's nothing left to do — it moves straight
+  // to the piggy bank/history instead of lingering in the to-do list.
+  // Cancelled ones still stick around for the day so a kid isn't left
+  // wondering where a quest went.
   const cancelledQuestsToday = cancelledQuests.filter(q => (q.cancelledAt ?? '').startsWith(today));
   const myQuestsCombined: Quest[] = [
     ...todoQuests,
     ...inProgressQuests,
     ...reviewQuests,
     ...poolQuests,
-    ...approvedQuestsToday,
     ...cancelledQuestsToday,
   ];
   const myQuestsVisible = myQuestsCombined.slice(0, MY_QUESTS_VISIBLE);
@@ -1343,9 +1404,16 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
             <Text style={{ fontSize: 18 }}>🏆</Text>
           </View>
           <Pressable onPress={() => setMyQuestsExpanded(e => !e)} style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>My Quests</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>My Quests</Text>
+              {myQuestsCombined.length > 0 && (
+                <View style={{ backgroundColor: BRAND.purple, borderRadius: 10, minWidth: 20, paddingHorizontal: 6, paddingVertical: 2, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff' }}>{myQuestsCombined.length}</Text>
+                </View>
+              )}
+            </View>
             <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
-              {myQuestsCombined.length > 0 ? `${myQuestsCombined.length} quest${myQuestsCombined.length !== 1 ? 's' : ''} — what to do first, approved last` : 'All caught up'}
+              {myQuestsCombined.length > 0 ? `${myQuestsCombined.length} quest${myQuestsCombined.length !== 1 ? 's' : ''} — what to do first` : 'All caught up'}
             </Text>
           </Pressable>
           <Pressable onPress={() => router.push('/(tabs)/quests')}>
@@ -1373,6 +1441,11 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
               const isClaimed = q.status === 'claimed';
               const isActionable = ['todo', 'claimed', 'in_progress'].includes(q.status);
               const meta = questStatusMeta(q);
+              // A grandparent quest waits on the kid's yes/no before it counts as started.
+              const isGpTodo = q.questType === 'grandparent_quest' && q.status === 'todo' && !isPool;
+              const teamMates = q.teamGroupId
+                ? quests.filter(t => t.teamGroupId === q.teamGroupId && t.id !== q.id)
+                : [];
               return (
                 <CollapsibleCard key={q.id} accent={meta.color} colors={colors} isDark={isDark} defaultExpanded={false}
                   summary={
@@ -1401,9 +1474,25 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
                   {q.status === 'pending_approval' && (
                     <Text style={{ fontSize: TYPO.body, color: BRAND.amber }}>Waiting on a parent to review this quest.</Text>
                   )}
+                  {q.teamGroupId && teamMates.length > 0 && (
+                    <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: BRAND.amber }}>
+                      🎯 Also offered to {teamMates.map(t => members.find(m => m.id === t.assignedToId)?.name.split(' ')[0] ?? 'a sibling').join(' & ')} — everyone who finishes gets the full {q.coins} 🪙
+                    </Text>
+                  )}
                   {isActionable && (
                     <View style={{ flexDirection: 'row', gap: 6 }}>
-                      {isPool ? (
+                      {isGpTodo ? (
+                        <>
+                          <Pressable onPress={() => startGrandparentQuest(q.id, active.id)}
+                            style={{ flex: 2, borderRadius: 10, backgroundColor: '#10B981', paddingVertical: 10, alignItems: 'center' }}>
+                            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>🙌 I'll take it</Text>
+                          </Pressable>
+                          <Pressable onPress={() => { setDeclineQuest({ id: q.id, title: q.title }); setDeclineNote(''); }}
+                            style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: '#EF444450', paddingVertical: 10, alignItems: 'center' }}>
+                            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>Decline</Text>
+                          </Pressable>
+                        </>
+                      ) : isPool ? (
                         <Pressable onPress={() => claimQuest(q.id, active.id)}
                           style={{ flex: 1, borderRadius: 10, backgroundColor: BRAND.purple, paddingVertical: 10, alignItems: 'center' }}>
                           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>🏆 Claim (+{q.coins} 🪙)</Text>
@@ -1414,7 +1503,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
                           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>⚡ Start Quest</Text>
                         </Pressable>
                       ) : (
-                        <Pressable onPress={() => submitQuest(q.id)}
+                        <Pressable onPress={() => handleSubmitTap(q)}
                           style={{ flex: 1, borderRadius: 10, backgroundColor: '#10B981', paddingVertical: 10, alignItems: 'center' }}>
                           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>
                             {q.photoRequired ? '📸 Take Photo to Get Paid' : '✅ Mark Done → Get Paid'}
@@ -1497,7 +1586,6 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
         <Text style={{ fontSize: 13, fontWeight: '900', color: colors.textPrimary }}>🎉 Cheer Squad</Text>
         {siblingCheerable.map(q => {
           const sib = siblingKids.find(s => s.id === q.assignedToId);
-          const alreadyCheered = (q.cheers ?? []).some(c => c.memberId === active.id);
           return (
             <View key={q.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14,
               backgroundColor: isDark ? '#052E16' : '#F0FDF4', borderWidth: 1, borderColor: '#10B98130', padding: 10 }}>
@@ -1508,13 +1596,9 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
                 <Text style={{ fontSize: 10, color: '#10B981' }}>{sib?.name?.split(' ')[0] ?? 'They'} finished it! ✅</Text>
               </View>
               <Pressable
-                disabled={alreadyCheered}
                 onPress={() => cheerQuest(q.id, active.id)}
-                style={{ borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6,
-                  backgroundColor: alreadyCheered ? (isDark ? colors.surface : '#E2E8F0') : '#10B981' }}>
-                <Text style={{ fontSize: 11, fontWeight: '800', color: alreadyCheered ? colors.textTertiary : '#fff' }}>
-                  {alreadyCheered ? 'Cheered ✓' : '🎉 Cheer'}
-                </Text>
+                style={{ borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#10B981' }}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: '#fff' }}>🎉 Cheer</Text>
               </Pressable>
             </View>
           );
@@ -1522,6 +1606,148 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
       </View>
     </View>
   ) : null;
+
+  // ── Decline a grandparent quest, with a note back to GP + parent ─────────────
+  const declineSheetEl = (
+    <AppBottomSheet
+      visible={!!declineQuest}
+      onClose={() => setDeclineQuest(null)}
+      title="Not this one?"
+      subtitle={declineQuest?.title}
+      accentColor="#EF4444"
+      minHeight="45%"
+      bodyPaddingBottom={16}
+    >
+      <View style={{ gap: 12 }}>
+        <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+          Tell them why — it goes back to whoever set the quest, and a grown-up can reassign it.
+        </Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {['Too busy today', 'Need help with it', "Already done", 'Not sure how'].map(preset => (
+            <Pressable key={preset} onPress={() => setDeclineNote(preset)}
+              style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
+                backgroundColor: declineNote === preset ? '#EF4444' : (isDark ? colors.surface : '#FEF2F2'),
+                borderWidth: 1.5, borderColor: declineNote === preset ? '#EF4444' : '#EF444430' }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: declineNote === preset ? '#fff' : '#EF4444' }}>{preset}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <View style={{ borderRadius: 12, borderWidth: 1.5, borderColor: isDark ? colors.border : '#E8E8F0',
+          backgroundColor: isDark ? colors.surface : '#FAFAFA', paddingHorizontal: 12, paddingVertical: 10 }}>
+          <TextInput value={declineNote} onChangeText={setDeclineNote}
+            placeholder="Add your own reason…" placeholderTextColor={colors.textTertiary}
+            style={{ fontSize: 14, color: colors.textPrimary, minHeight: 44 }} multiline />
+        </View>
+        <Pressable
+          disabled={!declineNote.trim()}
+          onPress={() => {
+            if (!declineQuest) return;
+            const note = declineNote.trim();
+            declineGrandparentQuest(declineQuest.id, active.id, note);
+            // Family chat is where both the parent and the sponsoring GP will
+            // see it — the chore's rejectionReason alone reaches neither.
+            const sponsor = useChoreStore.getState().chores.find(c => c.id === declineQuest.id)?.sponsorUserId;
+            const sponsorName = members.find(m => m.id === sponsor)?.name.split(' ')[0];
+            sendMessage('all', active.id,
+              `🙏 ${active.name.split(' ')[0]} can't take "${declineQuest.title}"${sponsorName ? ` from ${sponsorName}` : ''} — "${note}"`);
+            setDeclineQuest(null);
+            setDeclineNote('');
+          }}
+          style={{ borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+            backgroundColor: declineNote.trim() ? '#EF4444' : colors.border,
+            opacity: declineNote.trim() ? 1 : 0.5 }}>
+          <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Send it back</Text>
+        </Pressable>
+      </View>
+    </AppBottomSheet>
+  );
+
+  // A quest without photoRequired submits immediately; one that requires it
+  // opens the capture sheet instead — "Take Photo to Get Paid" has to mean it.
+  const handleSubmitTap = (q: Quest) => {
+    if (q.photoRequired) {
+      setSubmitProofQuest(q);
+      setSubmitProofUri(null);
+      setSubmitProofNote('');
+    } else {
+      submitQuest(q.id);
+    }
+  };
+
+  const pickSubmitProof = async (fromCamera: boolean) => {
+    const permission = fromCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permission.status !== 'granted') {
+      Alert.alert('Permission needed', `Allow ${fromCamera ? 'camera' : 'photo library'} access to attach proof.`);
+      return;
+    }
+    const result = fromCamera
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [4, 3], quality: 0.7 })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [4, 3], quality: 0.7 });
+    if (!result.canceled && result.assets[0]) setSubmitProofUri(result.assets[0].uri);
+  };
+
+  // ── Photo-proof submission sheet ──────────────────────────────────────────────
+  const submitProofSheetEl = (
+    <AppBottomSheet
+      visible={!!submitProofQuest}
+      onClose={() => setSubmitProofQuest(null)}
+      title="📸 Photo Proof"
+      subtitle={submitProofQuest?.title}
+      accentColor="#10B981"
+      minHeight="55%"
+      bodyPaddingBottom={16}
+    >
+      <View style={{ gap: 12 }}>
+        <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+          This quest needs a photo before it can be marked done.
+        </Text>
+        {submitProofUri ? (
+          <View style={{ borderRadius: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: '#10B98150' }}>
+            <Image source={{ uri: submitProofUri }} style={{ width: '100%', height: 200 }} resizeMode="cover" />
+            <Pressable onPress={() => pickSubmitProof(true)}
+              style={{ position: 'absolute', top: 8, right: 8, backgroundColor: '#00000090', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
+              <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>Retake</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <Pressable onPress={() => pickSubmitProof(true)}
+              style={{ flex: 1, borderRadius: 14, paddingVertical: 20, alignItems: 'center', gap: 6,
+                borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#10B98160', backgroundColor: '#10B98110' }}>
+              <Text style={{ fontSize: 24 }}>📷</Text>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: '#10B981' }}>Take Photo</Text>
+            </Pressable>
+            <Pressable onPress={() => pickSubmitProof(false)}
+              style={{ flex: 1, borderRadius: 14, paddingVertical: 20, alignItems: 'center', gap: 6,
+                borderWidth: 1.5, borderStyle: 'dashed', borderColor: isDark ? colors.border : '#E2E8F0', backgroundColor: isDark ? colors.surface : '#FAFAFA' }}>
+              <Text style={{ fontSize: 24 }}>🖼️</Text>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textSecondary }}>Choose Photo</Text>
+            </Pressable>
+          </View>
+        )}
+        <View style={{ borderRadius: 12, borderWidth: 1.5, borderColor: isDark ? colors.border : '#E8E8F0',
+          backgroundColor: isDark ? colors.surface : '#FAFAFA', paddingHorizontal: 12, paddingVertical: 10 }}>
+          <TextInput value={submitProofNote} onChangeText={setSubmitProofNote}
+            placeholder="Add a note (optional)…" placeholderTextColor={colors.textTertiary}
+            style={{ fontSize: 14, color: colors.textPrimary, minHeight: 40 }} multiline />
+        </View>
+        <Pressable
+          disabled={!submitProofUri}
+          onPress={() => {
+            if (!submitProofQuest || !submitProofUri) return;
+            submitQuest(submitProofQuest.id, { photoUrl: submitProofUri, note: submitProofNote.trim() || undefined });
+            setSubmitProofQuest(null);
+          }}
+          style={{ borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+            backgroundColor: submitProofUri ? '#10B981' : colors.border,
+            opacity: submitProofUri ? 1 : 0.5 }}>
+          <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>✅ Submit for Review</Text>
+        </Pressable>
+      </View>
+    </AppBottomSheet>
+  );
 
   // ── Ask Parent sheet — picker ─────────────────────────────────────────────────
   const askParentSheetEl = (
@@ -1581,6 +1807,8 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
       {cheerSquad}
 
       {askParentSheetEl}
+      {declineSheetEl}
+      {submitProofSheetEl}
       <GroceryModal  visible={groceryModal}  onClose={() => setGroceryModal(false)}  active={active} />
       <SuppliesModal visible={suppliesModal} onClose={() => setSuppliesModal(false)} active={active} />
       {askModal && <AskModal visible={!!askModal} onClose={() => setAskModal(null)} type={askModal} active={active} />}

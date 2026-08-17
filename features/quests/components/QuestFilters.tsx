@@ -24,6 +24,7 @@ interface Props {
   tabStatus: TabStatus;
   isKid: boolean;
   isParentOrSenior: boolean;
+  isSenior: boolean;
   kids: Member[];
   isDark: boolean;
   colors: any;
@@ -32,7 +33,7 @@ interface Props {
 }
 
 export function QuestFilters({
-  kidFilter, tabStatus, isKid, isParentOrSenior, kids, isDark, colors,
+  kidFilter, tabStatus, isKid, isParentOrSenior, isSenior, kids, isDark, colors,
   onSetKidFilter, onSetTabStatus,
 }: Props) {
   const pillBase = {
@@ -83,8 +84,10 @@ export function QuestFilters({
           </TouchableOpacity>
         ))}
 
-        {/* Adults tab */}
-        {isParentOrSenior && (
+        {/* Adults tab — parent-managed household backlog, not GP's scope
+            (GP's world is: their own quests, what they've sponsored for
+            grandkids, and cheering — see the Sibling Cheer note below). */}
+        {isParentOrSenior && !isSenior && (
           <TouchableOpacity
             style={[pillBase, kidFilter === 'adults'
               ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple }
@@ -109,18 +112,22 @@ export function QuestFilters({
           </Text>
         </TouchableOpacity>
 
-        {/* Sibling Cheer */}
-        <TouchableOpacity
-          style={[pillBase, kidFilter === 'cheer'
-            ? { backgroundColor: '#4338CA', borderColor: '#6366F1' }
-            : { backgroundColor: isDark ? '#1E1B4B' : '#EEF2FF', borderColor: isDark ? '#4338CA50' : '#C7D2FE' }]}
-          onPress={() => { onSetKidFilter('cheer'); onSetTabStatus('all'); }}
-        >
-          <ThumbsUpIcon c={kidFilter === 'cheer' ? '#fff' : '#6366F1'} />
-          <Text style={{ fontSize: 13, fontWeight: '700', color: kidFilter === 'cheer' ? '#fff' : '#6366F1', marginLeft: 4 }}>
-            Sibling Cheer
-          </Text>
-        </TouchableOpacity>
+        {/* Sibling Cheer — kid/teen-to-kid/teen only. Parents and GP have their
+            own kudos surfaces (Family Kudos strip, Hub cheer sections); this
+            tab was redundant with those and duplicated the same quests. */}
+        {!isParentOrSenior && (
+          <TouchableOpacity
+            style={[pillBase, kidFilter === 'cheer'
+              ? { backgroundColor: '#4338CA', borderColor: '#6366F1' }
+              : { backgroundColor: isDark ? '#1E1B4B' : '#EEF2FF', borderColor: isDark ? '#4338CA50' : '#C7D2FE' }]}
+            onPress={() => { onSetKidFilter('cheer'); onSetTabStatus('all'); }}
+          >
+            <ThumbsUpIcon c={kidFilter === 'cheer' ? '#fff' : '#6366F1'} />
+            <Text style={{ fontSize: 13, fontWeight: '700', color: kidFilter === 'cheer' ? '#fff' : '#6366F1', marginLeft: 4 }}>
+              Sibling Cheer
+            </Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       {/* ── Status segmented control ── */}

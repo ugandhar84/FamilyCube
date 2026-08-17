@@ -20,6 +20,18 @@ export function todayLocal(): string {
 }
 
 /**
+ * Parse a date-only string ("YYYY-MM-DD", e.g. a Postgres `date` column like
+ * quest/chore due_date) as LOCAL midnight. `new Date("YYYY-MM-DD")` parses it
+ * as UTC midnight instead — for anyone west of UTC that instant already fell
+ * on the previous local evening, so a quest due "today" reads as overdue
+ * since last night, and re-opening it in an edit form shows yesterday's date.
+ */
+export function parseLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
+/**
  * Parse a DB timestamp safely. Postgres may return "2026-07-01T20:15:00" or
  * "2026-07-01 20:15:00" with NO timezone suffix — JS then parses that as LOCAL
  * time even though the stored value is UTC, shifting evening entries to the

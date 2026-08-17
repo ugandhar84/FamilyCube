@@ -62,6 +62,9 @@ export interface ChoreTask {
   xpReward: number;
   status: ChoreStatus;
   assignedToId?: string;
+  targetChildIds?: string[];     // GP quest: kids it was published to (empty = bounty pool)
+  coinsSplitPerKid?: number;     // GP quest: per-kid split points when published to N kids
+  teamGroupId?: string;          // GP team job: clones sharing this id pay out together
   familyId?: string;
   createdById?: string;
   sponsorUserId?: string;        // For grandparent quests
@@ -322,6 +325,10 @@ function choreFromRow(row: any): ChoreTask {
     xpReward:                row.xp_reward ?? 0,
     status:                  (row.status ?? 'todo') as ChoreStatus,
     assignedToId:            row.assigned_to_id ?? undefined,
+    targetChildIds:          Array.isArray(row.target_child_ids) ? row.target_child_ids : undefined,
+    coinsSplitPerKid:        row.coins_split_per_kid ?? undefined,
+    teamGroupId:             row.team_group_id ?? undefined,
+    isPool:                  row.is_pool ?? false,
     familyId:                row.family_id ?? undefined,
     createdById:             row.created_by_id ?? undefined,
     sponsorUserId:           row.sponsor_user_id ?? undefined,
@@ -784,6 +791,9 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (updates.description        !== undefined) patch.description              = updates.description;
     if (updates.status             !== undefined) patch.status                   = updates.status;
     if (updates.assignedToId       !== undefined) patch.assigned_to_id           = updates.assignedToId;
+    if (updates.targetChildIds     !== undefined) patch.target_child_ids         = updates.targetChildIds;
+    if (updates.coinsSplitPerKid   !== undefined) patch.coins_split_per_kid       = updates.coinsSplitPerKid;
+    if (updates.teamGroupId        !== undefined) patch.team_group_id             = updates.teamGroupId;
     if (updates.categoryType       !== undefined) patch.category_type            = updates.categoryType;
     if (updates.category           !== undefined) patch.category                 = updates.category;
     if (updates.basePoints         !== undefined) patch.base_points              = updates.basePoints;
@@ -907,7 +917,9 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   startGrandparentQuest: (choreId, childId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.categoryType !== 'grandparent_quest' || chore.status !== 'todo') return;
-    get().updateChore(choreId, { status: 'in_progress', assignedToId: childId });
+    if (chore.assignedToId && chore.assignedToId !== childId) return; // already claimed by sibling
+    // Claim clears pool flag so first-come wins permanently.
+    get().updateChore(choreId, { status: 'in_progress', assignedToId: childId, isPool: false });
   },
 
   submitGrandparentQuest: (choreId, opts) => {
@@ -966,6 +978,11 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       approvedAt: now,
       reviewedAt: now,
     });
+
+    // Bounty targeted at a shortlist (teamGroupId links the sibling clones for
+    // display only): each kid earns the full amount independently, the moment
+    // they're approved. Nobody's payout waits on or shrinks because of anyone
+    // else — falls straight through to the normal single-kid payout below.
 
     // Award points
     const pointsToAward = chore.basePoints > 0 ? chore.basePoints : chore.coinsReward;
@@ -1043,12 +1060,58 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   approveGrandparentQuestAsParent: (choreId, parentId) => {
-    // Parent approves a GP-created quest → moves to 'todo' for child to claim
+    // Parent approves a GP-created quest → routes to targeted kids (split points)
+    // or drops to the Bounty Pool when no child was selected.
+    const now = new Date().toISOString();
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore) return;
+    const targets = chore.targetChildIds ?? [];
+
+    if (targets.length === 0) {
+      // No kids selected → Bounty Pool. Any grandchild can claim first-come.
+      get().updateChore(choreId, { status: 'todo', isPool: true, assignedToId: undefined, reviewedAt: now });
+      dbUpdate('chore_tasks', choreId, { status: 'todo', is_pool: true, assigned_to_id: null, reviewed_at: now });
+      return;
+    }
+    if (targets.length === 1) {
+      // Single targeted kid → assign directly, full points.
+      get().updateChore(choreId, { status: 'todo', isPool: false, assignedToId: targets[0], reviewedAt: now });
+      dbUpdate('chore_tasks', choreId, { status: 'todo', is_pool: false, assigned_to_id: targets[0], reviewed_at: now });
+      return;
+    }
+
+    // 2+ kids → a bounty targeted at a specific shortlist. Each kid gets their
+    // own clone for the FULL point value, not a split — one kid backing out
+    // must never shrink what the others earn. teamGroupId only links the
+    // clones for a single consolidated review card; it no longer gates payout.
+    const teamGroup = `team_${choreId}`;
+    console.log(`[choreStore] approveGrandparentQuestAsParent → bounty ${teamGroup}: ${targets.length} kids × ${chore.basePoints} pts each`);
     get().updateChore(choreId, {
-      status:     'todo',
-      reviewedAt: new Date().toISOString(),
+      status: 'todo', isPool: false, assignedToId: targets[0],
+      teamGroupId: teamGroup, targetChildIds: targets, reviewedAt: now,
     });
-    dbUpdate('chore_tasks', choreId, { status: 'todo', reviewed_at: new Date().toISOString() });
+    dbUpdate('chore_tasks', choreId, {
+      status: 'todo', is_pool: false, assigned_to_id: targets[0],
+      team_group_id: teamGroup, reviewed_at: now,
+    });
+    for (const targetKid of targets.slice(1)) {
+      const cloneId = genId();
+      dbInsert('chore_tasks', {
+        id: cloneId, title: chore.title, description: chore.description,
+        category_type: 'grandparent_quest', base_points: chore.basePoints, coins_reward: chore.coinsReward,
+        xp_reward: chore.xpReward, status: 'todo', assigned_to_id: targetKid, is_pool: false,
+        sponsor_user_id: chore.sponsorUserId, target_child_ids: targets,
+        team_group_id: teamGroup, quest_mode: chore.questMode ?? null,
+        requires_photo: chore.requiresPhotoProof, family_id: chore.familyId ?? getFamilyId(),
+        due_date: chore.dueDate ?? null, created_at: now,
+      });
+      set(s => ({
+        chores: [{
+          ...chore, id: cloneId, assignedToId: targetKid, status: 'todo', isPool: false,
+          teamGroupId: teamGroup, targetChildIds: targets, reviewedAt: now,
+        }, ...s.chores],
+      }));
+    }
   },
 
   declineGrandparentQuestAsParent: (choreId, parentId, reason) => {
@@ -1154,6 +1217,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
     set(s => ({ transactions: [tx, ...s.transactions] }));
     dbInsert('point_transactions', {
+      id:               tx.id,
       user_id:          userId,
       amount:           points,
       transaction_type: 'CASH_OUT',
@@ -1435,6 +1499,11 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   createGrandparentQuest: (task) => {
     const familyId = getFamilyId();
     const now = new Date().toISOString();
+    // GP-created quests enter the parent safety-review queue. Target children
+    // (if any) are captured NOW so the parent can publish to exactly those kids
+    // (split points evenly) or drop to the bounty pool when no kids selected.
+    const targets = task.childIds?.length ? [...new Set(task.childIds)] : [];
+    const perKid  = targets.length > 0 ? Math.floor(task.basePoints / targets.length) : undefined;
     const chore: ChoreTask = {
       id:               genId(),
       title:            task.title,
@@ -1446,9 +1515,11 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       xpReward:         0,
       status:           'pending_parent_approval', // awaiting parent OK
       sponsorUserId:    task.sponsorId,
+      targetChildIds:   targets,
+      coinsSplitPerKid: perKid,
       questMode:        task.mode,
       familyId:         familyId ?? undefined,
-      isPrivateParent:  false,
+      isPrivateParent:   false,
       requiresPhotoProof: task.requiresPhoto ?? true,
       recurrenceRule:   { frequency: 'once' },
       dueDate:          task.dueDate,
@@ -1460,6 +1531,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       id: chore.id, title: chore.title, description: chore.description,
       category_type: 'grandparent_quest', base_points: task.basePoints,
       status: 'pending_parent_approval', sponsor_user_id: task.sponsorId,
+      target_child_ids: targets, coins_split_per_kid: perKid,
       quest_mode: task.mode ?? null, requires_photo: task.requiresPhoto ?? true,
       family_id: familyId, due_date: task.dueDate, created_at: now,
     });
@@ -1467,6 +1539,24 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   declineGrandparentQuest: (choreId, parentId, reason) => {
+    // Kid declines a GP quest assigned to them → release back to the pool so
+    // siblings can still claim it. Single-target quests go back to the bounty
+    // pool rather than being killed entirely.
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.categoryType !== 'grandparent_quest') return;
+    if (chore.status !== 'todo') return;
+    if (!chore.isPool && !chore.targetChildIds?.length) {
+      // Directly assigned → release to pool for the whole family.
+      get().updateChore(choreId, {
+        status: 'todo', isPool: true, assignedToId: undefined,
+        rejectionReason: reason, reviewedAt: new Date().toISOString(),
+      });
+      dbUpdate('chore_tasks', choreId, {
+        status: 'todo', is_pool: true, assigned_to_id: null,
+        rejection_reason: reason, reviewed_at: new Date().toISOString(),
+      });
+      return;
+    }
     get().updateChore(choreId, {
       status: 'declined', rejectionReason: reason, reviewedAt: new Date().toISOString(),
     });
@@ -1520,6 +1610,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     };
     set(s => ({ grandparentMatches: [newMatch, ...s.grandparentMatches] }));
     dbInsert('grandparent_matches', {
+      id:                      newMatch.id,
       family_id:               newMatch.familyId,
       grandparent_id:          newMatch.grandparentId,
       child_id:                newMatch.childId,
@@ -1548,6 +1639,10 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
     const now = new Date().toISOString();
     get().updateChore(choreId, { status: 'completed', approvedAt: now });
+
+    // Bounty targeted at a shortlist (teamGroupId links the sibling clones for
+    // display only): each kid is verified and paid independently — falls
+    // straight through to the normal single-kid payout below.
 
     // Award points with 50/40/10 jar split (grandparent funded)
     if (chore.basePoints > 0) {

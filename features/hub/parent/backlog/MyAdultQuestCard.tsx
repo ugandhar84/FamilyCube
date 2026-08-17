@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { ChevronUp, ChevronDown } from 'lucide-react-native';
+import { ChevronUp, ChevronDown, Check, Send } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import type { Quest } from '@/store/questStore';
@@ -39,12 +39,14 @@ export function MyAdultQuestCard({ q, parentAssignments, active, colors, isDark,
           if (a) completeParentQuest(a.id, active.id);
           else updateQuest(q.id, { status: 'done' });
         }}
-          style={{ flex: 1, backgroundColor: BRAND.teal, borderRadius: 10, paddingVertical: 8, alignItems: 'center' }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>✓ Done</Text>
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: BRAND.teal, borderRadius: 10, paddingVertical: 8 }}>
+          <Check size={13} color="#fff" />
+          <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Done</Text>
         </Pressable>
         <Pressable onPress={() => onDelegate(q.id, q.title)}
-          style={{ flex: 1, borderWidth: 1.5, borderColor: BRAND.amber + '60', borderRadius: 10, paddingVertical: 8, alignItems: 'center' }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.amber }}>📤 Reassign</Text>
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 1.5, borderColor: BRAND.amber + '60', borderRadius: 10, paddingVertical: 8 }}>
+          <Send size={12} color={BRAND.amber} />
+          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.amber }}>Reassign</Text>
         </Pressable>
       </View>
       {isExp && (

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { ChevronUp, ChevronDown, ThumbsUp } from 'lucide-react-native';
+import { ChevronUp, ChevronDown, ThumbsUp, Check, CheckCircle2, ShoppingBag } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
@@ -25,14 +25,18 @@ export function AcceptedQuestCard({ a, chore, active, colors, isDark, completePa
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, paddingBottom: 8 }}>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{chore.title}</Text>
-          <Text style={{ fontSize: TYPO.label, color: BRAND.teal, marginTop: 2 }}>You've got this one ✓</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+            <CheckCircle2 size={11} color={BRAND.teal} />
+            <Text style={{ fontSize: TYPO.label, color: BRAND.teal }}>You've got this one</Text>
+          </View>
         </View>
         {hasDetail ? (isExp ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />) : null}
       </Pressable>
       <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
         <Pressable onPress={() => completeParentQuest(a.id, active.id)}
-          style={{ backgroundColor: BRAND.teal, borderRadius: 10, paddingVertical: 8, alignItems: 'center' }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>✓ Done</Text>
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: BRAND.teal, borderRadius: 10, paddingVertical: 8 }}>
+          <Check size={14} color="#fff" />
+          <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Done</Text>
         </Pressable>
       </View>
       {isExp && (
@@ -44,7 +48,7 @@ export function AcceptedQuestCard({ a, chore, active, colors, isDark, completePa
               backgroundColor: isDark ? BRAND.teal + '08' : '#F0FDFA', overflow: 'hidden' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7,
                 borderBottomWidth: 1, borderBottomColor: isDark ? BRAND.teal + '30' : '#99F6E4' }}>
-                <Text style={{ fontSize: 13 }}>🛍️</Text>
+                <ShoppingBag size={13} color={isDark ? '#2DD4BF' : '#0D9488'} />
                 <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#2DD4BF' : '#0D9488' }}>
                   {(chore as any).shoppingStore ? `Shop at ${(chore as any).shoppingStore}` : 'Shopping List'}
                 </Text>

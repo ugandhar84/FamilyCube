@@ -99,6 +99,7 @@ export interface ChoreTask {
   submittedAt?: string;
   approvedAt?: string;
   reviewedAt?: string;
+  reviewedById?: string;    // memberId of the parent/senior who approved or requested a redo
   declinedAt?: string;
   createdAt: string;
 }
@@ -351,6 +352,7 @@ function choreFromRow(row: any): ChoreTask {
     submittedAt:             row.submitted_at ?? undefined,
     approvedAt:              row.approved_at ?? undefined,
     reviewedAt:              row.reviewed_at ?? undefined,
+    reviewedById:            row.reviewed_by_id ?? undefined,
     declinedAt:              row.declined_at ?? undefined,
     createdAt:               row.created_at ?? new Date().toISOString(),
     shoppingItems:           Array.isArray(row.shopping_items) ? row.shopping_items : undefined,
@@ -820,6 +822,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (updates.submittedAt        !== undefined) patch.submitted_at             = updates.submittedAt;
     if (updates.approvedAt         !== undefined) patch.approved_at              = updates.approvedAt;
     if (updates.reviewedAt         !== undefined) patch.reviewed_at              = updates.reviewedAt;
+    if (updates.reviewedById       !== undefined) patch.reviewed_by_id           = updates.reviewedById;
     if (updates.declinedAt         !== undefined) patch.declined_at              = updates.declinedAt;
     if (updates.redoCount          !== undefined) patch.redo_count               = updates.redoCount;
     if (updates.cheers             !== undefined) patch.cheered_by               = updates.cheers;
@@ -974,9 +977,10 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
     const now = new Date().toISOString();
     get().updateChore(choreId, {
-      status:     'approved',
-      approvedAt: now,
-      reviewedAt: now,
+      status:       'approved',
+      approvedAt:   now,
+      reviewedAt:   now,
+      reviewedById: reviewerId,
     });
 
     // Bounty targeted at a shortlist (teamGroupId links the sibling clones for
@@ -1040,6 +1044,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       status:          'redo_requested',
       rejectionReason: reason,
       reviewedAt:      new Date().toISOString(),
+      reviewedById:    reviewerId,
       redoCount:       newRedoCount,
     });
   },

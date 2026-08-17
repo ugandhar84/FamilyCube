@@ -1,10 +1,16 @@
 import { View, Text, Pressable } from 'react-native';
+import { Check, HeartHandshake } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import { useChoreStore } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
+
+// Violet — "GP Welcome" toggle selection accent, deliberately distinct from
+// BRAND.purple (#9261C7) so the grandparent-facing toggle reads as its own
+// state color; kept as one local constant instead of a repeated bare hex.
+const GP_VIOLET = '#8B5CF6';
 
 export function DelegateSheet({ target, questPool, members, active, colors, isDark, onClose, updateQuest, addParentQuest }: {
   target: { choreId: string; choreTitle: string } | null;
@@ -44,6 +50,7 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
               borderRadius: 16, borderWidth: 1.5, borderColor: colors.border,
               backgroundColor: isDark ? colors.surface : '#F8FAFC',
             }}>
+              {/* intentional: 40 is this sheet's avatar-emoji size; no TYPO token is close without a visible size change */}
               <Text style={{ fontSize: 40 }}>{m.emoji || '👤'}</Text>
               <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{m.name}</Text>
             </Pressable>
@@ -59,20 +66,20 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
             flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14,
             marginTop: 6,
             borderRadius: 16, borderWidth: 1.5,
-            borderColor: isGPOpen ? '#8B5CF6' : (isDark ? '#475569' : '#CBD5E1'),
-            backgroundColor: isGPOpen ? '#8B5CF620' : (isDark ? colors.surface : '#F8FAFC'),
+            borderColor: isGPOpen ? GP_VIOLET : (isDark ? '#475569' : '#CBD5E1'),
+            backgroundColor: isGPOpen ? `${GP_VIOLET}20` : (isDark ? colors.surface : '#F8FAFC'),
           }}>
           <View style={{
             width: 44, height: 44, borderRadius: 22,
             borderWidth: 2,
-            borderColor: isGPOpen ? '#8B5CF6' : (isDark ? '#64748B' : '#94A3B8'),
-            backgroundColor: isGPOpen ? '#8B5CF6' : 'transparent',
+            borderColor: isGPOpen ? GP_VIOLET : (isDark ? '#64748B' : '#94A3B8'),
+            backgroundColor: isGPOpen ? GP_VIOLET : 'transparent',
             alignItems: 'center', justifyContent: 'center',
           }}>
-            {isGPOpen ? <Text style={{ fontSize: 20, color: '#fff' }}>✓</Text> : <Text style={{ fontSize: 20 }}>😊</Text>}
+            {isGPOpen ? <Check size={20} color="#fff" /> : <HeartHandshake size={20} color={isDark ? '#64748B' : '#94A3B8'} />}
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>😊 GP Welcome</Text>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>GP Welcome</Text>
             <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Grandparents can see and claim this task</Text>
           </View>
         </Pressable>

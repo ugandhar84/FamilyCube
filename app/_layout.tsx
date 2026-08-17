@@ -28,6 +28,7 @@ import { reloadBlockedWords } from '@/lib/profanityFilter';
 import { isBiometricEnabled, isBiometricAvailable, saveBiometricSession } from '@/lib/biometrics';
 import { applyScreenshotProtection } from '@/lib/screenshotProtection';
 import { dbg, dbgWarn, dbgError } from '@/lib/debug';
+import { useDeviceClass } from '@/lib/useDeviceClass';
 import { initRevenueCat } from '@/lib/subscription';
 import { prefetchFeatureFlags } from '@/lib/featureFlags';
 import { useSubscriptionStore } from '@/store/subscriptionStore';
@@ -139,6 +140,10 @@ async function syncLocationToPets(userId: string) {
 
 function RootNavigator() {
   useWidgetSync();
+  // Phones stay portrait (app.config.js); tablet-class devices — including a
+  // wall-mounted "kitchen hub" iPad/Android tablet — get landscape unlocked
+  // here at runtime, since Android has no static per-idiom orientation split.
+  useDeviceClass();
   const { isDark, colors } = useTheme();
   const { setSession } = useAuthStore();
   const [checked, setChecked] = useState(false);

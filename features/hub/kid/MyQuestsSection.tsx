@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { router } from 'expo-router';
-import { ChevronUp, ChevronDown } from 'lucide-react-native';
+import { ChevronUp, ChevronDown, Trophy } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import { KID } from './kidTheme';
 import { KidQuestCard } from './KidQuestCard';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
@@ -42,26 +43,26 @@ export function MyQuestsSection({
   return (
     <View style={{ paddingHorizontal: 16 }}>
       <View style={{ borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
-        backgroundColor: isDark ? colors.card : '#fff', overflow: 'hidden', marginBottom: 16 }}>
+        backgroundColor: colors.card, overflow: 'hidden', marginBottom: 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
-          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: BRAND.purple + '20', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 18 }}>🏆</Text>
+          <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: BRAND.purple + '20', alignItems: 'center', justifyContent: 'center' }}>
+            <Trophy size={20} color={BRAND.purple} />
           </View>
           <Pressable onPress={() => setExpanded(e => !e)} style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>My Quests</Text>
+              <Text style={{ fontSize: KID.title, fontWeight: '800', color: colors.textPrimary }}>My Quests</Text>
               {combined.length > 0 && (
-                <View style={{ backgroundColor: BRAND.purple, borderRadius: 10, minWidth: 20, paddingHorizontal: 6, paddingVertical: 2, alignItems: 'center' }}>
-                  <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff' }}>{combined.length}</Text>
+                <View style={{ backgroundColor: BRAND.purple, borderRadius: 10, minWidth: 22, paddingHorizontal: 7, paddingVertical: 3, alignItems: 'center' }}>
+                  <Text style={{ fontSize: KID.tiny, fontWeight: '900', color: '#fff' }}>{combined.length}</Text>
                 </View>
               )}
             </View>
-            <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+            <Text style={{ fontSize: KID.sub, color: colors.textSecondary, marginTop: 2 }}>
               {combined.length > 0 ? `${combined.length} quest${combined.length !== 1 ? 's' : ''} — what to do first` : 'All caught up'}
             </Text>
           </Pressable>
           <Pressable onPress={() => router.push('/(tabs)/quests')}>
-            <Text style={{ fontSize: 12, fontWeight: '700', color: BRAND.purple }}>All Quests →</Text>
+            <Text style={{ fontSize: KID.sub, fontWeight: '700', color: BRAND.purple }}>All Quests →</Text>
           </Pressable>
           <Pressable onPress={() => setExpanded(e => !e)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             {expanded ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
@@ -74,9 +75,9 @@ export function MyQuestsSection({
               <Pressable onPress={() => router.push('/(tabs)/quests')}
                 style={{ borderRadius: 18, borderWidth: 1.5, borderStyle: 'dashed', borderColor: BRAND.purple + '50',
                   backgroundColor: BRAND.purple + '08', padding: 28, alignItems: 'center', gap: 8 }}>
-                <Text style={{ fontSize: 40 }}>🏆</Text>
-                <Text style={{ fontSize: 15, fontWeight: '900', color: BRAND.purple }}>All caught up!</Text>
-                <Text style={{ fontSize: 12, color: colors.textTertiary, textAlign: 'center' }}>
+                <Trophy size={40} color={BRAND.purple} />
+                <Text style={{ fontSize: KID.title, fontWeight: '900', color: BRAND.purple, marginTop: 4 }}>All caught up!</Text>
+                <Text style={{ fontSize: KID.sub, color: colors.textTertiary, textAlign: 'center' }}>
                   {poolQuests.length > 0 ? `${poolQuests.length} bounty quests up for grabs 💰` : 'Complete quests to earn coins'}
                 </Text>
               </Pressable>
@@ -88,8 +89,8 @@ export function MyQuestsSection({
             {overflow > 0 && (
               <Pressable onPress={() => router.push('/(tabs)/quests')}
                 style={{ borderRadius: 14, backgroundColor: BRAND.purple + '12', borderWidth: 1, borderColor: BRAND.purple + '30',
-                  paddingVertical: 12, alignItems: 'center' }}>
-                <Text style={{ fontSize: 13, fontWeight: '800', color: BRAND.purple }}>+{overflow} more quests →</Text>
+                  paddingVertical: 13, alignItems: 'center' }}>
+                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: BRAND.purple }}>+{overflow} more quests →</Text>
               </Pressable>
             )}
           </View>

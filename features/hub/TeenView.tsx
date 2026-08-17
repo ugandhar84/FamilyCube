@@ -4,6 +4,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Car, BookOpen, ShoppingCart, Fuel, AlertTriangle,
   ChevronDown, ChevronUp, CheckCircle, Star, Zap, User,
+  HandHelping, Coins, CreditCard, Landmark, Apple, Check,
+  Bell,
 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -17,7 +19,7 @@ import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { SectionCard } from './hubComponents';
-import { localToday } from './hubUtils';
+import { localToday, hoursUntilEvent } from './hubUtils';
 import { ChildChoreBoard } from '@/features/chores/ChildChoreBoard';
 
 const GAS_LOG_KEY = (memberId: string) => `@familycube_gas_log_${memberId}`;
@@ -64,6 +66,12 @@ export function TeenView({ active, members, colors, isDark }: {
   );
   const [dispatchExpanded, setDispatchExpanded] = useState(openPickups.length > 0);
   const [passedPickups, setPassedPickups] = useState<string[]>([]);
+  // An open pickup within the hour is the one thing on this screen that's
+  // genuinely time-critical — everything else (tutoring, errands, gas log,
+  // cash-out) can wait. Surfaced as a banner above the fold so it isn't
+  // buried under six collapsed sections a teen has to scroll past.
+  const urgentPickups = openPickups.filter(e => !passedPickups.includes(e.id) &&
+    hoursUntilEvent(e.date, e.time) >= 0 && hoursUntilEvent(e.date, e.time) < 1);
 
   const claimPickup = (evId: string) => {
     const ev = events.find(e => e.id === evId);
@@ -148,8 +156,12 @@ export function TeenView({ active, members, colors, isDark }: {
 
   // ── Cash-out ──────────────────────────────────────────────────────────────────
   const [cashExpanded, setCashExpanded] = useState(false);
-  const CASH_METHODS = ['💳 Venmo Teen', '🏦 Greenlight', '🍎 Apple Cash'] as const;
-  const [cashMethod, setCashMethod] = useState<string>(CASH_METHODS[0]);
+  const CASH_METHODS = [
+    { label: 'Venmo Teen', Icon: CreditCard },
+    { label: 'Greenlight', Icon: Landmark },
+    { label: 'Apple Cash', Icon: Apple },
+  ] as const;
+  const [cashMethod, setCashMethod] = useState<string>(CASH_METHODS[0].label);
   const [cashAmount, setCashAmount] = useState('');
 
   const requestCashOut = () => {
@@ -173,6 +185,22 @@ export function TeenView({ active, members, colors, isDark }: {
 
   return (
     <ScrollView showsVerticalScrollIndicator={false}>
+
+      {/* ── Urgent banner — only the genuinely time-critical stuff ── */}
+      {urgentPickups.length > 0 && (
+        <View style={pad}>
+          <Pressable onPress={() => setDispatchExpanded(true)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+              backgroundColor: isDark ? colors.danger + '15' : '#FEF2F2',
+              borderWidth: 1.5, borderColor: colors.danger + '40',
+              borderRadius: 16, padding: 12, marginBottom: 12 }}>
+            <Bell size={18} color={colors.danger} />
+            <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '800', color: colors.danger }}>
+              {urgentPickups.length} pickup{urgentPickups.length > 1 ? 's' : ''} within the hour — needs a driver
+            </Text>
+          </Pressable>
+        </View>
+      )}
 
       {/* ── Teen Profile Card ── */}
       <View style={{ paddingHorizontal: 16, marginBottom: 4 }}>
@@ -202,9 +230,12 @@ export function TeenView({ active, members, colors, isDark }: {
               backgroundColor: hasCar ? (isDark ? '#1a1000' : '#FFFBEB') : (isDark ? colors.surface : '#F8FAFC'),
               borderWidth: 1.5, borderColor: hasCar ? BRAND.amber : colors.border }}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: hasCar ? BRAND.amber : colors.textPrimary }}>
-                🚗 I Have a Car
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Car size={16} color={hasCar ? BRAND.amber : colors.textSecondary} />
+                <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: hasCar ? BRAND.amber : colors.textPrimary }}>
+                  I Have a Car
+                </Text>
+              </View>
               <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
                 {hasCar
                   ? `Ride pickups routed to you · +${rideEarnings} coins/run`
@@ -289,7 +320,7 @@ export function TeenView({ active, members, colors, isDark }: {
                     backgroundColor: isDark ? '#2D1800' : '#FFFBEB', overflow: 'hidden' }}>
                     <View style={{ backgroundColor: BRAND.amber, paddingHorizontal: 14, paddingVertical: 8,
                       flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: 13 }}>🚗</Text>
+                      <Car size={14} color="#fff" />
                       <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>
                         RIDE · {evDay}{ev.time ? ` · ${ev.time}` : ''}
                       </Text>
@@ -297,7 +328,7 @@ export function TeenView({ active, members, colors, isDark }: {
                       {(ev.rideCoins ?? rideEarnings) > 0 && (
                         <View style={{ backgroundColor: '#fff3', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
                           flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <Text style={{ fontSize: 11 }}>🪙</Text>
+                          <Coins size={11} color="#fff" />
                           <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>
                             +{ev.rideCoins ?? rideEarnings}
                           </Text>
@@ -318,7 +349,10 @@ export function TeenView({ active, members, colors, isDark }: {
                       <Pressable onPress={() => claimPickup(ev.id)}
                         style={({ pressed }) => ({ flex: 2, paddingVertical: 13, alignItems: 'center', gap: 1,
                           backgroundColor: BRAND.amber, opacity: pressed ? 0.8 : 1 })}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>✋ I Got This</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          <HandHelping size={13} color="#fff" />
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>I Got This</Text>
+                        </View>
                         <Text style={{ fontSize: TYPO.micro, color: '#ffffffCC' }}>
                           earn +{ev.rideCoins ?? rideEarnings} coins
                         </Text>
@@ -385,7 +419,7 @@ export function TeenView({ active, members, colors, isDark }: {
 
           {tutorSent ? (
             <View style={{ alignItems: 'center', paddingVertical: 16 }}>
-              <Text style={{ fontSize: 28 }}>📚</Text>
+              <BookOpen size={28} color={BRAND.teal} />
               <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.teal, marginTop: 8 }}>
                 Offer sent to parents!
               </Text>
@@ -427,9 +461,10 @@ export function TeenView({ active, members, colors, isDark }: {
                   backgroundColor: isDark ? colors.surface : '#F8FAFC' }}
               />
               <Pressable onPress={sendTutorOffer}
-                style={({ pressed }) => ({ borderRadius: 12, backgroundColor: BRAND.purple,
-                  paddingVertical: 12, alignItems: 'center', opacity: pressed || !tutorKid || !tutorSubject.trim() ? 0.5 : 1 })}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>📚 Offer Help</Text>
+                style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, backgroundColor: BRAND.purple,
+                  paddingVertical: 12, opacity: pressed || !tutorKid || !tutorSubject.trim() ? 0.5 : 1 })}>
+                <BookOpen size={15} color="#fff" />
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Offer Help</Text>
               </Pressable>
             </View>
           )}
@@ -586,8 +621,8 @@ export function TeenView({ active, members, colors, isDark }: {
           <Pressable onPress={() => setGasExpanded(v => !v)}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, paddingBottom: 12 }}>
             <View style={{ width: 40, height: 40, borderRadius: 20,
-              backgroundColor: '#10B98120', alignItems: 'center', justifyContent: 'center' }}>
-              <Fuel size={20} color="#10B981" />
+              backgroundColor: colors.success + '20', alignItems: 'center', justifyContent: 'center' }}>
+              <Fuel size={20} color={colors.success} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>Gas & Vehicle Log</Text>
@@ -601,26 +636,27 @@ export function TeenView({ active, members, colors, isDark }: {
           {gasExpanded && (
             <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
               {/* Report issue */}
-              <View style={{ backgroundColor: isDark ? '#1F0000' : '#FEF2F2', borderRadius: 14,
-                borderWidth: 1, borderColor: '#FCA5A530', padding: 12, gap: 8 }}>
+              <View style={{ backgroundColor: isDark ? colors.danger + '10' : '#FEF2F2', borderRadius: 14,
+                borderWidth: 1, borderColor: colors.danger + '30', padding: 12, gap: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <AlertTriangle size={14} color="#EF4444" />
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444' }}>Report Vehicle Issue</Text>
+                  <AlertTriangle size={14} color={colors.danger} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.danger }}>Report Vehicle Issue</Text>
                 </View>
                 <TextInput
                   placeholder="Describe the issue (e.g. low tire, weird noise)"
                   placeholderTextColor={colors.textTertiary}
                   value={vehicleIssue}
                   onChangeText={setVehicleIssue}
-                  style={{ borderWidth: 1, borderColor: '#FCA5A570', borderRadius: 10,
+                  style={{ borderWidth: 1, borderColor: colors.danger + '70', borderRadius: 10,
                     padding: 8, fontSize: TYPO.body, color: colors.textPrimary,
                     backgroundColor: isDark ? colors.surface : '#fff' }}
                 />
                 <Pressable onPress={reportIssue}
-                  style={({ pressed }) => ({ backgroundColor: '#EF4444', borderRadius: 10,
-                    paddingVertical: 10, alignItems: 'center', opacity: pressed ? 0.8 : 1 })}>
+                  style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.danger, borderRadius: 10,
+                    paddingVertical: 10, opacity: pressed ? 0.8 : 1 })}>
+                  {issueSent ? <Check size={14} color="#fff" /> : <AlertTriangle size={14} color="#fff" />}
                   <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>
-                    {issueSent ? '✓ Sent to Parents' : '⚠️ Send Report'}
+                    {issueSent ? 'Sent to Parents' : 'Send Report'}
                   </Text>
                 </Pressable>
               </View>
@@ -660,9 +696,10 @@ export function TeenView({ active, members, colors, isDark }: {
                   backgroundColor: isDark ? colors.surface : '#F8FAFC' }}
               />
               <Pressable onPress={addGasEntry}
-                style={({ pressed }) => ({ backgroundColor: '#10B981', borderRadius: 10,
-                  paddingVertical: 10, alignItems: 'center', opacity: pressed ? 0.8 : 1 })}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>⛽ Log Fill-Up</Text>
+                style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.success, borderRadius: 10,
+                  paddingVertical: 10, opacity: pressed ? 0.8 : 1 })}>
+                <Fuel size={14} color="#fff" />
+                <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Log Fill-Up</Text>
               </Pressable>
 
               {/* History */}
@@ -673,9 +710,9 @@ export function TeenView({ active, members, colors, isDark }: {
                   {gasLog.slice(0, 5).map(entry => (
                     <View key={entry.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
                       padding: 10, borderRadius: 10,
-                      backgroundColor: isDark ? '#10B98110' : '#ECFDF5',
-                      borderWidth: 1, borderColor: '#10B98130' }}>
-                      <Fuel size={14} color="#10B981" />
+                      backgroundColor: isDark ? colors.success + '10' : '#ECFDF5',
+                      borderWidth: 1, borderColor: colors.success + '30' }}>
+                      <Fuel size={14} color={colors.success} />
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>
                           {entry.gallons} gal{entry.odometer ? ` · ${entry.odometer} mi` : ''}
@@ -705,13 +742,14 @@ export function TeenView({ active, members, colors, isDark }: {
           </Text>
           {/* Method selector */}
           <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-            {CASH_METHODS.map(m => (
-              <Pressable key={m} onPress={() => setCashMethod(m)}
-                style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1.5,
-                  borderColor: cashMethod === m ? BRAND.amber : colors.border,
-                  backgroundColor: cashMethod === m ? BRAND.amber + '18' : 'transparent' }}>
+            {CASH_METHODS.map(({ label, Icon }) => (
+              <Pressable key={label} onPress={() => setCashMethod(label)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1.5,
+                  borderColor: cashMethod === label ? BRAND.amber : colors.border,
+                  backgroundColor: cashMethod === label ? BRAND.amber + '18' : 'transparent' }}>
+                <Icon size={13} color={cashMethod === label ? BRAND.amber : colors.textSecondary} />
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700',
-                  color: cashMethod === m ? BRAND.amber : colors.textSecondary }}>{m}</Text>
+                  color: cashMethod === label ? BRAND.amber : colors.textSecondary }}>{label}</Text>
               </Pressable>
             ))}
           </View>

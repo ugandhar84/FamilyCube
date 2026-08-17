@@ -1,12 +1,17 @@
 import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { ChevronUp, ChevronDown, ClipboardList } from 'lucide-react-native';
+import { ChevronUp, ChevronDown, ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useChoreStore } from '@/store/choreStore';
 import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
+
+// Money-green — "Save" jar accent in the coin-split preview, distinct from
+// brand teal used for this card's header. Not colors.success (which IS
+// brand teal in this app) — kept as one local constant.
+const MONEY_GREEN = '#10B981';
 
 function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQuestAsParent, declineGrandparentQuestAsParent, active }: {
   c: ChoreTask; members: FamilyMember[]; colors: any; isDark: boolean; active: FamilyMember;
@@ -28,7 +33,7 @@ function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQues
       backgroundColor: isDark ? BRAND.teal + '08' : BRAND.teal + '06' }}>
       <View style={{ backgroundColor: BRAND.teal, paddingHorizontal: 14, paddingVertical: 8,
         flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <Text style={{ fontSize: 16 }}>{c.questMode === 'virtual' ? '💻' : '🌿'}</Text>
+        {c.questMode === 'virtual' ? <Laptop size={15} color="#fff" /> : <Leaf size={15} color="#fff" />}
         <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>
           {c.questMode === 'virtual' ? 'Virtual' : 'In-Person'} Quest · {pts} pts
         </Text>
@@ -51,9 +56,9 @@ function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQues
         )}
         <View style={{ flexDirection: 'row', gap: 6 }}>
           {[
-            { label: '💸 Spend', val: Math.floor(pts * 0.5), color: BRAND.amber },
-            { label: '🏦 Save',  val: Math.floor(pts * 0.4), color: '#10B981' },
-            { label: '🤲 Give',  val: pts - Math.floor(pts * 0.5) - Math.floor(pts * 0.4), color: BRAND.purple },
+            { label: 'Spend', val: Math.floor(pts * 0.5), color: BRAND.amber },
+            { label: 'Save',  val: Math.floor(pts * 0.4), color: MONEY_GREEN },
+            { label: 'Give',  val: pts - Math.floor(pts * 0.5) - Math.floor(pts * 0.4), color: BRAND.purple },
           ].map(j => (
             <View key={j.label} style={{ flex: 1, alignItems: 'center', borderRadius: 8,
               backgroundColor: j.color + '12', paddingVertical: 6,
@@ -72,8 +77,9 @@ function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQues
           </Pressable>
           <Pressable
             onPress={() => approveGrandparentQuestAsParent(c.id, active.id)}
-            style={{ flex: 2, alignItems: 'center', paddingVertical: 11, borderRadius: 12, backgroundColor: BRAND.teal }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>✓ Approve & Publish to Kid</Text>
+            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 12, backgroundColor: BRAND.teal }}>
+            <CheckCircle2 size={14} color="#fff" />
+            <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Approve & Publish to Kid</Text>
           </Pressable>
         </View>
       </View>
@@ -91,8 +97,8 @@ function GpTurnedDownCard({ c, members, colors, isDark }: {
 
   return (
     <View style={{ borderRadius: 14, padding: 12, gap: 8,
-      backgroundColor: isDark ? '#EF444410' : '#FEF2F2',
-      borderWidth: 1.5, borderColor: '#EF444430' }}>
+      backgroundColor: isDark ? `${colors.danger}10` : '#FEF2F2',
+      borderWidth: 1.5, borderColor: `${colors.danger}30` }}>
       <View>
         <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
         <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
@@ -153,7 +159,7 @@ export function ChoreReviewSection({
   return (
     <View style={{ paddingHorizontal: 16 }}>
       <View style={{
-        backgroundColor: isDark ? colors.card : '#fff',
+        backgroundColor: colors.card,
         borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
         overflow: 'hidden', marginBottom: 12,
       }}>
@@ -172,7 +178,7 @@ export function ChoreReviewSection({
               )}
             </View>
             <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-              {badgeCount > 0 ? `${badgeCount} pending approval` : 'All caught up ✓'}
+              {badgeCount > 0 ? `${badgeCount} pending approval` : 'All caught up'}
             </Text>
           </View>
           {expanded ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
@@ -181,10 +187,13 @@ export function ChoreReviewSection({
           <View style={{ paddingBottom: 8 }}>
             {gpPending.length > 0 && (
               <View style={{ marginHorizontal: 14, marginBottom: 12, gap: 8 }}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
-                  textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                  👴 Grandparent Quests — Safety Review
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <HeartHandshake size={12} color={colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                    textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                    Grandparent Quests — Safety Review
+                  </Text>
+                </View>
                 {gpPending.map(c => (
                   <GpSafetyReviewCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
                     approveGrandparentQuestAsParent={approveGrandparentQuestAsParent}
@@ -198,10 +207,13 @@ export function ChoreReviewSection({
                 notice and can reassign or open it up without leaving the Hub. */}
             {gpDeclined.length > 0 && (
               <View style={{ marginHorizontal: 14, marginBottom: 12, gap: 8 }}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
-                  textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                  🙏 Grandparent Quests — Turned Down
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <HandCoins size={12} color={colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                    textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                    Grandparent Quests — Turned Down
+                  </Text>
+                </View>
                 {gpDeclined.map(c => (
                   <GpTurnedDownCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} />
                 ))}

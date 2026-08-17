@@ -1,10 +1,18 @@
 import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { ChevronUp, ChevronDown } from 'lucide-react-native';
+import { ChevronUp, ChevronDown, Trophy, Flame } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import type { FamilyMember } from '@/store/familyStore';
+
+// Money-green — "Reviewed" stat accent, distinct from brand teal used
+// elsewhere in the hub. Not colors.success (which IS brand teal in this
+// app) — kept as one local constant.
+const MONEY_GREEN = '#10B981';
+// Streak-orange — fire/streak accent, not present in the brand palette;
+// left as a distinct literal per design (see final report).
+const STREAK_ORANGE = '#F97316';
 
 // Today's stats + the family coin leaderboard. Collapsed by default — this is
 // a "check in when curious" card, not something that needs a decision.
@@ -20,14 +28,14 @@ export function HouseholdSnapshotCard({
 
   return (
     <View style={{
-      backgroundColor: isDark ? colors.card : '#fff',
+      backgroundColor: colors.card,
       borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
       overflow: 'hidden', marginBottom: 12,
     }}>
       <View style={{ flexDirection: 'row', borderBottomWidth: open ? 1 : 0, borderBottomColor: isDark ? colors.border : '#F1F5F9' }}>
         {[
-          { label: 'Reviewed', value: String(reviewedToday), color: '#10B981' },
-          { label: 'Avg Streak', value: `🔥${avgStreak}d`, color: '#F97316' },
+          { label: 'Reviewed', value: String(reviewedToday), color: MONEY_GREEN },
+          { label: 'Avg Streak', value: `${avgStreak}d`, color: STREAK_ORANGE },
           { label: 'Cash-outs', value: String(pendingCashOutsCount), color: BRAND.amber },
         ].map((s, i, arr) => (
           <View key={s.label} style={{
@@ -35,7 +43,10 @@ export function HouseholdSnapshotCard({
             borderRightWidth: i < arr.length - 1 ? 1 : 0,
             borderRightColor: isDark ? colors.border : '#F1F5F9',
           }}>
-            <Text style={{ fontSize: TYPO.title, fontWeight: '900', color: s.color }}>{s.value}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              {s.label === 'Avg Streak' && <Flame size={15} color={s.color} fill={s.color} />}
+              <Text style={{ fontSize: TYPO.title, fontWeight: '900', color: s.color }}>{s.value}</Text>
+            </View>
             <Text style={{ fontSize: TYPO.micro, fontWeight: '600', color: colors.textTertiary, marginTop: 2 }}>{s.label}</Text>
           </View>
         ))}
@@ -43,7 +54,7 @@ export function HouseholdSnapshotCard({
 
       <Pressable onPress={() => setOpen(o => !o)}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 }}>
-        <Text style={{ fontSize: 16 }}>🏆</Text>
+        <Trophy size={16} color={BRAND.amber} fill={BRAND.amber + '30'} />
         <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>
           Family Leaderboard
         </Text>
@@ -78,6 +89,7 @@ export function HouseholdSnapshotCard({
                 borderWidth: idx === 0 ? 1 : 0,
                 borderColor: BRAND.amber + '40',
               }}>
+                {/* intentional: 18 sits between TYPO.subheading(17) and TYPO.heading(20); kept as this card's medal-emoji size */}
                 <Text style={{ fontSize: 18, width: 24 }}>{medals[idx] ?? '·'}</Text>
                 <FamilyAvatar
                   name={kid.name} emoji={(kid as any).emoji} avatarUrl={(kid as any).avatarUrl}
@@ -89,7 +101,10 @@ export function HouseholdSnapshotCard({
                     {kid.name.split(' ')[0]}
                   </Text>
                   {streak > 0 && (
-                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>🔥 {streak} day streak</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                      <Flame size={11} color={STREAK_ORANGE} fill={STREAK_ORANGE} />
+                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{streak} day streak</Text>
+                    </View>
                   )}
                 </View>
                 {idx === 0 && (
@@ -99,7 +114,7 @@ export function HouseholdSnapshotCard({
                 )}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3,
                   backgroundColor: BRAND.amber + '18', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5 }}>
-                  <Text style={{ fontSize: 12 }}>🪙</Text>
+                  <Text style={{ fontSize: TYPO.label }}>🪙</Text>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: BRAND.amber }}>{kidCoins}</Text>
                 </View>
               </View>

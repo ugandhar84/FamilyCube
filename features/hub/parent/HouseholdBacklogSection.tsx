@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { ChevronUp, ChevronDown, ClipboardList, AlertCircle } from 'lucide-react-native';
+import { ChevronUp, ChevronDown, ClipboardList, AlertCircle, Car, PartyPopper } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useChoreStore } from '@/store/choreStore';
@@ -55,10 +55,17 @@ export function HouseholdBacklogSection({
   );
   const isEmpty = questPool.length === 0 && myDirectPending.length === 0 && myAccepted.length === 0 && myHelperEvents.length === 0;
 
+  // Soonest due date first within a group — undated items sort last so
+  // something with a deadline never gets buried under whatever loaded first.
+  const byDueDate = <T extends { dueDate?: string }>(items: T[]): T[] =>
+    [...items].sort((a, b) => (a.dueDate ?? '9999') < (b.dueDate ?? '9999') ? -1 : 1);
+  const sortedMyAdultQuests = byDueDate(myAdultQuests);
+  const sortedUnclaimedPool = byDueDate(unclaimedPool);
+
   return (
     <View style={{ paddingHorizontal: 16 }}>
       <View style={{
-        backgroundColor: isDark ? colors.card : '#fff',
+        backgroundColor: colors.card,
         borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
         overflow: 'hidden', marginBottom: 12,
       }}>
@@ -92,7 +99,7 @@ export function HouseholdBacklogSection({
             {myAdultQuests.length > 0 && (
               <View style={{ gap: 6 }}>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple, marginBottom: 2 }}>Assigned to you</Text>
-                {myAdultQuests.map(q => (
+                {sortedMyAdultQuests.map(q => (
                   <MyAdultQuestCard key={q.id} q={q} parentAssignments={parentAssignments} active={active}
                     colors={colors} isDark={isDark} completeParentQuest={completeParentQuest}
                     updateQuest={updateQuest} onDelegate={onDelegate} />
@@ -128,13 +135,13 @@ export function HouseholdBacklogSection({
               if (!chore) return null;
               return (
                 <View key={a.id} style={{
-                  borderRadius: 14, borderWidth: 1.5, borderColor: '#EF444440',
-                  backgroundColor: isDark ? '#EF444410' : '#FEF2F2', padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center',
+                  borderRadius: 14, borderWidth: 1.5, borderColor: `${colors.danger}40`,
+                  backgroundColor: isDark ? `${colors.danger}10` : '#FEF2F2', padding: 12, flexDirection: 'row', gap: 10, alignItems: 'center',
                 }}>
-                  <AlertCircle size={16} color="#EF4444" />
+                  <AlertCircle size={16} color={colors.danger} />
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{chore.title}</Text>
-                    <Text style={{ fontSize: TYPO.label, color: '#EF4444', marginTop: 2 }}>Discuss offline — bounced twice</Text>
+                    <Text style={{ fontSize: TYPO.label, color: colors.danger, marginTop: 2 }}>Discuss offline — bounced twice</Text>
                   </View>
                 </View>
               );
@@ -149,7 +156,7 @@ export function HouseholdBacklogSection({
               );
             })}
 
-            {unclaimedPool.map(chore => (
+            {sortedUnclaimedPool.map(chore => (
               <PoolQuestCard key={chore.id} chore={chore} members={members} colors={colors} isDark={isDark}
                 onTakeIt={(c) => {
                   if ((c as any)._isQuestRow) {
@@ -164,7 +171,10 @@ export function HouseholdBacklogSection({
 
             {myHelperEvents.length > 0 && (
               <View style={{ gap: 6 }}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.teal, marginBottom: 2 }}>🚗 You're the driver / helper</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+                  <Car size={12} color={BRAND.teal} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.teal }}>You're the driver / helper</Text>
+                </View>
                 {myHelperEvents.map(ev => (
                   <HelperEventCard key={ev.id} ev={ev} members={members} active={active} colors={colors} isDark={isDark} updateEvent={updateEvent} />
                 ))}
@@ -172,9 +182,12 @@ export function HouseholdBacklogSection({
             )}
 
             {isEmpty && (
-              <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center', paddingVertical: 12 }}>
-                Backlog is clear 🎉
-              </Text>
+              <View style={{ alignItems: 'center', paddingVertical: 12, gap: 4 }}>
+                <PartyPopper size={18} color={colors.textTertiary} />
+                <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center' }}>
+                  Backlog is clear
+                </Text>
+              </View>
             )}
           </View>
         )}

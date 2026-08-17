@@ -1,8 +1,14 @@
 import { View, Text, Pressable, Alert } from 'react-native';
+import { Car, BookOpen, PartyPopper, HeartHandshake, CheckCircle2, Check, X } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
+
+// Money-green — "GP Welcome" confirmed-state accent, distinct from brand
+// teal used for this card's main styling. Not colors.success (which IS
+// brand teal in this app) — kept as one local constant.
+const GP_GREEN = '#22c55e';
 
 // Ride / tutor / cheer request — approve, decline with a note back to the
 // kid, or flag it open to a grandparent at approval time.
@@ -12,7 +18,7 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
   declineRequest: (id: string, by: string, note?: string) => void;
   toggleGPWelcome: (id: string, open: boolean) => void;
 }) {
-  const typeEmoji  = req.type === 'ride' ? '🚗' : req.type === 'tutor' ? '📚' : '🎉';
+  const TypeIcon   = req.type === 'ride' ? Car : req.type === 'tutor' ? BookOpen : PartyPopper;
   const typeLabel  = req.type === 'ride' ? 'Ride Request' : req.type === 'tutor' ? 'Tutor Request' : 'Cheer Request';
   const isGPOpen   = !!req.openToGP;
 
@@ -21,7 +27,9 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
       borderColor: BRAND.teal + '50', backgroundColor: isDark ? '#0D2A2A' : '#F0FDFA',
       overflow: 'hidden' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 }}>
-        <Text style={{ fontSize: 22 }}>{typeEmoji}</Text>
+        <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: BRAND.teal + '20', alignItems: 'center', justifyContent: 'center' }}>
+          <TypeIcon size={17} color={BRAND.teal} />
+        </View>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.teal }}>{kidName} — {typeLabel}</Text>
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 1 }} numberOfLines={2}>{req.detail}</Text>
@@ -36,19 +44,20 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
           marginHorizontal: 12, marginBottom: 8, padding: 8, borderRadius: 10,
           backgroundColor: isGPOpen ? (isDark ? '#14291a' : '#DCFCE7') : (isDark ? colors.surface2 : '#F1F5F9'),
-          borderWidth: 1, borderColor: isGPOpen ? '#22c55e' : (isDark ? colors.border : '#CBD5E1') }}>
-        <Text style={{ fontSize: 14 }}>👴</Text>
+          borderWidth: 1, borderColor: isGPOpen ? GP_GREEN : (isDark ? colors.border : '#CBD5E1') }}>
+        <HeartHandshake size={14} color={isGPOpen ? GP_GREEN : colors.textSecondary} />
         <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700',
-          color: isGPOpen ? '#22c55e' : colors.textSecondary }}>
+          color: isGPOpen ? GP_GREEN : colors.textSecondary }}>
           {isGPOpen ? 'GP Welcome — grandparent can take this' : 'Offer to GP (grandparent can help)'}
         </Text>
-        <Text style={{ fontSize: 12 }}>{isGPOpen ? '✅' : '○'}</Text>
+        {isGPOpen && <CheckCircle2 size={13} color={GP_GREEN} />}
       </Pressable>
       <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
         <Pressable onPress={() => approveRequest(req.id, active.id)}
-          style={{ flex: 1, backgroundColor: BRAND.teal, borderRadius: 10,
-            paddingVertical: 9, alignItems: 'center' }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>✓ Approve</Text>
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: BRAND.teal, borderRadius: 10,
+            paddingVertical: 9 }}>
+          <Check size={13} color="#fff" />
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Approve</Text>
         </Pressable>
         <Pressable
           onPress={() => {
@@ -68,9 +77,10 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
               '',
             );
           }}
-          style={{ flex: 1, backgroundColor: '#EF444415', borderWidth: 1,
-            borderColor: '#EF444440', borderRadius: 10, paddingVertical: 9, alignItems: 'center' }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>✕ Decline</Text>
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: `${colors.danger}15`, borderWidth: 1,
+            borderColor: `${colors.danger}40`, borderRadius: 10, paddingVertical: 9 }}>
+          <X size={13} color={colors.danger} />
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.danger }}>Decline</Text>
         </Pressable>
       </View>
     </View>

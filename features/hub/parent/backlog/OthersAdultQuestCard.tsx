@@ -1,12 +1,17 @@
 import { useState } from 'react';
 import { View, Text, Pressable, Alert } from 'react-native';
-import { ChevronUp, ChevronDown, MessageCircle, ArrowRightLeft } from 'lucide-react-native';
+import { ChevronUp, ChevronDown, MessageCircle, ArrowRightLeft, ShoppingBag, HeartHandshake, CheckCircle2 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useChoreStore } from '@/store/choreStore';
 import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
+
+// Confirmed-green — "GP Welcome" toggle accent, distinct from brand teal
+// used elsewhere in this card. Not colors.success (which IS brand teal in
+// this app) — kept as one local constant.
+const GP_GREEN = '#22c55e';
 
 // Read-only view of a task assigned to a co-parent — nudge them in family
 // chat, or reclaim it for yourself if it's stalled.
@@ -46,7 +51,7 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
         style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingBottom: 8 }}>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            {si?.length > 0 && <Text style={{ fontSize: 13 }}>🛍️</Text>}
+            {si?.length > 0 && <ShoppingBag size={13} color={BRAND.amber} />}
             <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
               {q.title}
             </Text>
@@ -78,7 +83,7 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
                 paddingHorizontal: 10, paddingVertical: 7,
                 borderBottomWidth: 1, borderBottomColor: isDark ? BRAND.teal + '30' : '#99F6E4' }}>
-                <Text style={{ fontSize: 12 }}>🛍️</Text>
+                <ShoppingBag size={12} color={isDark ? '#2DD4BF' : '#0D9488'} />
                 <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#2DD4BF' : '#0D9488' }}>
                   {ss ? `Shop at ${ss}` : 'Shopping List'}
                 </Text>
@@ -103,13 +108,13 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
           style={{ flexDirection: 'row', alignItems: 'center', gap: 7,
             marginHorizontal: 12, marginBottom: 6, padding: 8, borderRadius: 10,
             backgroundColor: isGPOpen ? (isDark ? '#14291a' : '#DCFCE7') : (isDark ? colors.surface2 : '#F8FAFC'),
-            borderWidth: 1, borderColor: isGPOpen ? '#22c55e' : (isDark ? colors.border : '#E2E8F0') }}>
-          <Text style={{ fontSize: 13 }}>👴</Text>
+            borderWidth: 1, borderColor: isGPOpen ? GP_GREEN : (isDark ? colors.border : '#E2E8F0') }}>
+          <HeartHandshake size={13} color={isGPOpen ? GP_GREEN : colors.textSecondary} />
           <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700',
-            color: isGPOpen ? '#22c55e' : colors.textSecondary }}>
+            color: isGPOpen ? GP_GREEN : colors.textSecondary }}>
             {isGPOpen ? 'GP Welcome — can buy & scan receipt' : 'Offer to GP (buy supplies + receipt scan)'}
           </Text>
-          <Text style={{ fontSize: 11 }}>{isGPOpen ? '✅' : '○'}</Text>
+          {isGPOpen && <CheckCircle2 size={12} color={GP_GREEN} />}
         </Pressable>
       )}
 

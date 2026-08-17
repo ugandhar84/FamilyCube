@@ -1,4 +1,5 @@
 import { View, Text, Pressable } from 'react-native';
+import { HeartHandshake, Car, BookOpen, PartyPopper, CheckCircle2 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import type { FamilyMember } from '@/store/familyStore';
 
@@ -10,14 +11,14 @@ export function GpCanHelpSection({ requests, members, colors, isDark, toggleGPWe
 
   return (
     <View style={{ paddingHorizontal: 16 }}>
-      <View style={{ backgroundColor: isDark ? colors.card : '#fff',
+      <View style={{ backgroundColor: colors.card,
         borderRadius: 18, borderWidth: 1, borderColor: isDark ? '#3b5a3b' : '#BBF7D0',
         overflow: 'hidden' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, paddingBottom: 10,
           borderBottomWidth: 1, borderBottomColor: isDark ? '#1a2e1a' : '#D1FAE5' }}>
           <View style={{ width: 32, height: 32, borderRadius: 16,
             backgroundColor: isDark ? '#14291a' : '#ECFDF5', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 16 }}>👴</Text>
+            <HeartHandshake size={16} color={isDark ? '#86efac' : '#166534'} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: isDark ? '#86efac' : '#166534' }}>
@@ -32,7 +33,7 @@ export function GpCanHelpSection({ requests, members, colors, isDark, toggleGPWe
           {requests.map(req => {
             const kid = members.find(m => m.id === req.fromMemberId);
             const kidName = kid?.name.split(' ')[0] ?? 'Kid';
-            const typeEmoji = req.type === 'ride' ? '🚗' : req.type === 'tutor' ? '📚' : '🎉';
+            const TypeIcon = req.type === 'ride' ? Car : req.type === 'tutor' ? BookOpen : PartyPopper;
             const isOpen = !!req.openToGP;
             return (
               <View key={req.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -44,7 +45,7 @@ export function GpCanHelpSection({ requests, members, colors, isDark, toggleGPWe
                 borderColor: isOpen
                   ? (isDark ? '#166534' : '#86EFAC')
                   : (isDark ? colors.border : '#E2E8F0') }}>
-                <Text style={{ fontSize: 20 }}>{typeEmoji}</Text>
+                <TypeIcon size={18} color={isDark ? '#4ade80' : '#166534'} />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
                     {kidName} — {req.detail}
@@ -64,7 +65,7 @@ export function GpCanHelpSection({ requests, members, colors, isDark, toggleGPWe
                       : (isDark ? colors.surface2 : '#F1F5F9'),
                     borderWidth: 1,
                     borderColor: isOpen ? '#22c55e' : (isDark ? colors.border : '#CBD5E1') }}>
-                  <Text style={{ fontSize: 11 }}>{isOpen ? '✅' : '👴'}</Text>
+                  {isOpen ? <CheckCircle2 size={12} color="#22c55e" /> : <HeartHandshake size={12} color={colors.textSecondary} />}
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800',
                     color: isOpen ? '#22c55e' : colors.textSecondary }}>
                     {isOpen ? 'GP Open' : 'Offer GP'}

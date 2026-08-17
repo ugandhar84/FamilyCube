@@ -66,7 +66,7 @@ export default function HubScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <AppHeader
         memberName={active.name.split(' ')[0]}
-        memberRole={active.role as 'parent' | 'kid' | 'senior'}
+        memberRole={active.role as 'parent' | 'kid' | 'teen' | 'senior'}
         onBellPress={() => Alert.alert('Nudge Center', 'Dinner ready · Meds · Pickup · Chore check')}
       />
 

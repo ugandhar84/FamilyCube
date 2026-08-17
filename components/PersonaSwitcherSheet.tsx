@@ -21,6 +21,7 @@ import FamilyAvatar from './FamilyAvatar';
 const ROLE_THEME: Record<string, { accent: string; bg: string; darkBg: string }> = {
   parent: { accent: BRAND.teal,   bg: '#D6F5EE', darkBg: '#0C2E28' },
   kid:    { accent: BRAND.amber,  bg: '#FFF0CC', darkBg: '#2A1C00' },
+  teen:   { accent: BRAND.pink,   bg: '#FCE4F1', darkBg: '#3A0F26' },
   senior: { accent: BRAND.purple, bg: '#EDE4FF', darkBg: '#1C0E30' },
 };
 
@@ -122,7 +123,7 @@ function MemberCard({ member, isActive, onPress, isDark, allNames }: {
   const ac      = accent(member.role);
   const theme   = ROLE_THEME[member.role] ?? ROLE_THEME.senior;
   const subLabel = member.subRole
-    ?? (member.role === 'senior' ? 'Grandparent' : member.role === 'parent' ? 'Parent' : 'Kid');
+    ?? (member.role === 'senior' ? 'Grandparent' : member.role === 'parent' ? 'Parent' : member.role === 'teen' ? 'Teen' : 'Kid');
 
   const scale = useSharedValue(1);
   const aStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
@@ -213,7 +214,7 @@ function MemberCard({ member, isActive, onPress, isDark, allNames }: {
           </View>
 
           {/* Role-specific info */}
-          {member.role === 'kid' ? (
+          {member.role === 'kid' || member.role === 'teen' ? (
             <View style={{ flexDirection: 'row', gap: 6 }}>
               <CoinBadge icon="🪙" amount={member.mainCoins} label="MAIN"   color={BRAND.amber}  isDark={isDark} />
               <CoinBadge icon="⭐" amount={member.gpCoins}   label="GP"     color={BRAND.purple} isDark={isDark} />
@@ -444,6 +445,7 @@ export default function PersonaSwitcherSheet({ visible, onClose }: { visible: bo
 
   const parents  = members.filter(m => m.role === 'parent');
   const kids     = members.filter(m => m.role === 'kid');
+  const teens    = members.filter(m => m.role === 'teen');
   const seniors  = members.filter(m => m.role === 'senior');
   const allNames = members.map(m => m.name);
 
@@ -522,6 +524,7 @@ export default function PersonaSwitcherSheet({ visible, onClose }: { visible: bo
           showsVerticalScrollIndicator={false}>
           <Group label="Parents"      members={parents} activeId={activeMemberId} onSelect={handleSelect} isDark={isDark} allNames={allNames} />
           <Group label="Kids"         members={kids}    activeId={activeMemberId} onSelect={handleSelect} isDark={isDark} allNames={allNames} />
+          <Group label="Teens"        members={teens}   activeId={activeMemberId} onSelect={handleSelect} isDark={isDark} allNames={allNames} />
           <Group label="Grandparents" members={seniors} activeId={activeMemberId} onSelect={handleSelect} isDark={isDark} allNames={allNames} />
         </ScrollView>
       )}

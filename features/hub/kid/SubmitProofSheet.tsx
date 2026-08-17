@@ -1,8 +1,15 @@
 import { useState } from 'react';
 import { View, Text, Pressable, TextInput, Image, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { Camera, Image as ImageIcon, CheckCircle2 } from 'lucide-react-native';
 import AppBottomSheet from '@/components/AppBottomSheet';
+import { KID } from './kidTheme';
 import type { Quest } from '@/store/questStore';
+
+// Money-green — "photo proof / submit" positive accent, distinct from
+// brand teal used elsewhere in the kid hub. Not colors.success (which IS
+// brand teal in this app) — kept as one local constant.
+const MONEY_GREEN = '#10B981';
 
 // Photo capture for a quest that requires proof — "Take Photo to Get Paid"
 // must actually collect one before submitting, not just relabel the button.
@@ -34,37 +41,37 @@ export function SubmitProofSheet({ quest, colors, isDark, onClose, submitQuest }
     <AppBottomSheet
       visible={!!quest}
       onClose={close}
-      title="📸 Photo Proof"
+      title="Photo Proof"
       subtitle={quest?.title}
-      accentColor="#10B981"
+      accentColor={MONEY_GREEN}
       minHeight="55%"
       bodyPaddingBottom={16}
     >
       <View style={{ gap: 12 }}>
-        <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+        <Text style={{ fontSize: KID.sub, color: colors.textSecondary }}>
           This quest needs a photo before it can be marked done.
         </Text>
         {uri ? (
-          <View style={{ borderRadius: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: '#10B98150' }}>
+          <View style={{ borderRadius: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: `${MONEY_GREEN}50` }}>
             <Image source={{ uri }} style={{ width: '100%', height: 200 }} resizeMode="cover" />
             <Pressable onPress={() => pickPhoto(true)}
               style={{ position: 'absolute', top: 8, right: 8, backgroundColor: '#00000090', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
-              <Text style={{ fontSize: 12, fontWeight: '800', color: '#fff' }}>Retake</Text>
+              <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: '#fff' }}>Retake</Text>
             </Pressable>
           </View>
         ) : (
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <Pressable onPress={() => pickPhoto(true)}
               style={{ flex: 1, borderRadius: 14, paddingVertical: 20, alignItems: 'center', gap: 6,
-                borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#10B98160', backgroundColor: '#10B98110' }}>
-              <Text style={{ fontSize: 24 }}>📷</Text>
-              <Text style={{ fontSize: 13, fontWeight: '800', color: '#10B981' }}>Take Photo</Text>
+                borderWidth: 1.5, borderStyle: 'dashed', borderColor: `${MONEY_GREEN}60`, backgroundColor: `${MONEY_GREEN}10` }}>
+              <Camera size={26} color={MONEY_GREEN} />
+              <Text style={{ fontSize: KID.sub, fontWeight: '800', color: MONEY_GREEN }}>Take Photo</Text>
             </Pressable>
             <Pressable onPress={() => pickPhoto(false)}
               style={{ flex: 1, borderRadius: 14, paddingVertical: 20, alignItems: 'center', gap: 6,
                 borderWidth: 1.5, borderStyle: 'dashed', borderColor: isDark ? colors.border : '#E2E8F0', backgroundColor: isDark ? colors.surface : '#FAFAFA' }}>
-              <Text style={{ fontSize: 24 }}>🖼️</Text>
-              <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textSecondary }}>Choose Photo</Text>
+              <ImageIcon size={26} color={colors.textSecondary} />
+              <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.textSecondary }}>Choose Photo</Text>
             </Pressable>
           </View>
         )}
@@ -72,7 +79,7 @@ export function SubmitProofSheet({ quest, colors, isDark, onClose, submitQuest }
           backgroundColor: isDark ? colors.surface : '#FAFAFA', paddingHorizontal: 12, paddingVertical: 10 }}>
           <TextInput value={note} onChangeText={setNote}
             placeholder="Add a note (optional)…" placeholderTextColor={colors.textTertiary}
-            style={{ fontSize: 14, color: colors.textPrimary, minHeight: 40 }} multiline />
+            style={{ fontSize: KID.body, color: colors.textPrimary, minHeight: 40 }} multiline />
         </View>
         <Pressable
           disabled={!uri}
@@ -81,10 +88,11 @@ export function SubmitProofSheet({ quest, colors, isDark, onClose, submitQuest }
             submitQuest(quest.id, { photoUrl: uri, note: note.trim() || undefined });
             close();
           }}
-          style={{ borderRadius: 14, paddingVertical: 14, alignItems: 'center',
-            backgroundColor: uri ? '#10B981' : colors.border,
+          style={{ borderRadius: 14, paddingVertical: 15, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8,
+            backgroundColor: uri ? MONEY_GREEN : colors.border,
             opacity: uri ? 1 : 0.5 }}>
-          <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>✅ Submit for Review</Text>
+          <CheckCircle2 size={17} color="#fff" />
+          <Text style={{ fontSize: KID.body, fontWeight: '900', color: '#fff' }}>Submit for Review</Text>
         </Pressable>
       </View>
     </AppBottomSheet>

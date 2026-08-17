@@ -160,6 +160,49 @@ export function SubCard({ children, accent, colors, isDark, style }: {
   );
 }
 
+// ─── QuestLiveness ────────────────────────────────────────────────────────────
+// One shared "who did what, when" line for a Quest, built from quest.history —
+// the one data source in the app with a real, always-live, per-actor audit
+// trail (unlike kid_requests/calendar events, which don't sync live or don't
+// record an actor per transition). Rendered identically across Parent, Kid,
+// Teen, and Senior Hub cards so the same quest tells the same story no matter
+// whose screen it's on.
+
+function relTime(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.round(hrs / 24)}d ago`;
+}
+
+const HISTORY_VERB: Record<string, string> = {
+  created: 'Posted', assigned: 'Assigned', claimed: 'Claimed', submitted: 'Submitted for review',
+  approved: 'Approved', declined: 'Sent back', reassigned: 'Reassigned', reopened: 'Reopened',
+  cancelled: 'Cancelled', archived: 'Archived',
+};
+
+export function QuestLiveness({ history, members, colors }: {
+  history: { at: string; action: string; by?: string; note?: string }[] | undefined;
+  members: { id: string; name: string }[];
+  colors: any;
+}) {
+  if (!history || history.length === 0) return null;
+  const last = history[history.length - 1];
+  const actor = last.by ? members.find(m => m.id === last.by)?.name.split(' ')[0] : undefined;
+  const verb = HISTORY_VERB[last.action] ?? last.action;
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+      <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: colors.textTertiary }} />
+      <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={1}>
+        {actor ? `${verb} by ${actor}` : verb} · {relTime(last.at)}
+      </Text>
+    </View>
+  );
+}
+
 // ─── UrgencyBadge ─────────────────────────────────────────────────────────────
 
 export function UrgencyBadge({ hours, hasIssue }: { hours: number; hasIssue: boolean }) {

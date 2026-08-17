@@ -1,21 +1,28 @@
 import { View, Text, Pressable } from 'react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import { KID } from './kidTheme';
 
-export function KidCheckinRow({ onCheckin }: { onCheckin: (type: 'home' | 'ready' | 'late') => void }) {
+// Money-green — "I'm home" positive check-in accent, distinct from brand
+// teal (used elsewhere for confirmed/assigned state). Not colors.success
+// (which IS brand teal in this app) — kept as one local constant.
+const MONEY_GREEN = '#10B981';
+
+export function KidCheckinRow({ colors, onCheckin }: { colors: any; onCheckin: (type: 'home' | 'ready' | 'late') => void }) {
   return (
-    <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
-      <Text style={{ fontSize: 10, fontWeight: '800', color: '#94A3B8', marginBottom: 8, letterSpacing: 0.5 }}>LET FAMILY KNOW</Text>
+    <View style={{ paddingHorizontal: 16, marginBottom: 14 }}>
+      <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: colors.textTertiary, marginBottom: 8, letterSpacing: 0.6 }}>LET FAMILY KNOW</Text>
       <View style={{ flexDirection: 'row', gap: 8 }}>
         {([
-          { type: 'home',  label: "I'm Home!",    emoji: '🏠', color: '#10B981', bg: '#10B98115', border: '#10B98140' },
+          { type: 'home',  label: "I'm Home!",    emoji: '🏠', color: MONEY_GREEN, bg: `${MONEY_GREEN}15`, border: `${MONEY_GREEN}40` },
           { type: 'ready', label: "I'm Ready!",    emoji: '🎒', color: BRAND.amber, bg: BRAND.amber + '15', border: BRAND.amber + '40' },
-          { type: 'late',  label: 'Running Late',  emoji: '🏃', color: '#EF4444', bg: '#EF444415', border: '#EF444440' },
+          { type: 'late',  label: 'Running Late',  emoji: '🏃', color: colors.danger, bg: `${colors.danger}15`, border: `${colors.danger}40` },
         ] as const).map(({ type, label, emoji, color, bg, border }) => (
           <Pressable key={type} onPress={() => onCheckin(type)}
-            style={{ flex: 1, borderRadius: 16, paddingVertical: 14, alignItems: 'center', gap: 5,
+            style={{ flex: 1, borderRadius: 18, paddingVertical: 16, alignItems: 'center', gap: 6,
               backgroundColor: bg, borderWidth: 1.5, borderColor: border }}>
-            <Text style={{ fontSize: 24 }}>{emoji}</Text>
-            <Text style={{ fontSize: 10, fontWeight: '900', color, textAlign: 'center' }}>{label}</Text>
+            {/* intentional: 26 sits between KID.title(19) and KID.hero(32); no token matches this emoji size without a visible size change */}
+            <Text style={{ fontSize: 26 }}>{emoji}</Text>
+            <Text style={{ fontSize: KID.tiny, fontWeight: '900', color, textAlign: 'center' }}>{label}</Text>
           </Pressable>
         ))}
       </View>

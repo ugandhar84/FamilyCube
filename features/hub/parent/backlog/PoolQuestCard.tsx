@@ -1,11 +1,20 @@
 import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { ChevronUp, ChevronDown } from 'lucide-react-native';
+import { ChevronUp, ChevronDown, Lock, CheckCircle2, ShoppingBag, HandHelping, Send, HeartHandshake, Check } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useChoreStore } from '@/store/choreStore';
 import type { ChoreTask } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
+
+// Money-green — "enabled" status accent, distinct from brand teal used
+// elsewhere in this card. Not colors.success (which IS brand teal in this
+// app) — kept as one local constant.
+const MONEY_GREEN = '#10B981';
+// Violet — "GP Welcome" toggle accent, deliberately distinct from
+// BRAND.purple (#9261C7); kept as one local constant instead of a
+// repeated bare hex.
+const GP_VIOLET = '#8B5CF6';
 
 // An unclaimed backlog item — "pull what you can handle". Take it yourself,
 // delegate it to a co-parent, or disable it (hide without deleting).
@@ -49,22 +58,29 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
             </Text>
           )}
           {(chore as any).shoppingItems?.length > 0 && !isExp ? (
-            <Text style={{ fontSize: TYPO.micro, color: isDark ? '#2DD4BF' : '#0D9488', marginTop: 2 }}>
-              🛍️ {(chore as any).shoppingItems.length} item{(chore as any).shoppingItems.length !== 1 ? 's' : ''}
-              {(chore as any).shoppingStore ? ` · ${(chore as any).shoppingStore}` : ''}
-              {(chore as any).openToGP && ' · 😊 GP Welcome'}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+              <ShoppingBag size={10} color={isDark ? '#2DD4BF' : '#0D9488'} />
+              <Text style={{ fontSize: TYPO.micro, color: isDark ? '#2DD4BF' : '#0D9488' }}>
+                {(chore as any).shoppingItems.length} item{(chore as any).shoppingItems.length !== 1 ? 's' : ''}
+                {(chore as any).shoppingStore ? ` · ${(chore as any).shoppingStore}` : ''}
+              </Text>
+              {(chore as any).openToGP && <HeartHandshake size={10} color={GP_VIOLET} />}
+            </View>
           ) : chore.dueDate && !isExp ? (
-            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }}>
-              Due {chore.dueDate}{(chore as any).openToGP && ' · 😊 GP Welcome'}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>Due {chore.dueDate}</Text>
+              {(chore as any).openToGP && <HeartHandshake size={10} color={GP_VIOLET} />}
+            </View>
           ) : (chore as any).openToGP && !isExp ? (
-            <Text style={{ fontSize: TYPO.micro, color: '#8B5CF6', marginTop: 2 }}>😊 GP Welcome</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+              <HeartHandshake size={10} color={GP_VIOLET} />
+              <Text style={{ fontSize: TYPO.micro, color: GP_VIOLET }}>GP Welcome</Text>
+            </View>
           ) : null}
         </View>
         <Pressable onPress={() => { const { updateChore } = useChoreStore.getState(); updateChore(chore.id, { isPrivateParent: !isDisabled } as any); }}
           style={{ padding: 6 }}>
-          <Text style={{ fontSize: 15 }}>{isDisabled ? '🔒' : '✅'}</Text>
+          {isDisabled ? <Lock size={15} color={colors.textTertiary} /> : <CheckCircle2 size={15} color={MONEY_GREEN} />}
         </Pressable>
         {hasDetail ? (isExp ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />) : null}
       </Pressable>
@@ -74,13 +90,15 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
           <Pressable onPress={() => onTakeIt(chore)}
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
               backgroundColor: BRAND.purple, borderRadius: 10, paddingVertical: 7 }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>✋ Take It</Text>
+            <HandHelping size={13} color="#fff" />
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Take It</Text>
           </Pressable>
           <Pressable onPress={() => onDelegate(chore.id, chore.title)}
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
               borderWidth: 1.5, borderColor: BRAND.teal + '80',
               borderRadius: 10, paddingVertical: 7 }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.teal }}>📤 Delegate</Text>
+            <Send size={12} color={BRAND.teal} />
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.teal }}>Delegate</Text>
           </Pressable>
         </View>
       )}
@@ -95,7 +113,7 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
               backgroundColor: isDark ? '#2DD4BF10' : '#F0FDFA', overflow: 'hidden' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6,
                 borderBottomWidth: 1, borderBottomColor: isDark ? '#2DD4BF30' : '#99F6E4' }}>
-                <Text style={{ fontSize: 12 }}>🛍️</Text>
+                <ShoppingBag size={12} color={isDark ? '#2DD4BF' : '#0D9488'} />
                 <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#2DD4BF' : '#0D9488' }}>
                   {(chore as any).shoppingStore ?? 'Shopping List'}
                 </Text>
@@ -124,20 +142,20 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
               style={{
                 flexDirection: 'row', alignItems: 'center', gap: 8,
                 borderRadius: 10, borderWidth: 1.5,
-                borderColor: (chore as any).openToGP ? '#8B5CF6' : (isDark ? '#475569' : '#CBD5E1'),
-                backgroundColor: (chore as any).openToGP ? '#8B5CF620' : 'transparent',
+                borderColor: (chore as any).openToGP ? GP_VIOLET : (isDark ? '#475569' : '#CBD5E1'),
+                backgroundColor: (chore as any).openToGP ? `${GP_VIOLET}20` : 'transparent',
                 padding: 10,
               }}>
               <View style={{
                 width: 20, height: 20, borderRadius: 10,
-                borderWidth: 2, borderColor: (chore as any).openToGP ? '#8B5CF6' : (isDark ? '#64748B' : '#94A3B8'),
-                backgroundColor: (chore as any).openToGP ? '#8B5CF6' : 'transparent',
+                borderWidth: 2, borderColor: (chore as any).openToGP ? GP_VIOLET : (isDark ? '#64748B' : '#94A3B8'),
+                backgroundColor: (chore as any).openToGP ? GP_VIOLET : 'transparent',
                 alignItems: 'center', justifyContent: 'center',
               }}>
-                {(chore as any).openToGP && <Text style={{ fontSize: 12, color: '#fff' }}>✓</Text>}
+                {(chore as any).openToGP && <Check size={12} color="#fff" />}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>😊 GP Welcome</Text>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>GP Welcome</Text>
                 <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>Grandparents can see and claim this task</Text>
               </View>
             </Pressable>

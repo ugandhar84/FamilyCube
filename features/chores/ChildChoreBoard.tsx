@@ -1,5 +1,5 @@
 /**
- * ChildChoreBoard — Daily chore command centre for kids (spec-compliant).
+ * ChildChoreBoard — Teen Hub's chore/quest command centre.
  * Flows: Citizenship checkbox → instant complete
  *        Routine/Bounty → submit sheet (note + photo)
  *        Bounty → claim or "Claimed by Sibling" read-only
@@ -12,8 +12,14 @@ import {
   Alert, ActivityIndicator, TouchableOpacity, Image,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import {
+  Sprout, Star, Gem, ShoppingBag, HeartHandshake, Lock,
+  Check, Camera, Image as ImageIcon, Clock, HandMetal, Play, Undo2,
+  MessageCircle, Zap, Target, ChevronDown, ChevronUp,
+  Flame, Trophy, Wallet, PiggyBank, HandHeart,
+} from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
-import { TYPO } from '@/constants/theme';
+import { TYPO, RADIUS, SPACING } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import {
@@ -22,15 +28,26 @@ import {
 import type { FamilyMember } from '@/store/familyStore';
 import { parseLocalDate } from '@/lib/dates';
 
+// Money-green — "done/positive" accent, distinct from brand teal used for
+// confirmed/assigned state elsewhere. Not colors.success (which IS brand
+// teal in this app) — kept as one local constant.
+const MONEY_GREEN = '#059669';
+// Amber — bounty/claim accent, a distinct hue from BRAND.amber for this
+// file's bounty-specific chrome. Kept as one local constant.
+const BOUNTY_AMBER = '#D97706';
+const BOUNTY_AMBER_BG = '#FEF3C7';
+const GP_BLUE = '#2563EB';
+const GP_BLUE_BG = '#DBEAFE';
+
 // ─── Category metadata ────────────────────────────────────────────────────────
 
-const CAT_META: Record<ChoreCategoryType, { emoji: string; label: string; color: string; bg: string }> = {
-  citizenship:       { emoji: '🌱', label: 'Citizenship',      color: '#059669', bg: '#D1FAE5' },
-  routine:           { emoji: '⭐', label: 'Routine',           color: '#7C3AED', bg: '#EDE9FE' },
-  bounty:            { emoji: '💎', label: 'Bounty',            color: '#D97706', bg: '#FEF3C7' },
-  shopping:          { emoji: '🛍️', label: 'Shopping',          color: '#0D9488', bg: '#CCFBF1' },
-  grandparent_quest: { emoji: '👴', label: 'GP Quest',          color: '#2563EB', bg: '#DBEAFE' },
-  parent_only_quest: { emoji: '🔒', label: 'Adult Task',        color: '#6B7280', bg: '#F3F4F6' },
+const CAT_META: Record<ChoreCategoryType, { Icon: any; label: string; color: string; bg: string }> = {
+  citizenship:       { Icon: Sprout,         label: 'Citizenship', color: MONEY_GREEN,  bg: '#D1FAE5' },
+  routine:           { Icon: Star,           label: 'Routine',     color: BRAND.purple, bg: '#EDE9FE' },
+  bounty:            { Icon: Gem,            label: 'Bounty',      color: BOUNTY_AMBER, bg: BOUNTY_AMBER_BG },
+  shopping:          { Icon: ShoppingBag,    label: 'Shopping',    color: '#0D9488',    bg: '#CCFBF1' },
+  grandparent_quest: { Icon: HeartHandshake, label: 'GP Quest',    color: GP_BLUE,      bg: GP_BLUE_BG },
+  parent_only_quest: { Icon: Lock,           label: 'Adult Task',  color: '#6B7280',    bg: '#F3F4F6' },
 };
 
 // ─── Auto-approve countdown hook ──────────────────────────────────────────────
@@ -52,12 +69,12 @@ function useCountdown(expiryIso?: string) {
 
 // ─── Section header ───────────────────────────────────────────────────────────
 
-function SectionHeader({ emoji, title, count, colors }: {
-  emoji: string; title: string; count: number; colors: any;
+function SectionHeader({ Icon, iconColor, title, count, colors }: {
+  Icon: any; iconColor?: string; title: string; count: number; colors: any;
 }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 20, marginBottom: 10, paddingHorizontal: 16 }}>
-      <Text style={{ fontSize: 18 }}>{emoji}</Text>
+      <Icon size={18} color={iconColor ?? BRAND.purple} />
       <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>{title}</Text>
       <View style={{ backgroundColor: BRAND.purple + '20', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 }}>
         <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.purple }}>{count}</Text>
@@ -78,9 +95,9 @@ function CitizenshipCard({ task, childId, colors, isDark }: {
     <Pressable
       onPress={() => {
         if (done) return;
-        Alert.alert('Mark complete?', `"${task.title}" — this keeps your streak alive!`, [
+        Alert.alert('Mark complete?', `"${task.title}" — keeps your streak going.`, [
           { text: 'Cancel', style: 'cancel' },
-          { text: '✓ Done', onPress: () => instantCompleteChore(task.id, childId) },
+          { text: 'Done', onPress: () => instantCompleteChore(task.id, childId) },
         ]);
       }}
       style={({ pressed }) => ({
@@ -97,11 +114,11 @@ function CitizenshipCard({ task, childId, colors, isDark }: {
       <View style={{
         width: 26, height: 26, borderRadius: 13,
         borderWidth: 2,
-        borderColor: done ? '#059669' : colors.border,
-        backgroundColor: done ? '#059669' : 'transparent',
+        borderColor: done ? MONEY_GREEN : colors.border,
+        backgroundColor: done ? MONEY_GREEN : 'transparent',
         alignItems: 'center', justifyContent: 'center',
       }}>
-        {done && <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>✓</Text>}
+        {done && <Check size={14} color="#fff" strokeWidth={3} />}
       </View>
       <View style={{ flex: 1 }}>
         <Text style={{
@@ -115,7 +132,7 @@ function CitizenshipCard({ task, childId, colors, isDark }: {
           <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>{task.description}</Text>
         )}
       </View>
-      {done && <Text style={{ fontSize: 16 }}>🌱</Text>}
+      {done && <Sprout size={16} color={MONEY_GREEN} />}
     </Pressable>
   );
 }
@@ -149,17 +166,18 @@ function BountyCard({ task, childId, members, colors, isDark, onAction }: {
     <View style={{
       backgroundColor: isDark ? colors.card : '#fff',
       borderRadius: 16, borderWidth: 1,
-      borderColor: claimedBy ? colors.border : isMine ? '#F59E0B40' : '#F59E0B40',
+      borderColor: claimedBy ? colors.border : `${BOUNTY_AMBER}40`,
       marginHorizontal: 16, marginBottom: 8, padding: 14,
       opacity: claimedBy ? 0.6 : 1,
     }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <View style={{ backgroundColor: isDark ? '#D9770620' : '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#D97706' }}>💎 Bounty</Text>
+        <View style={{ backgroundColor: isDark ? `${BOUNTY_AMBER}20` : BOUNTY_AMBER_BG, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Gem size={11} color={BOUNTY_AMBER} />
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BOUNTY_AMBER }}>Bounty</Text>
         </View>
         {task.basePoints > 0 && (
-          <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#D97706' }}>+{task.basePoints} pts</Text>
+          <View style={{ backgroundColor: BOUNTY_AMBER_BG, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BOUNTY_AMBER }}>+{task.basePoints} pts</Text>
           </View>
         )}
         {claimedBy && (
@@ -171,13 +189,16 @@ function BountyCard({ task, childId, members, colors, isDark, onAction }: {
         )}
         <View style={{ flex: 1 }} />
         {isPending && hoursLeft !== null && (
-          <Text style={{ fontSize: 10, color: hoursLeft < 4 ? '#EF4444' : colors.textTertiary, fontWeight: '600' }}>
-            ⏱ Auto in {hoursLeft < 1 ? '<1h' : `${Math.round(hoursLeft)}h`}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+            <Clock size={10} color={hoursLeft < 4 ? colors.danger : colors.textTertiary} />
+            <Text style={{ fontSize: 10, color: hoursLeft < 4 ? colors.danger : colors.textTertiary, fontWeight: '600' }}>
+              Auto in {hoursLeft < 1 ? '<1h' : `${Math.round(hoursLeft)}h`}
+            </Text>
+          </View>
         )}
         {!isPending && expiryDays !== null && (
-          <View style={{ backgroundColor: expiryDays < 1 ? '#FEE2E2' : '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: 10, fontWeight: '700', color: expiryDays < 1 ? '#EF4444' : '#92400E' }}>
+          <View style={{ backgroundColor: expiryDays < 1 ? `${colors.danger}20` : BOUNTY_AMBER_BG, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: expiryDays < 1 ? colors.danger : '#92400E' }}>
               {expiryDays < 1 ? 'Expires today!' : `Expires in ${Math.ceil(expiryDays)}d`}
             </Text>
           </View>
@@ -194,19 +215,21 @@ function BountyCard({ task, childId, members, colors, isDark, onAction }: {
         <Pressable
           onPress={() => onAction(task)}
           style={({ pressed }) => ({
-            marginTop: 8, borderRadius: 12,
-            backgroundColor: isMine ? BRAND.purple : '#F59E0B',
-            padding: 10, alignItems: 'center', opacity: pressed ? 0.8 : 1,
+            marginTop: 8, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+            backgroundColor: isMine ? BRAND.purple : BOUNTY_AMBER,
+            padding: 10, opacity: pressed ? 0.8 : 1,
           })}
         >
+          {isMine ? <Check size={14} color="#fff" /> : <Gem size={14} color="#fff" />}
           <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>
-            {isMine ? '✓ Submit Done' : '💎 Claim Bounty'}
+            {isMine ? 'Submit Done' : 'Claim Bounty'}
           </Text>
         </Pressable>
       )}
       {isPending && (
-        <View style={{ backgroundColor: BRAND.purple + '15', borderRadius: 10, padding: 8, marginTop: 8, alignItems: 'center' }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.purple }}>Reviewing… ⏳</Text>
+        <View style={{ backgroundColor: BRAND.purple + '15', borderRadius: 10, padding: 8, marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <Clock size={13} color={BRAND.purple} />
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.purple }}>Reviewing…</Text>
         </View>
       )}
     </View>
@@ -236,18 +259,19 @@ function GPQuestCard({ task, childId, members, colors, isDark, onStart, onSubmit
       marginHorizontal: 16, marginBottom: 8, padding: 14,
     }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <View style={{ backgroundColor: isDark ? '#2563EB20' : '#DBEAFE', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#2563EB' }}>👴 GP Quest</Text>
+        <View style={{ backgroundColor: isDark ? `${GP_BLUE}20` : GP_BLUE_BG, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <HeartHandshake size={11} color={GP_BLUE} />
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: GP_BLUE }}>GP Quest</Text>
         </View>
         {/* GP quests never show pts — GPs don't earn coins */}
         {task.basePoints > 0 && task.categoryType !== 'grandparent_quest' && (
-          <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#D97706' }}>+{task.basePoints} pts</Text>
+          <View style={{ backgroundColor: BOUNTY_AMBER_BG, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BOUNTY_AMBER }}>+{task.basePoints} pts</Text>
           </View>
         )}
         {isPendingGP && (
-          <View style={{ backgroundColor: '#DBEAFE', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#2563EB' }}>Grandparent reviewing…</Text>
+          <View style={{ backgroundColor: GP_BLUE_BG, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: GP_BLUE }}>Grandparent reviewing…</Text>
           </View>
         )}
       </View>
@@ -284,17 +308,18 @@ function GPQuestCard({ task, childId, members, colors, isDark, onStart, onSubmit
               padding: 10, alignItems: 'center', opacity: pressed ? 0.8 : 1,
             })}
           >
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444' }}>Not Now</Text>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.danger }}>Not Now</Text>
           </Pressable>
           <Pressable
             onPress={() => onStart(task)}
             style={({ pressed }) => ({
-              flex: 2, borderRadius: 12, backgroundColor: '#2563EB',
-              padding: 10, alignItems: 'center', opacity: pressed ? 0.8 : 1,
+              flex: 2, borderRadius: 12, backgroundColor: GP_BLUE, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: 10, opacity: pressed ? 0.8 : 1,
             })}
           >
+            {isPooled ? <HandMetal size={14} color="#fff" /> : <Play size={14} color="#fff" fill="#fff" />}
             <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>
-              {isPooled ? '🙋 I\'ll Take It' : '▶ Start Quest'}
+              {isPooled ? "I'll Take It" : 'Start Quest'}
             </Text>
           </Pressable>
         </View>
@@ -303,11 +328,12 @@ function GPQuestCard({ task, childId, members, colors, isDark, onStart, onSubmit
         <Pressable
           onPress={() => onSubmit(task)}
           style={({ pressed }) => ({
-            marginTop: 4, borderRadius: 12, backgroundColor: BRAND.purple,
-            padding: 10, alignItems: 'center', opacity: pressed ? 0.8 : 1,
+            marginTop: 4, borderRadius: 12, backgroundColor: BRAND.purple, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+            padding: 10, opacity: pressed ? 0.8 : 1,
           })}
         >
-          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>✓ Mark Complete & Submit</Text>
+          <Check size={14} color="#fff" />
+          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>Mark Complete & Submit</Text>
         </Pressable>
       )}
     </View>
@@ -331,30 +357,38 @@ function TaskCard({ task, childId, colors, isDark, onAction }: {
       style={({ pressed }) => ({
         backgroundColor: isDark ? colors.card : '#fff',
         borderRadius: 16, borderWidth: 1,
-        borderColor: isRedo ? '#FCA5A5' : isPending ? BRAND.purple + '30' : colors.border,
+        borderColor: isRedo ? colors.danger : isPending ? BRAND.purple + '30' : colors.border,
         marginHorizontal: 16, marginBottom: 8, padding: 14,
         opacity: pressed ? 0.85 : 1,
       })}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
         <View style={{ backgroundColor: isDark ? meta.color + '25' : meta.bg, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, flexDirection: 'row', gap: 4, alignItems: 'center' }}>
-          <Text style={{ fontSize: 11 }}>{meta.emoji}</Text>
+          <meta.Icon size={11} color={meta.color} />
           <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: meta.color }}>{meta.label}</Text>
         </View>
         {task.basePoints > 0 && task.categoryType !== 'grandparent_quest' && (
-          <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#D97706' }}>+{task.basePoints} pts</Text>
+          <View style={{ backgroundColor: BOUNTY_AMBER_BG, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BOUNTY_AMBER }}>+{task.basePoints} pts</Text>
           </View>
         )}
-        {task.requiresPhotoProof && <Text style={{ fontSize: 14 }}>📸</Text>}
+        {task.requiresPhotoProof && <Camera size={13} color={colors.textTertiary} />}
         <View style={{ flex: 1 }} />
         {isPending && hoursLeft !== null && (
-          <Text style={{ fontSize: 10, color: hoursLeft < 4 ? '#EF4444' : colors.textTertiary, fontWeight: '600' }}>
-            ⏱ Auto in {hoursLeft < 1 ? '<1h' : `${Math.round(hoursLeft)}h`}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+            <Clock size={10} color={hoursLeft < 4 ? colors.danger : colors.textTertiary} />
+            <Text style={{ fontSize: 10, color: hoursLeft < 4 ? colors.danger : colors.textTertiary, fontWeight: '600' }}>
+              Auto in {hoursLeft < 1 ? '<1h' : `${Math.round(hoursLeft)}h`}
+            </Text>
+          </View>
         )}
         {isPending && <View style={{ backgroundColor: BRAND.purple + '20', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}><Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: BRAND.purple }}>Reviewing…</Text></View>}
-        {isRedo && <View style={{ backgroundColor: '#FEE2E2', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}><Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>Redo ↩</Text></View>}
+        {isRedo && (
+          <View style={{ backgroundColor: `${colors.danger}20`, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+            <Undo2 size={10} color={colors.danger} />
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.danger }}>Redo</Text>
+          </View>
+        )}
       </View>
 
       <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary, marginBottom: 2 }}>{task.title}</Text>
@@ -362,15 +396,17 @@ function TaskCard({ task, childId, colors, isDark, onAction }: {
         <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, lineHeight: 18 }}>{task.description}</Text>
       )}
       {isRedo && task.rejectionReason && (
-        <View style={{ backgroundColor: '#FEF2F2', borderRadius: 10, padding: 10, marginTop: 6 }}>
-          <Text style={{ fontSize: TYPO.caption, color: '#DC2626', fontWeight: '600' }}>💬 {task.rejectionReason}</Text>
+        <View style={{ backgroundColor: `${colors.danger}10`, borderRadius: 10, padding: 10, marginTop: 6, flexDirection: 'row', gap: 6 }}>
+          <MessageCircle size={13} color={colors.danger} style={{ marginTop: 1 }} />
+          <Text style={{ flex: 1, fontSize: TYPO.caption, color: colors.danger, fontWeight: '600' }}>{task.rejectionReason}</Text>
         </View>
       )}
       {!isPending && (
         <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 }}>
-          <View style={{ backgroundColor: BRAND.purple, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 7 }}>
+          <View style={{ backgroundColor: BRAND.purple, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            {isRedo ? <Undo2 size={13} color="#fff" /> : <Check size={13} color="#fff" />}
             <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>
-              {isRedo ? '↩ Resubmit' : '✓ Done'}
+              {isRedo ? 'Resubmit' : 'Done'}
             </Text>
           </View>
         </View>
@@ -434,7 +470,7 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
   const handle = async () => {
     if (!task) return;
     if (needsPhoto && !photoUri) {
-      Alert.alert('📸 Photo required', 'Add a photo before submitting.');
+      Alert.alert('Photo required', 'Add a photo before submitting.');
       return;
     }
     setLoading(true);
@@ -468,26 +504,26 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
         </Text>
         {task.basePoints > 0 && !isClaimOnly && !isGPStart && (
           <Text style={{ fontSize: TYPO.label, color: BRAND.purple, fontWeight: '700', marginBottom: 12 }}>
-            +{task.basePoints} pts on approval ⭐
+            +{task.basePoints} pts on approval
           </Text>
         )}
 
         {isRedo && task.rejectionReason && (
-          <View style={{ backgroundColor: '#FEF2F2', borderRadius: 12, padding: 12, marginBottom: 16 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#DC2626' }}>Parent's feedback:</Text>
-            <Text style={{ fontSize: TYPO.caption, color: '#DC2626', marginTop: 2 }}>{task.rejectionReason}</Text>
+          <View style={{ backgroundColor: `${colors.danger}10`, borderRadius: 12, padding: 12, marginBottom: 16 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.danger }}>Feedback:</Text>
+            <Text style={{ fontSize: TYPO.caption, color: colors.danger, marginTop: 2 }}>{task.rejectionReason}</Text>
           </View>
         )}
 
         {isClaimOnly && (
           <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 20, lineHeight: 20 }}>
-            Claiming assigns this bounty to you. Complete it and submit for parent approval to earn {task.basePoints} pts!
+            Claiming assigns this bounty to you. Complete it and submit for approval to earn {task.basePoints} pts.
           </Text>
         )}
 
         {isGPStart && (
           <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 20, lineHeight: 20 }}>
-            Starting this quest marks it as in-progress. Your grandparent will see you've started!
+            Starting this quest marks it in-progress — your grandparent will see you're on it.
           </Text>
         )}
 
@@ -495,12 +531,12 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
           <>
             {/* Note input */}
             <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
-              Add a note {needsPhoto ? '(optional)' : '(optional)'}
+              Add a note (optional)
             </Text>
             <TextInput
               value={note}
               onChangeText={setNote}
-              placeholder={isRedo ? 'What did you fix?' : 'Tell your parent what you did…'}
+              placeholder={isRedo ? 'What did you fix?' : 'Add a note about what you did…'}
               placeholderTextColor={colors.textTertiary}
               multiline numberOfLines={3}
               style={{
@@ -517,13 +553,13 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
                 {/* Mandatory banner */}
                 <View style={{
                   flexDirection: 'row', alignItems: 'center', gap: 8,
-                  backgroundColor: photoUri ? '#F0FDF4' : '#FEF3C7',
+                  backgroundColor: photoUri ? '#F0FDF4' : BOUNTY_AMBER_BG,
                   borderRadius: 12, padding: 10, marginBottom: 12,
                   borderWidth: 1, borderColor: photoUri ? '#BBF7D0' : '#FDE68A',
                 }}>
-                  <Text style={{ fontSize: 18 }}>{photoUri ? '✅' : '📸'}</Text>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: photoUri ? '#059669' : '#D97706', flex: 1 }}>
-                    {photoUri ? 'Photo attached — looks good!' : 'Photo proof required to submit'}
+                  {photoUri ? <Check size={16} color={MONEY_GREEN} /> : <Camera size={16} color={BOUNTY_AMBER} />}
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: photoUri ? MONEY_GREEN : BOUNTY_AMBER, flex: 1 }}>
+                    {photoUri ? 'Photo attached — looks good' : 'Photo proof required to submit'}
                   </Text>
                 </View>
 
@@ -557,7 +593,7 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
                         opacity: pressed ? 0.7 : 1,
                       })}
                     >
-                      <Text style={{ fontSize: 18 }}>📷</Text>
+                      <Camera size={18} color={colors.textPrimary} />
                       <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>Camera</Text>
                     </Pressable>
                     <Pressable
@@ -570,7 +606,7 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
                         opacity: pressed ? 0.7 : 1,
                       })}
                     >
-                      <Text style={{ fontSize: 18 }}>🖼️</Text>
+                      <ImageIcon size={18} color={colors.textPrimary} />
                       <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>Gallery</Text>
                     </Pressable>
                   </View>
@@ -593,7 +629,7 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
           {loading
             ? <ActivityIndicator color="#fff" />
             : <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: canSubmit ? '#fff' : colors.textTertiary }}>
-                {isClaimOnly ? '💎 Claim Bounty' : isGPStart ? '▶ Start Quest' : isRedo ? '↩ Resubmit' : '✅ Submit for Approval'}
+                {isClaimOnly ? 'Claim Bounty' : isGPStart ? 'Start Quest' : isRedo ? 'Resubmit' : 'Submit for Approval'}
               </Text>
           }
         </Pressable>
@@ -659,7 +695,7 @@ function StreakBadgeStrip({ member, colors, isDark }: {
           marginBottom: 8,
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-            <Text style={{ fontSize: 22 }}>🔥</Text>
+            <Flame size={22} color="#F97316" fill="#F97316" />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#F97316' }}>
                 Day {streak} Streak
@@ -689,13 +725,11 @@ function StreakBadgeStrip({ member, colors, isDark }: {
           <Pressable
             onPress={() => setBadgesOpen(o => !o)}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 13 }}>
-            <Text style={{ fontSize: 18 }}>🏆</Text>
+            <Trophy size={18} color={BRAND.amber} />
             <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
-              My Badge Progress
+              Badge Progress
             </Text>
-            <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
-              {badgesOpen ? '▲' : '▼'}
-            </Text>
+            {badgesOpen ? <ChevronUp size={16} color={colors.textTertiary} /> : <ChevronDown size={16} color={colors.textTertiary} />}
           </Pressable>
           {badgesOpen && (
             <View style={{ paddingHorizontal: 14, paddingBottom: 12, gap: 10 }}>
@@ -742,9 +776,9 @@ function WalletStrip({ memberId, colors, isDark, onCashOut }: {
   const ratio = householdSettings.pointsToFiatRatio;
 
   const jars = [
-    { key: 'spend', label: 'Spend', emoji: '🛍️', value: bal.spend, color: '#7C3AED' },
-    { key: 'save',  label: 'Save',  emoji: '🏦', value: bal.save,  color: '#2563EB' },
-    { key: 'give',  label: 'Give',  emoji: '❤️', value: bal.give,  color: '#059669' },
+    { key: 'spend', label: 'Spend', Icon: Wallet,    value: bal.spend, color: BRAND.purple },
+    { key: 'save',  label: 'Save',  Icon: PiggyBank, value: bal.save,  color: GP_BLUE },
+    { key: 'give',  label: 'Give',  Icon: HandHeart, value: bal.give,  color: MONEY_GREEN },
   ] as const;
 
   return (
@@ -756,7 +790,7 @@ function WalletStrip({ memberId, colors, isDark, onCashOut }: {
             borderRadius: 14, padding: 12, alignItems: 'center',
             borderWidth: 1, borderColor: colors.border,
           }}>
-            <Text style={{ fontSize: 18, marginBottom: 3 }}>{jar.emoji}</Text>
+            <jar.Icon size={17} color={jar.color} style={{ marginBottom: 4 }} />
             <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: jar.color }}>{jar.value}</Text>
             <Text style={{ fontSize: 9, fontWeight: '600', color: colors.textTertiary }}>{jar.label}</Text>
             <Text style={{ fontSize: 9, color: colors.textTertiary, marginTop: 1 }}>${(jar.value * ratio).toFixed(2)}</Text>
@@ -767,12 +801,14 @@ function WalletStrip({ memberId, colors, isDark, onCashOut }: {
         <Pressable
           onPress={onCashOut}
           style={({ pressed }) => ({
-            backgroundColor: '#059669', borderRadius: 14, paddingVertical: 12,
-            alignItems: 'center', opacity: pressed ? 0.85 : 1,
+            backgroundColor: MONEY_GREEN, borderRadius: 14, paddingVertical: 12,
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+            opacity: pressed ? 0.85 : 1,
           })}
         >
+          <Wallet size={15} color="#fff" />
           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>
-            💵 Cash Out Points (min {householdSettings.minCashoutPoints} pts)
+            Cash Out Points (min {householdSettings.minCashoutPoints} pts)
           </Text>
         </Pressable>
       )}
@@ -843,12 +879,12 @@ function CashOutSheet({ memberId, visible, onClose, isDark, colors }: {
                 Split across jars — ${dollars} total
               </Text>
               {[
-                { label: 'Spend (50%)', emoji: '🛍️', amt: spendAmt, color: '#7C3AED' },
-                { label: 'Save (40%)',  emoji: '🏦', amt: saveAmt,  color: '#2563EB' },
-                { label: 'Give (10%)', emoji: '❤️', amt: giveAmt,  color: '#059669' },
+                { label: 'Spend (50%)', Icon: Wallet,    amt: spendAmt, color: BRAND.purple },
+                { label: 'Save (40%)',  Icon: PiggyBank, amt: saveAmt,  color: GP_BLUE },
+                { label: 'Give (10%)',  Icon: HandHeart, amt: giveAmt,  color: MONEY_GREEN },
               ].map(j => (
                 <View key={j.label} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                  <Text style={{ fontSize: 16, marginRight: 8 }}>{j.emoji}</Text>
+                  <j.Icon size={15} color={j.color} style={{ marginRight: 8 }} />
                   <Text style={{ flex: 1, fontSize: TYPO.caption, color: colors.textSecondary }}>{j.label}</Text>
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: j.color }}>
                     {j.amt} pts (${(j.amt * ratio).toFixed(2)})
@@ -868,7 +904,7 @@ function CashOutSheet({ memberId, visible, onClose, isDark, colors }: {
                   backgroundColor: customSplit ? BRAND.purple : 'transparent',
                   alignItems: 'center', justifyContent: 'center',
                 }}>
-                  {customSplit && <Text style={{ color: '#fff', fontSize: 12 }}>✓</Text>}
+                  {customSplit && <Check size={12} color="#fff" strokeWidth={3} />}
                 </View>
                 <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>Adjust split manually</Text>
               </Pressable>
@@ -887,7 +923,7 @@ function CashOutSheet({ memberId, visible, onClose, isDark, colors }: {
                 })}
               >
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: valid ? '#fff' : colors.textTertiary }}>
-                  Next →
+                  Next
                 </Text>
               </Pressable>
             </View>
@@ -899,11 +935,12 @@ function CashOutSheet({ memberId, visible, onClose, isDark, colors }: {
                 Ready to cash out {amount} pts (${dollars})
               </Text>
               {[
-                { label: '🛍️ Spend Jar',  sub: 'immediate / debit',      amt: spendAmt, color: '#7C3AED' },
-                { label: '🏦 Save Jar',   sub: 'family vault',            amt: saveAmt,  color: '#2563EB' },
-                { label: '❤️ Give Jar',   sub: 'to your chosen cause',    amt: giveAmt,  color: '#059669' },
+                { label: 'Spend Jar', Icon: Wallet,    sub: 'immediate / debit',    amt: spendAmt, color: BRAND.purple },
+                { label: 'Save Jar',  Icon: PiggyBank, sub: 'family vault',         amt: saveAmt,  color: GP_BLUE },
+                { label: 'Give Jar',  Icon: HandHeart, sub: 'to your chosen cause', amt: giveAmt,  color: MONEY_GREEN },
               ].map(j => (
-                <View key={j.label} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                <View key={j.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <j.Icon size={14} color={j.color} />
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{j.label}</Text>
                     <Text style={{ fontSize: 10, color: colors.textTertiary }}>{j.sub}</Text>
@@ -917,19 +954,22 @@ function CashOutSheet({ memberId, visible, onClose, isDark, colors }: {
 
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <Pressable onPress={() => setStep('amount')} style={{ flex: 1, padding: 14, borderRadius: 14, backgroundColor: colors.surface, alignItems: 'center' }}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>← Back</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Back</Text>
               </Pressable>
               <Pressable
                 onPress={handleSubmit}
                 disabled={loading}
                 style={({ pressed }) => ({
-                  flex: 2, padding: 14, borderRadius: 14,
-                  backgroundColor: '#059669', alignItems: 'center', opacity: pressed || loading ? 0.7 : 1,
+                  flex: 2, padding: 14, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  backgroundColor: MONEY_GREEN, opacity: pressed || loading ? 0.7 : 1,
                 })}
               >
                 {loading
                   ? <ActivityIndicator color="#fff" />
-                  : <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>✓ Confirm & Submit</Text>
+                  : <>
+                      <Check size={15} color="#fff" />
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>Confirm & Submit</Text>
+                    </>
                 }
               </Pressable>
             </View>
@@ -1001,7 +1041,7 @@ export function ChildChoreBoard({ member, members, colors, isDark }: ChildChoreB
 
   const handleTaskAction = (task: ChoreTask) => {
     if (task.status === 'pending_approval' || task.status === 'pending_grandparent_approval') {
-      Alert.alert('Under Review', 'This task is waiting for approval. Hang tight! ⏳');
+      Alert.alert('Under Review', 'This task is waiting for approval.');
       return;
     }
     setSelectedTask(task);
@@ -1049,15 +1089,18 @@ export function ChildChoreBoard({ member, members, colors, isDark }: ChildChoreB
         {/* Citizenship */}
         {dash.citizenship.length > 0 && (
           <>
-            <SectionHeader emoji="🌱" title="Citizenship" count={citizenshipTotal} colors={colors} />
+            <SectionHeader Icon={Sprout} iconColor={MONEY_GREEN} title="Citizenship" count={citizenshipTotal} colors={colors} />
             {citizenshipTotal > 0 && (
               <View style={{ marginHorizontal: 16, marginBottom: 10 }}>
                 <View style={{ height: 6, backgroundColor: colors.border, borderRadius: 3, overflow: 'hidden' }}>
-                  <View style={{ height: '100%', width: `${citizenshipPct}%`, backgroundColor: '#059669', borderRadius: 3 }} />
+                  <View style={{ height: '100%', width: `${citizenshipPct}%`, backgroundColor: MONEY_GREEN, borderRadius: 3 }} />
                 </View>
-                <Text style={{ fontSize: TYPO.caption, color: '#059669', fontWeight: '600', marginTop: 4 }}>
-                  {citizenshipPct === 100 ? '✅ All done — streak maintained!' : `${citizenshipDone}/${citizenshipTotal} completed`}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                  {citizenshipPct === 100 && <Check size={12} color={MONEY_GREEN} />}
+                  <Text style={{ fontSize: TYPO.caption, color: MONEY_GREEN, fontWeight: '600' }}>
+                    {citizenshipPct === 100 ? 'All done — streak maintained!' : `${citizenshipDone}/${citizenshipTotal} completed`}
+                  </Text>
+                </View>
               </View>
             )}
             {dash.citizenship.map(task => (
@@ -1069,7 +1112,7 @@ export function ChildChoreBoard({ member, members, colors, isDark }: ChildChoreB
         {/* Routines */}
         {dash.routines.length > 0 && (
           <>
-            <SectionHeader emoji="⭐" title="My Routines" count={dash.routines.length} colors={colors} />
+            <SectionHeader Icon={Star} title="My Routines" count={dash.routines.length} colors={colors} />
             {dash.routines.map(task => (
               <TaskCard key={task.id} task={task} childId={member.id} colors={colors} isDark={isDark} onAction={handleTaskAction} />
             ))}
@@ -1079,10 +1122,10 @@ export function ChildChoreBoard({ member, members, colors, isDark }: ChildChoreB
         {/* Bounty Board */}
         {dash.bounties.length > 0 && (
           <>
-            <SectionHeader emoji="💎" title="Bounty Board" count={dash.bounties.length} colors={colors} />
-            <View style={{ marginHorizontal: 16, marginBottom: 8, backgroundColor: '#FEF3C7', borderRadius: 10, padding: 10, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-              <Text style={{ fontSize: 16 }}>⚡</Text>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: '#D97706', flex: 1 }}>First-come! Claim before a sibling does.</Text>
+            <SectionHeader Icon={Gem} iconColor={BOUNTY_AMBER} title="Bounty Board" count={dash.bounties.length} colors={colors} />
+            <View style={{ marginHorizontal: 16, marginBottom: 8, backgroundColor: BOUNTY_AMBER_BG, borderRadius: 10, padding: 10, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              <Zap size={15} color={BOUNTY_AMBER} />
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: BOUNTY_AMBER, flex: 1 }}>First come, first served — claim it before someone else does.</Text>
             </View>
             {dash.bounties.map(task => (
               <BountyCard
@@ -1097,7 +1140,7 @@ export function ChildChoreBoard({ member, members, colors, isDark }: ChildChoreB
         {/* Grandparent Quests */}
         {dash.grandparentQuests.length > 0 && (
           <>
-            <SectionHeader emoji="👴" title="Grandparent Quests" count={dash.grandparentQuests.length} colors={colors} />
+            <SectionHeader Icon={HeartHandshake} iconColor={GP_BLUE} title="Grandparent Quests" count={dash.grandparentQuests.length} colors={colors} />
             {dash.grandparentQuests.map(task => (
               <GPQuestCard
                 key={task.id} task={task} childId={member.id} members={members}
@@ -1115,10 +1158,10 @@ export function ChildChoreBoard({ member, members, colors, isDark }: ChildChoreB
          dash.bounties.length === 0 && dash.grandparentQuests.length === 0 &&
          dash.completedToday.length === 0 && (
           <View style={{ alignItems: 'center', paddingVertical: 60, paddingHorizontal: 32 }}>
-            <Text style={{ fontSize: 48, marginBottom: 12 }}>🎯</Text>
+            <Target size={44} color={colors.textTertiary} style={{ marginBottom: 12 }} />
             <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary, textAlign: 'center', marginBottom: 6 }}>No tasks yet</Text>
             <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center', lineHeight: 20 }}>
-              Ask a parent to add chores, or check back for new bounties!
+              Nothing posted right now — check back later for new routines or bounties.
             </Text>
           </View>
         )}

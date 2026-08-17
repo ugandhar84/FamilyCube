@@ -1,0 +1,230 @@
+import { View, Text, Pressable, Alert } from 'react-native';
+import { Car, Hand, MapPin, BookOpen, PartyPopper, ShoppingBag, ClipboardList, AlertTriangle } from 'lucide-react-native';
+import { BRAND } from '@/components/FamilyCubeLogo';
+import FamilyAvatar from '@/components/FamilyAvatar';
+import { CollapsibleCard } from '../hubComponents';
+import { fmtTime, hoursUntilEvent } from '../hubUtils';
+import { GP } from './seniorTheme';
+import type { FamilyMember } from '@/store/familyStore';
+import type { FamilyEvent } from '@/store/eventStore';
+import type { ChoreTask } from '@/store/choreStore';
+import type { KidRequest } from '@/store/kidRequestStore';
+
+// Green — "GP Welcome" accent for parent-flagged requests/chores, distinct
+// from brand teal used elsewhere in this section. Not colors.success (which
+// IS brand teal in this app) — kept as one local constant.
+const GP_WELCOME_GREEN = '#22c55e';
+
+// "Family could use a hand" — anything still needing a volunteer. Rides
+// already on GP's plate live under Today, so they're not duplicated here.
+// Four sub-lists: kid-initiated open requests, parent-flagged GP-welcome
+// requests, GP-welcome supply chores, and the "step in" volunteer pool.
+export function FamilyNeedsHandSection({
+  openRequests, gpWelcomeRequests, gpWelcomeChores, volunteerPool,
+  active, members, allNames, colors, isDark,
+  updateEvent, updateChore, assignRequest,
+}: {
+  openRequests: FamilyEvent[];
+  gpWelcomeRequests: KidRequest[];
+  gpWelcomeChores: ChoreTask[];
+  volunteerPool: FamilyEvent[];
+  active: FamilyMember; members: FamilyMember[]; allNames: string[]; colors: any; isDark: boolean;
+  updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+  updateChore: (id: string, patch: Partial<ChoreTask>) => void;
+  assignRequest: (id: string, memberId: string) => void;
+}) {
+  if (openRequests.length === 0 && gpWelcomeRequests.length === 0 &&
+      gpWelcomeChores.length === 0 && volunteerPool.length === 0) return null;
+
+  return (
+    <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
+      <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textSecondary }}>
+        The family could use a hand
+      </Text>
+      {openRequests.map(ev => {
+        const kid = members.find(m => m.id === ev.memberId);
+        return (
+          <CollapsibleCard key={ev.id} accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded={false}
+            summary={
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Hand size={16} color={BRAND.amber} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: GP.body, fontWeight: '700', color: BRAND.amber }} numberOfLines={1}>{ev.title}</Text>
+                  <Text style={{ fontSize: GP.sub, color: BRAND.amber, opacity: 0.75 }}>{fmtTime(ev.time)}{ev.location ? ` · ${ev.location}` : ''}</Text>
+                </View>
+                <View style={{ backgroundColor: BRAND.amber + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                  <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: BRAND.amber }}>Open</Text>
+                </View>
+              </View>
+            }>
+            {kid && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl} siblings={allNames} size={26} ringColor={BRAND.amber} />
+                <Text style={{ fontSize: GP.sub, color: colors.textSecondary }}>For <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{kid.name.split(' ')[0]}</Text></Text>
+              </View>
+            )}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, helper: active.name, helperStatus: 'confirmed' })}
+                style={{ flex: 1, backgroundColor: BRAND.purple, paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                <Car size={14} color="#fff" />
+                <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
+              </Pressable>
+              <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false })}
+                style={{ flex: 1, backgroundColor: colors.danger + '20', borderWidth: 1, borderColor: colors.danger + '40', borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.danger }}>Pass</Text>
+              </Pressable>
+            </View>
+          </CollapsibleCard>
+        );
+      })}
+      {/* Parent-flagged requests GP can take */}
+      {gpWelcomeRequests.map(req => {
+        const kid = members.find(m => m.id === req.fromMemberId);
+        const TypeIcon = req.type === 'ride' ? Car : req.type === 'tutor' ? BookOpen : PartyPopper;
+        return (
+          <CollapsibleCard key={`gp-${req.id}`} accent={GP_WELCOME_GREEN} colors={colors} isDark={isDark} defaultExpanded={true}
+            summary={
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <TypeIcon size={16} color={GP_WELCOME_GREEN} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: GP.body, fontWeight: '700', color: GP_WELCOME_GREEN }} numberOfLines={1}>
+                    {kid?.name.split(' ')[0] ?? 'Kid'} — {req.detail}
+                  </Text>
+                  {req.scheduledDate || req.scheduledTime ? (
+                    <Text style={{ fontSize: GP.sub, color: GP_WELCOME_GREEN, opacity: 0.75 }}>
+                      {req.scheduledDate ?? ''}{req.scheduledTime ? ` at ${req.scheduledTime}` : ''}
+                    </Text>
+                  ) : null}
+                </View>
+                <View style={{ backgroundColor: GP_WELCOME_GREEN + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                  <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: GP_WELCOME_GREEN }}>GP Invited</Text>
+                </View>
+              </View>
+            }>
+            {kid && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl} siblings={allNames} size={26} ringColor={GP_WELCOME_GREEN} />
+                <Text style={{ fontSize: GP.sub, color: colors.textSecondary }}>For <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{kid.name.split(' ')[0]}</Text></Text>
+              </View>
+            )}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Pressable onPress={() => { assignRequest(req.id, active.id); }}
+                style={{ flex: 1, backgroundColor: GP_WELCOME_GREEN, paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                <Hand size={14} color="#fff" />
+                <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Help</Text>
+              </Pressable>
+              <Pressable onPress={() => {/* just close/ignore — GP passes */ }}
+                style={{ flex: 1, backgroundColor: colors.danger + '20', borderWidth: 1, borderColor: colors.danger + '40', borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
+                <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.danger }}>Pass</Text>
+              </Pressable>
+            </View>
+          </CollapsibleCard>
+        );
+      })}
+
+      {/* Partner chores flagged for GP — buy supplies + scan receipt */}
+      {gpWelcomeChores.map(c => {
+        const assignee = members.find(m => m.id === c.assignedToId);
+        const si = c.shoppingItems;
+        return (
+          <CollapsibleCard key={`gpc-${c.id}`} accent={GP_WELCOME_GREEN} colors={colors} isDark={isDark} defaultExpanded={true}
+            summary={
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {si?.length ? <ShoppingBag size={16} color={GP_WELCOME_GREEN} /> : <ClipboardList size={16} color={GP_WELCOME_GREEN} />}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: GP.body, fontWeight: '700', color: GP_WELCOME_GREEN }} numberOfLines={1}>{c.title}</Text>
+                  <Text style={{ fontSize: GP.sub, color: GP_WELCOME_GREEN, opacity: 0.75 }}>
+                    {assignee ? `Assigned to ${assignee.name.split(' ')[0]}` : 'Unassigned'}{si?.length ? ` · ${si.length} items` : ''}{c.shoppingStore ? ` · ${c.shoppingStore}` : ''}
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: GP_WELCOME_GREEN + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                  <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: GP_WELCOME_GREEN }}>GP Welcome</Text>
+                </View>
+              </View>
+            }>
+            {si && si.length > 0 && (
+              <View style={{ marginBottom: 10, gap: 4 }}>
+                {si.map((item, i) => (
+                  <Text key={i} style={{ fontSize: GP.sub, color: colors.textSecondary }}>• {item}</Text>
+                ))}
+                {c.shoppingBudget != null && (
+                  <Text style={{ fontSize: GP.sub, color: GP_WELCOME_GREEN, fontWeight: '700', marginTop: 4 }}>Budget: ${c.shoppingBudget}</Text>
+                )}
+              </View>
+            )}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Pressable onPress={() => updateChore(c.id, { assignedToId: active.id, status: 'in_progress', openToGP: false })}
+                style={{ flex: 1, backgroundColor: GP_WELCOME_GREEN, paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                <Hand size={14} color="#fff" />
+                <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Handle It</Text>
+              </Pressable>
+            </View>
+          </CollapsibleCard>
+        );
+      })}
+
+      {volunteerPool.map(ev => {
+        const kid = members.find(m => m.id === ev.memberId);
+        const hrs = hoursUntilEvent(ev.date, ev.time);
+        const isReallyUrgent = hrs < 1;
+        return (
+          <CollapsibleCard key={`vol-${ev.id}`} accent={isReallyUrgent ? colors.danger : BRAND.teal}
+            colors={colors} isDark={isDark} defaultExpanded={isReallyUrgent}
+            summary={
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Car size={16} color={isReallyUrgent ? colors.danger : BRAND.teal} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: GP.body, fontWeight: '800', color: isReallyUrgent ? colors.danger : BRAND.teal }} numberOfLines={1}>
+                    {ev.title}
+                  </Text>
+                  <Text style={{ fontSize: GP.sub, color: isReallyUrgent ? colors.danger : BRAND.teal, opacity: 0.75 }}>
+                    {kid?.name.split(' ')[0] ?? 'Kid'} · {fmtTime(ev.time)} · {ev.helper} hasn't replied
+                  </Text>
+                </View>
+                <View style={{ backgroundColor: (isReallyUrgent ? colors.danger : BRAND.teal) + '25', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  {isReallyUrgent && <AlertTriangle size={11} color={colors.danger} />}
+                  <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: isReallyUrgent ? colors.danger : BRAND.teal }}>
+                    {isReallyUrgent ? 'Step In' : 'Volunteer?'}
+                  </Text>
+                </View>
+              </View>
+            }>
+            {ev.location && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                <MapPin size={12} color={colors.textSecondary} />
+                <Text style={{ fontSize: GP.sub, color: colors.textSecondary }}>{ev.location}</Text>
+              </View>
+            )}
+            <View style={{ backgroundColor: isDark ? '#1e2540' : '#F8FAFC', borderRadius: 10, padding: 10, marginBottom: 8 }}>
+              <Text style={{ fontSize: GP.sub, color: colors.textSecondary }}>
+                <Text style={{ fontWeight: '700', color: colors.textPrimary }}>{ev.helper}</Text> was asked but hasn't replied.
+                {' '}If you step in, they'll be notified they're no longer needed.
+              </Text>
+            </View>
+            <Pressable
+              onPress={() =>
+                Alert.alert(
+                  'Step In as Driver?',
+                  `You'll replace ${ev.helper} and be confirmed immediately. ${ev.helper} will be notified they're off the hook.`,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: "Yes, I'll Drive",
+                      onPress: () => updateEvent(ev.id, {
+                        helper: active.name,
+                        helperStatus: 'confirmed',
+                      }),
+                    },
+                  ]
+                )
+              }
+              style={{ backgroundColor: BRAND.teal, borderRadius: 12, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+              <Car size={15} color="#fff" />
+              <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Step In — Confirm Drive</Text>
+            </Pressable>
+          </CollapsibleCard>
+        );
+      })}
+    </View>
+  );
+}

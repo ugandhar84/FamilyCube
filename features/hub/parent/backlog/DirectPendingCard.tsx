@@ -6,6 +6,11 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 
+// Money-green — "Accept" action accent, distinct from brand amber used
+// elsewhere in this card. Not colors.success (which IS brand teal in this
+// app) — kept as one local constant.
+const MONEY_GREEN = '#10B981';
+
 // A co-parent directly assigned this to you — accept it, or push back
 // (snooze / blocker / trade / discuss) via the pushback sheet.
 export function DirectPendingCard({ a, chore, members, colors, isDark, respondToParentQuest, onRespond }: {
@@ -34,7 +39,7 @@ export function DirectPendingCard({ a, chore, members, colors, isDark, respondTo
       <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
         <Pressable onPress={() => respondToParentQuest(a.id, { action: 'ACCEPT' })}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-            backgroundColor: '#10B981', borderRadius: 10, paddingVertical: 8 }}>
+            backgroundColor: MONEY_GREEN, borderRadius: 10, paddingVertical: 8 }}>
           <Check size={14} color="#fff" />
           <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Accept</Text>
         </Pressable>

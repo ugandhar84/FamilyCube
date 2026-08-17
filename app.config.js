@@ -5,7 +5,9 @@ const config = {
   name: "FamilyCube",
   slug: "family-cube",
   version: "1.0.0",
-  orientation: "portrait",
+  // Base value only — the actual per-idiom split (phone portrait-only, iPad
+  // all orientations) lives in ios.infoPlist below.
+  orientation: "default",
   icon: "./assets/icon.png",
   scheme: ["familycube"],
   userInterfaceStyle: "automatic",
@@ -44,6 +46,18 @@ const config = {
       tinted: "./assets/icon-dark.png",
     },
     infoPlist: {
+      // Phones stay portrait-only (unchanged). iPads — including a wall-mounted
+      // "kitchen hub" scenario — can rotate to landscape. iOS reads the
+      // idiom-suffixed key for iPad and falls back to the base key for iPhone,
+      // so these two keys are what actually split the behavior; the top-level
+      // `orientation: "default"` above just tells Expo not to force both
+      // idioms to the same single value.
+      UISupportedInterfaceOrientations: ["UIInterfaceOrientationPortrait"],
+      "UISupportedInterfaceOrientations~ipad": [
+        "UIInterfaceOrientationPortrait",
+        "UIInterfaceOrientationLandscapeLeft",
+        "UIInterfaceOrientationLandscapeRight",
+      ],
       ITSAppUsesNonExemptEncryption: false,
       NSCameraUsageDescription: "Family Cube uses your camera for profile photos and task proof submissions.",
       NSPhotoLibraryUsageDescription: "Family Cube accesses your photos for profile pictures and task completion proof.",
@@ -58,6 +72,11 @@ const config = {
     },
   },
   android: {
+    // Android's manifest has no per-idiom orientation split like iOS's
+    // ~ipad Info.plist keys, so this locks the default (phones) to portrait;
+    // lib/useDeviceClass.ts unlocks landscape at runtime specifically for
+    // tablet-class Android devices via expo-screen-orientation.
+    orientation: "portrait",
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
       backgroundColor: "#6C5CE7",

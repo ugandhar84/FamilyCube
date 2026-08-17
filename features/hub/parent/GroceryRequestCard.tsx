@@ -5,6 +5,11 @@ import { CollapsibleCard } from '../hubComponents';
 import { GROCERY_PREFIX, SUPPLIES_PREFIX, decodeGroceryRequest } from '../KidModals';
 import type { FamilyMember } from '@/store/familyStore';
 
+// Money-green — "item approved / added" accent, distinct from brand teal
+// used elsewhere in the hub. Not colors.success (which IS brand teal in
+// this app) — kept as one local constant.
+const MONEY_GREEN = '#10B981';
+
 // Grocery / supplies request — item-level approve/reject when the request
 // carries an items[] list, or a plain approve/decline when it doesn't.
 export function GroceryRequestCard({
@@ -81,18 +86,20 @@ export function GroceryRequestCard({
                 {item.status === 'pending' ? (
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     <Pressable onPress={() => approveItemsAndSync(req.id, [item.id], isSupplies)}
-                      style={{ backgroundColor: accent + '20', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accent }}>✓ Add</Text>
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: accent + '20', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
+                      <Check size={11} color={accent} />
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accent }}>Add</Text>
                     </Pressable>
                     <Pressable onPress={() => rejectItems(req.id, [item.id], active.id)}
-                      style={{ backgroundColor: '#EF444420', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>✕</Text>
+                      style={{ backgroundColor: `${colors.danger}20`, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
+                      <X size={11} color={colors.danger} />
                     </Pressable>
                   </View>
                 ) : (
-                  <View style={{ backgroundColor: item.status === 'approved' ? '#10B98120' : '#EF444420', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: item.status === 'approved' ? '#10B981' : '#EF4444' }}>
-                      {item.status === 'approved' ? '✓ Added' : '✕ No'}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: item.status === 'approved' ? `${MONEY_GREEN}20` : `${colors.danger}20`, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+                    {item.status === 'approved' ? <Check size={10} color={MONEY_GREEN} /> : <X size={10} color={colors.danger} />}
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: item.status === 'approved' ? MONEY_GREEN : colors.danger }}>
+                      {item.status === 'approved' ? 'Added' : 'No'}
                     </Text>
                   </View>
                 )}
@@ -102,12 +109,14 @@ export function GroceryRequestCard({
           {pendingItems.length > 1 && (
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <Pressable onPress={() => approveItemsAndSync(req.id, pendingItems.map((i: any) => i.id), isSupplies)}
-                style={{ flex: 1, backgroundColor: accent + '15', borderWidth: 1, borderColor: accent + '40', paddingVertical: 8, borderRadius: 10, alignItems: 'center' }}>
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: accent + '15', borderWidth: 1, borderColor: accent + '40', paddingVertical: 8, borderRadius: 10 }}>
+                <Check size={12} color={accent} />
                 <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accent }}>Add All</Text>
               </Pressable>
               <Pressable onPress={() => rejectItems(req.id, pendingItems.map((i: any) => i.id), active.id)}
-                style={{ flex: 1, backgroundColor: '#EF444415', borderWidth: 1, borderColor: '#EF444430', paddingVertical: 8, borderRadius: 10, alignItems: 'center' }}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#EF4444' }}>Reject All</Text>
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: `${colors.danger}15`, borderWidth: 1, borderColor: `${colors.danger}30`, paddingVertical: 8, borderRadius: 10 }}>
+                <X size={12} color={colors.danger} />
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.danger }}>Reject All</Text>
               </Pressable>
             </View>
           )}
@@ -121,10 +130,10 @@ export function GroceryRequestCard({
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Approve</Text>
           </Pressable>
           <Pressable onPress={() => declineRequest(req.id, active.id)}
-            style={{ flex: 1, backgroundColor: '#EF444415', borderWidth: 1,
-              borderColor: '#EF444440', borderRadius: 10, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-            <X size={14} color="#EF4444" />
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#EF4444' }}>Decline</Text>
+            style={{ flex: 1, backgroundColor: `${colors.danger}15`, borderWidth: 1,
+              borderColor: `${colors.danger}40`, borderRadius: 10, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+            <X size={14} color={colors.danger} />
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.danger }}>Decline</Text>
           </Pressable>
         </View>
       )}

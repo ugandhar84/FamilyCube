@@ -3,6 +3,11 @@ import { View, Text, Pressable, TextInput } from 'react-native';
 import { ChevronUp, ChevronDown, Pill, Unlock, HelpCircle, MessageSquare, Check, X } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 
+// Money-green — "approve/allow" accent for this card's action button,
+// distinct from brand teal used elsewhere in the hub. Not colors.success
+// (which IS brand teal in this app) — kept as one local constant.
+const MONEY_GREEN = '#10B981';
+
 // Question/permission/medical kid request — collapsed row that expands into a
 // reply box. Kept generic across all three so the parent has one consistent
 // pattern to learn instead of three slightly different card shapes.
@@ -72,7 +77,7 @@ export function InlineReplyCard({ req, kidName, isPermission, isQuestion, isMedi
               onPress={() => onApprove(reply.trim())}
               disabled={!canSubmit}
               style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                backgroundColor: canSubmit ? '#10B981' : (isDark ? '#374151' : '#D1D5DB'),
+                backgroundColor: canSubmit ? MONEY_GREEN : (isDark ? '#374151' : '#D1D5DB'),
                 paddingVertical: 11, borderRadius: 12 }}>
               <Check size={14} color="#fff" />
               <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
@@ -82,11 +87,11 @@ export function InlineReplyCard({ req, kidName, isPermission, isQuestion, isMedi
             <Pressable
               onPress={() => onDecline(reply.trim())}
               style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                backgroundColor: isDark ? '#EF444420' : '#FEF2F2',
-                borderWidth: 1.5, borderColor: '#EF444430',
+                backgroundColor: isDark ? `${colors.danger}20` : '#FEF2F2',
+                borderWidth: 1.5, borderColor: `${colors.danger}30`,
                 paddingVertical: 11, borderRadius: 12 }}>
-              <X size={14} color="#EF4444" />
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#EF4444' }}>
+              <X size={14} color={colors.danger} />
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.danger }}>
                 {isPermission ? 'No' : 'Dismiss'}
               </Text>
             </Pressable>

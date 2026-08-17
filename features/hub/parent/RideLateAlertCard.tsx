@@ -1,5 +1,6 @@
 import { View, Text, Pressable } from 'react-native';
 import { router } from 'expo-router';
+import { AlertTriangle, Car, MapPin, Flag, Clock, Hourglass, MessageCircle, HandHelping } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { CollapsibleCard } from '../hubComponents';
@@ -8,6 +9,11 @@ import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { RideLatePayload } from '../KidModals';
+
+// Money-green — "I'm on my way" resolve accent, distinct from brand teal
+// used elsewhere in this card (Message action). Not colors.success (which
+// IS brand teal in this app) — kept as one local constant.
+const MONEY_GREEN = '#10B981';
 
 // "My driver hasn't arrived" — a stranded kid, not an approval decision.
 // Everything the parent needs to judge the situation at a glance, plus a way
@@ -35,20 +41,20 @@ export function RideLateAlertCard({ req, rideLate, kidName, ev, active, colors, 
   };
 
   return (
-    <CollapsibleCard accent="#EF4444" colors={colors} isDark={isDark} defaultExpanded
+    <CollapsibleCard accent={colors.danger} colors={colors} isDark={isDark} defaultExpanded
       summary={
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Text style={{ fontSize: 22 }}>🚨</Text>
+          <AlertTriangle size={22} color={colors.danger} fill={`${colors.danger}25`} />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#EF4444' }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: colors.danger }}>
               {kidName} is still waiting
             </Text>
             <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 1 }} numberOfLines={1}>
               {rideLate.title}{rideLate.time ? ` · was ${fmtTime(rideLate.time)}` : ''}
             </Text>
           </View>
-          <View style={{ backgroundColor: '#EF444420', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#EF4444' }}>
+          <View style={{ backgroundColor: `${colors.danger}20`, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: colors.danger }}>
               {lateBy ? `${lateBy}m late` : `${waitedMin}m ago`}
             </Text>
           </View>
@@ -56,16 +62,16 @@ export function RideLateAlertCard({ req, rideLate, kidName, ev, active, colors, 
       }>
       <View style={{ borderRadius: 12, padding: 10, gap: 6,
         backgroundColor: isDark ? colors.surface : '#FEF2F2',
-        borderWidth: 1, borderColor: '#EF444425' }}>
+        borderWidth: 1, borderColor: `${colors.danger}25` }}>
         {[
-          ['🚗', 'Driver', driverName ?? 'Nobody assigned'],
-          ['📍', 'Pickup', pickup ?? '—'],
-          ...(dropOff ? [['🏁', 'Drop-off', dropOff]] : []),
-          ['🕒', 'Scheduled', rideLate.time ? fmtTime(rideLate.time) : '—'],
-          ['⏱️', 'Waiting', `${waitedMin} min since ${kidName} raised it`],
-        ].map(([icon, label, value]) => (
+          [Car, 'Driver', driverName ?? 'Nobody assigned'],
+          [MapPin, 'Pickup', pickup ?? '—'],
+          ...(dropOff ? [[Flag, 'Drop-off', dropOff]] : []),
+          [Clock, 'Scheduled', rideLate.time ? fmtTime(rideLate.time) : '—'],
+          [Hourglass, 'Waiting', `${waitedMin} min since ${kidName} raised it`],
+        ].map(([Icon, label, value]: any) => (
           <View key={label} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={{ fontSize: 13 }}>{icon}</Text>
+            <Icon size={13} color={colors.textTertiary} />
             <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary, width: 68 }}>{label}</Text>
             <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }} numberOfLines={2}>{value}</Text>
           </View>
@@ -76,13 +82,15 @@ export function RideLateAlertCard({ req, rideLate, kidName, ev, active, colors, 
         <Pressable onPress={() => resolve(
           "On my way",
           `🚗 ${active.name.split(' ')[0]} is on the way to ${kidName} for "${rideLate.title}" — hang tight!`)}
-          style={{ flex: 1, backgroundColor: '#10B981', borderRadius: 10, paddingVertical: 10, alignItems: 'center' }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>🚗 I'm on my way</Text>
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: MONEY_GREEN, borderRadius: 10, paddingVertical: 10 }}>
+          <Car size={14} color="#fff" />
+          <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>I'm on my way</Text>
         </Pressable>
         <Pressable onPress={() => router.push('/(tabs)/chat')}
-          style={{ borderWidth: 1.5, borderColor: BRAND.teal + '60', borderRadius: 10,
-            paddingVertical: 10, paddingHorizontal: 14, alignItems: 'center' }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.teal }}>💬 Message</Text>
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: BRAND.teal + '60', borderRadius: 10,
+            paddingVertical: 10, paddingHorizontal: 14 }}>
+          <MessageCircle size={14} color={BRAND.teal} />
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.teal }}>Message</Text>
         </Pressable>
       </View>
       {ev && (
@@ -91,10 +99,11 @@ export function RideLateAlertCard({ req, rideLate, kidName, ev, active, colors, 
           resolve('Opened to other helpers',
             `🆘 ${kidName} needs a ride for "${rideLate.title}" — can anyone pick this up?`);
         }}
-          style={{ borderWidth: 1.5, borderColor: BRAND.amber + '60', borderRadius: 10,
-            paddingVertical: 10, alignItems: 'center' }}>
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1.5, borderColor: BRAND.amber + '60', borderRadius: 10,
+            paddingVertical: 10 }}>
+          <HandHelping size={14} color={BRAND.amber} />
           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.amber }}>
-            🙋 Ask someone else to go
+            Ask someone else to go
           </Text>
         </Pressable>
       )}

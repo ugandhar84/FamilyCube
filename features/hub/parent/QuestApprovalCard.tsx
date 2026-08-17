@@ -1,10 +1,10 @@
 import { View, Text, Alert, Image, TouchableOpacity, Pressable } from 'react-native';
-import { Camera, Coins } from 'lucide-react-native';
+import { Camera, Coins, X, AlertTriangle } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import { CollapsibleCard } from '../hubComponents';
+import { CollapsibleCard, QuestLiveness } from '../hubComponents';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
 
@@ -37,6 +37,7 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
                 </Text>
               </View>
             )}
+            <QuestLiveness history={q.history} members={members} colors={colors} />
           </View>
           <View style={{ backgroundColor: BRAND.purple + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
             <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.purple }}>Review</Text>
@@ -57,9 +58,10 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
           </View>
         </TouchableOpacity>
       ) : q.photoRequired ? (
-        <View style={{ borderRadius: 12, marginBottom: 10, padding: 10, alignItems: 'center', gap: 4,
+        <View style={{ borderRadius: 12, marginBottom: 10, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 6,
           backgroundColor: isDark ? '#1C1200' : '#FFF7ED', borderWidth: 1, borderColor: '#FCD34D60' }}>
-          <Text style={{ fontSize: TYPO.label, color: '#D97706', fontWeight: '700' }}>⚠️ Photo proof missing</Text>
+          <AlertTriangle size={13} color="#D97706" />
+          <Text style={{ fontSize: TYPO.label, color: '#D97706', fontWeight: '700' }}>Photo proof missing</Text>
         </View>
       ) : null}
       {q.completionNote ? (
@@ -78,9 +80,10 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
             ],
             'plain-text',
           )}
-          style={{ flex: 1, backgroundColor: '#EF444415', borderWidth: 1, borderColor: '#EF444440',
-            paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#EF4444' }}>✕ Decline</Text>
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: `${colors.danger}15`, borderWidth: 1, borderColor: `${colors.danger}40`,
+            paddingVertical: 10, borderRadius: 12 }}>
+          <X size={13} color={colors.danger} />
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.danger }}>Decline</Text>
         </Pressable>
         <Pressable onPress={() => approveQuest(q.id, active.id)}
           style={{ flex: 2, backgroundColor: BRAND.purple, paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>

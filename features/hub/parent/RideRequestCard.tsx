@@ -1,12 +1,20 @@
 import { useState } from 'react';
 import { View, Text, Pressable, TextInput } from 'react-native';
-import { Hand, Car } from 'lucide-react-native';
+import { Hand, Car, Repeat, MapPinCheck, Flag, HandHelping, CheckCircle2 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { CollapsibleCard } from '../hubComponents';
 import { fmtTime } from '../hubUtils';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
+
+// This card deliberately uses two distinct hues for the two legs of a
+// both-ways ride — money-green for "drop-off" and indigo for "pickup" — so
+// they stay visually distinguishable at a glance. Not colors.success
+// (brand teal) or BRAND.purple: collapsing either would erase the
+// leg-vs-leg distinction, so both are kept as named local constants.
+const DROPOFF_GREEN = '#10B981';
+const PICKUP_INDIGO = '#6366F1';
 
 const to24HourTime = (raw: string): string | undefined => {
   const normalized = raw.trim();
@@ -73,7 +81,7 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
       returnTime: undefined,
       title: `${ev.title} — Drop-off`,
       notes: ev.notes,
-      color: '#10B981',
+      color: DROPOFF_GREEN,
       isOpenToGrandparents: !selfDrive,
       isOpenToTeens: !selfDrive,
       rideCoins: selfDrive ? undefined : splitCoins,
@@ -89,7 +97,7 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
       helper: selfDrive ? active.name : undefined,
       helperStatus: selfDrive ? 'confirmed' : undefined,
       notes: ev.notes ? `(Return) ${ev.notes}` : `Pickup leg for "${ev.title}"`,
-      color: '#6366F1',
+      color: PICKUP_INDIGO,
       isOpenToGrandparents: !selfDrive,
       isOpenToTeens: !selfDrive,
       rideCoins: selfDrive ? undefined : splitCoins,
@@ -102,10 +110,10 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
     <CollapsibleCard flat accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded
       summary={
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Hand size={16} color={BRAND.amber} />
+          {isBothWays ? <Repeat size={16} color={BRAND.amber} /> : isDropoff ? <MapPinCheck size={16} color={BRAND.amber} /> : isPickup ? <Flag size={16} color={BRAND.amber} /> : <Car size={16} color={BRAND.amber} />}
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.amber }} numberOfLines={1}>
-              {isBothWays ? '🔄 Both ways · ' : isDropoff ? '📍 Drop-off · ' : isPickup ? '🏁 Pickup · ' : '🚗 Ride · '}{ev.title}
+              {isBothWays ? 'Both ways · ' : isDropoff ? 'Drop-off · ' : isPickup ? 'Pickup · ' : 'Ride · '}{ev.title}
             </Text>
             <Text style={{ fontSize: TYPO.label, color: BRAND.amber, opacity: 0.8 }}>
               {requester} · {ev.time ? fmtTime(ev.time) : 'time TBD'}{ev.location ? ` · ${ev.location}` : ''}
@@ -129,7 +137,7 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
           borderColor: isDark ? '#334155' : '#E2E8F0',
           backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
           flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 6 }}>
-          <Text style={{ fontSize: 14 }}>🪙</Text>
+          <Text style={{ fontSize: TYPO.body }}>🪙</Text>
           <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, flex: 1 }}>
             Coins for teen driver
             {isBothWays && coinsVal ? ` (split ${splitCoins}+${splitCoins})` : ''}
@@ -147,9 +155,15 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
 
       {isBothWays ? (
         <View style={{ gap: 8 }}>
-          <View style={{ backgroundColor: isDark ? '#0f2a20' : '#ecfdf5', borderRadius: 10, padding: 10, gap: 4, borderWidth: 1, borderColor: '#10B98130' }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#10B981' }}>📍 Drop-off · {ev.time ? fmtTime(ev.time) : 'time TBD'}</Text>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#6366F1', marginTop: 2 }}>🏁 Pickup · {returnTimeStr ?? 'time TBD'}</Text>
+          <View style={{ backgroundColor: isDark ? '#0f2a20' : '#ecfdf5', borderRadius: 10, padding: 10, gap: 4, borderWidth: 1, borderColor: `${DROPOFF_GREEN}30` }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <MapPinCheck size={12} color={DROPOFF_GREEN} />
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: DROPOFF_GREEN }}>Drop-off · {ev.time ? fmtTime(ev.time) : 'time TBD'}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
+              <Flag size={12} color={PICKUP_INDIGO} />
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: PICKUP_INDIGO }}>Pickup · {returnTimeStr ?? 'time TBD'}</Text>
+            </View>
             <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4 }}>
               Creates 2 cards — GP or teen first to claim each leg wins.
               {splitCoins ? ` +${splitCoins} coins each leg.` : ''}
@@ -157,13 +171,14 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Pressable onPress={() => forkRide(false)}
-              style={{ flex: 2, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>✅ Approve & Split</Text>
+              style={{ flex: 2, backgroundColor: DROPOFF_GREEN, paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+              <CheckCircle2 size={14} color="#fff" />
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Approve & Split</Text>
             </Pressable>
             <Pressable onPress={() => forkRide(true)}
-              style={{ flex: 1, backgroundColor: '#10B98120', borderWidth: 1, borderColor: '#10B98140', paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
-              <Car size={13} color="#10B981" />
-              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>I'll Drive</Text>
+              style={{ flex: 1, backgroundColor: `${DROPOFF_GREEN}20`, borderWidth: 1, borderColor: `${DROPOFF_GREEN}40`, paddingVertical: 10, borderRadius: 12, alignItems: 'center' }}>
+              <Car size={13} color={DROPOFF_GREEN} />
+              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: DROPOFF_GREEN }}>I'll Drive</Text>
             </Pressable>
           </View>
         </View>
@@ -171,14 +186,14 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable
             onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'confirmed', helper: active.name, returnTime: undefined })}
-            style={{ flex: 1, backgroundColor: '#10B981', paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+            style={{ flex: 1, backgroundColor: DROPOFF_GREEN, paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
             <Car size={14} color="#fff" />
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
           </Pressable>
           <Pressable
             onPress={() => openToHelpers(coinsVal)}
             style={{ flex: 1, backgroundColor: BRAND.amber + '20', borderWidth: 1.5, borderColor: BRAND.amber + '50', paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
-            <Text style={{ fontSize: 13 }}>🤝</Text>
+            <HandHelping size={14} color={BRAND.amber} />
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.amber }}>Open to Helpers</Text>
           </Pressable>
         </View>

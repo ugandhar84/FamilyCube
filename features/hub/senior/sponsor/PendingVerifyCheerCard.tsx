@@ -1,0 +1,205 @@
+import { View, Text, Pressable, Image } from 'react-native';
+import { Camera, Hammer, CheckCircle2, UserX, Clock, Users, Wallet, PiggyBank, HandCoins } from 'lucide-react-native';
+import { BRAND } from '@/components/FamilyCubeLogo';
+import FamilyAvatar from '@/components/FamilyAvatar';
+import { fmtDateTime } from '@/lib/dates';
+import { GP } from '../seniorTheme';
+import { splitCoins } from '../splitMath';
+import type { FamilyMember } from '@/store/familyStore';
+import type { ChoreTask } from '@/store/choreStore';
+
+// Sticker-picker feature — intentional literal emoji options, not chrome.
+// Do not touch.
+const CHEER_STICKERS = ['⭐', '🏆', '🎉', '💪', '🌟', '❤️'];
+
+// Green — "verified" status accent, distinct from brand teal used
+// elsewhere in this card. Not colors.success (which IS brand teal in this
+// app) — kept as one local constant.
+const VERIFIED_GREEN = '#22c55e';
+// Money-green — "Save" jar accent in the 50/40/10 split preview, a
+// different hue from VERIFIED_GREEN above. Not colors.success — kept as
+// its own local constant.
+const MONEY_GREEN = '#10B981';
+
+function rowMeta(status: string, colors: any) {
+  switch (status) {
+    case 'pending_grandparent_approval': return { label: 'Ready to review', color: BRAND.teal, Icon: Camera };
+    case 'in_progress':                  return { label: 'Working on it',    color: BRAND.amber, Icon: Hammer };
+    case 'approved': case 'auto_approved': case 'completed':
+                                          return { label: 'Verified',         color: VERIFIED_GREEN, Icon: CheckCircle2 };
+    case 'declined':                     return { label: 'Declined',         color: colors.danger, Icon: UserX };
+    default:                             return { label: 'Not started',      color: colors.textTertiary, Icon: Clock };
+  }
+}
+
+// Pending grandparent verification — child submitted photo proof, GP picks
+// a cheer sticker and either approves per-kid (team quests) or approves the
+// whole card (single-kid quests).
+export function PendingVerifyCheerCard({
+  pendingGpApproval, allChores, kids, allNames, colors, isDark,
+  cheerSticker, setCheerSticker,
+  onApproveAndCheer, members,
+}: {
+  pendingGpApproval: ChoreTask[]; allChores: ChoreTask[];
+  kids: FamilyMember[]; allNames: string[]; colors: any; isDark: boolean;
+  cheerSticker: string; setCheerSticker: (s: string) => void;
+  onApproveAndCheer: (choreId: string) => void;
+  members?: FamilyMember[];
+}) {
+  if (pendingGpApproval.length === 0) return null;
+
+  // A team quest clones one chore per kid — reviewing them as N separate
+  // full cards repeats the same title/points/sticker chrome N times. Render
+  // each team once: one header, one roster with each kid's own
+  // status/photo/timestamp, one shared payout preview.
+  const seenTeams = new Set<string>();
+  const cards = pendingGpApproval.filter(c => {
+    if (!c.teamGroupId) return true;
+    if (seenTeams.has(c.teamGroupId)) return false;
+    seenTeams.add(c.teamGroupId);
+    return true;
+  });
+
+  return (
+    <View style={{ gap: 10, marginBottom: 12 }}>
+      {/* "Verify & Cheer 🎉" — the trailing emoji is expressive celebration
+          tone, not chrome — kept. */}
+      <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textTertiary,
+        textTransform: 'uppercase', letterSpacing: 0.8 }}>Verify & Cheer 🎉</Text>
+      {/* Sticker picker */}
+      <View style={{ flexDirection: 'row', gap: 6 }}>
+        {CHEER_STICKERS.map(s => (
+          <Pressable key={s} onPress={() => setCheerSticker(s)}
+            style={{ flex: 1, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+              borderWidth: 1.5,
+              borderColor: cheerSticker === s ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
+              backgroundColor: cheerSticker === s ? BRAND.teal + '20' : 'transparent' }}>
+            <Text style={{ fontSize: 18 }}>{s}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {cards.map(chore => {
+        const team = chore.teamGroupId
+          ? allChores.filter(c => c.teamGroupId === chore.teamGroupId)
+          : [chore];
+        const pts = chore.basePoints;
+        const { spend, save, give } = splitCoins(pts);
+        const readyCount = team.filter(c => c.status === 'pending_grandparent_approval').length;
+        const verifiedCount = team.filter(c => ['approved', 'auto_approved', 'completed'].includes(c.status)).length;
+        return (
+          <View key={chore.teamGroupId ?? chore.id} style={{
+            borderRadius: 16, borderWidth: 1.5, borderColor: BRAND.teal + '40',
+            backgroundColor: isDark ? BRAND.teal + '10' : BRAND.teal + '06',
+            overflow: 'hidden',
+          }}>
+            <View style={{ backgroundColor: BRAND.teal, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Camera size={16} color="#fff" />
+              <Text style={{ flex: 1, fontSize: GP.sub, fontWeight: '900', color: '#fff' }}>
+                {chore.title}
+              </Text>
+              {chore.teamGroupId && (
+                <View style={{ backgroundColor: '#ffffff30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Users size={11} color="#fff" />
+                  <Text style={{ fontSize: GP.tiny, fontWeight: '900', color: '#fff' }}>
+                    {verifiedCount}/{team.length} verified
+                  </Text>
+                </View>
+              )}
+            </View>
+            <View style={{ padding: 14, gap: 10 }}>
+              {/* Roster — one row per kid, own status/photo/note/timestamp */}
+              <View style={{ gap: 8 }}>
+                {team.map(member => {
+                  const kid = kids.find(k => k.id === member.assignedToId);
+                  const meta = rowMeta(member.status, colors);
+                  const when = member.submittedAt ?? member.approvedAt;
+                  const reviewer = member.reviewedById ? (members ?? kids).find(m => m.id === member.reviewedById) : undefined;
+                  return (
+                    <View key={member.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                      padding: 8, borderRadius: 12,
+                      backgroundColor: isDark ? colors.surface : '#fff',
+                      borderWidth: 1, borderColor: meta.color + '30' }}>
+                      {member.submissionPhotoUrl ? (
+                        <Image source={{ uri: member.submissionPhotoUrl }}
+                          style={{ width: 44, height: 44, borderRadius: 10 }} resizeMode="cover" />
+                      ) : (
+                        <FamilyAvatar name={kid?.name ?? '?'} emoji={kid?.emoji} avatarUrl={kid?.avatarUrl} siblings={allNames} size={38} />
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: GP.body, fontWeight: '800', color: colors.textPrimary }}>
+                          {kid?.name.split(' ')[0] ?? 'Grandchild'}
+                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <meta.Icon size={11} color={meta.color} />
+                          <Text style={{ fontSize: GP.tiny, fontWeight: '700', color: meta.color }}>
+                            {meta.label}{when ? ` · ${fmtDateTime(when)}` : ''}{reviewer ? ` by ${reviewer.name.split(' ')[0]}` : ''}
+                          </Text>
+                        </View>
+                        {member.submissionNote ? (
+                          <Text style={{ fontSize: GP.tiny, color: colors.textSecondary, fontStyle: 'italic', marginTop: 2 }} numberOfLines={2}>
+                            "{member.submissionNote}"
+                          </Text>
+                        ) : null}
+                      </View>
+                      {/* Team quests approve per-kid inline (payout waits for the group);
+                          a single-kid quest uses the one big button below instead. */}
+                      {member.status === 'pending_grandparent_approval' && chore.teamGroupId && (
+                        <Pressable onPress={() => onApproveAndCheer(member.id)}
+                          style={{ backgroundColor: BRAND.teal, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 }}>
+                          <Text style={{ fontSize: GP.tiny, fontWeight: '900', color: '#fff' }}>{cheerSticker} Approve</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+
+              {/* Full reward each — not a shared pool. One kid declining
+                  never reduces what the others earn. */}
+              {chore.teamGroupId && (
+                <Text style={{ fontSize: GP.tiny, fontWeight: '700', color: colors.textTertiary, textAlign: 'center' }}>
+                  {pts} pts to EACH kid who finishes — independently
+                </Text>
+              )}
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {[
+                  { label: 'Spend', Icon: Wallet,    val: spend, color: BRAND.amber },
+                  { label: 'Save',  Icon: PiggyBank, val: save,  color: MONEY_GREEN },
+                  { label: 'Give',  Icon: HandCoins, val: give,  color: BRAND.purple },
+                ].map(j => (
+                  <View key={j.label} style={{ flex: 1, alignItems: 'center', borderRadius: 10,
+                    borderWidth: 1, borderColor: j.color + '30',
+                    backgroundColor: j.color + '10', paddingVertical: 8, gap: 2 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <j.Icon size={12} color={j.color} />
+                      <Text style={{ fontSize: GP.sub, color: j.color }}>{j.label}</Text>
+                    </View>
+                    <Text style={{ fontSize: GP.body, fontWeight: '900', color: j.color }}>{j.val}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {chore.teamGroupId ? (
+                readyCount > 0 && (
+                  <Text style={{ fontSize: GP.tiny, color: colors.textTertiary, textAlign: 'center' }}>
+                    Approve each kid above — pays them right away
+                  </Text>
+                )
+              ) : (
+                <Pressable onPress={() => onApproveAndCheer(chore.id)}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    backgroundColor: BRAND.teal, borderRadius: 12, paddingVertical: 13 }}>
+                  <Text style={{ fontSize: 20 }}>{cheerSticker}</Text>
+                  <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>
+                    APPROVE & CHEER · {pts} pts
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}

@@ -250,7 +250,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
         <KidRideBanner ev={confirmedRide} rideCountdown={rideCountdown} colors={colors} isDark={isDark} />
       )}
 
-      <KidCheckinRow onCheckin={sendCheckin} />
+      <KidCheckinRow colors={colors} onCheckin={sendCheckin} />
       <KidActionRow colors={colors} isDark={isDark}
         onAskParent={() => setAskParentSheet(true)}
         onNeedRide={() => setAddEventModal(true)} />

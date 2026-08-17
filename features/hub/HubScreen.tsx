@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, RefreshControl, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Car, X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
@@ -22,6 +23,7 @@ import { EnRouteModal } from './hubComponents';
 import { fmtClock } from './hubUtils';
 
 export default function HubScreen() {
+  const router = useRouter();
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, setActiveMember, loaded, loadFromStorage } = useFamilyStore();
   const { loadFromStorage: loadQuests }  = useQuestStore();
@@ -68,6 +70,9 @@ export default function HubScreen() {
         memberName={active.name.split(' ')[0]}
         memberRole={active.role as 'parent' | 'kid' | 'teen' | 'senior'}
         onBellPress={() => Alert.alert('Nudge Center', 'Dinner ready · Meds · Pickup · Chore check')}
+        // GP's bottom nav swaps Profile/Hearth for Memories — this is their
+        // only remaining path to settings/PIN, since the tab is gone.
+        onSettingsPress={isSenior ? () => router.push('/profile') : undefined}
       />
 
       {transitBanner && (

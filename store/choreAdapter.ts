@@ -48,6 +48,7 @@ export function choreToQuest(c: ChoreTask): Quest {
   const recurrence: QuestRecurrence =
     c.recurrenceRule?.frequency === 'daily'   ? 'daily' :
     c.recurrenceRule?.frequency === 'weekly'  ? 'weekly' :
+    c.recurrenceRule?.frequency === 'monthly' ? 'monthly' :
     'once';
 
   return {
@@ -60,7 +61,7 @@ export function choreToQuest(c: ChoreTask): Quest {
     estimatedMinutes: undefined,
     coins:            c.basePoints,
     xpReward:         c.xpReward ?? 10,
-    bonusCoins:       (c as any).bonusCoins ?? 0,
+    bonusCoins:       c.bonusCoins ?? 0,
     bonusExpiresAt:   (c as any).bonusExpiresAt ?? undefined,
 
     assignedToId:     c.assignedToId,
@@ -79,17 +80,26 @@ export function choreToQuest(c: ChoreTask): Quest {
     templateId:       undefined,
 
     status:           choreStatusToQuestStatus(c.status),
+    awaitingParentApproval: c.status === 'pending_parent_approval',
     dueDate:          c.dueDate,
     dueTime:          c.dueTime,
 
     startedAt:        undefined,
-    claimedAt:        ['in_progress','pending_approval','approved','done'].includes(c.status)
+    // Every status past "just created" implies a claim happened at some
+    // point — 'done' was never a real ChoreStatus value (checked against
+    // the actual union), and pending_grandparent_approval/auto_approved/
+    // completed were missing entirely, which silently made the stepper's
+    // "Claimed" step show as not-done for any already-finished GP-sponsored
+    // quest (grandparentApproveAndCheer's terminal status is 'completed',
+    // not 'approved').
+    claimedAt:        (['in_progress','pending_approval','pending_grandparent_approval','approved','auto_approved','completed'] as string[]).includes(c.status)
                         ? c.createdAt
                         : undefined,
     submittedAt:      c.submittedAt,
     approvedAt:       c.approvedAt,
     completedAt:      c.approvedAt,
     declinedAt:       c.declinedAt,
+    reviewedById:     c.reviewedById,
     archivedAt:       undefined,
     cancelledAt:      undefined,
 
@@ -148,17 +158,30 @@ function questInputToChoreInput(q: Partial<Quest> & Record<string, any>) {
     coinsReward:       q.coins ?? 20,
     xpReward:          q.xpReward ?? 10,
     difficulty:        q.difficulty,
-    status:            'todo' as const,
+    // A grandparent_quest must clear the parent's safety-review gate before
+    // any kid can see it — same rule createGrandparentQuest enforces via its
+    // own dedicated insert. Without this, "Sponsor a Quest" (which reuses
+    // this same generic form) published straight to kids with no parent in
+    // the loop at all, which is the opposite of what that review status is
+    // for.
+    status:            (q.questType === 'grandparent_quest' ? 'pending_parent_approval' : 'todo') as any,
     assignedToId:      q.assignedToId ?? (q.assignedToIds?.[0]),
     requiresPhotoProof: q.photoRequired ?? false,
     dueDate:           q.dueDate,
     dueTime:           q.dueTime,
     createdById:       q.createdById,
+    // A grandparent_quest created through the normal Add Quest form (as
+    // opposed to the separate createGrandparentQuest flow) never set
+    // sponsorUserId — the field both SeniorView's own review queue and the
+    // parent-queue's exclusion filter key off of to know which grandparent
+    // must approve it. The creator IS the sponsor for this quest type.
+    sponsorUserId:     q.questType === 'grandparent_quest' ? q.createdById : (q as any).sponsorUserId,
     recurrenceRule:    {
       frequency: (
         q.recurrence === 'daily'   ? 'daily' :
-        q.recurrence === 'weekly'  ? 'weekly' : 'once'
-      ) as 'once' | 'daily' | 'weekly',
+        q.recurrence === 'weekly'  ? 'weekly' :
+        q.recurrence === 'monthly' ? 'monthly' : 'once'
+      ) as 'once' | 'daily' | 'weekly' | 'monthly',
     },
     isPrivateParent:    q.isAdultTask ?? false,
     isPool:             q.isPool ?? false,
@@ -267,7 +290,7 @@ useQuestStore.getState = () => {
       const choreUpdates: Partial<ChoreTask> = {};
       if (updates.coins          !== undefined) { choreUpdates.basePoints = updates.coins; choreUpdates.coinsReward = updates.coins; }
       if (updates.maxClaimants   !== undefined) { /* no-op — pool managed by isPool flag */ }
-      if (updates.bonusCoins     !== undefined) { /* no bonus in chore system */ }
+      if (updates.bonusCoins     !== undefined) choreUpdates.bonusCoins    = updates.bonusCoins;
       if (updates.difficulty     !== undefined) choreUpdates.difficulty    = updates.difficulty;
       if (updates.assignedToId   !== undefined) choreUpdates.assignedToId  = updates.assignedToId;
       if ((updates as any).isPool !== undefined) choreUpdates.isPool       = (updates as any).isPool;

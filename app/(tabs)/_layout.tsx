@@ -22,6 +22,7 @@ const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']
   calendar: 'calendar-outline',
   chat:     'chatbubbles-outline',
   profile:  'shield-outline',
+  memories: 'images-outline',
 };
 const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
   index:    'grid',
@@ -29,18 +30,29 @@ const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']>
   calendar: 'calendar',
   chat:     'chatbubbles',
   profile:  'shield',
+  memories: 'images',
 };
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
-const TABS = [
+// Grandparents get Memories in the 5th slot instead of Hearth/Profile —
+// settings/PIN for GP are still reachable from the Hub's profile switcher,
+// same as every other role; this only changes what's one tap away in the bar.
+const TABS_DEFAULT = [
   { name: 'index',    label: 'Hub'      },
   { name: 'quests',   label: 'Quests'   },
   { name: 'calendar', label: 'Schedule' },
   { name: 'chat',     label: 'Chat'     },
   { name: 'profile',  label: 'Hearth'   },
 ] as const;
+const TABS_SENIOR = [
+  { name: 'index',    label: 'Hub'      },
+  { name: 'quests',   label: 'Quests'   },
+  { name: 'calendar', label: 'Schedule' },
+  { name: 'chat',     label: 'Chat'     },
+  { name: 'memories', label: 'Memories' },
+] as const;
 
-type TabName = typeof TABS[number]['name'];
+type TabName = typeof TABS_DEFAULT[number]['name'] | typeof TABS_SENIOR[number]['name'];
 
 // ── Animated tab icon — spring bounce on selection ────────────────────────────
 function AnimatedTabIcon({ name, focused, activeColor, inactiveColor }: {
@@ -75,6 +87,9 @@ function CustomTabBar({ state, navigation }: any) {
   const insets = useSafeAreaInsets();
   const unreadCount = useNotifStore(s => s.unreadCount);
   const lastNavTime = useRef(0);
+  const { members, activeMemberId } = useFamilyStore();
+  const isSenior = members.find(m => m.id === activeMemberId)?.role === 'senior';
+  const TABS = isSenior ? TABS_SENIOR : TABS_DEFAULT;
 
   const activeColor   = colors.primary;
   const inactiveColor = colors.tabInactive;

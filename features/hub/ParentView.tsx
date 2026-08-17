@@ -70,7 +70,14 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
   const pendingRequests  = events.filter(e =>
     e.approvalPending && !isWorkEvent(e) && hoursUntilEvent(e.date, e.time) >= 0
   );
-  const awaitingApproval = quests.filter(q => q.status === 'pending_approval');
+  // pending_approval and pending_grandparent_approval both collapse to the
+  // same client-side status (choreAdapter's choreStatusToQuestStatus) — a
+  // grandparent_quest awaiting its sponsor's review must NOT show up in the
+  // parent's own queue, that review belongs to the grandparent who created it.
+  // Quest/chore approvals live ONLY in "Chore Reviews" (ParentReviewDeck) —
+  // previously also duplicated here in "Action Needed" with a different
+  // card design for the exact same item. actionCount below intentionally
+  // excludes these; ChoreReviewSection's own badge covers them.
 
   const rejectedHelperEvents = todayEvents.filter(e => e.helperStatus === 'rejected');
 
@@ -162,7 +169,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
     ['ride', 'tutor', 'cheer'].includes(r.type) &&
     !r.assignedHelper
   );
-  const actionCount = pendingRequests.length + awaitingApproval.length + pendingKidRequests.length;
+  const actionCount = pendingRequests.length + pendingKidRequests.length;
 
   const familyId = (active as any).familyId ?? 'family-1';
 
@@ -191,10 +198,12 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
   const doneStatuses     = new Set(['done', 'approved', 'archived', 'cancelled', 'completed']);
 
   // Adult quests: parent_only_quest type OR directly assigned to a parent/senior
-  // EXCLUDE ride/pickup/dropoff tasks (category === 'Ride') — GP ride tasks go to calendar, not Household Backlog
+  // Rides/pickups are FamilyEvents, not Quests — a Quest can never actually
+  // have category 'Ride' (not a valid QuestCategory value), so that dead
+  // exclusion check is removed; ride tasks were never reachable here to
+  // begin with, they live on the calendar, not the Household Backlog.
   const adultQuests = quests.filter(q => {
     if (doneStatuses.has(q.status)) return false;
-    if (q.category === 'Ride') return false;
     if (q.isAdultTask) return true;                                          // category_type === 'parent_only_quest' or shopping
     if (q.assignedToId != null && adultMemberIds.has(q.assignedToId)) return true;  // directly assigned to adult (parent/GP)
     return false;
@@ -305,7 +314,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
       <ActionNeededSection
         actionCount={actionCount}
         pendingRequests={pendingRequests}
-        awaitingApproval={awaitingApproval}
+        awaitingApproval={[]}
         pendingKidRequests={pendingKidRequests}
         events={events}
         active={active} members={members} allNames={allNames} colors={colors} isDark={isDark}

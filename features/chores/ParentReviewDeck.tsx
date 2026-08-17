@@ -18,6 +18,8 @@ import {
   useChoreStore, REJECTION_PRESETS,
   type ChoreTask, type RejectionPresetKey,
 } from '@/store/choreStore';
+import { choreToQuest } from '@/store/choreAdapter';
+import { QuestApprovalCard } from '../hub/parent/QuestApprovalCard';
 import type { FamilyMember } from '@/store/familyStore';
 
 // ─── Countdown hook ───────────────────────────────────────────────────────────
@@ -402,16 +404,22 @@ interface ParentReviewDeckProps {
 
 export function ParentReviewDeck({ parent, members, colors, isDark }: ParentReviewDeckProps) {
   const {
-    approveChore,
+    approveChore, requestRedo,
     scanAndAutoApprove, syncFromDB, loadFromStorage,
   } = useChoreStore();
+  const allNames = members.map(m => m.name);
 
   const chores       = useChoreStore(s => s.chores);
   const transactions = useChoreStore(s => s.transactions);
   const getPendingCashOuts = useChoreStore(s => s.getPendingCashOuts);
 
   const { pendingSubmissions, pendingCashOuts } = useMemo(() => ({
-    pendingSubmissions: chores.filter(c => ['pending_approval', 'pending_grandparent_approval'].includes(c.status)),
+    // pending_grandparent_approval is that GP's own completion review, not
+    // the parent's — this deck's Approve button calls approveChore, which
+    // requires status === 'pending_approval' and silently no-ops on
+    // anything else, so including it here rendered a dead "Approve" button
+    // for a chore only the sponsoring grandparent can actually complete.
+    pendingSubmissions: chores.filter(c => c.status === 'pending_approval'),
     pendingCashOuts:    getPendingCashOuts(),
   }), [chores, transactions]);
 
@@ -440,20 +448,36 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
     <>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
 
-        {/* 1. Child chore submissions */}
+        {/* 1. Child chore submissions — same card design as the (removed)
+             duplicate that used to also show in Action Needed, so a
+             submission only ever looks one way, in one place. Receipt-
+             bearing submissions (a GP's purchase receipt awaiting
+             reimbursement) keep the richer ReviewCard — QuestApprovalCard
+             has no receipt/reimbursement UI at all, so routing those
+             through it would silently drop that feature. */}
         {pendingSubmissions.length > 0 && (
           <>
             <SectionHeader emoji="📋" title="Waiting for Review" count={pendingSubmissions.length} colors={colors} />
             {pendingSubmissions.map(task => (
-              <ReviewCard
-                key={task.id} task={task} members={members}
-                colors={colors} isDark={isDark}
-                onApprove={(t) => Alert.alert('Approve?', `Award ${t.basePoints} pts for "${t.title}"?`, [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: '✓ Approve', onPress: () => approveChore(t.id, parent.id) },
-                ])}
-                onRedo={(t) => { setRedoTask(t); setRedoOpen(true); }}
-              />
+              task.receiptPhotoUrl || task.receiptAmount != null ? (
+                <ReviewCard
+                  key={task.id} task={task} members={members}
+                  colors={colors} isDark={isDark}
+                  onApprove={(t) => Alert.alert('Approve?', `Award ${t.basePoints} pts for "${t.title}"?`, [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: '✓ Approve', onPress: () => approveChore(t.id, parent.id) },
+                  ])}
+                  onRedo={(t) => { setRedoTask(t); setRedoOpen(true); }}
+                />
+              ) : (
+                <QuestApprovalCard
+                  key={task.id} q={choreToQuest(task)} active={parent} members={members} allNames={allNames}
+                  colors={colors} isDark={isDark}
+                  approveQuest={(id) => approveChore(id, parent.id)}
+                  declineQuest={(id, by, reason) => requestRedo(id, by, reason)}
+                  onDeclinePress={() => { setRedoTask(task); setRedoOpen(true); }}
+                />
+              )
             ))}
           </>
         )}

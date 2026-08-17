@@ -7,9 +7,11 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import { useEventStore } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useChoreStore } from '@/store/choreStore';
+import type { ChoreTask } from '@/store/choreStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { localToday, isWorkEvent, hoursUntilEvent } from './hubUtils';
+import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
 
 import { GroupBand } from './senior/seniorTheme';
 import { EmergencySosCard } from './senior/EmergencySosCard';
@@ -21,6 +23,7 @@ import { SendBonusCard } from './senior/SendBonusCard';
 import { SponsorQuestsSection } from './senior/sponsor/SponsorQuestsSection';
 import { SavingsMatchModal } from './senior/SavingsMatchModal';
 import { CreateQuestModal } from './senior/CreateQuestModal';
+import { MySponsoredQuestsSection } from './senior/MySponsoredQuestsSection';
 import { ReceiptSubmissionModal } from './senior/ReceiptSubmissionModal';
 import { FamilyMemoriesCard } from './senior/FamilyMemoriesCard';
 
@@ -31,9 +34,15 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   onEnRoute: () => void;
 }) {
   const { events, updateEvent } = useEventStore();
+  // Live, multi-day, cross-viewer-consistent feed for the "open to
+  // helpers" dispatch lists below — see useUpcomingOpenEvents' header
+  // comment for why the day-cached `events` above can't be reused for
+  // these specifically (only ever showed "today", and claims by another
+  // grandparent on a different day never disappeared live).
+  const { events: upcomingEvents } = useUpcomingOpenEvents((active as any).familyId);
   const { awardCoins, updateMember } = useFamilyStore();
   const {
-    chores, updateChore, grandparentMatches, grandparentApproveAndCheer, createGrandparentQuest,
+    chores, updateChore, grandparentMatches, grandparentApproveAndCheer, requestGrandparentRedo, createGrandparentQuest,
     addGrandparentMatch, claimGPErrand, submitGPErrandReceipt, cheerChore,
   } = useChoreStore();
   const { requests: kidRequests, assignRequest, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
@@ -56,6 +65,10 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     if (!['approved', 'auto_approved', 'completed'].includes(c.status)) return false;
     if (!c.assignedToId || !kids.some(k => k.id === c.assignedToId)) return false;
     if ((c.cheers ?? []).some(ch => ch.memberId === active.id)) return false;
+    // A quest this GP sponsored (and already personally approved via
+    // "Approve & Cheer") shouldn't also prompt them to cheer it again here —
+    // that action already happened as part of reviewing it.
+    if (c.categoryType === 'grandparent_quest' && c.sponsorUserId === active.id) return false;
     const when = c.approvedAt ?? c.reviewedAt ?? c.createdAt;
     return !!when && when.slice(0, 10) === today;
   });
@@ -112,6 +125,31 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const [newQuestKidIds, setNewQuestKidIds] = useState<string[]>([]);
   const [newQuestMode,   setNewQuestMode]   = useState<'local' | 'virtual'>('local');
   const [newQuestPhoto,  setNewQuestPhoto]  = useState(true);
+  // Set only while editing an already-sponsored quest that's still awaiting
+  // parent review — a GP can freely revise anything up to that point since
+  // the parent hasn't acted on it yet. Once a parent approves/declines it,
+  // there's no edit path — that's the safety gate doing its job.
+  const [editingQuestId, setEditingQuestId] = useState<string | null>(null);
+
+  // My own sponsored quests still awaiting the parent's safety review —
+  // previously invisible to the GP entirely between "I created it" and "a
+  // parent acted on it."
+  const myPendingSponsoredQuests = chores.filter(c =>
+    c.categoryType === 'grandparent_quest' &&
+    c.status === 'pending_parent_approval' &&
+    c.sponsorUserId === active.id
+  );
+
+  const openEditSponsoredQuest = (c: ChoreTask) => {
+    setEditingQuestId(c.id);
+    setNewQuestTitle(c.title);
+    setNewQuestDesc(c.description ?? '');
+    setNewQuestPoints(String(c.basePoints || 350));
+    setNewQuestKidIds(c.targetChildIds ?? []);
+    setNewQuestMode(c.questMode ?? 'local');
+    setNewQuestPhoto(c.requiresPhotoProof ?? true);
+    setShowCreateQuestModal(true);
+  };
 
   // ── Receipt submission modal ───────────────────────────────────────────────
   const [receiptChoreId,   setReceiptChoreId]   = useState<string | null>(null);
@@ -206,7 +244,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
   // Events open to grandparents that this senior hasn't passed, hasn't claimed,
   // and fall within their configured availability window
-  const openRides = events.filter(e =>
+  const openRides = upcomingEvents.filter(e =>
     e.isOpenToGrandparents &&
     e.helperStatus !== 'confirmed' &&
     !(e.grandparentPassedIds ?? []).includes(active.id) &&
@@ -216,7 +254,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   );
 
   // Rides this senior has already claimed (confirmed helper)
-  const myClaimedRides = events.filter(e =>
+  const myClaimedRides = upcomingEvents.filter(e =>
     e.isOpenToGrandparents &&
     e.helper && (e.helper.includes(active.name) || active.name.includes(e.helper.split(' ')[0])) &&
     e.helperStatus === 'confirmed'
@@ -286,6 +324,10 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     grandparentApproveAndCheer(choreId, active.id, cheerSticker);
   };
 
+  const handleRequestGpRedo = (choreId: string, reason: string) => {
+    requestGrandparentRedo(choreId, active.id, reason);
+  };
+
   const handleSaveMatch = () => {
     if (!matchKidId) return;
     addGrandparentMatch({
@@ -303,19 +345,34 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
   const handleCreateQuest = () => {
     if (!newQuestTitle.trim()) return;
-    createGrandparentQuest({
-      title:         newQuestTitle.trim(),
-      description:   newQuestDesc.trim() || undefined,
-      basePoints:    parseInt(newQuestPoints, 10) || 350,
-      // Store semantics (approveGrandparentQuestAsParent): 0 kids → bounty pool,
-      // 1 kid → assigned directly, 2+ kids → team job. Picking 0 used to fan
-      // out to every grandchild, silently turning a single-kid quest into an
-      // unwanted team job — see the label above the picker for what each choice does.
-      childIds:      newQuestKidIds,
-      sponsorId:     active.id,
-      mode:          newQuestMode,
-      requiresPhoto: newQuestPhoto,
-    });
+    if (editingQuestId) {
+      // Only reachable while the quest is still pending_parent_approval
+      // (openEditSponsoredQuest only offers this for quests in that state) —
+      // a parent hasn't acted on it yet, so the GP can freely revise it.
+      updateChore(editingQuestId, {
+        title:              newQuestTitle.trim(),
+        description:        newQuestDesc.trim() || undefined,
+        basePoints:         parseInt(newQuestPoints, 10) || 350,
+        targetChildIds:     newQuestKidIds,
+        questMode:          newQuestMode,
+        requiresPhotoProof: newQuestPhoto,
+      });
+      setEditingQuestId(null);
+    } else {
+      createGrandparentQuest({
+        title:         newQuestTitle.trim(),
+        description:   newQuestDesc.trim() || undefined,
+        basePoints:    parseInt(newQuestPoints, 10) || 350,
+        // Store semantics (approveGrandparentQuestAsParent): 0 kids → bounty pool,
+        // 1 kid → assigned directly, 2+ kids → team job. Picking 0 used to fan
+        // out to every grandchild, silently turning a single-kid quest into an
+        // unwanted team job — see the label above the picker for what each choice does.
+        childIds:      newQuestKidIds,
+        sponsorId:     active.id,
+        mode:          newQuestMode,
+        requiresPhoto: newQuestPhoto,
+      });
+    }
     setNewQuestTitle('');
     setNewQuestDesc('');
     setNewQuestPoints('350');
@@ -451,6 +508,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         onClaimRide={handleClaimRide} onPassRide={handlePassRide} onHelpRequest={onHelpRequest}
       />
 
+      <MySponsoredQuestsSection
+        quests={myPendingSponsoredQuests} colors={colors} isDark={isDark}
+        onEdit={openEditSponsoredQuest}
+      />
+
       {/* ══ MY GRANDKIDS ══ */}
       <GroupBand label="My Grandkids" color={BRAND.purple} colors={colors} />
 
@@ -472,7 +534,8 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         active={active} kids={kids} members={members} allNames={allNames} colors={colors} isDark={isDark}
         chores={chores} grandparentMatches={grandparentMatches} pendingGpApproval={pendingGpApproval}
         cheerSticker={cheerSticker} setCheerSticker={setCheerSticker}
-        updateChore={updateChore} handleApproveAndCheer={handleApproveAndCheer}
+        updateChore={updateChore} updateMember={updateMember} handleApproveAndCheer={handleApproveAndCheer}
+        handleRequestGpRedo={handleRequestGpRedo}
         onOpenMatchModal={() => setShowMatchModal(true)}
         onOpenCreateQuestModal={() => setShowCreateQuestModal(true)}
       />
@@ -487,7 +550,8 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       />
 
       <CreateQuestModal
-        visible={showCreateQuestModal} onClose={() => setShowCreateQuestModal(false)}
+        visible={showCreateQuestModal} onClose={() => { setShowCreateQuestModal(false); setEditingQuestId(null); }}
+        editing={!!editingQuestId}
         kids={kids} colors={colors} isDark={isDark}
         newQuestMode={newQuestMode} setNewQuestMode={setNewQuestMode}
         newQuestTitle={newQuestTitle} setNewQuestTitle={setNewQuestTitle}

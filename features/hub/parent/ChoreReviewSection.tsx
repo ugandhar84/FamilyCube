@@ -19,6 +19,7 @@ function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQues
   declineGrandparentQuestAsParent: (choreId: string, parentId: string, reason: string) => void;
 }) {
   const sponsor = members.filter(m => m.role === 'senior').find(s => s.id === c.sponsorUserId);
+  const linkedParent = sponsor?.linkedParentId ? members.find(m => m.id === sponsor.linkedParentId) : undefined;
   // Before approval nothing is assigned yet — targetChildIds is the only
   // record of who this was meant for. A 2+ target quest becomes a bounty
   // (full points each, independent) once approved.
@@ -38,7 +39,7 @@ function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQues
           {c.questMode === 'virtual' ? 'Virtual' : 'In-Person'} Quest · {pts} pts
         </Text>
         <Text style={{ fontSize: TYPO.micro, color: '#fff', opacity: 0.8 }}>
-          from {sponsor?.name.split(' ')[0] ?? 'Grandparent'}
+          from {sponsor?.name.split(' ')[0] ?? 'Grandparent'}{linkedParent ? ` (${linkedParent.name.split(' ')[0]}'s parent)` : ''}
         </Text>
       </View>
       <View style={{ padding: 14, gap: 8 }}>

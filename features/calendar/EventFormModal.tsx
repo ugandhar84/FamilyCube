@@ -236,6 +236,10 @@ function MemberPicker({ label, selectedIds, members, onToggle, onSelectAll, colo
 
 // ─── Family-specific custom categories/suggestions — backed by DB ─────────────
 import { fetchCustomSuggestions, recordCustomSuggestion, fetchCustomCategories, CustomCategory } from '@/lib/familyCustomCategories';
+import {
+  lookupCategoryDefaultsByLooseLabel, resolveDomainFromLooseLabel, fetchSubcategoriesForDomain,
+  previewAssignment, applyAssignment, type ResponsibilityCategory, type AssignmentSuggestion,
+} from '@/lib/responsibilityCategories';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // AddEventModal
@@ -244,7 +248,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   visible: boolean; onClose: () => void; activeMemberId: string;
 }) {
   const { colors, isDark } = useTheme();
-  const { addEvent } = useEventStore();
+  const { addEvent, updateEvent } = useEventStore();
   const members = useFamilyStore(s => s.members);
   const { pastStores: cachedStores, pastItemNames: cachedItemNames, appendToCache } = useGroceryStore();
   const siblings = members.map(m => m.name);
@@ -319,6 +323,20 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   const [openToGrandparents, setOpenToGrandparents] = useState(false);
   const [openToTeens,        setOpenToTeens]        = useState(false);
   const [rideCoinsTeen,      setRideCoinsTeen]      = useState('');
+  // Tracks whether the parent has manually touched either toggle, so a
+  // category-driven default (below) never overwrites a deliberate choice —
+  // only pre-fills the toggles the first time a category is picked.
+  const [gpTeenToggledByUser, setGpTeenToggledByUser] = useState(false);
+  // Optional taxonomy subcategory refinement — e.g. category "Medical" +
+  // subcategory "medical.dentist". Not required to submit; when set, it
+  // sharpens the eligibility defaults above (dentist vs. emergency have
+  // different needs_parent defaults even though both are "Medical") and
+  // gets passed to process-task-assignment as a more precise category than
+  // the loose top-level label alone would give.
+  const [subcategoryId, setSubcategoryId] = useState<string | null>(null);
+  const [subcategoryOptions, setSubcategoryOptions] = useState<ResponsibilityCategory[]>([]);
+  const [assignmentSuggestion, setAssignmentSuggestion] = useState<AssignmentSuggestion | null>(null);
+  const [loadingSuggestion, setLoadingSuggestion] = useState(false);
   const [customSuggestions,  setCustomSuggestions]  = useState<{ title: string; hint: string }[]>([]);
   const [customCategories,   setCustomCategories]   = useState<CustomCategory[]>([]);
 
@@ -342,6 +360,44 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
     if (!familyId || category !== 'Other') return;
     fetchCustomSuggestions(familyId, 'event', 'Other').then(setCustomSuggestions);
   }, [familyId, category]);
+
+  // Pre-fill GP-welcome/teen-eligible from the Responsibility Engine's
+  // category taxonomy when the category changes — e.g. picking "Ride"
+  // defaults both toggles on (transport is teen_eligible + gp_welcome),
+  // picking "Medical" leaves them off. Never overwrites a toggle the
+  // parent has already touched by hand this session.
+  useEffect(() => {
+    if (isKid || isTeen || gpTeenToggledByUser) return;
+    lookupCategoryDefaultsByLooseLabel(category).then(defaults => {
+      if (!defaults) return;
+      setOpenToGrandparents(defaults.gpWelcome);
+      setOpenToTeens(defaults.teenEligible);
+    });
+  }, [category, isKid, isTeen, gpTeenToggledByUser]);
+
+  // Subcategory options for the current category's mapped taxonomy domain
+  // — optional refinement, resets whenever the top-level category changes
+  // since a subcategory from "Medical" makes no sense once switched to "Ride".
+  useEffect(() => {
+    setSubcategoryId(null);
+    setAssignmentSuggestion(null);
+    if (isKid || isTeen) { setSubcategoryOptions([]); return; }
+    const domain = resolveDomainFromLooseLabel(category);
+    fetchSubcategoriesForDomain(domain).then(setSubcategoryOptions);
+  }, [category, isKid, isTeen]);
+
+  // Picking a specific subcategory sharpens the eligibility defaults beyond
+  // the domain-level majority vote above — e.g. "Medical" alone splits
+  // roughly evenly, but "medical.prescription" specifically is teen/GP-
+  // eligible while "medical.emergency" is parent-only. Still never
+  // overwrites a manually-touched toggle.
+  useEffect(() => {
+    if (!subcategoryId || gpTeenToggledByUser) return;
+    const match = subcategoryOptions.find(s => s.id === subcategoryId);
+    if (!match) return;
+    setOpenToGrandparents(match.defaultGpWelcome);
+    setOpenToTeens(match.defaultTeenEligible);
+  }, [subcategoryId, subcategoryOptions, gpTeenToggledByUser]);
 
   useEffect(() => {
     if (!linkGroceries || !familyId) return;
@@ -431,7 +487,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
     setShowKidPickDate(false); setShowKidPickTime(false);
     setLinkGroceries(false); setGroceryItems([]); setSelectedItemIds(new Set()); setNewGroceryLines([]);
     setFocusedLineIdx(null); setFocusedField(null);
-    setOpenToGrandparents(false); setOpenToTeens(false); setRideCoinsTeen('');
+    setOpenToGrandparents(false); setOpenToTeens(false); setRideCoinsTeen(''); setGpTeenToggledByUser(false);
   };
 
   // ── Validation ─────────────────────────────────────────────────────────────
@@ -465,7 +521,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
       ? (helperId ? helperName.trim() : tutorName.trim()) || undefined
       : helperName.trim() || undefined;
 
-    addEvent({
+    const newEventId = addEvent({
       title:           finalTitle,
       date:            localDateStr(primaryKidRideDate),
       time:            allDay ? undefined : fmtTime(primaryKidRideDate),
@@ -513,6 +569,28 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
     // Persist custom title so it appears in future suggestions for this family
     if (category === 'Other' && finalTitle && familyId) {
       recordCustomSuggestion(familyId, 'event', 'Other', finalTitle);
+    }
+
+    // Zero-touch auto-assignment: only when nobody was already explicitly
+    // picked in the "For" member list — an explicit pick already has its
+    // answer, no need to run the engine over it. Parent-only (kid/teen
+    // requests go through the approval flow, not the assignment engine).
+    // Fire-and-forget: the event is already saved above; a slow or failed
+    // engine call must never block or fail the save the user is waiting on.
+    // If the engine returns AUTO it has already written member_id server-
+    // side (process-task-assignment step 9) — reflect that back into the
+    // local optimistic copy so the UI shows the assignee without a refetch.
+    if (!isKid && !isTeen && familyId && memberIds.length === 0) {
+      applyAssignment({
+        taskId: newEventId,
+        taskType: 'event',
+        familyId,
+        category: subcategoryId ?? resolveDomainFromLooseLabel(category),
+      }).then(res => {
+        if (res?.decisionType === 'auto' && res.selectedMemberId) {
+          updateEvent(newEventId, { memberId: res.selectedMemberId });
+        }
+      });
     }
 
     // Create grocery run(s) when items are selected or new items typed
@@ -649,6 +727,113 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                 })}
               </View>
             </ScrollView>
+
+            {/* ── Optional subcategory refinement (Responsibility Engine taxonomy) ── */}
+            {!isKid && !isTeen && subcategoryOptions.length > 0 && (
+              <View style={{ marginBottom: 14, marginTop: -6 }}>
+                <Text style={[f.label, { color: colors.textSecondary, marginBottom: 6 }]}>
+                  Specifically… <Text style={{ color: colors.textTertiary, fontWeight: '600' }}>(optional, sharpens who can help)</Text>
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {subcategoryOptions.map(sc => {
+                      const active = subcategoryId === sc.id;
+                      return (
+                        <TouchableOpacity
+                          key={sc.id}
+                          onPress={() => setSubcategoryId(active ? null : sc.id)}
+                          style={{
+                            borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 7,
+                            backgroundColor: active ? catColor + '18' : (isDark ? colors.surface : '#F5F4FA'),
+                            borderColor: active ? catColor : (isDark ? colors.border : '#E2E8F0'),
+                          }}
+                        >
+                          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: active ? catColor : colors.textSecondary }}>
+                            {sc.subcategoryLabel}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+              </View>
+            )}
+
+            {/* ── Assignment suggestion — calls the live Responsibility Engine
+                 (process-task-assignment) so a parent can see who this would
+                 likely go to before saving. Always a dry run — nothing is
+                 assigned or written until the form is actually submitted. ── */}
+            {!isKid && !isTeen && familyId && (
+              <View style={{ marginBottom: 14 }}>
+                <TouchableOpacity
+                  onPress={async () => {
+                    setLoadingSuggestion(true);
+                    setAssignmentSuggestion(null);
+                    const result = await previewAssignment({
+                      taskId: `preview-${Date.now()}`,
+                      taskType: 'event',
+                      familyId,
+                      category: subcategoryId ?? resolveDomainFromLooseLabel(category),
+                    });
+                    setAssignmentSuggestion(result);
+                    setLoadingSuggestion(false);
+                  }}
+                  disabled={loadingSuggestion}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    borderRadius: 14, paddingVertical: 11, borderWidth: 1.5, borderStyle: 'dashed',
+                    borderColor: BRAND.purple + '60', backgroundColor: isDark ? colors.surface : '#F8F5FF',
+                    opacity: loadingSuggestion ? 0.6 : 1,
+                  }}
+                >
+                  {loadingSuggestion
+                    ? <ActivityIndicator size="small" color={BRAND.purple} />
+                    : <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>
+                        ✨ Who would this go to?
+                      </Text>
+                  }
+                </TouchableOpacity>
+
+                {assignmentSuggestion && (
+                  <View style={{
+                    marginTop: 8, borderRadius: 14, padding: 12,
+                    backgroundColor: isDark ? colors.surface : '#F8FAFC',
+                    borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0',
+                  }}>
+                    {assignmentSuggestion.error ? (
+                      <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
+                        {assignmentSuggestion.error}
+                      </Text>
+                    ) : assignmentSuggestion.decisionType === 'blocked' ? (
+                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                        {assignmentSuggestion.reason ?? 'No eligible family member found for this.'}
+                      </Text>
+                    ) : (
+                      <>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>
+                          {assignmentSuggestion.decisionType === 'auto' ? '✅ Would auto-assign to ' :
+                           assignmentSuggestion.decisionType === 'suggest' ? '💡 Suggested: ' : '🤔 Close call — '}
+                          {assignmentSuggestion.explanation.selected ?? '—'}
+                        </Text>
+                        {assignmentSuggestion.candidates.filter(c => !c.excluded).length > 1 && (
+                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 3 }}>
+                            {assignmentSuggestion.candidates
+                              .filter(c => !c.excluded)
+                              .map(c => `${c.memberName} (${Math.round(c.score)})`)
+                              .join(' · ')}
+                          </Text>
+                        )}
+                        {assignmentSuggestion.explanation.excludedReasons.length > 0 && (
+                          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4 }}>
+                            {assignmentSuggestion.explanation.excludedReasons.map(e => `${e.member}: ${e.reason}`).join(' · ')}
+                          </Text>
+                        )}
+                      </>
+                    )}
+                  </View>
+                )}
+              </View>
+            )}
 
             {/* ── Title ── */}
             <Text style={[f.label, { color: colors.textSecondary }]}>Title *</Text>
@@ -1021,7 +1206,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                   <View style={{ gap: 10, marginTop: 4, marginBottom: 14 }}>
                     {/* Grandparents Welcome */}
                     <TouchableOpacity
-                      onPress={() => setOpenToGrandparents(g => !g)}
+                      onPress={() => { setGpTeenToggledByUser(true); setOpenToGrandparents(g => !g); }}
                       activeOpacity={0.8}
                       style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                         paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14,
@@ -1048,7 +1233,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                     {/* Teen driver — only if teens exist in family */}
                     {members.some(m => m.role === 'teen') && (
                       <TouchableOpacity
-                        onPress={() => setOpenToTeens(t => !t)}
+                        onPress={() => { setGpTeenToggledByUser(true); setOpenToTeens(t => !t); }}
                         activeOpacity={0.8}
                         style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                           paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14,
@@ -1630,7 +1815,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
             {/* ── Grandparents Welcome toggle (parents only, non-Ride — Ride has inline toggles) ── */}
             {!isKid && !isTeen && category !== 'Ride' && (
               <TouchableOpacity
-                onPress={() => setOpenToGrandparents(g => !g)}
+                onPress={() => { setGpTeenToggledByUser(true); setOpenToGrandparents(g => !g); }}
                 activeOpacity={0.8}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, marginBottom: 14,

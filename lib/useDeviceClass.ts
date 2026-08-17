@@ -1,6 +1,18 @@
 import { useEffect } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
-import * as ScreenOrientation from 'expo-screen-orientation';
+
+// Loaded lazily (not as a static import) because expo-screen-orientation is a
+// native module — if the JS dependency was installed but the app hasn't been
+// rebuilt (pod install + Xcode build) to link it yet, a static import throws
+// at bundle-load time and crashes the whole app before any try/catch can run.
+// require() here defers that failure to first use, where it's actually caught.
+let ScreenOrientation: typeof import('expo-screen-orientation') | null = null;
+try {
+  ScreenOrientation = require('expo-screen-orientation');
+} catch {
+  // Native module not linked yet — orientation lock/unlock becomes a no-op
+  // below instead of crashing the app.
+}
 
 // Layout breakpoints for phone / tablet / a large wall-mounted "kitchen hub"
 // display (an iPad or Android tablet mounted on a fridge, viewed from a few
@@ -29,7 +41,7 @@ export function useDeviceClass(): { deviceClass: DeviceClass; width: number; hei
   const deviceClass = deviceClassFor(width, height);
 
   useEffect(() => {
-    if (Platform.OS === 'web') return;
+    if (Platform.OS === 'web' || !ScreenOrientation) return;
     if (deviceClass === 'phone') {
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
     } else {

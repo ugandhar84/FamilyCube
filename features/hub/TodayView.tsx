@@ -7,7 +7,6 @@ import {
   View, Text, Pressable, ScrollView,
 } from 'react-native';
 import { router } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TimelineCard } from './hubComponents';
 import { TYPO } from '@/constants/theme';
@@ -33,13 +32,6 @@ function getGreeting(firstName: string): string {
   if (tod === 'afternoon') return `Good afternoon, ${firstName}`;
   return `Good evening, ${firstName}`;
 }
-
-// gradient colours per time-of-day, light and dark
-const TOD_GRADIENT: Record<string, { light: [string, string]; dark: [string, string] }> = {
-  morning:   { light: ['#EEF2FF', '#E0E7FF'], dark: ['#0D1035', '#131855'] },
-  afternoon: { light: ['#FFFBEB', '#FEF3C7'], dark: ['#1A1200', '#2A1D00'] },
-  evening:   { light: ['#F5F3FF', '#EDE9FE'], dark: ['#0F0A1E', '#1A1030'] },
-};
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -68,8 +60,6 @@ export function TodayView({
   const allNames   = members.map(m => m.name);
   const firstName  = activeMember.name.split(' ')[0];
   const today      = localDateStr(new Date());
-  const tod        = getTimeOfDay();
-  const gradColors = isDark ? TOD_GRADIENT[tod].dark : TOD_GRADIENT[tod].light;
 
   // Weekday + date string
   const now = new Date();
@@ -100,33 +90,25 @@ export function TodayView({
 
   return (
     <View style={{ marginBottom: 8 }}>
-      {/* ── Header with gradient ── */}
-      <LinearGradient
-        colors={gradColors as [string, string]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={{
-          marginHorizontal: 16, marginTop: 8, marginBottom: 16,
-          borderRadius: 20, padding: 20,
-        }}
-      >
+      {/* ── Header — sits on the page background, no card boundary ── */}
+      <View style={{ paddingHorizontal: 16, marginTop: 8, marginBottom: 16 }}>
         <Text style={{
           fontSize: 22, fontWeight: '800',
-          color: isDark ? '#E0E7FF' : '#1E1B4B',
+          color: colors.textPrimary,
           letterSpacing: -0.3,
         }}>
           {getGreeting(firstName)}
         </Text>
         <Text style={{
           fontSize: TYPO.label, fontWeight: '600',
-          color: isDark ? '#A5B4FC' : '#6366F1',
+          color: colors.textSecondary,
           marginTop: 2,
         }}>
           {familyName.replace(/\s*family$/i, '')} Family  ·  {weekday}, {monthDay}
         </Text>
         <View style={{
           marginTop: 12,
-          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(99,102,241,0.08)',
+          backgroundColor: isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.08)',
           borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7,
           alignSelf: 'flex-start',
         }}>
@@ -137,7 +119,7 @@ export function TodayView({
             {summaryText}
           </Text>
         </View>
-      </LinearGradient>
+      </View>
 
       {/* ── Today timeline ── */}
       <View style={{ paddingHorizontal: 16, marginBottom: 16 }}>

@@ -8,6 +8,7 @@ import { Users, Mail } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useFamilyStore, MemberRole } from '@/store/familyStore';
 import { SCard, CardHeader, MemberAvatar, StatusPill, BRAND } from './shared';
+import { FamilyTreeView } from './FamilyTreeView';
 
 // ─── SVG Icons ────────────────────────────────────────────────────────────────
 const I = {
@@ -114,18 +115,30 @@ function PinModal({ member, onClose, onSave, colors, isDark }: {
 
 // ─── Edit-Member Modal ────────────────────────────────────────────────────────
 
-function EditMemberModal({ member, onClose, onSave, onDelete, colors, isDark }: {
-  member: any; onClose: () => void;
+function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, onDelete, colors, isDark }: {
+  member: any; allMembers: any[]; onClose: () => void;
   onSave: (memberId: string, name: string, role: string, hasCar: boolean, rideEarnings: number, groceryEarnings: number) => Promise<void>;
+  onLinkParent: (memberId: string, parentId: string) => void;
   onDelete: (memberId: string) => Promise<void>;
   colors: any; isDark: boolean;
 }) {
   const [name, setName]   = useState(member.name ?? '');
-  const [role, setRole]   = useState(member.role ?? 'child');
+  // member.role is this app's own MemberRole vocabulary ('kid'/'teen'),
+  // but the chips below use 'child'/'teenager' — without this translation
+  // no chip would ever show as selected for an existing kid or teen member.
+  const initialRole = member.role === 'kid' ? 'child' : member.role === 'teen' ? 'teenager' : (member.role ?? 'child');
+  const [role, setRole]   = useState(initialRole);
   const [hasCar, setHasCar] = useState(member.hasCar ?? false);
   const [rideEarnings, setRideEarnings] = useState(String(member.rideEarningsPerRun ?? 50));
   const [groceryEarnings, setGroceryEarnings] = useState(String(member.groceryEarningsPerRun ?? 30));
+  // Unlike the other fields above, this was reading member.linkedParentId
+  // (the prop) directly at render time instead of local state — the prop
+  // is a snapshot captured when the modal opened and never changes while
+  // it's open, so onLinkParent was correctly updating the real store
+  // underneath, but the pill's own highlight never reflected the tap.
+  const [linkedParentId, setLinkedParentId] = useState(member.linkedParentId as string | undefined);
   const [saving, setSaving] = useState(false);
+  const parentOptions = allMembers.filter(m => m.role === 'parent');
 
   const ROLES = ['parent', 'child', 'teenager', 'senior'];
 
@@ -203,6 +216,32 @@ function EditMemberModal({ member, onClose, onSave, onDelete, colors, isDark }: 
             </View>
           )}
 
+          {/* Senior-specific: which parent this GP belongs to — same field
+              a GP can set for themselves under "Quests I Sponsor", now also
+              editable by a parent directly from the roster/tree while
+              looking at that GP, since long-pressing a member here is the
+              other natural place someone would expect to fix this. */}
+          {role === 'senior' && parentOptions.length > 1 && (
+            <View style={{ marginTop: 14 }}>
+              <Text style={[p.label, { color: colors.textSecondary }]}>Whose parent?</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
+                {parentOptions.map(par => {
+                  const picked = linkedParentId === par.id;
+                  return (
+                    <TouchableOpacity key={par.id} onPress={() => { setLinkedParentId(par.id); onLinkParent(member.id, par.id); }}
+                      style={[p.roleChip, {
+                        backgroundColor: picked ? BRAND.blue : 'transparent',
+                        borderColor: picked ? BRAND.blue : colors.border,
+                      }]}>
+                      <Text style={{ fontSize: 13, fontWeight: '700',
+                        color: picked ? '#fff' : colors.textSecondary }}>{par.name.split(' ')[0]}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
             <TouchableOpacity onPress={onClose} style={[p.cancelBtn, { borderColor: colors.border }]}>
               <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
@@ -249,9 +288,6 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
   const { members, activeMemberId, updateMember, removeMember } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const isParent = activeMember?.role === 'parent';
-  const ROLE_ORDER: Record<string, number> = { parent: 0, teen: 1, kid: 2, senior: 3 };
-  const sortedMembers = [...members].sort((a, b) =>
-    (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9));
   const familyId = (members[0] as any)?.familyId ?? '';
 
   const [invites, setInvites]     = useState<Invite[]>([]);
@@ -306,17 +342,24 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
   };
 
   const saveMember = async (memberId: string, name: string, role: string, hasCar: boolean, rideEarningsPerRun: number, groceryEarningsPerRun: number) => {
-    const dbRole = role;
-    await supabase.from('members').update({ name, role: dbRole, has_car: hasCar, ride_earnings_per_run: rideEarningsPerRun, grocery_earnings_per_run: groceryEarningsPerRun }).eq('id', memberId);
+    // EditMemberModal's role chips use 'senior' (matching this app's own
+    // MemberRole vocabulary), but the DB's members_role_check only allows
+    // 'grandparent' — writing 'senior' straight through failed the
+    // constraint silently every time (the .update() call below never
+    // checked its own result), which is exactly why editing Maya to
+    // "teenager" appeared to do nothing. Translate here the same way
+    // familyStore's toRow does, so this raw write stays consistent with
+    // the one canonical DB vocabulary instead of inventing a second one.
+    const dbRole = role === 'senior' ? 'grandparent' : role;
+    const { error } = await supabase.from('members').update({ name, role: dbRole, has_car: hasCar, ride_earnings_per_run: rideEarningsPerRun, grocery_earnings_per_run: groceryEarningsPerRun }).eq('id', memberId);
+    if (error) {
+      console.warn('[RosterTab] saveMember failed', error.message);
+      Alert.alert('Couldn\'t save changes', error.message);
+      return;
+    }
     const appRole: MemberRole = role === 'child' ? 'kid' : role === 'teenager' ? 'teen' : role as MemberRole;
     updateMember(memberId, { name, role: appRole, hasCar, rideEarningsPerRun, groceryEarningsPerRun });
   };
-
-  const roleColor = (role: string) =>
-    role === 'parent' ? BRAND.purple : role === 'senior' ? BRAND.blue : role === 'teen' ? BRAND.amber : BRAND.emerald;
-
-  const roleEmoji = (role: string) =>
-    role === 'parent' ? '👨‍👩' : role === 'teen' ? '🎧' : role === 'senior' ? '👴' : '⭐';
 
   const togglePin = (id: string) => setShowPins(s => ({ ...s, [id]: !s[id] }));
 
@@ -340,126 +383,20 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
 
   return (
     <>
-      {/* ── Members — 2-column card grid ─────────────── */}
+      {/* ── Members — family tree layout ─────────────── */}
       <SCard colors={colors} isDark={isDark}>
-        <CardHeader Icon={Users} iconColor={BRAND.purple} title="Family Members"
+        <CardHeader Icon={Users} iconColor={BRAND.purple} title="Family Tree"
           badge={`${members.length}`} badgeColor={BRAND.purple} colors={colors} />
-
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 }}>
-          {sortedMembers.map(m => {
-            const rc = roleColor(m.role);
-            const hasPin = !!m.pin;
-            const isActive = m.id === activeMemberId;
-            const isTeen = m.role === 'teen';
-            const ROLE_LABEL: Record<string, string> = {
-              parent: 'Parent', kid: 'Kid', teen: 'Teen', senior: 'Senior',
-            };
-
-            return (
-              <TouchableOpacity key={m.id} activeOpacity={0.88}
-                onLongPress={() => { if (isParent) setEditTarget(m); }}
-                delayLongPress={500}
-                style={{
-                  width: '47%',
-                  borderRadius: 20,
-                  overflow: 'hidden',
-                  backgroundColor: isDark ? colors.card : '#fff',
-                  borderWidth: 2,
-                  borderColor: isActive ? rc : (isDark ? colors.border : '#EBEBF0'),
-                  shadowColor: rc,
-                  shadowOpacity: isActive ? 0.12 : 0,
-                  shadowRadius: 8,
-                  shadowOffset: { width: 0, height: 2 },
-                  elevation: isActive ? 3 : 0,
-                }}>
-
-                {/* Colored top bar */}
-                <View style={{ height: 6, backgroundColor: rc }} />
-
-                <View style={{ padding: 10 }}>
-                  {/* Emoji avatar */}
-                  <View style={{ alignItems: 'center', marginBottom: 6 }}>
-                    <View style={{ width: 48, height: 48, borderRadius: 24,
-                      backgroundColor: rc + '18', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 24 }}>
-                        {m.emoji ?? (m.role === 'parent' ? '👨' : m.role === 'senior' ? '👴' : m.role === 'teen' ? '🎧' : '⭐')}
-                      </Text>
-                    </View>
-                    {isActive && (
-                      <View style={{ marginTop: 3, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 5,
-                        backgroundColor: rc + '20' }}>
-                        <Text style={{ fontSize: 8, fontWeight: '800', color: rc }}>YOU</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Name + role */}
-                  <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textPrimary,
-                    textAlign: 'center' }} numberOfLines={1}>
-                    {m.name.split(' ')[0]}
-                  </Text>
-                  <View style={{ alignSelf: 'center', paddingHorizontal: 8, paddingVertical: 2,
-                    borderRadius: 6, backgroundColor: rc + '15', marginTop: 3, marginBottom: 8 }}>
-                    <Text style={{ fontSize: 10, fontWeight: '800', color: rc }}>
-                      {roleEmoji(m.role)} {ROLE_LABEL[m.role] ?? m.role}
-                    </Text>
-                  </View>
-
-                  {/* Stats strip */}
-                  <View style={{ flexDirection: 'row', borderRadius: 8, overflow: 'hidden',
-                    backgroundColor: isDark ? colors.surface : '#F5F5FA', marginBottom: 8 }}>
-                    <View style={{ flex: 1, alignItems: 'center', paddingVertical: 5 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '900', color: rc }}>{m.coins}</Text>
-                      <Text style={{ fontSize: 7, color: colors.textTertiary }}>COINS</Text>
-                    </View>
-                    <View style={{ width: 1, backgroundColor: isDark ? colors.border : '#E0E0EA' }} />
-                    <View style={{ flex: 1, alignItems: 'center', paddingVertical: 5 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '900', color: colors.textPrimary }}>{m.streak}🔥</Text>
-                      <Text style={{ fontSize: 7, color: colors.textTertiary }}>STREAK</Text>
-                    </View>
-                    <View style={{ width: 1, backgroundColor: isDark ? colors.border : '#E0E0EA' }} />
-                    <View style={{ flex: 1, alignItems: 'center', paddingVertical: 5 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '900', color: colors.textPrimary }}>L{m.level}</Text>
-                      <Text style={{ fontSize: 7, color: colors.textTertiary }}>LEVEL</Text>
-                    </View>
-                  </View>
-
-                  {/* Teen car badge */}
-                  {isTeen && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3,
-                      justifyContent: 'center', marginBottom: 6,
-                      paddingVertical: 3, borderRadius: 6,
-                      backgroundColor: m.hasCar ? BRAND.amber + '15' : (isDark ? colors.surface : '#F5F5FA') }}>
-                      <I.Car c={m.hasCar ? BRAND.amber : colors.textTertiary} />
-                      <Text style={{ fontSize: 9, fontWeight: '700',
-                        color: m.hasCar ? BRAND.amber : colors.textTertiary }}>
-                        {m.hasCar ? 'Has car' : 'No car'}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* PIN + key button */}
-                  <View style={{ flexDirection: 'row', gap: 5 }}>
-                    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 3,
-                      paddingVertical: 4, paddingHorizontal: 6, borderRadius: 7,
-                      backgroundColor: hasPin ? BRAND.emerald + '15' : BRAND.amber + '12' }}>
-                      {hasPin
-                        ? <><I.Lock c={BRAND.emerald} /><Text style={{ fontSize: 8, fontWeight: '800', color: BRAND.emerald }}>PIN set</Text></>
-                        : <><I.LockOpen c={BRAND.amber} /><Text style={{ fontSize: 8, fontWeight: '700', color: BRAND.amber }}>No PIN</Text></>}
-                    </View>
-                    {(isParent || isActive) && (
-                      <TouchableOpacity onPress={() => setPinTarget(m)}
-                        style={{ width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
-                          backgroundColor: BRAND.purple + '15', borderWidth: 1, borderColor: BRAND.purple + '30' }}>
-                        <I.Key c={BRAND.purple} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        <FamilyTreeView
+          members={members} activeMemberId={activeMemberId} isParent={isParent}
+          colors={colors} isDark={isDark}
+          onEdit={setEditTarget} onPin={setPinTarget}
+        />
+        {isParent && (
+          <Text style={{ fontSize: 10, color: colors.textTertiary, textAlign: 'center', marginTop: 4 }}>
+            Long-press anyone to edit · tap the key icon for PIN
+          </Text>
+        )}
       </SCard>
 
       {/* ── Invites ──────────────────────────────────── */}
@@ -536,8 +473,9 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
           onSave={savePin} colors={colors} isDark={isDark} />
       )}
       {editTarget && (
-        <EditMemberModal member={editTarget} onClose={() => setEditTarget(null)}
-          onSave={saveMember} onDelete={deleteMember} colors={colors} isDark={isDark} />
+        <EditMemberModal member={editTarget} allMembers={members} onClose={() => setEditTarget(null)}
+          onSave={saveMember} onLinkParent={(id, parentId) => updateMember(id, { linkedParentId: parentId })}
+          onDelete={deleteMember} colors={colors} isDark={isDark} />
       )}
     </>
   );

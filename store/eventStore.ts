@@ -58,6 +58,13 @@ export interface FamilyEvent {
   rideRequired?: boolean;
   driverName?: string;
   driverStatus?: HelperStatus;
+
+  // "Helper confirmed" (helperStatus === 'confirmed') only means the driver
+  // agreed to do the run — it says nothing about whether the pickup actually
+  // happened. This is that separate, later signal: either the rider or the
+  // driver can set it, whichever acts first.
+  pickupConfirmedAt?: string;
+  pickupConfirmedBy?: string;
 }
 
 export type StripMap = Record<string, string[]>;   // date → unique category[]
@@ -100,7 +107,7 @@ interface EventState {
   syncFromDB:      () => Promise<void>;
 
   // Mutations (optimistic)
-  addEvent:    (e: Omit<FamilyEvent, 'id'>) => void;
+  addEvent:    (e: Omit<FamilyEvent, 'id'>) => string;
   updateEvent: (id: string, updates: Partial<FamilyEvent>) => void;
   deleteEvent: (id: string) => void;
 }
@@ -136,7 +143,7 @@ function sortByTime(evs: FamilyEvent[]): FamilyEvent[] {
   return [...evs].sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
 }
 
-function fromRow(row: any): FamilyEvent {
+export function fromRow(row: any): FamilyEvent {
   return {
     id:                row.id,
     title:             row.title,
@@ -170,6 +177,8 @@ function fromRow(row: any): FamilyEvent {
     rideRequired:           row.ride_required ?? false,
     driverName:             row.driver_name ?? undefined,
     driverStatus:           row.driver_status ?? undefined,
+    pickupConfirmedAt:      row.pickup_confirmed_at ?? undefined,
+    pickupConfirmedBy:      row.pickup_confirmed_by ?? undefined,
   };
 }
 
@@ -208,6 +217,8 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     ride_required:              ev.rideRequired ?? false,
     driver_name:                ev.driverName ?? null,
     driver_status:              ev.driverStatus ?? null,
+    pickup_confirmed_at:        ev.pickupConfirmedAt ?? null,
+    pickup_confirmed_by:        ev.pickupConfirmedBy ?? null,
   };
 }
 
@@ -486,7 +497,14 @@ export const useEventStore = create<EventState>((set, get) => ({
         if (!map[d]) map[d] = [];
         if (!map[d].includes(c)) map[d].push(c);
       }
-      const next = { ...get().stripMap, ...map };
+      // Every date in [from, to] is authoritatively refreshed by this fetch
+      // — start from the old map, but explicitly clear each date in range
+      // before re-applying `map`, so a date whose last event got deleted
+      // (map has no entry for it) actually loses its stale strip dots
+      // instead of keeping whatever was cached from before.
+      const next = { ...get().stripMap };
+      for (const d of dates) delete next[d];
+      Object.assign(next, map);
       set({ stripMap: next, stripLoading: false, _stripFetchedAt: Date.now() } as any);
       AsyncStorage.setItem(DISK_STRIP, JSON.stringify(next));
     } catch (e) {
@@ -556,6 +574,8 @@ export const useEventStore = create<EventState>((set, get) => ({
         set({ dayEvents: rolledBack, events: rolledBack });
       }
     });
+
+    return event.id;
   },
 
   updateEvent: (id, updates) => {

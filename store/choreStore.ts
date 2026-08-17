@@ -59,6 +59,7 @@ export interface ChoreTask {
   category: string;              // From existing chore_tasks.category field
   basePoints: number;
   coinsReward: number;           // Aligns with existing coins_reward field
+  bonusCoins?: number;           // Extra coins on top of basePoints, paid at approval
   xpReward: number;
   status: ChoreStatus;
   assignedToId?: string;
@@ -112,7 +113,7 @@ export interface ChoreCheer {
 }
 
 export interface RecurrenceRule {
-  frequency: 'once' | 'daily' | 'weekly' | 'rotating' | 'first_come';
+  frequency: 'once' | 'daily' | 'weekly' | 'monthly' | 'rotating' | 'first_come';
   days?: number[];              // e.g. [1,3,5] for Mon/Wed/Fri
   siblingIds?: string[];        // For rotating assignments
   rotationCycleDays?: number;
@@ -323,6 +324,7 @@ function choreFromRow(row: any): ChoreTask {
     category:                row.category ?? 'home',
     basePoints:              row.base_points ?? row.coins_reward ?? 0,
     coinsReward:             row.coins_reward ?? 0,
+    bonusCoins:              row.bonus_coins ?? 0,
     xpReward:                row.xp_reward ?? 0,
     status:                  (row.status ?? 'todo') as ChoreStatus,
     assignedToId:            row.assigned_to_id ?? undefined,
@@ -470,6 +472,7 @@ interface ChoreState {
   // ── Parent review ──────────────────────────────────────────────────────────
   approveChore:                    (choreId: string, reviewerId: string) => void;
   requestRedo:                     (choreId: string, reviewerId: string, reason: string, presetKey?: string) => void;
+  requestGrandparentRedo:          (choreId: string, grandparentId: string, reason: string) => void;
 
   // ── Cheer Squad — GP/sibling reactions on a completed chore ─────────────────
   cheerChore:                      (choreId: string, fromMemberId: string, opts?: { coins?: number; note?: string }) => void;
@@ -478,7 +481,7 @@ interface ChoreState {
   scanAndAutoApprove:              () => void;
 
   // ── Points economy ────────────────────────────────────────────────────────
-  awardPoints:         (userId: string, choreId: string, points: number) => void;
+  awardPoints:         (userId: string, choreId: string, points: number, xp?: number) => void;
   requestCashOut:      (userId: string, points: number, override?: { spendPct: number; savePct: number; givePct: number }) => void;
   settleCashOut:       (transactionId: string, method: 'PHYSICAL_CASH' | 'DEBIT_CARD' | 'LEDGER') => void;
   approveCashOut:      (transactionId: string) => void;
@@ -758,9 +761,11 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       category:                 chore.category,
       base_points:              chore.basePoints,
       coins_reward:             chore.coinsReward,
+      bonus_coins:              chore.bonusCoins ?? 0,
       xp_reward:                chore.xpReward,
       status:                   chore.status,
       assigned_to_id:           chore.assignedToId,
+      is_pool:                  chore.isPool ?? false,
       family_id:                familyId,
       created_by_id:            chore.createdById,
       sponsor_user_id:          chore.sponsorUserId,
@@ -793,6 +798,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (updates.description        !== undefined) patch.description              = updates.description;
     if (updates.status             !== undefined) patch.status                   = updates.status;
     if (updates.assignedToId       !== undefined) patch.assigned_to_id           = updates.assignedToId;
+    if (updates.isPool             !== undefined) patch.is_pool                  = updates.isPool;
     if (updates.targetChildIds     !== undefined) patch.target_child_ids         = updates.targetChildIds;
     if (updates.coinsSplitPerKid   !== undefined) patch.coins_split_per_kid       = updates.coinsSplitPerKid;
     if (updates.teamGroupId        !== undefined) patch.team_group_id             = updates.teamGroupId;
@@ -800,6 +806,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (updates.category           !== undefined) patch.category                 = updates.category;
     if (updates.basePoints         !== undefined) patch.base_points              = updates.basePoints;
     if (updates.coinsReward        !== undefined) patch.coins_reward             = updates.coinsReward;
+    if (updates.bonusCoins         !== undefined) patch.bonus_coins              = updates.bonusCoins;
     if (updates.difficulty         !== undefined) patch.difficulty               = updates.difficulty;
     if (updates.dueDate            !== undefined) patch.due_date                 = updates.dueDate;
     if (updates.dueTime            !== undefined) patch.due_time                 = updates.dueTime;
@@ -860,8 +867,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ((chore.redoCount ?? 0) >= 2) {
       const now = new Date().toISOString();
       get().updateChore(choreId, { status: 'auto_approved', approvedAt: now, reviewedAt: now });
-      const pts = chore.basePoints > 0 ? chore.basePoints : chore.coinsReward;
-      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, choreId, pts);
+      const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
+      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward);
       return;
     }
 
@@ -886,8 +893,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ((chore.redoCount ?? 0) >= 2) {
       const now = new Date().toISOString();
       get().updateChore(choreId, { status: 'auto_approved', approvedAt: now, reviewedAt: now });
-      const pts = chore.basePoints > 0 ? chore.basePoints : chore.coinsReward;
-      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, choreId, pts);
+      const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
+      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward);
       return;
     }
 
@@ -988,20 +995,36 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // they're approved. Nobody's payout waits on or shrinks because of anyone
     // else — falls straight through to the normal single-kid payout below.
 
-    // Award points
-    const pointsToAward = chore.basePoints > 0 ? chore.basePoints : chore.coinsReward;
+    // Award points — bonusCoins (set via the Add Quest form's "bonus" field,
+    // or a Flash Bonus applied later) is paid in the SAME transaction as the
+    // base reward, not a separate step, so it can't be silently forgotten or
+    // left unpaid after approval. awardPoints below is the ONE payout call —
+    // it used to be paired with a second, separate award_coins RPC call
+    // here, which would have double-paid the base coinsReward now that
+    // awardPoints itself calls award_coins (see awardPoints' own comment).
+    const pointsToAward = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
     if (pointsToAward > 0 && chore.assignedToId) {
-      get().awardPoints(chore.assignedToId, choreId, pointsToAward);
+      get().awardPoints(chore.assignedToId, choreId, pointsToAward, chore.xpReward);
     }
 
-    // Also award coins via RPC (existing pattern)
-    if (chore.coinsReward > 0 && chore.assignedToId) {
-      supabase.rpc('award_coins', {
-        member_id:   chore.assignedToId,
-        coins_delta: chore.coinsReward,
-        xp_delta:    chore.xpReward,
+    // responsibility_history — same append-only audit trail the
+    // Responsibility Engine reads for fairness/effort scoring. Manual
+    // parent/GP approval (this function) was the one completion path that
+    // never wrote here — chore-auto-approve (the cron path) always did,
+    // which silently meant fairness scoring only ever saw auto-approved
+    // chores and never the far more common manually-reviewed ones.
+    if (chore.assignedToId && chore.familyId) {
+      supabase.from('responsibility_history').insert({
+        family_id: chore.familyId,
+        chore_id: choreId,
+        member_id: chore.assignedToId,
+        category: chore.categoryType ?? 'chore',
+        responsibility_type: 'chore',
+        outcome: 'completed',
+        effort_points: pointsToAward,
+        metadata: { reviewed_by_id: reviewerId },
       }).then(({ error }) => {
-        if (error) console.warn('[choreStore] award_coins RPC', error.message);
+        if (error) console.warn('[choreStore] responsibility_history insert', error.message);
       });
     }
 
@@ -1045,6 +1068,27 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       rejectionReason: reason,
       reviewedAt:      new Date().toISOString(),
       reviewedById:    reviewerId,
+      redoCount:       newRedoCount,
+    });
+  },
+
+  // Same shape as requestRedo, but for a grandparent's own completion review
+  // (pending_grandparent_approval) — requestRedo alone silently no-ops here
+  // since it only accepts pending_approval, which is exactly why
+  // PendingVerifyCheerCard had no reject path at all: nothing existed for a
+  // GP to call. resubmitChore (the kid-side "try again" flow) only checks
+  // for status === 'redo_requested' regardless of who set it, so this
+  // reuses the same status and the kid's existing resubmit flow just works.
+  requestGrandparentRedo: (choreId, grandparentId, reason) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.status !== 'pending_grandparent_approval') return;
+
+    const newRedoCount = (chore.redoCount ?? 0) + 1;
+    get().updateChore(choreId, {
+      status:          'redo_requested',
+      rejectionReason: reason,
+      reviewedAt:      new Date().toISOString(),
+      reviewedById:    grandparentId,
       redoCount:       newRedoCount,
     });
   },
@@ -1145,8 +1189,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         approvedAt: new Date().toISOString(),
         reviewedAt: new Date().toISOString(),
       });
-      const pts = chore.basePoints > 0 ? chore.basePoints : chore.coinsReward;
-      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, chore.id, pts);
+      const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
+      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, chore.id, pts, chore.xpReward);
     }
   },
 
@@ -1154,7 +1198,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // POINTS ECONOMY
   // ─────────────────────────────────────────────────────────────────────────
 
-  awardPoints: (userId, choreId, points) => {
+  awardPoints: (userId, choreId, points, xp = 0) => {
     const settings = get().householdSettings;
     const { spend, save, give } = calculateJarSplit(points, settings);
 
@@ -1173,15 +1217,22 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
     set(s => ({ transactions: [tx, ...s.transactions] }));
 
-    // Update balances in DB
-    supabase.rpc('increment_jar_balances', {
-      member_id:    userId,
-      spend_delta:  spend,
-      save_delta:   save,
-      give_delta:   give,
-      total_delta:  points,
+    // Update the member's real coin balance. There is no
+    // increment_jar_balances RPC in this database (confirmed via
+    // information_schema — it was called here for a long time, always
+    // failing silently to a console warning) and members has no
+    // spend/save/give sub-balance columns to write jar splits into anyway
+    // — award_coins (members.coins/main_coins/xp) is the one RPC that
+    // actually exists and is the real payout every caller of awardPoints
+    // needs. The jar split (spend/save/give) is still computed and
+    // recorded on the point_transactions row above for reporting; only the
+    // (not currently persisted) per-jar running balance was ever missing.
+    supabase.rpc('award_coins', {
+      member_id:   userId,
+      coins_delta: points,
+      xp_delta:    xp,
     }).then(({ error }) => {
-      if (error) console.warn('[choreStore] increment_jar_balances', error.message);
+      if (error) console.warn('[choreStore] award_coins', error.message);
     });
 
     // Log transaction in DB
@@ -1649,14 +1700,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // display only): each kid is verified and paid independently — falls
     // straight through to the normal single-kid payout below.
 
-    // Award points with 50/40/10 jar split (grandparent funded)
+    // Award points (grandparent funded) — the 50/40/10 split this comment
+    // used to reference was never actually applied (awardPoints always
+    // recomputes its own split from household settings, ignoring any split
+    // passed in here) — pre-existing, out of scope for this fix. bonusCoins
+    // now included, matching approveChore's identical payout.
     if (chore.basePoints > 0) {
-      const settings = get().householdSettings;
-      const split = calculateJarSplit(chore.basePoints, settings, { spendPct: 50, savePct: 40, givePct: 10 });
-      get().awardPoints(chore.assignedToId, choreId, chore.basePoints);
-      // Update jar balances on member record
-      const members = get().transactions; // side-effect: the transaction records the split
-      void split; // split values available for future DB write to member jar columns
+      const pts = chore.basePoints + (chore.bonusCoins ?? 0);
+      get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward);
     }
 
     // Increment Grand Champion badge progress
@@ -1665,6 +1716,24 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         b.userId === chore.assignedToId && b.badgeKey === 'grand_champion',
       )?.progress ?? 0) + 1,
     );
+
+    // responsibility_history — see approveChore's identical write for why
+    // this must happen on every completion path, not just the cron auto-
+    // approve one.
+    if (chore.assignedToId && chore.familyId) {
+      supabase.from('responsibility_history').insert({
+        family_id: chore.familyId,
+        chore_id: choreId,
+        member_id: chore.assignedToId,
+        category: chore.categoryType ?? 'chore',
+        responsibility_type: 'chore',
+        outcome: 'completed',
+        effort_points: chore.basePoints,
+        metadata: { reviewed_by_id: grandparentId, grandparent_approved: true },
+      }).then(({ error }) => {
+        if (error) console.warn('[choreStore] responsibility_history insert', error.message);
+      });
+    }
   },
 
   // ─────────────────────────────────────────────────────────────────────────

@@ -1,7 +1,17 @@
 // FamilyCube — Edge Function: chore-auto-approve
 // Scans all chores in `pending_approval` status whose 24h approval window has
 // expired and auto-approves them, crediting points to the child's wallet.
-// Also handles redo_count >= 2: the next submission is immediately auto-approved.
+//
+// FIXED (was querying a `chores` table that does not exist anywhere in the
+// live schema — confirmed via information_schema.tables, zero rows — plus a
+// `reviewer_id`/`auto_approved`/`base_points` column set that doesn't exist
+// on the real table either, and an insert into point_transactions using
+// transaction_type='EARN' which violates that table's own check constraint
+// (only 'EARNED' is valid) and a family_id column point_transactions doesn't
+// have. This function has been silently no-op/erroring on every cron run
+// since deployment — real chores were never actually auto-approved by it.
+// Rewritten against chore_tasks (this app's real chore table) with verified
+// column names.
 //
 // Cron schedule (Supabase Dashboard → Edge Functions → Schedule):
 //   every 30 minutes: */30 * * * *
@@ -35,8 +45,8 @@ serve(async (req) => {
 
     // ── 1. Fetch expired pending_approval chores ──────────────────────────────
     let q = supabase
-      .from('chores')
-      .select('id, title, assigned_to_id, family_id, base_points, redo_count, approval_window_expires_at, category_type')
+      .from('chore_tasks')
+      .select('id, title, assigned_to_id, family_id, coins_reward, redo_count, approval_window_expires_at, category_type')
       .eq('status', 'pending_approval')
       .lte('approval_window_expires_at', now);
 
@@ -58,14 +68,14 @@ serve(async (req) => {
         continue;
       }
 
-      // Mark chore as approved
+      // Mark chore as approved. reviewed_by_id stays null — an auto-approval
+      // has no human reviewer, distinct from a parent explicitly approving.
       const { error: updateErr } = await supabase
-        .from('chores')
+        .from('chore_tasks')
         .update({
-          status: 'approved',
+          status: 'auto_approved',
           reviewed_at: now,
-          reviewer_id: null,
-          auto_approved: true,
+          approved_at: now,
         })
         .eq('id', chore.id);
 
@@ -74,24 +84,38 @@ serve(async (req) => {
         continue;
       }
 
-      // Credit points — split 50/30/20 Spend/Save/Give per spec
-      const pts = chore.base_points ?? 0;
-      if (pts > 0) {
+      // Credit points — split 50/40/10 Spend/Save/Give per spec
+      const pts = chore.coins_reward ?? 0;
+      if (pts > 0 && chore.assigned_to_id) {
         const spend = Math.round(pts * 0.5);
         const save  = Math.round(pts * 0.4);
         const give  = pts - spend - save;
 
         await supabase.from('point_transactions').insert({
-          user_id:          chore.assigned_to_id,
-          family_id:        chore.family_id,
-          chore_id:         chore.id,
-          transaction_type: 'EARN',
-          amount:           pts,
-          spend_allocation: spend,
-          save_allocation:  save,
-          give_allocation:  give,
-          notes:            `Auto-approved: ${chore.title}`,
-          created_at:       now,
+          user_id:           chore.assigned_to_id,
+          chore_instance_id: chore.id,
+          transaction_type:  'EARNED',
+          amount:            pts,
+          spend_allocation:  spend,
+          save_allocation:   save,
+          give_allocation:   give,
+          notes:             `Auto-approved: ${chore.title}`,
+          created_at:        now,
+        });
+
+        // responsibility_history — same append-only audit trail the
+        // Responsibility Engine writes to on every assignment/completion,
+        // so an auto-approved chore shows up in fairness/effort scoring
+        // the same as a manually-approved one.
+        await supabase.from('responsibility_history').insert({
+          family_id: chore.family_id,
+          chore_id: chore.id,
+          member_id: chore.assigned_to_id,
+          category: chore.category_type ?? 'chore',
+          responsibility_type: 'chore',
+          outcome: 'completed',
+          effort_points: pts,
+          metadata: { auto_approved: true },
         });
       }
 

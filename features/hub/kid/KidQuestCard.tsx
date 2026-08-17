@@ -6,6 +6,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import { fmtDateTime } from '@/lib/dates';
 import { KID } from './kidTheme';
 import { CollapsibleCard, QuestLiveness } from '../hubComponents';
+import { BonusCoinBadge } from './BonusCoinBadge';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
 
@@ -56,6 +57,7 @@ export function KidQuestCard({
               <Text style={{ fontSize: KID.tiny }}>🪙</Text>
               <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: BRAND.amber }}>{q.coins}</Text>
             </View>
+            {q.bonusCoins > 0 && <BonusCoinBadge bonusCoins={q.bonusCoins} />}
             <View style={{ backgroundColor: meta.color + '20', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <meta.Icon size={11} color={meta.color} />
               <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: meta.color }}>{meta.label}</Text>
@@ -74,7 +76,11 @@ export function KidQuestCard({
         <Text style={{ fontSize: KID.body, color: colors.textSecondary, fontStyle: 'italic', lineHeight: 18 }}>"{q.description}"</Text>
       ) : null}
       {q.status === 'pending_approval' && (
-        <Text style={{ fontSize: KID.body, color: BRAND.amber }}>Waiting on a parent to review this quest.</Text>
+        <Text style={{ fontSize: KID.body, color: BRAND.amber }}>
+          {q.questType === 'grandparent_quest'
+            ? 'Waiting on a grandparent to review this quest.'
+            : 'Waiting on a parent to review this quest.'}
+        </Text>
       )}
       {q.teamGroupId && teamMates.length > 0 && (
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>

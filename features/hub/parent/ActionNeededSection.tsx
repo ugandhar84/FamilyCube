@@ -95,7 +95,7 @@ export function ActionNeededSection({
   active: FamilyMember; members: FamilyMember[]; allNames: string[];
   colors: any; isDark: boolean;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
-  addEvent: (ev: Omit<FamilyEvent, 'id'>) => void;
+  addEvent: (ev: Omit<FamilyEvent, 'id'>) => string;
   approveQuest: (id: string, by: string) => void;
   declineQuest: (id: string, by: string, reason: string) => void;
   approveRequest: (id: string, by: string, note?: string) => void;

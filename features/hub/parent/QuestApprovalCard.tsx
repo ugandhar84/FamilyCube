@@ -10,13 +10,18 @@ import type { Quest } from '@/store/questStore';
 
 // A kid's submitted-for-review quest — photo proof (or a missing-proof
 // warning), completion note, and the approve/decline decision.
-export function QuestApprovalCard({ q, active, members, allNames, colors, isDark, approveQuest, declineQuest }: {
+export function QuestApprovalCard({ q, active, members, allNames, colors, isDark, approveQuest, declineQuest, onDeclinePress }: {
   q: Quest; active: FamilyMember; members: FamilyMember[]; allNames: string[];
   colors: any; isDark: boolean;
   approveQuest: (id: string, by: string) => void;
   declineQuest: (id: string, by: string, reason: string) => void;
+  // Override the built-in Alert.prompt decline flow — e.g. ParentReviewDeck
+  // uses this to open its own preset-reason RedoSheet instead.
+  onDeclinePress?: () => void;
 }) {
   const kid = members.find(m => m.id === q.assignedToId);
+  const hasBonus = q.bonusCoins > 0;
+  const totalCoins = q.coins + (hasBonus ? q.bonusCoins : 0);
 
   return (
     <CollapsibleCard flat accent={BRAND.purple} colors={colors} isDark={isDark} defaultExpanded
@@ -35,6 +40,13 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
                 <Text style={{ fontSize: TYPO.label, color: BRAND.purple, fontWeight: '600' }}>
                   {kid.name.split(' ')[0]} wants {q.coins} coins
                 </Text>
+                {hasBonus && (
+                  <View style={{ backgroundColor: '#FEF3C7', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#D97706' }}>
+                      🔥 +{q.bonusCoins} bonus
+                    </Text>
+                  </View>
+                )}
               </View>
             )}
             <QuestLiveness history={q.history} members={members} colors={colors} />
@@ -71,7 +83,7 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
       ) : null}
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <Pressable
-          onPress={() => Alert.prompt(
+          onPress={() => onDeclinePress ? onDeclinePress() : Alert.prompt(
             'Decline Quest',
             `Let ${kid?.name.split(' ')[0] ?? 'them'} know why "${q.title}" needs another try.`,
             [
@@ -88,7 +100,9 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
         <Pressable onPress={() => approveQuest(q.id, active.id)}
           style={{ flex: 2, backgroundColor: BRAND.purple, paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
           <Coins size={14} color="#fff" />
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Approve & Pay {q.coins} Coins</Text>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
+            Approve & Pay {totalCoins} Coins{hasBonus ? ` (incl. ${q.bonusCoins} bonus)` : ''}
+          </Text>
         </Pressable>
       </View>
     </CollapsibleCard>

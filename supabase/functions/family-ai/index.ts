@@ -7,8 +7,11 @@
 //
 // Deploy: supabase functions deploy family-ai
 // Secrets required: GEMINI_API_KEY, DEEPSEEK_API_KEY
+// (extract_responsibility also uses SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY
+// to read the live category taxonomy — see extractResponsibility below)
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -410,6 +413,90 @@ Return JSON array: [{ title, coins (10-60), category, description }]`;
   return parseJson(text, []);
 }
 
+// Cached taxonomy fetch — responsibility_categories rarely changes, and
+// this runs on every extract_responsibility call, so a 5-minute TTL cache
+// avoids a DB round trip per request without risking serving badly-stale
+// data if a category is added/edited.
+let categoryCache: { taskDomains: string[]; errandSubcategories: string[]; fetchedAt: number } | null = null;
+const CATEGORY_CACHE_TTL_MS = 5 * 60_000;
+
+// Fell out of sync with the DB once already (found via a live e2e test):
+// errandSubcategories here MUST match errands.category's CHECK constraint
+// exactly, not the taxonomy's domain list — the two are different
+// granularities (errands.category is subcategory-level: grocery/pharmacy/
+// pet_store/household/package/return/dry_cleaning/other; tasks are scored
+// by process-task-assignment which accepts a domain OR a domain.subcategory
+// id, so domain-level is fine there). If responsibility_categories'
+// 'errand' domain subcategories or errands.category's constraint are ever
+// changed independently again, this drifts again — there is no DB-level
+// guarantee tying them together, only this comment.
+async function getCategoryDomains(): Promise<{ taskDomains: string[]; errandSubcategories: string[] }> {
+  if (categoryCache && Date.now() - categoryCache.fetchedAt < CATEGORY_CACHE_TTL_MS) return categoryCache;
+  try {
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const { data } = await supabase.from('responsibility_categories').select('domain, subcategory').eq('active', true);
+    const rows = data ?? [];
+    const domains = [...new Set(rows.map((r: any) => r.domain))];
+    const taskDomains = domains.filter(d => d !== 'errand');
+    const errandSubcategories = rows.filter((r: any) => r.domain === 'errand').map((r: any) => r.subcategory);
+    categoryCache = { taskDomains, errandSubcategories, fetchedAt: Date.now() };
+    return categoryCache;
+  } catch (e) {
+    console.warn('[family-ai] category taxonomy fetch failed, using fallback list:', (e as Error).message);
+    // Fallback keeps extraction working even if the DB call fails — matches
+    // errands.category's live CHECK constraint as of when this was written.
+    return {
+      taskDomains: ['medical', 'transport', 'school', 'sports', 'household', 'financial', 'social', 'work', 'other'],
+      errandSubcategories: ['grocery', 'pharmacy', 'pet_store', 'household', 'package', 'return', 'dry_cleaning', 'other'],
+    };
+  }
+}
+
+// Responsibility Engine Phase 4: unstructured-input extraction. Splits one
+// free-text/voice/flyer input into an optional event/task AND an optional
+// errand, per the spec's soccer+grocery example. AI extracts structure; it
+// does NOT decide who gets assigned — that's process-task-assignment/
+// process-kid-chore-assignment's job, called separately by the client (or
+// by resolve-and-assign, Phase 6) after this returns.
+//
+// Category lists in the prompt are now pulled from the live
+// responsibility_categories taxonomy (domain-level) instead of a hardcoded
+// 6/7-item enum — keeps AI extraction's category guesses aligned with what
+// process-task-assignment/process-kid-chore-assignment/resolve-and-assign
+// actually validate against, instead of drifting independently.
+async function extractResponsibility(body: Record<string, unknown>) {
+  const { text, existingMembers } = body as { text?: string; existingMembers?: unknown[] };
+  const { taskDomains, errandSubcategories } = await getCategoryDomains();
+
+  const prompt = `You are the AI intake agent for a family responsibility engine.
+Extract structured task/event and errand information from this family input. It may
+contain ONE, BOTH, or NEITHER of an event/task and an errand — do not invent one that
+isn't there.
+
+Family members (for matching "for Emma" type references): ${JSON.stringify(existingMembers ?? [])}
+
+Input: "${text}"
+
+Return JSON: {
+  task: null | {
+    title: string,
+    category: one of ${JSON.stringify(taskDomains)} (pick the closest match, never invent a new value),
+    startAt: string | null (ISO 8601 if a date/time was mentioned, else null),
+    requirements: string[] (things to bring/prepare, empty array if none),
+    forMemberName: string | null (which family member this is for/about, if named)
+  },
+  errand: null | {
+    category: one of ${JSON.stringify(errandSubcategories)} (pick the closest match, never invent a new value — this must be one of these exact values, they map directly to a database constraint),
+    storeName: string | null,
+    items: string[] (empty array if no specific items mentioned)
+  },
+  ambiguous: boolean (true if the input is unclear enough that a human should confirm before creating anything)
+}`;
+
+  const text2 = await callAI(prompt);
+  return parseJson(text2, { task: null, errand: null, ambiguous: true });
+}
+
 async function groceryAi(body: Record<string, unknown>) {
   const { prompt, context, existingItems, cultureHint } = body as any;
   const cultureNote = cultureHint === 'indian'
@@ -438,6 +525,7 @@ const ACTIONS: Record<string, (b: Record<string, unknown>) => Promise<unknown>> 
   parent_qa:       parentQa,
   smart_chores:    smartChores,
   grocery_ai:      groceryAi,
+  extract_responsibility: extractResponsibility,
 };
 
 serve(async (req) => {

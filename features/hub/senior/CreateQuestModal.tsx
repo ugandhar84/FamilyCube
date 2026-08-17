@@ -1,9 +1,11 @@
-import { View, Text, Pressable, TextInput, Modal } from 'react-native';
-import { Sparkles, Leaf, Laptop, PiggyBank, HandCoins, Wallet, Check, Camera } from 'lucide-react-native';
-import { TYPO } from '@/constants/theme';
+import { useState } from 'react';
+import { View, Text, Pressable, TextInput, ScrollView } from 'react-native';
+import { Leaf, Laptop, PiggyBank, HandCoins, Wallet, Check, Camera } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import AppBottomSheet from '@/components/AppBottomSheet';
 import { GP } from './seniorTheme';
 import { splitCoins } from './splitMath';
+import { GP_QUEST_CATEGORIES, GP_QUEST_SUGGESTIONS, type GpQuestCategory } from './gpQuestSuggestions';
 import type { FamilyMember } from '@/store/familyStore';
 
 // Money-green — "Save" jar accent in the 50/40/10 split preview, distinct
@@ -14,7 +16,7 @@ const MONEY_GREEN = '#10B981';
 // Create Grandparent Quest modal — full spec lifecycle: mode, title,
 // description, points, 50/40/10 split preview, kid targeting, photo proof.
 export function CreateQuestModal({
-  visible, onClose,
+  visible, onClose, editing = false,
   kids, colors, isDark,
   newQuestMode, setNewQuestMode,
   newQuestTitle, setNewQuestTitle,
@@ -24,7 +26,7 @@ export function CreateQuestModal({
   newQuestPhoto, setNewQuestPhoto,
   onCreate,
 }: {
-  visible: boolean; onClose: () => void;
+  visible: boolean; onClose: () => void; editing?: boolean;
   kids: FamilyMember[]; colors: any; isDark: boolean;
   newQuestMode: 'local' | 'virtual'; setNewQuestMode: (v: 'local' | 'virtual') => void;
   newQuestTitle: string; setNewQuestTitle: (v: string) => void;
@@ -36,19 +38,25 @@ export function CreateQuestModal({
 }) {
   const pts = parseInt(newQuestPoints) || 0;
   const { spend, save, give } = splitCoins(pts);
+  const [gpCategory, setGpCategory] = useState<GpQuestCategory | null>(null);
+  const suggestions = gpCategory
+    ? GP_QUEST_SUGGESTIONS.filter(s => s.category === gpCategory)
+    : GP_QUEST_SUGGESTIONS;
+  const applySuggestion = (s: (typeof GP_QUEST_SUGGESTIONS)[number]) => {
+    setNewQuestTitle(s.title);
+    setNewQuestDesc(s.desc);
+    setNewQuestMode(s.mode);
+  };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, backgroundColor: '#00000060' }} onPress={onClose} />
-      <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, gap: 14 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Sparkles size={18} color={BRAND.purple} />
-          <Text style={{ fontSize: TYPO.heading, fontWeight: '800', color: colors.textPrimary, flex: 1 }}>
-            Sponsor a Quest
-          </Text>
-          <Text style={{ fontSize: GP.tiny, color: colors.textTertiary }}>→ Parent reviews → Kid claims</Text>
-        </View>
-
+    <AppBottomSheet
+      visible={visible}
+      onClose={onClose}
+      title={editing ? '✏️ Edit Sponsored Quest' : '👴 Sponsor a Quest'}
+      subtitle={editing ? 'Still awaiting parent review — free to change' : '→ Parent reviews → Kid claims'}
+      minHeight="75%"
+    >
+      <View style={{ gap: 14 }}>
         {/* Mode: Local vs Virtual */}
         <View style={{ flexDirection: 'row', gap: 0, borderRadius: 14, overflow: 'hidden',
           borderWidth: 1.5, borderColor: isDark ? colors.border : '#E2E8F0' }}>
@@ -72,6 +80,47 @@ export function CreateQuestModal({
             </Pressable>
           ))}
         </View>
+
+        {/* Category — GP-relevant activities (cooking, garden, stories,
+            skills), not the parent household-chore list. Picking one just
+            narrows the suggestion pills below; tap a pill to fill title +
+            description + mode all at once. */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {GP_QUEST_CATEGORIES.map(c => {
+              const active = gpCategory === c.key;
+              return (
+                <Pressable key={c.key} onPress={() => setGpCategory(active ? null : c.key)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+                    borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 8,
+                    backgroundColor: active ? BRAND.purple + '18' : (isDark ? colors.surface : '#F5F4FA'),
+                    borderColor: active ? BRAND.purple : (isDark ? colors.border : '#E2E8F0') }}>
+                  <Text style={{ fontSize: GP.body }}>{c.emoji}</Text>
+                  <Text style={{ fontSize: GP.sub, fontWeight: '700', color: active ? BRAND.purple : colors.textSecondary }}>
+                    {c.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        {/* Suggestions — tap to fill title/description/mode at once */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {suggestions.map((s, i) => (
+              <Pressable key={i} onPress={() => applySuggestion(s)}
+                style={{ borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 8,
+                  backgroundColor: newQuestTitle === s.title ? BRAND.teal + '18' : (isDark ? colors.surface : '#F8FAFC'),
+                  borderColor: newQuestTitle === s.title ? BRAND.teal : (isDark ? colors.border : '#E2E8F0') }}>
+                <Text style={{ fontSize: GP.sub, fontWeight: '700',
+                  color: newQuestTitle === s.title ? BRAND.teal : colors.textSecondary }} numberOfLines={1}>
+                  {s.title}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </ScrollView>
 
         {/* Title */}
         <TextInput
@@ -197,11 +246,11 @@ export function CreateQuestModal({
             style={{ flex: 2, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
               backgroundColor: newQuestTitle.trim() ? BRAND.teal : (isDark ? '#374151' : '#D1D5DB') }}>
             <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>
-              Send to Parent for Review
+              {editing ? 'Save Changes' : 'Send to Parent for Review'}
             </Text>
           </Pressable>
         </View>
       </View>
-    </Modal>
+    </AppBottomSheet>
   );
 }

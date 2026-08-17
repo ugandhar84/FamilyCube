@@ -201,8 +201,20 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
   loaded:   false,
 
   loadFromStorage: async () => {
+    // approveRequest/declineRequest/etc. write locally via set()+save() immediately,
+    // then fire-and-forget upsertToDb() in the background. If a reload happens
+    // before that upsert lands, trusting the DB unconditionally below would pull
+    // back the still-"pending" row and make a just-dismissed card reappear.
+    // Read the local cache first so we have a same-request timestamp to compare
+    // against, and let whichever side responded more recently win per-request.
+    let localById = new Map<string, KidRequest>();
     try {
-      // Try DB first — authoritative, syncs across devices
+      const raw = await AsyncStorage.getItem(KEY);
+      const local = raw ? (JSON.parse(raw) as KidRequest[]) : [];
+      localById = new Map(local.map(r => [r.id, r]));
+    } catch { /* no local cache yet — DB read below is the only source */ }
+
+    try {
       // family_id comes from familyStore (invitation-based members, not auth users)
       const familyId = getFamilyId();
       if (familyId) {
@@ -213,28 +225,37 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
           .order('requested_at', { ascending: false });
         if (!error) {
           // rows may be [] on a fresh family — that's valid, don't fall through to seed
-          const requests: KidRequest[] = (rows ?? []).map((r: any) => ({
-            id:             r.id,
-            type:           r.type,
-            urgency:        r.urgency,
-            detail:         r.detail,
-            status:         r.status,
-            fromMemberId:   r.from_member_id,
-            toMemberId:     r.to_member_id    ?? undefined,
-            items:          r.items           ?? undefined,
-            requestedAt:    r.requested_at,
-            expiresAt:      r.expires_at      ?? undefined,
-            readAt:         r.read_at         ?? undefined,
-            respondedAt:    r.responded_at    ?? undefined,
-            respondedBy:    r.responded_by    ?? undefined,
-            parentNote:     r.parent_note     ?? undefined,
-            attachmentUrl:  r.attachment_url  ?? undefined,
-            assignedHelper: r.assigned_helper ?? undefined,
-            rewardCoins:    r.reward_coins    ?? undefined,
-            scheduledDate:  r.scheduled_date  ?? undefined,
-            scheduledTime:  r.scheduled_time  ?? undefined,
-            openToGP:       r.open_to_gp      ?? false,
-          }));
+          const requests: KidRequest[] = (rows ?? []).map((r: any) => {
+            const fromDb: KidRequest = {
+              id:             r.id,
+              type:           r.type,
+              urgency:        r.urgency,
+              detail:         r.detail,
+              status:         r.status,
+              fromMemberId:   r.from_member_id,
+              toMemberId:     r.to_member_id    ?? undefined,
+              items:          r.items           ?? undefined,
+              requestedAt:    r.requested_at,
+              expiresAt:      r.expires_at      ?? undefined,
+              readAt:         r.read_at         ?? undefined,
+              respondedAt:    r.responded_at    ?? undefined,
+              respondedBy:    r.responded_by    ?? undefined,
+              parentNote:     r.parent_note     ?? undefined,
+              attachmentUrl:  r.attachment_url  ?? undefined,
+              assignedHelper: r.assigned_helper ?? undefined,
+              rewardCoins:    r.reward_coins    ?? undefined,
+              scheduledDate:  r.scheduled_date  ?? undefined,
+              scheduledTime:  r.scheduled_time  ?? undefined,
+              openToGP:       r.open_to_gp      ?? false,
+            };
+            const local = localById.get(r.id);
+            // A local response newer than what the DB has means our upsert
+            // for it likely hasn't landed yet — keep the local version.
+            if (local?.respondedAt && (!fromDb.respondedAt || local.respondedAt > fromDb.respondedAt)) {
+              return local;
+            }
+            return fromDb;
+          });
           set({ requests, loaded: true });
           save(requests);
           return;
@@ -243,13 +264,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
     } catch { /* network unavailable — fall through to local cache */ }
 
     // Offline fallback: local AsyncStorage cache (no seed data — empty is correct)
-    try {
-      const raw = await AsyncStorage.getItem(KEY);
-      const requests = raw ? (JSON.parse(raw) as KidRequest[]) : [];
-      set({ requests, loaded: true });
-    } catch {
-      set({ requests: [], loaded: true });
-    }
+    set({ requests: [...localById.values()], loaded: true });
   },
 
   sendRequest: (req) => {

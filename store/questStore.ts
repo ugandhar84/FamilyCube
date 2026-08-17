@@ -121,6 +121,14 @@ export interface Quest {
   templateId?:      string;
 
   status:           QuestStatus;
+  // A grandparent_quest still sitting at the DB's pending_parent_approval
+  // status collapses to QuestStatus 'todo' (choreAdapter's
+  // choreStatusToQuestStatus) so existing 'todo' handling elsewhere doesn't
+  // need to change — but that means status alone can't tell a kid-visible
+  // ready quest from one still waiting on a parent's safety review. Callers
+  // that decide kid visibility MUST check this before showing a
+  // grandparent_quest as claimable.
+  awaitingParentApproval?: boolean;
   dueDate?:         string;
   dueTime?:         string;
 
@@ -132,6 +140,7 @@ export interface Quest {
   declinedAt?:      string;
   archivedAt?:      string;
   cancelledAt?:     string;
+  reviewedById?:    string;  // who approved/declined it — chore_tasks.reviewed_by_id
 
   photoRequired:    boolean;
   photoUrl?:        string;

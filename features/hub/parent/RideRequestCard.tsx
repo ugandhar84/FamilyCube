@@ -5,6 +5,7 @@ import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { CollapsibleCard } from '../hubComponents';
 import { fmtTime } from '../hubUtils';
+import { applyAssignment } from '@/lib/responsibilityCategories';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
@@ -54,8 +55,32 @@ function parseRideMeta(encoded: string | undefined, fallbackDate?: string) {
 export function RideRequestCard({ ev, active, members, colors, isDark, updateEvent, addEvent }: {
   ev: FamilyEvent; active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
-  addEvent: (ev: Omit<FamilyEvent, 'id'>) => void;
+  addEvent: (ev: Omit<FamilyEvent, 'id'>) => string;
 }) {
+  const familyId = (active as any).familyId as string | undefined;
+
+  // Zero-touch dispatch: once a ride is opened to helpers, ask the real
+  // engine for real (non-dry-run) whether one candidate is a confident
+  // AUTO pick. Only self-apply when that pick is specifically a
+  // grandparent — teens are eligible candidates too, but "auto-confirm
+  // without asking" is scoped to the GP dispatch-board zero-touch goal,
+  // not to silently signing a teen up for a driving commitment. SUGGEST/ASK
+  // (or an AUTO landing on a teen) leaves the ride in the normal open/claim
+  // list exactly as before — this only ever adds a confirmation, it never
+  // removes the manual path.
+  const tryAutoDispatchToGrandparent = (eventId: string) => {
+    if (!familyId) return;
+    applyAssignment({ taskId: eventId, taskType: 'event', familyId, category: 'transport' })
+      .then(res => {
+        if (res?.decisionType !== 'auto' || !res.selectedMemberId) return;
+        const winner = members.find(m => m.id === res.selectedMemberId);
+        if (winner?.role !== 'senior') return;
+        updateEvent(eventId, {
+          helper: winner.name, helperStatus: 'confirmed',
+          isOpenToGrandparents: false, isOpenToTeens: false,
+        });
+      });
+  };
   const [coinsStr, setCoinsStr] = useState('');
   const requester = ev.helperRequestedBy ?? members.find(m => m.id === ev.memberId)?.name ?? 'Kid';
   const rideMeta = parseRideMeta(ev.returnTime, ev.date);
@@ -64,12 +89,14 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
   const coinsVal   = coinsStr.trim() ? parseInt(coinsStr, 10) : undefined;
   const splitCoins = coinsVal ? Math.floor(coinsVal / 2) : undefined;
 
-  // Open to ALL helpers (GP + teen) — first to claim wins
+  // Open to ALL helpers (GP + teen) — first to claim wins, unless the engine
+  // is confident enough to zero-touch dispatch it to a GP right away.
   const openToHelpers = (rideCoins?: number) => {
     updateEvent(ev.id, {
       approvalPending: false, helperStatus: undefined, returnTime: undefined,
       isOpenToGrandparents: true, isOpenToTeens: true, rideCoins,
     });
+    tryAutoDispatchToGrandparent(ev.id);
   };
 
   // Fork both-ways ride → 2 separate event cards
@@ -88,7 +115,8 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
       pickupLocation: ev.pickupLocation,
       dropLocation: ev.dropLocation,
     });
-    addEvent({
+    if (!selfDrive) tryAutoDispatchToGrandparent(ev.id);
+    const pickupId = addEvent({
       title: `${ev.title} — Pickup`,
       date: rideMeta.pickupDate ?? ev.date,
       time: rideMeta.pickupTime ?? ev.time,
@@ -104,6 +132,7 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
       pickupLocation: ev.dropLocation,
       dropLocation: ev.pickupLocation,
     });
+    if (!selfDrive) tryAutoDispatchToGrandparent(pickupId);
   };
 
   return (

@@ -47,6 +47,18 @@ function PersonIcon({ color }: { color: string }) {
   );
 }
 
+function GearIcon({ color }: { color: string }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24">
+      <Circle cx={12} cy={12} r={3} stroke={color} strokeWidth={2} fill="none" />
+      <Path
+        d="M19.4,13 C19.5,12.7 19.5,12.3 19.4,12 L21,10.5 L19,7.5 L17,8.2 C16.5,7.8 16,7.5 15.4,7.3 L15,5.2 L11,5.2 L10.6,7.3 C10,7.5 9.5,7.8 9,8.2 L7,7.5 L5,10.5 L6.6,12 C6.5,12.3 6.5,12.7 6.6,13 L5,14.5 L7,17.5 L9,16.8 C9.5,17.2 10,17.5 10.6,17.7 L11,19.8 L15,19.8 L15.4,17.7 C16,17.5 16.5,17.2 17,16.8 L19,17.5 L21,14.5 Z"
+        stroke={color} strokeWidth={1.6} strokeLinejoin="round" fill="none"
+      />
+    </Svg>
+  );
+}
+
 // ── Animated cube: dice roll → settle → gentle pulse loop ────────────────────
 
 function AnimatedCubeMark({ size = 30 }: { size?: number }) {
@@ -150,11 +162,15 @@ const ROLE_CONFIG = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 interface AppHeaderProps {
-  memberName?:     string;
-  memberRole?:     'parent' | 'kid' | 'teen' | 'senior';
-  notifCount?:     number;
-  onPersonaPress?: () => void;
-  onBellPress?:    () => void;
+  memberName?:      string;
+  memberRole?:      'parent' | 'kid' | 'teen' | 'senior';
+  notifCount?:      number;
+  onPersonaPress?:  () => void;
+  onBellPress?:     () => void;
+  // Only passed by roles that don't have a dedicated Profile/settings tab in
+  // their bottom nav (currently: senior/GP, which trades that tab slot for
+  // Memories) — omitted everywhere else so the icon doesn't appear twice.
+  onSettingsPress?: () => void;
 }
 
 export default function AppHeader({
@@ -163,6 +179,7 @@ export default function AppHeader({
   notifCount    = 0,
   onPersonaPress,
   onBellPress,
+  onSettingsPress,
 }: AppHeaderProps) {
   const { colors, isDark } = useTheme();
   const role = ROLE_CONFIG[memberRole] ?? ROLE_CONFIG.parent;
@@ -200,15 +217,26 @@ export default function AppHeader({
         </TouchableOpacity>
       </View>
 
-      {/* RIGHT: bell only */}
-      <TouchableOpacity
-        style={[s.bell, { backgroundColor: isDark ? 'rgba(245,166,35,0.22)' : '#FEF0D3' }]}
-        onPress={onBellPress}
-        activeOpacity={0.8}
-      >
-        <BellIcon color={BRAND.amber} />
-        {notifCount > 0 && <View style={s.badge} />}
-      </TouchableOpacity>
+      {/* RIGHT: settings (only for roles without a Profile tab) + bell */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        {onSettingsPress && (
+          <TouchableOpacity
+            style={[s.bell, { backgroundColor: isDark ? 'rgba(155,125,212,0.22)' : '#F0E8FA' }]}
+            onPress={onSettingsPress}
+            activeOpacity={0.8}
+          >
+            <GearIcon color={BRAND.purple} />
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={[s.bell, { backgroundColor: isDark ? 'rgba(245,166,35,0.22)' : '#FEF0D3' }]}
+          onPress={onBellPress}
+          activeOpacity={0.8}
+        >
+          <BellIcon color={BRAND.amber} />
+          {notifCount > 0 && <View style={s.badge} />}
+        </TouchableOpacity>
+      </View>
     </View>
     </>
   );

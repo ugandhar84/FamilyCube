@@ -59,7 +59,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
 }) {
   const { quests, submitQuest, claimQuest, cheerQuest } = useQuestStore();
   const { startGrandparentQuest, declineGrandparentQuest } = useChoreStore();
-  const { events }                                        = useEventStore();
+  const { events, updateEvent }                           = useEventStore();
   const { rewards, redeemReward, getEligibleRewards }    = useRewardStore();
   const { sendRequest, requests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
   const { sendMessage }                                   = useChatStore();
@@ -74,6 +74,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   const [lateNudgeSent,   setLateNudgeSent]   = useState<Record<string, boolean>>({});
   const [dismissedReplies, setDismissedReplies] = useState<Set<string>>(new Set());
   const [dismissedActions,  setDismissedActions]  = useState<Set<string>>(new Set());
+  const [dismissedRideIds, setDismissedRideIds] = useState<Set<string>>(new Set());
   const [declineQuest,    setDeclineQuest]    = useState<{ id: string; title: string } | null>(null);
   // Submitting a photo-required quest — "Take Photo to Get Paid" must not pay
   // out on a bare tap; the photo IS the proof, so collect it before submitting.
@@ -94,6 +95,9 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
     AsyncStorage.getItem(`dismissed_actions_${active.id}`).then(val => {
       if (val) setDismissedActions(new Set(JSON.parse(val)));
     });
+    AsyncStorage.getItem(`dismissed_rides_${active.id}`).then(val => {
+      if (val) setDismissedRideIds(new Set(JSON.parse(val)));
+    });
   }, [active.id]);
 
   useEffect(() => {
@@ -103,6 +107,10 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   useEffect(() => {
     AsyncStorage.setItem(`dismissed_actions_${active.id}`, JSON.stringify([...dismissedActions]));
   }, [dismissedActions, active.id]);
+
+  useEffect(() => {
+    AsyncStorage.setItem(`dismissed_rides_${active.id}`, JSON.stringify([...dismissedRideIds]));
+  }, [dismissedRideIds, active.id]);
 
   const today       = localToday();
   const myEvents    = events.filter(e => (e.memberId === active.id || !e.memberId) && e.category !== 'Work');
@@ -125,8 +133,13 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
 
   const myRequests = requests.filter(r => r.fromMemberId === active.id && r.status !== 'cancelled');
 
-  const myQuests       = quests.filter(q => q.assignedToId === active.id || q.assignedToIds?.includes(active.id));
-  const poolQuests     = quests.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask);
+  // A grandparent_quest still awaiting the parent's safety review collapses
+  // to status 'todo' just like a normal ready quest (see choreAdapter's
+  // choreStatusToQuestStatus) — exclude it everywhere here via
+  // awaitingParentApproval so it never appears as visible/claimable before
+  // a parent has actually signed off.
+  const myQuests       = quests.filter(q => (q.assignedToId === active.id || q.assignedToIds?.includes(active.id)) && !q.awaitingParentApproval);
+  const poolQuests     = quests.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask && !q.awaitingParentApproval);
   const todoQuests       = myQuests.filter(q => q.status === 'todo' && !q.isPool);
   const inProgressQuests = myQuests.filter(q => ['claimed', 'in_progress'].includes(q.status));
   const reviewQuests   = myQuests.filter(q => q.status === 'pending_approval');
@@ -205,6 +218,15 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
     Alert.alert('⚠️ Alert sent!', 'Your parent has been notified that your driver is late.');
   };
 
+  // Either side (rider or driver) can confirm a pickup actually happened —
+  // "helperStatus: confirmed" only ever meant the driver agreed to the run.
+  // Whoever taps first closes the loop for everyone and clears the banner.
+  const confirmPickup = (ev: typeof todayEvents[0]) => {
+    if (ev.pickupConfirmedAt) return;
+    updateEvent(ev.id, { pickupConfirmedAt: new Date().toISOString(), pickupConfirmedBy: active.id });
+    sendMessage('all', active.id, `✅ ${active.name.split(' ')[0]} confirmed pickup for "${ev.title}" — all good!`);
+  };
+
   // A quest without photoRequired submits immediately; one that requires it
   // opens the capture sheet instead — "Take Photo to Get Paid" has to mean it.
   const handleSubmitTap = (q: Quest) => {
@@ -232,7 +254,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
         mainCoins={mainCoins} gpCoins={gpCoins} streak={streak} level={level}
         xp={xp} xpForNext={xpForNext} xpPct={xpPct}
         doneToday={doneToday} questGoal={questGoal} questPct={questPct}
-        confirmedRide={confirmedRide} rideCountdown={rideCountdown}
+        confirmedRide={confirmedRide}
         nextEvent={nextEvent} nextCountdown={nextCountdown}
       />
 
@@ -246,8 +268,13 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
         dismissedIds={dismissedAll} onDismiss={dismissAlert}
       />
 
-      {confirmedRide && rideCountdown !== null && rideCountdown > -10 && (
-        <KidRideBanner ev={confirmedRide} rideCountdown={rideCountdown} colors={colors} isDark={isDark} />
+      {confirmedRide && rideCountdown !== null && rideCountdown > -30 && !dismissedRideIds.has(confirmedRide.id) && (
+        <KidRideBanner
+          ev={confirmedRide} rideCountdown={rideCountdown} colors={colors} isDark={isDark}
+          active={active}
+          onConfirmPickup={confirmPickup}
+          onDismiss={(id) => setDismissedRideIds(prev => new Set([...prev, id]))}
+        />
       )}
 
       <KidCheckinRow colors={colors} onCheckin={sendCheckin} />

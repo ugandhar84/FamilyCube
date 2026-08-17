@@ -1,5 +1,7 @@
-import { View, Text, Pressable, Image } from 'react-native';
-import { Camera, Hammer, CheckCircle2, UserX, Clock, Users, Wallet, PiggyBank, HandCoins } from 'lucide-react-native';
+import { useState } from 'react';
+import { View, Text, Pressable, Image, Alert, Modal, Dimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Camera, Hammer, CheckCircle2, UserX, Clock, Users, Wallet, PiggyBank, HandCoins, RotateCcw, X } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { fmtDateTime } from '@/lib/dates';
@@ -38,15 +40,29 @@ function rowMeta(status: string, colors: any) {
 export function PendingVerifyCheerCard({
   pendingGpApproval, allChores, kids, allNames, colors, isDark,
   cheerSticker, setCheerSticker,
-  onApproveAndCheer, members,
+  onApproveAndCheer, onRequestRedo, members,
 }: {
   pendingGpApproval: ChoreTask[]; allChores: ChoreTask[];
   kids: FamilyMember[]; allNames: string[]; colors: any; isDark: boolean;
   cheerSticker: string; setCheerSticker: (s: string) => void;
   onApproveAndCheer: (choreId: string) => void;
+  onRequestRedo: (choreId: string, reason: string) => void;
   members?: FamilyMember[];
 }) {
   if (pendingGpApproval.length === 0) return null;
+
+  const insets = useSafeAreaInsets();
+  const [lightboxUri, setLightboxUri] = useState<string | null>(null);
+
+  const promptRedo = (choreId: string, title: string, kidName: string) => Alert.prompt(
+    'Ask for a redo?',
+    `Let ${kidName} know why "${title}" needs another try.`,
+    [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Request Redo', style: 'destructive', onPress: (reason?: string) => onRequestRedo(choreId, reason?.trim() || 'Needs another try') },
+    ],
+    'plain-text',
+  );
 
   // A team quest clones one chore per kid — reviewing them as N separate
   // full cards repeats the same title/points/sticker chrome N times. Render
@@ -121,8 +137,10 @@ export function PendingVerifyCheerCard({
                       backgroundColor: isDark ? colors.surface : '#fff',
                       borderWidth: 1, borderColor: meta.color + '30' }}>
                       {member.submissionPhotoUrl ? (
-                        <Image source={{ uri: member.submissionPhotoUrl }}
-                          style={{ width: 44, height: 44, borderRadius: 10 }} resizeMode="cover" />
+                        <Pressable onPress={() => setLightboxUri(member.submissionPhotoUrl!)}>
+                          <Image source={{ uri: member.submissionPhotoUrl }}
+                            style={{ width: 44, height: 44, borderRadius: 10 }} resizeMode="cover" />
+                        </Pressable>
                       ) : (
                         <FamilyAvatar name={kid?.name ?? '?'} emoji={kid?.emoji} avatarUrl={kid?.avatarUrl} siblings={allNames} size={38} />
                       )}
@@ -145,10 +163,17 @@ export function PendingVerifyCheerCard({
                       {/* Team quests approve per-kid inline (payout waits for the group);
                           a single-kid quest uses the one big button below instead. */}
                       {member.status === 'pending_grandparent_approval' && chore.teamGroupId && (
-                        <Pressable onPress={() => onApproveAndCheer(member.id)}
-                          style={{ backgroundColor: BRAND.teal, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 }}>
-                          <Text style={{ fontSize: GP.tiny, fontWeight: '900', color: '#fff' }}>{cheerSticker} Approve</Text>
-                        </Pressable>
+                        <View style={{ flexDirection: 'row', gap: 6 }}>
+                          <Pressable onPress={() => promptRedo(member.id, chore.title, kid?.name.split(' ')[0] ?? 'them')}
+                            style={{ borderRadius: 10, paddingHorizontal: 10, paddingVertical: 9,
+                              borderWidth: 1.5, borderColor: colors.danger + '60' }}>
+                            <RotateCcw size={13} color={colors.danger} />
+                          </Pressable>
+                          <Pressable onPress={() => onApproveAndCheer(member.id)}
+                            style={{ backgroundColor: BRAND.teal, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 }}>
+                            <Text style={{ fontSize: GP.tiny, fontWeight: '900', color: '#fff' }}>{cheerSticker} Approve</Text>
+                          </Pressable>
+                        </View>
                       )}
                     </View>
                   );
@@ -187,19 +212,47 @@ export function PendingVerifyCheerCard({
                   </Text>
                 )
               ) : (
-                <Pressable onPress={() => onApproveAndCheer(chore.id)}
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    backgroundColor: BRAND.teal, borderRadius: 12, paddingVertical: 13 }}>
-                  <Text style={{ fontSize: 20 }}>{cheerSticker}</Text>
-                  <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>
-                    APPROVE & CHEER · {pts} pts
-                  </Text>
-                </Pressable>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Pressable onPress={() => promptRedo(chore.id, chore.title, kids.find(k => k.id === chore.assignedToId)?.name.split(' ')[0] ?? 'them')}
+                    style={{ paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center',
+                      borderRadius: 12, borderWidth: 1.5, borderColor: colors.danger + '60' }}>
+                    <RotateCcw size={16} color={colors.danger} />
+                  </Pressable>
+                  <Pressable onPress={() => onApproveAndCheer(chore.id)}
+                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      backgroundColor: BRAND.teal, borderRadius: 12, paddingVertical: 13, paddingHorizontal: 6 }}>
+                    <Text style={{ fontSize: 18 }}>{cheerSticker}</Text>
+                    <Text style={{ fontSize: GP.sub, fontWeight: '900', color: '#fff', flexShrink: 1 }}
+                      numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                      APPROVE & CHEER · {pts} pts
+                    </Text>
+                  </Pressable>
+                </View>
               )}
             </View>
           </View>
         );
       })}
+
+      {/* Full-screen photo lightbox — the thumbnail is the only way a GP
+          can inspect proof before deciding approve vs. redo, so it needs
+          to actually enlarge, not just sit there at 44x44. */}
+      <Modal visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
+        <Pressable style={{ flex: 1, backgroundColor: '#000' }} onPress={() => setLightboxUri(null)}>
+          <View style={{ position: 'absolute', top: insets.top + 8, right: 16, zIndex: 10 }}>
+            <Pressable onPress={() => setLightboxUri(null)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' }}>
+              <X size={20} color="#fff" />
+            </Pressable>
+          </View>
+          {lightboxUri && (
+            <Image source={{ uri: lightboxUri }}
+              style={{ flex: 1, width: Dimensions.get('window').width }}
+              resizeMode="contain" />
+          )}
+        </Pressable>
+      </Modal>
     </View>
   );
 }

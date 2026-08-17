@@ -36,6 +36,7 @@ export interface FamilyMember {
   gpDriveWindowStart?: string;        // 'HH:MM' 24h
   gpDriveWindowEnd?: string;          // 'HH:MM' 24h
   gpWeeklyRideCap?: number;           // Max rides they'll take per calendar week
+  linkedParentId?: string;            // Which parent this GP belongs to (e.g. Priya's mother -> Priya's id) — informational, both parents can still review either side's GP quests
 }
 
 interface FamilyState {
@@ -80,7 +81,11 @@ function fromRow(row: any): FamilyMember {
     name:            row.name,
     role:            row.role === 'child' ? 'kid' : row.role === 'grandparent' ? 'senior' : row.role === 'teenager' ? 'teen' : row.role as MemberRole,
     subRole:         row.sub_role ?? undefined,
-    emoji:           isUrl ? undefined : (row.avatar ?? undefined),
+    // '' (empty string) is how the DB represents "never picked one" for
+    // some rows, not just null/undefined — `?? undefined` alone leaves it
+    // as '' in that case, which every consumer that does `m.emoji ?? X`
+    // then silently renders as nothing instead of falling through to X.
+    emoji:           isUrl ? undefined : (row.avatar || undefined),
     avatarUrl:       isUrl ? row.avatar : undefined,
     familyId:        row.family_id ?? undefined,
     coins,
@@ -101,6 +106,7 @@ function fromRow(row: any): FamilyMember {
     gpDriveWindowStart: row.gp_drive_window_start ?? '14:00',
     gpDriveWindowEnd:   row.gp_drive_window_end   ?? '17:30',
     gpWeeklyRideCap:    row.gp_weekly_ride_cap    ?? 2,
+    linkedParentId:     row.linked_parent_id ?? undefined,
   };
 }
 
@@ -109,7 +115,7 @@ function toRow(m: FamilyMember) {
   return {
     id:       m.id,
     name:     m.name,
-    role:     m.role === 'kid' ? 'child' : m.role === 'teen' ? 'teenager' : m.role,
+    role:     m.role === 'kid' ? 'child' : m.role === 'teen' ? 'teenager' : m.role === 'senior' ? 'grandparent' : m.role,
     sub_role: m.subRole ?? null,
     avatar: m.avatarUrl ?? m.emoji ?? '👤',
     coins: m.coins,
@@ -118,8 +124,12 @@ function toRow(m: FamilyMember) {
     xp:    m.xp,
     streak: m.streak,
     level:  m.level,
-    quests_completed: m.questsCompleted,
-    quests_pending:   m.questsPending,
+    // quests_completed / quests_pending were never real DB columns (only
+    // ever set to 0 at member creation, never read anywhere) — every
+    // updateMember() call was failing outright because of this, unrelated
+    // to whatever field the caller actually meant to change (role,
+    // linked_parent_id, GP dispatch prefs, etc.) — the root cause behind a
+    // whole string of "X isn't saving" reports this session.
     pin:   m.pin ?? null,
     has_car: m.hasCar ?? false,
     ride_earnings_per_run: m.rideEarningsPerRun ?? 50,
@@ -129,6 +139,7 @@ function toRow(m: FamilyMember) {
     gp_drive_window_start: m.gpDriveWindowStart ?? '14:00',
     gp_drive_window_end:   m.gpDriveWindowEnd   ?? '17:30',
     gp_weekly_ride_cap:    m.gpWeeklyRideCap    ?? 2,
+    linked_parent_id:      m.linkedParentId ?? null,
   };
 }
 
@@ -182,7 +193,13 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     const updated = next.find(m => m.id === id);
     if (updated) {
-      await supabase.from('members').update(toRow(updated)).eq('id', id);
+      // This was a silent await with no error check — every caller of
+      // updateMember (GP dispatch prefs, linked_parent_id, role edits,
+      // etc.) could fail the DB write with zero indication anywhere, which
+      // is exactly the shape of bug found repeatedly this session
+      // (RosterTab's saveMember, choreStore's award payouts). Surface it.
+      const { error } = await supabase.from('members').update(toRow(updated)).eq('id', id);
+      if (error) console.warn('[familyStore] updateMember failed', error.message);
     }
   },
 

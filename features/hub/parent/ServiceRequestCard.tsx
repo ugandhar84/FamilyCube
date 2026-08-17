@@ -1,8 +1,10 @@
-import { View, Text, Pressable, Alert } from 'react-native';
-import { Car, BookOpen, PartyPopper, HeartHandshake, CheckCircle2, Check, X } from 'lucide-react-native';
+import { useState } from 'react';
+import { View, Text, Pressable, Alert, TextInput } from 'react-native';
+import { Car, BookOpen, PartyPopper, HeartHandshake, CheckCircle2, Check, X, Coins } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useChatStore } from '@/store/chatStore';
+import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 
 // Money-green — "GP Welcome" confirmed-state accent, distinct from brand
@@ -10,17 +12,33 @@ import type { FamilyMember } from '@/store/familyStore';
 // brand teal in this app) — kept as one local constant.
 const GP_GREEN = '#22c55e';
 
-// Ride / tutor / cheer request — approve, decline with a note back to the
-// kid, or flag it open to a grandparent at approval time.
+// Ride / tutor / cheer request — approve (optionally with a coin reward for
+// tutor/cheer), decline with a note back to the kid, or flag it open to a
+// grandparent at approval time.
 export function ServiceRequestCard({ req, kidName, active, colors, isDark, approveRequest, declineRequest, toggleGPWelcome }: {
   req: any; kidName: string; active: FamilyMember; colors: any; isDark: boolean;
-  approveRequest: (id: string, by: string) => void;
+  approveRequest: (id: string, by: string, note?: string) => void;
   declineRequest: (id: string, by: string, note?: string) => void;
   toggleGPWelcome: (id: string, open: boolean) => void;
 }) {
+  const awardCoins = useFamilyStore(s => s.awardCoins);
   const TypeIcon   = req.type === 'ride' ? Car : req.type === 'tutor' ? BookOpen : PartyPopper;
   const typeLabel  = req.type === 'ride' ? 'Ride Request' : req.type === 'tutor' ? 'Tutor Request' : 'Cheer Request';
   const isGPOpen   = !!req.openToGP;
+  const canOfferCoins = req.type === 'tutor' || req.type === 'cheer';
+  const [coinOffer, setCoinOffer] = useState('');
+
+  const handleApprove = () => {
+    const coins = parseInt(coinOffer, 10);
+    if (canOfferCoins && coins > 0) {
+      awardCoins(req.fromMemberId, coins, 'mainCoins');
+      approveRequest(req.id, active.id, `+${coins} coins for helping!`);
+      useChatStore.getState().sendMessage('all', active.id,
+        `🪙 ${kidName} earned +${coins} coins for: "${req.detail}"`);
+    } else {
+      approveRequest(req.id, active.id);
+    }
+  };
 
   return (
     <View style={{ borderRadius: 14, borderWidth: 1.5,
@@ -52,12 +70,31 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
         </Text>
         {isGPOpen && <CheckCircle2 size={13} color={GP_GREEN} />}
       </Pressable>
+      {canOfferCoins && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+          marginHorizontal: 12, marginBottom: 8, padding: 8, borderRadius: 10,
+          backgroundColor: isDark ? colors.surface2 : '#F1F5F9', borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0' }}>
+          <Coins size={14} color={BRAND.amber} />
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Offer coins (optional):</Text>
+          <TextInput
+            value={coinOffer}
+            onChangeText={t => setCoinOffer(t.replace(/[^0-9]/g, ''))}
+            keyboardType="number-pad"
+            placeholder="0"
+            placeholderTextColor={colors.textTertiary}
+            style={{ flex: 1, textAlign: 'right', fontSize: TYPO.label, fontWeight: '800',
+              color: colors.textPrimary, paddingVertical: 2 }}
+          />
+        </View>
+      )}
       <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
-        <Pressable onPress={() => approveRequest(req.id, active.id)}
+        <Pressable onPress={handleApprove}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: BRAND.teal, borderRadius: 10,
             paddingVertical: 9 }}>
           <Check size={13} color="#fff" />
-          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Approve</Text>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>
+            {canOfferCoins && parseInt(coinOffer, 10) > 0 ? `Approve +${parseInt(coinOffer, 10)}¢` : 'Approve'}
+          </Text>
         </Pressable>
         <Pressable
           onPress={() => {

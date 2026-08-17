@@ -84,6 +84,9 @@ export interface ChoreTask {
   proofNotes?: string;
   submissionPhotoUrl?: string;
   rejectionReason?: string;
+  // Parent-authored note added AFTER final approval — the one field still
+  // editable once a quest is done and paid; every other field is locked.
+  parentNote?: string;
   approvalWindowExpiresAt?: string;
   // Shopping quest item list (categoryType === 'shopping')
   shoppingItems?: string[];          // e.g. ['Milk 2%', 'Bread', 'Eggs x12']
@@ -350,6 +353,7 @@ function choreFromRow(row: any): ChoreTask {
     proofNotes:              row.proof_notes ?? undefined,
     submissionPhotoUrl:      row.submission_photo_url ?? undefined,
     rejectionReason:         row.rejection_reason ?? undefined,
+    parentNote:              row.parent_note ?? undefined,
     approvalWindowExpiresAt: row.approval_window_expires_at ?? undefined,
     submittedAt:             row.submitted_at ?? undefined,
     approvedAt:              row.approved_at ?? undefined,
@@ -435,6 +439,29 @@ function calculateJarSplit(
   return { spend, save, give };
 }
 
+// Local calendar date as YYYY-MM-DD — NOT toISOString().slice(0,10), which
+// is UTC and can already read as "tomorrow" hours before local midnight in
+// timezones behind UTC. A chore approved at 5:57pm local time getting
+// reset back to todo an hour later, same day, was exactly this bug: the
+// UTC-vs-local mismatch made resetDueRecurringChores treat "later today"
+// as if the next cycle had already started.
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// The date a recurring chore's next cycle actually starts, given the date
+// it was last approved. Daily → tomorrow; weekly/monthly → the same
+// weekday/day-of-month one period out. 'rotating'/'first_come' have no
+// fixed cadence here — they're reassigned by other flows, not this clock.
+function nextDueDate(fromISO: string, frequency: RecurrenceRule['frequency']): string | null {
+  const d = new Date(fromISO);
+  if (frequency === 'daily') d.setDate(d.getDate() + 1);
+  else if (frequency === 'weekly') d.setDate(d.getDate() + 7);
+  else if (frequency === 'monthly') d.setMonth(d.getMonth() + 1);
+  else return null;
+  return localDateStr(d);
+}
+
 // ─── Store interface ──────────────────────────────────────────────────────────
 
 interface ChoreState {
@@ -479,6 +506,7 @@ interface ChoreState {
   approveGrandparentQuestAsParent: (choreId: string, parentId: string) => void;
   declineGrandparentQuestAsParent: (choreId: string, parentId: string, reason: string) => void;
   scanAndAutoApprove:              () => void;
+  resetDueRecurringChores:         () => void;
 
   // ── Points economy ────────────────────────────────────────────────────────
   awardPoints:         (userId: string, choreId: string, points: number, xp?: number) => void;
@@ -826,6 +854,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (updates.proofNotes         !== undefined) patch.proof_notes              = updates.proofNotes;
     if (updates.submissionPhotoUrl !== undefined) patch.submission_photo_url     = updates.submissionPhotoUrl;
     if (updates.rejectionReason    !== undefined) patch.rejection_reason         = updates.rejectionReason;
+    if (updates.parentNote         !== undefined) patch.parent_note              = updates.parentNote;
     if (updates.submittedAt        !== undefined) patch.submitted_at             = updates.submittedAt;
     if (updates.approvedAt         !== undefined) patch.approved_at              = updates.approvedAt;
     if (updates.reviewedAt         !== undefined) patch.reviewed_at              = updates.reviewedAt;
@@ -1042,20 +1071,12 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       });
     }
 
-    // G1 — reset recurring chores back to todo so they reappear next cycle
-    if (chore.recurrenceRule?.frequency && chore.recurrenceRule.frequency !== 'once') {
-      get().updateChore(choreId, {
-        status:           'todo',
-        assignedToId:     undefined,
-        submittedAt:      undefined,
-        submissionPhotoUrl: undefined,
-        submissionNote:   undefined,
-        approvedAt:       undefined,
-        reviewedAt:       undefined,
-        rejectionReason:  undefined,
-        redoCount:        0,
-      });
-    }
+    // G1 — recurring chores reset back to todo for their next cycle, but not
+    // instantly: resetting the moment this approval lands (same day, same
+    // session) meant an approved-and-paid photo quest snapped straight back
+    // to "Take Photo to Get Paid" before the teen ever left the screen. The
+    // actual reset is date-gated and handled by resetDueRecurringChores,
+    // called alongside scanAndAutoApprove on every load.
   },
 
   requestRedo: (choreId, reviewerId, reason, _presetKey) => {
@@ -1194,6 +1215,37 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
+  // G1 — an approved recurring chore only resets to an unassigned 'todo'
+  // once its next cycle has actually arrived (daily → the next calendar
+  // day, weekly/monthly → one period out from approval), not the instant
+  // it's approved. Called alongside scanAndAutoApprove on every load, same
+  // as that function's own cadence.
+  resetDueRecurringChores: () => {
+    const today = localDateStr(new Date());
+    const toReset = get().chores.filter(c =>
+      c.status === 'approved' &&
+      c.recurrenceRule?.frequency && c.recurrenceRule.frequency !== 'once' &&
+      c.approvedAt &&
+      (() => {
+        const next = nextDueDate(c.approvedAt!, c.recurrenceRule.frequency);
+        return next !== null && today >= next;
+      })(),
+    );
+    for (const chore of toReset) {
+      get().updateChore(chore.id, {
+        status:             'todo',
+        assignedToId:       undefined,
+        submittedAt:        undefined,
+        submissionPhotoUrl: undefined,
+        submissionNote:     undefined,
+        approvedAt:         undefined,
+        reviewedAt:         undefined,
+        rejectionReason:    undefined,
+        redoCount:          0,
+      });
+    }
+  },
+
   // ─────────────────────────────────────────────────────────────────────────
   // POINTS ECONOMY
   // ─────────────────────────────────────────────────────────────────────────
@@ -1234,6 +1286,24 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }).then(({ error }) => {
       if (error) console.warn('[choreStore] award_coins', error.message);
     });
+
+    // The RPC above is the source of truth in Postgres, but familyStore's
+    // in-memory members array (what every balance display actually reads)
+    // is only ever refetched once at app boot — nothing here used to patch
+    // it, so an approved quest's payout was invisible on-screen until a
+    // full reload. Apply the same delta locally, by increment (not by
+    // overwriting with a snapshot), so it can't clobber a concurrent award
+    // from another device.
+    try {
+      const { useFamilyStore } = require('@/store/familyStore');
+      useFamilyStore.setState((s: any) => ({
+        members: s.members.map((m: any) => m.id === userId
+          ? { ...m, coins: Math.max(0, (m.coins ?? 0) + points),
+              mainCoins: Math.max(0, (m.mainCoins ?? 0) + points),
+              xp: Math.max(0, (m.xp ?? 0) + xp) }
+          : m),
+      }));
+    } catch { /* familyStore not mounted yet — RPC write still lands */ }
 
     // Log transaction in DB
     dbInsert('point_transactions', {

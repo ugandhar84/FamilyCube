@@ -15,27 +15,34 @@ const VISIBLE_LIMIT = 6;
 // Once a parent approves a quest it's removed entirely (nothing left to do),
 // which is why "approved" never appears in this list.
 export function MyQuestsSection({
-  todoQuests, inProgressQuests, reviewQuests, poolQuests, cancelledToday, allQuests,
-  active, members, colors, isDark,
+  todoQuests, inProgressQuests, reviewQuests, poolQuests, cancelledToday, declinedQuests = [], allQuests,
+  active, members, colors, isDark, title = 'My Quests',
   onClaim, onStart, onSubmit, onAcceptGpQuest, onDeclineGpQuest,
 }: {
   todoQuests: Quest[]; inProgressQuests: Quest[]; reviewQuests: Quest[]; poolQuests: Quest[]; cancelledToday: Quest[];
+  declinedQuests?: Quest[];
   allQuests: Quest[]; active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
+  title?: string;
   onClaim: (id: string) => void;
   onStart: (id: string) => void;
   onSubmit: (q: Quest) => void;
   onAcceptGpQuest: (id: string) => void;
   onDeclineGpQuest: (q: Quest) => void;
 }) {
-  const combined = [...todoQuests, ...inProgressQuests, ...reviewQuests, ...poolQuests, ...cancelledToday];
-  const actionableCount = todoQuests.length + inProgressQuests.length + reviewQuests.length;
+  // Declined-needs-resubmit is real work waiting on the kid — sits right
+  // after in-progress, ahead of the passive pool listing, so it doesn't get
+  // buried under quests nobody's blocked on yet.
+  const combined = [...todoQuests, ...inProgressQuests, ...declinedQuests, ...reviewQuests, ...poolQuests, ...cancelledToday];
+  const actionableCount = todoQuests.length + inProgressQuests.length + reviewQuests.length + declinedQuests.length;
 
-  // Collapsed by default like every Hub section — auto-opens the moment
-  // there's something to do.
+  // Collapsed by default like every Hub section — auto-opens once there's
+  // more than one thing to do. A single actionable quest is easy to spot
+  // collapsed (the count badge already says "1"); it's only once there's
+  // a real list worth scanning that auto-opening earns the screen space.
   const [expanded, setExpanded] = useState(false);
   useEffect(() => {
-    if (actionableCount > 0) setExpanded(true);
-  }, [actionableCount > 0]);
+    if (actionableCount > 1) setExpanded(true);
+  }, [actionableCount > 1]);
 
   const visible = combined.slice(0, VISIBLE_LIMIT);
   const overflow = combined.length - visible.length;
@@ -50,7 +57,7 @@ export function MyQuestsSection({
           </View>
           <Pressable onPress={() => setExpanded(e => !e)} style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ fontSize: KID.title, fontWeight: '800', color: colors.textPrimary }}>My Quests</Text>
+              <Text style={{ fontSize: KID.title, fontWeight: '800', color: colors.textPrimary }}>{title}</Text>
               {combined.length > 0 && (
                 <View style={{ backgroundColor: BRAND.purple, borderRadius: 10, minWidth: 22, paddingHorizontal: 7, paddingVertical: 3, alignItems: 'center' }}>
                   <Text style={{ fontSize: KID.tiny, fontWeight: '900', color: '#fff' }}>{combined.length}</Text>

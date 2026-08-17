@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { ChevronUp, ChevronDown, ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
@@ -152,10 +152,17 @@ export function ChoreReviewSection({
   approveGrandparentQuestAsParent: (choreId: string, parentId: string) => void;
   declineGrandparentQuestAsParent: (choreId: string, parentId: string, reason: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const gpPending = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval');
   const gpDeclined = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'declined');
   const badgeCount = pendingReviewsCount + gpPending.length;
+
+  // Collapsed by default — auto-opens once there's more than one thing
+  // waiting on review. A single pending item is legible from the badge
+  // alone; a real backlog is worth the screen space.
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (badgeCount > 1) setExpanded(true);
+  }, [badgeCount > 1]);
 
   return (
     <View style={{ paddingHorizontal: 16 }}>

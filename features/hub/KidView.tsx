@@ -16,7 +16,7 @@ import { localToday, fmtTime, hoursUntilEvent } from './hubUtils';
 export { GROCERY_PREFIX, SUPPLIES_PREFIX, encodeGroceryRequest, decodeGroceryRequest } from './KidModals';
 import { SUPPLIES_PREFIX, encodeRideLate } from './KidModals';
 import { GroceryModal, SuppliesModal, AskModal, KidRequestHistoryModal } from './KidModals';
-import { SchoolScheduleCard } from './SchoolScheduleModal';
+import { HubTimelineSection } from './HubTimelineSection';
 
 import { KidHeroCard } from './kid/KidHeroCard';
 import { KidRideBanner } from './kid/KidRideBanner';
@@ -176,7 +176,6 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   const xpForNext  = level * 100;
   const xpPct      = Math.min((xp % xpForNext) / xpForNext, 1);
   const almostAffordable = rewards.filter(r => !eligibleRewards.find(e => e.id === r.id) && r.cost > 0 && r.cost - mainCoins <= 30 && r.cost - mainCoins > 0);
-  const pad        = { paddingHorizontal: 16 };
 
   const sendCheckin = (type: 'home' | 'ready' | 'late') => {
     const messages: Record<string, { detail: string; chatMsg: string; emoji: string }> = {
@@ -237,7 +236,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
   const recentReplies = myRequests.filter(r =>
     ['approved', 'declined'].includes(r.status) &&
-    ['permission', 'question', 'medication', 'checkin'].includes(r.type) &&
+    ['permission', 'question', 'medication', 'checkin', 'tutor', 'cheer'].includes(r.type) &&
     r.respondedAt && !dismissedReplies.has(r.id) &&
     new Date(r.respondedAt).getTime() > cutoff
   );
@@ -282,9 +281,11 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
         onAskParent={() => setAskParentSheet(true)}
         onNeedRide={() => setAddEventModal(true)} />
 
+      <HubTimelineSection active={active} members={members} events={events} updateEvent={updateEvent} colors={colors} isDark={isDark} />
+
       <MyQuestsSection
         todoQuests={todoQuests} inProgressQuests={inProgressQuests} reviewQuests={reviewQuests}
-        poolQuests={poolQuests} cancelledToday={cancelledQuestsToday} allQuests={quests}
+        poolQuests={poolQuests} cancelledToday={cancelledQuestsToday} declinedQuests={declinedQuests} allQuests={quests}
         active={active} members={members} colors={colors} isDark={isDark}
         onClaim={(id) => claimQuest(id, active.id)}
         onStart={(id) => submitQuest(id)}
@@ -293,15 +294,6 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
         onDeclineGpQuest={(q) => setDeclineQuest({ id: q.id, title: q.title })}
       />
 
-      <View style={pad}>
-        <SchoolScheduleCard
-          memberId={active.id}
-          memberName={active.name.split(' ')[0]}
-          isParent={false}
-          colors={colors}
-          isDark={isDark}
-        />
-      </View>
 
       <KidMoreRow onPiggyBank={() => setPiggyBankModal(true)} onHistory={() => setHistoryModal(true)} />
       <KidLeaderboard activeId={active.id} kids={allKids} colors={colors} isDark={isDark} />

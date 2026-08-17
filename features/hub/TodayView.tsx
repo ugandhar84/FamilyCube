@@ -141,13 +141,14 @@ export function TodayView({
 
           if (todayEvents.length === 0) return (
             <View style={{
-              backgroundColor: isDark ? colors.card : '#fff', borderRadius: 16,
+              flexDirection: 'row', alignItems: 'center', gap: 8,
+              backgroundColor: isDark ? colors.card : '#fff', borderRadius: 14,
               borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
-              alignItems: 'center', paddingVertical: 28, marginBottom: 12,
+              paddingVertical: 12, paddingHorizontal: 14, marginBottom: 12,
             }}>
-              <Text style={{ fontSize: 26, marginBottom: 6 }}>✨</Text>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textTertiary }}>
-                All clear — no events today
+              <Text style={{ fontSize: 16 }}>✨</Text>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '600', color: colors.textTertiary }}>
+                Nothing on the calendar today — enjoy the breathing room.
               </Text>
             </View>
           );

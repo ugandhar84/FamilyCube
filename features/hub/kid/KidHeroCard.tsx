@@ -40,13 +40,13 @@ export function KidHeroCard({
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
         style={{ borderRadius: 24, overflow: 'hidden' }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, paddingBottom: 12 }}>
-          <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', borderWidth: 2.5, borderColor: 'rgba(255,255,255,0.5)' }}>
-            <Text style={{ fontSize: KID.hero }}>{active.emoji ?? '👤'}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, paddingBottom: 12 }}>
+          <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', borderWidth: 2.5, borderColor: 'rgba(255,255,255,0.5)' }}>
+            <Text style={{ fontSize: 24 }}>{active.emoji ?? '👤'}</Text>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: KID.title, fontWeight: '900', color: '#fff' }}>{active.name.split(' ')[0]}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ fontSize: KID.title, fontWeight: '900', color: '#fff' }} numberOfLines={1}>{active.name.split(' ')[0]}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
               <View style={{ backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                 <Zap size={11} color="#fff" fill="#fff" />
                 <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: '#fff' }}>Lv {level}</Text>
@@ -59,10 +59,10 @@ export function KidHeroCard({
               )}
             </View>
           </View>
-          <Pressable onPress={() => router.push('/(tabs)/store' as any)} style={{ alignItems: 'center', gap: 3 }}>
-            <View style={{ backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ fontSize: KID.body }}>🪙</Text>
-              <Text style={{ fontSize: KID.hero, fontWeight: '900', color: BRAND.amber, lineHeight: 34 }}>{mainCoins}</Text>
+          <Pressable onPress={() => router.push('/(tabs)/store' as any)} style={{ alignItems: 'center', gap: 3, flexShrink: 0 }}>
+            <View style={{ backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <Text style={{ fontSize: KID.sub }}>🪙</Text>
+              <Text style={{ fontSize: KID.title, fontWeight: '900', color: BRAND.amber }} numberOfLines={1}>{mainCoins}</Text>
             </View>
             {gpCoins > 0 && <Text style={{ fontSize: KID.tiny, fontWeight: '700', color: '#fff' }}>+{gpCoins} ⭐ GP</Text>}
           </Pressable>

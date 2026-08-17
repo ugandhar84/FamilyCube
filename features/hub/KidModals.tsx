@@ -15,7 +15,7 @@
 import { useState, useMemo, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Alert, Pressable,
+  StyleSheet, Alert, Pressable, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import { useTheme } from '@/lib/ThemeContext';
@@ -274,23 +274,31 @@ export function GroceryModal({ visible, onClose, active }: {
   };
 
   return (
-    <AppBottomSheet
-      visible={visible}
-      onClose={dismiss}
-      title="🛒 Request Groceries"
-      subtitle={canSubmit ? `${validLines.length} item${validLines.length > 1 ? 's' : ''} · parent approves each one` : 'Parent approves before items are added'}
-      accentColor={BRAND.teal}
-      minHeight="75%"
-      bodyPaddingBottom={16}
-      footer={
-        <TouchableOpacity onPress={submit} disabled={!canSubmit}
-          style={[f.submitBtn, { backgroundColor: canSubmit ? BRAND.teal : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
-          <Text style={{ fontSize: 15, fontWeight: '900', color: canSubmit ? '#fff' : colors.textTertiary }}>
-            {canSubmit ? `Send ${validLines.length} item${validLines.length > 1 ? 's' : ''} to Parent →` : 'Add at least one item'}
-          </Text>
-        </TouchableOpacity>
-      }
-    >
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={f.backdrop}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
+          <View style={[f.sheet, { backgroundColor: colors.card }]}>
+            <View style={[f.handle, { backgroundColor: colors.border }]} />
+            <View style={f.header}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={[f.title, { color: colors.textPrimary }]}>🛒 Request Groceries</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: BRAND.teal }}>
+                  {canSubmit ? `${validLines.length} item${validLines.length > 1 ? 's' : ''} · parent approves each one` : 'Parent approves before items are added'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={dismiss}
+                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                <Text style={{ fontSize: 16, color: colors.textSecondary }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="always"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 48 }}>
               {/* ── Category selector ── */}
               <Text style={[f.label, { color: colors.textSecondary }]}>Category</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
@@ -393,7 +401,17 @@ export function GroceryModal({ visible, onClose, active }: {
                 value={notes} onChangeText={setNotes} multiline
               />
 
-    </AppBottomSheet>
+              <TouchableOpacity onPress={submit} disabled={!canSubmit}
+                style={[f.submitBtn, { marginTop: 16, backgroundColor: canSubmit ? BRAND.teal : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
+                <Text style={{ fontSize: 15, fontWeight: '900', color: canSubmit ? '#fff' : colors.textTertiary }}>
+                  {canSubmit ? `Send ${validLines.length} item${validLines.length > 1 ? 's' : ''} to Parent →` : 'Add at least one item'}
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -457,23 +475,31 @@ export function SuppliesModal({ visible, onClose, active }: {
   };
 
   return (
-    <AppBottomSheet
-      visible={visible}
-      onClose={dismiss}
-      title="📚 School Supplies"
-      subtitle="Parent approves and picks these up for you"
-      accentColor="#6366F1"
-      minHeight="75%"
-      bodyPaddingBottom={16}
-      footer={
-        <TouchableOpacity onPress={submit} disabled={!canSubmit}
-          style={[f.submitBtn, { backgroundColor: canSubmit ? '#6366F1' : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
-          <Text style={{ fontSize: 15, fontWeight: '900', color: canSubmit ? '#fff' : colors.textTertiary }}>
-            Send to Parent ({validItems.length} item{validItems.length !== 1 ? 's' : ''}) →
-          </Text>
-        </TouchableOpacity>
-      }
-    >
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={f.backdrop}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
+          <View style={[f.sheet, { backgroundColor: colors.card }]}>
+            <View style={[f.handle, { backgroundColor: colors.border }]} />
+            <View style={f.header}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={[f.title, { color: colors.textPrimary }]}>📚 School Supplies</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: '#6366F1' }}>
+                  Parent approves and picks these up for you
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={dismiss}
+                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                <Text style={{ fontSize: 16, color: colors.textSecondary }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="always"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 48 }}>
               {/* Urgency */}
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
                 {(['normal', 'soon'] as const).map(u => (
@@ -551,7 +577,17 @@ export function SuppliesModal({ visible, onClose, active }: {
                 placeholder="e.g. for science project due Friday"
                 placeholderTextColor={colors.textTertiary} multiline />
 
-    </AppBottomSheet>
+              <TouchableOpacity onPress={submit} disabled={!canSubmit}
+                style={[f.submitBtn, { marginTop: 16, backgroundColor: canSubmit ? '#6366F1' : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
+                <Text style={{ fontSize: 15, fontWeight: '900', color: canSubmit ? '#fff' : colors.textTertiary }}>
+                  Send to Parent ({validItems.length} item{validItems.length !== 1 ? 's' : ''}) →
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -677,7 +713,7 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: colors.textPrimary }}>
-                          {isGrocery ? '🛒 Grocery' : isSupplies ? '📚 Supplies' : req.type === 'delegation' ? '📋 Request' : req.type === 'checkin' ? '🎒 Check-in' : req.type === 'question' ? '❓ Question' : req.type === 'medication' ? '💊 Medical' : '🔓 Permission'}
+                          {isGrocery ? '🛒 Grocery' : isSupplies ? '📚 Supplies' : req.type === 'delegation' ? '📋 Request' : req.type === 'checkin' ? '🎒 Check-in' : req.type === 'question' ? '❓ Question' : req.type === 'medication' ? '💊 Medical' : req.type === 'tutor' ? '🎒 Tutor Offer' : req.type === 'cheer' ? '✋ Cheer' : req.type === 'ride' ? '🚗 Ride' : '🔓 Permission'}
                           {hasItems ? ` · ${req.items!.length} item${req.items!.length > 1 ? 's' : ''}` : ''}
                         </Text>
                         <View style={{ borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2,
@@ -826,39 +862,56 @@ export function AskModal({ visible, onClose, type, active }: {
   };
 
   return (
-    <AppBottomSheet
-      visible={visible}
-      onClose={dismiss}
-      title={`${meta.emoji} ${meta.label}`}
-      subtitle="Sent directly to your parent"
-      accentColor={meta.accent}
-      minHeight="50%"
-      maxHeight="70%"
-      bodyPaddingBottom={16}
-      footer={
-        <TouchableOpacity onPress={submit} disabled={!text.trim()}
-          style={[f.submitBtn, { backgroundColor: text.trim() ? meta.accent : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
-          <Text style={{ fontSize: 15, fontWeight: '900', color: text.trim() ? '#fff' : colors.textTertiary }}>
-            Send to Parent →
-          </Text>
-        </TouchableOpacity>
-      }
-    >
-      <TextInput
-        value={text}
-        onChangeText={setText}
-        style={{
-          borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14,
-          fontSize: 15, color: colors.textPrimary,
-          backgroundColor: isDark ? colors.surface : '#F9FAFB',
-          borderColor: text.trim() ? meta.accent + '80' : colors.border,
-          minHeight: 120, textAlignVertical: 'top',
-        }}
-        placeholder={meta.hint}
-        placeholderTextColor={colors.textTertiary}
-        multiline
-        numberOfLines={5}
-      />
-    </AppBottomSheet>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={f.backdrop}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
+          <View style={[f.sheet, { backgroundColor: colors.card }]}>
+            <View style={[f.handle, { backgroundColor: colors.border }]} />
+            <View style={f.header}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={[f.title, { color: colors.textPrimary }]}>{meta.emoji} {meta.label}</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: meta.accent }}>
+                  Sent directly to your parent
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={dismiss}
+                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                <Text style={{ fontSize: 16, color: colors.textSecondary }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="always"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 48 }}>
+              <TextInput
+                value={text}
+                onChangeText={setText}
+                style={{
+                  borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14,
+                  fontSize: 15, color: colors.textPrimary,
+                  backgroundColor: isDark ? colors.surface : '#F9FAFB',
+                  borderColor: text.trim() ? meta.accent + '80' : colors.border,
+                  minHeight: 120, textAlignVertical: 'top',
+                }}
+                placeholder={meta.hint}
+                placeholderTextColor={colors.textTertiary}
+                multiline
+                numberOfLines={5}
+              />
+              <TouchableOpacity onPress={submit} disabled={!text.trim()}
+                style={[f.submitBtn, { marginTop: 16, backgroundColor: text.trim() ? meta.accent : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
+                <Text style={{ fontSize: 15, fontWeight: '900', color: text.trim() ? '#fff' : colors.textTertiary }}>
+                  Send to Parent →
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }

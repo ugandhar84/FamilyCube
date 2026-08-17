@@ -159,8 +159,12 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
       const ageHours = (Date.now() - new Date(r.requestedAt).getTime()) / 3_600_000;
       if (ageHours > 2) return false;
     }
-    // Hide grocery/supplies delegation cards that have no items — nothing actionable to show
-    if (r.type === 'delegation' && (r.items?.length ?? 0) === 0) return false;
+    // Hide grocery/supplies delegation cards that have no items — nothing
+    // actionable to show. A cash-out request is ALSO type 'delegation' but
+    // is plain text with no items by design (see TeenView's requestCashOut)
+    // — this filter used to drop those silently before they ever reached
+    // the parent's Action Needed feed at all.
+    if (r.type === 'delegation' && (r.items?.length ?? 0) === 0 && !r.detail.startsWith('💵')) return false;
     return true;
   });
   // Approved ride/help requests still pending a helper — parent can flag these for GP

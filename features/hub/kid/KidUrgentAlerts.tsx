@@ -123,10 +123,12 @@ export function KidUrgentAlerts({
       {recentReplies.map(r => {
         const approved = r.status === 'approved';
         const isCheckin = r.type === 'checkin';
+        const isTutorOrCheer = r.type === 'tutor' || r.type === 'cheer';
         const accent = isCheckin ? BRAND.teal : approved ? MONEY_GREEN : colors.danger;
         const ReplyIcon = isCheckin ? ThumbsUp : approved ? CheckCircle2 : XCircle;
         const label = isCheckin ? 'Seen!' : approved ? 'Yes!' : 'No';
-        const typeLabel = isCheckin ? 'Check-in' : r.type === 'medication' ? 'Medical' : r.type === 'permission' ? 'Permission' : 'Question';
+        const typeLabel = isCheckin ? 'Check-in' : r.type === 'medication' ? 'Medical' : r.type === 'permission' ? 'Permission'
+          : r.type === 'tutor' ? 'Tutor Offer' : r.type === 'cheer' ? 'Cheer' : 'Question';
         const responder = r.respondedBy ? members.find(m => m.id === r.respondedBy) : null;
         const responderName = responder ? responder.name.split(' ')[0] : 'Parent';
         let timeAgo = '';

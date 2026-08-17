@@ -405,7 +405,7 @@ interface ParentReviewDeckProps {
 export function ParentReviewDeck({ parent, members, colors, isDark }: ParentReviewDeckProps) {
   const {
     approveChore, requestRedo,
-    scanAndAutoApprove, syncFromDB, loadFromStorage,
+    scanAndAutoApprove, resetDueRecurringChores, syncFromDB, loadFromStorage,
   } = useChoreStore();
   const allNames = members.map(m => m.name);
 
@@ -427,7 +427,7 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
   const [redoOpen, setRedoOpen] = useState(false);
 
   useEffect(() => {
-    loadFromStorage().then(() => { syncFromDB(); scanAndAutoApprove(); });
+    loadFromStorage().then(() => { syncFromDB(); scanAndAutoApprove(); resetDueRecurringChores(); });
   }, []);
 
   const totalCount = pendingSubmissions.length + pendingCashOuts.length;

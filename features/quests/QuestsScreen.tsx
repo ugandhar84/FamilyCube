@@ -46,6 +46,7 @@ import { useChoreStore } from '@/store/choreStore';
 import { DEFAULT_GROCERY_ITEMS, DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { AiEngineBanner, AiTool } from './components/AiEngineBanner';
 import { QuestFilters, TabStatus } from './components/QuestFilters';
+import { QuestSearchBar, type DateRange } from './components/QuestSearchBar';
 import { I } from './components/icons';
 import { s } from './components/questCardStyles';
 import { DeclineModal } from './components/DeclineModal';
@@ -54,6 +55,7 @@ import { FlashBonusBadge } from './components/FlashBonusBadge';
 import { QuestStepper } from './components/QuestStepper';
 import { AddQuestModal, aq } from './components/AddQuestModal';
 import { EditQuestModal } from './components/EditQuestModal';
+import { ParentSelfNoteRow } from './components/ParentSelfNoteRow';
 import { CreateQuestModal } from '../hub/senior/CreateQuestModal';
 import { AutoBalanceCard, FomoCard, AdviceCard } from './components/AiFeatureCards';
 
@@ -378,7 +380,10 @@ export default function QuestsScreen() {
   const isKid            = activeMember?.role === 'kid';
   const isKidOrTeen      = isKid || isTeen;        // same visibility as kids — sees all household quests + can claim
   const isParentOrSenior = isParent || isSenior;   // RBAC: approve/decline/reopen (teens excluded)
-  const kids             = members.filter(m => m.role === 'kid');
+  // "kids" here means the filter-chip roster, not the literal role — teens
+  // get the same household-quest visibility as kids (isKidOrTeen above), so
+  // a parent filtering "by kid" needs to be able to pick a teen too.
+  const kids              = members.filter(m => m.role === 'kid' || m.role === 'teen');
   const myId             = activeMember?.id;
   const isAssignedTo     = (q: typeof quests[0], memberId: string) =>
     q.assignedToId === memberId ||
@@ -386,6 +391,8 @@ export default function QuestsScreen() {
 
   const [kidFilter,      setKidFilter]      = useState('all');
   const [tabStatus,      setTabStatus]      = useState<TabStatus>('all');
+  const [searchQuery,    setSearchQuery]    = useState('');
+  const [dateRange,      setDateRange]      = useState<DateRange>(null);
   const [showAiTool,     setShowAiTool]     = useState<AiTool>('none');
   const [isAiLoading,    setIsAiLoading]    = useState(false);
   const [autoBalResult,  setAutoBalResult]  = useState<any>(null);
@@ -704,8 +711,38 @@ export default function QuestsScreen() {
     }
     // Hub decision banners can open one specific quest for the kid to review.
     if (questId) list = list.filter(q => q.id === questId);
+    // Text search — title/description, case-insensitive.
+    if (searchQuery.trim()) {
+      const needle = searchQuery.trim().toLowerCase();
+      list = list.filter(q =>
+        q.title.toLowerCase().includes(needle) ||
+        (q.description ?? '').toLowerCase().includes(needle));
+    }
+    // Date-range filter — by due date, inclusive on both ends. A quest with
+    // no due date never matches a range filter (nothing to compare against).
+    if (dateRange) {
+      list = list.filter(q => !!q.dueDate && q.dueDate >= dateRange.from && q.dueDate <= dateRange.to);
+    }
+    // "All Family" reads as a due-date worklist — soonest due first, no-due-
+    // date quests after everything with a real deadline — with approved/done
+    // quests sinking to the very bottom regardless of due date, since they're
+    // finished business, not upcoming work. A stable sort keeps same-due-date
+    // ties in their original relative order.
+    const isDone = (q: typeof list[number]) => q.status === 'approved' || q.status === 'done';
+    const dueMs = (q: typeof list[number]) => {
+      if (!q.dueDate) return Infinity;
+      const ms = parseLocalDate(q.dueDate).getTime();
+      if (!q.dueTime) return ms;
+      const [h, m] = q.dueTime.split(':').map(Number);
+      return ms + (h * 60 + m) * 60_000;
+    };
+    list = [...list].sort((a, b) => {
+      const doneDiff = Number(isDone(a)) - Number(isDone(b));
+      if (doneDiff !== 0) return doneDiff;
+      return dueMs(a) - dueMs(b);
+    });
     return list;
-  }, [quests, kidFilter, tabStatus, isKidOrTeen, activeMember, questId]);
+  }, [quests, kidFilter, tabStatus, isKidOrTeen, activeMember, questId, searchQuery, dateRange]);
 
   // ── Kid grouped sections (spec §4 dashboard layout) ───────────────────────────
   const kidSections = React.useMemo(() => {
@@ -968,6 +1005,13 @@ export default function QuestsScreen() {
         {isParent && !isAiLoading && showAiTool === 'advice' && adviceResult && (
           <AdviceCard result={adviceResult} appliedActions={appliedActions} onApply={handleApply} onClose={() => setShowAiTool('none')} isDark={isDark} colors={colors} />
         )}
+
+        {/* ── Search + due-date range filter ── */}
+        <QuestSearchBar
+          query={searchQuery} onQueryChange={setSearchQuery}
+          range={dateRange} onRangeChange={setDateRange}
+          colors={colors} isDark={isDark}
+        />
 
         {/* ── Member / Filter Pills + Status Tabs ── */}
         <QuestFilters
@@ -1366,8 +1410,8 @@ export default function QuestsScreen() {
                 };
 
                 return (
+                  <View key={q.id}>
                   <Swipeable
-                    key={q.id}
                     renderRightActions={canDelete ? swipeDeleteAction : undefined}
                     overshootRight={false}
                     friction={2}
@@ -1377,6 +1421,10 @@ export default function QuestsScreen() {
                     onLongPress={canEdit ? () => setEditTarget(q) : undefined}
                     initiallyExpanded={q.id === questId}
                     header={cardHeader}
+                    dimmed={isDoneCard}
+                    pinnedFooter={isParent && isDoneCard
+                      ? <ParentSelfNoteRow choreId={q.id} initialNote={choreData?.parentNote} colors={colors} isDark={isDark} />
+                      : undefined}
                   >
                     {/* ── Expanded body — NO title/coin repeat, header already shows them ── */}
 
@@ -1731,6 +1779,28 @@ export default function QuestsScreen() {
                         </TouchableOpacity>
                       )}
 
+                      {/* Parent/senior: Approve + Redo — same actions the Hub's
+                          Chore Review board offers, so a parent doesn't have
+                          to leave the Quests tab to actually review a
+                          submission. Multi-kid quests get this per-row above
+                          instead (each participant reviewed independently). */}
+                      {canApprove && q.participants.length <= 1 && (
+                        <>
+                          <TouchableOpacity
+                            style={[s.actionBtn, { flex: 1, backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#EF4444' }]}
+                            onPress={() => setDeclineTarget({ id: q.id, title: q.title, memberId: undefined })}
+                          >
+                            <Text style={[s.actionBtnText, { color: '#EF4444' }]}>↩ Redo</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[s.actionBtn, { flex: 2, backgroundColor: '#059669' }]}
+                            onPress={() => approveQuest(q.id, activeMember?.id ?? '')}
+                          >
+                            <Text style={[s.actionBtnText, { color: '#fff' }]}>✓ Approve</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+
                       {/* A parent-claimable "I'll do this" on a kid bounty
                           pool card was removed — a bounty pool is
                           specifically kid-earning-coins territory; a parent
@@ -1829,6 +1899,7 @@ export default function QuestsScreen() {
                     </View>{/* action strip */}
                   </CollapsibleQuestCard>
                   </Swipeable>
+                  </View>
                 );
               })}
             </View>

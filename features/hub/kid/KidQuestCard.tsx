@@ -1,6 +1,6 @@
 import { View, Text, Pressable } from 'react-native';
 import {
-  Clock, CheckCircle2, Ban, Zap, Coins, ClipboardList, Sparkles, Trophy, Camera, Target,
+  Clock, CheckCircle2, Ban, Zap, Coins, ClipboardList, Sparkles, Trophy, Camera, Target, RotateCcw,
 } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { fmtDateTime } from '@/lib/dates';
@@ -20,6 +20,7 @@ function questStatusMeta(q: Quest, colors: any) {
   if (q.status === 'pending_approval') return { Icon: Clock, label: 'IN REVIEW', color: BRAND.amber };
   if (q.status === 'approved' || q.status === 'done') return { Icon: CheckCircle2, label: 'APPROVED', color: MONEY_GREEN };
   if (q.status === 'cancelled') return { Icon: Ban, label: 'CANCELLED', color: colors.danger };
+  if (q.status === 'declined') return { Icon: RotateCcw, label: 'NEEDS ANOTHER TRY', color: colors.danger };
   if (q.status === 'in_progress') return { Icon: Zap, label: 'IN PROGRESS', color: BRAND.teal };
   if (q.status === 'claimed') return { Icon: Zap, label: 'CLAIMED', color: BRAND.teal };
   if (isPool) return { Icon: Coins, label: 'BOUNTY', color: MONEY_GREEN };
@@ -39,7 +40,8 @@ export function KidQuestCard({
 }) {
   const isPool = q.isPool && q.status === 'todo';
   const isClaimed = q.status === 'claimed';
-  const isActionable = ['todo', 'claimed', 'in_progress'].includes(q.status);
+  const isDeclined = q.status === 'declined';
+  const isActionable = ['todo', 'claimed', 'in_progress', 'declined'].includes(q.status);
   const meta = questStatusMeta(q, colors);
   // A grandparent quest waits on the kid's yes/no before it counts as started.
   const isGpTodo = q.questType === 'grandparent_quest' && q.status === 'todo' && !isPool;
@@ -82,6 +84,11 @@ export function KidQuestCard({
             : 'Waiting on a parent to review this quest.'}
         </Text>
       )}
+      {isDeclined && q.declineReason && (
+        <Text style={{ fontSize: KID.body, color: colors.danger }}>
+          "{q.declineReason}"
+        </Text>
+      )}
       {q.teamGroupId && teamMates.length > 0 && (
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
           <Target size={14} color={BRAND.amber} style={{ marginTop: 1 }} />
@@ -118,6 +125,13 @@ export function KidQuestCard({
                 borderRadius: 10, backgroundColor: BRAND.teal, paddingVertical: 13 }}>
               <Zap size={15} color="#fff" fill="#ffffff30" />
               <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>Start Quest</Text>
+            </Pressable>
+          ) : isDeclined ? (
+            <Pressable onPress={() => onSubmit(q)}
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                borderRadius: 10, backgroundColor: colors.danger, paddingVertical: 13 }}>
+              <RotateCcw size={15} color="#fff" />
+              <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>↩ Revise & Resubmit</Text>
             </Pressable>
           ) : (
             <Pressable onPress={() => onSubmit(q)}

@@ -138,23 +138,35 @@ export function ActionNeededSection({
     const kid = members.find(m => m.id === req.fromMemberId);
     const kidName = kid?.name.split(' ')[0] ?? 'Kid';
     const isSupplies   = req.detail.startsWith(SUPPLIES_PREFIX);
-    const isGrocery    = req.type === 'delegation' && !isSupplies && (req.items?.length ?? 0) > 0;
+    const isCashOut    = req.type === 'delegation' && req.detail.startsWith('💵');
+    const isVehicleIssue = req.type === 'emergency' && req.detail.startsWith('🚗');
+    const isGrocery    = req.type === 'delegation' && !isSupplies && !isCashOut && (req.items?.length ?? 0) > 0;
     const isPermission = req.type === 'permission';
     const isQuestion   = req.type === 'question';
     const isMedical    = req.type === 'medication';
     const isCheckin    = req.type === 'checkin';
-    const accent = isMedical ? colors.danger : isGrocery ? MONEY_GREEN : isSupplies ? INDIGO_ACCENT : isPermission ? BRAND.amber : isQuestion ? BRAND.purple : BRAND.teal;
+    const accent = isMedical ? colors.danger : isVehicleIssue ? colors.danger : isCashOut ? BRAND.amber : isGrocery ? MONEY_GREEN : isSupplies ? INDIGO_ACCENT : isPermission ? BRAND.amber : isQuestion ? BRAND.purple : BRAND.teal;
     const age = ageMinutes(req.requestedAt);
 
-    // "My driver hasn't arrived" — a stranded kid, not an approval. Without
-    // this branch an emergency request falls through to the grocery/supplies
-    // fallback and renders as "Supplies — 0 items". Always top severity.
-    const rideLate = decodeRideLate(req.detail)
-      ?? (req.type === 'emergency'
-        ? { eventId: '', title: req.detail.replace(/^My driver.*?for /i, '').replace(/^"|"$/g, '') || 'a ride',
-            time: undefined, driver: undefined, location: req.location,
-            dropLocation: undefined, sentAt: req.requestedAt }
-        : null);
+    // A reported vehicle issue (TeenView's "Report Vehicle Issue") also uses
+    // type 'emergency' but isn't a ride-lateness report — routed to its own
+    // plain approve/decline card via InlineReplyCard below instead of the
+    // "My driver hasn't arrived" framing, which only fits a real late ride.
+    if (isVehicleIssue) {
+      ranked.push({
+        key: `req-${req.id}`, age,
+        severity: 'urgent', score: SEVERITY.urgent,
+        node: <InlineReplyCard key={req.id} req={req} kidName={kidName}
+          isPermission={false} isQuestion={false} isMedical={false}
+          accent={accent} colors={colors} isDark={isDark}
+          onApprove={(reply) => approveRequest(req.id, active.id, reply || undefined)}
+          onDecline={(reply) => declineRequest(req.id, active.id, reply || undefined)} />,
+      });
+      continue;
+    }
+
+    // "My driver hasn't arrived" — a stranded kid, not an approval. Always top severity.
+    const rideLate = decodeRideLate(req.detail);
     if (rideLate) {
       const ev = events.find(e => e.id === rideLate.eventId);
       ranked.push({
@@ -208,6 +220,24 @@ export function ActionNeededSection({
         severity: sev, score: SEVERITY[sev],
         node: <InlineReplyCard key={req.id} req={req} kidName={kidName}
           isPermission={isPermission} isQuestion={isQuestion} isMedical={false}
+          accent={accent} colors={colors} isDark={isDark}
+          onApprove={(reply) => approveRequest(req.id, active.id, reply || undefined)}
+          onDecline={(reply) => declineRequest(req.id, active.id, reply || undefined)} />,
+      });
+      continue;
+    }
+
+    if (isCashOut) {
+      // Teen's cash-out request — plain approve/decline, no item picker
+      // (it has no items[], only a free-text amount/method — see
+      // TeenView's requestCashOut). Never rendered before this fix; the
+      // old delegation-with-zero-items filter dropped it before it ever
+      // reached this feed at all.
+      ranked.push({
+        key: `req-${req.id}`, age,
+        severity: 'soon', score: SEVERITY.soon,
+        node: <InlineReplyCard key={req.id} req={req} kidName={kidName}
+          isPermission={false} isQuestion={false} isMedical={false}
           accent={accent} colors={colors} isDark={isDark}
           onApprove={(reply) => approveRequest(req.id, active.id, reply || undefined)}
           onDecline={(reply) => declineRequest(req.id, active.id, reply || undefined)} />,

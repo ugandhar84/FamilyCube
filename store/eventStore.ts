@@ -352,6 +352,51 @@ function ensureRealtime(
         AsyncStorage.setItem(DISK_DAY, JSON.stringify({ date: currentDate, events: next }));
       }
     )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'calendar_events', filter: `family_id=eq.${familyId}` },
+      (payload) => {
+        // Keeps Week/Agenda's rangeEvents in sync with changes made
+        // elsewhere (another family member's device/session, or a change
+        // that doesn't route through this store's own updateEvent/addEvent
+        // actions) — without this, a helper/driver assignment made by
+        // someone else never appears in Agenda until the 5-minute cache
+        // TTL expires or the user leaves and re-enters the view.
+        const { rangeEvents } = getState();
+        const newRow = payload.new as any;
+        const oldRow = payload.old as any;
+        const isDeleted = !!newRow?.deleted_at;
+
+        let next: FamilyEvent[];
+        if (payload.eventType === 'INSERT' && !isDeleted) {
+          const ev = fromRow(newRow);
+          if (rangeEvents.find(e => e.id === ev.id)) return;
+          // Only append if it falls within the currently-loaded range —
+          // matching addEvent's own optimistic-append reasoning (a date
+          // outside the loaded window just won't show in these views
+          // anyway, and we don't know the exact loaded bounds here).
+          next = sortByTime([...rangeEvents, ev]);
+        } else if (payload.eventType === 'UPDATE') {
+          if (isDeleted) {
+            next = rangeEvents.filter(e => e.id !== newRow.id);
+          } else {
+            const ev = fromRow(newRow);
+            // Only patch if this event is already part of the loaded range —
+            // an UPDATE to a row outside the window shouldn't pull it in.
+            if (!rangeEvents.find(e => e.id === ev.id)) return;
+            next = sortByTime(rangeEvents.map(e => e.id === ev.id ? ev : e));
+          }
+        } else if (payload.eventType === 'DELETE') {
+          next = rangeEvents.filter(e => e.id !== oldRow.id);
+        } else return;
+
+        setState({ rangeEvents: next });
+        // Invalidate the range cache too so a fresh loadRange() call
+        // (e.g. switching view modes) doesn't clobber this with a stale
+        // cached copy before the TTL naturally expires.
+        setState({ _rangeCache: {} });
+      }
+    )
     .subscribe((status) => {
       console.log('[eventStore] realtime', status, familyId);
     });

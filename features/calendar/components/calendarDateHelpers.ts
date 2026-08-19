@@ -13,6 +13,18 @@ export function addDays(d: Date, n: number): Date {
   next.setDate(d.getDate() + n);
   return next;
 }
+
+// Whether an event's date/time has already passed — drives the dimmed
+// treatment for completed/past events across every view (Day, Agenda, etc).
+export function isEventPast(date: string, time?: string | null): boolean {
+  const today = toDateStr(new Date());
+  if (date < today) return true;
+  if (date > today) return false;
+  if (!time) return false;
+  const [h, m] = time.split(':').map(Number);
+  const now = new Date();
+  return h < now.getHours() || (h === now.getHours() && m <= now.getMinutes());
+}
 // Mon-first ordering
 export const DAY_SHORT = ['MON','TUE','WED','THU','FRI','SAT','SUN'];
 

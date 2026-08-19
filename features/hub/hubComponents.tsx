@@ -17,7 +17,7 @@ import FamilyAvatar from '@/components/FamilyAvatar';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import { fmtTime, hoursUntilEvent, catColor, isWorkEvent, isHomeLocation } from './hubUtils';
-import { fmtTimeParts } from '@/lib/dates';
+import { fmtTimeParts, fmtDateShort } from '@/lib/dates';
 import { relationalNameByName } from '@/lib/format';
 import { useChatStore } from '@/store/chatStore';
 
@@ -681,11 +681,11 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
             </View>
           </View>
 
-          {/* Time */}
+          {/* Date + Time */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Calendar size={14} color={cc} />
             <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
-              {fmtTime(ev.time)}
+              {fmtDateShort(ev.date)} · {fmtTime(ev.time)}
             </Text>
             {isPast && (
               <View style={{ backgroundColor: colors.success + '18', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>

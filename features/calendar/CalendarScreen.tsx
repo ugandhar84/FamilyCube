@@ -44,22 +44,13 @@ import { EventCardTimeline, roleStyle, catStyle, LocationLink } from './componen
 import { s as calCardStyles } from './components/calendarCardStyles';
 import { AiConflictBanner, type AiConflict, type AiResult } from './components/AiConflictBanner';
 import { CalendarSearchBar } from './components/CalendarSearchBar';
-import { toDateStr, parseDate, addDays, DAY_SHORT, CAT_DOT, buildMonthGrid } from './components/calendarDateHelpers';
+import { toDateStr, parseDate, addDays, DAY_SHORT, CAT_DOT, buildMonthGrid, isEventPast } from './components/calendarDateHelpers';
 import MonthGridView, { DayEventsSummaryCard } from './components/MonthGridView';
 import WeekView from './components/WeekView';
 import AgendaView from './components/AgendaView';
 import DaySlotView from './components/DaySlotView';
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
-function isEventPast(date: string, time?: string | null): boolean {
-  const today = toDateStr(new Date());
-  if (date < today) return true;
-  if (date > today) return false;
-  if (!time) return false;
-  const [h, m] = time.split(':').map(Number);
-  const now = new Date();
-  return h < now.getHours() || (h === now.getHours() && m <= now.getMinutes());
-}
 // Minutes until a today-dated event starts; Infinity for other days / no time set
 function minutesUntilEvent(date: string, time?: string | null): number {
   const today = toDateStr(new Date());
@@ -743,42 +734,66 @@ export default function CalendarScreen() {
     return (e.title ?? '').toLowerCase().includes(q) || (e.notes ?? '').toLowerCase().includes(q);
   };
 
+  // Tapping a member's filter pill should surface events they're INVOLVED
+  // in, not just events that are FOR them — e.g. Priya pending as the
+  // helper/driver on an event that's for Maya should still show under
+  // Priya's pill. e.helper/e.driverName are free-text names, not ids, so
+  // this resolves the filtered member's name once and checks both fields.
+  const filterMemberName = filterMember ? members.find(m => m.id === filterMember)?.name : undefined;
+  const matchesMemberFilter = (e: FamilyEvent) => {
+    if (!filterMember) return true;
+    if (!e.memberId) return true; // family-wide events always show
+    if (e.memberId === filterMember) return true;
+    if (filterMemberName) {
+      const first = filterMemberName.split(' ')[0];
+      if (e.helper && (e.helper.includes(filterMemberName) || e.helper.includes(first))) return true;
+      if (e.driverName && (e.driverName.includes(filterMemberName) || e.driverName.includes(first))) return true;
+    }
+    return false;
+  };
+
   // Filtered events for selected day
   const dayEvents = useMemo(() => {
     return events
       .filter(e => e.date === selectedDate &&
         e.category !== 'Holiday' &&
-        // Kid: only their own events or family-wide
-        (!isKid || e.memberId === activeMemberId || !e.memberId) &&
-        // Teen: sees all family events (like parent) — full schedule awareness
-        // Senior: only events they're the helper on, or family-wide with no assigned member
+        // Kid: full family visibility, same as parent/teen — kids can see
+        // siblings' events (e.g. "what's Leo up to today"), not just their
+        // own. Kids just don't get the member-filter/view-mode toolbar UI.
+        // Senior/GP: restricted to only schedules they're actually part of
+        // — assigned to them, they're the named helper/driver, or the
+        // event has no assignee at all (family-wide). Previously this also
+        // OR'd in `!(e as any).isPrivate`, a field that doesn't exist on
+        // FamilyEvent — that condition was always true, silently giving
+        // every senior full visibility regardless of the other checks.
         (!isSenior || (
+          e.memberId === activeMemberId ||
           (e.helper && (e.helper.includes(activeMemberName) || activeMemberName.includes(e.helper.split(' ')[0]))) ||
-          (!e.memberId && !e.helper) ||
-          !(e as any).isPrivate
+          !e.memberId
         )) &&
         // My Schedule / All tabs (kid/teen/senior only — parents always see all)
         (isParent || scheduleFilter === 'all' || e.memberId === activeMemberId || !e.memberId) &&
-        (!filterMember || e.memberId === filterMember || !e.memberId) &&
+        matchesMemberFilter(e) &&
         matchesSearch(e))
       .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
-  }, [events, selectedDate, filterMember, scheduleFilter, isKid, isSenior, isParent, activeMemberId, activeMemberName, searchQuery]);
+  }, [events, selectedDate, filterMember, filterMemberName, scheduleFilter, isSenior, isParent, activeMemberId, activeMemberName, searchQuery]);
 
   // Same RBAC shape as dayEvents but across rangeEvents' multi-date window
   // — feeds Week/Agenda, both parent/senior-only views (same gate as
-  // Family), so this skips the kid/teen My-Schedule branch entirely.
+  // Family). Kids get full visibility here too — same reasoning as
+  // dayEvents above.
   const scopedRangeEvents = useMemo(() => {
     return rangeEvents.filter(e =>
       e.category !== 'Holiday' &&
       (!isSenior || (
+        e.memberId === activeMemberId ||
         (e.helper && (e.helper.includes(activeMemberName) || activeMemberName.includes(e.helper.split(' ')[0]))) ||
-        (!e.memberId && !e.helper) ||
-        !(e as any).isPrivate
+        !e.memberId
       )) &&
-      (!filterMember || e.memberId === filterMember || !e.memberId) &&
+      matchesMemberFilter(e) &&
       matchesSearch(e)
     );
-  }, [rangeEvents, isSenior, activeMemberName, filterMember, searchQuery]);
+  }, [rangeEvents, isSenior, activeMemberName, filterMember, filterMemberName, searchQuery]);
 
   // Events where senior can volunteer as helper (has a pending/no helper, dated today or future)
   // seniorOpenRides removed — ride volunteering now lives in Hub > Helper Dispatch
@@ -933,10 +948,10 @@ export default function CalendarScreen() {
                   scrolling row of separate pills. */}
               <View style={{ flexDirection: 'row', marginHorizontal: 14, backgroundColor: colors.surface, borderRadius: 12, padding: 3 }}>
                 {([
+                  { key: 'agenda' as const, label: 'Agenda' },
                   { key: 'month' as const,  label: 'Month' },
                   { key: 'week' as const,   label: 'Week' },
                   { key: 'day' as const,    label: 'Day' },
-                  { key: 'agenda' as const, label: 'Agenda' },
                 ]).map(v => (
                   <TouchableOpacity key={v.key} onPress={() => setViewMode(v.key)}
                     style={{
@@ -1041,6 +1056,14 @@ export default function CalendarScreen() {
 
         {/* Senior ride volunteering lives in the Hub > Helper Dispatch section, not here */}
 
+        {/* This whole block (month's day-summary card, day's parent/senior
+            hour-slot list, and day's kid/fallback timeline) only applies to
+            Month and Day views — Week/Agenda render entirely through their
+            own WeekView/AgendaView components above. Without this guard the
+            final unconditional else branch below renders its dayEvents
+            timeline underneath every other view too (the bug where a Day-
+            style detail card kept appearing under Agenda/Week). */}
+        {(viewMode === 'month' || viewMode === 'day') && (<React.Fragment>
         {!isKid && viewMode === 'month' ? (
           // Selected-day card below the month grid — matches the reference
           // exactly: white rounded card, title + count badge header, each
@@ -1360,6 +1383,7 @@ export default function CalendarScreen() {
                       isConf={!!isConf}
                       cs={cs}
                       forLabel={forLabel}
+                      helperLabel={helperLabel}
                       pickerMembers={pickerMembers}
                       isParent={isParent}
                       isKid={isKid}
@@ -1395,6 +1419,7 @@ export default function CalendarScreen() {
         </View>
         </>
         )}
+        </React.Fragment>)}
       </ScrollView>
 
       {/* Modals */}

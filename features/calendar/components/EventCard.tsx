@@ -22,12 +22,24 @@ import React from 'react';
 import { View, Text, TouchableOpacity, Platform, StyleSheet, Linking } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path, Circle } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { s } from './calendarCardStyles';
+import { isEventPast } from './calendarDateHelpers';
+
+// Filled map-pin — real SVG, replacing the 📍 emoji used as a location icon.
+function MapPinIcon({ c, size = 13 }: { c: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M12 22s7-7.58 7-12.5A7 7 0 0 0 5 9.5C5 14.42 12 22 12 22z" fill={c} />
+      <Circle cx={12} cy={9.5} r={2.6} fill="#fff" />
+    </Svg>
+  );
+}
 
 // ─── Location link — tappable address that opens the native maps app ──────────
 function shortAddress(addr: string, maxLen = 22): string {
@@ -48,11 +60,14 @@ export function LocationLink({ addr, color, fontSize = 13, iconSize = 12, fontWe
 }) {
   return (
     <TouchableOpacity onPress={() => openInMaps(addr)} activeOpacity={0.7}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-      <Text style={{ fontSize, fontWeight: fontWeight as any, color, textDecorationLine: 'underline', textDecorationStyle: 'dotted' }} numberOfLines={1}>
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+      <View style={{ width: iconSize + 8, height: iconSize + 8, borderRadius: (iconSize + 8) / 2,
+        backgroundColor: color, alignItems: 'center', justifyContent: 'center' }}>
+        <MapPinIcon c="#fff" size={iconSize} />
+      </View>
+      <Text style={{ fontSize, fontWeight: fontWeight as any, color }} numberOfLines={1}>
         {shortAddress(addr)}
       </Text>
-      <Text style={{ fontSize: fontSize - 2, color, opacity: 0.7 }}>↗</Text>
     </TouchableOpacity>
   );
 }
@@ -101,41 +116,73 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, timeStyle =
   const assignee = members.find(m => m.id === ev.memberId);
   const rs = roleStyle(assignee?.role, colors);
   const timeParts = fmtTimePartsLocal(ev.time);
+  // Driver/accompanying-adult is a free-text name field, not a memberId
+  // reference — resolved by name match against the real family roster so a
+  // real avatar can show instead of just a text pill. Rides use
+  // ev.driverName; every other category (Medical/Study/Sports/etc) uses the
+  // more general ev.helper field for "who's accompanying/escorting" — check
+  // both so this isn't Ride-only.
+  const driverName = ev.driverName || ev.helper;
+  const driver = driverName ? members.find(m => m.name === driverName || m.name.split(' ')[0] === driverName) : undefined;
+  // Dimmed once the event's date/time has passed — matches Day view's
+  // existing opacity:0.5 treatment for completed events, applied here so
+  // Agenda (and any other row-variant caller) gets it too.
+  const isPast = isEventPast(ev.date, ev.time);
 
   if (timeStyle === 'boxed') {
     return (
       <TouchableOpacity onPress={onPress}
         style={{
-          flexDirection: 'row', alignItems: 'flex-start', gap: 10,
           borderRadius: 16, borderWidth: 1, borderColor: rs.dot + '35',
           backgroundColor: isDark ? colors.card : colors.card,
-          paddingHorizontal: 10, paddingVertical: 10,
+          padding: 10,
+          opacity: isPast ? 0.5 : 1,
         }}>
-        <View style={{ width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-          backgroundColor: isDark ? rs.dot + '1A' : rs.badge, borderWidth: 1, borderColor: rs.dot + '40' }}>
-          <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: rs.text }}>{timeParts.time}</Text>
-          <Text style={{ fontSize: 9, fontWeight: '700', color: rs.text, opacity: 0.8 }}>{timeParts.ampm}</Text>
-        </View>
-        <View style={{ flex: 1, paddingTop: 2 }}>
-          <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
-            {ev.title}
-          </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-            {showCategory && ev.category && (
-              <View style={{ backgroundColor: colors.surface, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 }}>
-                <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textSecondary }}>{ev.category}</Text>
-              </View>
-            )}
-            {showLocation && ev.location && (
-              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={1}>📍 {ev.location}</Text>
-            )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={{ width: 40, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
+            backgroundColor: isDark ? rs.dot + '1A' : rs.badge, borderWidth: 1, borderColor: rs.dot + '40' }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: rs.text }}>{timeParts.time}</Text>
+            <Text style={{ fontSize: 9, fontWeight: '700', color: rs.text, opacity: 0.8 }}>{timeParts.ampm}</Text>
           </View>
-        </View>
-        {assignee && (
-          <View style={{ backgroundColor: rs.dot, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 }}>
-            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textInverse }}>{assignee.name.split(' ')[0]}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
+              {ev.title}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+              {showCategory && ev.category && (
+                <View style={{ backgroundColor: colors.surface, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 }}>
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textSecondary }}>{ev.category}</Text>
+                </View>
+              )}
+              {showLocation && ev.location && (
+                <LocationLink addr={ev.location} color={colors.info} fontSize={TYPO.micro} iconSize={12} fontWeight="700" />
+              )}
+            </View>
           </View>
-        )}
+          {/* "For" + accompanied-by/driver avatars, overlapped into one
+              cluster (driver drawn on top, offset left) rather than split
+              top/bottom — they're both people tied to this one event, so
+              stacking them as a pair reads as related and keeps the card
+              from growing an extra row just to fit a second avatar. Centered
+              against the row's own height (matches the time chip/title). */}
+          {(assignee || driver) && (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {assignee && (
+                <FamilyAvatar name={assignee.name} emoji={assignee.emoji} avatarUrl={(assignee as any).avatarUrl}
+                  siblings={members.map(m => m.name)} size={26} ringColor={rs.dot} ringWidth={1.5} />
+              )}
+              {driver && (
+                <View style={{
+                  marginLeft: assignee ? -10 : 0,
+                  borderRadius: 15, borderWidth: 2, borderColor: colors.card,
+                }}>
+                  <FamilyAvatar name={driver.name} emoji={driver.emoji} avatarUrl={(driver as any).avatarUrl}
+                    siblings={members.map(m => m.name)} size={26} ringColor={colors.info} ringWidth={1.5} />
+                </View>
+              )}
+            </View>
+          )}
+        </View>
       </TouchableOpacity>
     );
   }
@@ -148,6 +195,7 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, timeStyle =
         borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8,
         borderWidth: 1, borderColor: rs.dot + '35',
         backgroundColor: isDark ? rs.dot + '1A' : rs.badge,
+        opacity: isPast ? 0.5 : 1,
       }}>
       <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: rs.text, width: 46 }}>{timeParts.time}{timeParts.ampm.toLowerCase()}</Text>
       <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
@@ -178,6 +226,9 @@ export interface EventCardTimelineProps {
   isConf: boolean;
   cs: { dot: string; badge: string; text: string };
   forLabel: string | null;
+  // Context label for ev.helper (e.g. "Accompanied by", "Drop-off by") —
+  // rendered bottom-right alongside the driver avatar when present.
+  helperLabel?: string | null;
   pickerMembers: FamilyMember[];
   isParent: boolean;
   isKid: boolean;
@@ -190,12 +241,16 @@ export interface EventCardTimelineProps {
 }
 
 export function EventCardTimeline({
-  ev, members, colors, isDark, isPast, isConf, cs, forLabel, pickerMembers,
+  ev, members, colors, isDark, isPast, isConf, cs, forLabel, helperLabel, pickerMembers,
   isParent, isKid, canApproveRequest, onPress, onLongPress, onAssignMember, onApprove, canDelete,
 }: EventCardTimelineProps) {
   const assignee = members.find(m => m.id === ev.memberId);
   const cat = ev.category ?? 'Event';
   const accentColor = isConf ? colors.warning : cs.dot;
+  // ev.helper is a free-text name (driver/tutor/coach/escort), not a
+  // memberId — resolved by name match against the roster so a real avatar
+  // can be shown instead of just initials/text.
+  const helperMember = ev.helper ? members.find(m => m.name === ev.helper || m.name.split(' ')[0] === ev.helper) : undefined;
 
   return (
     <TouchableOpacity activeOpacity={0.88} onPress={onPress} onLongPress={onLongPress} delayLongPress={450}>
@@ -265,14 +320,29 @@ export function EventCardTimeline({
                   </Text>
                 )}
                 {ev.location && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                    <Text style={{ fontSize: 11 }}>📍</Text>
-                    <LocationLink addr={ev.location} color={colors.success} fontSize={TYPO.label} fontWeight="600" />
-                  </View>
+                  <LocationLink addr={ev.location} color={colors.info} fontSize={TYPO.label} fontWeight="600" />
                 )}
               </View>
             );
           })()}
+
+          {/* Accompanied-by / driver — bottom-right, real avatar when the
+              named helper matches a real family member. */}
+          {ev.helper && (
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>
+                  {helperLabel ?? 'With'}:
+                </Text>
+                {helperMember ? (
+                  <FamilyAvatar name={helperMember.name} emoji={helperMember.emoji} avatarUrl={(helperMember as any).avatarUrl}
+                    siblings={members.map(m => m.name)} size={24} ringColor={colors.info} ringWidth={1.5} />
+                ) : (
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>{ev.helper}</Text>
+                )}
+              </View>
+            </View>
+          )}
 
           {/* Category-specific extra fields */}
           {cat === 'Medical' && ev.doctorName && (
@@ -295,13 +365,13 @@ export function EventCardTimeline({
               {ev.pickupLocation && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>From: </Text>
-                  <LocationLink addr={ev.pickupLocation} color={colors.success} fontSize={TYPO.label} fontWeight="700" />
+                  <LocationLink addr={ev.pickupLocation} color={colors.info} fontSize={TYPO.label} fontWeight="700" />
                 </View>
               )}
               {ev.dropLocation && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>→ To: </Text>
-                  <LocationLink addr={ev.dropLocation} color={colors.success} fontSize={TYPO.label} fontWeight="700" />
+                  <LocationLink addr={ev.dropLocation} color={colors.info} fontSize={TYPO.label} fontWeight="700" />
                 </View>
               )}
             </View>

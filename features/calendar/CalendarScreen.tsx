@@ -40,11 +40,17 @@ import { EventDetailSheet } from '@/features/hub/hubComponents';
 import AddIntakeChooser from '@/components/AddIntakeChooser';
 import { useChatStore } from '@/store/chatStore';
 import { relationalNameByName } from '@/lib/format';
+import { EventCardTimeline, roleStyle, catStyle, LocationLink } from './components/EventCard';
+import { s as calCardStyles } from './components/calendarCardStyles';
+import { AiConflictBanner, type AiConflict, type AiResult } from './components/AiConflictBanner';
+import { CalendarSearchBar } from './components/CalendarSearchBar';
+import { toDateStr, parseDate, addDays, DAY_SHORT, CAT_DOT, buildMonthGrid } from './components/calendarDateHelpers';
+import MonthGridView, { DayEventsSummaryCard } from './components/MonthGridView';
+import WeekView from './components/WeekView';
+import AgendaView from './components/AgendaView';
+import DaySlotView from './components/DaySlotView';
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
-function toDateStr(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
 function isEventPast(date: string, time?: string | null): boolean {
   const today = toDateStr(new Date());
   if (date < today) return true;
@@ -88,15 +94,6 @@ function UrgentPulse() {
     </Animated.View>
   );
 }
-function parseDate(s: string) {
-  const [y, m, d] = s.split('-').map(Number);
-  return new Date(y, m - 1, d);
-}
-function addDays(d: Date, n: number): Date {
-  const next = new Date(d);
-  next.setDate(d.getDate() + n);
-  return next;
-}
 function get15Days(center: string): string[] {
   const base = parseDate(center);
   // Mon-first: start from Monday of the week containing center, show 15 days
@@ -112,45 +109,6 @@ function currentWeekBounds() {
   const mon = new Date(today); mon.setDate(today.getDate() - dayOfWeek);
   const sun = new Date(mon);   sun.setDate(mon.getDate() + 6);
   return { start: toDateStr(mon), end: toDateStr(sun) };
-}
-// Mon-first ordering
-const DAY_SHORT = ['MON','TUE','WED','THU','FRI','SAT','SUN'];
-
-// ─── Location helpers ─────────────────────────────────────────────────────────
-function shortAddress(addr: string, maxLen = 22): string {
-  if (addr.length <= maxLen) return addr;
-  // Keep up to the second comma segment (street + city), then ellipsis
-  const parts = addr.split(',');
-  const short = parts.length > 1 ? `${parts[0].trim()}, ${parts[1].trim()}` : addr;
-  return short.length <= maxLen + 6 ? short : addr.slice(0, maxLen).trimEnd() + '…';
-}
-
-function openInMaps(addr: string) {
-  const encoded = encodeURIComponent(addr);
-  // Use web URLs — these open the native Maps app but stay in search/pin mode,
-  // not turn-by-turn directions (which the maps:// scheme can trigger).
-  const url = Platform.OS === 'ios'
-    ? `https://maps.apple.com/?q=${encoded}`
-    : `https://maps.google.com/?q=${encoded}`;
-  Linking.openURL(url).catch(() =>
-    Linking.openURL(`https://maps.google.com/?q=${encoded}`)
-  );
-}
-
-function LocationLink({ addr, color, fontSize = 13, iconSize = 12, fontWeight = '600' }: {
-  addr: string; color: string; fontSize?: number; iconSize?: number; fontWeight?: string;
-}) {
-  return (
-    <TouchableOpacity
-      onPress={() => openInMaps(addr)}
-      activeOpacity={0.7}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-      <Text style={{ fontSize, fontWeight: fontWeight as any, color, textDecorationLine: 'underline', textDecorationStyle: 'dotted' }} numberOfLines={1}>
-        {shortAddress(addr)}
-      </Text>
-      <Text style={{ fontSize: fontSize - 2, color, opacity: 0.7 }}>↗</Text>
-    </TouchableOpacity>
-  );
 }
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -268,53 +226,9 @@ const I = {
   ),
 };
 
-// ─── Category color system ────────────────────────────────────────────────────
-const CAT_COLOR: Record<string, { dot: string; badge: string; text: string }> = {
-  Medical:  { dot: '#EF4444', badge: '#FEE2E2', text: '#DC2626' },
-  Work:     { dot: '#A855F7', badge: '#F3E8FF', text: '#7C3AED' },
-  Sports:   { dot: '#F59E0B', badge: '#FEF3C7', text: '#D97706' },
-  School:   { dot: '#3B82F6', badge: '#DBEAFE', text: '#1D4ED8' },
-  Study:    { dot: '#3B82F6', badge: '#DBEAFE', text: '#1D4ED8' },
-  Birthday: { dot: '#F59E0B', badge: '#FEF3C7', text: '#D97706' },
-  Holiday:  { dot: '#F59E0B', badge: '#FEF3C7', text: '#D97706' },
-  Event:    { dot: '#10B981', badge: '#D1FAE5', text: '#059669' },
-  default:  { dot: '#10B981', badge: '#D1FAE5', text: '#059669' },
-};
-function catStyle(category?: string, isDark = false) {
-  const c = CAT_COLOR[category ?? 'default'] ?? CAT_COLOR.default;
-  if (isDark) return { dot: c.dot, badge: c.dot + '25', text: c.dot };
-  return c;
-}
-
-// ─── Role color system — WHO the event is for, not what it's about ────────────
-// Month/Week/Day/Agenda cards color by member role (teal=parent,
-// amber=kid, purple=teen, pink=senior) rather than event category — matches
-// the "whose event is this" scanning pattern from the Month/Week/Agenda
-// reference design. Only `parent`/`kid` have dedicated tokens in
-// constants/colors.ts; teen/senior reuse `primary`(purple)/`accent`(pink),
-// the same fallback pairing DayGridView's LANE_ACCENTS already established.
-function roleStyle(role: string | undefined, colors: any) {
-  const dot =
-    role === 'parent' ? colors.parent :
-    role === 'kid'    ? colors.kid :
-    role === 'teen'   ? colors.primary :
-    role === 'senior' ? colors.accent :
-    colors.textTertiary;
-  return { dot, badge: dot + '20', text: dot };
-}
-
 // ─── AI Simulation ────────────────────────────────────────────────────────────
-interface AiConflict {
-  description: string;
-  eventsInvolved: string[];
-  suggestedFix?: string;
-  recommendedDriverSwap?: string;
-}
-interface AiResult {
-  summary: string;
-  conflictsFound: boolean;
-  conflicts: AiConflict[];
-}
+// AiConflict/AiResult types now live in ./components/AiConflictBanner
+// (imported above) — role/category color helpers moved to ./components/EventCard.
 
 function simulateConflictDetection(events: FamilyEvent[]): Promise<AiResult> {
   return new Promise(res => setTimeout(() => {
@@ -364,36 +278,6 @@ function simulateConflictDetection(events: FamilyEvent[]): Promise<AiResult> {
   }, 1800));
 }
 
-// Category → dot color map (used only in strip — no full event objects needed)
-const CAT_DOT: Record<string, string> = {
-  Medical:  '#EF4444',
-  Work:     '#A855F7',
-  Sports:   '#F59E0B',
-  Study:    '#3B82F6',
-  Ride:     '#10B981',
-  Event:    '#10B981',
-  Birthday: '#F59E0B',
-  Holiday:  '#F59E0B',
-};
-
-// ─── Month grid — Apple Calendar style ─────────────────────────────────────
-// A real month sheet: weekday header, 6-row grid, up to 3 category dots per
-// day from the lightweight stripMap (no full event fetch needed to paint
-// it). Tapping a day sets selectedDate, which drives the agenda list
-// rendered below by the caller — the grid itself never renders events.
-const MONTH_LABELS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-
-function buildMonthGrid(year: number, month: number): string[] {
-  const first = new Date(year, month, 1);
-  const startOffset = (first.getDay() + 6) % 7; // Mon-first
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells: string[] = [];
-  for (let i = 0; i < startOffset; i++) cells.push('');
-  for (let d = 1; d <= daysInMonth; d++) cells.push(toDateStr(new Date(year, month, d)));
-  while (cells.length % 7 !== 0) cells.push('');
-  return cells;
-}
-
 // Gentle mount-fade — used so Month view arrives as a soft continuation of
 // the pull-to-reveal gesture in Day view rather than an abrupt hard cut.
 function FadeInView({ children }: { children: React.ReactNode }) {
@@ -410,424 +294,6 @@ function FadeInView({ children }: { children: React.ReactNode }) {
     </Animated.View>
   );
 }
-
-// Compact "Events for X" card — used both as Month's selected-day summary
-// below the grid, and as the Day-first intro shown above the grid when
-// Month opens on today (before the user has scrolled into the full grid).
-function DayEventsSummaryCard({
-  dateLabel, events, members, colors, isDark, onSelectEvent,
-}: {
-  dateLabel: string; events: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
-  onSelectEvent: (ev: FamilyEvent) => void;
-}) {
-  const shown = events.filter(ev => ev.category !== 'Holiday');
-  return (
-    <View style={{ borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#F1F5F9', backgroundColor: isDark ? colors.card : '#fff', padding: 14, gap: 10 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
-          Events for {dateLabel}
-        </Text>
-        <View style={{ backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 }}>
-          <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textSecondary }}>
-            {shown.length} item{shown.length === 1 ? '' : 's'}
-          </Text>
-        </View>
-      </View>
-
-      {shown.length === 0 ? (
-        <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, fontStyle: 'italic', paddingVertical: 8 }}>
-          No scheduled events for this day. Tap + to add one.
-        </Text>
-      ) : (
-        <View style={{ gap: 8 }}>
-          {shown.map(ev => {
-            const assignee = members.find(m => m.id === ev.memberId);
-            const rs = roleStyle(assignee?.role, colors);
-            const { time, ampm } = fmtTimeParts(ev.time);
-            return (
-              <TouchableOpacity key={ev.id} onPress={() => onSelectEvent(ev)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14,
-                  borderWidth: 1, borderColor: rs.dot + '35',
-                  backgroundColor: isDark ? rs.dot + '1A' : rs.badge,
-                  paddingHorizontal: 10, paddingVertical: 9 }}>
-                <View style={{ width: 3, height: 30, borderRadius: 2, backgroundColor: rs.dot }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={1}>
-                    {ev.title}
-                  </Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 1 }}>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textSecondary }}>{time}{ampm.toLowerCase()}</Text>
-                    {ev.location && (
-                      <>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>·</Text>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={1}>{ev.location}</Text>
-                      </>
-                    )}
-                  </View>
-                </View>
-                {assignee && (
-                  <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: rs.dot + '40' }}>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: rs.text }}>{assignee.name.split(' ')[0]}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
-    </View>
-  );
-}
-
-function MonthGridView({
-  monthDate, selected, stripMap, colors, isDark, onSelectDay, onChangeMonth,
-}: {
-  monthDate: Date; selected: string; stripMap: Record<string, string[]>; colors: any; isDark: boolean;
-  onSelectDay: (d: string) => void;
-  onChangeMonth: (delta: number) => void;
-}) {
-  const todayStr = toDateStr(new Date());
-  const year = monthDate.getFullYear();
-  const month = monthDate.getMonth();
-  const cells = useMemo(() => buildMonthGrid(year, month), [year, month]);
-
-  return (
-    <View style={{ paddingHorizontal: 14, paddingTop: 4 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <TouchableOpacity onPress={() => onChangeMonth(-1)} style={{ padding: 8 }}>
-          <I.ChevronLeft c={colors.textSecondary} size={18} />
-        </TouchableOpacity>
-        <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
-          {MONTH_LABELS[month]} {year}
-        </Text>
-        <TouchableOpacity onPress={() => onChangeMonth(1)} style={{ padding: 8 }}>
-          <I.ChevronRight c={colors.textSecondary} size={18} />
-        </TouchableOpacity>
-      </View>
-
-      <View style={{ flexDirection: 'row', marginBottom: 6 }}>
-        {DAY_SHORT.map(d => (
-          <Text key={d} style={{ flex: 1, textAlign: 'center', fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, letterSpacing: 0.4 }}>
-            {d[0]}
-          </Text>
-        ))}
-      </View>
-
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-        {cells.map((d, i) => {
-          if (!d) return <View key={i} style={{ width: `${100/7}%`, aspectRatio: 1 }} />;
-          const date = parseDate(d);
-          const isSel = d === selected;
-          const isToday = d === todayStr;
-          const cats = stripMap[d] ?? [];
-          const dotColors = cats.map(c => CAT_DOT[c] ?? '#10B981').filter((c, idx, a) => a.indexOf(c) === idx).slice(0, 3);
-          return (
-            <TouchableOpacity key={d} onPress={() => onSelectDay(d)}
-              style={{ width: `${100/7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' }}>
-              <View style={{
-                width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
-                backgroundColor: isSel ? BRAND.purple : isToday ? BRAND.purple + '18' : 'transparent',
-              }}>
-                <Text style={{
-                  fontSize: TYPO.body, fontWeight: isToday || isSel ? '900' : '600',
-                  color: isSel ? '#fff' : isToday ? BRAND.purple : (isDark ? colors.textPrimary : '#1E2D6B'),
-                }}>
-                  {date.getDate()}
-                </Text>
-              </View>
-              <View style={{ flexDirection: 'row', gap: 3, height: 8, marginTop: 2, alignItems: 'center' }}>
-                {dotColors.map((c, idx) => (
-                  <View key={idx} style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: c }} />
-                ))}
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
-
-// ─── Week view — one card per day, chronological events inside ────────────────
-// Simple day-cards rather than an hour grid (that's what Family view is
-// for) — this is the "what's the shape of the week" overview: 7 cards,
-// today highlighted, each showing its events as compact rows colored by
-// who they're for.
-function WeekView({
-  weekStart, events, members, colors, isDark, onSelectEvent, onNavigateWeek, onAddDay,
-}: {
-  weekStart: Date; events: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
-  onSelectEvent: (ev: FamilyEvent) => void;
-  onNavigateWeek: (delta: number) => void;
-  onAddDay?: (dateKey: string) => void;
-}) {
-  const todayStr = toDateStr(new Date());
-  const weekEnd = addDays(weekStart, 6);
-  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-
-  return (
-    <View style={{ paddingHorizontal: 14, paddingTop: 4, gap: 10 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <TouchableOpacity onPress={() => onNavigateWeek(-1)} style={{ padding: 8 }}>
-          <I.ChevronLeft c={colors.textSecondary} size={16} />
-        </TouchableOpacity>
-        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary }}>
-          {fmtDateShort(toDateStr(weekStart))} – {fmtDateShort(toDateStr(weekEnd))}
-        </Text>
-        <TouchableOpacity onPress={() => onNavigateWeek(1)} style={{ padding: 8 }}>
-          <I.ChevronRight c={colors.textSecondary} size={16} />
-        </TouchableOpacity>
-      </View>
-
-      {days.map(day => {
-        const dateKey = toDateStr(day);
-        const isToday = dateKey === todayStr;
-        const dayEvs = events.filter(e => e.date === dateKey && e.category !== 'Holiday')
-          .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
-
-        return (
-          <View key={dateKey} style={{
-            borderRadius: 18, padding: 12, gap: 8,
-            backgroundColor: isToday ? (isDark ? BRAND.purple + '18' : BRAND.purple + '0C') : (isDark ? colors.card : '#fff'),
-            borderWidth: 1, borderColor: isToday ? BRAND.purple + '50' : (isDark ? colors.border : '#F1F5F9'),
-          }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isToday ? BRAND.purple : colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                  {DAY_SHORT[(day.getDay() + 6) % 7]}
-                </Text>
-                {isToday ? (
-                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>{day.getDate()}</Text>
-                  </View>
-                ) : (
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{day.getDate()}</Text>
-                )}
-              </View>
-              {onAddDay ? (
-                <TouchableOpacity onPress={() => onAddDay(dateKey)}>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.purple }}>+ Add</Text>
-                </TouchableOpacity>
-              ) : (
-                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary }}>
-                  {dayEvs.length === 0 ? 'No events' : `${dayEvs.length} event${dayEvs.length === 1 ? '' : 's'}`}
-                </Text>
-              )}
-            </View>
-
-            {/* Reference's per-event row: border + light tint together
-                (not just a tinted background), same role-color pairing. */}
-            {dayEvs.length === 0 ? (
-              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontStyle: 'italic' }}>No events</Text>
-            ) : (
-              <View style={{ gap: 6 }}>
-                {dayEvs.map(ev => {
-                  const assignee = members.find(m => m.id === ev.memberId);
-                  const rs = roleStyle(assignee?.role, colors);
-                  const { time, ampm } = fmtTimeParts(ev.time);
-                  return (
-                    <TouchableOpacity key={ev.id} onPress={() => onSelectEvent(ev)}
-                      style={{
-                        flexDirection: 'row', alignItems: 'center', gap: 8,
-                        borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8,
-                        borderWidth: 1, borderColor: rs.dot + '35',
-                        backgroundColor: isDark ? rs.dot + '1A' : rs.badge,
-                      }}>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: rs.text, width: 46 }}>{time}{ampm.toLowerCase()}</Text>
-                      <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={1}>
-                        {ev.title}
-                      </Text>
-                      {assignee && <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: rs.text }}>{assignee.name.split(' ')[0]}</Text>}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-// ─── Agenda view — chronological list grouped by date, sticky headers ─────────
-// Spans many upcoming days (not just one selected date) — the "what's
-// coming up" view, matching the reference's grouped-by-date list pattern.
-function AgendaView({
-  events, members, colors, isDark, onSelectEvent,
-}: {
-  events: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
-  onSelectEvent: (ev: FamilyEvent) => void;
-}) {
-  const todayStr = toDateStr(new Date());
-
-  const grouped = useMemo(() => {
-    const byDate: Record<string, FamilyEvent[]> = {};
-    for (const ev of events) {
-      if (ev.category === 'Holiday') continue;
-      (byDate[ev.date] ??= []).push(ev);
-    }
-    const dates = Object.keys(byDate).sort();
-    return dates.map(date => ({
-      date,
-      events: byDate[date].sort((a, b) => (a.time ?? '').localeCompare(b.time ?? '')),
-    }));
-  }, [events]);
-
-  if (grouped.length === 0) {
-    return (
-      <View style={{ paddingHorizontal: 14, paddingTop: 8 }}>
-        <View style={{ borderRadius: 18, borderWidth: 1, borderColor: isDark ? colors.border : '#F1F5F9', backgroundColor: isDark ? colors.card : '#fff', padding: 28, alignItems: 'center' }}>
-          <Text style={{ fontSize: 26, marginBottom: 6 }}>📋</Text>
-          <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>No upcoming events in this window</Text>
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={{ paddingHorizontal: 14, paddingTop: 4, gap: 14 }}>
-      {grouped.map(group => {
-        const date = parseDate(group.date);
-        const isToday = group.date === todayStr;
-        return (
-          <View key={group.date} style={{ gap: 6 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 4 }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: isToday ? BRAND.purple : colors.textSecondary }}>
-                {isToday ? 'TODAY · ' : ''}{date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-              </Text>
-              <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary }}>
-                {group.events.length} event{group.events.length === 1 ? '' : 's'}
-              </Text>
-            </View>
-            {group.events.map(ev => {
-              const assignee = members.find(m => m.id === ev.memberId);
-              const rs = roleStyle(assignee?.role, colors);
-              const { time, ampm } = fmtTimeParts(ev.time);
-              return (
-                <TouchableOpacity key={ev.id} onPress={() => onSelectEvent(ev)}
-                  style={{
-                    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-                    borderRadius: 16, borderWidth: 1, borderColor: rs.dot + '35',
-                    backgroundColor: isDark ? colors.card : '#fff',
-                    paddingHorizontal: 10, paddingVertical: 10,
-                  }}>
-                  {/* Reference's boxed time chip (tinted square, member-
-                      bordered) rather than a plain left-bar accent. */}
-                  <View style={{ width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: isDark ? rs.dot + '1A' : rs.badge, borderWidth: 1, borderColor: rs.dot + '40' }}>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: rs.text }}>{time}</Text>
-                    <Text style={{ fontSize: 9, fontWeight: '700', color: rs.text, opacity: 0.8 }}>{ampm}</Text>
-                  </View>
-                  <View style={{ flex: 1, paddingTop: 2 }}>
-                    <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={1}>
-                      {ev.title}
-                    </Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                      {ev.category && (
-                        <View style={{ backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 }}>
-                          <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textSecondary }}>{ev.category}</Text>
-                        </View>
-                      )}
-                      {ev.location && (
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={1}>📍 {ev.location}</Text>
-                      )}
-                    </View>
-                  </View>
-                  {assignee && (
-                    <View style={{ backgroundColor: rs.dot, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 }}>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }}>{assignee.name.split(' ')[0]}</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-// ─── Day view — simple hour-slot list, matching the reference exactly ─────────
-// One fixed-height row per hour (5am–11pm), not a proportional time-block
-// grid — an empty hour shows a dashed "+ tap to add" placeholder, a filled
-// hour shows its event(s) as role-colored cards. This intentionally drops
-// the proportional positioning/now-line/pull-to-month gesture the previous
-// hour-grid Day view had, in favor of matching the reference's simpler
-// slot-list pattern 1:1.
-const DAY_SLOT_START_HOUR = 5;
-const DAY_SLOT_END_HOUR = 23;
-
-function DaySlotView({
-  dayEvents, members, colors, isDark, onSelect, onAddAtTime,
-}: {
-  dayEvents: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
-  onSelect: (ev: FamilyEvent) => void;
-  onAddAtTime: (hourTimeKey: string) => void;
-}) {
-  const hours = Array.from({ length: DAY_SLOT_END_HOUR - DAY_SLOT_START_HOUR + 1 }, (_, i) => DAY_SLOT_START_HOUR + i);
-
-  return (
-    <View style={{ paddingHorizontal: 14, paddingTop: 8 }}>
-      {hours.map(hour => {
-        const hourLabel = hour < 12 ? `${hour}:00 AM` : hour === 12 ? '12:00 PM' : `${hour - 12}:00 PM`;
-        const hourTimeKey = `${String(hour).padStart(2, '0')}:00`;
-        const matching = dayEvents.filter(ev => {
-          const t = timeToMinutes(ev.time);
-          return t !== null && Math.floor(t / 60) === hour;
-        });
-
-        return (
-          <View key={hour}
-            style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, minHeight: 54, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : '#F1F5F9' }}>
-            <View style={{ width: 64, paddingTop: 4 }}>
-              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textAlign: 'right' }}>{hourLabel}</Text>
-            </View>
-
-            {matching.length > 0 ? (
-              <View style={{ flex: 1, gap: 6 }}>
-                {matching.map(ev => {
-                  const assignee = members.find(m => m.id === ev.memberId);
-                  const rs = roleStyle(assignee?.role, colors);
-                  return (
-                    <TouchableOpacity key={ev.id} onPress={() => onSelect(ev)}
-                      style={{ borderRadius: 14, backgroundColor: isDark ? rs.dot + '1A' : rs.badge, padding: 10 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={1}>
-                          {ev.title}
-                        </Text>
-                        {assignee && (
-                          <View style={{ backgroundColor: rs.dot, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
-                            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }}>{assignee.name.split(' ')[0]}</Text>
-                          </View>
-                        )}
-                      </View>
-                      {(ev.location || ev.category) && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
-                          {ev.location && <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>📍 {ev.location}</Text>}
-                          {ev.location && ev.category && <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>·</Text>}
-                          {ev.category && <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>🏷️ {ev.category}</Text>}
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ) : (
-              <TouchableOpacity onPress={() => onAddAtTime(hourTimeKey)}
-                style={{ flex: 1, height: 40, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed',
-                  borderColor: isDark ? colors.border : '#E2E8F0', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontWeight: '600' }}>+ Tap to add event</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
 
 // ─── Add Event Modal ──────────────────────────────────────────────────────────
 const EVENT_TYPES: EventType[] = ['event', 'reminder', 'appointment', 'birthday'];
@@ -1083,15 +549,6 @@ function SwipeableEventCard({ children, onDelete, onLongPress, onPress, canDelet
   );
 }
 
-// Shared by DaySlotView (hour-slot placement) — parses "HH:MM" into
-// minutes-since-midnight.
-function timeToMinutes(t?: string): number | null {
-  if (!t) return null;
-  const [h, m] = t.split(':').map(Number);
-  if (Number.isNaN(h)) return null;
-  return h * 60 + (m || 0);
-}
-
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function CalendarScreen() {
   const { colors, isDark } = useTheme();
@@ -1243,6 +700,9 @@ export default function CalendarScreen() {
   }, [viewMode]);
 
   const [detailEv,      setDetailEv]      = useState<FamilyEvent | null>(null);
+  // Net-new title/notes search — layers on top of the existing date/member/
+  // role filters below, never replaces them.
+  const [searchQuery,   setSearchQuery]   = useState('');
 
   // AI state
   const [aiResult,       setAiResult]       = useState<AiResult | null>(null);
@@ -1275,6 +735,14 @@ export default function CalendarScreen() {
     setAppliedSwaps(p => ({ ...p, [`swap_${idx}`]: true }));
   };
 
+  // Net-new title/notes search, layered on top of the RBAC/date/member
+  // filters below — never replaces them, just narrows further.
+  const matchesSearch = (e: FamilyEvent) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (e.title ?? '').toLowerCase().includes(q) || (e.notes ?? '').toLowerCase().includes(q);
+  };
+
   // Filtered events for selected day
   const dayEvents = useMemo(() => {
     return events
@@ -1291,9 +759,10 @@ export default function CalendarScreen() {
         )) &&
         // My Schedule / All tabs (kid/teen/senior only — parents always see all)
         (isParent || scheduleFilter === 'all' || e.memberId === activeMemberId || !e.memberId) &&
-        (!filterMember || e.memberId === filterMember || !e.memberId))
+        (!filterMember || e.memberId === filterMember || !e.memberId) &&
+        matchesSearch(e))
       .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
-  }, [events, selectedDate, filterMember, scheduleFilter, isKid, isSenior, isParent, activeMemberId, activeMemberName]);
+  }, [events, selectedDate, filterMember, scheduleFilter, isKid, isSenior, isParent, activeMemberId, activeMemberName, searchQuery]);
 
   // Same RBAC shape as dayEvents but across rangeEvents' multi-date window
   // — feeds Week/Agenda, both parent/senior-only views (same gate as
@@ -1306,9 +775,10 @@ export default function CalendarScreen() {
         (!e.memberId && !e.helper) ||
         !(e as any).isPrivate
       )) &&
-      (!filterMember || e.memberId === filterMember || !e.memberId)
+      (!filterMember || e.memberId === filterMember || !e.memberId) &&
+      matchesSearch(e)
     );
-  }, [rangeEvents, isSenior, activeMemberName, filterMember]);
+  }, [rangeEvents, isSenior, activeMemberName, filterMember, searchQuery]);
 
   // Events where senior can volunteer as helper (has a pending/no helper, dated today or future)
   // seniorOpenRides removed — ride volunteering now lives in Hub > Helper Dispatch
@@ -1359,32 +829,68 @@ export default function CalendarScreen() {
                 )}
               </View>
             </View>
-            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-              {isKid ? (
-                <>
-                  {/* List view toggle — defaults on for kids */}
-                  <TouchableOpacity
-                    onPress={() => setCompact(v => !v)}
-                    style={[sc.headerBtnOutline, { borderColor: compact ? BRAND.purple : colors.border, backgroundColor: compact ? BRAND.purple + '15' : 'transparent' }]}>
-                    <I.List c={compact ? BRAND.purple : colors.textTertiary} size={14} />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[sc.headerBtn, { backgroundColor: BRAND.amber }]} onPress={() => setShowAskHelp(true)}>
-                    <I.HelpCircle c="#0F172A" size={14} />
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>+ Ask Help</Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <>
-                  {isParentOrSenior && (
-                    <TouchableOpacity style={[sc.headerBtn, { backgroundColor: BRAND.purple }]} onPress={() => setShowAddChooser(true)}>
-                      <I.Plus c="#fff" size={14} />
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Event</Text>
-                    </TouchableOpacity>
-                  )}
-                </>
-              )}
-            </View>
           </View>
+
+          {/* Shared wrapping toolbar row — mirrors QuestsScreen's AI-pill +
+              search + "+Quest" pill composition: AI conflict pill (parent
+              only, renders nothing when there's nothing to flag), search,
+              then the role-appropriate action pill(s). */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', paddingHorizontal: 14, gap: 8 }}>
+            {isParent && (
+              <AiConflictBanner
+                hasConflicts={dayEvents.some(e => e.conflict || e.helperStatus === 'rejected')}
+                isAnalyzing={isAnalyzing}
+                showAiPanel={false}
+                aiResult={aiResult}
+                appliedSwaps={appliedSwaps}
+                onRunScan={runAiScan}
+                onClosePanel={() => setShowAiPanel(false)}
+                onApplySwap={handleApplySwap}
+                colors={colors} isDark={isDark}
+              />
+            )}
+            <CalendarSearchBar query={searchQuery} onQueryChange={setSearchQuery} colors={colors} isDark={isDark} />
+            {isKid ? (
+              <>
+                {/* List view toggle — defaults on for kids */}
+                <TouchableOpacity
+                  onPress={() => setCompact(v => !v)}
+                  style={[calCardStyles.headerBtnOutline, { borderColor: compact ? BRAND.purple : colors.border, backgroundColor: compact ? BRAND.purple + '15' : 'transparent' }]}>
+                  <I.List c={compact ? BRAND.purple : colors.textTertiary} size={14} />
+                </TouchableOpacity>
+                <TouchableOpacity style={[calCardStyles.headerBtn, { backgroundColor: BRAND.amber }]} onPress={() => setShowAskHelp(true)}>
+                  <I.HelpCircle c="#0F172A" size={14} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>+ Ask Help</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              isParentOrSenior && (
+                <TouchableOpacity style={[calCardStyles.headerBtn, { backgroundColor: BRAND.purple }]} onPress={() => setShowAddChooser(true)}>
+                  <I.Plus c="#fff" size={14} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Event</Text>
+                </TouchableOpacity>
+              )
+            )}
+          </View>
+
+          {/* Standalone AI results panel — kept separate from the pill row
+              above (it expands full-width below the toolbar, same spot the
+              old inline panel occupied) since AiConflictBanner's own pill
+              is rendered with showAiPanel forced false above to avoid
+              double-rendering the panel inline in the wrapping row. */}
+          {isParent && showAiPanel && (
+            <AiConflictBanner
+              hasConflicts={false}
+              isAnalyzing={isAnalyzing}
+              showAiPanel={showAiPanel}
+              aiResult={aiResult}
+              appliedSwaps={appliedSwaps}
+              onRunScan={runAiScan}
+              onClosePanel={() => setShowAiPanel(false)}
+              onApplySwap={handleApplySwap}
+              colors={colors} isDark={isDark}
+            />
+          )}
 
           {/* Member filter bar — matches the reference's persistent header
               row (always visible above the view tabs, not tucked inside
@@ -1425,7 +931,7 @@ export default function CalendarScreen() {
               {/* Mock's segmented control: equal-width tabs in one pill-shaped
                   bar, active tab lifted on a white/card chip — not a
                   scrolling row of separate pills. */}
-              <View style={{ flexDirection: 'row', marginHorizontal: 14, backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 12, padding: 3 }}>
+              <View style={{ flexDirection: 'row', marginHorizontal: 14, backgroundColor: colors.surface, borderRadius: 12, padding: 3 }}>
                 {([
                   { key: 'month' as const,  label: 'Month' },
                   { key: 'week' as const,   label: 'Week' },
@@ -1435,11 +941,11 @@ export default function CalendarScreen() {
                   <TouchableOpacity key={v.key} onPress={() => setViewMode(v.key)}
                     style={{
                       flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 9,
-                      backgroundColor: viewMode === v.key ? (isDark ? colors.card : '#fff') : 'transparent',
-                      shadowColor: '#000', shadowOpacity: viewMode === v.key && !isDark ? 0.06 : 0, shadowRadius: 3, shadowOffset: { width: 0, height: 1 },
+                      backgroundColor: viewMode === v.key ? colors.card : 'transparent',
+                      shadowColor: colors.textPrimary, shadowOpacity: viewMode === v.key && !isDark ? 0.06 : 0, shadowRadius: 3, shadowOffset: { width: 0, height: 1 },
                     }}>
                     <Text style={{ fontSize: TYPO.label, fontWeight: '700',
-                      color: viewMode === v.key ? (isDark ? colors.textPrimary : '#0F172A') : colors.textSecondary }}>
+                      color: viewMode === v.key ? colors.textPrimary : colors.textSecondary }}>
                       {v.label}
                     </Text>
                   </TouchableOpacity>
@@ -1448,102 +954,6 @@ export default function CalendarScreen() {
             </View>
           )}
 
-          {/* AI Conflict Banner — parent only, and only when there's
-              actually something to flag. Permanent "agent is active" chrome
-              read as prototype filler; a real conflict earns the space,
-              nothing to report shouldn't take up a row every time the
-              screen loads. */}
-          {isParent && dayEvents.some(e => e.conflict || e.helperStatus === 'rejected') && (
-            <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 6 }}>
-              <TouchableOpacity onPress={runAiScan} style={{
-                borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10,
-                backgroundColor: isDark ? '#0D1B2A' : '#0F2027',
-                flexDirection: 'row', alignItems: 'center', gap: 10,
-              }}>
-                <I.AlertTriangle c="#5EEAD4" size={15} />
-                <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>
-                  Schedule conflict detected
-                </Text>
-                {isAnalyzing
-                  ? <ActivityIndicator size={12} color="#5EEAD4" />
-                  : <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#5EEAD4' }}>Review →</Text>}
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* AI Results Panel */}
-          {showAiPanel && (
-            <View style={[sc.aiPanel, {
-              backgroundColor: isDark ? '#1E1B4B' : '#F5F0FF',
-              borderColor: isDark ? '#6D28D940' : 'rgba(146,97,199,0.25)',
-              marginHorizontal: 12, marginTop: 10,
-            }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 }}>
-                <I.Bot c={isDark ? '#C4B5FD' : BRAND.purple} size={15} />
-                <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '900', color: isDark ? '#C4B5FD' : BRAND.purple }} numberOfLines={1}>
-                  Schedule Conflicts & Recommendations
-                </Text>
-                <TouchableOpacity
-                  onPress={() => setShowAiPanel(false)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  style={{ flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16, backgroundColor: isDark ? 'rgba(167,139,250,0.18)' : 'rgba(146,97,199,0.12)' }}>
-                  <I.X c={isDark ? '#A78BFA' : BRAND.purple} size={11} />
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isDark ? '#A78BFA' : BRAND.purple }}>Close</Text>
-                </TouchableOpacity>
-              </View>
-              {isAnalyzing ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8 }}>
-                  <ActivityIndicator color={BRAND.purple} size="small" />
-                  <Text style={{ fontSize: TYPO.label, color: isDark ? '#A78BFA' : BRAND.purple, fontWeight: '700' }}>
-                    Scanning for time overlaps, missing drivers, and travel conflicts...
-                  </Text>
-                </View>
-              ) : aiResult ? (
-                <View style={{ gap: 8 }}>
-                  <Text style={{ fontSize: TYPO.label, color: isDark ? '#CBD5E1' : '#374151', lineHeight: 16 }}>{aiResult.summary}</Text>
-                  {aiResult.conflictsFound ? (
-                    <>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                        <I.Shield c="#F59E0B" size={13} />
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#D97706' }}>
-                          {aiResult.conflicts.length} Logistics Conflict(s) Detected:
-                        </Text>
-                      </View>
-                      {aiResult.conflicts.map((c, idx) => (
-                        <View key={idx} style={[sc.conflictCard, { backgroundColor: isDark ? '#1C1000' : '#FFF7ED' }]}>
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#FDE68A' : '#92400E', marginBottom: 3 }}>{c.description}</Text>
-                          <Text style={{ fontSize: TYPO.label, color: isDark ? '#F59E0B80' : '#D97706' }}>Affected: {c.eventsInvolved.join(' & ')}</Text>
-                          {c.suggestedFix && (
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, flexWrap: 'wrap', gap: 8 }}>
-                              <Text style={{ fontSize: TYPO.label, color: '#6EE7B7', fontWeight: '700', flex: 1 }}>
-                                💡 {c.suggestedFix}
-                              </Text>
-                              {c.recommendedDriverSwap && (
-                                appliedSwaps[`swap_${idx}`] ? (
-                                  <View style={sc.swapApplied}>
-                                    <Text style={sc.swapAppliedText}>✓ Swapped to {c.recommendedDriverSwap}</Text>
-                                  </View>
-                                ) : (
-                                  <TouchableOpacity style={sc.swapBtn} onPress={() => handleApplySwap(idx, c)}>
-                                    <I.Arrows c="#0F172A" size={11} />
-                                    <Text style={sc.swapBtnText}>⚡ Apply Swap to {c.recommendedDriverSwap}</Text>
-                                  </TouchableOpacity>
-                                )
-                              )}
-                            </View>
-                          )}
-                        </View>
-                      ))}
-                    </>
-                  ) : (
-                    <View style={[sc.allClearBox, { backgroundColor: isDark ? '#064E3B40' : '#F0FDF4' }]}>
-                      <Text style={sc.allClearText}>✅ No schedule conflicts! All drivers and events smoothly covered.</Text>
-                    </View>
-                  )}
-                </View>
-              ) : null}
-            </View>
-          )}
         </View>
 
         {/* My Schedule / All — kid/teen/senior scope toggle, not in the
@@ -1931,156 +1341,35 @@ export default function CalendarScreen() {
                     </View>
                   </View>
 
-                  {/* Event Card (swipeable + long-press to edit) */}
+                  {/* Event Card (swipeable + long-press to edit) — swipe-to-
+                      delete stays owned here (SwipeableEventCard), the card
+                      body itself now renders through the shared
+                      EventCardTimeline so this matches DaySlotView's card
+                      treatment 1:1. */}
                   <SwipeableEventCard
                     canDelete={canDelete}
                     onDelete={handleEvDelete}
                     onLongPress={() => setEditEv(ev)}
                     onPress={() => setDetailEv(ev)}
                   >
-                  <View style={[sc.evCard, { flex: 1, borderColor: isConf ? '#F59E0B60' : cardBord,
-                    backgroundColor: isConf ? (isDark ? '#1C1700' : '#FFFBEB') : cardBg,
-                    overflow: 'hidden' }]}>
-
-                    {/* Header: always visible */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                        <View style={[sc.catBadge, { backgroundColor: cs.badge, borderColor: cs.dot + '60' }]}>
-                          <Text style={[sc.catText, { color: cs.text }]}>{cat.toUpperCase()}</Text>
-                        </View>
-                        {isConf && <I.AlertTriangle c="#F59E0B" size={12} />}
-                        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B', flex: 1 }}>
-                          {ev.title}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {isConf && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4, marginTop: 2 }}>
-                        <I.AlertTriangle c="#F59E0B" size={12} />
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#F59E0B' }}>Scheduling Conflict Detected</Text>
-                      </View>
-                    )}
-
-                    {/* Always-visible: for / patient row — shows ALL assigned members */}
-                    {forLabel && (() => {
-                      const allAssignees = ev.memberIds?.length
-                        ? members.filter(m => ev.memberIds!.includes(m.id))
-                        : assignee ? [assignee] : [];
-                      return (
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 4 }}>
-                          {allAssignees.length > 0 ? (
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap', flex: 1 }}>
-                              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>{forLabel}:</Text>
-                              {allAssignees.map(m => (
-                                <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={24} ringColor={cs.dot} ringWidth={1.5} />
-                              ))}
-                            </View>
-                          ) : !isPast && isParent && pickerMembers.length > 0 ? (
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
-                              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>{forLabel}:</Text>
-                              {pickerMembers.map(k => (
-                                <TouchableOpacity key={k.id}
-                                  style={{ padding: 2 }}
-                                  onPress={() => updateEvent(ev.id, { memberId: k.id })}>
-                                  <FamilyAvatar name={k.name} emoji={k.emoji} avatarUrl={(k as any).avatarUrl} siblings={pickerMembers.map(x => x.name)} size={30} ringColor={ev.memberId === k.id ? BRAND.purple : colors.border} ringWidth={ev.memberId === k.id ? 2.5 : 1} bgColor={ev.memberId === k.id ? BRAND.purple + '20' : undefined} />
-                                </TouchableOpacity>
-                              ))}
-                            </View>
-                          ) : (
-                            <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>
-                              {forLabel}: <Text style={{ fontWeight: '700' }}>—</Text>
-                            </Text>
-                          )}
-                          {ev.location && (
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                              <I.MapPin c={isDark ? '#34D399' : '#059669'} size={11} />
-                              <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.label} fontWeight="600" />
-                            </View>
-                          )}
-                        </View>
-                      );
-                    })()}
-
-                    {/* Always-visible: category-specific extra fields */}
-                    {cat === 'Medical' && ev.doctorName && (
-                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-                        🩺 Doctor: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.doctorName}</Text>
-                      </Text>
-                    )}
-                    {cat === 'Study' && ev.subject && (
-                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-                        📖 Subject: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.subject}</Text>
-                      </Text>
-                    )}
-                    {cat === 'Sports' && ev.coachName && (
-                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-                        🏅 Coached by: <Text style={{ fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.coachName}</Text>
-                      </Text>
-                    )}
-                    {(cat === 'Ride' || cat === 'Sports') && (ev.pickupLocation || ev.dropLocation) && (
-                      <View style={{ flexDirection: 'row', gap: 12, marginTop: 2 }}>
-                        {ev.pickupLocation && (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                            <I.MapPin c={isDark ? '#34D399' : '#059669'} size={11} />
-                            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>From: </Text>
-                            <LocationLink addr={ev.pickupLocation} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.label} fontWeight="700" />
-                          </View>
-                        )}
-                        {ev.dropLocation && (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>→ To: </Text>
-                            <LocationLink addr={ev.dropLocation} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.label} fontWeight="700" />
-                          </View>
-                        )}
-                      </View>
-                    )}
-
-                    {/* Read-only helper/driver status now lives in the shared
-                        EventDetailSheet (opened on tap) — Accept/Decline/
-                        Take-Over/Swap are handled there so Calendar doesn't
-                        maintain a second copy of that logic. */}
-
-                    {/* Always-visible: notes */}
-                    {ev.notes && (
-                      <Text style={[sc.notesText, { backgroundColor: isDark ? '#1E1B4B' : '#F0F0FE', color: isDark ? '#C4B5FD' : '#4338CA', borderColor: isDark ? '#4338CA50' : '#C7D2FE' }]}>
-                        📝 "{ev.notes}"
-                      </Text>
-                    )}
-
-                    {/* Kid help/ride request awaiting parent approval — a
-                        separate concern from ride/helper-assignment (that
-                        part is handled by EventDetailSheet); kept inline
-                        since it gates whether a helper can even be assigned
-                        yet. */}
-                    {canApproveRequest && (
-                      <View style={[sc.approvalRow, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                          <I.AlertTriangle c="#F59E0B" size={12} />
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#F59E0B' }}>Request Pending</Text>
-                        </View>
-                        <TouchableOpacity style={[sc.approveBtn]}
-                          onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'pending' })}>
-                          <I.Check c="#fff" size={13} />
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Approve & Assign</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-
-                    {!isPast && isKid && ev.approvalPending && (
-                      <View style={[sc.approvalRow, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9', justifyContent: 'flex-start', gap: 6 }]}>
-                        <I.AlertTriangle c="#F59E0B" size={12} />
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#F59E0B' }}>Awaiting parent approval…</Text>
-                      </View>
-                    )}
-
-                    {/* Long-press hint (only on non-past events) */}
-                    {!isPast && (
-                      <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4, textAlign: 'right', opacity: 0.6 }}>
-                        Hold to edit{canDelete ? ' · Swipe ← to delete' : ''}{ev.helper ? ' · Tap for driver actions' : ''}
-                      </Text>
-                    )}
-                  </View>
+                    <EventCardTimeline
+                      ev={ev}
+                      members={members}
+                      colors={colors} isDark={isDark}
+                      isPast={isPast}
+                      isConf={!!isConf}
+                      cs={cs}
+                      forLabel={forLabel}
+                      pickerMembers={pickerMembers}
+                      isParent={isParent}
+                      isKid={isKid}
+                      canApproveRequest={!!canApproveRequest}
+                      onPress={() => setDetailEv(ev)}
+                      onLongPress={() => setEditEv(ev)}
+                      onAssignMember={(memberId) => updateEvent(ev.id, { memberId })}
+                      onApprove={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'pending' })}
+                      canDelete={canDelete}
+                    />
                   </SwipeableEventCard>
                 </View>
               );
@@ -2167,21 +1456,6 @@ export default function CalendarScreen() {
 const sc = StyleSheet.create({
   titleRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1 },
   title:        { fontSize: TYPO.heading, fontWeight: '900' },
-  headerBtn:    { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
-  headerBtnOutline: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5 },
-
-  aiBannerCard: { borderRadius: 24, padding: 14, borderWidth: 1, borderColor: '#6D28D940' },
-  aiIconBox:    { width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(139,92,246,0.3)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(167,139,250,0.3)' },
-  activePill:   { backgroundColor: 'rgba(16,185,129,0.3)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2, borderWidth: 1, borderColor: 'rgba(52,211,153,0.4)' },
-  aiScanBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
-  aiPanel:      { borderRadius: 24, borderWidth: 1, padding: 14, marginBottom: 4 },
-  conflictCard: { borderRadius: 18, borderWidth: 1, borderColor: '#F59E0B40', padding: 10 },
-  allClearBox:  { borderRadius: 14, borderWidth: 1, borderColor: '#10B98160', padding: 10 },
-  allClearText: { fontSize: TYPO.label, fontWeight: '700', color: '#059669', textAlign: 'center' },
-  swapBtn:      { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#10B981', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },
-  swapBtnText:  { fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' },
-  swapApplied:  { backgroundColor: '#059669', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 },
-  swapAppliedText: { fontSize: TYPO.label, fontWeight: '900', color: '#fff' },
 
   pill:         { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 22, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 7 },
   pillText:     { fontSize: TYPO.caption, fontWeight: '700' },
@@ -2189,23 +1463,14 @@ const sc = StyleSheet.create({
   timeLabel:    { position: 'absolute', left: -30, top: 14, alignItems: 'flex-end', width: 26 },
   timelineDot:  { position: 'absolute', left: -6, top: 18, width: 12, height: 12, borderRadius: 6, borderWidth: 3 },
 
-  evCard:       { borderRadius: 24, borderWidth: 1, padding: 14, gap: 8 },
-  catBadge:     { borderRadius: 20, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
-  catText:      { fontSize: TYPO.micro, fontWeight: '900', letterSpacing: 0.5 },
-
   assignRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, borderTopWidth: 1, paddingTop: 8, flexWrap: 'wrap' },
   assignChip:   { borderRadius: 12, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4 },
-
-  approvalRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, paddingTop: 8 },
-  approveBtn:   { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#059669', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7 },
 
   driverSection:{ borderTopWidth: 1, paddingTop: 8, gap: 6 },
   statusBadge:  { borderRadius: 20, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
   statusText:   { fontSize: TYPO.label, fontWeight: '800' },
   rejectedBox:  { borderRadius: 14, borderWidth: 1, padding: 10 },
   reassignBtn:  { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: BRAND.amber, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7, alignSelf: 'flex-end' as any },
-
-  notesText:    { fontSize: 11, fontWeight: '600', fontStyle: 'italic', borderRadius: 12, borderWidth: 1, padding: 8, lineHeight: 16 },
 
   emptyBox:     { borderRadius: 24, borderWidth: 1, padding: 48, alignItems: 'center', marginHorizontal: 14 },
 });

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { View, Text, Pressable, Alert } from 'react-native';
 import { ChevronUp, ChevronDown, MessageCircle, ArrowRightLeft, ShoppingBag, HeartHandshake, CheckCircle2 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
-import { BRAND } from '@/components/FamilyCubeLogo';
 import { useChoreStore } from '@/store/choreStore';
 import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
@@ -44,23 +43,26 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
 
   return (
     <View style={{
-      borderRadius: 14, borderWidth: 1.5, borderColor: BRAND.amber + '50',
-      backgroundColor: isDark ? BRAND.amber + '08' : '#FFFBEB', overflow: 'hidden',
+      borderRadius: 14, borderWidth: 1, borderColor: isDark ? colors.border : 'rgba(225,218,203,0.7)',
+      backgroundColor: isDark ? colors.card : '#FFFFFF', overflow: 'hidden',
+      shadowColor: isDark ? '#000' : 'rgba(80,60,40,0.10)',
+      shadowOpacity: isDark ? 0.4 : 1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
+      elevation: isDark ? 3 : 2,
     }}>
       <Pressable onPress={() => hasDetail && setExp(e => !e)}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingBottom: 8 }}>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            {si?.length > 0 && <ShoppingBag size={13} color={BRAND.amber} />}
+            {si?.length > 0 && <ShoppingBag size={13} color={colors.warning} />}
             <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
               {q.title}
             </Text>
           </View>
-          <Text style={{ fontSize: TYPO.label, color: BRAND.amber, marginTop: 2, fontWeight: '600' }}>
+          <Text style={{ fontSize: TYPO.label, color: colors.warning, marginTop: 2, fontWeight: '600' }}>
             → {assignee?.name ?? 'Partner'}{q.dueDate ? ` · Due ${q.dueDate}` : ''}
           </Text>
           {si?.length > 0 && !isExp && (
-            <Text style={{ fontSize: TYPO.micro, color: isDark ? '#2DD4BF' : '#0D9488', marginTop: 2 }}>
+            <Text style={{ fontSize: TYPO.micro, color: colors.parent, marginTop: 2 }}>
               {si.length} item{si.length !== 1 ? 's' : ''}{ss ? ` · ${ss}` : ''}
             </Text>
           )}
@@ -72,19 +74,19 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
       </Pressable>
 
       {isExp && (
-        <View style={{ borderTopWidth: 1, borderTopColor: BRAND.amber + '30', paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4, gap: 8 }}>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.warning + '30', paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4, gap: 8 }}>
           {q.description ? (
             <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{q.description}</Text>
           ) : null}
           {si?.length > 0 && (
             <View style={{ borderRadius: 10, borderWidth: 1,
-              borderColor: isDark ? BRAND.teal + '40' : '#99F6E4',
-              backgroundColor: isDark ? BRAND.teal + '10' : '#F0FDFA', overflow: 'hidden' }}>
+              borderColor: colors.parent + '40',
+              backgroundColor: isDark ? colors.parent + '10' : colors.parentLight, overflow: 'hidden' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
                 paddingHorizontal: 10, paddingVertical: 7,
-                borderBottomWidth: 1, borderBottomColor: isDark ? BRAND.teal + '30' : '#99F6E4' }}>
-                <ShoppingBag size={12} color={isDark ? '#2DD4BF' : '#0D9488'} />
-                <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#2DD4BF' : '#0D9488' }}>
+                borderBottomWidth: 1, borderBottomColor: colors.parent + '30' }}>
+                <ShoppingBag size={12} color={colors.parent} />
+                <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: colors.parent }}>
                   {ss ? `Shop at ${ss}` : 'Shopping List'}
                 </Text>
               </View>
@@ -92,9 +94,9 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
                 <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
                   paddingHorizontal: 10, paddingVertical: 6,
                   borderBottomWidth: i < si.length - 1 ? 1 : 0,
-                  borderBottomColor: isDark ? BRAND.teal + '20' : '#CCFBF1' }}>
+                  borderBottomColor: colors.parent + '20' }}>
                   <View style={{ width: 14, height: 14, borderRadius: 7, borderWidth: 1.5,
-                    borderColor: isDark ? '#2DD4BF' : '#0D9488' }} />
+                    borderColor: colors.parent }} />
                   <Text style={{ fontSize: TYPO.label, color: colors.textPrimary }}>{item}</Text>
                 </View>
               ))}
@@ -121,19 +123,19 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
       <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12, paddingTop: 4 }}>
         <Pressable onPress={sendNudge}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-            backgroundColor: isDark ? '#1C1000' : '#FEF3C7',
-            borderWidth: 1.5, borderColor: BRAND.amber + '60',
+            backgroundColor: isDark ? colors.warning + '18' : colors.warningLight,
+            borderWidth: 1.5, borderColor: colors.warning + '60',
             borderRadius: 10, paddingVertical: 8 }}>
-          <MessageCircle size={13} color={BRAND.amber} />
-          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.amber }}>Nudge</Text>
+          <MessageCircle size={13} color={colors.warning} />
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warning }}>Nudge</Text>
         </Pressable>
         <Pressable onPress={reclaim}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-            backgroundColor: BRAND.purple + '18',
-            borderWidth: 1.5, borderColor: BRAND.purple + '50',
+            backgroundColor: colors.primary + '18',
+            borderWidth: 1.5, borderColor: colors.primary + '50',
             borderRadius: 10, paddingVertical: 8 }}>
-          <ArrowRightLeft size={13} color={BRAND.purple} />
-          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>Reclaim</Text>
+          <ArrowRightLeft size={13} color={colors.primary} />
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.primary }}>Reclaim</Text>
         </Pressable>
       </View>
     </View>

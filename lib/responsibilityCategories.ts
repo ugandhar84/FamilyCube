@@ -135,6 +135,25 @@ export function resolveDomainFromLooseLabel(label: string): string {
   return DOMAIN_ALIASES[lower] ?? lower;
 }
 
+// Reverse of DOMAIN_ALIASES' event-relevant entries — maps a taxonomy
+// domain slug (what extractResponsibility/the AI returns) back to this
+// app's own EventCategory vocabulary, for voice/text intake feeding
+// EventFormModal. Domains with no natural EventCategory (household,
+// financial, social-that-isn't-a-birthday, other) fall through to 'Other'
+// by the caller rather than being force-mapped here.
+const DOMAIN_TO_EVENT_CATEGORY: Record<string, string> = {
+  transport: 'Ride',
+  medical:   'Medical',
+  school:    'Study',
+  sports:    'Sports',
+  work:      'Work',
+};
+
+/** Resolve a taxonomy domain slug (e.g. "transport") back to this app's EventCategory (e.g. "Ride"). Returns null when the domain has no natural event-category equivalent — caller should fall back to 'Other' or a Quest instead. */
+export function eventCategoryFromDomain(domain: string): string | null {
+  return DOMAIN_TO_EVENT_CATEGORY[domain.toLowerCase().trim()] ?? null;
+}
+
 /** Subcategories for one domain, in sort order — feeds the optional subcategory refinement chips. */
 export async function fetchSubcategoriesForDomain(domain: string): Promise<ResponsibilityCategory[]> {
   const grouped = await fetchCategoriesByDomain();
@@ -230,6 +249,11 @@ export async function previewKidChoreAssignment(params: {
  */
 export async function applyAssignment(params: {
   taskId: string; taskType: 'chore' | 'event' | 'errand'; familyId: string; category: string;
+  // 'helper' targets the event's accompanying-adult field, 'driver' targets
+  // the separate transport-person field (Study category only, when the
+  // tutor and the driver are two different people) — instead of the
+  // default who-the-event-is-for. Both only valid when taskType is 'event'.
+  targetField?: 'assignee' | 'helper' | 'driver';
 }): Promise<AssignmentSuggestion | null> {
   try {
     const { data, error } = await supabase.functions.invoke('process-task-assignment', {

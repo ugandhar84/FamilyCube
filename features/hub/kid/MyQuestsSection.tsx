@@ -16,7 +16,7 @@ const VISIBLE_LIMIT = 6;
 // which is why "approved" never appears in this list.
 export function MyQuestsSection({
   todoQuests, inProgressQuests, reviewQuests, poolQuests, cancelledToday, declinedQuests = [], allQuests,
-  active, members, colors, isDark, title = 'My Quests',
+  active, members, colors, isDark, title = 'My Chores',
   onClaim, onStart, onSubmit, onAcceptGpQuest, onDeclineGpQuest,
 }: {
   todoQuests: Quest[]; inProgressQuests: Quest[]; reviewQuests: Quest[]; poolQuests: Quest[]; cancelledToday: Quest[];
@@ -65,11 +65,11 @@ export function MyQuestsSection({
               )}
             </View>
             <Text style={{ fontSize: KID.sub, color: colors.textSecondary, marginTop: 2 }}>
-              {combined.length > 0 ? `${combined.length} quest${combined.length !== 1 ? 's' : ''} — what to do first` : 'All caught up'}
+              {combined.length > 0 ? `${combined.length} chore${combined.length !== 1 ? 's' : ''} — what to do first` : 'All caught up'}
             </Text>
           </Pressable>
           <Pressable onPress={() => router.push('/(tabs)/quests')}>
-            <Text style={{ fontSize: KID.sub, fontWeight: '700', color: BRAND.purple }}>All Quests →</Text>
+            <Text style={{ fontSize: KID.sub, fontWeight: '700', color: BRAND.purple }}>All Chores →</Text>
           </Pressable>
           <Pressable onPress={() => setExpanded(e => !e)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             {expanded ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
@@ -85,7 +85,7 @@ export function MyQuestsSection({
                 <Trophy size={40} color={BRAND.purple} />
                 <Text style={{ fontSize: KID.title, fontWeight: '900', color: BRAND.purple, marginTop: 4 }}>All caught up!</Text>
                 <Text style={{ fontSize: KID.sub, color: colors.textTertiary, textAlign: 'center' }}>
-                  {poolQuests.length > 0 ? `${poolQuests.length} bounty quests up for grabs 💰` : 'Complete quests to earn coins'}
+                  {poolQuests.length > 0 ? `${poolQuests.length} bounty chores up for grabs 💰` : 'Complete chores to earn coins'}
                 </Text>
               </Pressable>
             ) : visible.map(q => (

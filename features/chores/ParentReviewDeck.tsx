@@ -7,9 +7,10 @@
  */
 import React, { useMemo, useState, useEffect } from 'react';
 import {
-  View, Text, Pressable, ScrollView, TextInput, Alert,
+  View, Text, Pressable, TextInput, Alert,
   ActivityIndicator, Image,
 } from 'react-native';
+import { CheckCircle2 } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -433,12 +434,14 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
   const totalCount = pendingSubmissions.length + pendingCashOuts.length;
 
   if (totalCount === 0) {
+    // Matches HouseholdBacklogSection's empty state — compact single-line
+    // treatment, not a large heading+subtext box, so every Hub section's
+    // "nothing here" moment reads the same.
     return (
-      <View style={{ paddingVertical: 32, alignItems: 'center', paddingHorizontal: 24 }}>
-        <Text style={{ fontSize: 36, marginBottom: 10 }}>✅</Text>
-        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary, textAlign: 'center', marginBottom: 4 }}>All caught up!</Text>
-        <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center', lineHeight: 20 }}>
-          No chores waiting for your review. Submissions will show up here.
+      <View style={{ alignItems: 'center', paddingVertical: 12, gap: 4 }}>
+        <CheckCircle2 size={18} color={colors.textTertiary} />
+        <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center' }}>
+          All caught up
         </Text>
       </View>
     );
@@ -446,7 +449,13 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
 
   return (
     <>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+      {/* Plain View, not a ScrollView — this only ever renders nested inside
+          ChoreReviewSection's own SectionCard, which already sits inside the
+          Hub's outer ScrollView. A second ScrollView here caused scroll-
+          inside-scroll AND double horizontal padding (this component's own
+          16px on top of the section's), which visibly narrowed these cards
+          versus the section header and every sibling card above them. */}
+      <View>
 
         {/* 1. Child chore submissions — same card design as the (removed)
              duplicate that used to also show in Action Needed, so a
@@ -454,10 +463,13 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
              bearing submissions (a GP's purchase receipt awaiting
              reimbursement) keep the richer ReviewCard — QuestApprovalCard
              has no receipt/reimbursement UI at all, so routing those
-             through it would silently drop that feature. */}
+             through it would silently drop that feature. No "Waiting for
+             Review" sub-header here — when this deck renders inside
+             ChoreReviewSection (the Hub), that section's own header
+             ("Chore Reviews · N pending approval") already says the same
+             thing; repeating it directly above the list read as a bug. */}
         {pendingSubmissions.length > 0 && (
           <>
-            <SectionHeader emoji="📋" title="Waiting for Review" count={pendingSubmissions.length} colors={colors} />
             {pendingSubmissions.map(task => (
               task.receiptPhotoUrl || task.receiptAmount != null ? (
                 <ReviewCard
@@ -494,7 +506,7 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
             ))}
           </>
         )}
-      </ScrollView>
+      </View>
 
       <RedoSheet
         task={redoTask} visible={redoOpen}

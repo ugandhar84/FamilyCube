@@ -1,7 +1,6 @@
 import { View, Text, Pressable } from 'react-native';
 import { Sparkles, Footprints, Home, Backpack, AlertOctagon } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
-import { BRAND } from '@/components/FamilyCubeLogo';
 import { SectionCard } from '../hubComponents';
 import { decodeRideLate, SUPPLIES_PREFIX } from '../KidModals';
 import { InlineReplyCard } from './InlineReplyCard';
@@ -34,7 +33,7 @@ type Severity = keyof typeof SEVERITY;
 function severityColor(s: Severity, colors: any): string {
   if (s === 'emergency') return colors.danger;
   if (s === 'urgent') return colors.danger;
-  if (s === 'soon') return BRAND.amber;
+  if (s === 'soon') return colors.warning;
   return colors.textTertiary;
 }
 
@@ -65,16 +64,16 @@ function CheckinRow({ req, kidName, colors, isDark, active, approveRequest }: {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
       backgroundColor: isDark ? '#1e293b' : '#F0FDF4', borderRadius: 14, padding: 12,
-      borderLeftWidth: 3, borderLeftColor: BRAND.teal }}>
-      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: BRAND.teal + '20', alignItems: 'center', justifyContent: 'center' }}>
-        <CheckinIcon size={17} color={BRAND.teal} />
+      borderLeftWidth: 3, borderLeftColor: colors.parent }}>
+      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.parent + '20', alignItems: 'center', justifyContent: 'center' }}>
+        <CheckinIcon size={17} color={colors.parent} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.teal }}>{kidName}</Text>
+        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.parent }}>{kidName}</Text>
         <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }} numberOfLines={2}>{req.detail}</Text>
       </View>
       <Pressable onPress={() => approveRequest(req.id, active.id)}
-        style={{ backgroundColor: BRAND.teal, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 }}>
+        style={{ backgroundColor: colors.parent, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 }}>
         <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Got it</Text>
       </Pressable>
     </View>
@@ -145,7 +144,7 @@ export function ActionNeededSection({
     const isQuestion   = req.type === 'question';
     const isMedical    = req.type === 'medication';
     const isCheckin    = req.type === 'checkin';
-    const accent = isMedical ? colors.danger : isVehicleIssue ? colors.danger : isCashOut ? BRAND.amber : isGrocery ? MONEY_GREEN : isSupplies ? INDIGO_ACCENT : isPermission ? BRAND.amber : isQuestion ? BRAND.purple : BRAND.teal;
+    const accent = isMedical ? colors.danger : isVehicleIssue ? colors.danger : isCashOut ? colors.warning : isGrocery ? MONEY_GREEN : isSupplies ? INDIGO_ACCENT : isPermission ? colors.warning : isQuestion ? colors.primary : colors.parent;
     const age = ageMinutes(req.requestedAt);
 
     // A reported vehicle issue (TeenView's "Report Vehicle Issue") also uses
@@ -264,7 +263,8 @@ export function ActionNeededSection({
     <View style={{ paddingHorizontal: 16 }}>
       <SectionCard
         icon={topSeverity === 'emergency' ? <AlertOctagon size={16} color={colors.danger} /> : <Sparkles size={16} color={colors.danger} />}
-        title="Action Needed" badge={actionCount} badgeColor={colors.danger}
+        title="Action Needed" accent={colors.danger} badge={actionCount}
+        badgeLabel="Pending" badgeColor={colors.danger}
         collapsible defaultExpanded
         colors={colors} isDark={isDark}>
         <View style={{ gap: 10 }}>

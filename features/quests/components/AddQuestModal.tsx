@@ -36,16 +36,21 @@ function wordMatches(haystack: string, needle: string): boolean {
 }
 
 // ─── Add Quest Modal ──────────────────────────────────────────────────────────
-export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestType }: {
+export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestType, prefill }: {
   visible: boolean; onClose: () => void; activeMemberId: string; defaultQuestType?: QuestType;
+  // Seeds initial state from AI-extracted data (VoiceIntakeReviewSheet's
+  // "Edit in full form" handoff) — only covers what the AI response
+  // actually produces; every other field keeps its normal default so the
+  // rest of the form behaves exactly as if a parent had started fresh.
+  prefill?: { title?: string; coins?: number; assignedToId?: string; photoRequired?: boolean; dueDate?: string };
 }) {
   const { colors, isDark } = useTheme();
   const { addQuest, createParticipants } = useQuestStore();
   const members = useFamilyStore(s => s.members);
   const kids    = members.filter(m => m.role === 'kid');
 
-  const [title,        setTitle]        = useState('');
-  const [coins,        setCoins]        = useState('30');
+  const [title,        setTitle]        = useState(prefill?.title ?? '');
+  const [coins,        setCoins]        = useState(prefill?.coins !== undefined ? String(prefill.coins) : '30');
   const [category,     setCategory]     = useState<QuestCategory>('Other');
   // category always has a real value (defaults to 'Kitchen'), but that
   // default was never a deliberate choice — process-task-assignment
@@ -53,15 +58,17 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   // unexamined default risks a quest going out with a category that
   // doesn't actually match what it is. Require an explicit tap.
   const [categoryTouched, setCategoryTouched] = useState(false);
-  const [assignIds,    setAssignIds]    = useState<string[]>([]);
+  const [assignIds,    setAssignIds]    = useState<string[]>(prefill?.assignedToId ? [prefill.assignedToId] : []);
   const [isPool,       setIsPool]       = useState(false);
   const [maxClaimants, setMaxClaimants] = useState<number>(1); // pool: how many kids can claim
-  const [photoReq,     setPhotoReq]     = useState(false);
+  const [photoReq,     setPhotoReq]     = useState(prefill?.photoRequired ?? false);
   const [desc,         setDesc]         = useState('');
   const [difficulty,   setDifficulty]   = useState<QuestDifficulty | ''>('');
   const [bonusCoins,   setBonusCoins]   = useState('');
   const [saving,       setSaving]       = useState(false);
   const [titleFocused, setTitleFocused] = useState(false);
+  const [titleTouched, setTitleTouched] = useState(false);
+  const [descTouched,  setDescTouched]  = useState(false);
   const [isAdultTask,       setIsAdultTask]       = useState(false);
   const [customCategories,  setCustomCategories]  = useState<CustomCategory[]>([]);
   const [customSuggestions, setCustomSuggestions] = useState<{ title: string; hint: string }[]>([]);
@@ -246,9 +253,9 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
     setSubcategoryId(null);
   };
 
-  // Due date/time — default to tomorrow 6 PM
+  // Due date/time — default to tomorrow 6 PM, or the AI-extracted date if prefilled
   const defaultDue = () => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); return d; };
-  const [dueDate,      setDueDate]      = useState<Date>(defaultDue);
+  const [dueDate,      setDueDate]      = useState<Date>(() => prefill?.dueDate ? new Date(prefill.dueDate + 'T18:00:00') : defaultDue());
   const [showDatePick, setShowDatePick] = useState(false);
   const [showTimePick, setShowTimePick] = useState(false);
 
@@ -456,10 +463,10 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
               <View style={{ flex: 1, marginRight: 12 }}>
                 <Text style={[aq.title, { color: colors.textPrimary }]}>
-                  {defaultQuestType === 'grandparent_quest' ? '👴 Sponsor a Quest' : 'New Quest'}
+                  {defaultQuestType === 'grandparent_quest' ? '👴 Sponsor a Chore' : 'New Chore'}
                 </Text>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: BRAND.purple }}>
-                  {defaultQuestType === 'grandparent_quest' ? 'Create a special quest for the grandkids' : 'Assign a chore, bounty, or task'}
+                  {defaultQuestType === 'grandparent_quest' ? 'Create a special chore for the grandkids' : 'Assign a chore, bounty, or task'}
                 </Text>
               </View>
               <TouchableOpacity
@@ -481,13 +488,22 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
             {/* Title */}
             <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
             <TextInput
-              style={[aq.input, { color: colors.textPrimary, borderColor: title.trim() ? colors.border : '#EF444480', backgroundColor: colors.surface }]}
+              style={[aq.input, { color: colors.textPrimary,
+                // Neutral border until the parent has actually left this
+                // field empty at least once — required-but-untouched
+                // shouldn't read as an error before anyone's had a chance
+                // to type anything. colors.surface (tan) against the
+                // sheet's white colors.card background gives the field its
+                // own visible shape, with borderMed (28% tint) instead of
+                // the near-invisible 15%-opacity default border.
+                borderColor: (!title.trim() && titleTouched) ? colors.danger : colors.borderMed,
+                backgroundColor: colors.surface }]}
               placeholder={routineType === 'shopping' ? 'e.g. Grocery run, Pick up dry cleaning…' : 'e.g. Wash the dishes, Take out trash…'}
               placeholderTextColor={colors.textTertiary}
               value={title}
               onChangeText={setTitle}
               onFocus={() => setTitleFocused(true)}
-              onBlur={() => setTitleFocused(false)}
+              onBlur={() => { setTitleFocused(false); setTitleTouched(true); }}
               returnKeyType="next"
             />
             {/* Dynamic suggestion pills — always visible */}
@@ -652,16 +668,19 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               <Text style={{ fontWeight: '400', color: colors.textTertiary }}>what needs to be done</Text>
             </Text>
             <TextInput
-              style={[aq.input, aq.descInput, { color: colors.textPrimary, borderColor: desc.trim() ? colors.border : '#EF444480', backgroundColor: colors.surface }]}
+              style={[aq.input, aq.descInput, { color: colors.textPrimary,
+                borderColor: (!desc.trim() && descTouched) ? colors.danger : colors.borderMed,
+                backgroundColor: colors.surface }]}
               placeholder="Describe exactly what's expected so there's no confusion…"
               placeholderTextColor={colors.textTertiary}
               value={desc}
               onChangeText={t => setDesc(t.slice(0, 150))}
+              onBlur={() => setDescTouched(true)}
               multiline
               numberOfLines={3}
               textAlignVertical="top"
             />
-            <Text style={{ fontSize: TYPO.micro, color: desc.length > 130 ? '#EF4444' : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 12 }}>
+            <Text style={{ fontSize: TYPO.micro, color: desc.length > 130 ? colors.danger : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 12 }}>
               {desc.length}/150
             </Text>
 
@@ -789,7 +808,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                         <View key={idx} style={{ marginBottom: 8 }}>
                           <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 4 }}>
                             <TextInput
-                              style={[aq.input, { flex: 2.5, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'name' ? BRAND.purple : colors.border, marginBottom: 0 }]}
+                              style={[aq.input, { flex: 2.5, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'name' ? BRAND.purple : colors.borderMed, marginBottom: 0 }]}
                               placeholder="Item name" placeholderTextColor={colors.textTertiary}
                               value={line.name}
                               onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, name: v } : l))}
@@ -797,7 +816,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                               onBlur={() => { setFocusedLineIdx(null); setFocusedField(null); }}
                             />
                             <TextInput
-                              style={[aq.input, { flex: 1, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border, marginBottom: 0 }]}
+                              style={[aq.input, { flex: 1, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed, marginBottom: 0 }]}
                               placeholder="Qty" placeholderTextColor={colors.textTertiary}
                               value={line.qty}
                               onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, qty: v } : l))}
@@ -817,7 +836,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                             </ScrollView>
                           )}
                           <TextInput
-                            style={[aq.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'store' ? BRAND.purple : colors.border, marginBottom: 0 }]}
+                            style={[aq.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'store' ? BRAND.purple : colors.borderMed, marginBottom: 0 }]}
                             placeholder="🏪 Store (e.g. Walmart)" placeholderTextColor={colors.textTertiary}
                             value={line.store}
                             onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, store: v } : l))}
@@ -1333,7 +1352,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               {saving
                 ? <ActivityIndicator color="#fff" size="small" />
                 : <>
-                    <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>Add Quest to Board</Text>
+                    <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>Add Chore to Board</Text>
                     <Text style={{ color: '#A7F3D0', fontSize: TYPO.label, marginTop: 2 }}>
                       Due {fmtDateLabel(dueDate)} at {fmtTimeLabel(dueDate)}
                     </Text>

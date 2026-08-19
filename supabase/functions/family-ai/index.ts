@@ -30,7 +30,7 @@ const DEEPSEEK_URL  = 'https://api.deepseek.com/chat/completions';
 
 // ─── Model calls ──────────────────────────────────────────────────────────────
 
-async function callGemini(prompt: string, imageBase64?: string, imageMimeType?: string, jsonMode = true): Promise<string> {
+async function callGemini(prompt: string, imageBase64?: string, imageMimeType?: string, jsonMode = true, temperature?: number): Promise<string> {
   if (!GEMINI_KEY) throw new Error('GEMINI_API_KEY not configured');
   const parts: unknown[] = [];
   if (imageBase64) parts.push({ inlineData: { mimeType: imageMimeType ?? 'image/jpeg', data: imageBase64 } });
@@ -40,7 +40,10 @@ async function callGemini(prompt: string, imageBase64?: string, imageMimeType?: 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts }],
-      ...(jsonMode ? { generationConfig: { responseMimeType: 'application/json' } } : {}),
+      generationConfig: {
+        ...(jsonMode ? { responseMimeType: 'application/json' } : {}),
+        ...(temperature !== undefined ? { temperature } : {}),
+      },
     }),
   });
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${await res.text()}`);
@@ -48,7 +51,7 @@ async function callGemini(prompt: string, imageBase64?: string, imageMimeType?: 
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 }
 
-async function callDeepSeek(prompt: string, jsonMode = true): Promise<string> {
+async function callDeepSeek(prompt: string, jsonMode = true, temperature = 0.7): Promise<string> {
   if (!DEEPSEEK_KEY) throw new Error('DEEPSEEK_API_KEY not configured');
   const res = await fetch(DEEPSEEK_URL, {
     method: 'POST',
@@ -56,7 +59,7 @@ async function callDeepSeek(prompt: string, jsonMode = true): Promise<string> {
     body: JSON.stringify({
       model: 'deepseek-chat',
       messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
+      temperature,
       ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
     }),
   });
@@ -67,11 +70,15 @@ async function callDeepSeek(prompt: string, jsonMode = true): Promise<string> {
   return text;
 }
 
-async function callAI(prompt: string, jsonMode = true): Promise<string> {
-  try { return await callDeepSeek(prompt, jsonMode); }
+// temperature default (0.7) matches every existing caller's prior behavior
+// unchanged — only extractResponsibility passes a low value, since
+// classification (event vs quest, category) needs to be deterministic, not
+// creative, and 0.7 was letting the same phrasing flip-flop between runs.
+async function callAI(prompt: string, jsonMode = true, temperature?: number): Promise<string> {
+  try { return await callDeepSeek(prompt, jsonMode, temperature ?? 0.7); }
   catch (err) {
     console.warn('[family-ai] DeepSeek failed, falling back to Gemini:', (err as Error).message);
-    return callGemini(prompt, undefined, undefined, jsonMode);
+    return callGemini(prompt, undefined, undefined, jsonMode, temperature);
   }
 }
 
@@ -465,13 +472,22 @@ async function getCategoryDomains(): Promise<{ taskDomains: string[]; errandSubc
 // process-task-assignment/process-kid-chore-assignment/resolve-and-assign
 // actually validate against, instead of drifting independently.
 async function extractResponsibility(body: Record<string, unknown>) {
-  const { text, existingMembers } = body as { text?: string; existingMembers?: unknown[] };
+  const { text, existingMembers, today: todayIn } = body as { text?: string; existingMembers?: unknown[]; today?: string };
   const { taskDomains, errandSubcategories } = await getCategoryDomains();
+  const today = todayIn ?? new Date().toISOString().slice(0, 10);
+  const todayWeekday = new Date(today + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' });
 
   const prompt = `You are the AI intake agent for a family responsibility engine.
 Extract structured task/event and errand information from this family input. It may
 contain ONE, BOTH, or NEITHER of an event/task and an errand — do not invent one that
 isn't there.
+
+Today is ${todayWeekday}, ${today}. Resolve every relative date/time reference
+("tonight", "tomorrow", "this weekend", "next Monday", "after practice") against
+this — never leave a due date unresolved just because it wasn't a literal
+calendar date. "This weekend" -> the upcoming Saturday. "Tonight"/no day
+mentioned but clearly today -> today's date. Always use the correct year;
+never return a date in the past.
 
 Family members (for matching "for Emma" type references): ${JSON.stringify(existingMembers ?? [])}
 
@@ -481,7 +497,27 @@ Return JSON: {
   task: null | {
     title: string,
     category: one of ${JSON.stringify(taskDomains)} (pick the closest match, never invent a new value),
-    startAt: string | null (ISO 8601 if a date/time was mentioned, else null),
+    kind: "event" | "quest" — decide using this rule, in order:
+      1. Does the input mention a driver, ride, pickup, or drop-off ("pick up X from Y",
+         "drop X at Y", "drive X to Y")? -> ALWAYS "event", regardless of whether a clock
+         time is stated. A pickup/drop-off is inherently transport-scheduled even when the
+         exact minute is implied ("after practice") rather than spelled out.
+      2. Otherwise, is there a specific date/time or an appointment (doctor, practice,
+         lesson, school)? -> "event".
+      3. Otherwise, is it a choreable to-do with no fixed time (household chores, "clean
+         the garage", "walk the dog", "take out the trash")? -> "quest".
+      Worked examples (do not deviate from these):
+        "Pick up Maya from soccer at 5" -> kind: "event", category: "transport"
+        "Someone grab Maya after practice" -> kind: "event", category: "transport"
+        "Dentist appointment Thursday 2pm" -> kind: "event", category: "medical"
+        "Clean the garage this weekend" -> kind: "quest", category: "household"
+        "Take out the trash tonight" -> kind: "quest", category: "household"
+    startAt: string | null — for kind "event": ISO 8601 date+time if a clock
+      time was mentioned or implied, else just the date at midnight. For kind
+      "quest": this is the DUE DATE — always resolve a fuzzy reference
+      ("this weekend", "tonight", "by Friday") into a real ISO date using
+      today's date above; only leave this null if truly no timing was implied
+      at all (e.g. "clean the garage" with no timeframe whatsoever).
     requirements: string[] (things to bring/prepare, empty array if none),
     forMemberName: string | null (which family member this is for/about, if named)
   },
@@ -493,7 +529,11 @@ Return JSON: {
   ambiguous: boolean (true if the input is unclear enough that a human should confirm before creating anything)
 }`;
 
-  const text2 = await callAI(prompt);
+  // Low temperature — this is a classification task (event vs quest, which
+  // category), not a creative one. The default 0.7 was letting nearly
+  // identical phrasing ("pick up Maya from soccer at 5") flip-flop between
+  // "event" and "quest" across calls.
+  const text2 = await callAI(prompt, true, 0.1);
   return parseJson(text2, { task: null, errand: null, ambiguous: true });
 }
 

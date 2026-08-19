@@ -87,7 +87,7 @@ export function InlineReplyCard({ req, kidName, isPermission, isQuestion, isMedi
             <Pressable
               onPress={() => onDecline(reply.trim())}
               style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                backgroundColor: isDark ? `${colors.danger}20` : '#FEF2F2',
+                backgroundColor: isDark ? `${colors.danger}20` : colors.dangerLight,
                 borderWidth: 1.5, borderColor: `${colors.danger}30`,
                 paddingVertical: 11, borderRadius: 12 }}>
               <X size={14} color={colors.danger} />

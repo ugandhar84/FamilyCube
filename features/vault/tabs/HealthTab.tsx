@@ -232,8 +232,8 @@ function AddMedModal({ visible, onClose, onSave, members, colors, isDark }: {
           <TouchableOpacity onPress={handleSave}
             style={[aStyles.saveBtn, { backgroundColor: catColor }]} disabled={saving}>
             {saving
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save Medication</Text>}
+              ? <ActivityIndicator size="small" color={colors.textInverse} />
+              : <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textInverse }}>Save Medication</Text>}
           </TouchableOpacity>
         </View>
       }
@@ -455,7 +455,7 @@ function AddMedModal({ visible, onClose, onSave, members, colors, isDark }: {
                             <View style={{ position: 'absolute', bottom: -2, right: -2,
                               width: 16, height: 16, borderRadius: 8,
                               backgroundColor: mc, alignItems: 'center', justifyContent: 'center' }}>
-                              <Check size={9} color="#fff" />
+                              <Check size={9} color={colors.textInverse} />
                             </View>
                           )}
                         </View>
@@ -625,8 +625,8 @@ function AddVaxModal({ visible, onClose, onSave, members, colors, isDark }: {
           <TouchableOpacity onPress={handleSave}
             style={[aStyles.saveBtn, { backgroundColor: BRAND.teal }]} disabled={saving}>
             {saving
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save Vaccine</Text>}
+              ? <ActivityIndicator size="small" color={colors.textInverse} />
+              : <Text style={{ fontSize: 14, fontWeight: '900', color: colors.textInverse }}>Save Vaccine</Text>}
           </TouchableOpacity>
         </View>
       }
@@ -837,7 +837,7 @@ function AddVaxModal({ visible, onClose, onSave, members, colors, isDark }: {
                             <View style={{ position: 'absolute', bottom: -2, right: -2,
                               width: 16, height: 16, borderRadius: 8,
                               backgroundColor: mc, alignItems: 'center', justifyContent: 'center' }}>
-                              <Check size={9} color="#fff" />
+                              <Check size={9} color={colors.textInverse} />
                             </View>
                           )}
                         </View>
@@ -1530,7 +1530,7 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
           onPress={load}
           style={{ alignSelf: 'center', backgroundColor: BRAND.rose, borderRadius: 10, paddingHorizontal: 20, paddingVertical: 8 }}
         >
-          <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>Retry</Text>
+          <Text style={{ color: colors.textInverse, fontSize: 13, fontWeight: '800' }}>Retry</Text>
         </TouchableOpacity>
       </View>
     </SCard>
@@ -1562,7 +1562,7 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
               borderRadius: 20, overflow: 'hidden',
               borderWidth: 1.5,
               borderColor: isTaken ? BRAND.emerald + '50' : catColor + '30',
-              backgroundColor: isDark ? colors.card : '#FFFFFF',
+              backgroundColor: colors.card,
             }}>
               {/* Color stripe */}
               <View style={{ height: 4, backgroundColor: isTaken ? BRAND.emerald : catColor }} />
@@ -1607,9 +1607,9 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
                     borderWidth: isTaken ? 1.5 : 0,
                     borderColor: isTaken ? BRAND.emerald + '50' : 'transparent',
                   }}>
-                  <Check size={16} color={isTaken ? BRAND.emerald : '#fff'} />
+                  <Check size={16} color={isTaken ? BRAND.emerald : colors.textInverse} />
                   <Text style={{ fontSize: 15, fontWeight: '900',
-                    color: isTaken ? BRAND.emerald : '#fff' }}>
+                    color: isTaken ? BRAND.emerald : colors.textInverse }}>
                     {isTaken ? 'Marked as Taken' : 'Mark as Taken'}
                   </Text>
                 </TouchableOpacity>
@@ -1756,7 +1756,7 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
               />
               <TouchableOpacity onPress={() => askAI()} disabled={aiLoading || !aiQuery.trim()}
                 style={[h.aiSendBtn, { backgroundColor: BRAND.purple, opacity: aiQuery.trim() ? 1 : 0.35 }]}>
-                {aiLoading ? <ActivityIndicator size="small" color="#fff" /> : <Send size={16} color="#fff" />}
+                {aiLoading ? <ActivityIndicator size="small" color={colors.textInverse} /> : <Send size={16} color={colors.textInverse} />}
               </TouchableOpacity>
             </View>
 
@@ -1788,12 +1788,12 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
                       <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
                         {aiShared
                           ? <View style={[h.sharedBtn, { backgroundColor: BRAND.emerald }]}>
-                              <Check size={13} color="#fff" />
-                              <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>Posted to Family Chat</Text>
+                              <Check size={13} color={colors.textInverse} />
+                              <Text style={{ fontSize: 12, fontWeight: '900', color: colors.textInverse }}>Posted to Family Chat</Text>
                             </View>
                           : <TouchableOpacity onPress={shareAiToChat} style={[h.sharedBtn, { backgroundColor: BRAND.purple }]}>
-                              <MessageSquare size={13} color="#fff" />
-                              <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>Share with Family</Text>
+                              <MessageSquare size={13} color={colors.textInverse} />
+                              <Text style={{ fontSize: 12, fontWeight: '900', color: colors.textInverse }}>Share with Family</Text>
                             </TouchableOpacity>}
                       </View>
                     </>}
@@ -1877,7 +1877,7 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
                 <SlidersHorizontal size={17} color={activeCount ? accentColor : colors.textSecondary} />
                 {activeCount > 0 && (
                   <View style={[hf.filterBadge, { backgroundColor: accentColor }]}>
-                    <Text style={{ fontSize: 9, fontWeight: '900', color: '#fff' }}>{activeCount}</Text>
+                    <Text style={{ fontSize: 9, fontWeight: '900', color: colors.textInverse }}>{activeCount}</Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -2169,6 +2169,16 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
         onSave={addVax} members={members} colors={colors} isDark={isDark} />
 
       {/* ── Scan Rx / Vaccine — 2-page bottom sheet (full-screen during redact) ── */}
+      {/* NOTE on hardcoded hex below (redact screen + scan-source picker sheet,
+          through ~line 2710): this is a deliberate camera/photo-review UI with
+          its own fixed near-black/near-white neutral scale ('#000'/'#111'/
+          '#1E1E2E'/'#333'/'#ddd'/'#fff' etc.), not the app's warm Kinfolk
+          palette — matching a standard native photo-capture-review look rather
+          than the surrounding card UI. None of these neutrals match a token in
+          constants/colors.ts (closest would be textPrimary/card/border, but
+          swapping in the warm-toned app palette here would visibly clash with
+          the intentionally neutral-gray photo/redact chrome). Left as
+          documented hardcoded swatches rather than guessing a wrong mapping. */}
       <Modal visible={showScanSheet} animationType="slide" transparent onRequestClose={closeScanSheet}>
         {/* ── REDACT MODE: full-screen layout ── */}
         {pendingImages.length > 0 && !scanning && (() => {
@@ -2743,7 +2753,7 @@ export default function HealthTab({ colors, isDark, kidView = false }: { colors:
                     backgroundColor: healthTab === 'meds' ? BRAND.purple : BRAND.teal,
                     borderColor: 'transparent',
                   }]}>
-                  <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>Apply</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '900', color: colors.textInverse }}>Apply</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -3093,6 +3103,9 @@ const hf = StyleSheet.create({
   sheetOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet:        { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: 1,
                   maxHeight: '88%', overflow: 'hidden' },
+  // Drag-handle gray: static StyleSheet (no useTheme() access here) and no
+  // constants/colors.ts token is a close match to this neutral slate — left
+  // as a documented hardcoded swatch rather than guessing a mismatched token.
   sheetHandle:  { width: 40, height: 4, borderRadius: 2, backgroundColor: '#CBD5E1',
                   alignSelf: 'center', marginTop: 10 },
   sheetHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -3130,6 +3143,8 @@ const h = StyleSheet.create({
   detailText: { fontSize: 12 },
   actionBtn:  { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, borderWidth: 1,
                 paddingHorizontal: 10, paddingVertical: 7 },
+  // Static StyleSheet (no useTheme() access) and no theme token closely
+  // matches this neutral slate — documented hardcoded swatch.
   auditText:  { fontSize: 10, color: '#94A3B8', fontStyle: 'italic' },
   disclaimer: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, borderRadius: 10,
                 borderWidth: 1, padding: 10, marginTop: 12 },
@@ -3149,6 +3164,8 @@ const aStyles = StyleSheet.create({
   sheet:         { borderTopLeftRadius: 28, borderTopRightRadius: 28,
                    paddingHorizontal: 20, paddingTop: 6, paddingBottom: 0,
                    maxHeight: '92%' },
+  // Static StyleSheet (no useTheme() access) and no theme token closely
+  // matches this neutral slate — documented hardcoded swatch.
   handle:        { width: 40, height: 4, borderRadius: 2, backgroundColor: '#CBD5E1' },
   closeBtn:      { padding: 8, borderRadius: 20, backgroundColor: 'rgba(100,116,139,0.12)' },
 
@@ -3179,7 +3196,7 @@ const aStyles = StyleSheet.create({
   saveBtn:       { flex: 2, borderRadius: 14, paddingVertical: 13, alignItems: 'center' },
 
   // Validation error text
-  errText:       { fontSize: 11, fontWeight: '700', color: '#F43F5E', marginTop: 4, marginLeft: 2 },
+  errText:       { fontSize: 11, fontWeight: '700', color: BRAND.rose, marginTop: 4, marginLeft: 2 },
 
   // Kept for legacy (filter toggles in sheet use hf.toggle)
   memberChip:    { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 14, borderWidth: 1.5,

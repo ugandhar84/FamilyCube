@@ -23,6 +23,11 @@ export const FONTS = {
   bold: Platform.select({ ios: 'System', android: 'Roboto' }),
 };
 
+// Sizes below are deliberately larger than the Kinfolk mock's raw pixel
+// values. The mock is a desktop web preview; those same px sizes read as
+// too small to comfortably read on an actual phone screen (confirmed on
+// device — 9-11px text was reported illegible). Every size here is the
+// mock's intent (hierarchy, uppercase tracking, etc.) at a legible floor.
 export const TYPO = {
   hero:       32,   // big hero numbers, pet names on detail
   title:      24,   // screen titles
@@ -30,11 +35,29 @@ export const TYPO = {
   subheading: 17,   // sub-section headers, large body
   body:       15,   // primary body text, buttons, inputs
   caption:    13,   // secondary info, timestamps, descriptions
-  label:      11,   // chips, badges, tiny labels
-  micro:       9,   // legal, fine print
+  label:      12,   // chips, badges, small labels — floor raised from 11
+  micro:      11,   // fine print — floor raised from 9, still smallest on screen
+  // Kinfolk mock's uppercase section-header label (e.g. "TODAY'S TIMELINE
+  // AXIS") — floor raised from the mock's 10-11px; paired with
+  // LETTER_SPACING.sectionLabel and textTransform: 'uppercase'.
+  sectionLabel: 12,
 } as const;
 
 export type TypoKey = keyof typeof TYPO;
+
+// Letter-spacing pairings lifted from the mock (Tailwind's tracking-wider
+// on uppercase labels, tracking-tight on display headings). Kept as a
+// lookup so callers don't reinvent slightly-different values per screen.
+export const LETTER_SPACING = {
+  sectionLabel: 0.6,  // uppercase section headers ("ACTION NEEDED")
+  display:     -0.3,  // greeting / large display headings
+  badge:        0.4,  // small uppercase pills (role tags, status badges)
+} as const;
+
+// Tabular/mono-style numerals for times, ETAs, currency — the mock's
+// `font-mono` class on timestamps and stat values. Apply alongside a
+// monospace-leaning system font so digits align in a column.
+export const MONO_FONT = Platform.select({ ios: 'Menlo', android: 'monospace' });
 
 export const RADIUS = {
   xs: 4,

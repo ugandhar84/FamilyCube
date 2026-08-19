@@ -2,7 +2,6 @@ import { View, Text, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import { AlertTriangle, Car, MapPin, Flag, Clock, Hourglass, MessageCircle, HandHelping } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
-import { BRAND } from '@/components/FamilyCubeLogo';
 import { CollapsibleCard } from '../hubComponents';
 import { fmtTime } from '../hubUtils';
 import { useChatStore } from '@/store/chatStore';
@@ -61,7 +60,7 @@ export function RideLateAlertCard({ req, rideLate, kidName, ev, active, colors, 
         </View>
       }>
       <View style={{ borderRadius: 12, padding: 10, gap: 6,
-        backgroundColor: isDark ? colors.surface : '#FEF2F2',
+        backgroundColor: isDark ? colors.surface : colors.dangerLight,
         borderWidth: 1, borderColor: `${colors.danger}25` }}>
         {[
           [Car, 'Driver', driverName ?? 'Nobody assigned'],
@@ -87,10 +86,10 @@ export function RideLateAlertCard({ req, rideLate, kidName, ev, active, colors, 
           <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>I'm on my way</Text>
         </Pressable>
         <Pressable onPress={() => router.push('/(tabs)/chat')}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: BRAND.teal + '60', borderRadius: 10,
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: colors.parent + '60', borderRadius: 10,
             paddingVertical: 10, paddingHorizontal: 14 }}>
-          <MessageCircle size={14} color={BRAND.teal} />
-          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.teal }}>Message</Text>
+          <MessageCircle size={14} color={colors.parent} />
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.parent }}>Message</Text>
         </Pressable>
       </View>
       {ev && (
@@ -99,10 +98,10 @@ export function RideLateAlertCard({ req, rideLate, kidName, ev, active, colors, 
           resolve('Opened to other helpers',
             `🆘 ${kidName} needs a ride for "${rideLate.title}" — can anyone pick this up?`);
         }}
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1.5, borderColor: BRAND.amber + '60', borderRadius: 10,
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1.5, borderColor: colors.warning + '60', borderRadius: 10,
             paddingVertical: 10 }}>
-          <HandHelping size={14} color={BRAND.amber} />
-          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.amber }}>
+          <HandHelping size={14} color={colors.warning} />
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warning }}>
             Ask someone else to go
           </Text>
         </Pressable>

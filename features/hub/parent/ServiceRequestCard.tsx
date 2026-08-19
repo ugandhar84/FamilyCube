@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { View, Text, Pressable, Alert, TextInput } from 'react-native';
 import { Car, BookOpen, PartyPopper, HeartHandshake, CheckCircle2, Check, X, Coins } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
-import { BRAND } from '@/components/FamilyCubeLogo';
 import { useChatStore } from '@/store/chatStore';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
@@ -42,14 +41,14 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
 
   return (
     <View style={{ borderRadius: 14, borderWidth: 1.5,
-      borderColor: BRAND.teal + '50', backgroundColor: isDark ? '#0D2A2A' : '#F0FDFA',
+      borderColor: colors.parent + '50', backgroundColor: isDark ? colors.parent + '14' : colors.parentLight,
       overflow: 'hidden' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 }}>
-        <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: BRAND.teal + '20', alignItems: 'center', justifyContent: 'center' }}>
-          <TypeIcon size={17} color={BRAND.teal} />
+        <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: colors.parent + '20', alignItems: 'center', justifyContent: 'center' }}>
+          <TypeIcon size={17} color={colors.parent} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.teal }}>{kidName} — {typeLabel}</Text>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.parent }}>{kidName} — {typeLabel}</Text>
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 1 }} numberOfLines={2}>{req.detail}</Text>
           {req.scheduledDate || req.scheduledTime ? (
             <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }}>
@@ -74,7 +73,7 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
           marginHorizontal: 12, marginBottom: 8, padding: 8, borderRadius: 10,
           backgroundColor: isDark ? colors.surface2 : '#F1F5F9', borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0' }}>
-          <Coins size={14} color={BRAND.amber} />
+          <Coins size={14} color={colors.kid} />
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Offer coins (optional):</Text>
           <TextInput
             value={coinOffer}
@@ -89,7 +88,7 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
       )}
       <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
         <Pressable onPress={handleApprove}
-          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: BRAND.teal, borderRadius: 10,
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: colors.parent, borderRadius: 10,
             paddingVertical: 9 }}>
           <Check size={13} color="#fff" />
           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>

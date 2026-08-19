@@ -142,7 +142,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
     <AppBottomSheet
       visible
       onClose={onClose}
-      title={locked ? 'Adjust Quest' : 'Edit Quest'}
+      title={locked ? 'Adjust Chore' : 'Edit Chore'}
       subtitle={locked ? 'Reassign or adjust coins' : 'Edit title, assignment & more'}
       minHeight="75%"
     >
@@ -515,7 +515,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                       if (locked) {
                         // Active quest — prompt for reason before deleting
                         Alert.prompt(
-                          'Delete Active Quest',
+                          'Delete Active Chore',
                           `"${quest.title}" is in progress. Add a note for the assignee (required):`,
                           [
                             { text: 'Cancel', style: 'cancel' },
@@ -528,7 +528,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                           'plain-text',
                         );
                       } else {
-                        Alert.alert('Delete Quest', `Remove "${quest.title}"? This cannot be undone.`, [
+                        Alert.alert('Delete Chore', `Remove "${quest.title}"? This cannot be undone.`, [
                           { text: 'Cancel', style: 'cancel' },
                           { text: 'Delete', style: 'destructive', onPress: () => { onDelete(quest.id); onClose(); } },
                         ]);

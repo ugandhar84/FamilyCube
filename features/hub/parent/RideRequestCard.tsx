@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { View, Text, Pressable, TextInput } from 'react-native';
 import { Hand, Car, Repeat, MapPinCheck, Flag, HandHelping, CheckCircle2 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
-import { BRAND } from '@/components/FamilyCubeLogo';
 import { CollapsibleCard } from '../hubComponents';
 import { fmtTime } from '../hubUtils';
 import { applyAssignment } from '@/lib/responsibilityCategories';
@@ -136,27 +135,27 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
   };
 
   return (
-    <CollapsibleCard flat accent={BRAND.amber} colors={colors} isDark={isDark} defaultExpanded
+    <CollapsibleCard flat accent={colors.warning} colors={colors} isDark={isDark} defaultExpanded
       summary={
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {isBothWays ? <Repeat size={16} color={BRAND.amber} /> : isDropoff ? <MapPinCheck size={16} color={BRAND.amber} /> : isPickup ? <Flag size={16} color={BRAND.amber} /> : <Car size={16} color={BRAND.amber} />}
+          {isBothWays ? <Repeat size={16} color={colors.warning} /> : isDropoff ? <MapPinCheck size={16} color={colors.warning} /> : isPickup ? <Flag size={16} color={colors.warning} /> : <Car size={16} color={colors.warning} />}
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.amber }} numberOfLines={1}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.warning }} numberOfLines={1}>
               {isBothWays ? 'Both ways · ' : isDropoff ? 'Drop-off · ' : isPickup ? 'Pickup · ' : 'Ride · '}{ev.title}
             </Text>
-            <Text style={{ fontSize: TYPO.label, color: BRAND.amber, opacity: 0.8 }}>
+            <Text style={{ fontSize: TYPO.label, color: colors.warning, opacity: 0.8 }}>
               {requester} · {ev.time ? fmtTime(ev.time) : 'time TBD'}{ev.location ? ` · ${ev.location}` : ''}
               {isBothWays && returnTimeStr ? ` · pickup ${returnTimeStr}` : ''}
             </Text>
           </View>
-          <View style={{ backgroundColor: BRAND.amber + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.amber }}>Pending</Text>
+          <View style={{ backgroundColor: colors.warning + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.warning }}>Pending</Text>
           </View>
         </View>
       }>
 
       {ev.notes && (
-        <View style={{ backgroundColor: isDark ? '#1e293b' : '#fefce8', borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: BRAND.amber }}>
+        <View style={{ backgroundColor: isDark ? '#1e293b' : '#fefce8', borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: colors.warning }}>
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>"{ev.notes}"</Text>
         </View>
       )}
@@ -177,7 +176,7 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
             keyboardType="number-pad"
             placeholder="optional"
             placeholderTextColor={colors.textTertiary}
-            style={{ width: 72, textAlign: 'right', fontSize: TYPO.caption, fontWeight: '800', color: BRAND.amber, paddingVertical: 10 }}
+            style={{ width: 72, textAlign: 'right', fontSize: TYPO.caption, fontWeight: '800', color: colors.warning, paddingVertical: 10 }}
           />
         </View>
       )}
@@ -221,9 +220,9 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
           </Pressable>
           <Pressable
             onPress={() => openToHelpers(coinsVal)}
-            style={{ flex: 1, backgroundColor: BRAND.amber + '20', borderWidth: 1.5, borderColor: BRAND.amber + '50', paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
-            <HandHelping size={14} color={BRAND.amber} />
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.amber }}>Open to Helpers</Text>
+            style={{ flex: 1, backgroundColor: colors.warning + '20', borderWidth: 1.5, borderColor: colors.warning + '50', paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
+            <HandHelping size={14} color={colors.warning} />
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.warning }}>Open to Helpers</Text>
           </Pressable>
         </View>
       )}

@@ -17,6 +17,7 @@ export { GROCERY_PREFIX, SUPPLIES_PREFIX, encodeGroceryRequest, decodeGroceryReq
 import { SUPPLIES_PREFIX, encodeRideLate } from './KidModals';
 import { GroceryModal, SuppliesModal, AskModal, KidRequestHistoryModal } from './KidModals';
 import { HubTimelineSection } from './HubTimelineSection';
+import { PickupRadarStatus } from './hubComponents';
 
 import { KidHeroCard } from './kid/KidHeroCard';
 import { KidRideBanner } from './kid/KidRideBanner';
@@ -52,10 +53,14 @@ function useCountdown(date?: string, time?: string) {
 }
 
 // ─── Main KidView ──────────────────────────────────────────────────────────────
-export function KidView({ active, members, colors, isDark, onHelpRequest }: {
+export function KidView({ active, members, colors, isDark, onHelpRequest, activeTrip }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   onHelpRequest: () => void;
+  // Family-wide Pick-up Radar state, synced from tripStore — shown here
+  // read-only (driver controls the ETA/Pickup Done) so a kid can see the
+  // same live trip progress the driver's own Hub shows.
+  activeTrip?: { kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; etaMinutes: number; startedAtMs?: number } | null;
 }) {
   const { quests, submitQuest, claimQuest, cheerQuest } = useQuestStore();
   const { startGrandparentQuest, declineGrandparentQuest } = useChoreStore();
@@ -275,6 +280,8 @@ export function KidView({ active, members, colors, isDark, onHelpRequest }: {
           onDismiss={(id) => setDismissedRideIds(prev => new Set([...prev, id]))}
         />
       )}
+
+      {activeTrip && <PickupRadarStatus colors={colors} isDark={isDark} activeTrip={activeTrip} />}
 
       <KidCheckinRow colors={colors} onCheckin={sendCheckin} />
       <KidActionRow colors={colors} isDark={isDark}

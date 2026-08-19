@@ -1,0 +1,490 @@
+/**
+ * AskCubeChat — the agentic chat itself. Reachable from the floating FAB
+ * mounted in app/(tabs)/_layout.tsx over every tab. Talks to the ask-cube
+ * edge function (tool-calling loop against real schedule/chore data),
+ * shows a proposal (create_event/create_quest) as an inline confirm card
+ * — never auto-created, same rule as every other AI-assist surface in this
+ * app — and supports voice input via the same useVoiceIntake capture UI
+ * AddIntakeChooser already uses, transcribed on-device, sent as a normal
+ * chat turn once the user stops speaking.
+ */
+import { useEffect, useRef, useState } from 'react';
+import { Modal, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Sparkles, X, Send, Mic, ChevronDown } from 'lucide-react-native';
+import { useTheme } from '@/lib/ThemeContext';
+import { TYPO } from '@/constants/theme';
+import { askCube, AskCubeProposal } from '@/lib/askCubeService';
+import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
+import { useEventStore } from '@/store/eventStore';
+import { useQuestStore } from '@/store/choreAdapter';
+import { useGroceryStore } from '@/store/groceryStore';
+import { useChatStore } from '@/store/chatStore';
+import { supabase } from '@/lib/supabase';
+import { checkProfanity } from '@/lib/contentModeration';
+import { eventCategoryFromDomain } from '@/lib/responsibilityCategories';
+import AskCubeProposalCard from '@/components/AskCubeProposalCard';
+import AskCubeMessageText from '@/components/AskCubeMessageText';
+import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
+import AskCubeMealDayPicker from '@/components/AskCubeMealDayPicker';
+import type { FamilyMember } from '@/store/familyStore';
+
+type ProposalStatus = 'pending' | 'created' | 'discarded';
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp?: string; // ISO — undefined for a just-sent local message until echoed back
+  // A single assistant turn can carry several proposals at once (e.g. 2-3
+  // meal options to pick from) — each tracks its own status independently,
+  // so picking one doesn't affect the others' cards.
+  proposals?: AskCubeProposal[];
+  proposalStatuses?: ProposalStatus[];
+}
+
+export default function AskCubeChat({ visible, onClose, activeMember, members }: {
+  visible: boolean;
+  onClose: () => void;
+  activeMember: FamilyMember;
+  members: FamilyMember[];
+}) {
+  const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const addEvent = useEventStore(s => s.addEvent);
+  const { addQuest } = useQuestStore();
+  const addGroceryItem = useGroceryStore(s => s.addItem);
+  const sendChatMessage = useChatStore(s => s.sendMessage);
+
+  const [expandedRecipe, setExpandedRecipe] = useState<{ msgId: string; index: number } | null>(null);
+
+  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+
+  const THINKING_WORDS = ['Thinking', 'Crafting', 'Pursuing', 'Digging in', 'Piecing it together'];
+  const [thinkingWord, setThinkingWord] = useState(THINKING_WORDS[0]);
+  useEffect(() => {
+    if (!sending) return;
+    setThinkingWord(THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)]);
+    const interval = setInterval(() => {
+      setThinkingWord(w => {
+        const others = THINKING_WORDS.filter(x => x !== w);
+        return others[Math.floor(Math.random() * others.length)];
+      });
+    }, 1400);
+    return () => clearInterval(interval);
+  }, [sending]);
+
+  // send is referenced by the voice hook's onAutoStop below, so it's kept
+  // in a ref that always points at the latest closure — avoids a
+  // declaration-order dependency between the two.
+  const sendRef = useRef<(text: string) => void>(() => {});
+  // Ask Cube auto-sends once the user pauses — a chat question benefits
+  // from going out immediately, unlike the family Chat tab's dictation
+  // (which only enables Send after a pause, letting the mic keep listening
+  // in case the user has more to add before actually sending).
+  const voice = useVoiceDictation();
+  const lastSilenceTranscript = useRef('');
+  useEffect(() => {
+    if (voice.silenceReady && voice.liveTranscript && voice.liveTranscript !== lastSilenceTranscript.current) {
+      lastSilenceTranscript.current = voice.liveTranscript;
+      const transcript = voice.liveTranscript;
+      voice.stop().then(() => sendRef.current(transcript));
+    }
+  }, [voice.silenceReady, voice.liveTranscript]);
+
+  // Resume the most recent thread when the sheet opens, instead of always
+  // starting fresh — matches the "persist to a real table" decision.
+  useEffect(() => {
+    if (!visible) return;
+    (async () => {
+      const latest = await askCube.getLatestConversation(activeMember.id);
+      if (latest) {
+        setConversationId(latest);
+        const rows = await askCube.getMessages(latest);
+        setMessages(rows.map(r => {
+          // Legacy rows stored a single proposal object; current rows store
+          // an array — normalize either shape to an array on load.
+          const proposals: AskCubeProposal[] = Array.isArray(r.proposal) ? r.proposal : (r.proposal ? [r.proposal as any] : []);
+          return {
+            id: r.id, role: r.role as 'user' | 'assistant', content: r.content ?? '', timestamp: r.created_at,
+            proposals, proposalStatuses: proposals.map(() => (r.proposal_status as ProposalStatus) ?? 'pending'),
+          };
+        }));
+        // Land on the latest message immediately — no visible scroll
+        // animation on open, same as opening any normal chat app. Content
+        // height isn't settled the instant setMessages flushes, so retry a
+        // couple of times over the next layout passes rather than relying
+        // on a single rAF landing after the ScrollView has measured.
+        setShowScrollToBottom(false);
+        for (const delay of [0, 50, 150]) {
+          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), delay);
+        }
+      }
+    })();
+  }, [visible, activeMember.id]);
+
+  const send = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || sending) return;
+    // Layer 1 only here — Ask Cube is a private parent<->AI chat, not a
+    // shared family thread, so the "flag for other parents" layer 2 doesn't
+    // apply the same way; still worth blocking obvious profanity before it
+    // gets persisted or sent to the model.
+    if (checkProfanity(trimmed).blocked) {
+      const now = new Date().toISOString();
+      setInput('');
+      setMessages(prev => [...prev, { id: `local-${Date.now()}`, role: 'user', content: trimmed, timestamp: now },
+        { id: `local-${Date.now()}-mod`, role: 'assistant', content: "Let's keep it kind — that message wasn't sent.", timestamp: now }]);
+      return;
+    }
+    setInput('');
+    setMessages(prev => [...prev, { id: `local-${Date.now()}`, role: 'user', content: trimmed, timestamp: new Date().toISOString() }]);
+    setSending(true);
+    try {
+      const res = await askCube.send(activeMember.id, trimmed, conversationId);
+      setConversationId(res.conversationId);
+      const fullText = res.answer;
+      const msgId = `local-${Date.now()}-a`;
+      // Client-side typewriter reveal — ask-cube returns one complete JSON
+      // response (no SSE infra yet), so this simulates streaming rather than
+      // reducing actual latency, which is still an improvement over the
+      // answer just popping in all at once.
+      const proposals = res.proposals ?? [];
+      setMessages(prev => [...prev, {
+        id: msgId, role: 'assistant', content: '', timestamp: new Date().toISOString(),
+        proposals, proposalStatuses: proposals.map(() => 'pending' as ProposalStatus),
+      }]);
+      setSending(false);
+      let i = 0;
+      const step = Math.max(1, Math.ceil(fullText.length / 60));
+      await new Promise<void>((resolve) => {
+        const interval = setInterval(() => {
+          i += step;
+          setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: fullText.slice(0, i) } : m));
+          scrollRef.current?.scrollToEnd({ animated: true });
+          if (i >= fullText.length) { clearInterval(interval); resolve(); }
+        }, 16);
+      });
+    } catch (e: any) {
+      setMessages(prev => [...prev, { id: `local-${Date.now()}-err`, role: 'assistant', content: "Sorry, I couldn't reach the server — try again in a moment.", timestamp: new Date().toISOString() }]);
+      setSending(false);
+    } finally {
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+    }
+  };
+  useEffect(() => { sendRef.current = send; });
+
+  // Cache of existing meals, keyed by week_of, loaded on demand as the day
+  // picker's calendar moves between weeks — powers the "replace existing?"
+  // confirmation without a fresh query on every date tap for a week already
+  // fetched. Not just "this week" any more since the picker now supports
+  // any future date.
+  const [weekMealsCache, setWeekMealsCache] = useState<Record<string, { day: string; type: string; title: string }[]>>({});
+  const loadWeekMeals = async (weekOf: string) => {
+    if (weekMealsCache[weekOf]) return;
+    const { data } = await supabase.from('family_meals')
+      .select('day, type, title')
+      .eq('family_id', activeMember.familyId)
+      .eq('week_of', weekOf);
+    setWeekMealsCache(prev => ({ ...prev, [weekOf]: data ?? [] }));
+  };
+
+  const addMealToPlan = async (d: any, weekOf: string, day: string, mealType: string) => {
+    // Replacing an existing slot — delete it first rather than leaving two
+    // rows stacked in the same day/type slot.
+    await supabase.from('family_meals').delete()
+      .eq('family_id', activeMember.familyId).eq('week_of', weekOf)
+      .eq('day', day).eq('type', mealType.toLowerCase());
+    await supabase.from('family_meals').insert({
+      id: `${activeMember.familyId}-${weekOf}-${day}-askcube-${Date.now()}`,
+      family_id: activeMember.familyId, week_of: weekOf, day,
+      title: d.title, type: mealType.toLowerCase(), chef_id: d.chefId ?? null,
+      ingredients: d.ingredients ?? [], emoji: d.emoji ?? null, image_url: d.imageUrl ?? null, prep_minutes: d.prepMinutes ?? null,
+      dietary_tags: [], prep_steps: d.prepSteps ?? [], ai_generated: true,
+    });
+  };
+
+  // Meal creation is a two-step flow: tapping Create/Add opens the day/meal
+  // picker (pendingMealCreate) instead of inserting immediately, so "tonight
+  // dinner" always gets confirmed against a real day rather than trusting
+  // whatever the model guessed.
+  const [pendingMealCreate, setPendingMealCreate] = useState<{ msgId: string; index: number; proposal: AskCubeProposal } | null>(null);
+
+  // Shares as a structured, read-only card (systemEvent) that ChatScreen.tsx
+  // renders specially — not a formatted text blob — so the family sees the
+  // same rich meal card (photo/emoji, prep time, ingredients) in Chat that
+  // they saw here, instead of a wall of plain text.
+  const shareMealToChat = (d: any) => {
+    sendChatMessage(
+      'all', activeMember.id, `Shared a meal: ${d.title}`,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      { type: 'shared_card', payload: { kind: 'meal', data: d } },
+    );
+  };
+
+  const markProposalCreated = (msgId: string, index: number) => {
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msgId || !m.proposalStatuses) return m;
+      const next = [...m.proposalStatuses];
+      next[index] = 'created';
+      return { ...m, proposalStatuses: next };
+    }));
+  };
+
+  const createProposal = async (msgId: string, index: number, proposal: AskCubeProposal) => {
+    if (proposal.kind === 'meal') {
+      setPendingMealCreate({ msgId, index, proposal });
+      return;
+    }
+    const d = proposal.data;
+    if (proposal.kind === 'event') {
+      const dt = d.startAt ? new Date(d.startAt) : new Date();
+      addEvent({
+        title: d.title, date: dt.toISOString().slice(0, 10),
+        time: d.startAt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : undefined,
+        type: 'event', category: eventCategoryFromDomain(d.category) ?? d.category ?? 'Other',
+        allDay: !d.startAt, memberId: d.memberId ?? undefined, notes: d.notes ?? undefined,
+        approvalPending: false, conflict: false,
+      });
+    } else if (proposal.kind === 'quest') {
+      addQuest({
+        title: d.title, category: 'Other', priority: 'medium',
+        coins: d.memberId && members.find(m => m.id === d.memberId)?.role === 'parent' ? 0 : (d.coins ?? 20),
+        xpReward: 15, isPool: !d.memberId, isDaily: false, recurrence: 'once', status: 'todo',
+        assignedToIds: d.memberId ? [d.memberId] : [], isAdultTask: false,
+        dueDate: d.dueDate ?? undefined, photoRequired: d.photoRequired ?? false,
+        createdById: activeMember.id,
+      });
+    } else if (proposal.kind === 'grocery') {
+      for (const it of (d.items ?? [])) {
+        await addGroceryItem({
+          familyId: activeMember.familyId!, name: it.name, quantity: it.quantity ?? undefined,
+          category: it.category ?? 'Other', addedBy: activeMember.id, aiGenerated: true,
+        });
+      }
+    }
+    markProposalCreated(msgId, index);
+  };
+
+  const discardProposal = (msgId: string, index: number) => {
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msgId || !m.proposalStatuses) return m;
+      const next = [...m.proposalStatuses];
+      next[index] = 'discarded';
+      return { ...m, proposalStatuses: next };
+    }));
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}>
+          <Pressable style={{ flex: 1 }} onPress={onClose} />
+          <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+            height: '85%', paddingTop: 12 }}>
+
+            <View style={{ width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12, backgroundColor: colors.border }} />
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
+              borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <View style={{ width: 34, height: 34, borderRadius: 12, backgroundColor: colors.primary + '18',
+                alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+                <Sparkles size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary }}>Ask Cube</Text>
+                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Ask about the family's schedule or chores</Text>
+              </View>
+              <Pressable onPress={onClose} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#1E293B' : colors.surface }}>
+                <X size={18} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+
+            <View style={{ flex: 1 }}>
+            <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 12 }}
+              keyboardShouldPersistTaps="handled"
+              onScroll={(e) => {
+                const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+                const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
+                setShowScrollToBottom(distanceFromBottom > 120);
+              }}
+              scrollEventThrottle={100}>
+              {messages.length === 0 && !sending && (
+                <View style={{ alignItems: 'center', paddingVertical: 30, gap: 8 }}>
+                  <Sparkles size={28} color={colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center', maxWidth: 260 }}>
+                    Try "what's going on this week?" or "has anyone done the trash?"
+                  </Text>
+                </View>
+              )}
+              {messages.map(m => (
+                <View key={m.id} style={{ alignItems: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                  <View style={{ maxWidth: m.role === 'user' ? '85%' : '92%', borderRadius: 16,
+                    paddingHorizontal: 14, paddingVertical: m.role === 'user' ? 10 : 13,
+                    backgroundColor: m.role === 'user' ? colors.primary : colors.card,
+                    borderWidth: m.role === 'user' ? 0 : 1, borderColor: colors.border,
+                    borderBottomRightRadius: m.role === 'user' ? 4 : 16,
+                    borderBottomLeftRadius: m.role === 'user' ? 16 : 4 }}>
+                    {m.role === 'user' ? (
+                      <Text style={{ fontSize: TYPO.caption, color: '#fff', lineHeight: 20 }}>{m.content}</Text>
+                    ) : (
+                      <AskCubeMessageText content={m.content} color={colors.textPrimary} urgentColor={colors.danger} soonColor={colors.amber} />
+                    )}
+                  </View>
+                  {m.timestamp && (
+                    <Text style={{ fontSize: 10, color: colors.textTertiary, marginTop: 2, marginHorizontal: 4 }}>
+                      {new Date(m.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                    </Text>
+                  )}
+
+                  {m.proposals?.length ? (() => {
+                    // 2+ meal options render as a 2-per-row grid (compact
+                    // cards) instead of stacked full-width — picking between
+                    // several dinner ideas shouldn't mean scrolling through
+                    // a wall of tall cards.
+                    const isMealGrid = m.proposals.length > 1 && m.proposals.every(p => p.kind === 'meal');
+                    return (
+                      <View style={{ width: '100%', flexDirection: isMealGrid ? 'row' : 'column', flexWrap: isMealGrid ? 'wrap' : 'nowrap', gap: isMealGrid ? 8 : 4 }}>
+                        {m.proposals.map((p, i) => {
+                          const status = m.proposalStatuses?.[i] ?? 'pending';
+                          if (status === 'pending') {
+                            return (
+                              <View key={i} style={isMealGrid ? { width: '48%' } : undefined}>
+                                <AskCubeProposalCard
+                                  proposal={p}
+                                  members={members}
+                                  compact={isMealGrid}
+                                  onDiscard={() => discardProposal(m.id, i)}
+                                  onCreate={() => createProposal(m.id, i, p)}
+                                  onExpand={p.kind === 'meal' ? () => setExpandedRecipe({ msgId: m.id, index: i }) : undefined}
+                                />
+                              </View>
+                            );
+                          }
+                          return (
+                            <Text key={i} style={{ marginTop: 4, fontSize: TYPO.label, fontWeight: status === 'created' ? '700' : '400',
+                              color: status === 'created' ? colors.success : colors.textTertiary, fontStyle: status === 'discarded' ? 'italic' : 'normal' }}>
+                              {status === 'created' ? `✓ ${p.data?.title ?? 'Created'}` : `${p.data?.title ?? 'Draft'} — discarded`}
+                            </Text>
+                          );
+                        })}
+                      </View>
+                    );
+                  })() : null}
+                </View>
+              ))}
+              {sending && (
+                <View style={{ alignItems: 'flex-start' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 16,
+                    paddingHorizontal: 14, paddingVertical: 10, backgroundColor: colors.surface }}>
+                    <Sparkles size={13} color={colors.primary} />
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{thinkingWord}…</Text>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+
+            {showScrollToBottom && (
+              <Pressable
+                onPress={() => scrollRef.current?.scrollToEnd({ animated: true })}
+                style={{ position: 'absolute', bottom: 12, alignSelf: 'center',
+                  flexDirection: 'row', alignItems: 'center', gap: 4,
+                  backgroundColor: colors.primary, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+                  shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
+                <ChevronDown size={14} color="#fff" />
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>Latest</Text>
+              </Pressable>
+            )}
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16,
+              paddingTop: 10, paddingBottom: Math.max(16, insets.bottom + 8), borderTopWidth: 1, borderTopColor: colors.border }}>
+              <Pressable
+                onPress={async () => {
+                  // Single mic control feeds the text box directly — while
+                  // listening, the box shows the live transcript; after a
+                  // short pause useVoiceDictation's onAutoStop fires send()
+                  // automatically, same as tapping the mic again to stop
+                  // manually and then tapping send.
+                  if (voice.state === 'listening') { await voice.stop(); return; }
+                  await voice.start();
+                }}
+                style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: voice.state === 'listening' ? colors.danger + '20' : colors.surface }}>
+                {voice.state === 'listening'
+                  ? <ActivityIndicator size="small" color={colors.danger} />
+                  : <Mic size={18} color={colors.textSecondary} />}
+              </Pressable>
+              <TextInput
+                value={voice.state === 'listening' ? (voice.liveTranscript || 'Listening…') : input}
+                onChangeText={setInput}
+                placeholder="Ask Cube anything…"
+                placeholderTextColor={colors.placeholder}
+                editable={voice.state !== 'listening'}
+                style={{ flex: 1, fontSize: TYPO.caption,
+                  color: voice.state === 'listening' && !voice.liveTranscript ? colors.textTertiary : colors.textPrimary,
+                  backgroundColor: colors.surface, borderRadius: 20, borderWidth: 1,
+                  borderColor: voice.state === 'listening' ? colors.danger + '60' : colors.borderMed,
+                  paddingHorizontal: 16, paddingVertical: 10 }}
+                onSubmitEditing={() => send(input)}
+                returnKeyType="send"
+              />
+              <Pressable onPress={() => send(input)} disabled={!input.trim() || sending}
+                style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: input.trim() && !sending ? colors.primary : colors.border }}>
+                <Send size={16} color={input.trim() && !sending ? '#fff' : colors.textTertiary} />
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+
+      {(() => {
+        const msg = expandedRecipe ? messages.find(m => m.id === expandedRecipe.msgId) : null;
+        const p = msg?.proposals?.[expandedRecipe?.index ?? -1];
+        const d = p?.data;
+        const status = msg?.proposalStatuses?.[expandedRecipe?.index ?? -1] ?? 'pending';
+        return (
+          <AskCubeRecipeSheet
+            visible={!!expandedRecipe && !!d}
+            data={d ? { title: d.title, day: d.day, mealType: d.mealType, emoji: d.emoji, imageUrl: d.imageUrl, prepMinutes: d.prepMinutes, ingredients: d.ingredients, prepSteps: d.prepSteps } : null}
+            chefName={d?.chefId ? members.find(m => m.id === d.chefId)?.name : undefined}
+            added={status === 'created'}
+            onClose={() => setExpandedRecipe(null)}
+            onAdd={async () => {
+              if (!expandedRecipe || !d) return;
+              await createProposal(expandedRecipe.msgId, expandedRecipe.index, p!);
+              setExpandedRecipe(null); // day picker takes over from here
+            }}
+            onShare={() => { if (d) shareMealToChat(d); }}
+          />
+        );
+      })()}
+
+      <AskCubeMealDayPicker
+        visible={!!pendingMealCreate}
+        initialDay={pendingMealCreate?.proposal.data.day}
+        initialMealType={pendingMealCreate?.proposal.data.mealType}
+        existingMealTitle={(weekOf, day, mealType) => {
+          const cached = weekMealsCache[weekOf];
+          if (!cached) { loadWeekMeals(weekOf); return null; }
+          return cached.find(m => m.day === day && m.type === mealType.toLowerCase())?.title ?? null;
+        }}
+        onCancel={() => setPendingMealCreate(null)}
+        onConfirm={async (weekOf, day, mealType) => {
+          if (!pendingMealCreate) return;
+          const { msgId, index, proposal } = pendingMealCreate;
+          await addMealToPlan(proposal.data, weekOf, day, mealType);
+          markProposalCreated(msgId, index);
+          setPendingMealCreate(null);
+        }}
+      />
+    </Modal>
+  );
+}

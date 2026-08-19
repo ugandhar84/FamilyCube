@@ -22,6 +22,7 @@ import { DeclineQuestSheet } from './kid/DeclineQuestSheet';
 import { SubmitProofSheet } from './kid/SubmitProofSheet';
 import { HubTimelineSection } from './HubTimelineSection';
 import { HubGreetingHeader } from './HubGreetingHeader';
+import { PickupRadarStatus } from './hubComponents';
 import { TeenTile } from './teen/TeenTile';
 import { TeenTileSheet } from './teen/TeenTileSheet';
 import { TeenCarDispatchSection } from './teen/TeenCarDispatchSection';
@@ -34,9 +35,11 @@ const pad = { paddingHorizontal: 16, marginBottom: 4 } as const;
 
 type SheetKey = 'rides' | 'gas' | 'tutor' | 'grocery' | 'cashout' | 'history' | null;
 
-export function TeenView({ active, members, colors, isDark }: {
+export function TeenView({ active, members, colors, isDark, activeTrip }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
+  // Family-wide Pick-up Radar state, synced from tripStore — read-only here.
+  activeTrip?: { kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; etaMinutes: number; startedAtMs?: number } | null;
 }) {
   const { events, updateEvent } = useEventStore();
   const { quests, submitQuest, claimQuest } = useQuestStore();
@@ -92,6 +95,13 @@ export function TeenView({ active, members, colors, isDark }: {
     updateEvent(evId, { helper: active.name, helperStatus: 'confirmed' });
     const coins = ev?.rideCoins ?? rideEarnings;
     if (coins > 0) awardCoins(active.id, coins, 'mainCoins');
+  };
+
+  // A claimed run had no way to back out once confirmed — same rejected-state
+  // flow the parent-facing sheet uses, so Parent Hub's own urgency banner
+  // (<4hr window) picks it up automatically once it's close enough to matter.
+  const dropPickup = (evId: string) => {
+    updateEvent(evId, { helperStatus: 'rejected', declinedBy: active.name });
   };
 
   // ── Tutoring / sibling help ───────────────────────────────────────────────────
@@ -154,6 +164,8 @@ export function TeenView({ active, members, colors, isDark }: {
         colors={colors} isDark={isDark}
       />
 
+      {activeTrip && <PickupRadarStatus colors={colors} isDark={isDark} activeTrip={activeTrip} />}
+
       <HubTimelineSection active={active} members={members} events={events} updateEvent={updateEvent} colors={colors} isDark={isDark} />
 
       <MyQuestsSection
@@ -215,7 +227,7 @@ export function TeenView({ active, members, colors, isDark }: {
         <TeenCarDispatchSection
           hasCar={hasCar} onToggleCar={toggleCar}
           openPickups={openPickups} myPickups={myPickups} passedPickups={passedPickups}
-          onPass={(id) => setPassedPickups(p => [...p, id])} onClaim={claimPickup}
+          onPass={(id) => setPassedPickups(p => [...p, id])} onClaim={claimPickup} onDrop={dropPickup}
           rideEarnings={rideEarnings} members={members} colors={colors} isDark={isDark}
         />
       </TeenTileSheet>

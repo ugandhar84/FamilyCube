@@ -117,7 +117,7 @@ function PinModal({ member, onClose, onSave, colors, isDark }: {
 
 function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, onDelete, colors, isDark }: {
   member: any; allMembers: any[]; onClose: () => void;
-  onSave: (memberId: string, name: string, role: string, hasCar: boolean, rideEarnings: number, groceryEarnings: number) => Promise<void>;
+  onSave: (memberId: string, name: string, role: string, hasCar: boolean, rideEarnings: number, groceryEarnings: number, subRole?: string) => Promise<void>;
   onLinkParent: (memberId: string, parentId: string) => void;
   onDelete: (memberId: string) => Promise<void>;
   colors: any; isDark: boolean;
@@ -128,7 +128,10 @@ function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, on
   // no chip would ever show as selected for an existing kid or teen member.
   const initialRole = member.role === 'kid' ? 'child' : member.role === 'teen' ? 'teenager' : (member.role ?? 'child');
   const [role, setRole]   = useState(initialRole);
-  const [hasCar, setHasCar] = useState(member.hasCar ?? false);
+  // Defaults true for parents (most can drive; teens/GPs opt in explicitly) —
+  // drives whether this member shows up as pickable in ride reassignment and
+  // the GP/Teen open-pool claim lists.
+  const [hasCar, setHasCar] = useState(member.hasCar ?? (initialRole === 'parent'));
   const [rideEarnings, setRideEarnings] = useState(String(member.rideEarningsPerRun ?? 50));
   const [groceryEarnings, setGroceryEarnings] = useState(String(member.groceryEarningsPerRun ?? 30));
   // Unlike the other fields above, this was reading member.linkedParentId
@@ -137,6 +140,10 @@ function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, on
   // it's open, so onLinkParent was correctly updating the real store
   // underneath, but the pill's own highlight never reflected the tap.
   const [linkedParentId, setLinkedParentId] = useState(member.linkedParentId as string | undefined);
+  // How this senior is addressed by the household — "Grandma"/"Grandpa" —
+  // derived relationally everywhere it's displayed (see lib/format.ts's
+  // relationalName), disambiguated by first name if two seniors share it.
+  const [subRole, setSubRole] = useState(member.subRole as string | undefined);
   const [saving, setSaving] = useState(false);
   const parentOptions = allMembers.filter(m => m.role === 'parent');
 
@@ -177,8 +184,11 @@ function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, on
             ))}
           </View>
 
-          {/* Teen-specific settings */}
-          {(role === 'teenager') && (
+          {/* Can Drive — controls whether this member shows up as pickable in
+              ride reassignment (InlineReassignPanel). Seniors already have
+              their own self-service "cheerleader mode" toggle in-Hub for the
+              same concept, so this doesn't duplicate it for them here. */}
+          {(role === 'parent' || role === 'teenager') && (
             <View style={{ marginTop: 14, gap: 10 }}>
               <TouchableOpacity
                 onPress={() => setHasCar((v: boolean) => !v)}
@@ -189,7 +199,7 @@ function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, on
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <I.Car c={hasCar ? BRAND.amber : colors.textSecondary} />
                   <Text style={{ fontSize: 13, fontWeight: '700', color: hasCar ? BRAND.amber : colors.textPrimary }}>
-                    Has a Car
+                    Can Drive
                   </Text>
                 </View>
                 <View style={{ width: 38, height: 22, borderRadius: 11,
@@ -199,20 +209,22 @@ function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, on
                     alignSelf: hasCar ? 'flex-end' : 'flex-start' }} />
                 </View>
               </TouchableOpacity>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[p.label, { color: colors.textSecondary }]}>Ride earnings (coins)</Text>
-                  <TextInput value={rideEarnings} onChangeText={setRideEarnings} keyboardType="number-pad"
-                    style={[p.inp, { backgroundColor: isDark ? colors.card : '#F5F3FF',
-                      borderColor: colors.border, color: colors.textPrimary, letterSpacing: 0, fontSize: 15 }]} />
+              {role === 'teenager' && (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[p.label, { color: colors.textSecondary }]}>Ride earnings (coins)</Text>
+                    <TextInput value={rideEarnings} onChangeText={setRideEarnings} keyboardType="number-pad"
+                      style={[p.inp, { backgroundColor: isDark ? colors.card : '#F5F3FF',
+                        borderColor: colors.border, color: colors.textPrimary, letterSpacing: 0, fontSize: 15 }]} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[p.label, { color: colors.textSecondary }]}>Grocery earnings (coins)</Text>
+                    <TextInput value={groceryEarnings} onChangeText={setGroceryEarnings} keyboardType="number-pad"
+                      style={[p.inp, { backgroundColor: isDark ? colors.card : '#F5F3FF',
+                        borderColor: colors.border, color: colors.textPrimary, letterSpacing: 0, fontSize: 15 }]} />
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[p.label, { color: colors.textSecondary }]}>Grocery earnings (coins)</Text>
-                  <TextInput value={groceryEarnings} onChangeText={setGroceryEarnings} keyboardType="number-pad"
-                    style={[p.inp, { backgroundColor: isDark ? colors.card : '#F5F3FF',
-                      borderColor: colors.border, color: colors.textPrimary, letterSpacing: 0, fontSize: 15 }]} />
-                </View>
-              </View>
+              )}
             </View>
           )}
 
@@ -242,6 +254,30 @@ function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, on
             </View>
           )}
 
+          {/* How the kids address them — shown everywhere in place of their
+              first name (e.g. "Accompanied by Grandma"), disambiguated by
+              first name automatically if a second Grandma/Grandpa exists. */}
+          {role === 'senior' && (
+            <View style={{ marginTop: 14 }}>
+              <Text style={[p.label, { color: colors.textSecondary }]}>What do the kids call them?</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
+                {['Grandma', 'Grandpa'].map(opt => {
+                  const picked = subRole === opt;
+                  return (
+                    <TouchableOpacity key={opt} onPress={() => setSubRole(picked ? undefined : opt)}
+                      style={[p.roleChip, {
+                        backgroundColor: picked ? BRAND.purple : 'transparent',
+                        borderColor: picked ? BRAND.purple : colors.border,
+                      }]}>
+                      <Text style={{ fontSize: 13, fontWeight: '700',
+                        color: picked ? '#fff' : colors.textSecondary }}>{opt}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
             <TouchableOpacity onPress={onClose} style={[p.cancelBtn, { borderColor: colors.border }]}>
               <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
@@ -249,7 +285,7 @@ function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, on
             <TouchableOpacity
               onPress={async () => {
                 setSaving(true);
-                await onSave(member.id, name, role, hasCar, parseInt(rideEarnings) || 50, parseInt(groceryEarnings) || 30);
+                await onSave(member.id, name, role, hasCar, parseInt(rideEarnings) || 50, parseInt(groceryEarnings) || 30, subRole);
                 setSaving(false); onClose();
               }}
               style={[p.saveBtn, { backgroundColor: BRAND.purple }]} disabled={saving}>
@@ -341,7 +377,7 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
     removeMember(memberId);
   };
 
-  const saveMember = async (memberId: string, name: string, role: string, hasCar: boolean, rideEarningsPerRun: number, groceryEarningsPerRun: number) => {
+  const saveMember = async (memberId: string, name: string, role: string, hasCar: boolean, rideEarningsPerRun: number, groceryEarningsPerRun: number, subRole?: string) => {
     // EditMemberModal's role chips use 'senior' (matching this app's own
     // MemberRole vocabulary), but the DB's members_role_check only allows
     // 'grandparent' — writing 'senior' straight through failed the
@@ -351,14 +387,18 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
     // familyStore's toRow does, so this raw write stays consistent with
     // the one canonical DB vocabulary instead of inventing a second one.
     const dbRole = role === 'senior' ? 'grandparent' : role;
-    const { error } = await supabase.from('members').update({ name, role: dbRole, has_car: hasCar, ride_earnings_per_run: rideEarningsPerRun, grocery_earnings_per_run: groceryEarningsPerRun }).eq('id', memberId);
+    const { error } = await supabase.from('members').update({
+      name, role: dbRole, has_car: hasCar,
+      ride_earnings_per_run: rideEarningsPerRun, grocery_earnings_per_run: groceryEarningsPerRun,
+      sub_role: subRole ?? null,
+    }).eq('id', memberId);
     if (error) {
       console.warn('[RosterTab] saveMember failed', error.message);
       Alert.alert('Couldn\'t save changes', error.message);
       return;
     }
     const appRole: MemberRole = role === 'child' ? 'kid' : role === 'teenager' ? 'teen' : role as MemberRole;
-    updateMember(memberId, { name, role: appRole, hasCar, rideEarningsPerRun, groceryEarningsPerRun });
+    updateMember(memberId, { name, role: appRole, hasCar, rideEarningsPerRun, groceryEarningsPerRun, subRole });
   };
 
   const togglePin = (id: string) => setShowPins(s => ({ ...s, [id]: !s[id] }));

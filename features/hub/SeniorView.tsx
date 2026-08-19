@@ -26,12 +26,15 @@ import { CreateQuestModal } from './senior/CreateQuestModal';
 import { MySponsoredQuestsSection } from './senior/MySponsoredQuestsSection';
 import { ReceiptSubmissionModal } from './senior/ReceiptSubmissionModal';
 import { FamilyMemoriesCard } from './senior/FamilyMemoriesCard';
+import { PickupRadarStatus } from './hubComponents';
 
-export function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute }: {
+export function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute, activeTrip }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   onHelpRequest: () => void;
   onEnRoute: () => void;
+  // Family-wide Pick-up Radar state, synced from tripStore — read-only here.
+  activeTrip?: { kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; etaMinutes: number; startedAtMs?: number } | null;
 }) {
   const { events, updateEvent } = useEventStore();
   // Live, multi-day, cross-viewer-consistent feed for the "open to
@@ -470,6 +473,8 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       <GroupBand label="Today" color={BRAND.teal} colors={colors} />
 
       <EmergencySosCard sosActive={sosActive} setSosActive={setSosActive} colors={colors} isDark={isDark} />
+
+      {activeTrip && <PickupRadarStatus colors={colors} isDark={isDark} activeTrip={activeTrip} />}
 
       <YourRidesSection
         myPendingAssignments={dedupMyPendingAssignments}

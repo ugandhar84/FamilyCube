@@ -52,7 +52,7 @@ export function CreateQuestModal({
     <AppBottomSheet
       visible={visible}
       onClose={onClose}
-      title={editing ? '✏️ Edit Sponsored Quest' : '👴 Sponsor a Quest'}
+      title={editing ? '✏️ Edit Sponsored Chore' : '👴 Sponsor a Chore'}
       subtitle={editing ? 'Still awaiting parent review — free to change' : '→ Parent reviews → Kid claims'}
       minHeight="75%"
     >

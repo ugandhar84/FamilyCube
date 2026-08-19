@@ -70,7 +70,7 @@ export function QuestStepper({ claimedAt, submittedAt, approvedAt, declinedAt, d
   const durations = assignedStep ? [null, dur01, dur12] : [dur01, dur12];
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginTop: 8, marginBottom: 4 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginTop: 2, marginBottom: 8 }}>
       {steps.map((step, i) => (
         <React.Fragment key={step.label}>
           {/* Step node */}

@@ -17,18 +17,18 @@
  *  - AI runs simulated conflict detection; 1-click driver swap stored back into event
  *  - Category dots on day strip: Medical=red, Work=purple, Sports=amber, School=blue
  */
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Modal, Pressable,
   TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
-  Animated, PanResponder, Linking,
+  Animated, PanResponder, Linking, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
+import type { FamilyMember } from '@/store/familyStore';
 import { useEventStore, FamilyEvent, EventType } from '@/store/eventStore';
 import AppHeader from '@/components/AppHeader';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -36,6 +36,10 @@ import FamilyAvatar from '@/components/FamilyAvatar';
 import { TYPO } from '@/constants/theme';
 import { fmtDate, fmtDateShort, fmtTimeParts } from '@/lib/dates';
 import { AddEventModal as EventFormAdd, EditEventModal } from './EventFormModal';
+import { EventDetailSheet } from '@/features/hub/hubComponents';
+import AddIntakeChooser from '@/components/AddIntakeChooser';
+import { useChatStore } from '@/store/chatStore';
+import { relationalNameByName } from '@/lib/format';
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function toDateStr(d: Date) {
@@ -87,6 +91,11 @@ function UrgentPulse() {
 function parseDate(s: string) {
   const [y, m, d] = s.split('-').map(Number);
   return new Date(y, m - 1, d);
+}
+function addDays(d: Date, n: number): Date {
+  const next = new Date(d);
+  next.setDate(d.getDate() + n);
+  return next;
 }
 function get15Days(center: string): string[] {
   const base = parseDate(center);
@@ -205,6 +214,16 @@ const I = {
       <Path d="M18 15l-6-6-6 6" stroke={c} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
     </Svg>
   ),
+  ChevronLeft: ({ c, size=14 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M15 18l-6-6 6-6" stroke={c} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </Svg>
+  ),
+  ChevronRight: ({ c, size=14 }: { c: string; size?: number }) => (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M9 6l6 6-6 6" stroke={c} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </Svg>
+  ),
   HelpCircle: ({ c, size=14 }: { c: string; size?: number }) => (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Circle cx={12} cy={12} r={10} stroke={c} strokeWidth={2} fill="none" />
@@ -265,6 +284,23 @@ function catStyle(category?: string, isDark = false) {
   const c = CAT_COLOR[category ?? 'default'] ?? CAT_COLOR.default;
   if (isDark) return { dot: c.dot, badge: c.dot + '25', text: c.dot };
   return c;
+}
+
+// ─── Role color system — WHO the event is for, not what it's about ────────────
+// Month/Week/Day/Agenda cards color by member role (teal=parent,
+// amber=kid, purple=teen, pink=senior) rather than event category — matches
+// the "whose event is this" scanning pattern from the Month/Week/Agenda
+// reference design. Only `parent`/`kid` have dedicated tokens in
+// constants/colors.ts; teen/senior reuse `primary`(purple)/`accent`(pink),
+// the same fallback pairing DayGridView's LANE_ACCENTS already established.
+function roleStyle(role: string | undefined, colors: any) {
+  const dot =
+    role === 'parent' ? colors.parent :
+    role === 'kid'    ? colors.kid :
+    role === 'teen'   ? colors.primary :
+    role === 'senior' ? colors.accent :
+    colors.textTertiary;
+  return { dot, badge: dot + '20', text: dot };
 }
 
 // ─── AI Simulation ────────────────────────────────────────────────────────────
@@ -328,14 +364,6 @@ function simulateConflictDetection(events: FamilyEvent[]): Promise<AiResult> {
   }, 1800));
 }
 
-// ─── Decline presets ──────────────────────────────────────────────────────────
-const RIDE_DECLINE_PRESETS = [
-  'Schedule conflict',
-  'Work meeting I can\'t move',
-  'Vehicle unavailable',
-  'Kid playing with the system',
-];
-
 // Category → dot color map (used only in strip — no full event objects needed)
 const CAT_DOT: Record<string, string> = {
   Medical:  '#EF4444',
@@ -348,246 +376,458 @@ const CAT_DOT: Record<string, string> = {
   Holiday:  '#F59E0B',
 };
 
-// ─── Day Strip ────────────────────────────────────────────────────────────────
-// Uses lightweight stripMap (date→category[]) — no full event objects.
-function DayStrip({ selected, stripMap, colors, isDark, onSelect }: {
-  selected: string; stripMap: Record<string, string[]>; colors: any; isDark: boolean;
-  onSelect: (d: string) => void;
-}) {
-  const todayStr = toDateStr(new Date());
-  const days     = get15Days(selected);
+// ─── Month grid — Apple Calendar style ─────────────────────────────────────
+// A real month sheet: weekday header, 6-row grid, up to 3 category dots per
+// day from the lightweight stripMap (no full event fetch needed to paint
+// it). Tapping a day sets selectedDate, which drives the agenda list
+// rendered below by the caller — the grid itself never renders events.
+const MONTH_LABELS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
+function buildMonthGrid(year: number, month: number): string[] {
+  const first = new Date(year, month, 1);
+  const startOffset = (first.getDay() + 6) % 7; // Mon-first
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: string[] = [];
+  for (let i = 0; i < startOffset; i++) cells.push('');
+  for (let d = 1; d <= daysInMonth; d++) cells.push(toDateStr(new Date(year, month, d)));
+  while (cells.length % 7 !== 0) cells.push('');
+  return cells;
+}
+
+// Gentle mount-fade — used so Month view arrives as a soft continuation of
+// the pull-to-reveal gesture in Day view rather than an abrupt hard cut.
+function FadeInView({ children }: { children: React.ReactNode }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, { toValue: 1, duration: 260, useNativeDriver: true }).start();
+  }, []);
   return (
-    <View style={[ds.wrap, { backgroundColor: isDark ? colors.card : '#fff', borderBottomColor: colors.border }]}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 14, gap: 5, paddingVertical: 8 }}>
-        {days.map(d => {
-          const date    = parseDate(d);
-          const cats    = stripMap[d] ?? [];
-          const isSel   = d === selected;
-          const isToday = d === todayStr;
-
-          // Up to 3 distinct dot colors from the strip map
-          const dotColors = cats
-            .map(c => CAT_DOT[c] ?? '#10B981')
-            .filter((c, i, a) => a.indexOf(c) === i)
-            .slice(0, 3);
-
-          return (
-            <TouchableOpacity key={d} onPress={() => onSelect(d)}
-              style={[ds.cell, {
-                backgroundColor: isSel ? BRAND.purple : isDark ? '#1E293B' : '#FFFFFF',
-                borderColor: isSel ? BRAND.purple : isToday ? BRAND.purple + '80' : (isDark ? '#334155' : '#E2E8F0'),
-                borderWidth: 1,
-                shadowColor: '#000',
-                shadowOpacity: isSel ? 0.18 : isDark ? 0 : 0.04,
-                shadowRadius: isSel ? 6 : 2,
-                shadowOffset: { width: 0, height: 2 },
-                elevation: isSel ? 3 : 1,
-              }]}>
-              <Text style={{ fontSize: 10, fontWeight: '700', letterSpacing: 0.4,
-                color: isSel ? 'rgba(255,255,255,0.8)' : isToday ? BRAND.purple : colors.textTertiary }}>
-                {DAY_SHORT[(date.getDay() + 6) % 7]}
-              </Text>
-              <Text style={{ fontSize: 17, fontWeight: '900', lineHeight: 22,
-                color: isSel ? '#fff' : isToday ? BRAND.purple : colors.textPrimary }}>
-                {date.getDate()}
-              </Text>
-              <View style={{ flexDirection: 'row', gap: 3, minHeight: 7, alignItems: 'center' }}>
-                {dotColors.map((col, i) => (
-                  <View key={i} style={[ds.dot, { backgroundColor: isSel ? 'rgba(255,255,255,0.5)' : col + '70' }]} />
-                ))}
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-    </View>
+    <Animated.View style={{
+      opacity: anim,
+      transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }],
+    }}>
+      {children}
+    </Animated.View>
   );
 }
-const ds = StyleSheet.create({
-  wrap: { borderBottomWidth: 1 },
-  cell: { width: 44, borderRadius: 14, paddingVertical: 5, paddingHorizontal: 2, alignItems: 'center', gap: 1 },
-  dot:  { width: 5, height: 5, borderRadius: 3 },
-});
 
-// ─── Pending Helper Flow sub-component ───────────────────────────────────────
-function PendingHelperFlow({ ev, activeMemberName, isParent, isSenior, colors, isDark, onAccept, onDecline, onWithdraw, onReassign }: {
-  ev: FamilyEvent; activeMemberName: string;
-  isParent: boolean; isSenior: boolean;
-  colors: any; isDark: boolean;
-  onAccept: (note: string) => void;
-  onDecline: (reason: string) => void;
-  onWithdraw: () => void;
-  onReassign: () => void;
+// Compact "Events for X" card — used both as Month's selected-day summary
+// below the grid, and as the Day-first intro shown above the grid when
+// Month opens on today (before the user has scrolled into the full grid).
+function DayEventsSummaryCard({
+  dateLabel, events, members, colors, isDark, onSelectEvent,
+}: {
+  dateLabel: string; events: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
+  onSelectEvent: (ev: FamilyEvent) => void;
 }) {
-  const [note,         setNote]         = useState('');
-  const [showDecInput, setShowDecInput] = useState(false);
-  const [decReason,    setDecReason]    = useState('');
-
-  const isRequestor   = activeMemberName === ev.helperRequestedBy;
-  const isNamedHelper = ev.helper && (
-    ev.helper.includes(activeMemberName) || activeMemberName.includes(ev.helper.split(' ')[0])
-  );
-
+  const shown = events.filter(ev => ev.category !== 'Holiday');
   return (
-    <View style={[pf.box, { backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderColor: '#F59E0B60' }]}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#D97706' }}>
-          Awaiting confirmation from {ev.helper}
+    <View style={{ borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#F1F5F9', backgroundColor: isDark ? colors.card : '#fff', padding: 14, gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
+          Events for {dateLabel}
         </Text>
-        <Text style={{ fontSize: TYPO.micro, color: '#D97706', opacity: 0.7 }}>
-          Requested by: {ev.helperRequestedBy ?? 'Parent'}
-        </Text>
+        <View style={{ backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 }}>
+          <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textSecondary }}>
+            {shown.length} item{shown.length === 1 ? '' : 's'}
+          </Text>
+        </View>
       </View>
 
-      {showDecInput ? (
-        <View style={[pf.decBox, { backgroundColor: isDark ? '#450A0A' : '#FEF2F2', borderColor: '#FCA5A5' }]}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444', marginBottom: 6 }}>Select or type decline reason:</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-            {RIDE_DECLINE_PRESETS.map(p => (
-              <TouchableOpacity key={p}
-                style={[pf.presetChip, { backgroundColor: decReason === p ? '#EF4444' : isDark ? '#1E293B' : '#fff', borderColor: decReason === p ? '#EF4444' : '#FCA5A5' }]}
-                onPress={() => setDecReason(p)}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: decReason === p ? '#fff' : '#EF4444' }}>{p}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <TextInput
-            style={[pf.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]}
-            placeholder="Reason (max 150 chars)..."
-            placeholderTextColor={colors.textTertiary}
-            value={decReason} onChangeText={t => setDecReason(t.slice(0, 150))}
-            maxLength={150}
-          />
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-            <TouchableOpacity style={[pf.btn, { flex: 1, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}
-              onPress={() => setShowDecInput(false)}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[pf.btn, { flex: 2, backgroundColor: decReason ? '#EF4444' : colors.border }]}
-              onPress={() => decReason && onDecline(decReason)} disabled={!decReason}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Confirm Decline</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+      {shown.length === 0 ? (
+        <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, fontStyle: 'italic', paddingVertical: 8 }}>
+          No scheduled events for this day. Tap + to add one.
+        </Text>
       ) : (
-        <View>
-          <TextInput
-            style={[pf.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#fff' }]}
-            placeholder="Add a note (optional, max 150 chars)..."
-            placeholderTextColor={colors.textTertiary}
-            value={note} onChangeText={t => setNote(t.slice(0, 150))}
-            maxLength={150}
-          />
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 7 }}>
-            {(isNamedHelper || isParent || isSenior) && (
-              <TouchableOpacity style={[pf.btn, { flex: 2, backgroundColor: '#059669' }]}
-                onPress={() => onAccept(note)}>
-                <I.Check c="#fff" size={13} />
-                <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Accept</Text>
+        <View style={{ gap: 8 }}>
+          {shown.map(ev => {
+            const assignee = members.find(m => m.id === ev.memberId);
+            const rs = roleStyle(assignee?.role, colors);
+            const { time, ampm } = fmtTimeParts(ev.time);
+            return (
+              <TouchableOpacity key={ev.id} onPress={() => onSelectEvent(ev)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14,
+                  borderWidth: 1, borderColor: rs.dot + '35',
+                  backgroundColor: isDark ? rs.dot + '1A' : rs.badge,
+                  paddingHorizontal: 10, paddingVertical: 9 }}>
+                <View style={{ width: 3, height: 30, borderRadius: 2, backgroundColor: rs.dot }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={1}>
+                    {ev.title}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 1 }}>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textSecondary }}>{time}{ampm.toLowerCase()}</Text>
+                    {ev.location && (
+                      <>
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>·</Text>
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={1}>{ev.location}</Text>
+                      </>
+                    )}
+                  </View>
+                </View>
+                {assignee && (
+                  <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: rs.dot + '40' }}>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: rs.text }}>{assignee.name.split(' ')[0]}</Text>
+                  </View>
+                )}
               </TouchableOpacity>
-            )}
-            {(isNamedHelper || isParent || isSenior) && (
-              <TouchableOpacity style={[pf.btn, { backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderWidth: 1, borderColor: '#FCA5A5' }]}
-                onPress={() => setShowDecInput(true)}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444' }}>Decline</Text>
-              </TouchableOpacity>
-            )}
-            {isParent && (
-              <TouchableOpacity style={[pf.btn, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]}
-                onPress={onReassign}>
-                <I.Arrows c={colors.textSecondary} size={12} />
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Find Another</Text>
-              </TouchableOpacity>
-            )}
-            {isRequestor && (
-              <TouchableOpacity style={[pf.btn, { paddingHorizontal: 8 }]} onPress={onWithdraw}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444' }}>🗑️ Withdraw</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+            );
+          })}
         </View>
       )}
     </View>
   );
 }
-const pf = StyleSheet.create({
-  box:       { borderRadius: 16, borderWidth: 1, padding: 10, marginTop: 8 },
-  decBox:    { borderRadius: 14, borderWidth: 1, padding: 10 },
-  presetChip:{ borderRadius: 12, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4 },
-  input:     { borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, fontSize: 11, marginBottom: 4 },
-  btn:       { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 7 },
-});
 
-// ─── Find Helper Modal ────────────────────────────────────────────────────────
-function FindHelperModal({ visible, ev, members, onAssign, onClose, colors, isDark }: {
-  visible: boolean; ev: FamilyEvent | null;
-  members: any[]; onAssign: (name: string) => void;
-  onClose: () => void; colors: any; isDark: boolean;
+function MonthGridView({
+  monthDate, selected, stripMap, colors, isDark, onSelectDay, onChangeMonth,
+}: {
+  monthDate: Date; selected: string; stripMap: Record<string, string[]>; colors: any; isDark: boolean;
+  onSelectDay: (d: string) => void;
+  onChangeMonth: (delta: number) => void;
 }) {
-  const adults = members.filter(m => m.role === 'parent' || m.role === 'senior');
-  const helperLabel = ev?.category === 'Medical' ? '🏥 Accompanied by'
-    : ev?.category === 'Study'   ? '📚 Tutored by'
-    : ev?.category === 'Sports'  ? '🚗 Drop-off by'
-    : '🚗 Driven by';
+  const todayStr = toDateStr(new Date());
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const cells = useMemo(() => buildMonthGrid(year, month), [year, month]);
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={rm.backdrop}>
-        <View style={[rm.sheet, { backgroundColor: colors.card }]}>
-          <View style={[rm.handle, { backgroundColor: colors.border }]} />
-          <Text style={[rm.title, { color: colors.textPrimary }]}>{helperLabel}</Text>
-          {ev && <Text style={[rm.sub, { color: colors.textSecondary }]} numberOfLines={1}>"{ev.title}"</Text>}
-          <Text style={[rm.label, { color: colors.textSecondary }]}>Pick an available adult:</Text>
-          {adults.map(m => {
-            const isDeclined = ev && (m.name === ev.helper || m.name === ev.declinedBy) && ev.helperStatus === 'rejected';
-            return (
-              <TouchableOpacity key={m.id}
-                style={[rm.option, {
-                  backgroundColor: isDeclined ? (isDark ? '#2d0a0a' : '#FEF2F2') : (isDark ? colors.surface : '#F8FAFC'),
-                  borderColor: isDeclined ? '#EF444440' : colors.border,
-                }]}
-                onPress={() => onAssign(m.name)}>
-                <View style={{ position: 'relative' }}>
-                  <Text style={{ fontSize: 22 }}>{m.emoji ?? '👤'}</Text>
-                  {isDeclined && (
-                    <View style={{ position: 'absolute', top: -3, right: -3, backgroundColor: '#EF4444', borderRadius: 7, width: 14, height: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: isDark ? colors.card : '#fff' }}>
-                      <Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>!</Text>
-                    </View>
-                  )}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[rm.optionText, { color: isDeclined ? '#EF4444' : colors.textPrimary }]}>{m.name}</Text>
-                  {isDeclined && ev.declineReason && (
-                    <Text style={{ fontSize: TYPO.micro, color: '#EF4444', fontStyle: 'italic' }} numberOfLines={1}>"{ev.declineReason}"</Text>
-                  )}
-                </View>
-                {isDeclined
-                  ? <View style={{ backgroundColor: '#EF444420', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#EF444440' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#EF4444' }}>Declined ✕</Text></View>
-                  : <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>{m.role === 'senior' ? '👵 Senior' : '👨‍👩 Parent'}</Text>
-                }
-              </TouchableOpacity>
-            );
-          })}
-          <TouchableOpacity style={[rm.cancel, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={onClose}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
+    <View style={{ paddingHorizontal: 14, paddingTop: 4 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+        <TouchableOpacity onPress={() => onChangeMonth(-1)} style={{ padding: 8 }}>
+          <I.ChevronLeft c={colors.textSecondary} size={18} />
+        </TouchableOpacity>
+        <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
+          {MONTH_LABELS[month]} {year}
+        </Text>
+        <TouchableOpacity onPress={() => onChangeMonth(1)} style={{ padding: 8 }}>
+          <I.ChevronRight c={colors.textSecondary} size={18} />
+        </TouchableOpacity>
       </View>
-    </Modal>
+
+      <View style={{ flexDirection: 'row', marginBottom: 6 }}>
+        {DAY_SHORT.map(d => (
+          <Text key={d} style={{ flex: 1, textAlign: 'center', fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, letterSpacing: 0.4 }}>
+            {d[0]}
+          </Text>
+        ))}
+      </View>
+
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {cells.map((d, i) => {
+          if (!d) return <View key={i} style={{ width: `${100/7}%`, aspectRatio: 1 }} />;
+          const date = parseDate(d);
+          const isSel = d === selected;
+          const isToday = d === todayStr;
+          const cats = stripMap[d] ?? [];
+          const dotColors = cats.map(c => CAT_DOT[c] ?? '#10B981').filter((c, idx, a) => a.indexOf(c) === idx).slice(0, 3);
+          return (
+            <TouchableOpacity key={d} onPress={() => onSelectDay(d)}
+              style={{ width: `${100/7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{
+                width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: isSel ? BRAND.purple : isToday ? BRAND.purple + '18' : 'transparent',
+              }}>
+                <Text style={{
+                  fontSize: TYPO.body, fontWeight: isToday || isSel ? '900' : '600',
+                  color: isSel ? '#fff' : isToday ? BRAND.purple : (isDark ? colors.textPrimary : '#1E2D6B'),
+                }}>
+                  {date.getDate()}
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 3, height: 8, marginTop: 2, alignItems: 'center' }}>
+                {dotColors.map((c, idx) => (
+                  <View key={idx} style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: c }} />
+                ))}
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
   );
 }
-const rm = StyleSheet.create({
-  backdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
-  sheet:      { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36 },
-  handle:     { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  title:      { fontSize: 16, fontWeight: '900', marginBottom: 2 },
-  sub:        { fontSize: 11, marginBottom: 14 },
-  label:      { fontSize: TYPO.label, fontWeight: '700', marginBottom: 8 },
-  option:     { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 8 },
-  optionText: { fontSize: TYPO.caption, fontWeight: '700' },
-  cancel:     { borderRadius: 14, borderWidth: 1, padding: 12, alignItems: 'center', marginTop: 4 },
-});
+
+// ─── Week view — one card per day, chronological events inside ────────────────
+// Simple day-cards rather than an hour grid (that's what Family view is
+// for) — this is the "what's the shape of the week" overview: 7 cards,
+// today highlighted, each showing its events as compact rows colored by
+// who they're for.
+function WeekView({
+  weekStart, events, members, colors, isDark, onSelectEvent, onNavigateWeek, onAddDay,
+}: {
+  weekStart: Date; events: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
+  onSelectEvent: (ev: FamilyEvent) => void;
+  onNavigateWeek: (delta: number) => void;
+  onAddDay?: (dateKey: string) => void;
+}) {
+  const todayStr = toDateStr(new Date());
+  const weekEnd = addDays(weekStart, 6);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+
+  return (
+    <View style={{ paddingHorizontal: 14, paddingTop: 4, gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <TouchableOpacity onPress={() => onNavigateWeek(-1)} style={{ padding: 8 }}>
+          <I.ChevronLeft c={colors.textSecondary} size={16} />
+        </TouchableOpacity>
+        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary }}>
+          {fmtDateShort(toDateStr(weekStart))} – {fmtDateShort(toDateStr(weekEnd))}
+        </Text>
+        <TouchableOpacity onPress={() => onNavigateWeek(1)} style={{ padding: 8 }}>
+          <I.ChevronRight c={colors.textSecondary} size={16} />
+        </TouchableOpacity>
+      </View>
+
+      {days.map(day => {
+        const dateKey = toDateStr(day);
+        const isToday = dateKey === todayStr;
+        const dayEvs = events.filter(e => e.date === dateKey && e.category !== 'Holiday')
+          .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
+
+        return (
+          <View key={dateKey} style={{
+            borderRadius: 18, padding: 12, gap: 8,
+            backgroundColor: isToday ? (isDark ? BRAND.purple + '18' : BRAND.purple + '0C') : (isDark ? colors.card : '#fff'),
+            borderWidth: 1, borderColor: isToday ? BRAND.purple + '50' : (isDark ? colors.border : '#F1F5F9'),
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isToday ? BRAND.purple : colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                  {DAY_SHORT[(day.getDay() + 6) % 7]}
+                </Text>
+                {isToday ? (
+                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>{day.getDate()}</Text>
+                  </View>
+                ) : (
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{day.getDate()}</Text>
+                )}
+              </View>
+              {onAddDay ? (
+                <TouchableOpacity onPress={() => onAddDay(dateKey)}>
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: BRAND.purple }}>+ Add</Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary }}>
+                  {dayEvs.length === 0 ? 'No events' : `${dayEvs.length} event${dayEvs.length === 1 ? '' : 's'}`}
+                </Text>
+              )}
+            </View>
+
+            {/* Reference's per-event row: border + light tint together
+                (not just a tinted background), same role-color pairing. */}
+            {dayEvs.length === 0 ? (
+              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontStyle: 'italic' }}>No events</Text>
+            ) : (
+              <View style={{ gap: 6 }}>
+                {dayEvs.map(ev => {
+                  const assignee = members.find(m => m.id === ev.memberId);
+                  const rs = roleStyle(assignee?.role, colors);
+                  const { time, ampm } = fmtTimeParts(ev.time);
+                  return (
+                    <TouchableOpacity key={ev.id} onPress={() => onSelectEvent(ev)}
+                      style={{
+                        flexDirection: 'row', alignItems: 'center', gap: 8,
+                        borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8,
+                        borderWidth: 1, borderColor: rs.dot + '35',
+                        backgroundColor: isDark ? rs.dot + '1A' : rs.badge,
+                      }}>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: rs.text, width: 46 }}>{time}{ampm.toLowerCase()}</Text>
+                      <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={1}>
+                        {ev.title}
+                      </Text>
+                      {assignee && <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: rs.text }}>{assignee.name.split(' ')[0]}</Text>}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+// ─── Agenda view — chronological list grouped by date, sticky headers ─────────
+// Spans many upcoming days (not just one selected date) — the "what's
+// coming up" view, matching the reference's grouped-by-date list pattern.
+function AgendaView({
+  events, members, colors, isDark, onSelectEvent,
+}: {
+  events: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
+  onSelectEvent: (ev: FamilyEvent) => void;
+}) {
+  const todayStr = toDateStr(new Date());
+
+  const grouped = useMemo(() => {
+    const byDate: Record<string, FamilyEvent[]> = {};
+    for (const ev of events) {
+      if (ev.category === 'Holiday') continue;
+      (byDate[ev.date] ??= []).push(ev);
+    }
+    const dates = Object.keys(byDate).sort();
+    return dates.map(date => ({
+      date,
+      events: byDate[date].sort((a, b) => (a.time ?? '').localeCompare(b.time ?? '')),
+    }));
+  }, [events]);
+
+  if (grouped.length === 0) {
+    return (
+      <View style={{ paddingHorizontal: 14, paddingTop: 8 }}>
+        <View style={{ borderRadius: 18, borderWidth: 1, borderColor: isDark ? colors.border : '#F1F5F9', backgroundColor: isDark ? colors.card : '#fff', padding: 28, alignItems: 'center' }}>
+          <Text style={{ fontSize: 26, marginBottom: 6 }}>📋</Text>
+          <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>No upcoming events in this window</Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ paddingHorizontal: 14, paddingTop: 4, gap: 14 }}>
+      {grouped.map(group => {
+        const date = parseDate(group.date);
+        const isToday = group.date === todayStr;
+        return (
+          <View key={group.date} style={{ gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 4 }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: isToday ? BRAND.purple : colors.textSecondary }}>
+                {isToday ? 'TODAY · ' : ''}{date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              </Text>
+              <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary }}>
+                {group.events.length} event{group.events.length === 1 ? '' : 's'}
+              </Text>
+            </View>
+            {group.events.map(ev => {
+              const assignee = members.find(m => m.id === ev.memberId);
+              const rs = roleStyle(assignee?.role, colors);
+              const { time, ampm } = fmtTimeParts(ev.time);
+              return (
+                <TouchableOpacity key={ev.id} onPress={() => onSelectEvent(ev)}
+                  style={{
+                    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+                    borderRadius: 16, borderWidth: 1, borderColor: rs.dot + '35',
+                    backgroundColor: isDark ? colors.card : '#fff',
+                    paddingHorizontal: 10, paddingVertical: 10,
+                  }}>
+                  {/* Reference's boxed time chip (tinted square, member-
+                      bordered) rather than a plain left-bar accent. */}
+                  <View style={{ width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: isDark ? rs.dot + '1A' : rs.badge, borderWidth: 1, borderColor: rs.dot + '40' }}>
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: rs.text }}>{time}</Text>
+                    <Text style={{ fontSize: 9, fontWeight: '700', color: rs.text, opacity: 0.8 }}>{ampm}</Text>
+                  </View>
+                  <View style={{ flex: 1, paddingTop: 2 }}>
+                    <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={1}>
+                      {ev.title}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                      {ev.category && (
+                        <View style={{ backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 }}>
+                          <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textSecondary }}>{ev.category}</Text>
+                        </View>
+                      )}
+                      {ev.location && (
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={1}>📍 {ev.location}</Text>
+                      )}
+                    </View>
+                  </View>
+                  {assignee && (
+                    <View style={{ backgroundColor: rs.dot, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 }}>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }}>{assignee.name.split(' ')[0]}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+// ─── Day view — simple hour-slot list, matching the reference exactly ─────────
+// One fixed-height row per hour (5am–11pm), not a proportional time-block
+// grid — an empty hour shows a dashed "+ tap to add" placeholder, a filled
+// hour shows its event(s) as role-colored cards. This intentionally drops
+// the proportional positioning/now-line/pull-to-month gesture the previous
+// hour-grid Day view had, in favor of matching the reference's simpler
+// slot-list pattern 1:1.
+const DAY_SLOT_START_HOUR = 5;
+const DAY_SLOT_END_HOUR = 23;
+
+function DaySlotView({
+  dayEvents, members, colors, isDark, onSelect, onAddAtTime,
+}: {
+  dayEvents: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
+  onSelect: (ev: FamilyEvent) => void;
+  onAddAtTime: (hourTimeKey: string) => void;
+}) {
+  const hours = Array.from({ length: DAY_SLOT_END_HOUR - DAY_SLOT_START_HOUR + 1 }, (_, i) => DAY_SLOT_START_HOUR + i);
+
+  return (
+    <View style={{ paddingHorizontal: 14, paddingTop: 8 }}>
+      {hours.map(hour => {
+        const hourLabel = hour < 12 ? `${hour}:00 AM` : hour === 12 ? '12:00 PM' : `${hour - 12}:00 PM`;
+        const hourTimeKey = `${String(hour).padStart(2, '0')}:00`;
+        const matching = dayEvents.filter(ev => {
+          const t = timeToMinutes(ev.time);
+          return t !== null && Math.floor(t / 60) === hour;
+        });
+
+        return (
+          <View key={hour}
+            style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, minHeight: 54, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : '#F1F5F9' }}>
+            <View style={{ width: 64, paddingTop: 4 }}>
+              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textAlign: 'right' }}>{hourLabel}</Text>
+            </View>
+
+            {matching.length > 0 ? (
+              <View style={{ flex: 1, gap: 6 }}>
+                {matching.map(ev => {
+                  const assignee = members.find(m => m.id === ev.memberId);
+                  const rs = roleStyle(assignee?.role, colors);
+                  return (
+                    <TouchableOpacity key={ev.id} onPress={() => onSelect(ev)}
+                      style={{ borderRadius: 14, backgroundColor: isDark ? rs.dot + '1A' : rs.badge, padding: 10 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={1}>
+                          {ev.title}
+                        </Text>
+                        {assignee && (
+                          <View style={{ backgroundColor: rs.dot, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }}>{assignee.name.split(' ')[0]}</Text>
+                          </View>
+                        )}
+                      </View>
+                      {(ev.location || ev.category) && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                          {ev.location && <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>📍 {ev.location}</Text>}
+                          {ev.location && ev.category && <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>·</Text>}
+                          {ev.category && <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>🏷️ {ev.category}</Text>}
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              <TouchableOpacity onPress={() => onAddAtTime(hourTimeKey)}
+                style={{ flex: 1, height: 40, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed',
+                  borderColor: isDark ? colors.border : '#E2E8F0', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontWeight: '600' }}>+ Tap to add event</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 
 // ─── Add Event Modal ──────────────────────────────────────────────────────────
 const EVENT_TYPES: EventType[] = ['event', 'reminder', 'appointment', 'birthday'];
@@ -775,8 +1015,8 @@ function _OldAskHelpModal({ visible, selectedDate, activeMemberId, colors, isDar
 
 // ─── Swipeable event card wrapper ────────────────────────────────────────────
 // Swipe left to reveal delete. Only shown for future events (per RBAC).
-function SwipeableEventCard({ children, onDelete, onLongPress, canDelete }: {
-  children: React.ReactNode; onDelete: () => void; onLongPress: () => void; canDelete: boolean;
+function SwipeableEventCard({ children, onDelete, onLongPress, onPress, canDelete }: {
+  children: React.ReactNode; onDelete: () => void; onLongPress: () => void; onPress?: () => void; canDelete: boolean;
 }) {
   const tx      = useRef(new Animated.Value(0)).current;
   const [open, setOpen] = useState(false);
@@ -815,7 +1055,7 @@ function SwipeableEventCard({ children, onDelete, onLongPress, canDelete }: {
           <TouchableOpacity
             activeOpacity={0.88}
             onLongPress={onLongPress}
-            onPress={open ? close : undefined}
+            onPress={open ? close : onPress}
             delayLongPress={450}
           >
             {children}
@@ -843,15 +1083,26 @@ function SwipeableEventCard({ children, onDelete, onLongPress, canDelete }: {
   );
 }
 
+// Shared by DaySlotView (hour-slot placement) — parses "HH:MM" into
+// minutes-since-midnight.
+function timeToMinutes(t?: string): number | null {
+  if (!t) return null;
+  const [h, m] = t.split(':').map(Number);
+  if (Number.isNaN(h)) return null;
+  return h * 60 + (m || 0);
+}
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function CalendarScreen() {
   const { colors, isDark } = useTheme();
+  const { height: windowHeight } = useWindowDimensions();
   const { members, activeMemberId, setActiveMember } = useFamilyStore();
   const {
     events, dayLoading, hasMore,
     stripMap,
+    rangeEvents, rangeLoading,
     addEvent, updateEvent, deleteEvent,
-    selectDate: storeSelectDate, loadMoreDay, loadStrip,
+    selectDate: storeSelectDate, loadMoreDay, loadStrip, loadRange,
   } = useEventStore();
 
   const activeMember = members.find(m => m.id === activeMemberId)
@@ -863,12 +1114,24 @@ export default function CalendarScreen() {
   const isParentOrSenior = isParent || isSenior;
   const activeMemberName = activeMember?.name ?? '';
 
+  // Whoever had committed to drive/help only finds out an event vanished by
+  // noticing it's gone from their own Hub unless we say so — same reasoning
+  // as the takeover broadcast added for reassignment this session.
+  const notifyDeleteIfAssigned = (ev: FamilyEvent) => {
+    if (ev.helper && ev.helper !== activeMemberName &&
+        (ev.helperStatus === 'pending' || ev.helperStatus === 'confirmed')) {
+      useChatStore.getState().sendMessage('all', activeMemberId ?? '',
+        `🗑️ ${relationalNameByName(activeMemberName, members)} removed "${ev.title}" — ${relationalNameByName(ev.helper, members)} is no longer needed for it.`);
+    }
+  };
+
   const [selectedDate, setSelectedDate] = useState(toDateStr(new Date()));
   const todayStr = toDateStr(new Date());
   const goToToday = () => {
     setSelectedDate(todayStr);
     storeSelectDate(todayStr);
     loadStrip(get15Days(todayStr));
+    setMonthCursor(parseDate(todayStr));
   };
 
   // On mount: load today's events + strip for visible 15-day window
@@ -883,12 +1146,15 @@ export default function CalendarScreen() {
   // per family member. My Schedule/All is only a kid/teen/senior concept.
   const [scheduleFilter, setScheduleFilter] = useState<'mine' | 'all'>(isParent ? 'all' : 'mine');
   const [showAdd,       setShowAdd]       = useState(false);
+  const [showAddChooser, setShowAddChooser] = useState(false);
+  const [addPrefill, setAddPrefill] = useState<{
+    title: string; category?: string; memberId?: string; startAt?: string; notes?: string;
+  } | undefined>(undefined);
   const [showAskHelp,   setShowAskHelp]   = useState(false);
-  const [showReassign,  setShowReassign]  = useState(false);
-  const [reassignEv,    setReassignEv]    = useState<FamilyEvent | null>(null);
   const [editEv,        setEditEv]        = useState<FamilyEvent | null>(null);
 
   const calScrollRef = useRef<ScrollView>(null);
+
   const prevCalMemberRef = useRef(activeMemberId);
   React.useEffect(() => {
     if (prevCalMemberRef.current === activeMemberId) return;
@@ -898,34 +1164,91 @@ export default function CalendarScreen() {
     setCompact(isKid);
     setShowAdd(false);
     setShowAskHelp(false);
-    setShowReassign(false);
-    setReassignEv(null);
     setEditEv(null);
     setShowAiPanel(false);
     setIsAnalyzing(false);
     calScrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [activeMemberId]);
-  const [showRange,     setShowRange]     = useState(false);
-  const weekBounds = useMemo(() => currentWeekBounds(), []);
   const [compact,       setCompact]       = useState(isKid);
+  // 'month' — Apple-style month sheet, tap a day to load its agenda below.
+  // 'week' — one card per day, chronological events inside. 'day' — the
+  // chronological single-day timeline. 'agenda' — grouped-by-date list
+  // spanning many upcoming days. Defaults to 'agenda' — the most useful
+  // at-a-glance view across the whole family's upcoming schedule.
+  const [viewMode,      setViewMode]      = useState<'month' | 'week' | 'day' | 'agenda'>('agenda');
+  const [monthCursor,   setMonthCursor]   = useState(() => parseDate(toDateStr(new Date())));
+  const [weekCursor,    setWeekCursor]    = useState(() => {
+    const b = currentWeekBounds();
+    return parseDate(b.start);
+  });
+
+  // Day view auto-scroll-to-now — Day owns its own ScrollView (dayScrollRef)
+  // now, so this scrolls directly within that, relative offset 0, instead
+  // of computing a position inside the outer page scroll. hourYRef collects
+  // each hour row's offset as DaySlotView lays out (row heights vary since
+  // a row with events is taller than an empty dashed placeholder, so this
+  // can't be precomputed from a fixed row height); once the current hour's
+  // row is known, scroll there once per Day-view-mount (dedup via
+  // scrolledRef so re-renders don't re-trigger).
+  const dayScrollRef = useRef<ScrollView>(null);
+  const dayHeaderHeightRef = useRef(0);
+  // Day's own scroller needs a real bounded height (a ScrollView inside an
+  // unbounded outer ScrollView gets no height from flex:1 alone). Measured
+  // at runtime via onLayout on Day's wrapper — pageY is where that wrapper
+  // actually starts on screen, so windowHeight minus that (minus a little
+  // breathing room for the tab bar) is exactly the space left to scroll in,
+  // regardless of device size or how tall the chrome above it happens to be.
+  const [dayViewportHeight, setDayViewportHeight] = useState(560);
+  const dayWrapperRef = useRef<View>(null);
+  // Collapsing-header state: the full date card scrolls away as ordinary
+  // content; this compact docked bar fades/slides in once scroll position
+  // has passed the card's own height, and back out when scrolled to top.
+  // Day view opens at the very top (no auto-scroll) so the full card is
+  // always seen first, matching Month/Week/Agenda.
+  const [dayDockedVisible, setDayDockedVisible] = useState(false);
+  const dayDockAnim = useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    setDayDockedVisible(false);
+    dayDockAnim.setValue(0);
+  }, [viewMode, selectedDate]);
+
+
+  // Month grid's dots need strip data for every visible cell (including the
+  // lead/trail days from adjoining months), not just the 15-day window
+  // the Day/Family toolbar loads around selectedDate.
+  React.useEffect(() => {
+    const cells = buildMonthGrid(monthCursor.getFullYear(), monthCursor.getMonth()).filter(Boolean);
+    if (cells.length) loadStrip(cells);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthCursor]);
+
+  // Week view loads full rows for its visible 7-day window; Agenda loads a
+  // wider forward-looking window (today → +60 days) since it's meant to
+  // answer "what's coming up", not just this week.
+  React.useEffect(() => {
+    if (viewMode !== 'week') return;
+    const from = toDateStr(weekCursor);
+    const to = toDateStr(addDays(weekCursor, 6));
+    loadRange(from, to);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, weekCursor]);
+
+  React.useEffect(() => {
+    if (viewMode !== 'agenda') return;
+    const from = toDateStr(new Date());
+    const to = toDateStr(addDays(new Date(), 60));
+    loadRange(from, to);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode]);
+
   const [detailEv,      setDetailEv]      = useState<FamilyEvent | null>(null);
-  const [rangeStart,    setRangeStart]    = useState('');  // no default filter
-  const [rangeEnd,      setRangeEnd]      = useState('');
 
   // AI state
   const [aiResult,       setAiResult]       = useState<AiResult | null>(null);
   const [isAnalyzing,    setIsAnalyzing]    = useState(false);
   const [showAiPanel,    setShowAiPanel]    = useState(false);
   const [appliedSwaps,   setAppliedSwaps]   = useState<Record<string, boolean>>({});
-  // Collapsed event cards — id in set = collapsed
-  // expandedEvs: IDs whose action section is expanded; reset to empty on every screen focus
-  const [collapsedEvs,   setCollapsedEvs]   = useState<Set<string>>(new Set());
-  const toggleCollapse = (id: string) =>
-    setCollapsedEvs(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
-
-  useFocusEffect(useCallback(() => {
-    setCollapsedEvs(new Set()); // reset all expanded actions when screen comes into focus
-  }, []));
 
   const switchMember = () => {
     const idx = members.findIndex(m => m.id === activeMember?.id);
@@ -952,39 +1275,7 @@ export default function CalendarScreen() {
     setAppliedSwaps(p => ({ ...p, [`swap_${idx}`]: true }));
   };
 
-  const handleAccept = (evId: string, note: string) => {
-    updateEvent(evId, { helperStatus: 'confirmed', notes: note || undefined });
-  };
-
-  const handleDecline = (evId: string, reason: string) => {
-    updateEvent(evId, { helperStatus: 'rejected', declineReason: reason, declinedBy: activeMemberName });
-  };
-
-  const handleWithdraw = (evId: string) => {
-    updateEvent(evId, { approvalPending: false, helper: undefined, helperStatus: undefined });
-  };
-
-  const handleFindHelper = (name: string) => {
-    if (reassignEv) {
-      updateEvent(reassignEv.id, { helper: name, helperStatus: 'pending' });
-    }
-    setShowReassign(false);
-    setReassignEv(null);
-  };
-
-  const openReassign = (ev: FamilyEvent) => {
-    setReassignEv(ev);
-    setShowReassign(true);
-  };
-
-  const isInRange = (date: string) => {
-    if (!rangeStart && !rangeEnd) return true;
-    if (rangeStart && !rangeEnd) return date >= rangeStart;
-    if (!rangeStart && rangeEnd) return date <= rangeEnd;
-    return date >= rangeStart && date <= rangeEnd;
-  };
-
-  // Filtered events for selected day (also respects range filter)
+  // Filtered events for selected day
   const dayEvents = useMemo(() => {
     return events
       .filter(e => e.date === selectedDate &&
@@ -1000,10 +1291,24 @@ export default function CalendarScreen() {
         )) &&
         // My Schedule / All tabs (kid/teen/senior only — parents always see all)
         (isParent || scheduleFilter === 'all' || e.memberId === activeMemberId || !e.memberId) &&
-        (!filterMember || e.memberId === filterMember || !e.memberId) &&
-        isInRange(e.date))
+        (!filterMember || e.memberId === filterMember || !e.memberId))
       .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
-  }, [events, selectedDate, filterMember, scheduleFilter, rangeStart, rangeEnd, isKid, isSenior, isParent, activeMemberId, activeMemberName]);
+  }, [events, selectedDate, filterMember, scheduleFilter, isKid, isSenior, isParent, activeMemberId, activeMemberName]);
+
+  // Same RBAC shape as dayEvents but across rangeEvents' multi-date window
+  // — feeds Week/Agenda, both parent/senior-only views (same gate as
+  // Family), so this skips the kid/teen My-Schedule branch entirely.
+  const scopedRangeEvents = useMemo(() => {
+    return rangeEvents.filter(e =>
+      e.category !== 'Holiday' &&
+      (!isSenior || (
+        (e.helper && (e.helper.includes(activeMemberName) || activeMemberName.includes(e.helper.split(' ')[0]))) ||
+        (!e.memberId && !e.helper) ||
+        !(e as any).isPrivate
+      )) &&
+      (!filterMember || e.memberId === filterMember || !e.memberId)
+    );
+  }, [rangeEvents, isSenior, activeMemberName, filterMember]);
 
   // Events where senior can volunteer as helper (has a pending/no helper, dated today or future)
   // seniorOpenRides removed — ride volunteering now lives in Hub > Helper Dispatch
@@ -1023,9 +1328,17 @@ export default function CalendarScreen() {
         onBellPress={() => {}}
       />
 
-      {/* ── Main Scroll: title + AI + member filter + timeline ── */}
+      {/* ── Main Scroll: title + AI + member filter + timeline ──
+          No stickyHeaderIndices here anymore — it was pinned to index 1,
+          which for most views is a conditional block that renders to
+          nothing (false), and RN's sticky-header math got confused by a
+          collapsing pinned child: it both failed to actually stick
+          anything meaningful AND corrupted the scrollable content height,
+          which is what caused Day view's scroll to dead-stop partway
+          through instead of reaching 8pm. Day view now owns its own
+          correctly-scoped sticky header inside its own branch below. */}
       <ScrollView ref={calScrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 48 }}
-        stickyHeaderIndices={[1]}>
+        scrollEnabled={viewMode !== 'day'} bounces={viewMode !== 'day'}>
 
         {/* [0] Scrollable: Title row + AI banner + AI panel */}
         <View>
@@ -1036,9 +1349,9 @@ export default function CalendarScreen() {
               </Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 1 }}>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>
-                  {rangeStart || rangeEnd ? `${rangeStart || '…'} → ${rangeEnd || '…'}` : selectedDateLabel}
+                  {selectedDateLabel}
                 </Text>
-                {selectedDate !== todayStr && !rangeStart && !rangeEnd && (
+                {selectedDate !== todayStr && (
                   <TouchableOpacity onPress={goToToday}
                     style={{ borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: BRAND.purple + '15' }}>
                     <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.purple }}>Today</Text>
@@ -1062,37 +1375,8 @@ export default function CalendarScreen() {
                 </>
               ) : (
                 <>
-                  {rangeStart || rangeEnd ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 0,
-                      backgroundColor: BRAND.purple + '18', borderRadius: 14, borderWidth: 1.5, borderColor: BRAND.purple + '55', overflow: 'hidden' }}>
-                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6 }}
-                        onPress={() => setShowRange(true)}>
-                        <I.Calendar c={BRAND.purple} size={12} />
-                        <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.purple }}>
-                          {rangeStart || '…'} → {rangeEnd || '…'}
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={{ paddingHorizontal: 8, paddingVertical: 6,
-                        borderLeftWidth: 1, borderLeftColor: BRAND.purple + '40' }}
-                        onPress={() => { setRangeStart(''); setRangeEnd(''); }}>
-                        <I.X c={BRAND.purple} size={12} />
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    <TouchableOpacity style={[sc.headerBtnOutline, { borderColor: colors.border }]}
-                      onPress={() => setShowRange(true)}>
-                      <I.Calendar c={BRAND.purple} size={14} />
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>Range</Text>
-                    </TouchableOpacity>
-                  )}
-                  {/* Compact toggle */}
-                  <TouchableOpacity
-                    onPress={() => setCompact(v => !v)}
-                    style={[sc.headerBtnOutline, { borderColor: compact ? BRAND.purple : colors.border, backgroundColor: compact ? BRAND.purple + '15' : 'transparent' }]}>
-                    <I.List c={compact ? BRAND.purple : colors.textTertiary} size={14} />
-                  </TouchableOpacity>
                   {isParentOrSenior && (
-                    <TouchableOpacity style={[sc.headerBtn, { backgroundColor: BRAND.purple }]} onPress={() => setShowAdd(true)}>
+                    <TouchableOpacity style={[sc.headerBtn, { backgroundColor: BRAND.purple }]} onPress={() => setShowAddChooser(true)}>
                       <I.Plus c="#fff" size={14} />
                       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Event</Text>
                     </TouchableOpacity>
@@ -1102,40 +1386,88 @@ export default function CalendarScreen() {
             </View>
           </View>
 
-          {/* AI Conflict Banner (parent only) */}
-          {isParent && (
+          {/* Member filter bar — matches the reference's persistent header
+              row (always visible above the view tabs, not tucked inside
+              one specific view). "All Family" + one pill per member,
+              colored dot per role. Parent/senior only. */}
+          {isParentOrSenior && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 14, gap: 8, paddingTop: 10 }}>
+              <TouchableOpacity
+                style={[sc.pill, !filterMember ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple } : { backgroundColor: isDark ? colors.surface : '#F5F4FA', borderColor: isDark ? colors.border : 'rgba(146,97,199,0.2)' }]}
+                onPress={() => setFilterMember(null)}>
+                <Text style={[sc.pillText, { color: !filterMember ? '#fff' : colors.textSecondary }]}>All Family</Text>
+              </TouchableOpacity>
+              {members.map(m => {
+                const rs = roleStyle(m.role, colors);
+                const isSel = filterMember === m.id;
+                return (
+                  <TouchableOpacity key={m.id}
+                    style={[sc.pill, isSel ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple } : { backgroundColor: isDark ? colors.surface : '#F5F4FA', borderColor: isDark ? colors.border : 'rgba(146,97,199,0.2)' }]}
+                    onPress={() => setFilterMember(isSel ? null : m.id)}>
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isSel ? '#fff' : rs.dot }} />
+                    <Text style={[sc.pillText, { color: isSel ? '#fff' : colors.textSecondary }]}>{m.name.split(' ')[0]}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+
+          {/* Toolbar — Month / Week / Day / Agenda segmented switch. Month/
+              Week own their own prev/next chevrons inside the view itself;
+              Agenda has no single-date concept at all; so the day-step
+              chevrons + Range button only show for Day, where "which
+              single date" is still the relevant question. Parent/senior
+              only — kids keep the simpler single Day view with no toolbar
+              at all. */}
+          {isParentOrSenior && (
+            <View style={{ marginTop: 10, gap: 8 }}>
+              {/* Mock's segmented control: equal-width tabs in one pill-shaped
+                  bar, active tab lifted on a white/card chip — not a
+                  scrolling row of separate pills. */}
+              <View style={{ flexDirection: 'row', marginHorizontal: 14, backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 12, padding: 3 }}>
+                {([
+                  { key: 'month' as const,  label: 'Month' },
+                  { key: 'week' as const,   label: 'Week' },
+                  { key: 'day' as const,    label: 'Day' },
+                  { key: 'agenda' as const, label: 'Agenda' },
+                ]).map(v => (
+                  <TouchableOpacity key={v.key} onPress={() => setViewMode(v.key)}
+                    style={{
+                      flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 9,
+                      backgroundColor: viewMode === v.key ? (isDark ? colors.card : '#fff') : 'transparent',
+                      shadowColor: '#000', shadowOpacity: viewMode === v.key && !isDark ? 0.06 : 0, shadowRadius: 3, shadowOffset: { width: 0, height: 1 },
+                    }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700',
+                      color: viewMode === v.key ? (isDark ? colors.textPrimary : '#0F172A') : colors.textSecondary }}>
+                      {v.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* AI Conflict Banner — parent only, and only when there's
+              actually something to flag. Permanent "agent is active" chrome
+              read as prototype filler; a real conflict earns the space,
+              nothing to report shouldn't take up a row every time the
+              screen loads. */}
+          {isParent && dayEvents.some(e => e.conflict || e.helperStatus === 'rejected') && (
             <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 6 }}>
-              <View style={{
-                borderRadius: 20, padding: 12,
+              <TouchableOpacity onPress={runAiScan} style={{
+                borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10,
                 backgroundColor: isDark ? '#0D1B2A' : '#0F2027',
-                borderWidth: 1, borderColor: isDark ? '#1E3A4A' : '#1A3346',
                 flexDirection: 'row', alignItems: 'center', gap: 10,
               }}>
-                <View style={{ width: 32, height: 32, borderRadius: 10,
-                  backgroundColor: 'rgba(20,184,166,0.25)', borderWidth: 1, borderColor: 'rgba(20,184,166,0.4)',
-                  alignItems: 'center', justifyContent: 'center' }}>
-                  <I.Bot c="#5EEAD4" size={16} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>CubeAI Schedule Agent</Text>
-                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#34D399' }} />
-                  </View>
-                  <Text style={{ fontSize: TYPO.micro, color: '#94A3B8', marginTop: 1 }}>
-                    Conflict detection &amp; swap suggestions active
-                  </Text>
-                </View>
-                <TouchableOpacity style={{
-                  backgroundColor: 'rgba(20,184,166,0.2)', borderWidth: 1, borderColor: 'rgba(20,184,166,0.35)',
-                  borderRadius: 12, paddingHorizontal: 11, paddingVertical: 7,
-                  flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                  onPress={runAiScan}>
-                  {isAnalyzing
-                    ? <ActivityIndicator size={11} color="#5EEAD4" />
-                    : <I.AlertTriangle c="#5EEAD4" size={11} />}
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#5EEAD4' }}>Scan</Text>
-                </TouchableOpacity>
-              </View>
+                <I.AlertTriangle c="#5EEAD4" size={15} />
+                <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>
+                  Schedule conflict detected
+                </Text>
+                {isAnalyzing
+                  ? <ActivityIndicator size={12} color="#5EEAD4" />
+                  : <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#5EEAD4' }}>Review →</Text>}
+              </TouchableOpacity>
             </View>
           )}
 
@@ -1214,9 +1546,11 @@ export default function CalendarScreen() {
           )}
         </View>
 
-        {/* [1] Sticky: My Schedule / All (kid/teen/senior) + member filter */}
-        <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderBottomWidth: 1, borderBottomColor: colors.border }}>
-          {!isParent && (
+        {/* My Schedule / All — kid/teen/senior scope toggle, not in the
+            reference (it has no kid-mode concept), so this stays scoped
+            to Day only, where "whose day am I looking at" is relevant. */}
+        {viewMode === 'day' && !isParent && (
+          <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderBottomWidth: 1, borderBottomColor: colors.border }}>
             <View style={{ flexDirection: 'row', marginHorizontal: 14, marginTop: 10, marginBottom: 10,
               backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 12, padding: 3 }}>
               {([{ key: 'mine', label: 'My Schedule' }, { key: 'all', label: 'All' }] as const).map(t => (
@@ -1229,44 +1563,60 @@ export default function CalendarScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-          )}
-          {(isParent || scheduleFilter === 'all') && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 14, gap: 8, paddingVertical: 10 }}>
-              <TouchableOpacity
-                style={[sc.pill, !filterMember ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple } : { backgroundColor: isDark ? colors.surface : '#F5F4FA', borderColor: isDark ? colors.border : 'rgba(146,97,199,0.2)' }]}
-                onPress={() => setFilterMember(null)}>
-                <Text style={[sc.pillText, { color: !filterMember ? '#fff' : colors.textSecondary }]}>All Members</Text>
-              </TouchableOpacity>
-              {members.map(m => (
-                <TouchableOpacity key={m.id}
-                  style={[sc.pill, filterMember === m.id ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple } : { backgroundColor: isDark ? colors.surface : '#F5F4FA', borderColor: isDark ? colors.border : 'rgba(146,97,199,0.2)' }]}
-                  onPress={() => setFilterMember(filterMember === m.id ? null : m.id)}>
-                  <Text style={{ fontSize: 13 }}>{m.emoji ?? '👤'}</Text>
-                  <Text style={[sc.pillText, { color: filterMember === m.id ? '#fff' : colors.textSecondary }]}>{m.name.split(' ')[0]}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
-        </View>
+          </View>
+        )}
 
-        {/* Day strip (scrolls with content) */}
-        <DayStrip
-          selected={selectedDate}
-          stripMap={stripMap}
-          colors={colors}
-          isDark={isDark}
-          onSelect={(d) => {
-            setSelectedDate(d);
-            storeSelectDate(d);
-            // Expand strip window if user scrolls near the edge
-            const days = get15Days(d);
-            loadStrip(days);
-          }}
-        />
+        {!isKid && viewMode === 'month' && (
+          <FadeInView>
+            <MonthGridView
+              monthDate={monthCursor}
+              selected={selectedDate}
+              stripMap={stripMap}
+              colors={colors} isDark={isDark}
+              onSelectDay={(d) => { setSelectedDate(d); storeSelectDate(d); }}
+              onChangeMonth={(delta) => setMonthCursor(prev => {
+                const next = new Date(prev.getFullYear(), prev.getMonth() + delta, 1);
+                return next;
+              })}
+            />
+          </FadeInView>
+        )}
+
+        {!isKid && viewMode === 'week' && (
+          <FadeInView>
+            <WeekView
+              weekStart={weekCursor}
+              events={scopedRangeEvents}
+              members={members}
+              colors={colors} isDark={isDark}
+              onSelectEvent={(ev) => setDetailEv(ev)}
+              onNavigateWeek={(delta) => setWeekCursor(prev => addDays(prev, delta * 7))}
+              onAddDay={(d) => { setSelectedDate(d); storeSelectDate(d); setShowAdd(true); }}
+            />
+          </FadeInView>
+        )}
+
+        {!isKid && viewMode === 'agenda' && (
+          <FadeInView>
+            {rangeLoading && scopedRangeEvents.length === 0 ? (
+              <View style={{ paddingHorizontal: 14, gap: 10, paddingTop: 8 }}>
+                {[70, 70, 70].map((h, i) => (
+                  <View key={i} style={{ height: h, borderRadius: 16, backgroundColor: isDark ? '#1E293B' : '#E8E6F0', opacity: 0.5 + i * 0.1 }} />
+                ))}
+              </View>
+            ) : (
+              <AgendaView
+                events={scopedRangeEvents}
+                members={members}
+                colors={colors} isDark={isDark}
+                onSelectEvent={(ev) => setDetailEv(ev)}
+              />
+            )}
+          </FadeInView>
+        )}
 
         {/* ── Holiday banner — quiet amber strip, not a full card ── */}
-        {dayEvents.filter(ev => ev.category === 'Holiday').map(ev => (
+        {viewMode === 'day' && dayEvents.filter(ev => ev.category === 'Holiday').map(ev => (
           <View key={ev.id} style={{ marginHorizontal: 14, marginTop: 10, borderRadius: 12,
             backgroundColor: isDark ? '#451A03' : '#FEF3C7',
             borderWidth: 1, borderColor: isDark ? '#92400E' : '#F59E0B',
@@ -1281,6 +1631,114 @@ export default function CalendarScreen() {
 
         {/* Senior ride volunteering lives in the Hub > Helper Dispatch section, not here */}
 
+        {!isKid && viewMode === 'month' ? (
+          // Selected-day card below the month grid — matches the reference
+          // exactly: white rounded card, title + count badge header, each
+          // event a colored-left-bar + light-tint row (role color, not
+          // category) with the member's name as a pill on the right.
+          <View style={{ paddingHorizontal: 14, paddingTop: 8 }}>
+            <DayEventsSummaryCard
+              dateLabel={selectedDate === todayStr ? 'Today' : selectedDateLabel}
+              events={dayEvents}
+              members={members}
+              colors={colors} isDark={isDark}
+              onSelectEvent={(ev) => setDetailEv(ev)}
+            />
+          </View>
+        ) : viewMode === 'day' && isParentOrSenior ? (
+          // Simple hour-slot list — matches the reference's Day view.
+          // The full date card scrolls away normally as part of the
+          // content (no stickyHeaderIndices — that fought this row's
+          // flexDirection layout and only ever pins something in place
+          // immediately, not the "scroll away, then dock" behavior this
+          // needed). Instead a slim compact bar sits fixed under the app
+          // header, hidden until the full card has scrolled out of view,
+          // then fades/slides in — the standard iOS collapsing-header
+          // pattern, driven by tracking scroll position against the
+          // card's own measured height.
+          <View ref={dayWrapperRef} style={{ paddingTop: 12, height: dayViewportHeight, position: 'relative' }}
+            onLayout={() => {
+              dayWrapperRef.current?.measureInWindow((_x, pageY) => {
+                const available = windowHeight - pageY - 90; // ~90px breathing room above the tab bar
+                if (available > 200) setDayViewportHeight(available);
+              });
+            }}>
+            {/* Docked compact bar — absolutely positioned over the top of
+                the scroller, invisible/non-interactive until scrolled past
+                the full card. Sits flush at true top:0 (not offset by the
+                wrapper's paddingTop, which only affects the ScrollView's
+                content below it) with its own full-bleed opaque background
+                so no sliver of the scrolled-away card can show through
+                behind or beside it. */}
+            <Animated.View pointerEvents={dayDockedVisible ? 'auto' : 'none'} style={{
+              position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
+              paddingTop: 12, paddingBottom: 8,
+              backgroundColor: isDark ? colors.background : '#F5F4FA',
+              opacity: dayDockAnim,
+              transform: [{ translateY: dayDockAnim.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }],
+            }}>
+              <View style={{ marginHorizontal: 14, borderRadius: 14, borderWidth: 1, borderColor: isDark ? colors.border : '#F1F5F9',
+                backgroundColor: isDark ? colors.card : '#fff', paddingVertical: 8, paddingHorizontal: 14,
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                shadowColor: '#000', shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } }}>
+                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                  style={{ padding: 6 }}>
+                  <I.ChevronLeft c={colors.textSecondary} size={15} />
+                </TouchableOpacity>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
+                  {selectedDateLabel}
+                </Text>
+                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                  style={{ padding: 6 }}>
+                  <I.ChevronRight c={colors.textSecondary} size={15} />
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
+
+            <ScrollView ref={dayScrollRef} showsVerticalScrollIndicator={false}
+              scrollEventThrottle={16}
+              onScroll={(e) => {
+                const y = e.nativeEvent.contentOffset.y;
+                const threshold = dayHeaderHeightRef.current;
+                const shouldShow = threshold > 0 && y > threshold;
+                if (shouldShow !== dayDockedVisible) {
+                  setDayDockedVisible(shouldShow);
+                  Animated.timing(dayDockAnim, { toValue: shouldShow ? 1 : 0, duration: 180, useNativeDriver: true }).start();
+                }
+              }}>
+              <View onLayout={(e) => { dayHeaderHeightRef.current = e.nativeEvent.layout.height; }}
+                style={{ marginHorizontal: 14, borderRadius: 18, borderWidth: 1, borderColor: isDark ? colors.border : '#F1F5F9',
+                backgroundColor: isDark ? colors.card : '#fff', paddingVertical: 10, paddingHorizontal: 14,
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                  style={{ padding: 6 }}>
+                  <I.ChevronLeft c={colors.textSecondary} size={16} />
+                </TouchableOpacity>
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
+                    {selectedDateLabel}
+                  </Text>
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '600', color: colors.textTertiary, marginTop: 1 }}>
+                    {dayEvents.filter(ev => ev.category !== 'Holiday').length} Scheduled Activit{dayEvents.filter(ev => ev.category !== 'Holiday').length === 1 ? 'y' : 'ies'}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                  style={{ padding: 6 }}>
+                  <I.ChevronRight c={colors.textSecondary} size={16} />
+                </TouchableOpacity>
+              </View>
+
+              <DaySlotView
+                dayEvents={dayEvents.filter(ev => ev.category !== 'Holiday')}
+                members={members}
+                colors={colors} isDark={isDark}
+                onSelect={(ev) => setDetailEv(ev)}
+                onAddAtTime={() => setShowAdd(true)}
+              />
+            </ScrollView>
+          </View>
+        ) : (
+        <>
         {/* ── Timeline ── */}
         <View style={{ paddingTop: 16 }}>
         {dayLoading && dayEvents.length === 0 ? (
@@ -1437,8 +1895,6 @@ export default function CalendarScreen() {
 
               // RBAC checks (all blocked for past events)
               const canApproveRequest = !isPast && isParent && ev.approvalPending;
-              const hasPendingHelper  = !isPast && !!(ev.helper && ev.helperStatus === 'pending');
-              const hasRejectedHelper = !isPast && !!(ev.helper && ev.helperStatus === 'rejected');
 
               // Which members to show in the picker depends on category
               const pickerMembers = (cat === 'Work')
@@ -1447,15 +1903,16 @@ export default function CalendarScreen() {
 
               // Swipe-delete eligibility: future event + parent (any) or kid own pending
               const canDelete    = !isPast && (isParent || (isKid && !!ev.approvalPending && ev.memberId === activeMemberId));
-              // Action section is collapsed by default; tap to expand
-              const isCollapsed = !collapsedEvs.has(ev.id);
 
               const handleEvDelete = () => Alert.alert(
                 ev.approvalPending ? 'Withdraw Request' : 'Remove Event',
                 `${ev.approvalPending ? 'Withdraw' : 'Remove'} "${ev.title}"?`,
                 [
                   { text: 'Cancel', style: 'cancel' },
-                  { text: ev.approvalPending ? 'Withdraw' : 'Delete', style: 'destructive', onPress: () => deleteEvent(ev.id) },
+                  { text: ev.approvalPending ? 'Withdraw' : 'Delete', style: 'destructive', onPress: () => {
+                    notifyDeleteIfAssigned(ev);
+                    deleteEvent(ev.id);
+                  }},
                 ]
               );
 
@@ -1479,6 +1936,7 @@ export default function CalendarScreen() {
                     canDelete={canDelete}
                     onDelete={handleEvDelete}
                     onLongPress={() => setEditEv(ev)}
+                    onPress={() => setDetailEv(ev)}
                   >
                   <View style={[sc.evCard, { flex: 1, borderColor: isConf ? '#F59E0B60' : cardBord,
                     backgroundColor: isConf ? (isDark ? '#1C1700' : '#FFFBEB') : cardBg,
@@ -1578,49 +2036,10 @@ export default function CalendarScreen() {
                       </View>
                     )}
 
-                    {/* Always-visible: helper / accompaniment */}
-                    {ev.helper && !ev.approvalPending && (() => {
-                      const isRej = ev.helperStatus === 'rejected';
-                      const isPen = ev.helperStatus === 'pending';
-                      const helperMember = members.find(m => m.name === ev.helper);
-                      const helperLabel = cat === 'Medical' ? 'Accompanied by' : cat === 'Study' ? 'Tutored by' : cat === 'Sports' ? 'Dropped off by' : cat === 'Ride' ? 'Driven by' : 'Organised by';
-                      return (
-                        <View style={[sc.driverSection, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                          <View style={{
-                            flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                            backgroundColor: isRej ? (isDark ? '#2d0a0a' : '#FEF2F2') : isPen ? (isDark ? '#1C1700' : '#FFFBEB') : (isDark ? '#0F172A' : '#F8FAFC'),
-                            borderRadius: 14, borderWidth: 1,
-                            borderColor: isRej ? '#EF444440' : isPen ? '#FCD34D' : (isDark ? '#1E293B' : '#E2E8F0'),
-                            paddingHorizontal: 12, paddingVertical: 8, gap: 8,
-                          }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                              {/* Avatar with ! badge */}
-                              <View style={{ position: 'relative' }}>
-                                <FamilyAvatar name={ev.helper} emoji={helperMember?.emoji} avatarUrl={helperMember?.avatarUrl}
-                                  siblings={members.map(m => m.name)} size={28}
-                                  ringColor={isRej ? '#EF4444' : isPen ? '#F59E0B' : '#10B981'} ringWidth={2} />
-                                {isRej && (
-                                  <View style={{ position: 'absolute', top: -3, right: -3, backgroundColor: '#EF4444', borderRadius: 7, width: 14, height: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: isDark ? colors.card : '#fff' }}>
-                                    <Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>!</Text>
-                                  </View>
-                                )}
-                              </View>
-                              <View style={{ flex: 1 }}>
-                                <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{helperLabel}</Text>
-                                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: isRej ? '#EF4444' : (isDark ? colors.textPrimary : '#1E2D6B') }}>{ev.helper}</Text>
-                                {isRej && ev.declineReason && (
-                                  <Text style={{ fontSize: TYPO.micro, color: '#EF4444', fontStyle: 'italic', marginTop: 1 }}>"{ev.declineReason}"</Text>
-                                )}
-                              </View>
-                            </View>
-                            {ev.helperStatus === 'confirmed' && <View style={{ backgroundColor: isDark ? '#064E3B' : '#D1FAE5', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#6EE7B7' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>Confirmed ✓</Text></View>}
-                            {isPen && <View style={{ backgroundColor: isDark ? '#1C1700' : '#FEF3C7', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCD34D' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#D97706' }}>⏳ Pending</Text></View>}
-                            {isRej && !isPast && isParent && <TouchableOpacity onPress={() => openReassign(ev)} style={{ backgroundColor: '#F59E0B', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 }}><Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>Swap</Text></TouchableOpacity>}
-                            {isRej && (isPast || !isParent) && <View style={{ backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCA5A5' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Declined ✕</Text></View>}
-                          </View>
-                        </View>
-                      );
-                    })()}
+                    {/* Read-only helper/driver status now lives in the shared
+                        EventDetailSheet (opened on tap) — Accept/Decline/
+                        Take-Over/Swap are handled there so Calendar doesn't
+                        maintain a second copy of that logic. */}
 
                     {/* Always-visible: notes */}
                     {ev.notes && (
@@ -1629,21 +2048,11 @@ export default function CalendarScreen() {
                       </Text>
                     )}
 
-                    {/* Collapsible actions section — tap chevron to expand */}
-                    {(canApproveRequest || hasPendingHelper || hasRejectedHelper || (!isPast && isKid && ev.approvalPending)) && (
-                      <TouchableOpacity activeOpacity={0.7} onPress={() => toggleCollapse(ev.id)}
-                        style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2, paddingVertical: 4 }}>
-                        <View style={{ flex: 1, height: 1, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }} />
-                        {isCollapsed
-                          ? <><I.ChevronDown c={colors.textTertiary} size={12} /><Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontWeight: '700' }}>Actions</Text><I.ChevronDown c={colors.textTertiary} size={12} /></>
-                          : <><I.ChevronUp   c={colors.textTertiary} size={12} /><Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, fontWeight: '700' }}>Actions</Text><I.ChevronUp   c={colors.textTertiary} size={12} /></>}
-                        <View style={{ flex: 1, height: 1, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }} />
-                      </TouchableOpacity>
-                    )}
-
-                    {!isCollapsed && <>
-
-                    {/* Kid approval pending */}
+                    {/* Kid help/ride request awaiting parent approval — a
+                        separate concern from ride/helper-assignment (that
+                        part is handled by EventDetailSheet); kept inline
+                        since it gates whether a helper can even be assigned
+                        yet. */}
                     {canApproveRequest && (
                       <View style={[sc.approvalRow, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -1665,58 +2074,12 @@ export default function CalendarScreen() {
                       </View>
                     )}
 
-                    {/* Actions — PendingHelperFlow, rejection, reassign */}
-                    {ev.helper && !ev.approvalPending && hasPendingHelper && (
-                      <View style={[sc.driverSection, { borderTopColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
-                        {hasPendingHelper && (
-                          <PendingHelperFlow
-                            ev={ev}
-                            activeMemberName={activeMemberName}
-                            isParent={isParent}
-                            isSenior={isSenior}
-                            colors={colors}
-                            isDark={isDark}
-                            onAccept={note => handleAccept(ev.id, note)}
-                            onDecline={reason => handleDecline(ev.id, reason)}
-                            onWithdraw={() => handleWithdraw(ev.id)}
-                            onReassign={() => openReassign(ev)}
-                          />
-                        )}
-
-                        {hasRejectedHelper && (
-                          <View style={[sc.rejectedBox, { backgroundColor: isDark ? '#450A0A' : '#FEF2F2', borderColor: '#FCA5A5' }]}>
-                            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444', marginBottom: 4 }}>
-                              ❌ Declined by {ev.declinedBy ?? ev.helper}:
-                            </Text>
-                            <Text style={{ fontSize: TYPO.label, color: '#EF4444', fontStyle: 'italic' }}>
-                              "{ev.declineReason ?? 'No reason provided'}"
-                            </Text>
-                            {isParentOrSenior && (
-                              <TouchableOpacity style={[sc.reassignBtn, { marginTop: 8 }]} onPress={() => openReassign(ev)}>
-                                <I.Arrows c="#0F172A" size={12} />
-                                <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>Find Someone Else</Text>
-                              </TouchableOpacity>
-                            )}
-                          </View>
-                        )}
-
-                        {isConf && isParent && ev.helperStatus !== 'pending' && !['Study', 'Work'].includes(ev.category ?? '') && (
-                          <TouchableOpacity style={[sc.reassignBtn, { marginTop: 8 }]} onPress={() => openReassign(ev)}>
-                            <I.Arrows c="#0F172A" size={12} />
-                            <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>Reassign / Swap</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    )}
-
                     {/* Long-press hint (only on non-past events) */}
                     {!isPast && (
                       <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4, textAlign: 'right', opacity: 0.6 }}>
-                        Hold to edit{canDelete ? ' · Swipe ← to delete' : ''}
+                        Hold to edit{canDelete ? ' · Swipe ← to delete' : ''}{ev.helper ? ' · Tap for driver actions' : ''}
                       </Text>
                     )}
-
-                    </>}
                   </View>
                   </SwipeableEventCard>
                 </View>
@@ -1741,6 +2104,8 @@ export default function CalendarScreen() {
           )
         )}
         </View>
+        </>
+        )}
       </ScrollView>
 
       {/* Modals */}
@@ -1748,8 +2113,27 @@ export default function CalendarScreen() {
       <EventFormAdd
         visible={showAdd || showAskHelp}
         activeMemberId={activeMember?.id ?? ''}
-        onClose={() => { setShowAdd(false); setShowAskHelp(false); }}
+        onClose={() => { setShowAdd(false); setShowAskHelp(false); setAddPrefill(undefined); }}
+        prefill={addPrefill as any}
       />
+
+      {/* Header "+ Event" button opens the Speak it/Type it chooser first —
+          the contextual entry points (tap an empty day/time slot) still go
+          straight to the manual form since the date is already implied. */}
+      {isParentOrSenior && (
+        <AddIntakeChooser
+          visible={showAddChooser}
+          kind="event"
+          members={members}
+          activeMemberId={activeMember?.id ?? ''}
+          onClose={() => setShowAddChooser(false)}
+          onTypeManually={(prefill) => {
+            setShowAddChooser(false);
+            setAddPrefill(prefill);
+            setShowAdd(true);
+          }}
+        />
+      )}
 
       {/* Edit event — long-press on any card opens this */}
       {editEv && (
@@ -1757,274 +2141,24 @@ export default function CalendarScreen() {
           event={editEv}
           activeMemberId={activeMember?.id ?? ''}
           onClose={() => setEditEv(null)}
-          onDelete={() => { deleteEvent(editEv.id); setEditEv(null); }}
+          onDelete={() => { notifyDeleteIfAssigned(editEv); deleteEvent(editEv.id); setEditEv(null); }}
         />
       )}
 
-      <FindHelperModal visible={showReassign} ev={reassignEv} members={members}
-        onAssign={handleFindHelper} onClose={() => { setShowReassign(false); setReassignEv(null); }}
-        colors={colors} isDark={isDark}
-      />
-
-      {/* Date Range Picker Modal */}
-      <Modal visible={showRange} transparent animationType="slide" onRequestClose={() => setShowRange(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-          <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.65)' }}>
-            <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowRange(false)} />
-            <View style={[ae.sheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={[ae.handle, { backgroundColor: colors.border }]} />
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                <Text style={[ae.title, { color: colors.textPrimary }]}>📅 Filter Date Range</Text>
-                <TouchableOpacity onPress={() => setShowRange(false)}><I.X c={colors.textSecondary} /></TouchableOpacity>
-              </View>
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginBottom: 14 }}>
-                Filter events in the timeline between two dates. Leave blank to show all.
-              </Text>
-
-              {/* Quick presets */}
-              <Text style={[ae.label, { color: colors.textSecondary }]}>QUICK SELECT</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-                {[
-                  { label: 'This week', ...currentWeekBounds() },
-                  { label: 'Today', start: toDateStr(new Date()), end: toDateStr(new Date()) },
-                  { label: 'Next 7 days', start: toDateStr(new Date()), end: (() => { const d=new Date(); d.setDate(d.getDate()+6); return toDateStr(d); })() },
-                  { label: 'This month', start: (() => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; })(), end: (() => { const d=new Date(new Date().getFullYear(), new Date().getMonth()+1, 0); return toDateStr(d); })() },
-                ].map(p => (
-                  <TouchableOpacity key={p.label}
-                    style={[ae.catChip, { backgroundColor: rangeStart === p.start && rangeEnd === p.end ? BRAND.purple : isDark ? colors.surface : '#F5F4FA', borderColor: rangeStart === p.start && rangeEnd === p.end ? BRAND.purple : isDark ? colors.border : '#E2E8F0' }]}
-                    onPress={() => { setRangeStart(p.start); setRangeEnd(p.end); }}>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: rangeStart === p.start && rangeEnd === p.end ? '#fff' : colors.textSecondary }}>{p.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[ae.label, { color: colors.textSecondary }]}>FROM (YYYY-MM-DD)</Text>
-                  <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F9F8FD' }]}
-                    placeholder={toDateStr(new Date())} placeholderTextColor={colors.textTertiary}
-                    value={rangeStart} onChangeText={setRangeStart} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[ae.label, { color: colors.textSecondary }]}>TO (YYYY-MM-DD)</Text>
-                  <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F9F8FD' }]}
-                    placeholder={toDateStr(new Date())} placeholderTextColor={colors.textTertiary}
-                    value={rangeEnd} onChangeText={setRangeEnd} />
-                </View>
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <TouchableOpacity style={[ae.submitBtn, { flex: 1, backgroundColor: isDark ? colors.surface : '#F1F5F9', borderWidth: 1, borderColor: colors.border }]}
-                  onPress={() => { setRangeStart(''); setRangeEnd(''); setShowRange(false); }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Clear Filter</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[ae.submitBtn, { flex: 2, backgroundColor: BRAND.purple }]}
-                  onPress={() => setShowRange(false)}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Apply Range</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* ── Compact Detail Popup ── */}
-      <Modal visible={!!detailEv} transparent animationType="slide" onRequestClose={() => setDetailEv(null)}>
-        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' }}
-          activeOpacity={1} onPress={() => setDetailEv(null)}>
-          {detailEv && (() => {
-            const ev = detailEv;
-            const { time, ampm } = fmtTimeParts(ev.time);
-            const cs = catStyle(ev.category, isDark);
-            const isConf = ev.conflict;
-            const assignee  = members.find(m => m.id === ev.memberId);
-            const assignees = ev.memberIds?.length
-              ? members.filter(m => ev.memberIds!.includes(m.id))
-              : assignee ? [assignee] : [];
-            const cat = ev.category ?? 'Event';
-
-            const helperLabelDetail =
-              cat === 'Medical' ? '🏥 Accompanied by' :
-              cat === 'Study'   ? '📚 Tutored by'     :
-              cat === 'Sports'  ? '🚗 Drop-off'        :
-              cat === 'Ride'    ? '🚗 Driver'          : '🤝 Organised by';
-
-            const forLabelDetail =
-              cat === 'Medical' ? 'Patient'   :
-              cat === 'Sports'  ? 'Player'    :
-              cat === 'Study'   ? 'Student'   :
-              cat === 'Ride'    ? 'Passenger' :
-              cat === 'Work'    ? null         : 'For';
-
-            return (
-              <TouchableOpacity activeOpacity={1} onPress={() => {}} style={{
-                backgroundColor: isDark ? '#1A2235' : '#FFFFFF',
-                borderTopLeftRadius: 28, borderTopRightRadius: 28,
-                paddingBottom: 32,
-                shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: -4 }, elevation: 16,
-              }}>
-                {/* Drag handle */}
-                <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 6 }}>
-                  <View style={{ width: 38, height: 4, borderRadius: 2, backgroundColor: isDark ? '#334155' : '#E2E8F0' }} />
-                </View>
-
-                {/* Header row — accent dot + title + time badge */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10, gap: 10 }}>
-                  <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: (isConf ? '#F59E0B' : cs.dot) + '18', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: (isConf ? '#F59E0B' : cs.dot) + '44' }}>
-                    <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: isConf ? '#F59E0B' : cs.dot }} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: isConf ? '#F59E0B' : cs.dot, textTransform: 'uppercase', letterSpacing: 0.6 }}>{cat}</Text>
-                    <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={2}>{ev.title}</Text>
-                  </View>
-                  <View style={{ backgroundColor: isDark ? '#0F172A' : '#F1F5F9', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center', borderWidth: 1, borderColor: isDark ? '#1E293B' : '#E2E8F0', minWidth: 48 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '900', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{time}</Text>
-                    <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textTertiary }}>{ampm}</Text>
-                  </View>
-                </View>
-
-                {/* Divider */}
-                <View style={{ height: 1, backgroundColor: isDark ? '#1E293B' : '#F1F5F9', marginHorizontal: 20, marginBottom: 14 }} />
-
-                {/* Details body */}
-                <ScrollView style={{ maxHeight: 360 }} contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }} showsVerticalScrollIndicator={false}>
-
-                  {/* For / Patient chips */}
-                  {forLabelDetail && assignees.length > 0 && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary, minWidth: 64 }}>{forLabelDetail}:</Text>
-                      {assignees.map(m => (
-                        <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl} siblings={members.map(x => x.name)} size={28} ringColor={cs.dot} ringWidth={1.5} />
-                      ))}
-                    </View>
-                  )}
-
-                  {/* Category-specific details */}
-                  {cat === 'Medical' && ev.doctorName && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, width: 64 }}>Doctor:</Text>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{ev.doctorName}</Text>
-                    </View>
-                  )}
-                  {cat === 'Study' && ev.subject && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, width: 64 }}>Subject:</Text>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{ev.subject}</Text>
-                    </View>
-                  )}
-                  {cat === 'Sports' && ev.coachName && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, width: 64 }}>Coach:</Text>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{ev.coachName}</Text>
-                    </View>
-                  )}
-
-                  {/* Location */}
-                  {ev.location ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <I.MapPin c={isDark ? '#34D399' : '#059669'} size={14} />
-                      <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.caption} fontWeight="600" iconSize={0} />
-                    </View>
-                  ) : null}
-
-                  {/* Pickup / drop */}
-                  {(ev.pickupLocation || ev.dropLocation) && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      {ev.pickupLocation && <>
-                        <I.MapPin c={isDark ? '#34D399' : '#059669'} size={13} />
-                        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>From:</Text>
-                        <LocationLink addr={ev.pickupLocation} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.label} fontWeight="700" iconSize={0} />
-                      </>}
-                      {ev.dropLocation && <>
-                        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>→ To:</Text>
-                        <LocationLink addr={ev.dropLocation} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.label} fontWeight="700" iconSize={0} />
-                      </>}
-                    </View>
-                  )}
-
-                  {/* Accompaniment / helper */}
-                  {ev.helper && (
-                    <View style={{
-                      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                      backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
-                      borderRadius: 14, borderWidth: 1, borderColor: isDark ? '#1E293B' : '#E8E8F0',
-                      paddingHorizontal: 14, paddingVertical: 10,
-                    }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
-                          {helperLabelDetail}:{' '}
-                          <Text style={{ fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.helper}</Text>
-                        </Text>
-                      </View>
-                      {ev.helperStatus === 'confirmed' && <View style={{ backgroundColor: isDark ? '#064E3B' : '#D1FAE5', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#6EE7B7' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>Confirmed ✓</Text></View>}
-                      {ev.helperStatus === 'pending'   && <View style={{ backgroundColor: isDark ? '#1C1700' : '#FEF3C7', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCD34D' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#D97706' }}>⏳ Pending</Text></View>}
-                      {ev.helperStatus === 'rejected'  && <View style={{ backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCA5A5' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Declined ✕</Text></View>}
-                    </View>
-                  )}
-
-                  {/* Drive assignment — separate from the tutor/escort/coach above */}
-                  {ev.rideRequired && ev.driverName && (
-                    <View style={{
-                      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                      backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
-                      borderRadius: 14, borderWidth: 1, borderColor: isDark ? '#1E293B' : '#E8E8F0',
-                      paddingHorizontal: 14, paddingVertical: 10,
-                    }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <I.Car c={isDark ? '#FBBF24' : '#D97706'} size={14} />
-                        <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary }}>
-                          Driven by:{' '}
-                          <Text style={{ fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>{ev.driverName}</Text>
-                        </Text>
-                      </View>
-                      {ev.driverStatus === 'confirmed' && <View style={{ backgroundColor: isDark ? '#064E3B' : '#D1FAE5', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#6EE7B7' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#10B981' }}>Confirmed ✓</Text></View>}
-                      {ev.driverStatus === 'pending'   && <View style={{ backgroundColor: isDark ? '#1C1700' : '#FEF3C7', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCD34D' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#D97706' }}>⏳ Pending</Text></View>}
-                      {ev.driverStatus === 'rejected'  && <View style={{ backgroundColor: isDark ? '#450A0A' : '#FEE2E2', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: '#FCA5A5' }}><Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Declined ✕</Text></View>}
-                    </View>
-                  )}
-                  {ev.rideRequired && !ev.driverName && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: '#F59E0B44' }}>
-                      <I.Car c="#D97706" size={13} />
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#D97706' }}>Ride needed — no driver assigned yet</Text>
-                    </View>
-                  )}
-
-                  {/* Conflict */}
-                  {isConf && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: '#F59E0B44' }}>
-                      <I.AlertTriangle c="#D97706" size={13} />
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#D97706' }}>Scheduling conflict detected</Text>
-                    </View>
-                  )}
-
-                  {/* Notes */}
-                  {ev.notes ? (
-                    <View style={{ backgroundColor: isDark ? '#1E1B4B' : '#F5F3FF', borderRadius: 12, padding: 12, borderLeftWidth: 3, borderLeftColor: cs.dot }}>
-                      <Text style={{ fontSize: TYPO.label, color: isDark ? '#C4B5FD' : '#4338CA', fontStyle: 'italic' }}>"{ev.notes}"</Text>
-                    </View>
-                  ) : null}
-
-                  <View style={{ height: 4 }} />
-                </ScrollView>
-
-                {/* Actions */}
-                <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 14 }}>
-                  <TouchableOpacity style={{ flex: 1, backgroundColor: isDark ? '#0F172A' : '#F1F5F9', borderRadius: 16, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: isDark ? '#1E293B' : '#E2E8F0' }}
-                    onPress={() => { setDetailEv(null); }}>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Close</Text>
-                  </TouchableOpacity>
-                  {isParent && (
-                    <TouchableOpacity style={{ flex: 2, backgroundColor: BRAND.purple, borderRadius: 16, paddingVertical: 13, alignItems: 'center' }}
-                      onPress={() => { setDetailEv(null); setEditEv(ev); }}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Edit Event</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })()}
-        </TouchableOpacity>
-      </Modal>
+      {/* Event detail + ride/helper-assignment actions — same EventDetailSheet
+          Hub uses (Accept/Decline/Take-Over/Swap all live there now), so
+          Calendar and Hub share one action surface instead of maintaining
+          duplicate accept/decline/reassign UI. */}
+      {detailEv && (
+        <EventDetailSheet
+          ev={events.find(e => e.id === detailEv.id) ?? detailEv}
+          members={members}
+          colors={colors} isDark={isDark}
+          activeName={activeMemberName}
+          updateEvent={updateEvent}
+          onClose={() => setDetailEv(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }

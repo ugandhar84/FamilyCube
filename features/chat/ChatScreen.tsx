@@ -26,7 +26,7 @@ import {
   Play, Pause, Trash2, Send, Square, CheckCheck, Search, X, XCircle,
   ChevronDown, ChevronUp, CornerUpLeft, Copy, ShoppingCart, Pencil,
   MessageSquare, Paperclip, Mic, Lock, ShieldCheck, Video, Plus,
-  Camera, Image as ImageIcon, MapPin, FileText,
+  Camera, Image as ImageIcon, MapPin, FileText, AudioLines, AlertTriangle,
   type LucideIcon,
 } from 'lucide-react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -35,6 +35,9 @@ import { useFamilyStore } from '@/store/familyStore';
 import AppHeader from '@/components/AppHeader';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { useChatStore, ChatMessage } from '@/store/chatStore';
+import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
+import { checkProfanity } from '@/lib/contentModeration';
+import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
 import { useGroceryStore, GroceryCategory, GroceryStore } from '@/store/groceryStore';
 import { supabase } from '@/lib/supabase';
 import { RADIUS } from '@/constants/theme';
@@ -60,7 +63,11 @@ function formatDuration(sec: number) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-const VOICE_COLOR     = '#7C3AED';
+// Matches colors.primary's light-mode value — these voice subcomponents
+// (VoiceNoteBubble/VoiceReviewBar/RecordingBar) don't receive the colors
+// object as a prop, so this stays a direct brand-purple constant rather
+// than threading colors through every one of them for this pass.
+const VOICE_COLOR     = '#9261C7';
 const QUICK_REACTIONS = ['❤️', '👍', '😋', '🙌', '🌟', '😂'];
 const GROUP_CHANNELS  = [
   { id: 'all',     label: '#all-family',       isDM: false, lock: false },
@@ -81,7 +88,10 @@ function highlightSearch(raw: string, query: string, baseStyle: any): React.Reac
   const lo = raw.toLowerCase();
   while ((idx = lo.indexOf(q, cursor)) !== -1) {
     if (idx > cursor) parts.push(<Text key={cursor}>{raw.slice(cursor, idx)}</Text>);
-    parts.push(<Text key={idx} style={{ backgroundColor: '#fbbf24', color: '#1e1b4b', fontWeight: '700' }}>{raw.slice(idx, idx + q.length)}</Text>);
+    // colors isn't threaded into this pure-text utility — use the brand
+    // amber/navy hex directly rather than plumbing a theme param through
+    // every call site for a two-color search highlight.
+    parts.push(<Text key={idx} style={{ backgroundColor: '#F5A623', color: '#1E2D6B', fontWeight: '700' }}>{raw.slice(idx, idx + q.length)}</Text>);
     cursor = idx + q.length;
   }
   if (cursor < raw.length) parts.push(<Text key={cursor}>{raw.slice(cursor)}</Text>);
@@ -323,8 +333,10 @@ function VoiceNoteBubble({ uri, msgId, duration, isMine, colors }: {
 function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
   uri: string; duration: number; isDark: boolean; onSend: () => void; onDiscard: () => void;
 }) {
-  const bg     = isDark ? '#0f0a1e' : '#f5f3ff';
-  const border = isDark ? '#4C1D95' : '#DDD6FE';
+  // colors.card / colors.primary + alpha, inlined per isDark since this
+  // component doesn't receive the theme object as a prop.
+  const bg     = isDark ? '#1E2640' : '#F0E8FA';
+  const border = isDark ? '#B98EDB55' : '#9261C755';
   const [playing, setPlaying]   = useState(false);
   const [progress, setProgress] = useState(0);
   const playerRef = useRef<ReturnType<typeof createAudioPlayer> | null>(null);
@@ -546,7 +558,7 @@ function CollapsibleText({ text, memberMap, myId, searchQuery, isMe, bubbleMeTxt
       {needsCollapse && (
         <Pressable onPress={() => setCollapsed(v => !v)} hitSlop={8}>
           <Text style={{ fontSize: 13, fontWeight: '700', marginTop: 4,
-            color: isMe ? 'rgba(255,255,255,0.75)' : '#818cf8' }}>
+            color: isMe ? 'rgba(255,255,255,0.75)' : '#9261C7' }}>
             {collapsed ? 'Show more ▾' : 'Show less ▴'}
           </Text>
         </Pressable>
@@ -557,27 +569,89 @@ function CollapsibleText({ text, memberMap, myId, searchQuery, isMe, bubbleMeTxt
 
 // ─── Message bubble (WhatsApp style — rounded rect with tail) ────────────────
 
-const BUBBLE_R  = 18; // standard corners
+const BUBBLE_R  = 16; // standard corners — matches Ask Cube's bubble radius
 const BUBBLE_SM = 4;  // tail corner (last in group)
 
+// Automated broadcast alerts (En Route pings, missed-pickup warnings, etc.)
+// are plain text with no severity field in ChatMessage/the DB — rather than
+// a schema change, senders prefix the text with one of these emoji markers
+// and the bubble picks up a matching tint. Order matters: check the more
+// urgent marker first since a message could theoretically start with either.
+const ALERT_MARKERS: { prefix: string; tint: 'danger' | 'warning' | 'success' }[] = [
+  { prefix: '🚨', tint: 'danger' },   // e.g. "Pickup not confirmed yet"
+  { prefix: '⚠️', tint: 'warning' },  // e.g. running late, needs attention
+  { prefix: '🚗', tint: 'success' },  // routine En Route / trip broadcast
+];
+
+function detectAlertTint(text: string): 'danger' | 'warning' | 'success' | null {
+  const marker = ALERT_MARKERS.find(m => text.startsWith(m.prefix));
+  return marker?.tint ?? null;
+}
+
+// ─── Shared card (read-only meal/event/quest share from Ask Cube) ─────────
+
+const SHARE_KIND_META: Record<string, { label: string; icon: string; accentKey: string }> = {
+  meal:   { label: 'Meal',   icon: '🍽️', accentKey: 'amber' },
+  event:  { label: 'Event',  icon: '📅', accentKey: 'primary' },
+  quest:  { label: 'Quest',  icon: '✅', accentKey: 'kid' },
+};
+
+function SharedCardBubble({ payload, colors, onLongPress, onPress }: { payload: any; colors: any; onLongPress: () => void; onPress?: () => void }) {
+  const kind = payload?.kind ?? 'meal';
+  const meta = SHARE_KIND_META[kind] ?? SHARE_KIND_META.meal;
+  const accent = colors[meta.accentKey] ?? colors.primary;
+  const d = payload?.data ?? {};
+
+  return (
+    <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={350}
+      style={{ width: 260, backgroundColor: colors.card, borderRadius: 16,
+        borderWidth: 1.5, borderColor: accent + '40', overflow: 'hidden' }}>
+      {(d.imageUrl || d.emoji) && (
+        <View style={{ height: 90, backgroundColor: accent + '18', alignItems: 'center', justifyContent: 'center' }}>
+          {d.imageUrl
+            ? <Image source={{ uri: d.imageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+            : <Text style={{ fontSize: 44 }}>{d.emoji}</Text>}
+        </View>
+      )}
+      <View style={{ padding: 12, gap: 6 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Text style={{ fontSize: 13 }}>{meta.icon}</Text>
+          <Text style={{ fontSize: 10, fontWeight: '800', color: accent, textTransform: 'uppercase', letterSpacing: 0.5 }}>{meta.label}</Text>
+        </View>
+        <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }} numberOfLines={2}>{d.title}</Text>
+        {(d.day || d.mealType || d.startAt) && (
+          <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+            {d.day ? `${d.day}${d.mealType ? ` · ${d.mealType}` : ''}` : new Date(d.startAt).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+          </Text>
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
 function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, senderEmoji,
-  senderColor, activeMemberId, memberMap, searchQuery, colors, isDark, highlighted,
-  onLongPress, onDoubleTap, onSwipeRight, onQuoteTap, onOpenImage, onOpenVideo }: {
+  senderColor, activeMemberId, memberMap, searchQuery, colors, isDark, highlighted, isParent,
+  onLongPress, onDoubleTap, onSwipeRight, onQuoteTap, onOpenImage, onOpenVideo, onOpenSharedCard }: {
   msg: ChatMessage; isMe: boolean; isGroupFirst: boolean; isGroupLast: boolean;
   senderName: string; senderEmoji: string; senderColor: string;
   activeMemberId: string; memberMap: Record<string, any>;
   highlighted?: boolean;
+  isParent?: boolean;
   onQuoteTap?: () => void;
   onOpenImage?: (uri: string) => void;
   onOpenVideo?: (uri: string) => void;
+  onOpenSharedCard?: (payload: any) => void;
   searchQuery: string; colors: any; isDark: boolean;
   onLongPress: () => void; onDoubleTap: () => void; onSwipeRight: () => void;
 }) {
+  const alertTint = detectAlertTint(msg.text);
+  const alertColor = alertTint === 'danger' ? colors.danger : alertTint === 'warning' ? colors.warning : alertTint === 'success' ? colors.success : null;
+
   const bubbleMe       = colors.primary;
   const bubbleMeTxt    = '#FFFFFF';
-  const bubbleOther    = isDark ? '#131927' : '#FFFFFF';
-  const bubbleOtherTxt = isDark ? '#E2E8F0' : '#0F172A';
-  const tsColor        = isMe ? 'rgba(255,255,255,0.65)' : (isDark ? 'rgba(226,232,240,0.5)' : 'rgba(26,26,46,0.38)');
+  const bubbleOther    = alertColor ? (isDark ? alertColor + '20' : alertColor + '12') : colors.card;
+  const bubbleOtherTxt = colors.textPrimary;
+  const tsColor        = isMe ? 'rgba(255,255,255,0.65)' : colors.textTertiary;
 
   const totalRx = Object.values(msg.reactions ?? {}).flat().length;
   const isVoice = !!msg.voiceUri && !msg.text;
@@ -610,6 +684,16 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
   const metaRow = (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3,
       alignSelf: 'flex-end', marginTop: 4, marginBottom: -2 }}>
+      {/* Parent-only — the AI moderation pass (layer 2) flags tone issues
+          silently; the message stays visible to everyone as sent, only
+          parents see this small indicator, never a public callout. */}
+      {isParent && msg.moderationFlag && (
+        <Pressable
+          onPress={() => Alert.alert('Flagged for review', msg.moderationFlag!.reason || 'This message was flagged by AI moderation.')}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <AlertTriangle size={11} color={colors.danger} style={{ marginRight: 2 }} />
+        </Pressable>
+      )}
       {msg.edited && <Text style={{ fontSize: 9, color: tsColor }}>edited · </Text>}
       <Text style={{ fontSize: 10, color: tsColor }}>{formatTime(msg.timestamp)}</Text>
       {isMe && <CheckCheck size={13} color={isDark ? '#53BDEB' : '#34B7F1'} />}
@@ -622,6 +706,36 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
       <Text style={{ fontSize: 10, color: '#fff', fontWeight: '600' }}>{formatTime(msg.timestamp)}</Text>
     </View>
   );
+
+  // Structured share (meal/event/quest from Ask Cube) — a read-only card,
+  // not the normal colored text bubble. Kept outside SwipeableBubble (no
+  // reply-swipe on a card) but keeps the same avatar/sender-name row so it
+  // still reads as part of the conversation flow.
+  if (msg.systemEvent?.type === 'shared_card') {
+    return (
+      <View style={{ flexDirection: isMe ? 'row-reverse' : 'row',
+        alignItems: 'flex-end', gap: 6, paddingHorizontal: 10,
+        marginBottom: isGroupLast ? 14 : 3, marginTop: isGroupFirst ? 8 : 0 }}>
+        {!isMe && (
+          isGroupLast
+            ? <View style={[mb.avatar, { backgroundColor: senderColor }]}>
+                <Text style={{ fontSize: senderEmoji && senderEmoji !== '👤' ? 16 : 13, color: '#fff', fontWeight: '700' }}>
+                  {senderEmoji && senderEmoji !== '👤' ? senderEmoji : senderName[0]?.toUpperCase()}
+                </Text>
+              </View>
+            : <View style={{ width: 34 }} />
+        )}
+        <View style={{ maxWidth: '82%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 2 }}>
+          {!isMe && isGroupFirst && (
+            <Text style={{ fontSize: 11, fontWeight: '800', color: senderColor, marginLeft: 4, marginBottom: 1 }}>{senderName}</Text>
+          )}
+          <SharedCardBubble payload={msg.systemEvent.payload} colors={colors} onLongPress={onLongPress}
+            onPress={() => onOpenSharedCard?.(msg.systemEvent!.payload)} />
+          {metaRow}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <SwipeableBubble onSwipeRight={onSwipeRight} timeNode={swipeTimeNode}>
@@ -662,15 +776,10 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
               borderBottomLeftRadius: bblr,
               borderBottomRightRadius: bbrr,
               borderWidth: isMe ? 0 : 1,
-              borderColor: isDark ? '#1E293B' : '#E2E8F0',
+              borderColor: alertColor ? alertColor + '50' : colors.border,
               overflow: 'hidden',
               padding: isVoice ? 8 : 11,
               minWidth: msg.replyTo ? 220 : undefined,
-              shadowColor: '#000',
-              shadowOpacity: isMe ? 0.18 : (isDark ? 0.25 : 0.06),
-              shadowRadius: isMe ? 6 : 3,
-              shadowOffset: { width: 0, height: isMe ? 2 : 1 },
-              elevation: isMe ? 3 : 1,
             }}
           >
             {/* Reply quote — WhatsApp inset card */}
@@ -681,11 +790,9 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
                   borderRadius: 10,
                   overflow: 'hidden',
                   marginBottom: 8,
-                  // Outgoing: dark navy card so it pops against purple
-                  // Incoming: very light tinted card against white/dark card
-                  backgroundColor: isMe
-                    ? (isDark ? '#1E1B4B' : '#2D1F6E')
-                    : (isDark ? '#0F172A' : '#EDE9FE'),
+                  // Outgoing: a translucent white tint pops against the solid
+                  // primary bubble; incoming: colors.surface against the card.
+                  backgroundColor: isMe ? 'rgba(255,255,255,0.16)' : colors.surface,
                 }}>
                 {/* Accent strip — sender colour */}
                 <View style={{ width: 3, backgroundColor: senderColor }} />
@@ -695,7 +802,7 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
                     {memberMap[msg.replyTo.senderId]?.name?.split(' ')[0] ?? 'Family'}
                   </Text>
                   <Text numberOfLines={2} style={{ fontSize: 12, lineHeight: 16,
-                    color: isMe ? '#C4B5FD' : (isDark ? '#94A3B8' : '#6D28D9') }}>
+                    color: isMe ? 'rgba(255,255,255,0.85)' : colors.textSecondary }}>
                     {msg.replyTo.text || '🎙️ Voice note'}
                   </Text>
                 </View>
@@ -742,8 +849,8 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
                     {/* Address footer */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
                       paddingHorizontal: 10, paddingVertical: 8,
-                      backgroundColor: isMe ? 'rgba(0,0,0,0.28)' : (isDark ? '#1e293b' : '#f1f5f9') }}>
-                      <MapPin size={13} color={isMe ? '#C4B5FD' : colors.primary} />
+                      backgroundColor: isMe ? 'rgba(0,0,0,0.28)' : colors.surface }}>
+                      <MapPin size={13} color={isMe ? '#fff' : colors.primary} />
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: 12, fontWeight: '700',
                           color: isMe ? '#fff' : colors.textPrimary }} numberOfLines={1}>
@@ -760,11 +867,11 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
                 {msg.documentUri && (
                   <Pressable onPress={() => Linking.openURL(msg.documentUri!)}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-                    backgroundColor: isMe ? 'rgba(0,0,0,0.2)' : (isDark ? '#1e293b' : '#f1f5f9'),
+                    backgroundColor: isMe ? 'rgba(0,0,0,0.2)' : colors.surface,
                     borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, maxWidth: 220 }}>
-                    <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: '#F59E0B22',
+                    <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: colors.amber + '22',
                       alignItems: 'center', justifyContent: 'center' }}>
-                      <FileText size={20} color="#F59E0B" />
+                      <FileText size={20} color={colors.amber} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 12, fontWeight: '700', color: isMe ? '#fff' : colors.textPrimary }} numberOfLines={2}>
@@ -816,10 +923,8 @@ function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, sende
               {Object.entries(msg.reactions ?? {}).map(([emoji, ids]) =>
                 ids.length > 0 ? (
                   <View key={emoji} style={[mb.rxChip, {
-                    backgroundColor: ids.includes(activeMemberId)
-                      ? (isDark ? '#005C4B' : '#DCF8C6')
-                      : (isDark ? '#202C33' : '#f0f2f5'),
-                    borderColor: ids.includes(activeMemberId) ? '#25D366' : 'transparent',
+                    backgroundColor: ids.includes(activeMemberId) ? colors.primaryLight : colors.surface,
+                    borderColor: ids.includes(activeMemberId) ? colors.primary : 'transparent',
                   }]}>
                     <Text style={{ fontSize: 13 }}>{emoji}</Text>
                     {ids.length > 1 && (
@@ -876,7 +981,7 @@ function MessageActionSheet({ visible, msg, isMe, canEdit, colors, isDark, onClo
             {QUICK_REACTIONS.map(e => (
               <Pressable key={e} onPress={() => { onReact(e); onClose(); }}
                 style={{ width: 46, height: 46, borderRadius: 23,
-                  backgroundColor: isDark ? '#1e293b' : '#f1f5f9',
+                  backgroundColor: colors.surface,
                   borderWidth: 1, borderColor: colors.border,
                   alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ fontSize: 24 }}>{e}</Text>
@@ -1058,6 +1163,14 @@ export default function ChatScreen() {
 
   const [channelId, setChannelId]         = useState('all');
   const [text, setText]                   = useState('');
+  // Dictation into the text box — distinct from the separate voice-NOTE mic
+  // (Mic icon, outside the input pill, records+sends an audio attachment).
+  // This one transcribes speech straight into the text field for a normal
+  // typed-looking message, same on-device engine Ask Cube's chat input uses.
+  const preDictationText = useRef('');
+  const dictation = useVoiceDictation();
+  const [moderationWarning, setModerationWarning] = useState(false);
+  const [sharedCardPayload, setSharedCardPayload] = useState<any>(null);
   const [actionMsg, setActionMsg]         = useState<ChatMessage | null>(null);
   const [editingMsg, setEditingMsg]       = useState<ChatMessage | null>(null);
   const [replyingTo, setReplyingTo]       = useState<ChatMessage | null>(null);
@@ -1071,7 +1184,14 @@ export default function ChatScreen() {
   const [attachType, setAttachType]       = useState<'image' | 'video'>('image');
   const [mentionQuery, setMentionQuery]   = useState<string | null>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
-  const [tipVisible, setTipVisible]       = useState(true);
+  // Collapses the channel strip + sub-header while the user scrolls up
+  // (toward older messages) to free up vertical space, and brings it back
+  // as soon as they scroll back down — direction-based, not just "am I at
+  // the bottom", so it also reveals while actively scrolling down through
+  // history, not only once they reach the very latest message.
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const lastScrollY = useRef(0);
+  const headerAnim = useRef(new Animated.Value(0)).current; // 0 = shown, 1 = collapsed
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [lightboxUri, setLightboxUri]       = useState<string | null>(null);
   const [videoLightboxUri, setVideoLightboxUri] = useState<string | null>(null);
@@ -1146,6 +1266,7 @@ export default function ChatScreen() {
 
   const handleTextChange = (val: string) => {
     setText(val);
+    if (moderationWarning) setModerationWarning(false);
     const atIdx = val.lastIndexOf('@');
     if (atIdx !== -1) {
       const after = val.slice(atIdx + 1);
@@ -1171,11 +1292,26 @@ export default function ChatScreen() {
 
   // ── Send ──────────────────────────────────────────────────────────────────
 
-  const handleSend = () => {
-    if ((!text.trim() && !attachUri) || !activeMemberId) return;
+  const handleSend = async () => {
+    let sourceText = text;
+    if (dictation.state === 'listening') {
+      const finalTranscript = await dictation.stop();
+      sourceText = preDictationText.current + finalTranscript;
+    }
+    if ((!sourceText.trim() && !attachUri) || !activeMemberId) return;
+
+    // Layer 1 moderation — fast local blocklist, blocks the send outright
+    // before anything reaches the server. Attachments/voice notes aren't
+    // text-checked; only the message body.
+    if (sourceText.trim()) {
+      const check = checkProfanity(sourceText);
+      if (check.blocked) { setModerationWarning(true); return; }
+    }
+    setModerationWarning(false);
+
     if (editingMsg) { deleteMessage(channelId, editingMsg.id); setEditingMsg(null); }
     // Convert display tokens "@FirstName" back to storage format "@[Name|id]"
-    let finalText = text.trim();
+    let finalText = sourceText.trim();
     for (const [token, full] of Object.entries(pendingMentions.current)) {
       finalText = finalText.split(token).join(full);
     }
@@ -1310,46 +1446,56 @@ export default function ChatScreen() {
   };
 
   const searchHeight = searchAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 52] });
-  const canSend      = text.trim().length > 0 || attachUri !== null;
+  // While dictating, Send only lights up once the user has paused for a
+  // beat (dictation.silenceReady) — the mic keeps listening either way, so
+  // they can still keep talking to add more before actually tapping Send.
+  const dictatedText = dictation.state === 'listening' ? preDictationText.current + dictation.liveTranscript : text;
+  const canSend      = (dictation.state === 'listening' ? dictation.silenceReady && dictatedText.trim().length > 0 : dictatedText.trim().length > 0) || attachUri !== null;
   const parentLocked = channelId === 'parents' && !isParent;
 
   const [switcherOpen, setSwitcherOpen] = useState(false);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <AppHeader
-        memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
-        memberRole={activeMember?.role ?? 'parent'}
-        notifCount={0}
-        onPersonaPress={() => setSwitcherOpen(true)}
-      />
+      <Animated.View style={{
+        maxHeight: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [200, 0] }),
+        opacity: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+        overflow: 'hidden',
+      }}>
+        <AppHeader
+          memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
+          memberRole={activeMember?.role ?? 'parent'}
+          notifCount={0}
+          onPersonaPress={() => setSwitcherOpen(true)}
+        />
 
-      {/* ── Channel strip ── */}
-      <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 }}>
-        <View style={[s.strip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 2, paddingHorizontal: 2 }}>
-            {allChannels.map(ch => {
-              if ((ch as any).lock && !isParent) return null;
-              const act = channelId === ch.id;
-              return (
-                <Pressable key={ch.id} onPress={() => setChannelId(ch.id)}
-                  style={[s.channelBtn, { backgroundColor: act ? ((ch as any).isDM ? colors.primary : colors.card) : 'transparent' }]}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                    {(ch as any).isDM && (
-                      <View style={{ width: 7, height: 7, borderRadius: 4,
-                        backgroundColor: '#22c55e',
-                        borderWidth: 1.5, borderColor: act ? colors.primary : colors.surface }} />
-                    )}
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: act ? ((ch as any).isDM ? '#fff' : colors.textPrimary) : colors.textTertiary }}>
-                      {ch.label}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+        {/* ── Channel strip ── */}
+        <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 }}>
+          <View style={[s.strip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 2, paddingHorizontal: 2 }}>
+              {allChannels.map(ch => {
+                if ((ch as any).lock && !isParent) return null;
+                const act = channelId === ch.id;
+                return (
+                  <Pressable key={ch.id} onPress={() => setChannelId(ch.id)}
+                    style={[s.channelBtn, { backgroundColor: act ? ((ch as any).isDM ? colors.primary : colors.card) : 'transparent' }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                      {(ch as any).isDM && (
+                        <View style={{ width: 7, height: 7, borderRadius: 4,
+                          backgroundColor: '#22c55e',
+                          borderWidth: 1.5, borderColor: act ? colors.primary : colors.surface }} />
+                      )}
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: act ? ((ch as any).isDM ? '#fff' : colors.textPrimary) : colors.textTertiary }}>
+                        {ch.label}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
         </View>
-      </View>
+      </Animated.View>
 
       {/* ── Channel sub-header: label + member avatars ── */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, gap: 8, backgroundColor: colors.card, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
@@ -1438,38 +1584,14 @@ export default function ChatScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         {parentLocked ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 16 }}>
-            <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: '#fef3c7', borderWidth: 2, borderColor: '#fbbf24', alignItems: 'center', justifyContent: 'center' }}>
-              <Lock size={30} color="#b45309" />
+            <View style={{ width: 64, height: 64, borderRadius: 20, backgroundColor: colors.amberLight, borderWidth: 2, borderColor: colors.amber, alignItems: 'center', justifyContent: 'center' }}>
+              <Lock size={30} color={colors.amber} />
             </View>
             <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary, textAlign: 'center' }}>🔒 Parents Vault</Text>
             <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 }}>Restricted to parents. Switch profile to access.</Text>
           </View>
         ) : (
           <>
-            {/* ── Family coaching tip banner ── */}
-            {isParent && tipVisible && (
-              <View style={{
-                marginHorizontal: 12, marginTop: 6, marginBottom: 2,
-                borderRadius: 14, padding: 10,
-                backgroundColor: isDark ? '#1A1040' : '#F3F0FF',
-                borderWidth: 1, borderColor: isDark ? '#4B38B360' : '#6C5CE730',
-                flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-              }}>
-                <Text style={{ fontSize: 16, lineHeight: 20 }}>📌</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 10, fontWeight: '900', color: colors.primary, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 }}>
-                    Family Goal Insights
-                  </Text>
-                  <Text style={{ fontSize: 11, color: colors.textSecondary, lineHeight: 16 }}>
-                    Break larger weekend chores into smaller 10-min steps to help kids build streaks without feeling overwhelmed!
-                  </Text>
-                </View>
-                <Pressable onPress={() => setTipVisible(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Text style={{ fontSize: 12, color: colors.textTertiary, fontWeight: '700' }}>✕</Text>
-                </Pressable>
-              </View>
-            )}
-
             {/* ── Messages — inverted so newest is always at visual bottom ── */}
             <FlatList
               ref={flatRef}
@@ -1477,13 +1599,28 @@ export default function ChatScreen() {
               inverted
               keyExtractor={(item, i) => item.type === 'day' ? `day-${i}` : item.msg.id}
               contentContainerStyle={{ paddingVertical: 6 }}
-              style={{ backgroundColor: isDark ? '#13131F' : '#EEF2FF' }}
+              style={{ backgroundColor: colors.background }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               onTouchStart={() => showAttachMenu && setShowAttachMenu(false)}
               onScroll={({ nativeEvent: { contentOffset } }) => {
                 // In inverted list offset 0 = bottom; >200 means user scrolled up
                 setShowScrollBtn(contentOffset.y > 200);
+
+                // Inverted list: a GROWING offset.y means the user is
+                // scrolling toward older messages (visually "up"); a
+                // shrinking one means back toward the latest ("down").
+                const dy = contentOffset.y - lastScrollY.current;
+                lastScrollY.current = contentOffset.y;
+                if (Math.abs(dy) < 2) return; // ignore jitter
+                const goingToOlder = dy > 0;
+                if (goingToOlder && contentOffset.y > 40 && !headerCollapsed) {
+                  setHeaderCollapsed(true);
+                  Animated.timing(headerAnim, { toValue: 1, duration: 180, useNativeDriver: false }).start();
+                } else if ((!goingToOlder || contentOffset.y <= 40) && headerCollapsed) {
+                  setHeaderCollapsed(false);
+                  Animated.timing(headerAnim, { toValue: 0, duration: 180, useNativeDriver: false }).start();
+                }
               }}
               scrollEventThrottle={100}
               onScrollToIndexFailed={({ index }) => {
@@ -1532,6 +1669,7 @@ export default function ChatScreen() {
                     activeMemberId={activeMemberId ?? ''}
                     memberMap={memberMap}
                     searchQuery={searchQuery}
+                    isParent={isParent}
                     colors={colors} isDark={isDark}
                     highlighted={highlightedMsgId === msg.id}
                     onLongPress={() => setActionMsg(msg)}
@@ -1540,6 +1678,7 @@ export default function ChatScreen() {
                     onQuoteTap={msg.replyTo ? () => scrollToQuotedMsg(msg.replyTo!.id) : undefined}
                     onOpenImage={setLightboxUri}
                     onOpenVideo={setVideoLightboxUri}
+                    onOpenSharedCard={setSharedCardPayload}
                   />
                 );
               }}
@@ -1557,10 +1696,20 @@ export default function ChatScreen() {
               </Pressable>
             )}
 
+            {/* ── Moderation warning ── */}
+            {moderationWarning && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8,
+                backgroundColor: colors.danger + '14', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.danger }}>
+                <Text style={{ fontSize: 14 }}>🙏</Text>
+                <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: colors.danger }}>Let's keep it kind — that message wasn't sent.</Text>
+                <Pressable onPress={() => setModerationWarning(false)}><X size={16} color={colors.danger} /></Pressable>
+              </View>
+            )}
+
             {/* ── Reply banner ── */}
             {replyingTo && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 8,
-                backgroundColor: isDark ? '#1e293b' : '#f8fafc', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+                backgroundColor: colors.surface, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
                 <CornerUpLeft size={16} color={colors.primary} />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary }}>Reply to {memberMap[replyingTo.senderId]?.name?.split(' ')[0]}</Text>
@@ -1573,8 +1722,8 @@ export default function ChatScreen() {
             {/* ── Edit banner ── */}
             {editingMsg && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 8,
-                backgroundColor: isDark ? '#1e293b' : '#fef9c3', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#fbbf24' }}>
-                <Pencil size={16} color="#f59e0b" />
+                backgroundColor: colors.amberLight, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.amber }}>
+                <Pencil size={16} color={colors.amber} />
                 <Text style={{ flex: 1, fontSize: 12, color: colors.textSecondary }} numberOfLines={1}>Editing: {editingMsg.text}</Text>
                 <Pressable onPress={() => { setEditingMsg(null); setText(''); }}><X size={18} color={colors.textTertiary} /></Pressable>
               </View>
@@ -1664,18 +1813,37 @@ export default function ChatScreen() {
                 </Pressable>
 
                 {/* Text input */}
-                <View style={[s.inputBubble, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={[s.inputBubble, { backgroundColor: colors.surface,
+                  borderColor: dictation.state === 'listening' ? colors.teal : colors.borderMed }]}>
                   <TextInput
                     ref={inputRef}
-                    value={text}
+                    value={dictation.state === 'listening' ? (preDictationText.current + dictation.liveTranscript) : text}
                     onChangeText={handleTextChange}
                     placeholder={`Message ${channelLabel}…`}
                     placeholderTextColor={colors.placeholder}
                     multiline
                     maxLength={1000}
                     scrollEnabled
+                    editable={dictation.state !== 'listening'}
                     style={[s.input, { color: colors.textPrimary }]}
                   />
+                  {/* Dictation — transcribes into the text field itself, distinct
+                      from the outer Mic (records a separate voice-note attachment).
+                      Different icon + teal accent so the two are never confused. */}
+                  <Pressable
+                    onPress={async () => {
+                      if (dictation.state === 'listening') {
+                        const finalText = await dictation.stop();
+                        handleTextChange(preDictationText.current + finalText);
+                        return;
+                      }
+                      preDictationText.current = text ? text + ' ' : '';
+                      await dictation.start();
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={{ padding: 4 }}>
+                    <AudioLines size={19} color={dictation.state === 'listening' ? colors.teal : colors.textTertiary} />
+                  </Pressable>
                 </View>
 
                 {/* Mic → Send */}
@@ -1699,6 +1867,14 @@ export default function ChatScreen() {
           </>
         )}
       </KeyboardAvoidingView>
+
+      {/* ── Shared card detail (read-only — tapped a meal/event/quest card someone shared) ── */}
+      <AskCubeRecipeSheet
+        visible={!!sharedCardPayload}
+        data={sharedCardPayload?.data ?? null}
+        chefName={sharedCardPayload?.data?.chefId ? members.find((m: any) => m.id === sharedCardPayload.data.chefId)?.name : undefined}
+        onClose={() => setSharedCardPayload(null)}
+      />
 
       {/* ── Quick emoji (double-tap) ── */}
       <Modal visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>
@@ -1786,7 +1962,7 @@ const s = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 10, elevation: 50, zIndex: 100 },
   inputBar:   { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 10, paddingTop: 8,
     paddingBottom: Platform.OS === 'ios' ? 22 : 10, gap: 7, borderTopWidth: StyleSheet.hairlineWidth },
-  inputBubble:{ flex: 1, flexDirection: 'row', alignItems: 'flex-end', borderRadius: 22, borderWidth: 1,
+  inputBubble:{ flex: 1, flexDirection: 'row', alignItems: 'flex-end', borderRadius: 20, borderWidth: 1,
     paddingHorizontal: 13, paddingVertical: 5 },
   // single line (minHeight ~36) → grows to 5 lines (~21px lineHeight × 5 = 105) then scrolls
   input:      { flex: 1, fontSize: 14.5, lineHeight: 21, minHeight: 36, maxHeight: 111,

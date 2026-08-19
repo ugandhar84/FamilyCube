@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Modal } from 'react-native';
+import { useState, useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity, Modal, Animated } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Search, Calendar, X } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
@@ -8,10 +8,10 @@ import { localDateStr, fmtDateShort } from '@/lib/dates';
 
 export type DateRange = { from: string; to: string } | null;
 
-// Text search + a due-date range filter (single day when from===to, or a
-// span) — the range picker uses two native date spinners rather than a
-// calendar grid, matching how AddQuestModal already picks a single due
-// date elsewhere in this app.
+// Collapsed by default to a single filter icon — tapping it expands the
+// search input + date-range button inline (width animation, not a modal),
+// so the row only takes up real space once someone actually wants to
+// search/filter instead of sitting always-open above the chore list.
 export function QuestSearchBar({ query, onQueryChange, range, onRangeChange, colors, isDark }: {
   query: string; onQueryChange: (q: string) => void;
   range: DateRange; onRangeChange: (r: DateRange) => void;
@@ -21,6 +21,17 @@ export function QuestSearchBar({ query, onQueryChange, range, onRangeChange, col
   const [pickingFrom, setPickingFrom] = useState(true);
   const [draftFrom, setDraftFrom] = useState<Date>(range ? new Date(range.from + 'T12:00') : new Date());
   const [draftTo, setDraftTo] = useState<Date>(range ? new Date(range.to + 'T12:00') : new Date());
+
+  // Expanded whenever there's an active filter/query too, so the state
+  // reflects reality even after the user collapses it manually then it's
+  // reopened by something else setting a query/range programmatically.
+  const [expanded, setExpanded] = useState(!!query || !!range);
+  const widthAnim = useRef(new Animated.Value(expanded ? 1 : 0)).current;
+
+  const toggleExpanded = (next: boolean) => {
+    setExpanded(next);
+    Animated.timing(widthAnim, { toValue: next ? 1 : 0, duration: 220, useNativeDriver: false }).start();
+  };
 
   const openPicker = () => {
     setDraftFrom(range ? new Date(range.from + 'T12:00') : new Date());
@@ -42,42 +53,67 @@ export function QuestSearchBar({ query, onQueryChange, range, onRangeChange, col
       : `${fmtDateShort(range.from)} – ${fmtDateShort(range.to)}`
     : 'Filter by date';
 
-  return (
-    <View style={{ paddingHorizontal: 14, marginBottom: 10, gap: 8 }}>
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
-          borderRadius: 14, borderWidth: 1.5, borderColor: isDark ? colors.border : '#E2E8F0',
-          backgroundColor: isDark ? colors.surface : '#F8FAFC', paddingHorizontal: 12, paddingVertical: 9 }}>
-          <Search size={15} color={colors.textTertiary} />
-          <TextInput
-            value={query}
-            onChangeText={onQueryChange}
-            placeholder="Search quests…"
-            placeholderTextColor={colors.textTertiary}
-            style={{ flex: 1, fontSize: TYPO.body, color: colors.textPrimary, padding: 0 }}
-          />
-          {query.length > 0 && (
-            <TouchableOpacity onPress={() => onQueryChange('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <X size={15} color={colors.textTertiary} />
-            </TouchableOpacity>
-          )}
-        </View>
+  const hasActiveFilter = !!query || !!range;
 
-        <TouchableOpacity onPress={openPicker}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 14, borderWidth: 1.5,
-            paddingHorizontal: 12, paddingVertical: 9,
-            borderColor: range ? BRAND.purple : (isDark ? colors.border : '#E2E8F0'),
-            backgroundColor: range ? BRAND.purple + '15' : (isDark ? colors.surface : '#F8FAFC') }}>
-          <Calendar size={15} color={range ? BRAND.purple : colors.textTertiary} />
-          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: range ? BRAND.purple : colors.textSecondary }} numberOfLines={1}>
-            {rangeLabel}
-          </Text>
-          {range && (
-            <TouchableOpacity onPress={() => onRangeChange(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <X size={13} color={BRAND.purple} />
-            </TouchableOpacity>
+  return (
+    <View style={expanded ? { flex: 1, minWidth: 220 } : undefined}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        {/* Filter icon toggle — always visible, badge-dot when a filter is
+            active even while collapsed, so it's obvious something is set. */}
+        <TouchableOpacity onPress={() => toggleExpanded(!expanded)}
+          style={{ width: 38, height: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+            borderWidth: 1.5, borderColor: expanded || hasActiveFilter ? BRAND.purple : (isDark ? colors.border : '#E2E8F0'),
+            backgroundColor: expanded || hasActiveFilter ? BRAND.purple + '15' : (isDark ? colors.surface : '#F8FAFC') }}>
+          <Search size={16} color={expanded || hasActiveFilter ? BRAND.purple : colors.textTertiary} />
+          {hasActiveFilter && !expanded && (
+            <View style={{ position: 'absolute', top: 5, right: 5, width: 7, height: 7, borderRadius: 4, backgroundColor: BRAND.purple }} />
           )}
         </TouchableOpacity>
+
+        {expanded && (
+          <Animated.View style={{
+            flex: 1, flexDirection: 'row', gap: 8,
+            opacity: widthAnim,
+            transform: [{ scaleX: widthAnim.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }],
+          }}>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+              borderRadius: 14, borderWidth: 1.5, borderColor: isDark ? colors.border : '#E2E8F0',
+              backgroundColor: isDark ? colors.surface : '#F8FAFC', paddingHorizontal: 12, paddingVertical: 9 }}>
+              <TextInput
+                value={query}
+                onChangeText={onQueryChange}
+                placeholder="Search chores…"
+                placeholderTextColor={colors.textTertiary}
+                autoFocus
+                style={{ flex: 1, fontSize: TYPO.body, color: colors.textPrimary, padding: 0 }}
+              />
+              {query.length > 0 && (
+                <TouchableOpacity onPress={() => onQueryChange('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <X size={15} color={colors.textTertiary} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <TouchableOpacity onPress={openPicker}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 14, borderWidth: 1.5,
+                paddingHorizontal: 12, paddingVertical: 9,
+                borderColor: range ? BRAND.purple : (isDark ? colors.border : '#E2E8F0'),
+                backgroundColor: range ? BRAND.purple + '15' : (isDark ? colors.surface : '#F8FAFC') }}>
+              <Calendar size={15} color={range ? BRAND.purple : colors.textTertiary} />
+              {range && (
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }} numberOfLines={1}>
+                  {rangeLabel}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => { onQueryChange(''); onRangeChange(null); toggleExpanded(false); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ alignItems: 'center', justifyContent: 'center' }}>
+              <X size={18} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </Animated.View>
+        )}
       </View>
 
       <Modal transparent animationType="fade" visible={pickerOpen} onRequestClose={() => setPickerOpen(false)}>

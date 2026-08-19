@@ -139,19 +139,36 @@ export function YourRidesSection({
             const kid = members.find(m => m.id === ev.memberId);
             const evDay = ev.date ? new Date(ev.date + 'T12:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) : ev.date;
             return (
-              <View key={ev.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
-                padding: 14, borderRadius: 14,
+              <View key={ev.id} style={{ borderRadius: 14, overflow: 'hidden',
                 backgroundColor: isDark ? BRAND.teal + '15' : BRAND.teal + '12',
                 borderWidth: 1.5, borderColor: BRAND.teal + '40' }}>
-                <CheckCircle size={22} color={BRAND.teal} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: GP.title, fontWeight: '800', color: colors.textPrimary }}>
-                    {ev.title}
-                  </Text>
-                  <Text style={{ fontSize: GP.body, color: colors.textSecondary, marginTop: 2 }}>
-                    {kid?.name.split(' ')[0] ?? 'Child'} · {evDay}{ev.time ? ` at ${fmtTime(ev.time)}` : ''}
-                  </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
+                  <CheckCircle size={22} color={BRAND.teal} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: GP.title, fontWeight: '800', color: colors.textPrimary }}>
+                      {ev.title}
+                    </Text>
+                    <Text style={{ fontSize: GP.body, color: colors.textSecondary, marginTop: 2 }}>
+                      {kid?.name.split(' ')[0] ?? 'Child'} · {evDay}{ev.time ? ` at ${fmtTime(ev.time)}` : ''}
+                    </Text>
+                  </View>
                 </View>
+                {/* Only "today" claimed rides got a Can't Make It button before —
+                    a ride claimed for a future day had no withdraw path at all.
+                    Same decline flow as myDrivingToday: helperStatus → rejected,
+                    which re-surfaces it in Parent Hub's urgency banner once it's
+                    inside the same <4hr window used for any other declined ride. */}
+                <Pressable onPress={() => beginDecline(ev.id)}
+                  style={{ borderTopWidth: 1, borderTopColor: BRAND.teal + '30',
+                    paddingVertical: 11, alignItems: 'center' }}>
+                  <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.danger }}>Can't Make It</Text>
+                </Pressable>
+                {declineId === ev.id && (
+                  <View style={{ paddingHorizontal: 14, paddingBottom: 14 }}>
+                    <DeclineReasonPanel declineText={declineText} setDeclineText={setDeclineText}
+                      onCancel={cancelDecline} onConfirm={() => confirmDecline(ev)} colors={colors} isDark={isDark} />
+                  </View>
+                )}
               </View>
             );
           })}

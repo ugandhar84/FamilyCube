@@ -2,14 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, RefreshControl, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Car, X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useEventStore } from '@/store/eventStore';
 import { useRewardStore } from '@/store/rewardStore';
-import { TYPO } from '@/constants/theme';
-import { BRAND } from '@/components/FamilyCubeLogo';
+import { useChatStore } from '@/store/chatStore';
+import { useTripStore } from '@/store/tripStore';
 import AppHeader from '@/components/AppHeader';
 import HelpRequestModal from '@/components/HelpRequestModal';
 import FlyerScannerModal from '@/components/FlyerScannerModal';
@@ -29,6 +28,8 @@ export default function HubScreen() {
   const { loadFromStorage: loadQuests }  = useQuestStore();
   const { loadFromStorage: loadEvents }  = useEventStore();
   const { loadFromStorage: loadRewards } = useRewardStore();
+  const { activeTrip: trip, loadFromStorage: loadTrip, dispatch: dispatchTrip,
+          updateEta: updateTripEta, markOverdueAlertSent, complete: completeTrip } = useTripStore();
 
   const [refreshing, setRefreshing]        = useState(false);
   const [pinTarget, setPinTarget]          = useState<FamilyMember | null>(null);
@@ -36,7 +37,6 @@ export default function HubScreen() {
   const [helpModalVisible, setHelpModal]   = useState(false);
   const [flyerVisible, setFlyerVisible]    = useState(false);
   const [enRouteVisible, setEnRouteVisible]= useState(false);
-  const [transitBanner, setTransitBanner]  = useState<{ kid: string; eta: string } | null>(null);
 
   useEffect(() => {
     if (!loaded) loadFromStorage();
@@ -45,10 +45,57 @@ export default function HubScreen() {
     loadRewards();
   }, [loaded]);
 
+  const familyId = (members[0] as any)?.familyId as string | undefined;
+  useEffect(() => {
+    if (familyId) loadTrip(familyId);
+  }, [familyId]);
+
   useEffect(() => {
     const id = setInterval(() => setClock(fmtClock()), 30_000);
     return () => clearInterval(id);
   }, []);
+
+  const driver  = trip ? members.find(m => m.id === trip.driverMemberId) : undefined;
+  const pickup  = trip?.pickupMemberId ? members.find(m => m.id === trip.pickupMemberId) : undefined;
+  const driverName = driver?.name.split(' ')[0] ?? 'Someone';
+  const kidName     = pickup?.name.split(' ')[0] ?? 'Family';
+
+  // Broadcast En Route to family chat, 30s after the driver last touched
+  // the ETA (dispatch or any slider adjustment) — debounced so dragging
+  // doesn't spam the chat with every intermediate value. 🚗 prefix maps to
+  // a routine/success tint in ChatScreen's MessageBubble. Every family
+  // member's device runs this same effect off the synced trip row, but
+  // only the driver's device actually has a reason to fire it — guarded by
+  // activeMemberId matching the driver so it isn't posted once per viewer.
+  useEffect(() => {
+    if (!trip || activeMemberId !== trip.driverMemberId) return;
+    const msg = `🚗 ${driverName} en route to pick up ${kidName} · ETA ${trip.etaMinutes} min`;
+    const id = setTimeout(() => {
+      useChatStore.getState().sendMessage('all', trip.driverMemberId, msg);
+    }, 30_000);
+    return () => clearTimeout(id);
+  }, [trip?.etaMinutes, trip?.startedAt, trip?.driverMemberId, activeMemberId]);
+
+  // One-time alarming alert if a trip runs 5+ min past its ETA with no
+  // Pickup Done confirmation — checked every 15s while a trip is active.
+  // 🚨 prefix maps to a danger tint in ChatScreen's MessageBubble. Guarded
+  // the same way — only the driver's own device fires the check, but the
+  // resulting DB row update (overdueAlertSent) is what every viewer's
+  // Pick-up Radar card reacts to for the red "Overdue" styling.
+  useEffect(() => {
+    if (!trip || activeMemberId !== trip.driverMemberId || trip.overdueAlertSent) return;
+    const check = () => {
+      const elapsedMin = (Date.now() - new Date(trip.startedAt).getTime()) / 60_000;
+      if (elapsedMin - trip.etaMinutes >= 5) {
+        const msg = `🚨 Pickup not confirmed yet — ${driverName} was due to pick up ${kidName} ${trip.etaMinutes} min ago`;
+        useChatStore.getState().sendMessage('all', trip.driverMemberId, msg);
+        markOverdueAlertSent();
+      }
+    };
+    check();
+    const id = setInterval(check, 15_000);
+    return () => clearInterval(id);
+  }, [trip?.id, trip?.overdueAlertSent, activeMemberId]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -64,6 +111,16 @@ export default function HubScreen() {
 
   if (!active) return null;
 
+  // Shape EnRouteBanner/ParentView already expect — resolved fresh on every
+  // render from the synced trip row + this device's own members list, so
+  // every viewer (driver, requester, other parent) sees the same trip.
+  const activeTripView = trip ? {
+    kidName, kidEmoji: pickup?.emoji,
+    driverName, driverEmoji: driver?.emoji, driverMemberId: trip.driverMemberId,
+    etaMinutes: trip.etaMinutes,
+    startedAtMs: new Date(trip.startedAt).getTime(),
+  } : null;
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <AppHeader
@@ -75,19 +132,6 @@ export default function HubScreen() {
         onSettingsPress={isSenior ? () => router.push('/profile') : undefined}
       />
 
-      {transitBanner && (
-        <View style={{ backgroundColor: '#065F46', paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Car size={16} color="#6EE7B7" />
-          <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: '#6EE7B7' }}>
-            En Route to pick up {transitBanner.kid} · ETA {transitBanner.eta}
-          </Text>
-          <Pressable onPress={() => setTransitBanner(null)}
-            style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#10B98130', alignItems: 'center', justifyContent: 'center' }}>
-            <X size={15} color="#6EE7B7" />
-          </Pressable>
-        </View>
-      )}
-
       <ScrollView
         showsVerticalScrollIndicator={false}
         // Child views render bottom-sheet modals with suggestion chips. Without this,
@@ -95,7 +139,7 @@ export default function HubScreen() {
         // chip's onPress never fires. (CalendarScreen avoids it by rendering its
         // modals outside the ScrollView.)
         keyboardShouldPersistTaps="handled"
-        style={{ backgroundColor: isDark ? colors.background : '#F1F5F9' }}
+        style={{ backgroundColor: colors.background }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         contentContainerStyle={{ paddingTop: 16, paddingBottom: 60 }}
       >
@@ -103,18 +147,32 @@ export default function HubScreen() {
           <ParentView
             active={active} members={members} colors={colors} isDark={isDark}
             onScanFlyer={() => setFlyerVisible(true)}
-            onEnRoute={() => setEnRouteVisible(true)}
+            onDispatchDirect={(memberId, etaMinutes) => {
+              if (!familyId) return;
+              dispatchTrip({ familyId, driverMemberId: active.id, pickupMemberId: memberId, etaMinutes });
+            }}
+            onPickupDone={() => {
+              if (trip) {
+                useChatStore.getState().sendMessage('all', trip.driverMemberId, `✅ ${driverName} picked up ${kidName}`);
+              }
+              completeTrip();
+            }}
+            onCancelTrip={() => completeTrip()}
+            activeTrip={activeTripView}
+            onUpdateEta={(etaMinutes) => updateTripEta(etaMinutes)}
           />
         )}
         {isKid && (
           <KidView
             active={active} members={members} colors={colors} isDark={isDark}
             onHelpRequest={() => setHelpModal(true)}
+            activeTrip={activeTripView}
           />
         )}
         {isTeen && (
           <TeenView
             active={active} members={members} colors={colors} isDark={isDark}
+            activeTrip={activeTripView}
           />
         )}
         {isSenior && (
@@ -122,17 +180,24 @@ export default function HubScreen() {
             active={active} members={members} colors={colors} isDark={isDark}
             onHelpRequest={() => setHelpModal(true)}
             onEnRoute={() => setEnRouteVisible(true)}
+            activeTrip={activeTripView}
           />
         )}
       </ScrollView>
 
       <HelpRequestModal visible={helpModalVisible} onClose={() => setHelpModal(false)} />
       <FlyerScannerModal visible={flyerVisible} onClose={() => setFlyerVisible(false)} />
+      {/* Senior Hub's own En Route flow still uses the picker modal — it has
+          no linked-ride concept like Parent Hub's Pick-up Radar does. */}
       <EnRouteModal
         visible={enRouteVisible}
         onClose={() => setEnRouteVisible(false)}
-        kids={members.filter(m => m.role === 'kid')}
-        onDispatch={(kid, eta) => setTransitBanner({ kid, eta })}
+        pickups={members.filter(m => m.id !== active.id)}
+        driverName={active.name.split(' ')[0]}
+        onDispatch={(person, etaMinutes) => {
+          if (!familyId) return;
+          dispatchTrip({ familyId, driverMemberId: active.id, pickupMemberId: person?.id, etaMinutes });
+        }}
       />
       <PinEntryModal
         visible={pinTarget !== null}

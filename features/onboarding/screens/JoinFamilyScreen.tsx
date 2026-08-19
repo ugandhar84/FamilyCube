@@ -118,6 +118,15 @@ export default function JoinFamilyScreen() {
     try {
       const expoPushToken = await registerForPushNotifications().catch(() => null);
 
+      // This device already has a real Supabase Auth session (app/_layout.tsx
+      // gates onboarding on it) — pass its access token so join-family can
+      // stamp auth_user_id on the new member row. Without this, the member
+      // row has no auth_user_id and every RLS-gated write they make (or that
+      // gets made on their behalf) fails silently. See migration
+      // 20260818192700 for why this is the actual identity RLS checks.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not signed in');
+
       const res = await fetch(
         `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/join-family`,
         {
@@ -125,6 +134,7 @@ export default function JoinFamilyScreen() {
           headers: {
             'Content-Type': 'application/json',
             'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({ code: code.trim(), name: name.trim(), role, avatar, color, expoPushToken }),
         }

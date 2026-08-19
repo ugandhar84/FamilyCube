@@ -43,11 +43,12 @@ export function QuestFilters({
   const pillBg   = isDark ? '#1E293B' : '#F1F5F9';
   const pillBdr  = isDark ? '#334155' : '#E2E8F0';
 
+  // No dedicated "Paid ✓" tab — approved/paid chores stay inline in "All"
+  // alongside active ones instead of being segregated into their own view.
   const STATUS_TABS: { key: TabStatus; label: string }[] = [
     { key: 'all',       label: 'All' },
     { key: 'todo',      label: 'To Do' },
     { key: 'review',    label: 'In Review' },
-    { key: 'completed', label: 'Paid ✓' },
   ];
 
   return (
@@ -66,7 +67,7 @@ export function QuestFilters({
           onPress={() => { onSetKidFilter('all'); onSetTabStatus('all'); }}
         >
           <Text style={{ fontSize: 13, fontWeight: '700', color: kidFilter === 'all' ? '#fff' : colors.textSecondary }}>
-            {isKid ? '🎯 My Quests' : 'All Family'}
+            {isKid ? '🎯 My Chores' : 'All Family'}
           </Text>
         </TouchableOpacity>
 

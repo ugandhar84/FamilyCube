@@ -154,7 +154,10 @@ export default function SetupFamilyScreen() {
         .single();
       if (famErr || !family) throw new Error(famErr?.message ?? 'Failed to create family');
 
-      // 2. Create parent member
+      // 2. Create parent member — auth_user_id ties this row to the device's
+      // real Supabase Auth session, which is what every RLS policy actually
+      // checks (see migration 20260818192700). Without this, every write
+      // this parent makes afterward silently fails RLS.
       const memberId = crypto.randomUUID();
       const { error: memErr } = await supabase.from('members').insert({
         id:              memberId,
@@ -163,6 +166,7 @@ export default function SetupFamilyScreen() {
         avatar,
         color,
         family_id:       family.id,
+        auth_user_id:    user.id,
         coins:           0, xp: 0, level: 1, max_xp: 100, streak: 0,
         pin,
         expo_push_token: expoPushToken ?? null,

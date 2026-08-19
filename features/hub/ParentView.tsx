@@ -6,10 +6,12 @@ import { useEventStore } from '@/store/eventStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { AddQuestModal } from '@/features/quests/QuestsScreen';
+import { AddEventModal } from '@/features/calendar/EventFormModal';
+import AddIntakeChooser from '@/components/AddIntakeChooser';
 import type { FamilyMember } from '@/store/familyStore';
-import { AlertBanner } from './hubComponents';
+import { AlertBanner, PickupRadarStatus } from './hubComponents';
 import { localToday, hoursUntilEvent, isWorkEvent, minutesBetween } from './hubUtils';
-import { TodayView } from './TodayView';
+import { TodayView, GreetingHeader } from './TodayView';
 import { useChoreStore } from '@/store/choreStore';
 import type { ChoreTask } from '@/store/choreStore';
 
@@ -23,11 +25,18 @@ import { ChoreReviewSection } from './parent/ChoreReviewSection';
 import { PushbackSheet } from './parent/PushbackSheet';
 import { DelegateSheet } from './parent/DelegateSheet';
 
-export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnRoute }: {
+export function ParentView({ active, members, colors, isDark, onScanFlyer, onDispatchDirect, onPickupDone, onCancelTrip, activeTrip, onUpdateEta }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   onScanFlyer: () => void;
-  onEnRoute: () => void;
+  // Dispatches immediately, no modal — memberId is nextRide's kid when one
+  // is linked, else undefined for a generic "family" broadcast. Matches the
+  // mock's plain in-card toggle exactly (no picker ever).
+  onDispatchDirect: (memberId: string | undefined, etaMinutes: number) => void;
+  onPickupDone: () => void;
+  onCancelTrip: () => void;
+  activeTrip?: { kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number } | null;
+  onUpdateEta?: (etaMinutes: number) => void;
 }) {
   const { quests, approveQuest, declineQuest, updateQuest } = useQuestStore();
   const { events, updateEvent, addEvent }  = useEventStore();
@@ -45,6 +54,18 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
   const pendingReviews = getParentReviewDeck();
 
   const [showAddTask, setShowAddTask] = useState(false);
+  const [showAddEvent, setShowAddEvent] = useState(false);
+  // Quick-action entry points go through the Speak it/Type it chooser first
+  // (matching the existing pet-appointment voice flow) — HouseholdBacklog's
+  // own "add task" trigger below still opens the manual quest form directly,
+  // since that's a narrower, already-scoped-to-backlog action.
+  const [addChooser, setAddChooser] = useState<'event' | 'quest' | null>(null);
+  // "Adjust in full form" handoff from VoiceIntakeReviewSheet — seeds
+  // whichever manual modal opens next with the AI-extracted fields.
+  const [addPrefill, setAddPrefill] = useState<{
+    title: string; category?: string; memberId?: string; startAt?: string;
+    notes?: string; coins?: number; photoRequired?: boolean;
+  } | undefined>(undefined);
   const [pushbackSheet, setPushbackSheet] = useState<{ assignmentId: string; choreTitle: string } | null>(null);
   const [delegateSheet, setDelegateSheet] = useState<{ choreId: string; choreTitle: string } | null>(null);
 
@@ -128,6 +149,36 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
       }
     }
   }
+
+  // D: family event vs. THE OTHER PARENT's work block — e.g. a ride
+  // assigned to Alex during a window Alex is actually at work. Distinct
+  // from check C, which only catches a kid's own event colliding with a
+  // work event for that same person — this catches a helper assignment
+  // colliding with the helper's own work schedule.
+  const timedHelperAssignments = upcomingEvents.filter(e => !!e.time && !!e.helper && e.helperStatus !== 'rejected');
+  for (const familyEv of timedHelperAssignments) {
+    const helperMember = members.find(m => m.name === familyEv.helper);
+    if (!helperMember) continue;
+    for (const workEv of upcomingWorkEvents) {
+      if (workEv.memberId !== helperMember.id) continue;
+      if (!workEv.time) continue;
+      if (minutesBetween(familyEv.time!, workEv.time) < 30) {
+        if (!conflictReasons.has(familyEv.id)) {
+          conflictReasons.set(familyEv.id, `Conflicts with ${helperMember.name.split(' ')[0]}'s work`);
+        }
+      }
+    }
+  }
+
+  // Other parents' Work events today, for the read-only coordination strip
+  // on TodayView — never the viewer's own (they don't need to be told about
+  // their own work block).
+  const otherParentsWorkToday = workEvents
+    .filter(e => e.memberId && e.memberId !== active.id)
+    .map(e => ({
+      id: e.id, title: e.title,
+      time: e.time, ownerName: members.find(m => m.id === e.memberId)?.name.split(' ')[0] ?? 'Parent',
+    }));
 
   const conflictEventIds = new Set(conflictReasons.keys());
   const conflictEvents   = todayEvents.filter(e => e.conflict || conflictEventIds.has(e.id));
@@ -259,6 +310,21 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
     return (e.date ?? '') >= today;
   });
 
+  const backlogCount = questPool.length + myAdultQuests.length + othersAdultQuests.length + myHelperEvents.length;
+
+  // The next confirmed ride THIS parent is driving today, soonest first —
+  // Pick-up Radar's "Up Next" card links to this instead of only ever
+  // offering the manual "pick anyone" dispatch modal.
+  const myUpcomingRides = todayEvents
+    .filter(e => e.helper === active.name && e.helperStatus === 'confirmed' && !!e.memberId
+      && hoursUntilEvent(e.date, e.time) >= -0.5)
+    .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
+  const nextRide = myUpcomingRides[0];
+  // pendingReviews (Chore Reviews) intentionally excluded — GreetingHeader
+  // already counts those itself via useQuestStore, which reads the same
+  // underlying chores array; including it here would double-count.
+  const otherAttentionCount = actionCount + backlogCount;
+
   const handlePullTask = (chore: ChoreTask) => {
     addParentQuest(chore.id, active.id, active.id, 'PULL');
   };
@@ -279,17 +345,18 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
 
   const pad = { paddingHorizontal: 16 };
 
+  // Order matches the reference mock's Hub sequence — Greeting → Quick
+  // Actions → Today's Timeline → Action Needed → Household Backlog →
+  // Pick-up Radar — with Family Cube's own sections (not present in the
+  // mock at all) placed next to whichever mock section they're closest
+  // to in spirit: AlertBanner right after Greeting (urgency-first, same
+  // position it already had), HouseholdSnapshotCard right after Quick
+  // Actions (a stats/summary block), GpCanHelpSection right after Action
+  // Needed (both are "needs a decision" sections), ChoreReviewSection
+  // right after Household Backlog (both are chore/task related).
   return (
     <>
-      <TodayView
-        colors={colors}
-        isDark={isDark}
-        activeMember={active}
-        members={members}
-        onAddQuest={() => router.push('/(tabs)/quests')}
-        onAddEvent={() => router.push('/(tabs)/calendar')}
-        onAddGrocery={() => router.push('/(tabs)/grocery' as any)}
-      />
+      <GreetingHeader colors={colors} isDark={isDark} activeMember={active} otherAttentionCount={otherAttentionCount} />
 
       {showBanner && (
         <AlertBanner
@@ -297,23 +364,24 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
           pendingNoResponseEvents={pendingNoResponse} unassignedUrgentEvents={unassignedUrgent}
           conflictReasons={conflictReasons}
           members={members} colors={colors} isDark={isDark} updateEvent={updateEvent}
+          activeName={active.name}
         />
       )}
 
-      <ParentQuickActions colors={colors} isDark={isDark} groceryCount={groceryItems.length} onScanFlyer={onScanFlyer} />
+      <ParentQuickActions colors={colors} isDark={isDark} groceryCount={groceryItems.length} onScanFlyer={onScanFlyer}
+        onAddQuest={() => setAddChooser('quest')} onAddEvent={() => setAddChooser('event')} />
 
-      <View style={pad}>
-        <HouseholdSnapshotCard
-          colors={colors} isDark={isDark}
-          reviewedToday={reviewedToday} avgStreak={avgStreak}
-          pendingCashOutsCount={pendingCashOuts.length}
-          leaderboardKids={leaderboardKids} allNames={allNames}
-        />
-      </View>
-
-      <View style={pad}>
-        <EnRouteBanner colors={colors} isDark={isDark} onEnRoute={onEnRoute} />
-      </View>
+      <TodayView
+        colors={colors}
+        isDark={isDark}
+        activeMember={active}
+        members={members}
+        onAddQuest={() => setAddChooser('quest')}
+        onAddEvent={() => setAddChooser('event')}
+        onAddGrocery={() => router.push('/(tabs)/grocery' as any)}
+        conflictReasons={conflictReasons}
+        otherParentsWorkToday={otherParentsWorkToday}
+      />
 
       <ActionNeededSection
         actionCount={actionCount}
@@ -344,6 +412,45 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
         onRespond={(assignmentId, choreTitle) => setPushbackSheet({ assignmentId, choreTitle })}
       />
 
+      <ChoreReviewSection
+        active={active} members={members} colors={colors} isDark={isDark}
+        chores={chores} pendingReviewsCount={pendingReviews.length}
+        approveGrandparentQuestAsParent={approveGrandparentQuestAsParent}
+        declineGrandparentQuestAsParent={declineGrandparentQuestAsParent}
+      />
+
+      {/* Only the driver gets editable controls (ETA slider, Pickup Done) —
+          another parent sees the same read-only status view kids/teens/GP
+          get, so two parents can't fight over the same trip. */}
+      {activeTrip && activeTrip.driverMemberId !== active.id ? (
+        <PickupRadarStatus colors={colors} isDark={isDark} activeTrip={activeTrip} />
+      ) : (
+        <EnRouteBanner
+          colors={colors} isDark={isDark}
+          onDispatchRide={(etaMinutes) => onDispatchDirect(nextRide?.memberId, etaMinutes)}
+          onPickupDone={onPickupDone}
+          onCancelTrip={onCancelTrip}
+          nextRide={nextRide ? {
+            kidName: members.find(m => m.id === nextRide.memberId)?.name.split(' ')[0] ?? 'Family',
+            kidEmoji: members.find(m => m.id === nextRide.memberId)?.emoji,
+            title: nextRide.title,
+            time: nextRide.time,
+            location: nextRide.location,
+            hoursUntil: hoursUntilEvent(nextRide.date, nextRide.time),
+          } : null}
+          activeTrip={activeTrip} onUpdateEta={onUpdateEta}
+        />
+      )}
+
+      <View style={pad}>
+        <HouseholdSnapshotCard
+          colors={colors} isDark={isDark}
+          reviewedToday={reviewedToday} avgStreak={avgStreak}
+          pendingCashOutsCount={pendingCashOuts.length}
+          leaderboardKids={leaderboardKids} allNames={allNames}
+        />
+      </View>
+
       <PushbackSheet
         target={pushbackSheet} colors={colors} isDark={isDark}
         onClose={() => setPushbackSheet(null)}
@@ -352,15 +459,50 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onEnR
 
       <AddQuestModal
         visible={showAddTask}
-        onClose={() => setShowAddTask(false)}
+        onClose={() => { setShowAddTask(false); setAddPrefill(undefined); }}
         activeMemberId={active.id}
+        prefill={addPrefill ? {
+          title: addPrefill.title,
+          coins: addPrefill.coins,
+          assignedToId: addPrefill.memberId,
+          photoRequired: addPrefill.photoRequired,
+          dueDate: addPrefill.startAt ? addPrefill.startAt.slice(0, 10) : undefined,
+        } : undefined}
       />
 
-      <ChoreReviewSection
-        active={active} members={members} colors={colors} isDark={isDark}
-        chores={chores} pendingReviewsCount={pendingReviews.length}
-        approveGrandparentQuestAsParent={approveGrandparentQuestAsParent}
-        declineGrandparentQuestAsParent={declineGrandparentQuestAsParent}
+      {/* Same AddEventModal Calendar uses — opened right over the Hub
+          instead of navigating away to the Calendar tab, either directly
+          (HouseholdBacklog's own trigger) or via the chooser's "Type it"
+          below. */}
+      <AddEventModal
+        visible={showAddEvent}
+        onClose={() => { setShowAddEvent(false); setAddPrefill(undefined); }}
+        activeMemberId={active.id}
+        prefill={addPrefill ? {
+          title: addPrefill.title,
+          category: addPrefill.category as any,
+          memberId: addPrefill.memberId,
+          startAt: addPrefill.startAt,
+          notes: addPrefill.notes,
+        } : undefined}
+      />
+
+      {/* "Add Event"/"New Quest" quick actions open this chooser first
+          (Speak it / Type it) instead of jumping straight to the manual
+          form — matching the existing pet-appointment voice flow. */}
+      <AddIntakeChooser
+        visible={addChooser !== null}
+        kind={addChooser ?? 'event'}
+        members={members}
+        activeMemberId={active.id}
+        onClose={() => setAddChooser(null)}
+        onTypeManually={(prefill) => {
+          const kind = addChooser;
+          setAddChooser(null);
+          setAddPrefill(prefill);
+          if (kind === 'quest') setShowAddTask(true);
+          else setShowAddEvent(true);
+        }}
       />
 
       <DelegateSheet

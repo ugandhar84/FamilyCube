@@ -9,12 +9,12 @@ import type { FamilyEvent } from '@/store/eventStore';
 // teen only sees dispatch content once they've said they have a car), then
 // the ride pickups open to them and their own confirmed runs.
 export function TeenCarDispatchSection({
-  hasCar, onToggleCar, openPickups, myPickups, passedPickups, onPass, onClaim,
+  hasCar, onToggleCar, openPickups, myPickups, passedPickups, onPass, onClaim, onDrop,
   rideEarnings, members, colors, isDark,
 }: {
   hasCar: boolean; onToggleCar: () => void;
   openPickups: FamilyEvent[]; myPickups: FamilyEvent[]; passedPickups: string[];
-  onPass: (id: string) => void; onClaim: (id: string) => void;
+  onPass: (id: string) => void; onClaim: (id: string) => void; onDrop: (id: string) => void;
   rideEarnings: number; members: FamilyMember[]; colors: any; isDark: boolean;
 }) {
   const openVisible = openPickups.filter(e => !passedPickups.includes(e.id));
@@ -121,18 +121,23 @@ export function TeenCarDispatchSection({
                 const evDay = ev.date ? new Date(ev.date + 'T12:00').toLocaleDateString('en-US',
                   { weekday: 'short', month: 'short', day: 'numeric' }) : ev.date;
                 return (
-                  <View key={ev.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-                    padding: 10, borderRadius: 12,
+                  <View key={ev.id} style={{ borderRadius: 12, overflow: 'hidden',
                     backgroundColor: isDark ? BRAND.teal + '15' : BRAND.teal + '12',
                     borderWidth: 1, borderColor: BRAND.teal + '30' }}>
-                    <CheckCircle size={14} color={BRAND.teal} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>
-                        {kid?.name.split(' ')[0] ?? 'Sibling'} · {ev.title}
-                      </Text>
-                      <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>{evDay}{ev.time ? ` · ${ev.time}` : ''}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10 }}>
+                      <CheckCircle size={14} color={BRAND.teal} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>
+                          {kid?.name.split(' ')[0] ?? 'Sibling'} · {ev.title}
+                        </Text>
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>{evDay}{ev.time ? ` · ${ev.time}` : ''}</Text>
+                      </View>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: BRAND.teal }}>Confirmed</Text>
                     </View>
-                    <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: BRAND.teal }}>Confirmed</Text>
+                    <Pressable onPress={() => onDrop(ev.id)}
+                      style={{ borderTopWidth: 1, borderTopColor: BRAND.teal + '25', paddingVertical: 9, alignItems: 'center' }}>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.danger }}>Can't Make It</Text>
+                    </Pressable>
                   </View>
                 );
               })}

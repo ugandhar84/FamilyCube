@@ -9,10 +9,12 @@ import { localDateStr } from '@/lib/dates';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
-// Same "Today" vertical-rail timeline Parent's Hub leads with (TodayView.tsx)
-// — one combined household feed, not filtered to just this person, since
-// TimelineCard already tags each row with whose event it is via the
-// assignee avatar. Reused as-is on both Kid and Teen Hub.
+// Same "Today" vertical-rail timeline Parent's Hub leads with (TodayView.tsx),
+// but scoped to this member: their own events (assignee or helper) plus
+// family-wide events with no specific assignee (e.g. "Family Dinner"). A kid
+// or teen shouldn't see a sibling's personal/medical appointment on their own
+// Hub just because it happened to be on the same day. Parents keep the full
+// household view via ParentView/TodayView, which doesn't use this component.
 export function HubTimelineSection({ active, members, events, updateEvent, colors, isDark }: {
   active: FamilyMember; members: FamilyMember[]; events: FamilyEvent[];
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
@@ -23,11 +25,20 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
   const today = localDateStr(new Date());
   const now = new Date();
 
+  const belongsToMe = (e: FamilyEvent) => {
+    const hasAnyAssignee = !!e.memberId || !!e.memberIds?.length;
+    if (!hasAnyAssignee) return true; // family-wide event, e.g. "Family Dinner"
+    if (e.memberId === active.id) return true;
+    if (e.memberIds?.includes(active.id)) return true;
+    if (e.helper === active.name) return true;
+    return false;
+  };
+
   const todayEvents = useMemo(() =>
     events
-      .filter(e => e.date === today && !isWorkEvent(e))
+      .filter(e => e.date === today && !isWorkEvent(e) && belongsToMe(e))
       .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? '')),
-    [events, today]
+    [events, today, active.id, active.name]
   );
 
   const upcoming = todayEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) > -0.5);

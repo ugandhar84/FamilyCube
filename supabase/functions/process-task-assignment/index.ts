@@ -92,14 +92,20 @@ serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const {
-      taskId, taskType, familyId, category, dryRun = false,
-    } = body as { taskId?: string; taskType?: TaskType; familyId?: string; category?: string; dryRun?: boolean };
+      taskId, taskType, familyId, category, dryRun = false, targetField = 'assignee',
+    } = body as { taskId?: string; taskType?: TaskType; familyId?: string; category?: string; dryRun?: boolean; targetField?: 'assignee' | 'helper' | 'driver' };
 
     if (!taskId || !taskType || !familyId || !category) {
       return json({ error: 'taskId, taskType, familyId, and category are required' }, 400);
     }
     if (!['chore', 'event', 'errand'].includes(taskType)) {
       return json({ error: 'taskType must be chore, event, or errand' }, 400);
+    }
+    // 'helper' (accompanying adult) and 'driver' (separate transport person,
+    // Study category only) only exist as distinct concepts on
+    // calendar_events — chores/errands have one assignee, full stop.
+    if ((targetField === 'helper' || targetField === 'driver') && taskType !== 'event') {
+      return json({ error: `targetField '${targetField}' is only valid for taskType 'event'` }, 400);
     }
 
     const supabase = createClient(
@@ -520,11 +526,25 @@ serve(async (req) => {
       // ── 9. If AUTO, actually assign it and log to responsibility_history ───
       if (decisionType === 'auto' && selectedMemberId) {
         const table = taskType === 'chore' ? 'chore_tasks' : taskType === 'event' ? 'calendar_events' : 'errands';
-        const assigneeColumn = taskType === 'event' ? 'member_id' : 'assigned_to_id';
-        await supabase.from(table).update({
-          [assigneeColumn]: selectedMemberId,
+        const assigneeColumn =
+          targetField === 'helper' ? 'helper' :
+          targetField === 'driver' ? 'driver_name' :
+          taskType === 'event' ? 'member_id' : 'assigned_to_id';
+        // 'helper'/'driver' store a display name on calendar_events
+        // (external helpers like a coach have no member row at all), not a
+        // member_id — resolve the picked member's name for that column.
+        let assigneeValue: string | null = selectedMemberId;
+        if (targetField === 'helper' || targetField === 'driver') {
+          const { data: m } = await supabase.from('members').select('name').eq('id', selectedMemberId).single();
+          assigneeValue = m?.name ?? null;
+        }
+        const updatePatch: Record<string, unknown> = {
+          [assigneeColumn]: assigneeValue,
           assignment_decision_id: decisionId,
-        }).eq('id', taskId);
+        };
+        if (targetField === 'helper') updatePatch.helper_status = 'confirmed';
+        if (targetField === 'driver') { updatePatch.driver_status = 'confirmed'; updatePatch.ride_required = true; }
+        await supabase.from(table).update(updatePatch).eq('id', taskId);
 
         await supabase.from('responsibility_history').insert({
           family_id: familyId,
@@ -533,7 +553,7 @@ serve(async (req) => {
           category,
           responsibility_type: taskType === 'chore' ? 'chore' : taskType === 'event' ? 'adult_task' : 'errand',
           outcome: 'assigned',
-          metadata: { decisionId, auto: true },
+          metadata: { decisionId, auto: true, targetField },
         });
       }
     }

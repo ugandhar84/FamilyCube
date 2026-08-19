@@ -43,12 +43,23 @@ const X = ({ c, size = 14 }: { c: string; size?: number }) => (
 // ─── Category definitions ──────────────────────────────────────────────────────
 export type EventCategory = 'Medical' | 'Sports' | 'Study' | 'Ride' | 'Work' | 'Event' | 'Birthday' | 'Errand' | 'Other';
 
+// 'Work' intentionally excluded — it's parent-personal, not family-facing
+// (see isWorkEvent, which already filters it out of every family timeline).
+// The EventCategory type value and its filter stay in place for any
+// existing Work events already saved; this list is just what's offered
+// going forward.
+// Category swatches are intentionally hardcoded hex — this is a per-category
+// color legend (8 distinct categories) with no matching semantic token in
+// constants/colors.ts (only ~6 semantic tokens exist: danger/warning/success/
+// info/primary/accent). Collapsing 8 categories onto 6 tokens would make two
+// categories visually indistinguishable, so these stay as documented swatches
+// rather than guessing a wrong semantic mapping. Module-level constant — can't
+// call useTheme() here anyway.
 const CATEGORIES: { key: EventCategory; emoji: string; label: string; color: string }[] = [
   { key: 'Medical',  emoji: '🏥', label: 'Medical',  color: '#EF4444' },
   { key: 'Sports',   emoji: '🏅', label: 'Sports',   color: '#F59E0B' },
   { key: 'Study',    emoji: '📚', label: 'Study',    color: '#3B82F6' },
   { key: 'Ride',     emoji: '🚗', label: 'Ride',     color: '#10B981' },
-  { key: 'Work',     emoji: '💼', label: 'Work',     color: '#A855F7' },
   { key: 'Event',    emoji: '🎉', label: 'Event',    color: '#6C5CE7' },
   { key: 'Birthday', emoji: '🎂', label: 'Birthday', color: '#F59E0B' },
   { key: 'Errand',   emoji: '🛒', label: 'Errand',   color: '#0EA5E9' },
@@ -126,7 +137,6 @@ const SUGGESTIONS: Record<EventCategory, { title: string; hint: string }[]> = {
 // ─── Sport type chips ──────────────────────────────────────────────────────────
 const SPORT_TYPES = ['Soccer','Basketball','Swimming','Tennis','Cricket','Gymnastics','Karate','Rugby','Athletics','Badminton','Cycling'];
 const SUBJECTS    = ['Math','Science','English','Hindi','Coding','Music','Art','History','Geography','Economics'];
-const WORK_TYPES  = ['Meeting','Presentation','Conference','Errand','Doctor','Client Visit','Training'];
 const APPT_TYPES  = ['Routine checkup','Vaccine','Dental','Eye exam','Therapy','Ortho','Allergy','Blood test','Specialist'];
 
 // ─── Date / time helpers ───────────────────────────────────────────────────────
@@ -157,7 +167,7 @@ function Chip({ label, active, color, onPress, small }: {
       onPress={onPress}
       style={{
         borderRadius: 20, borderWidth: 1.5, paddingHorizontal: small ? 10 : 12, paddingVertical: small ? 5 : 7,
-        backgroundColor: active ? color + '20' : (isDark ? colors.surface : '#F5F4FA'),
+        backgroundColor: active ? color + '20' : (isDark ? colors.surface : colors.inputBg),
         borderColor: active ? color : (isDark ? colors.border : '#E2E8F0'),
       }}
     >
@@ -210,13 +220,13 @@ function MemberPicker({ label, selectedIds, members, onToggle, onSelectAll, colo
                   bgColor={sel ? BRAND.purple + '20' : (isDark ? '#1E293B' : '#F1F5F9')}
                 />
                 {isLocked && sel && (
-                  <View style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: 8, backgroundColor: '#F59E0B', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 9, color: '#fff', fontWeight: '900' }}>🔒</Text>
+                  <View style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: 8, backgroundColor: colors.warning, alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 9, color: colors.textInverse, fontWeight: '900' }}>🔒</Text>
                   </View>
                 )}
                 {!isLocked && sel && (
                   <View style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: 8, backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 9, color: '#fff', fontWeight: '900' }}>✓</Text>
+                    <Text style={{ fontSize: 9, color: colors.textInverse, fontWeight: '900' }}>✓</Text>
                   </View>
                 )}
               </View>
@@ -224,7 +234,7 @@ function MemberPicker({ label, selectedIds, members, onToggle, onSelectAll, colo
                 {m.name.split(' ')[0]}
               </Text>
               {isLocked && (
-                <Text style={{ fontSize: 8, color: '#F59E0B', fontWeight: '800', marginTop: -2 }}>Locked</Text>
+                <Text style={{ fontSize: 8, color: colors.warning, fontWeight: '800', marginTop: -2 }}>Locked</Text>
               )}
             </TouchableOpacity>
           );
@@ -244,8 +254,12 @@ import {
 // ═══════════════════════════════════════════════════════════════════════════════
 // AddEventModal
 // ═══════════════════════════════════════════════════════════════════════════════
-export function AddEventModal({ visible, onClose, activeMemberId }: {
+export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
   visible: boolean; onClose: () => void; activeMemberId: string;
+  // Seeds initial state from AI-extracted data (VoiceIntakeReviewSheet's
+  // "Edit in full form" handoff) — only covers what the AI response
+  // actually produces; every other field keeps its normal default.
+  prefill?: { title?: string; category?: EventCategory; memberId?: string; startAt?: string; notes?: string };
 }) {
   const { colors, isDark } = useTheme();
   const { addEvent, updateEvent } = useEventStore();
@@ -262,7 +276,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   // Kids can request Sports / Study / Event / Birthday / Other, with optional ride flag
 
   // ── State ──────────────────────────────────────────────────────────────────
-  const [category,       setCategory]       = useState<EventCategory>(isKid ? 'Sports' : 'Medical');
+  const [category,       setCategory]       = useState<EventCategory>(prefill?.category ?? (isKid ? 'Sports' : 'Medical'));
   const [kidRideNeeded,    setKidRideNeeded]    = useState(false);
   const [kidDropoffOn,     setKidDropoffOn]     = useState(false);
   const [kidPickupOn,      setKidPickupOn]      = useState(false);
@@ -276,20 +290,20 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
   const kidRideType: 'none' | 'dropoff' | 'pickup' | 'both' =
     !kidRideNeeded ? 'none' : kidDropoffOn && kidPickupOn ? 'both' : kidDropoffOn ? 'dropoff' : kidPickupOn ? 'pickup' : 'none';
   const kidReturnDate = kidPickupDate;
-  const [title,          setTitle]          = useState('');
+  const [title,          setTitle]          = useState(prefill?.title ?? '');
   const [titleFocused,   setTitleFocused]   = useState(false);
-  const [notes,          setNotes]          = useState('');
+  const [notes,          setNotes]          = useState(prefill?.notes ?? '');
   const [saving,         setSaving]         = useState(false);
 
   // Date/time
   const nowRounded = () => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); return d; };
-  const [eventDate,      setEventDate]      = useState<Date>(nowRounded());
+  const [eventDate,      setEventDate]      = useState<Date>(() => prefill?.startAt ? new Date(prefill.startAt) : nowRounded());
   const [showDatePick,   setShowDatePick]   = useState(false);
   const [showTimePick,   setShowTimePick]   = useState(false);
   const [allDay,         setAllDay]         = useState(false);
 
   // Category-specific
-  const [memberIds,      setMemberIds]      = useState<string[]>(isKid ? [activeMemberId] : []);
+  const [memberIds,      setMemberIds]      = useState<string[]>(prefill?.memberId ? [prefill.memberId] : (isKid ? [activeMemberId] : []));
   const [helperId,       setHelperId]       = useState<string | undefined>();
   const [helperName,     setHelperName]     = useState('');
   const [doctorName,     setDoctorName]     = useState('');
@@ -317,8 +331,6 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
     setDriverId(id);
     setDriverName(m?.name ?? '');
   };
-  const [workType,       setWorkType]       = useState('');
-  const [workLocation,   setWorkLocation]   = useState('');
   const [generalLocation,setGeneralLocation]= useState('');
   const [openToGrandparents, setOpenToGrandparents] = useState(false);
   const [openToTeens,        setOpenToTeens]        = useState(false);
@@ -448,7 +460,11 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
 
   // ── Member pickers ─────────────────────────────────────────────────────────
   const kids   = members.filter(m => m.role === 'kid');
-  const adults = members.filter(m => m.role === 'parent' || m.role === 'senior');
+  // Grandparents only appear as a directly-pickable "Accompanied by/Driven
+  // by" option once Grandparents Welcome is on — picking one while the
+  // toggle reads "Off · private between parents only" was a direct
+  // contradiction (see AddQuestModal's same suggestion-then-lock pattern).
+  const adults = members.filter(m => m.role === 'parent' || (m.role === 'senior' && openToGrandparents));
   // Show all family members in "For" picker; exclude the selected helper so one person isn't in both roles
   const forMembers = members.filter(m => m.id !== helperId);
 
@@ -478,7 +494,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
     setSportType(''); setCoachName(''); setVenueLocation(''); setKitReminder(false);
     setSubject(''); setTutorName(''); setIsOnline(false); setMeetingUrl('');
     setPickupLocation(''); setDropLocation(''); setReturnDate(null);
-    setWorkType(''); setWorkLocation(''); setGeneralLocation('');
+    setGeneralLocation('');
     setShowDatePick(false); setShowTimePick(false);
     setShowReturnDatePick(false); setShowReturnTimePick(false);
     setKidRideNeeded(false); setKidDropoffOn(false); setKidPickupOn(false);
@@ -512,14 +528,30 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
       : category === 'Sports' ? venueLocation  || undefined
       : category === 'Study'  ? (isOnline ? 'Online — Zoom' : venueLocation || undefined)
       : category === 'Ride'   ? dropLocation   || undefined
-      : category === 'Work'   ? workLocation   || undefined
       : generalLocation       || undefined;
 
     // Study's dedicated "Tutor name" field is the source of truth when no
     // family tutor was picked — helperName alone would silently drop it.
-    const helper = category === 'Study'
+    let helper = category === 'Study'
       ? (helperId ? helperName.trim() : tutorName.trim()) || undefined
       : helperName.trim() || undefined;
+
+    // A parent creating a Ride with no explicit choice (didn't pick a
+    // specific helper, didn't toggle Open to GP/Teen) auto-assigns to the
+    // other parent — the common two-parent-household case shouldn't require
+    // manually picking who when there's only one other person it could be.
+    // Declining routes into eventStore's own auto-open-pool-on-decline,
+    // so GP/Teen become the fallback without the creating parent having to
+    // notice and manually flip those toggles.
+    if (isParent && category === 'Ride' && !helper && !openToGrandparents && !openToTeens) {
+      // hasCar !== false — a parent who's explicitly turned off "Can Drive"
+      // (RosterTab) shouldn't be auto-handed a ride they can't fulfill,
+      // same eligibility check every other reassignment path already uses.
+      const otherParents = members.filter(m => m.role === 'parent' && m.id !== activeMemberId && m.hasCar !== false);
+      if (otherParents.length === 1) {
+        helper = otherParents[0].name;
+      }
+    }
 
     const newEventId = addEvent({
       title:           finalTitle,
@@ -540,7 +572,10 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
         : returnDate ? fmtTimeDisplay(returnDate) : undefined,
       memberId:        memberIds[0],
       memberIds:       memberIds.length > 1 ? memberIds : undefined,
-      // Helper
+      // Helper — always starts pending, even when picking yourself. Staying
+      // in the pending flow (rather than auto-confirming self-picks) is what
+      // surfaces "Can't Make It"/reassign/Open to GP/Open to Teen right away
+      // instead of only after an extra explicit confirm step.
       helper,
       helperStatus:    helper ? 'pending' : undefined,
       helperRequestedBy: isKid ? activeMember?.name : undefined,
@@ -560,10 +595,11 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
       isOpenToGrandparents: !isKid && !isTeen && openToGrandparents,
       isOpenToTeens:        !isKid && !isTeen && openToTeens,
       rideCoins:            (!isKid && !isTeen && openToTeens && rideCoinsTeen) ? parseInt(rideCoinsTeen, 10) : undefined,
-      // Drive assignment — distinct from `helper` (tutor/escort/coach)
+      // Drive assignment — distinct from `helper` (tutor/escort/coach).
+      // Same self-pick rule: assigning yourself is already settled.
       rideRequired:    !isKid && !!driverName.trim(),
       driverName:      !isKid ? (driverName.trim() || undefined) : undefined,
-      driverStatus:    !isKid && driverName.trim() ? 'pending' : undefined,
+      driverStatus:    !isKid && driverName.trim() ? (driverId === activeMemberId ? 'confirmed' : 'pending') : undefined,
     });
 
     // Persist custom title so it appears in future suggestions for this family
@@ -589,6 +625,43 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
       }).then(res => {
         if (res?.decisionType === 'auto' && res.selectedMemberId) {
           updateEvent(newEventId, { memberId: res.selectedMemberId });
+        }
+      });
+    }
+
+    // Same zero-touch pattern for "who's accompanying/driving" — Work and
+    // Event have no accompanying-adult concept at all (matches the
+    // MemberPicker's own visibility gate above), and Ride runs through its
+    // own open-dispatch pool (RideRequestCard/Junior Dispatch) once nobody
+    // picks a helper here, so it's excluded from this direct auto-assign too.
+    if (!isKid && !isTeen && familyId && category !== 'Work' && category !== 'Event' && category !== 'Ride' && !helperId && !helperName.trim()) {
+      applyAssignment({
+        taskId: newEventId,
+        taskType: 'event',
+        familyId,
+        category: subcategoryId ?? resolveDomainFromLooseLabel(category),
+        targetField: 'helper',
+      }).then(res => {
+        if (res?.decisionType === 'auto' && res.selectedMemberId) {
+          const name = members.find(m => m.id === res.selectedMemberId)?.name;
+          if (name) updateEvent(newEventId, { helper: name, helperStatus: 'confirmed' });
+        }
+      });
+    }
+
+    // Study's separate Drive Assignment field (transport, when different
+    // from the tutor picked above) gets the same treatment.
+    if (!isKid && !isTeen && familyId && category === 'Study' && !driverId && !driverName.trim()) {
+      applyAssignment({
+        taskId: newEventId,
+        taskType: 'event',
+        familyId,
+        category: subcategoryId ?? resolveDomainFromLooseLabel(category),
+        targetField: 'driver',
+      }).then(res => {
+        if (res?.decisionType === 'auto' && res.selectedMemberId) {
+          const name = members.find(m => m.id === res.selectedMemberId)?.name;
+          if (name) updateEvent(newEventId, { driverName: name, driverStatus: 'confirmed', rideRequired: true });
         }
       });
     }
@@ -714,7 +787,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                       style={{
                         borderRadius: 16, borderWidth: 2, paddingHorizontal: 12, paddingVertical: 8,
                         alignItems: 'center', gap: 3, minWidth: 64,
-                        backgroundColor: active ? c.color + '18' : (isDark ? colors.surface : '#F5F4FA'),
+                        backgroundColor: active ? c.color + '18' : (isDark ? colors.surface : colors.inputBg),
                         borderColor: active ? c.color : (isDark ? colors.border : '#E2E8F0'),
                       }}
                     >
@@ -744,7 +817,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                           onPress={() => setSubcategoryId(active ? null : sc.id)}
                           style={{
                             borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 7,
-                            backgroundColor: active ? catColor + '18' : (isDark ? colors.surface : '#F5F4FA'),
+                            backgroundColor: active ? catColor + '18' : (isDark ? colors.surface : colors.inputBg),
                             borderColor: active ? catColor : (isDark ? colors.border : '#E2E8F0'),
                           }}
                         >
@@ -839,7 +912,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
             <Text style={[f.label, { color: colors.textSecondary }]}>Title *</Text>
             <TextInput
               style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface,
-                borderColor: finalTitle ? colors.border : '#EF444460' }]}
+                borderColor: finalTitle ? colors.borderMed : colors.danger + '60' }]}
               placeholder={autoTitle || `e.g. ${SUGGESTIONS[category]?.[0]?.title ?? 'Event title'}`}
               placeholderTextColor={colors.textTertiary}
               value={title}
@@ -856,21 +929,26 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                 </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
                   <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {suggestions.map((s, i) => (
-                      <TouchableOpacity
-                        key={i}
-                        onPress={() => applySuggestion(s)}
-                        style={[f.suggPill, {
-                          backgroundColor: title === s.title ? catColor + '20' : (isDark ? colors.surface : '#F5F4FA'),
-                          borderColor: title === s.title ? catColor : (isDark ? colors.border : '#E2E8F0'),
-                        }]}
-                      >
-                        <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: title === s.title ? catColor : colors.textPrimary }} numberOfLines={1}>
-                          {s.title}
-                        </Text>
-                        {s.hint ? <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginLeft: 4 }}>{s.hint}</Text> : null}
-                      </TouchableOpacity>
-                    ))}
+                    {suggestions.map((s, i) => {
+                      const selected = title === s.title;
+                      return (
+                        <TouchableOpacity
+                          key={i}
+                          onPress={() => selected ? setTitle('') : applySuggestion(s)}
+                          style={[f.suggPill, {
+                            flexDirection: 'row', alignItems: 'center',
+                            backgroundColor: selected ? catColor + '20' : (isDark ? colors.surface : colors.inputBg),
+                            borderColor: selected ? catColor : (isDark ? colors.border : '#E2E8F0'),
+                          }]}
+                        >
+                          <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: selected ? catColor : colors.textPrimary }} numberOfLines={1}>
+                            {s.title}
+                          </Text>
+                          {s.hint ? <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginLeft: 4 }}>{s.hint}</Text> : null}
+                          {selected && <X c={catColor} size={12} />}
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 </ScrollView>
               </View>
@@ -964,13 +1042,13 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <View style={{ flex: 1 }}>
                     <Text style={[f.label, { color: colors.textSecondary }]}>🩺 Doctor</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                       placeholder="Dr. Smith" placeholderTextColor={colors.textTertiary}
                       value={doctorName} onChangeText={setDoctorName} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[f.label, { color: colors.textSecondary }]}>📍 Clinic</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                       placeholder="Clinic name" placeholderTextColor={colors.textTertiary}
                       value={clinicLocation} onChangeText={setClinicLocation} />
                   </View>
@@ -993,20 +1071,20 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <View style={{ flex: 1 }}>
                     <Text style={[f.label, { color: colors.textSecondary }]}>🏅 Coach</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                       placeholder="Coach Williams" placeholderTextColor={colors.textTertiary}
                       value={coachName} onChangeText={setCoachName} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[f.label, { color: colors.textSecondary }]}>📍 Venue</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                       placeholder="Riverside Park" placeholderTextColor={colors.textTertiary}
                       value={venueLocation} onChangeText={setVenueLocation} />
                   </View>
                 </View>
 
                 <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
-                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                   placeholder="Home / School" placeholderTextColor={colors.textTertiary}
                   value={pickupLocation} onChangeText={setPickupLocation} />
 
@@ -1036,7 +1114,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                 </ScrollView>
 
                 <Text style={[f.label, { color: colors.textSecondary }]}>📚 Tutor name</Text>
-                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                   placeholder="Mr. Kumar" placeholderTextColor={colors.textTertiary}
                   value={tutorName} onChangeText={setTutorName} />
 
@@ -1050,14 +1128,14 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                 {isOnline ? (
                   <>
                     <Text style={[f.label, { color: colors.textSecondary }]}>🔗 Meeting link</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                       placeholder="https://zoom.us/j/..." placeholderTextColor={colors.textTertiary}
                       value={meetingUrl} onChangeText={setMeetingUrl} keyboardType="url" autoCapitalize="none" />
                   </>
                 ) : (
                   <>
                     <Text style={[f.label, { color: colors.textSecondary }]}>📍 Location</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                       placeholder="Home / Library" placeholderTextColor={colors.textTertiary}
                       value={venueLocation} onChangeText={setVenueLocation} />
                     {/* External tutor + in-person → show drop & pickup */}
@@ -1066,13 +1144,13 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                         <View style={{ flexDirection: 'row', gap: 10 }}>
                           <View style={{ flex: 1 }}>
                             <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
-                            <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                            <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                               placeholder="Home / School" placeholderTextColor={colors.textTertiary}
                               value={pickupLocation} onChangeText={setPickupLocation} />
                           </View>
                           <View style={{ flex: 1 }}>
                             <Text style={[f.label, { color: colors.textSecondary }]}>🏁 Drop to</Text>
-                            <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                            <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                               placeholder="Tutor's place / Library" placeholderTextColor={colors.textTertiary}
                               value={dropLocation} onChangeText={setDropLocation} />
                           </View>
@@ -1088,7 +1166,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                             />
                             {!driverId && (
                               <TextInput
-                                style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                                style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                                 placeholder="Or type a name (e.g. external driver)"
                                 placeholderTextColor={colors.textTertiary}
                                 value={driverName}
@@ -1132,14 +1210,14 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <View style={{ flex: 1 }}>
                     <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                       placeholder="Home / School" placeholderTextColor={colors.textTertiary}
                       value={pickupLocation} onChangeText={setPickupLocation} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[f.label, { color: colors.textSecondary }]}>🏁 Drop to</Text>
                     <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface,
-                      borderColor: dropLocation ? colors.border : '#F59E0B60' }]}
+                      borderColor: dropLocation ? colors.borderMed : colors.warning + '60' }]}
                       placeholder="Chess Club, Oak St" placeholderTextColor={colors.textTertiary}
                       value={dropLocation} onChangeText={setDropLocation} />
                   </View>
@@ -1204,15 +1282,20 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                 {/* ── GP + Teen toggles always shown for Ride (parent/senior only) ── */}
                 {!isKid && !isTeen && (
                   <View style={{ gap: 10, marginTop: 4, marginBottom: 14 }}>
-                    {/* Grandparents Welcome */}
+                    {/* Grandparents Welcome. Border/track/toggle fill use colors.warning
+                        (closest token to the amber highlight). The darker on-tint text
+                        shades (#92400E / #B45309) have no token equivalent — the
+                        semantic palette only defines one amber value per mode, not a
+                        separate darker "text on amber tint" shade — so those two stay
+                        documented hardcoded hex rather than guessing a mismatched token. */}
                     <TouchableOpacity
                       onPress={() => { setGpTeenToggledByUser(true); setOpenToGrandparents(g => !g); }}
                       activeOpacity={0.8}
                       style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                         paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14,
                         borderWidth: 1.5,
-                        borderColor: openToGrandparents ? '#F59E0B' : (isDark ? colors.border : '#E2E8F0'),
-                        backgroundColor: openToGrandparents ? (isDark ? '#2D1800' : '#FFFBEB') : (isDark ? colors.surface : '#F9FAFB'),
+                        borderColor: openToGrandparents ? colors.warning : (isDark ? colors.border : '#E2E8F0'),
+                        backgroundColor: openToGrandparents ? (isDark ? '#2D1800' : colors.warningLight) : (isDark ? colors.surface : '#F9FAFB'),
                       }}>
                       <View style={{ flex: 1, gap: 2 }}>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: openToGrandparents ? '#92400E' : colors.textPrimary }}>
@@ -1223,14 +1306,20 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                         </Text>
                       </View>
                       <View style={{ width: 44, height: 26, borderRadius: 13,
-                        backgroundColor: openToGrandparents ? '#F59E0B' : (isDark ? '#334155' : '#CBD5E1'),
+                        backgroundColor: openToGrandparents ? colors.warning : (isDark ? '#334155' : '#CBD5E1'),
                         justifyContent: 'center', paddingHorizontal: 3 }}>
-                        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
+                        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
                           alignSelf: openToGrandparents ? 'flex-end' : 'flex-start' }} />
                       </View>
                     </TouchableOpacity>
 
                     {/* Teen driver — only if teens exist in family */}
+                    {/* Indigo (#6366F1 family) is the Teen-Welcome legend color used
+                        throughout this file. constants/colors.ts has no indigo/violet
+                        token — only 6 semantic tokens (danger/warning/success/info/
+                        primary/accent), none of which is a close hue match — so this
+                        stays a documented hardcoded swatch rather than guessing a
+                        wrong semantic color onto it. */}
                     {members.some(m => m.role === 'teen') && (
                       <TouchableOpacity
                         onPress={() => { setGpTeenToggledByUser(true); setOpenToTeens(t => !t); }}
@@ -1252,7 +1341,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                         <View style={{ width: 44, height: 26, borderRadius: 13,
                           backgroundColor: openToTeens ? '#6366F1' : (isDark ? '#334155' : '#CBD5E1'),
                           justifyContent: 'center', paddingHorizontal: 3 }}>
-                          <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
+                          <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
                             alignSelf: openToTeens ? 'flex-end' : 'flex-start' }} />
                         </View>
                       </TouchableOpacity>
@@ -1273,23 +1362,6 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
               </>
             )}
 
-            {/* ── WORK fields ── */}
-            {category === 'Work' && (
-              <>
-                <Text style={[f.sectionLabel, { color: catColor }]}>💼 Work details</Text>
-                <Text style={[f.label, { color: colors.textSecondary }]}>Type</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-                  <View style={{ flexDirection: 'row', gap: 7 }}>
-                    {WORK_TYPES.map(t => <Chip key={t} label={t} active={workType === t} color={catColor} onPress={() => setWorkType(p => p === t ? '' : t)} small />)}
-                  </View>
-                </ScrollView>
-                <Text style={[f.label, { color: colors.textSecondary }]}>📍 Location / Link</Text>
-                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
-                  placeholder="Office HQ or https://meet.google.com/..." placeholderTextColor={colors.textTertiary}
-                  value={workLocation} onChangeText={setWorkLocation} />
-              </>
-            )}
-
             {/* ── EVENT / BIRTHDAY fields ── */}
             {(category === 'Event' || category === 'Birthday') && (
               <>
@@ -1297,7 +1369,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                   {category === 'Birthday' ? '🎂 Party details' : '🎉 Event details'}
                 </Text>
                 <Text style={[f.label, { color: colors.textSecondary }]}>📍 Location</Text>
-                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                   placeholder={category === 'Birthday' ? "Friend's house / venue" : 'Living Room / Park / Restaurant'}
                   placeholderTextColor={colors.textTertiary}
                   value={generalLocation} onChangeText={setGeneralLocation} />
@@ -1334,7 +1406,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
               <>
                 <Text style={[f.sectionLabel, { color: catColor }]}>🛒 Errand details</Text>
                 <Text style={[f.label, { color: colors.textSecondary }]}>📍 Where</Text>
-                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                   placeholder="Supermarket / Mall / Pharmacy" placeholderTextColor={colors.textTertiary}
                   value={generalLocation} onChangeText={setGeneralLocation} />
                 <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Expected return (optional)</Text>
@@ -1425,7 +1497,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                                       borderColor: (storeSelected || storePartial) ? catColor : colors.border,
                                       backgroundColor: storeSelected ? catColor : 'transparent',
                                       alignItems: 'center', justifyContent: 'center' }}>
-                                      {storeSelected && <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '900' }}>✓</Text>}
+                                      {storeSelected && <Text style={{ color: colors.textInverse, fontSize: 10, fontWeight: '900' }}>✓</Text>}
                                       {storePartial && <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: catColor }} />}
                                     </View>
                                   </Pressable>
@@ -1448,7 +1520,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                                           borderColor: selected ? catColor : colors.border,
                                           backgroundColor: selected ? catColor : 'transparent',
                                           alignItems: 'center', justifyContent: 'center', marginRight: 9 }}>
-                                          {selected && <Text style={{ color: '#FFF', fontSize: 9, fontWeight: '900' }}>✓</Text>}
+                                          {selected && <Text style={{ color: colors.textInverse, fontSize: 9, fontWeight: '900' }}>✓</Text>}
                                         </View>
                                         <Text style={{ flex: 1, fontSize: 13, color: colors.textPrimary, fontWeight: selected ? '600' : '400' }}>{item.name}</Text>
                                         {item.quantity ? <Text style={{ fontSize: 11, color: colors.textSecondary }}>{item.quantity}</Text> : null}
@@ -1469,7 +1541,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                       </Text>
                       <Pressable onPress={() => setNewGroceryLines(prev => [...prev, { name: '', qty: '', store: generalLocation.trim() || '' }])}
                         style={{ backgroundColor: catColor, borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10 }}>
-                        <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '700' }}>+ Add item</Text>
+                        <Text style={{ color: colors.textInverse, fontSize: 12, fontWeight: '700' }}>+ Add item</Text>
                       </Pressable>
                     </View>
                     {newGroceryLines.length === 0 ? (
@@ -1496,7 +1568,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                             {/* Row 1: name + qty + delete */}
                             <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 4 }}>
                               <TextInput
-                                style={[f.input, { flex: 2.5, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'name' ? catColor : colors.border, marginBottom: 0 }]}
+                                style={[f.input, { flex: 2.5, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'name' ? catColor : colors.borderMed, marginBottom: 0 }]}
                                 placeholder="Item name" placeholderTextColor={colors.textTertiary}
                                 value={line.name}
                                 onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, name: v } : l))}
@@ -1504,7 +1576,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                                 onBlur={() => { setFocusedLineIdx(null); setFocusedField(null); }}
                               />
                               <TextInput
-                                style={[f.input, { flex: 1, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border, marginBottom: 0 }]}
+                                style={[f.input, { flex: 1, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed, marginBottom: 0 }]}
                                 placeholder="Qty" placeholderTextColor={colors.textTertiary}
                                 value={line.qty}
                                 onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, qty: v } : l))}
@@ -1526,7 +1598,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                             )}
                             {/* Row 2: store field */}
                             <TextInput
-                              style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'store' ? catColor : colors.border, marginBottom: 0 }]}
+                              style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'store' ? catColor : colors.borderMed, marginBottom: 0 }]}
                               placeholder="🏪 Store (e.g. Walmart, Costco)" placeholderTextColor={colors.textTertiary}
                               value={line.store}
                               onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, store: v } : l))}
@@ -1558,7 +1630,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
               <>
                 <Text style={[f.sectionLabel, { color: catColor }]}>✨ Custom event</Text>
                 <Text style={[f.label, { color: colors.textSecondary }]}>📍 Location (optional)</Text>
-                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                   placeholder="Where is this happening?" placeholderTextColor={colors.textTertiary}
                   value={generalLocation} onChangeText={setGeneralLocation} />
               </>
@@ -1611,7 +1683,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                       <View style={{ width: 44, height: 26, borderRadius: 13,
                         backgroundColor: kidRideNeeded ? catColor : (isDark ? '#334155' : '#CBD5E1'),
                         justifyContent: 'center', paddingHorizontal: 3 }}>
-                        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
+                        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
                           alignSelf: kidRideNeeded ? 'flex-end' : 'flex-start' }} />
                       </View>
                     </TouchableOpacity>
@@ -1625,15 +1697,15 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                           activeOpacity={0.8}
                           style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                             paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5,
-                            borderColor: kidDropoffOn ? '#10B981' : (isDark ? colors.border : '#E2E8F0'),
-                            backgroundColor: kidDropoffOn ? '#10B98112' : (isDark ? colors.surface : '#F9FAFB') }}>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: kidDropoffOn ? '#059669' : colors.textPrimary }}>
+                            borderColor: kidDropoffOn ? colors.success : (isDark ? colors.border : '#E2E8F0'),
+                            backgroundColor: kidDropoffOn ? colors.success + '12' : (isDark ? colors.surface : '#F9FAFB') }}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: kidDropoffOn ? colors.success : colors.textPrimary }}>
                             📍 Drop-off needed
                           </Text>
                           <View style={{ width: 40, height: 24, borderRadius: 12,
-                            backgroundColor: kidDropoffOn ? '#10B981' : (isDark ? '#334155' : '#CBD5E1'),
+                            backgroundColor: kidDropoffOn ? colors.success : (isDark ? '#334155' : '#CBD5E1'),
                             justifyContent: 'center', paddingHorizontal: 3 }}>
-                            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
+                            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: colors.textInverse,
                               alignSelf: kidDropoffOn ? 'flex-end' : 'flex-start' }} />
                           </View>
                         </TouchableOpacity>
@@ -1644,17 +1716,17 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                             <View style={{ flexDirection: 'row', gap: 8 }}>
                               <TouchableOpacity
                                 onPress={() => { setShowKidDropDate(p => !p); setShowKidDropTime(false); setShowKidPickDate(false); setShowKidPickTime(false); if (!kidDropoffDate) setKidDropoffDate(new Date(eventDate)); }}
-                                style={[f.dateBtn, { flex: 3, borderColor: showKidDropDate ? '#10B981' : (kidDropoffDate ? '#10B98180' : colors.border), backgroundColor: showKidDropDate ? '#10B98115' : colors.surface }]}>
+                                style={[f.dateBtn, { flex: 3, borderColor: showKidDropDate ? colors.success : (kidDropoffDate ? colors.success + '80' : colors.border), backgroundColor: showKidDropDate ? colors.success + '15' : colors.surface }]}>
                                 <Text style={{ fontSize: 13 }}>📅</Text>
-                                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidDropDate ? '#059669' : (kidDropoffDate ? colors.textPrimary : colors.textTertiary) }}>
+                                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidDropDate ? colors.success : (kidDropoffDate ? colors.textPrimary : colors.textTertiary) }}>
                                   {kidDropoffDate ? fmtDisplay(kidDropoffDate) : 'Pick date'}
                                 </Text>
                               </TouchableOpacity>
                               <TouchableOpacity
                                 onPress={() => { setShowKidDropTime(p => !p); setShowKidDropDate(false); setShowKidPickDate(false); setShowKidPickTime(false); if (!kidDropoffDate) setKidDropoffDate(new Date(eventDate)); }}
-                                style={[f.dateBtn, { flex: 2, borderColor: showKidDropTime ? '#10B981' : (kidDropoffDate ? '#10B98180' : colors.border), backgroundColor: showKidDropTime ? '#10B98115' : colors.surface }]}>
+                                style={[f.dateBtn, { flex: 2, borderColor: showKidDropTime ? colors.success : (kidDropoffDate ? colors.success + '80' : colors.border), backgroundColor: showKidDropTime ? colors.success + '15' : colors.surface }]}>
                                 <Text style={{ fontSize: 13 }}>🕐</Text>
-                                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidDropTime ? '#059669' : (kidDropoffDate ? colors.textPrimary : colors.textTertiary) }}>
+                                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidDropTime ? colors.success : (kidDropoffDate ? colors.textPrimary : colors.textTertiary) }}>
                                   {kidDropoffDate ? fmtTimeDisplay(kidDropoffDate) : 'Time'}
                                 </Text>
                               </TouchableOpacity>
@@ -1668,7 +1740,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                                         {showKidDropDate ? '📅 Drop-off Date' : '🕐 Drop-off Time'}
                                       </Text>
                                       <TouchableOpacity onPress={() => { setShowKidDropDate(false); setShowKidDropTime(false); }}>
-                                        <Text style={{ color: '#10B981', fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+                                        <Text style={{ color: colors.success, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
                                       </TouchableOpacity>
                                     </View>
                                     {showKidDropDate && (
@@ -1707,7 +1779,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                           <View style={{ width: 40, height: 24, borderRadius: 12,
                             backgroundColor: kidPickupOn ? '#6366F1' : (isDark ? '#334155' : '#CBD5E1'),
                             justifyContent: 'center', paddingHorizontal: 3 }}>
-                            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
+                            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: colors.textInverse,
                               alignSelf: kidPickupOn ? 'flex-end' : 'flex-start' }} />
                           </View>
                         </TouchableOpacity>
@@ -1769,11 +1841,11 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                       </View>
                     )}
 
-                    <View style={[f.kidNote, { backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderColor: '#F59E0B40', marginTop: 4 }]}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#D97706' }}>
+                    <View style={[f.kidNote, { backgroundColor: isDark ? '#1C1700' : colors.warningLight, borderColor: colors.warning + '40', marginTop: 4 }]}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.amber }}>
                         👋 Parent will review &amp; assign a driver
                       </Text>
-                      <Text style={{ fontSize: TYPO.label, color: '#D97706', opacity: 0.8, marginTop: 2 }}>
+                      <Text style={{ fontSize: TYPO.label, color: colors.amber, opacity: 0.8, marginTop: 2 }}>
                         {!kidRideNeeded        ? 'No ride requested — you have your own way there.' :
                          kidDropoffOn && kidPickupOn ? '2 events will be created (drop-off + pickup) — parent assigns each.' :
                          kidDropoffOn          ? 'A drop-off event will be created for parent to assign.' :
@@ -1802,7 +1874,7 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                     single source of truth, synced into `helper` at submit time. */}
                 {!isKid && category !== 'Study' && (
                   <TextInput
-                    style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border, marginTop: -8 }]}
+                    style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed, marginTop: -8 }]}
                     placeholder="Or type name (e.g. Grandma Mary)"
                     placeholderTextColor={colors.textTertiary}
                     value={helperName}
@@ -1820,9 +1892,9 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, marginBottom: 14,
                   borderWidth: 1.5,
-                  borderColor: openToGrandparents ? '#F59E0B' : (isDark ? colors.border : '#E2E8F0'),
+                  borderColor: openToGrandparents ? colors.warning : (isDark ? colors.border : '#E2E8F0'),
                   backgroundColor: openToGrandparents
-                    ? (isDark ? '#2D1800' : '#FFFBEB')
+                    ? (isDark ? '#2D1800' : colors.warningLight)
                     : (isDark ? colors.surface : '#F9FAFB'),
                 }}>
                 <View style={{ flex: 1, gap: 2 }}>
@@ -1837,10 +1909,45 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
                   </Text>
                 </View>
                 <View style={{ width: 44, height: 26, borderRadius: 13,
-                  backgroundColor: openToGrandparents ? '#F59E0B' : (isDark ? '#334155' : '#CBD5E1'),
+                  backgroundColor: openToGrandparents ? colors.warning : (isDark ? '#334155' : '#CBD5E1'),
                   justifyContent: 'center', paddingHorizontal: 3 }}>
-                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
+                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
                     alignSelf: openToGrandparents ? 'flex-end' : 'flex-start' }} />
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {/* ── Teens Welcome toggle — non-Ride (has its own inline toggle),
+                non-Medical (not appropriate for a minor to be responsible
+                for a medical appointment) ── */}
+            {!isKid && !isTeen && category !== 'Ride' && category !== 'Medical' && members.some(m => m.role === 'teen') && (
+              <TouchableOpacity
+                onPress={() => { setGpTeenToggledByUser(true); setOpenToTeens(t => !t); }}
+                activeOpacity={0.8}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, marginBottom: 14,
+                  borderWidth: 1.5,
+                  borderColor: openToTeens ? '#6366F1' : (isDark ? colors.border : '#E2E8F0'),
+                  backgroundColor: openToTeens
+                    ? (isDark ? '#1E1B4B' : '#EEF2FF')
+                    : (isDark ? colors.surface : '#F9FAFB'),
+                }}>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800',
+                    color: openToTeens ? '#3730A3' : colors.textPrimary }}>
+                    🧑 Teens Welcome
+                  </Text>
+                  <Text style={{ fontSize: TYPO.label, color: openToTeens ? '#4338CA' : colors.textSecondary }}>
+                    {openToTeens
+                      ? 'Enters voluntary pool — a teen with a car can cover this'
+                      : 'Off · not offered to teens'}
+                  </Text>
+                </View>
+                <View style={{ width: 44, height: 26, borderRadius: 13,
+                  backgroundColor: openToTeens ? '#6366F1' : (isDark ? '#334155' : '#CBD5E1'),
+                  justifyContent: 'center', paddingHorizontal: 3 }}>
+                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
+                    alignSelf: openToTeens ? 'flex-end' : 'flex-start' }} />
                 </View>
               </TouchableOpacity>
             )}
@@ -1848,13 +1955,13 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
             {/* ── Notes ── */}
             <Text style={[f.label, { color: colors.textSecondary, marginTop: 4 }]}>📝 Notes (optional)</Text>
             <TextInput
-              style={[f.input, f.multiInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+              style={[f.input, f.multiInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
               placeholder={isKid ? 'Any message for parents? (e.g. please pick me up early)' : 'Any details, instructions, or reminders…'}
               placeholderTextColor={colors.textTertiary}
               value={notes} onChangeText={t => setNotes(t.slice(0, 200))}
               multiline numberOfLines={3} textAlignVertical="top"
             />
-            <Text style={{ fontSize: TYPO.micro, color: notes.length > 180 ? '#EF4444' : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 16 }}>
+            <Text style={{ fontSize: TYPO.micro, color: notes.length > 180 ? colors.danger : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 16 }}>
               {notes.length}/200
             </Text>
 
@@ -1876,8 +1983,8 @@ export function AddEventModal({ visible, onClose, activeMemberId }: {
               onPress={submit} disabled={!canSubmit || saving}
             >
               {saving
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={{ color: '#fff', fontSize: TYPO.caption, fontWeight: '900' }}>
+                ? <ActivityIndicator color={colors.textInverse} size="small" />
+                : <Text style={{ color: colors.textInverse, fontSize: TYPO.caption, fontWeight: '900' }}>
                     {isKid ? 'Send Request to Parent 🙋' : `Add to Family Schedule ${catEmoji}`}
                   </Text>}
             </TouchableOpacity>
@@ -1902,7 +2009,6 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const { updateEvent } = useEventStore();
   const members  = useFamilyStore(s => s.members);
   const siblings = members.map(m => m.name);
-  const adults   = members.filter(m => m.role === 'parent' || m.role === 'senior');
   const kids     = members.filter(m => m.role === 'kid');
 
   const activeMember = members.find(m => m.id === activeMemberId);
@@ -1910,7 +2016,10 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const isKid    = activeMember?.role === 'kid';
   const isPast   = (() => {
     if (!event.date) return false;
-    const today = new Date().toISOString().slice(0, 10);
+    // Local calendar date, not UTC — toISOString() can already read as
+    // "tomorrow" hours before local midnight in timezones behind UTC,
+    // which would lock an event as "past" while it's still happening today.
+    const today = localDateStr(new Date());
     if (event.date < today) return true;
     if (event.date > today) return false;
     // Same day — compare time
@@ -1943,6 +2052,9 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const [editGPOpen,    setEditGPOpen]    = useState(event.isOpenToGrandparents ?? false);
   const [editTeenOpen,  setEditTeenOpen]  = useState(event.isOpenToTeens ?? false);
   const [editRideCoins, setEditRideCoins] = useState(event.rideCoins != null ? String(event.rideCoins) : '');
+  // Same reveal-on-opt-in as the create form — a GP only appears as a
+  // directly-pickable accompany/drive option once Grandparents Welcome is on.
+  const adults = members.filter(m => m.role === 'parent' || (m.role === 'senior' && editGPOpen));
 
   // Drive assignment — separate from the tutor/escort/coach (`helper`) once
   // that's already filled in (e.g. by the kid naming an external tutor).
@@ -1973,11 +2085,34 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const save = async () => {
     setSaving(true);
     const patch: Partial<FamilyEvent> = {};
+    // Past/restricted: notes is the one field still editable (matches the
+    // quest pattern — everything locks after the fact except a note).
+    // Every other field's local state may still hold stale edits from
+    // before the event tipped into "past" mid-session, so this must
+    // ignore them entirely rather than trust the hidden sections are inert.
+    if (restricted) {
+      if (notes !== event.notes) patch.notes = notes.trim() || undefined;
+      if (Object.keys(patch).length > 0) updateEvent(event.id, patch);
+      setSaving(false);
+      onClose();
+      return;
+    }
     if (isParent) {
       if (notes !== event.notes) patch.notes = notes.trim() || undefined;
       if (helperName !== event.helper) {
-        patch.helper = helperName.trim() || undefined;
-        patch.helperStatus = helperName.trim() ? 'pending' : undefined;
+        let newHelperName = helperName.trim();
+        // Same auto-assign-to-other-parent convenience as creating a new
+        // Ride — clearing the helper here without opening to GP/Teen
+        // shouldn't require manually re-picking the one other parent it
+        // could be.
+        if (!newHelperName && event.category === 'Ride' && !editGPOpen && !editTeenOpen) {
+          const otherParents = members.filter(m => m.role === 'parent' && m.id !== activeMemberId && m.hasCar !== false);
+          if (otherParents.length === 1) newHelperName = otherParents[0].name;
+        }
+        patch.helper = newHelperName || undefined;
+        // Always starts pending, even reassigning to yourself — see the
+        // matching comment in AddEventModal's create path for why.
+        patch.helperStatus = newHelperName ? 'pending' : undefined;
       }
       const origIds = event.memberIds?.length ? event.memberIds : event.memberId ? [event.memberId] : [];
       if (JSON.stringify(editMemberIds) !== JSON.stringify(origIds)) {
@@ -1996,7 +2131,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
         if (editRideRequired !== (event.rideRequired ?? false)) patch.rideRequired = editRideRequired;
         if (editDriverName !== (event.driverName ?? '')) {
           patch.driverName = editDriverName.trim() || undefined;
-          patch.driverStatus = editDriverName.trim() ? 'pending' : undefined;
+          patch.driverStatus = editDriverName.trim() ? (editDriverId === activeMemberId ? 'confirmed' : 'pending') : undefined;
         }
       }
     } else if (isOwnPending) {
@@ -2089,7 +2224,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
               )}
               {event.helper && (
                 <View style={{ backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: colors.border }}>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: event.helperStatus === 'confirmed' ? '#10B981' : event.helperStatus === 'rejected' ? '#EF4444' : '#D97706' }}>
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: event.helperStatus === 'confirmed' ? colors.success : event.helperStatus === 'rejected' ? colors.danger : colors.amber }}>
                     {event.helperStatus === 'confirmed' ? '✓' : event.helperStatus === 'rejected' ? '✕' : '⏳'} {event.helper}
                   </Text>
                 </View>
@@ -2102,8 +2237,8 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                 </View>
               )}
               {restricted && (
-                <View style={{ backgroundColor: '#FEF3C715', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-                  <Text style={{ fontSize: TYPO.micro, color: '#D97706', fontWeight: '700' }}>🔒 Read-only</Text>
+                <View style={{ backgroundColor: colors.warningLight, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                  <Text style={{ fontSize: TYPO.micro, color: colors.amber, fontWeight: '700' }}>🔒 Read-only</Text>
                 </View>
               )}
             </View>
@@ -2115,10 +2250,10 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
               contentContainerStyle={{ gap: 12, paddingBottom: 12 }}
             >
               {/* Change who it's for */}
-              {isParent && !['Work', 'Event'].includes(event.category ?? '') && (
+              {!restricted && isParent && !['Work', 'Event'].includes(event.category ?? '') && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 8 }}>
                   {lockedMemberIds.length > 0 && (
-                    <Text style={{ fontSize: TYPO.micro, color: '#F59E0B', fontWeight: '700', marginBottom: 4 }}>
+                    <Text style={{ fontSize: TYPO.micro, color: colors.warning, fontWeight: '700', marginBottom: 4 }}>
                       🔒 Original requester cannot be removed • add siblings if needed
                     </Text>
                   )}
@@ -2153,7 +2288,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   the driver there). For Medical/Study/Sports it only shows until a
                   role-helper name is filled in; once set, Drive Assignment below takes
                   over since the remaining question is transport, not who tutors. */}
-              {isParent && !['Work', 'Event'].includes(event.category ?? '') && !helperIsRoleFilled && (
+              {!restricted && isParent && !['Work', 'Event'].includes(event.category ?? '') && !helperIsRoleFilled && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 8 }}>
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>
                     {event.category === 'Medical' ? '🏥 Reassign escort' :
@@ -2175,7 +2310,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   />
                   {!helperId && (
                     <TextInput
-                      style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border, marginTop: -4 }]}
+                      style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed, marginTop: -4 }]}
                       placeholder="Or type a name (e.g. external tutor)"
                       placeholderTextColor={colors.textTertiary}
                       value={helperName}
@@ -2188,7 +2323,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
               {/* Drive Assignment — Medical/Study/Sports once the tutor/escort/coach is
                   already set (e.g. by the kid). Transport is a separate, parent-decided
                   need from who's running the actual session. */}
-              {isParent && helperIsRoleFilled && (
+              {!restricted && isParent && helperIsRoleFilled && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 10 }}>
                   <View style={{ backgroundColor: isDark ? colors.surface : '#F8FAFC', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
                     <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
@@ -2216,7 +2351,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     <View style={{ width: 40, height: 24, borderRadius: 12,
                       backgroundColor: editRideRequired ? BRAND.teal : (isDark ? '#334155' : '#CBD5E1'),
                       justifyContent: 'center', paddingHorizontal: 3 }}>
-                      <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
+                      <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: colors.textInverse,
                         alignSelf: editRideRequired ? 'flex-end' : 'flex-start' }} />
                     </View>
                   </TouchableOpacity>
@@ -2231,7 +2366,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                       />
                       {!editDriverId && (
                         <TextInput
-                          style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                          style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                           placeholder="Or type a name (e.g. external driver)"
                           placeholderTextColor={colors.textTertiary}
                           value={editDriverName}
@@ -2243,16 +2378,20 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                 </View>
               )}
 
-              {/* GP + Teen toggles for Ride/Study (parent only, not past) */}
-              {isParent && !isPast && (event.category === 'Ride' || event.category === 'Study') && (
+              {/* GP Welcome toggle — matches the create form's gate (every
+                  category except Ride, which has its own inline toggle
+                  above); previously edit mode only offered this for
+                  Ride/Study, so a parent could set it at creation but never
+                  change it afterward for Medical/Sports/Birthday/etc. */}
+              {isParent && !isPast && event.category !== 'Ride' && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 10 }}>
                   <TouchableOpacity
                     onPress={() => setEditGPOpen(g => !g)}
                     activeOpacity={0.8}
                     style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                       paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
-                      borderColor: editGPOpen ? '#F59E0B' : (isDark ? colors.border : '#E2E8F0'),
-                      backgroundColor: editGPOpen ? (isDark ? '#2D1800' : '#FFFBEB') : (isDark ? colors.surface : '#F9FAFB'),
+                      borderColor: editGPOpen ? colors.warning : (isDark ? colors.border : '#E2E8F0'),
+                      backgroundColor: editGPOpen ? (isDark ? '#2D1800' : colors.warningLight) : (isDark ? colors.surface : '#F9FAFB'),
                     }}>
                     <View style={{ flex: 1, gap: 2 }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: editGPOpen ? '#92400E' : colors.textPrimary }}>
@@ -2262,19 +2401,19 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                         {editGPOpen
                           ? (event.category === 'Study'
                               ? 'GP can help with tutoring/escort, or pass'
-                              : 'GPs can claim this ride or pass, no pressure')
+                              : 'Enters voluntary pool — grandparents can claim or pass, no pressure')
                           : 'Off · only visible to parents'}
                       </Text>
                     </View>
                     <View style={{ width: 44, height: 26, borderRadius: 13,
-                      backgroundColor: editGPOpen ? '#F59E0B' : (isDark ? '#334155' : '#CBD5E1'),
+                      backgroundColor: editGPOpen ? colors.warning : (isDark ? '#334155' : '#CBD5E1'),
                       justifyContent: 'center', paddingHorizontal: 3 }}>
-                      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
+                      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
                         alignSelf: editGPOpen ? 'flex-end' : 'flex-start' }} />
                     </View>
                   </TouchableOpacity>
 
-                  {event.category === 'Ride' && members.some(m => m.role === 'teen') && (
+                  {event.category !== 'Medical' && members.some(m => m.role === 'teen') && (
                     <TouchableOpacity
                       onPress={() => setEditTeenOpen(t => !t)}
                       activeOpacity={0.8}
@@ -2285,16 +2424,18 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                       }}>
                       <View style={{ flex: 1, gap: 2 }}>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: editTeenOpen ? '#3730A3' : colors.textPrimary }}>
-                          🚗 Teen Driver Welcome
+                          🧑 Teens Welcome
                         </Text>
                         <Text style={{ fontSize: TYPO.label, color: editTeenOpen ? '#4338CA' : colors.textSecondary }}>
-                          {editTeenOpen ? 'Teen can drive · set coins below' : 'Off · teen driver not offered'}
+                          {editTeenOpen
+                            ? (event.category === 'Ride' ? 'Teen can drive · set coins below' : 'Enters voluntary pool — a teen with a car can cover this')
+                            : 'Off · not offered to teens'}
                         </Text>
                       </View>
                       <View style={{ width: 44, height: 26, borderRadius: 13,
                         backgroundColor: editTeenOpen ? '#6366F1' : (isDark ? '#334155' : '#CBD5E1'),
                         justifyContent: 'center', paddingHorizontal: 3 }}>
-                        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
+                        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
                           alignSelf: editTeenOpen ? 'flex-end' : 'flex-start' }} />
                       </View>
                     </TouchableOpacity>
@@ -2313,12 +2454,17 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                 </View>
               )}
 
-              {/* Notes */}
-              {!restricted && (
+              {/* Notes — the one field still editable once an event is past
+                  (matches the quest pattern: everything locks after the
+                  fact except a note). A kid-restricted event (not past,
+                  just not theirs to edit) stays fully locked including
+                  notes — that's a permissions boundary, not "add a
+                  retrospective note." */}
+              {(!restricted || (isPast && isParent)) && (
                 <View style={{ gap: 6 }}>
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>📝 Notes</Text>
                   <TextInput
-                    style={[f.input, f.multiInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border }]}
+                    style={[f.input, f.multiInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                     placeholder="Add or update notes…"
                     placeholderTextColor={colors.textTertiary}
                     value={notes} onChangeText={t => setNotes(t.slice(0, 200))}
@@ -2332,18 +2478,18 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                 {!isPast && (isParent || isOwnPending) && onDelete && (
                   <TouchableOpacity
                     style={{ paddingHorizontal: 18, borderRadius: 14, justifyContent: 'center', alignItems: 'center',
-                      borderWidth: 1, borderColor: '#FCA5A560', backgroundColor: isDark ? '#2D1515' : '#FEF2F2' }}
+                      borderWidth: 1, borderColor: colors.danger + '60', backgroundColor: isDark ? '#2D1515' : colors.dangerLight }}
                     onPress={handleDelete}>
-                    <X c="#EF4444" size={16} />
+                    <X c={colors.danger} size={16} />
                   </TouchableOpacity>
                 )}
-                {!restricted && (
+                {(!restricted || (isPast && isParent)) && (
                   <TouchableOpacity style={[f.submitBtn, { flex: 1, opacity: saving ? 0.7 : 1 }]} onPress={save} disabled={saving}>
-                    {saving ? <ActivityIndicator color="#fff" size="small" />
-                      : <Text style={{ color: '#fff', fontSize: TYPO.caption, fontWeight: '900' }}>Save Changes</Text>}
+                    {saving ? <ActivityIndicator color={colors.textInverse} size="small" />
+                      : <Text style={{ color: colors.textInverse, fontSize: TYPO.caption, fontWeight: '900' }}>{restricted ? 'Save Note' : 'Save Changes'}</Text>}
                   </TouchableOpacity>
                 )}
-                {restricted && (
+                {restricted && !(isPast && isParent) && (
                   <TouchableOpacity style={[f.submitBtn, { flex: 1, backgroundColor: colors.surface }]} onPress={onClose}>
                     <Text style={{ color: colors.textSecondary, fontSize: TYPO.caption, fontWeight: '700' }}>Close</Text>
                   </TouchableOpacity>
@@ -2352,7 +2498,9 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
 
               {restricted && (
                 <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, textAlign: 'center' }}>
-                  {isPast ? 'This event is in the past — no edits allowed.' : 'This event was approved by a parent. Ask a parent to make changes.'}
+                  {isPast && isParent ? 'This event is in the past — only a note can still be added.'
+                    : isPast ? 'This event is in the past — no edits allowed.'
+                    : 'This event was approved by a parent. Ask a parent to make changes.'}
                 </Text>
               )}
             </ScrollView>

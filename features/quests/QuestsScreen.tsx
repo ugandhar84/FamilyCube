@@ -28,6 +28,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useLocalSearchParams } from 'expo-router';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import CelebrationBurst from '@/components/CelebrationBurst';
+import AddIntakeChooser from '@/components/AddIntakeChooser';
 import { useFamilyStore } from '@/store/familyStore';
 // questStore commented out — chores system is the single source of truth
 // import { useQuestStore } from '@/store/questStore';
@@ -263,7 +264,7 @@ function buildFomoResult(quests: any[], kids: any[]) {
   const totalPenalty  = penaltyCandidates.length;
   const totalIssues   = totalBonus + totalPenalty;
   const fomoNudgeSummary = totalIssues === 0
-    ? 'All quests are on track! You can still add flash bonuses to pool bounties to drive faster claims.'
+    ? 'All chores are on track! You can still add flash bonuses to pool bounties to drive faster claims.'
     : `${totalIssues} quest${totalIssues > 1 ? 's need' : ' needs'} attention — ${totalBonus} need a bonus nudge, ${totalPenalty} need a penalty action.`;
 
   return { fomoNudgeSummary, urgentAlerts, penaltiesAndForceAssigns };
@@ -406,6 +407,11 @@ export default function QuestsScreen() {
   const [declineTarget,  setDeclineTarget]  = useState<{ id: string; title: string; memberId?: string } | null>(null);
   const [editTarget,     setEditTarget]     = useState<Quest | null>(null);
   const [showAddModal,   setShowAddModal]   = useState(false);
+  const [showAddChooser, setShowAddChooser] = useState(false);
+  const [addPrefill, setAddPrefill] = useState<{
+    title: string; category?: string; memberId?: string; startAt?: string;
+    notes?: string; coins?: number; photoRequired?: boolean;
+  } | undefined>(undefined);
   const [showSponsorModal, setShowSponsorModal] = useState(false);
   // Sponsor-a-Quest form state — mirrors SeniorView's identically so both
   // entry points (Hub and this Quests tab) produce the exact same safe,
@@ -478,7 +484,7 @@ export default function QuestsScreen() {
   const submitWithProof = () => {
     if (!submitTarget) return;
     if (submitTarget.photoRequired && !submissionPhotoUri) {
-      Alert.alert('📸 Photo required', 'Add a photo before submitting this quest for review.');
+      Alert.alert('📸 Photo required', 'Add a photo before submitting this chore for review.');
       return;
     }
     submitQuest(submitTarget.id, {
@@ -874,8 +880,8 @@ export default function QuestsScreen() {
     setIsReopening(p => ({ ...p, [id]: false }));
   };
 
-  const cardBg   = isDark ? '#131927' : '#FFFFFF';
-  const cardBord = isDark ? '#1E293B' : '#E2E8F0';
+  const cardBg   = colors.card;
+  const cardBord = colors.border;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
@@ -889,11 +895,11 @@ export default function QuestsScreen() {
 
       <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
 
-        {/* ── Title + Add Quest (parent ONLY) ── */}
+        {/* ── Title ── */}
         <View style={[s.titleRow, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }]}>
           <View style={{ flex: 1 }}>
-            <Text style={[s.title, { color: isDark ? colors.textPrimary : '#1E2D6B' }]}>
-              {isKid ? 'My Quests' : 'Household Quests'}
+            <Text style={[s.title, { color: colors.textPrimary }]}>
+              {isKid ? 'My Chores' : 'Household Chores'}
             </Text>
             {isParent && (
               <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple, marginTop: 1 }}>
@@ -901,36 +907,52 @@ export default function QuestsScreen() {
               </Text>
             )}
           </View>
+        </View>
+
+        {/* ── AI toggle + search/filter + add-chore, one shared row (wraps
+            to a second line if things are expanded at once) ── */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', paddingHorizontal: 14, marginBottom: 10, gap: 8 }}>
           {isParent && (
-            <TouchableOpacity style={[s.headerBtn, { backgroundColor: '#059669' }]} onPress={() => setShowAddModal(true)}>
-              <I.PlusCircle c="#fff" />
-              <Text style={{ color: '#fff', fontSize: TYPO.label, fontWeight: '900' }}>+ Quest</Text>
+            <AiEngineBanner
+              showAiTool={showAiTool}
+              isAiLoading={isAiLoading}
+              onRunAI={runAI}
+              colors={colors}
+              isDark={isDark}
+            />
+          )}
+          <QuestSearchBar
+            query={searchQuery} onQueryChange={setSearchQuery}
+            range={dateRange} onRangeChange={setDateRange}
+            colors={colors} isDark={isDark}
+          />
+          {isParent && (
+            <TouchableOpacity onPress={() => setShowAddChooser(true)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
+                backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
+              <I.PlusCircle c={colors.success} />
+              <Text style={{ color: colors.success, fontSize: TYPO.label, fontWeight: '900' }}>+ Quest</Text>
             </TouchableOpacity>
           )}
           {isSenior && (
-            <TouchableOpacity style={[s.headerBtn, { backgroundColor: '#00BBA4' }]} onPress={() => setShowSponsorModal(true)}>
-              <I.PlusCircle c="#fff" />
-              <Text style={{ color: '#fff', fontSize: TYPO.label, fontWeight: '900' }}>Sponsor Quest</Text>
+            <TouchableOpacity onPress={() => setShowSponsorModal(true)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
+                backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
+              <I.PlusCircle c={colors.teal} />
+              <Text style={{ color: colors.teal, fontSize: TYPO.label, fontWeight: '900' }}>Sponsor Chore</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* ── AI Engine Banner (parent ONLY) ── */}
-        {isParent && (
-          <AiEngineBanner
-            showAiTool={showAiTool}
-            isAiLoading={isAiLoading}
-            onRunAI={runAI}
-          />
-        )}
-
         {/* ── Family Kudos — today's completed quests, tap to cheer ── */}
         {todaysKudos.length > 0 && (
           <View style={{ marginHorizontal: 14, marginBottom: 12 }}>
-            <View style={{ backgroundColor: isDark ? '#0D2E2A' : '#ECFDF5', borderRadius: 20, borderWidth: 1, borderColor: '#00BBA430', padding: 14 }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#00BBA4', marginBottom: 2 }}>🎉 Family Kudos</Text>
-              <Text style={{ fontSize: TYPO.micro, color: '#059669', marginBottom: 10 }}>
-                {isSenior ? 'Tap a quest to cheer — with a note, or bonus coins' : 'Tap a quest to send a kudos note'}
+            <View style={{ backgroundColor: colors.tealLight, borderRadius: 20, borderWidth: 1, borderColor: colors.teal + '30', padding: 14 }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: colors.teal, marginBottom: 2 }}>🎉 Family Kudos</Text>
+              <Text style={{ fontSize: TYPO.micro, color: colors.success, marginBottom: 10 }}>
+                {isSenior ? 'Tap a chore to cheer — with a note, or bonus coins' : 'Tap a chore to send a kudos note'}
               </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
                 <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 4 }}>
@@ -938,11 +960,11 @@ export default function QuestsScreen() {
                     const kid = members.find(m => m.id === q.assignedToId);
                     return (
                       <TouchableOpacity key={q.id} onPress={() => handleKudosTap(q)}
-                        style={{ backgroundColor: isDark ? '#0F3A35' : '#D1FAE5', borderRadius: 16, padding: 10, width: 130, gap: 4 }}>
-                        <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#059669' }}>✅ Done</Text>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isDark ? '#fff' : '#064E3B' }} numberOfLines={2}>{q.title}</Text>
-                        <Text style={{ fontSize: TYPO.micro, color: '#059669' }}>{kid?.emoji ?? '🧒'} {kid?.name ?? 'Kid'}</Text>
-                        {q.coins > 0 && <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#F59E0B' }}>+{q.coins} coins</Text>}
+                        style={{ backgroundColor: colors.successLight, borderRadius: 16, padding: 10, width: 130, gap: 4 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: colors.success }}>✅ Done</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }} numberOfLines={2}>{q.title}</Text>
+                        <Text style={{ fontSize: TYPO.micro, color: colors.success }}>{kid?.emoji ?? '🧒'} {kid?.name ?? 'Kid'}</Text>
+                        {q.coins > 0 && <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.warning }}>+{q.coins} coins</Text>}
                       </TouchableOpacity>
                     );
                   })}
@@ -956,13 +978,13 @@ export default function QuestsScreen() {
         {isSenior && grandparentData && (
           <View style={{ marginHorizontal: 14, marginBottom: 12, gap: 10 }}>
             {grandparentData.sponsored.length > 0 && (
-              <View style={{ backgroundColor: isDark ? '#0D1A2D' : '#EFF6FF', borderRadius: 20, borderWidth: 1, borderColor: '#3B82F620', padding: 14 }}>
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#3B82F6', marginBottom: 8 }}>👴 My Sponsored Quests · elsewhere</Text>
+              <View style={{ backgroundColor: colors.infoLight, borderRadius: 20, borderWidth: 1, borderColor: colors.info + '20', padding: 14 }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: colors.info, marginBottom: 8 }}>👴 My Sponsored Chores · elsewhere</Text>
                 {grandparentData.sponsored.map(q => {
                   const kid = members.find(m => m.id === q.assignedToId);
-                  const statusColor = q.status === 'done' ? '#059669' : q.status === 'pending_approval' ? '#F5A623' : '#6366F1';
+                  const statusColor = q.status === 'done' ? colors.success : q.status === 'pending_approval' ? colors.warning : colors.info;
                   return (
-                    <View key={q.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? '#1E293B' : '#E2E8F0' }}>
+                    <View key={q.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{q.title}</Text>
                         <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>{kid?.emoji ?? '🧒'} {kid?.name ?? 'Unassigned'} · {q.coins} coins</Text>
@@ -977,7 +999,7 @@ export default function QuestsScreen() {
             )}
             {grandparentData.sponsored.length === 0 && todaysKudos.length === 0 && (
               <View style={[s.seniorBanner, { marginHorizontal: 0 }]}>
-                <Text style={s.seniorBannerText}>👴 Tap "Sponsor Quest" to fund a special quest for the grandkids!</Text>
+                <Text style={s.seniorBannerText}>👴 Tap "Sponsor Chore" to fund a special chore for the grandkids!</Text>
               </View>
             )}
           </View>
@@ -985,13 +1007,13 @@ export default function QuestsScreen() {
 
         {/* ── AI Loading + Results (parent ONLY) ── */}
         {isParent && isAiLoading && (
-          <View style={[s.aiLoadingBox, { marginHorizontal: 14, marginBottom: 12, backgroundColor: isDark ? '#1E1B4B' : '#EEF2FF', borderColor: isDark ? '#6D28D940' : '#C7D2FE' }]}>
+          <View style={[s.aiLoadingBox, { marginHorizontal: 14, marginBottom: 12, backgroundColor: colors.primaryLight, borderColor: colors.primary + '40' }]}>
             <ActivityIndicator color={BRAND.purple} size="small" />
-            <Text style={[s.aiLoadingText, { color: isDark ? '#A78BFA' : '#4338CA' }]}>CubeAI is analysing your household quests...</Text>
+            <Text style={[s.aiLoadingText, { color: colors.primary }]}>CubeAI is analysing your household quests...</Text>
           </View>
         )}
         {isParent && !isAiLoading && showAiTool !== 'none' && aiFromCache[showAiTool] && (
-          <View style={{ marginHorizontal: 14, marginBottom: 6, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: isDark ? '#0F172A' : '#F1F5F9', borderRadius: 10, borderWidth: 1, borderColor: isDark ? '#334155' : '#E2E8F0' }}>
+          <View style={{ marginHorizontal: 14, marginBottom: 6, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.border }}>
             <Text style={{ fontSize: 13 }}>ℹ️</Text>
             <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, flex: 1 }}>No changes since last analysis — showing cached results.</Text>
           </View>
@@ -1005,13 +1027,6 @@ export default function QuestsScreen() {
         {isParent && !isAiLoading && showAiTool === 'advice' && adviceResult && (
           <AdviceCard result={adviceResult} appliedActions={appliedActions} onApply={handleApply} onClose={() => setShowAiTool('none')} isDark={isDark} colors={colors} />
         )}
-
-        {/* ── Search + due-date range filter ── */}
-        <QuestSearchBar
-          query={searchQuery} onQueryChange={setSearchQuery}
-          range={dateRange} onRangeChange={setDateRange}
-          colors={colors} isDark={isDark}
-        />
 
         {/* ── Member / Filter Pills + Status Tabs ── */}
         <QuestFilters
@@ -1052,8 +1067,8 @@ export default function QuestsScreen() {
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 }}>
                         <Text style={{ fontSize: 16 }}>📬</Text>
                         <Text style={[s.cardTitle, { color: colors.textPrimary }]}>Awaiting Review</Text>
-                        <View style={{ marginLeft: 'auto', backgroundColor: BRAND.purple + '20', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 }}>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: BRAND.purple }}>{pendingKidQuests.length}</Text>
+                        <View style={{ marginLeft: 'auto', backgroundColor: colors.primary + '20', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.primary }}>{pendingKidQuests.length}</Text>
                         </View>
                       </View>
                       <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 10 }}>
@@ -1067,7 +1082,7 @@ export default function QuestsScreen() {
                                 this row from the list, so it must outlive the animation. */}
                             <CelebrationBurst visible={celebratingId === q.id}
                               onDone={() => { cheerQuest(q.id, myId ?? ''); setCelebratingId(null); }} />
-                            <View style={[s.cheerRow, { backgroundColor: isDark ? '#1E1B4B' : '#F5F3FF', borderColor: BRAND.purple + '30' }]}>
+                            <View style={[s.cheerRow, { backgroundColor: colors.primaryLight, borderColor: colors.primary + '30' }]}>
                               <View style={{ flex: 1 }}>
                                 <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
                                   {kid?.emoji ?? '🧒'} {q.title}
@@ -1077,10 +1092,10 @@ export default function QuestsScreen() {
                                 </Text>
                               </View>
                               <TouchableOpacity disabled={celebratingId === q.id}
-                                style={{ backgroundColor: BRAND.purple, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, marginLeft: 8, opacity: celebratingId === q.id ? 0.6 : 1 }}
+                                style={{ backgroundColor: colors.primary, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, marginLeft: 8, opacity: celebratingId === q.id ? 0.6 : 1 }}
                                 onPress={() => setCelebratingId(q.id)}
                               >
-                                <Text style={{ color: '#fff', fontSize: TYPO.caption, fontWeight: '800' }}>🎉 Cheer!</Text>
+                                <Text style={{ color: colors.textInverse, fontSize: TYPO.caption, fontWeight: '800' }}>🎉 Cheer!</Text>
                               </TouchableOpacity>
                             </View>
                           </View>
@@ -1101,12 +1116,12 @@ export default function QuestsScreen() {
                           <View key={q.id} style={{ position: 'relative' }}>
                             <CelebrationBurst visible={celebratingId === q.id}
                               onDone={() => { cheerQuest(q.id, myId ?? ''); setCelebratingId(null); }} />
-                            <View style={[s.cheerRow, { backgroundColor: isDark ? '#052E16' : '#F0FDF4', borderColor: '#10B98130' }]}>
+                            <View style={[s.cheerRow, { backgroundColor: colors.successLight, borderColor: colors.success + '30' }]}>
                               <View style={{ flex: 1 }}>
                                 <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
                                   {kid?.emoji ?? '🧒'} {q.title}
                                 </Text>
-                                <Text style={{ fontSize: TYPO.caption, color: '#10B981', marginTop: 2 }}>
+                                <Text style={{ fontSize: TYPO.caption, color: colors.success, marginTop: 2 }}>
                                   ✅ {kid?.name ?? 'Kid'} earned {q.coins > 0 ? `+${q.coins}🪙` : 'it'}!
                                 </Text>
                                 <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>
@@ -1114,10 +1129,10 @@ export default function QuestsScreen() {
                                 </Text>
                               </View>
                               <TouchableOpacity disabled={celebratingId === q.id}
-                                style={{ backgroundColor: '#10B981', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, marginLeft: 8, opacity: celebratingId === q.id ? 0.6 : 1 }}
+                                style={{ backgroundColor: colors.success, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, marginLeft: 8, opacity: celebratingId === q.id ? 0.6 : 1 }}
                                 onPress={() => setCelebratingId(q.id)}
                               >
-                                <Text style={{ color: '#fff', fontSize: TYPO.caption, fontWeight: '800' }}>🖐️ High Five!</Text>
+                                <Text style={{ color: colors.textInverse, fontSize: TYPO.caption, fontWeight: '800' }}>🖐️ High Five!</Text>
                               </TouchableOpacity>
                             </View>
                           </View>
@@ -1147,9 +1162,9 @@ export default function QuestsScreen() {
                 <View style={[s.emptyBox, { backgroundColor: cardBg, borderColor: cardBord }]}>
                   <Text style={[s.emptyText, { color: colors.textTertiary }]}>
                     {tabStatus === 'todo'        ? 'All caught up! No tasks pending 🎉'
-                     : tabStatus === 'review'    ? 'No quests awaiting review'
-                     : tabStatus === 'completed' ? 'No completed quests yet'
-                     : 'No quests found for this filter'}
+                     : tabStatus === 'review'    ? 'No chores awaiting review'
+                     : tabStatus === 'completed' ? 'No completed chores yet'
+                     : 'No chores found for this filter'}
                   </Text>
                 </View>
               )}
@@ -1157,61 +1172,61 @@ export default function QuestsScreen() {
               {/* ── Kid grouped section headers (spec §4) ── */}
               {kidSections && kidSections.citizenship.length > 0 && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, marginBottom: -4 }}>
-                  <View style={{ flex: 1, height: 1, backgroundColor: '#EF444420' }} />
+                  <View style={{ flex: 1, height: 1, backgroundColor: colors.danger + '20' }} />
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
-                    backgroundColor: isDark ? '#450A0A' : '#FEF2F2', borderRadius: 20,
-                    paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#EF444430' }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#EF4444' }}>🏛 Citizenship</Text>
-                    <View style={{ backgroundColor: '#EF4444', borderRadius: 10, minWidth: 18, alignItems: 'center', paddingHorizontal: 4 }}>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>{kidSections.citizenship.length}</Text>
+                    backgroundColor: colors.dangerLight, borderRadius: 20,
+                    paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: colors.danger + '30' }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: colors.danger }}>🏛 Citizenship</Text>
+                    <View style={{ backgroundColor: colors.danger, borderRadius: 10, minWidth: 18, alignItems: 'center', paddingHorizontal: 4 }}>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: colors.textInverse }}>{kidSections.citizenship.length}</Text>
                     </View>
                   </View>
-                  <View style={{ flex: 1, height: 1, backgroundColor: '#EF444420' }} />
+                  <View style={{ flex: 1, height: 1, backgroundColor: colors.danger + '20' }} />
                 </View>
               )}
 
               {kidSections && kidSections.routines.length > 0 && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, marginBottom: -4 }}>
-                  <View style={{ flex: 1, height: 1, backgroundColor: '#9261C720' }} />
+                  <View style={{ flex: 1, height: 1, backgroundColor: colors.primary + '20' }} />
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
-                    backgroundColor: isDark ? '#1A1030' : '#F5F3FF', borderRadius: 20,
-                    paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#9261C730' }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#9261C7' }}>⭐ Routines</Text>
-                    <View style={{ backgroundColor: '#9261C7', borderRadius: 10, minWidth: 18, alignItems: 'center', paddingHorizontal: 4 }}>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>{kidSections.routines.length}</Text>
+                    backgroundColor: colors.primaryLight, borderRadius: 20,
+                    paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: colors.primary + '30' }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: colors.primary }}>⭐ Routines</Text>
+                    <View style={{ backgroundColor: colors.primary, borderRadius: 10, minWidth: 18, alignItems: 'center', paddingHorizontal: 4 }}>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: colors.textInverse }}>{kidSections.routines.length}</Text>
                     </View>
                   </View>
-                  <View style={{ flex: 1, height: 1, backgroundColor: '#9261C720' }} />
+                  <View style={{ flex: 1, height: 1, backgroundColor: colors.primary + '20' }} />
                 </View>
               )}
 
               {kidSections && kidSections.bountyBoard.length > 0 && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, marginBottom: -4 }}>
-                  <View style={{ flex: 1, height: 1, backgroundColor: '#F5A62320' }} />
+                  <View style={{ flex: 1, height: 1, backgroundColor: colors.amber + '20' }} />
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
-                    backgroundColor: isDark ? '#2D2008' : '#FFFBEB', borderRadius: 20,
-                    paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#F5A62330' }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#F5A623' }}>🎯 Bounty Board</Text>
-                    <View style={{ backgroundColor: '#F5A623', borderRadius: 10, minWidth: 18, alignItems: 'center', paddingHorizontal: 4 }}>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>{kidSections.bountyBoard.length}</Text>
+                    backgroundColor: colors.amberLight, borderRadius: 20,
+                    paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: colors.amber + '30' }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: colors.amber }}>🎯 Bounty Board</Text>
+                    <View style={{ backgroundColor: colors.amber, borderRadius: 10, minWidth: 18, alignItems: 'center', paddingHorizontal: 4 }}>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: colors.textInverse }}>{kidSections.bountyBoard.length}</Text>
                     </View>
                   </View>
-                  <View style={{ flex: 1, height: 1, backgroundColor: '#F5A62320' }} />
+                  <View style={{ flex: 1, height: 1, backgroundColor: colors.amber + '20' }} />
                 </View>
               )}
 
               {kidSections && kidSections.grandparent.length > 0 && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, marginBottom: -4 }}>
-                  <View style={{ flex: 1, height: 1, backgroundColor: '#00BBA420' }} />
+                  <View style={{ flex: 1, height: 1, backgroundColor: colors.teal + '20' }} />
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
-                    backgroundColor: isDark ? '#0D2E2A' : '#ECFDF5', borderRadius: 20,
-                    paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: '#00BBA430' }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#00BBA4' }}>👴 Grandparent Quests</Text>
-                    <View style={{ backgroundColor: '#00BBA4', borderRadius: 10, minWidth: 18, alignItems: 'center', paddingHorizontal: 4 }}>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>{kidSections.grandparent.length}</Text>
+                    backgroundColor: colors.tealLight, borderRadius: 20,
+                    paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: colors.teal + '30' }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: colors.teal }}>👴 Grandparent Quests</Text>
+                    <View style={{ backgroundColor: colors.teal, borderRadius: 10, minWidth: 18, alignItems: 'center', paddingHorizontal: 4 }}>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: colors.textInverse }}>{kidSections.grandparent.length}</Text>
                     </View>
                   </View>
-                  <View style={{ flex: 1, height: 1, backgroundColor: '#00BBA420' }} />
+                  <View style={{ flex: 1, height: 1, backgroundColor: colors.teal + '20' }} />
                 </View>
               )}
 
@@ -1263,12 +1278,26 @@ export default function QuestsScreen() {
                 // Accent colour by status
                 const accentColor =
                   isPoolCard    ? BRAND.amber :
-                  isDeclined    ? '#EF4444' :
-                  isDoneCard    ? '#10B981' :
+                  isDeclined    ? colors.danger :
+                  isDoneCard    ? colors.success :
                   isReview      ? BRAND.purple :
-                  q.priority === 'urgent' ? '#EF4444' : BRAND.purple;
+                  q.priority === 'urgent' ? colors.danger : BRAND.purple;
 
                 const hasBonus = q.bonusCoins > 0 && (!q.bonusExpiresAt || new Date(q.bonusExpiresAt).getTime() > now);
+
+                // Whether the action strip has ANYTHING to render — with the
+                // redundant Edit button gone (long-press covers it now), an
+                // otherwise-inert card would show a bare empty divider bar
+                // without this gate.
+                const hasActionStripContent =
+                  canClaim || canAcceptGp ||
+                  (canSubmit && !canAcceptGp && q.participants.length <= 1) ||
+                  canResubmit || canKidDecline ||
+                  (canApprove && q.participants.length <= 1) ||
+                  (isPoolCard && isParentOrSenior) ||
+                  (isParent && q.isAdultTask && isTodoCard && !q.assignedToId) ||
+                  (isSenior && q.questType === 'grandparent_quest' && isTodoCard && !q.assignedToId) ||
+                  (isSenior && q.questType === 'grandparent_quest' && isTodoCard && q.assignedToId === activeMember?.id);
 
                 // ── Collapsed header ────────────────────────────────────────────
                 const claimantIds    = q.assignedToIds?.length ? q.assignedToIds : (q.assignedToId ? [q.assignedToId] : []);
@@ -1290,10 +1319,7 @@ export default function QuestsScreen() {
                 const isOverdue   = !!dueMsRaw && dueMsRaw < todayStart.getTime() && !isDoneCard && !isDeclined;
                 const isDueToday  = !!dueMsRaw && dueMsRaw <= todayEnd.getTime() && !isOverdue;
                 const isDueTomorrow = !!dueMsRaw && dueMsRaw <= tomorrowEnd.getTime() && !isDueToday && !isOverdue;
-                const dueBg    = isOverdue    ? (isDark ? '#450A0A' : '#FEE2E2')
-                               : isDueToday  ? (isDark ? '#1C1000' : '#FFF7ED')
-                               : isDark ? '#1E293B' : '#F1F5F9';
-                const dueColor = isOverdue ? '#DC2626' : isDueToday ? '#D97706' : colors.textSecondary;
+                const dueColor = isOverdue ? colors.danger : isDueToday ? colors.warning : colors.textSecondary;
                 const dueLabel = isOverdue    ? `⚠ ${q.dueDate ? fmtDateShort(q.dueDate) : 'Overdue'}`
                                : isDueToday  ? '⚡ Today'
                                : isDueTomorrow ? 'Tomorrow'
@@ -1305,10 +1331,11 @@ export default function QuestsScreen() {
                   ? ` · ⚡ Grab it before bonus ends!`
                   : '';
 
+                const paidSuffix = q.participants.length > 1 ? ` · ${q.participants.length} paid` : q.coins > 0 ? ` · +${q.coins} paid` : '';
                 const statusLine = isReview
                   ? `Submitted ${q.submittedAt ? new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'for review'}`
                   : isDoneCard
-                    ? 'Approved'
+                    ? `Approved${paidSuffix}`
                     : isDeclined
                       ? 'Declined ❌'
                       : isPoolCard && claimants.length > 1
@@ -1342,44 +1369,44 @@ export default function QuestsScreen() {
                       {/* Title + status */}
                       <View style={{ flex: 1 }}>
                         <Text style={[s.questTitle, { color: colors.textPrimary }]} numberOfLines={1}>{q.title}</Text>
-                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 3 }} numberOfLines={1}>
+                        <Text style={{ fontSize: TYPO.label, color: isDoneCard ? colors.success : colors.textSecondary, fontWeight: isDoneCard ? '700' : '400', marginTop: 3 }} numberOfLines={1}>
                           {statusLine}
                         </Text>
                       </View>
 
-                      {/* Right: due chip + coins only */}
+                      {/* Right: due chip + coins (done cards show their pill
+                          pinned to the card's bottom-right instead — see
+                          below — so this column only carries the due chip
+                          and in-progress coin pill here). */}
                       <View style={{ alignItems: 'flex-end', gap: 4 }}>
                         {(isTodoCard || isPoolCard || isReview) && (
-                          <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: dueBg }}>
-                            <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '800', color: dueColor }}>{dueLabel}</Text>
+                          <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
+                            backgroundColor: dueColor + '14', borderWidth: 1, borderColor: dueColor + '30' }}>
+                            <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '800', color: dueColor, letterSpacing: 0.2 }}>{dueLabel}</Text>
                           </View>
                         )}
-                        {q.coins > 0 && (() => {
+                        {!isDoneCard && q.coins > 0 && (() => {
                           const role = members.find(m => m.id === q.assignedToId)?.role;
                           const isAdult = role === 'parent' || role === 'senior';
                           const isGPQuest = q.questType === 'grandparent_quest';
                           if (isAdult || isGPQuest || q.isAdultTask) return null;
                           const coinAmt = hasBonus ? q.coins + q.bonusCoins : q.coins;
-                          const earned = isDoneCard;
                           const locked = isReview;
+                          const coinColor = locked ? BRAND.purple : BRAND.amber;
                           return (
                             <View style={{
                               flexDirection: 'row', alignItems: 'center', gap: 3,
-                              paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8,
-                              backgroundColor: earned ? '#10B98120' : locked ? BRAND.purple + '18' : BRAND.amber + '22',
+                              paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
+                              backgroundColor: coinColor + '14', borderWidth: 1, borderColor: coinColor + '30',
                             }}>
                               <Text style={{ fontSize: 11 }}>{locked ? '🔒' : '🪙'}</Text>
-                              <Text style={{
-                                fontSize: TYPO.label, fontWeight: '800',
-                                color: earned ? '#10B981' : locked ? BRAND.purple : BRAND.amber,
-                              }}>
-                                {earned ? `+${coinAmt}` : coinAmt}
-                              </Text>
+                              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: coinColor }}>{coinAmt}</Text>
                             </View>
                           );
                         })()}
                       </View>
                     </View>
+
 
                     {/* Flash bonus badge — full width, below header row so it never overlaps title */}
                     {hasBonus && q.bonusExpiresAt && (
@@ -1394,16 +1421,16 @@ export default function QuestsScreen() {
                   const scale = dragX.interpolate({ inputRange: [-80, 0], outputRange: [1, 0], extrapolate: 'clamp' });
                   return (
                     <TouchableOpacity
-                      style={{ width: 72, justifyContent: 'center', alignItems: 'center', backgroundColor: '#EF4444', borderRadius: 18, marginLeft: 8, marginBottom: 10 }}
+                      style={{ width: 72, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.danger, borderRadius: 18, marginLeft: 8, marginBottom: 10 }}
                       onPress={() => Alert.alert(
-                        'Delete Quest',
+                        'Delete Chore',
                         `Remove "${q.title}"? This cannot be undone.`,
                         [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => deleteQuest(q.id) }]
                       )}
                     >
                       <Animated.View style={{ alignItems: 'center', transform: [{ scale }] }}>
-                        <I.Trash c="#fff" size={20} />
-                        <Text style={{ color: '#fff', fontSize: TYPO.micro, fontWeight: '800', marginTop: 2 }}>Delete</Text>
+                        <I.Trash c={colors.textInverse} size={20} />
+                        <Text style={{ color: colors.textInverse, fontSize: TYPO.micro, fontWeight: '800', marginTop: 2 }}>Delete</Text>
                       </Animated.View>
                     </TouchableOpacity>
                   );
@@ -1422,26 +1449,35 @@ export default function QuestsScreen() {
                     initiallyExpanded={q.id === questId}
                     header={cardHeader}
                     dimmed={isDoneCard}
-                    pinnedFooter={isParent && isDoneCard
-                      ? <ParentSelfNoteRow choreId={q.id} initialNote={choreData?.parentNote} colors={colors} isDark={isDark} />
-                      : undefined}
                   >
                     {/* ── Expanded body — NO title/coin repeat, header already shows them ── */}
 
-                      {/* Progress stepper — single-kid quests only (multi-kid gets per-row stepper below) */}
+                      {/* Progress stepper — single-kid quests only (multi-kid gets per-row stepper below).
+                          Once fully settled (approved/declined) the 3-node stepper is past business —
+                          a compact one-line summary keeps that history without the tall spread. */}
                       {q.participants.length <= 1 && (!!q.assignedToId || q.claimedAt || q.submittedAt || (q as any).approvedAt || (q as any).declinedAt) && (
-                        <QuestStepper
-                          claimedAt={q.claimedAt}
-                          submittedAt={q.submittedAt}
-                          approvedAt={(q as any).approvedAt}
-                          declinedAt={(q as any).declinedAt}
-                          declineReason={q.declineReason}
-                          reviewerName={members.find(m => m.id === q.reviewedById)?.name.split(' ')[0]}
-                          accentColor={accentColor}
-                          isDark={isDark}
-                          colors={colors}
-                          isAssigned={!!q.assignedToId && !q.claimedAt}
-                        />
+                        isDoneCard && (q as any).approvedAt ? (
+                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 2, marginBottom: 6 }}>
+                            {q.claimedAt && `Claimed ${new Date(q.claimedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+                            {q.claimedAt && (q.submittedAt || (q as any).approvedAt) ? ' → ' : ''}
+                            {q.submittedAt && `Submitted ${new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+                            {q.submittedAt && (q as any).approvedAt ? ' → ' : ''}
+                            {(q as any).approvedAt && `Approved ${new Date((q as any).approvedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+                          </Text>
+                        ) : (
+                          <QuestStepper
+                            claimedAt={q.claimedAt}
+                            submittedAt={q.submittedAt}
+                            approvedAt={(q as any).approvedAt}
+                            declinedAt={(q as any).declinedAt}
+                            declineReason={q.declineReason}
+                            reviewerName={members.find(m => m.id === q.reviewedById)?.name.split(' ')[0]}
+                            accentColor={accentColor}
+                            isDark={isDark}
+                            colors={colors}
+                            isAssigned={!!q.assignedToId && !q.claimedAt}
+                          />
+                        )
                       )}
 
                       {/* Description */}
@@ -1458,19 +1494,19 @@ export default function QuestsScreen() {
                         const sb = choreData?.shoppingBudget ?? q.shoppingBudget;
                         return (si?.length || ss || sb != null) ? (
                         <View style={{ marginBottom: 10, borderRadius: 10, borderWidth: 1,
-                          borderColor: isDark ? BRAND.teal + '40' : '#99F6E4',
-                          backgroundColor: isDark ? BRAND.teal + '10' : '#F0FDFA', overflow: 'hidden' }}>
+                          borderColor: colors.teal + '40',
+                          backgroundColor: colors.tealLight, overflow: 'hidden' }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8,
                             borderBottomWidth: si?.length ? 1 : 0,
-                            borderBottomColor: isDark ? BRAND.teal + '30' : '#99F6E4' }}>
+                            borderBottomColor: colors.teal + '30' }}>
                             <Text style={{ fontSize: 14 }}>🛍️</Text>
-                            <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#2DD4BF' : '#0D9488' }}>
+                            <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: colors.teal }}>
                               {ss ? `Shop at ${ss}` : 'Shopping List'}
                             </Text>
                             {sb != null && (
                               <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
-                                backgroundColor: isDark ? '#065F46' : '#D1FAE5', borderWidth: 1, borderColor: isDark ? '#10B981' : '#6EE7B7' }}>
-                                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: isDark ? '#6EE7B7' : '#065F46' }}>
+                                backgroundColor: colors.successLight, borderWidth: 1, borderColor: colors.success }}>
+                                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.successDark }}>
                                   Budget ${sb}
                                 </Text>
                               </View>
@@ -1480,9 +1516,9 @@ export default function QuestsScreen() {
                             <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
                               paddingHorizontal: 12, paddingVertical: 7,
                               borderBottomWidth: i < (si.length - 1) ? 1 : 0,
-                              borderBottomColor: isDark ? BRAND.teal + '20' : '#CCFBF1' }}>
+                              borderBottomColor: colors.teal + '20' }}>
                               <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: 1.5,
-                                borderColor: isDark ? '#2DD4BF' : '#0D9488', backgroundColor: 'transparent' }} />
+                                borderColor: colors.teal, backgroundColor: 'transparent' }} />
                               <Text style={{ flex: 1, fontSize: TYPO.label, color: colors.textPrimary }}>{item}</Text>
                             </View>
                           ))}
@@ -1495,23 +1531,23 @@ export default function QuestsScreen() {
                           proof photo remains available for future reference
                           instead of vanishing the moment a quest is done. */}
                       {(isReview || isDoneCard) && q.submittedAt && (
-                        <View style={{ marginBottom: 12, borderRadius: 12, borderWidth: 1, borderColor: isDark ? BRAND.purple + '40' : '#C7D2FE', overflow: 'hidden', backgroundColor: isDark ? BRAND.purple + '12' : '#EEF2FF' }}>
+                        <View style={{ marginBottom: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.primary + '40', overflow: 'hidden', backgroundColor: colors.primaryLight }}>
                           {/* Submitted banner */}
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10 }}>
-                            <I.Mail c={isDark ? '#A78BFA' : '#4338CA'} />
+                            <I.Mail c={colors.primary} />
                             <View style={{ flex: 1 }}>
-                              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#A78BFA' : '#4338CA' }}>
+                              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.primary }}>
                                 {isDoneCard
                                   ? `${assignee?.name ?? 'Kid'} submitted this`
                                   : `${assignee?.name ?? 'Kid'} submitted for review`}
                               </Text>
-                              <Text style={{ fontSize: TYPO.micro + 1, color: isDark ? '#818CF8' : '#6366F1' }}>
+                              <Text style={{ fontSize: TYPO.micro + 1, color: colors.primaryDark }}>
                                 {fmtDateTime(q.submittedAt)}
                               </Text>
                             </View>
                             {q.photoRequired && !q.photoUrl && (
-                              <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#FCD34D' }}>
-                                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: '#D97706' }}>No photo</Text>
+                              <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: colors.warningLight, borderWidth: 1, borderColor: colors.warning }}>
+                                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.warningDark }}>No photo</Text>
                               </View>
                             )}
                           </View>
@@ -1520,23 +1556,23 @@ export default function QuestsScreen() {
                             <TouchableOpacity onPress={() => setProofPhotoViewerUri(q.photoUrl!)}>
                               <Image
                                 source={{ uri: q.photoUrl }}
-                                style={{ width: '100%', height: 160, backgroundColor: isDark ? '#1E293B' : '#E2E8F0' }}
+                                style={{ width: '100%', height: 160, backgroundColor: colors.surface }}
                                 resizeMode="cover"
                               />
                               <View style={{ position: 'absolute', bottom: 8, right: 8, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.6)' }}>
-                                <Text style={{ fontSize: TYPO.micro, color: '#fff', fontWeight: '700' }}>Tap to enlarge</Text>
+                                <Text style={{ fontSize: TYPO.micro, color: colors.textInverse, fontWeight: '700' }}>Tap to enlarge</Text>
                               </View>
                             </TouchableOpacity>
                           ) : q.photoRequired ? (
-                            <View style={{ height: 80, alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: isDark ? '#1C1200' : '#FFF7ED' }}>
-                              <I.Photo c="#D97706" size={28} />
-                              <Text style={{ fontSize: TYPO.label, color: '#D97706', fontWeight: '600' }}>Photo proof missing</Text>
+                            <View style={{ height: 80, alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.warningLight }}>
+                              <I.Photo c={colors.warningDark} size={28} />
+                              <Text style={{ fontSize: TYPO.label, color: colors.warningDark, fontWeight: '600' }}>Photo proof missing</Text>
                             </View>
                           ) : null}
                           {/* Completion note */}
                           {q.completionNote ? (
                             <View style={{ padding: 10, paddingTop: 4 }}>
-                              <Text style={{ fontSize: TYPO.label, color: isDark ? '#A78BFA' : '#4338CA', fontStyle: 'italic' }}>
+                              <Text style={{ fontSize: TYPO.label, color: colors.primary, fontStyle: 'italic' }}>
                                 "{q.completionNote}"
                               </Text>
                             </View>
@@ -1544,19 +1580,23 @@ export default function QuestsScreen() {
                         </View>
                       )}
 
-                      {/* ── Badge strip ── */}
+                      {/* ── Badge strip — settled/paid cards skip this entirely;
+                          category/difficulty/etc are no longer live info
+                          once a chore is done, and the header pill already
+                          says everything that still matters. ── */}
+                      {!isDoneCard && (
                       <>
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
-                        <View style={[s.badge, { backgroundColor: isDark ? '#2D1B69' : '#EEF2FF', borderColor: isDark ? '#4338CA40' : '#C7D2FE' }]}>
-                          <Text style={[s.badgeText, { color: isDark ? '#818CF8' : '#4338CA' }]}>{q.category}</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: 4 }}>
+                        <View style={[s.badge, { backgroundColor: colors.primaryLight, borderColor: colors.primary + '40' }]}>
+                          <Text style={[s.badgeText, { color: colors.primary }]}>{q.category}</Text>
                         </View>
                         {q.priority === 'urgent' && (
-                          <View style={[s.badge, { backgroundColor: '#FEE2E2', borderColor: '#FECACA' }]}>
-                            <Text style={[s.badgeText, { color: '#DC2626' }]}>🔴 Urgent</Text>
+                          <View style={[s.badge, { backgroundColor: colors.dangerLight, borderColor: colors.danger + '40' }]}>
+                            <Text style={[s.badgeText, { color: colors.danger }]}>🔴 Urgent</Text>
                           </View>
                         )}
                         {q.difficulty && (
-                          <View style={[s.badge, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderColor: colors.border }]}>
+                          <View style={[s.badge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                             <Text style={[s.badgeText, { color: colors.textSecondary }]}>
                               {q.difficulty === 'easy' ? '😊' : q.difficulty === 'medium' ? '💪' : q.difficulty === 'hard' ? '🔥' : '⚡'}{' '}
                               {q.difficulty.charAt(0).toUpperCase() + q.difficulty.slice(1)}
@@ -1564,15 +1604,15 @@ export default function QuestsScreen() {
                           </View>
                         )}
                         {isPoolCard && (
-                          <View style={[s.badge, { backgroundColor: isDark ? '#1C1000' : '#FFFBEB', borderColor: BRAND.amber + '60' }]}>
+                          <View style={[s.badge, { backgroundColor: colors.warningLight, borderColor: BRAND.amber + '60' }]}>
                             <Text style={[s.badgeText, { color: BRAND.amber }]}>⚡ Open Bounty</Text>
                           </View>
                         )}
                         {q.photoRequired && (isTodoCard || isPoolCard) && (
-                          <View style={[s.badge, { backgroundColor: isDark ? '#1C1700' : '#FFFBEB', borderColor: '#FCD34D60' }]}>
+                          <View style={[s.badge, { backgroundColor: colors.warningLight, borderColor: colors.warning + '60' }]}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                              <I.Photo c="#D97706" size={11} />
-                              <Text style={[s.badgeText, { color: '#D97706' }]}>Photo proof</Text>
+                              <I.Photo c={colors.warningDark} size={11} />
+                              <Text style={[s.badgeText, { color: colors.warningDark }]}>Photo proof</Text>
                             </View>
                           </View>
                         )}
@@ -1588,8 +1628,8 @@ export default function QuestsScreen() {
                             else countdownLabel = secsLeft > 0 ? ` · ${s}s left` : ' · expired';
                           }
                           return (
-                            <View style={[s.badge, { backgroundColor: '#FCD34D18', borderColor: '#FCD34D60' }]}>
-                              <Text style={[s.badgeText, { color: '#F59E0B', fontWeight: '900' }]}>
+                            <View style={[s.badge, { backgroundColor: colors.warning + '18', borderColor: colors.warning + '60' }]}>
+                              <Text style={[s.badgeText, { color: colors.warning, fontWeight: '900' }]}>
                                 🔥 +{q.bonusCoins}🪙 BONUS{countdownLabel}
                               </Text>
                             </View>
@@ -1611,13 +1651,23 @@ export default function QuestsScreen() {
 
                       {/* ── Decline reason ── */}
                       {isDeclined && q.declineReason && (
-                        <View style={[s.declineBox, { backgroundColor: isDark ? '#450A0A' : '#FEF2F2', borderColor: '#FCA5A5' }]}>
-                          <I.AlertCircle c="#EF4444" />
-                          <Text style={[s.declineText, { color: '#EF4444', flex: 1 }]}>{q.declineReason}</Text>
+                        <View style={[s.declineBox, { backgroundColor: colors.dangerLight, borderColor: colors.danger + '60' }]}>
+                          <I.AlertCircle c={colors.danger} />
+                          <Text style={[s.declineText, { color: colors.danger, flex: 1 }]}>{q.declineReason}</Text>
                         </View>
                       )}
 
-                      </>{/* end badge strip */}
+                      </>
+                      )}{/* end badge strip */}
+
+                    {/* Parent's private note — inside the expandable body
+                        (not a pinned footer) so it only shows once someone
+                        actually opens the card, per collapsed-card density. */}
+                    {isParent && isDoneCard && (
+                      <View style={{ marginBottom: 8 }}>
+                        <ParentSelfNoteRow choreId={q.id} initialNote={choreData?.parentNote} colors={colors} isDark={isDark} />
+                      </View>
+                    )}
 
                     {/* ── Participant tracker — multi-kid only (single-kid: header + stepper covers it) ── */}
                     {q.participants.length > 1 && (
@@ -1631,9 +1681,9 @@ export default function QuestsScreen() {
                           const pSiblings = members.map(m => m.name);
                           const pIsMe = p.memberId === activeMember?.id;
                           const pStatusColor =
-                            p.status === 'approved'          ? '#10B981'
+                            p.status === 'approved'          ? colors.success
                             : p.status === 'pending_approval' ? BRAND.purple
-                            : p.status === 'declined'         ? '#EF4444'
+                            : p.status === 'declined'         ? colors.danger
                             : p.status === 'in_progress'      ? BRAND.amber
                             : colors.textTertiary;
                           const pStatusLabel =
@@ -1643,7 +1693,7 @@ export default function QuestsScreen() {
                             : p.status === 'in_progress'      ? `🏃 In progress${p.claimedAt ? ' · ' + timeAgo(p.claimedAt) : ''}`
                             : '○ Not started';
                           return (
-                            <View key={p.id} style={{ borderTopWidth: 1, borderTopColor: isDark ? '#1E293B' : '#F0F4F8', paddingTop: 10, paddingBottom: 6 }}>
+                            <View key={p.id} style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10, paddingBottom: 6 }}>
                               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                                 <FamilyAvatar name={pm.name} emoji={pm.emoji} avatarUrl={(pm as any).avatarUrl} siblings={pSiblings} size={30} ringColor={pStatusColor} ringWidth={1.5} />
                                 <View style={{ flex: 1 }}>
@@ -1654,22 +1704,22 @@ export default function QuestsScreen() {
                                 {isParentOrSenior && p.status === 'pending_approval' && (
                                   <View style={{ flexDirection: 'row', gap: 6 }}>
                                     <TouchableOpacity
-                                      style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: '#EF444420', borderWidth: 1, borderColor: '#EF4444' }}
+                                      style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: colors.danger + '20', borderWidth: 1, borderColor: colors.danger }}
                                       onPress={() => setDeclineTarget({ id: q.id, title: q.title, memberId: p.memberId })}
                                     >
-                                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Decline</Text>
+                                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.danger }}>Decline</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
-                                      style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: '#05906920', borderWidth: 1, borderColor: '#059669' }}
+                                      style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: colors.success + '20', borderWidth: 1, borderColor: colors.success }}
                                       onPress={() => approveParticipant(q.id, p.memberId, activeMember?.id ?? '')}
                                     >
-                                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#059669' }}>Approve ✓</Text>
+                                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.success }}>Approve ✓</Text>
                                     </TouchableOpacity>
                                   </View>
                                 )}
                                 {isParentOrSenior && p.status === 'declined' && (
                                   <TouchableOpacity
-                                    style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderWidth: 1, borderColor: colors.border }}
+                                    style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
                                     onPress={() => reopenParticipant(q.id, p.memberId, activeMember?.id)}
                                   >
                                     <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textSecondary }}>Reopen</Text>
@@ -1679,7 +1729,7 @@ export default function QuestsScreen() {
                                 {pIsMe && (p.status === 'todo' || p.status === 'in_progress') && (
                                   <View style={{ flexDirection: 'row', gap: 6 }}>
                                     <TouchableOpacity
-                                      style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: '#EF444415', borderWidth: 1, borderColor: '#EF444440' }}
+                                      style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: colors.danger + '15', borderWidth: 1, borderColor: colors.danger + '40' }}
                                       onPress={() => Alert.alert(
                                         "Can't do this?",
                                         `Send "${q.title}" back to the family pool so a parent can reassign it?`,
@@ -1689,7 +1739,7 @@ export default function QuestsScreen() {
                                         ]
                                       )}
                                     >
-                                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#EF4444' }}>Can't do this</Text>
+                                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.danger }}>Can't do this</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
                                       style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: BRAND.purple + '20', borderWidth: 1, borderColor: BRAND.purple }}
@@ -1723,7 +1773,8 @@ export default function QuestsScreen() {
                     )}
 
                     {/* Action strip — pool claim + single-kid fallback + edit hint */}
-                    <View style={[s.actionStrip, { borderTopColor: isDark ? '#1E293B' : '#F0F4F8' }]}>
+                    {hasActionStripContent && (
+                    <View style={[s.actionStrip, { borderTopColor: colors.border }]}>
 
                       {/* Kid: Claim open bounty */}
                       {canClaim && (
@@ -1733,18 +1784,18 @@ export default function QuestsScreen() {
                           disabled={isClaiming[q.id]}
                         >
                           {isClaiming[q.id]
-                            ? <ActivityIndicator color="#0F172A" size="small" />
-                            : <Text style={[s.actionBtnText, { color: '#0F172A' }]}>Claim Quest</Text>}
+                            ? <ActivityIndicator color={colors.textInverse} size="small" />
+                            : <Text style={[s.actionBtnText, { color: colors.textInverse }]}>Claim Quest</Text>}
                         </TouchableOpacity>
                       )}
 
                       {/* Kid: opt in to a grandparent quest before working it */}
                       {canAcceptGp && (
                         <TouchableOpacity
-                          style={[s.actionBtn, { backgroundColor: '#10B981' }]}
+                          style={[s.actionBtn, { backgroundColor: colors.success }]}
                           onPress={() => useChoreStore.getState().startGrandparentQuest(q.id, myId ?? '')}
                         >
-                          <Text style={[s.actionBtnText, { color: '#fff' }]}>🙌 I'll take it</Text>
+                          <Text style={[s.actionBtnText, { color: colors.textInverse }]}>🙌 I'll take it</Text>
                         </TouchableOpacity>
                       )}
 
@@ -1754,7 +1805,7 @@ export default function QuestsScreen() {
                           style={[s.actionBtn, { backgroundColor: BRAND.purple }]}
                           onPress={() => openSubmitSheet(q)}
                         >
-                          <Text style={[s.actionBtnText, { color: '#fff' }]}>Submit for Review</Text>
+                          <Text style={[s.actionBtnText, { color: colors.textInverse }]}>Submit for Review</Text>
                         </TouchableOpacity>
                       )}
 
@@ -1764,7 +1815,7 @@ export default function QuestsScreen() {
                           style={[s.actionBtn, { backgroundColor: BRAND.purple }]}
                           onPress={() => openSubmitSheet(q)}
                         >
-                          <Text style={[s.actionBtnText, { color: '#fff' }]}>↩ Revise & Resubmit</Text>
+                          <Text style={[s.actionBtnText, { color: colors.textInverse }]}>↩ Revise & Resubmit</Text>
                         </TouchableOpacity>
                       )}
 
@@ -1772,10 +1823,10 @@ export default function QuestsScreen() {
                           GP-quest card ("Decline") when this is that same choice */}
                       {canKidDecline && (
                         <TouchableOpacity
-                          style={[s.actionBtn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#EF4444' }]}
+                          style={[s.actionBtn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.danger }]}
                           onPress={() => setDeclineTarget({ id: q.id, title: q.title, memberId: undefined })}
                         >
-                          <Text style={[s.actionBtnText, { color: '#EF4444' }]}>{canAcceptGp ? 'Decline' : "Can't do this"}</Text>
+                          <Text style={[s.actionBtnText, { color: colors.danger }]}>{canAcceptGp ? 'Decline' : "Can't do this"}</Text>
                         </TouchableOpacity>
                       )}
 
@@ -1787,16 +1838,16 @@ export default function QuestsScreen() {
                       {canApprove && q.participants.length <= 1 && (
                         <>
                           <TouchableOpacity
-                            style={[s.actionBtn, { flex: 1, backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#EF4444' }]}
+                            style={[s.actionBtn, { flex: 1, backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.danger }]}
                             onPress={() => setDeclineTarget({ id: q.id, title: q.title, memberId: undefined })}
                           >
-                            <Text style={[s.actionBtnText, { color: '#EF4444' }]}>↩ Redo</Text>
+                            <Text style={[s.actionBtnText, { color: colors.danger }]}>↩ Redo</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
-                            style={[s.actionBtn, { flex: 2, backgroundColor: '#059669' }]}
+                            style={[s.actionBtn, { flex: 2, backgroundColor: colors.success }]}
                             onPress={() => approveQuest(q.id, activeMember?.id ?? '')}
                           >
-                            <Text style={[s.actionBtnText, { color: '#fff' }]}>✓ Approve</Text>
+                            <Text style={[s.actionBtnText, { color: colors.textInverse }]}>✓ Approve</Text>
                           </TouchableOpacity>
                         </>
                       )}
@@ -1811,7 +1862,7 @@ export default function QuestsScreen() {
 
                       {/* Parent/Senior view of open bounty — show claimant count vs cap */}
                       {isPoolCard && isParentOrSenior && (
-                        <View style={[s.paidBadge, { backgroundColor: isDark ? '#1C1000' : '#FFFBEB', borderColor: BRAND.amber + '50' }]}>
+                        <View style={[s.paidBadge, { backgroundColor: colors.warningLight, borderColor: BRAND.amber + '50' }]}>
                           <Text style={[s.paidText, { color: BRAND.amber }]}>
                             {q.participants.length === 0
                               ? 'Waiting for a kid to claim'
@@ -1870,33 +1921,19 @@ export default function QuestsScreen() {
                           style={[s.actionBtn, { backgroundColor: BRAND.teal }]}
                           onPress={() => openSubmitSheet(q)}
                         >
-                          <Text style={[s.actionBtnText, { color: '#fff' }]}>Done · Submit</Text>
+                          <Text style={[s.actionBtnText, { color: colors.textInverse }]}>Done · Submit</Text>
                         </TouchableOpacity>
                       )}
 
-                      {/* Completed badge — only when ALL participants approved */}
-                      {isDoneCard && (
-                        <View style={[s.paidBadge, { backgroundColor: isDark ? '#064E3B' : '#D1FAE5', borderColor: isDark ? '#10B981' : '#6EE7B7' }]}>
-                          <I.CheckCircle c="#10B981" />
-                          <Text style={[s.paidText, { color: '#10B981' }]}>
-                            All done · {q.participants.length > 1 ? `${q.participants.length} kids paid` : `+${q.coins}🪙 paid`}
-                          </Text>
-                        </View>
-                      )}
+                      {/* "All done · paid" moved up into the collapsed header
+                          (bottom-right, next to the coin/due chips) — no
+                          longer duplicated down here in the action strip. */}
 
-                      {/* Parent: edit button */}
-                      {canEdit && !canClaim && !isDoneCard && (
-                        <TouchableOpacity onPress={() => setEditTarget(q)}
-                          style={{ flex: 1, alignItems: 'flex-end' }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
-                            backgroundColor: accentColor + '18', borderRadius: 8,
-                            paddingHorizontal: 10, paddingVertical: 5,
-                            borderWidth: 1, borderColor: accentColor + '35' }}>
-                            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: accentColor }}>✏️ Edit</Text>
-                          </View>
-                        </TouchableOpacity>
-                      )}
-                    </View>{/* action strip */}
+                      {/* Edit is reachable via long-press on the card itself
+                          (CollapsibleQuestCard's onLongPress) — no separate
+                          button needed, one less thing competing for space. */}
+                    </View>
+                    )}{/* action strip */}
                   </CollapsibleQuestCard>
                   </Swipeable>
                   </View>
@@ -1911,7 +1948,7 @@ export default function QuestsScreen() {
         visible={!!submitTarget}
         onClose={closeSubmitSheet}
         title="Submit quest"
-        subtitle={submitTarget?.photoRequired ? 'A photo is required for this quest.' : 'Add a completion note or photo if helpful.'}
+        subtitle={submitTarget?.photoRequired ? 'A photo is required for this chore.' : 'Add a completion note or photo if helpful.'}
         accentColor={BRAND.purple}
         minHeight="75%"
         maxHeight="75%"
@@ -2005,7 +2042,34 @@ export default function QuestsScreen() {
 
       {/* Parent-only: Add Quest modal */}
       {isParent && (
-        <AddQuestModal visible={showAddModal} onClose={() => setShowAddModal(false)} activeMemberId={activeMember?.id ?? ''} />
+        <AddQuestModal visible={showAddModal}
+          onClose={() => { setShowAddModal(false); setAddPrefill(undefined); }}
+          activeMemberId={activeMember?.id ?? ''}
+          prefill={addPrefill ? {
+            title: addPrefill.title,
+            coins: addPrefill.coins,
+            assignedToId: addPrefill.memberId,
+            photoRequired: addPrefill.photoRequired,
+            dueDate: addPrefill.startAt ? addPrefill.startAt.slice(0, 10) : undefined,
+          } : undefined}
+        />
+      )}
+
+      {/* "+" Quest button opens the Speak it/Type it chooser first, matching
+          the Hub's own quick-action entry point. */}
+      {isParent && (
+        <AddIntakeChooser
+          visible={showAddChooser}
+          kind="quest"
+          members={members}
+          activeMemberId={activeMember?.id ?? ''}
+          onClose={() => setShowAddChooser(false)}
+          onTypeManually={(prefill) => {
+            setShowAddChooser(false);
+            setAddPrefill(prefill);
+            setShowAddModal(true);
+          }}
+        />
       )}
 
       {/* Grandparent: Sponsor Quest modal — same CreateQuestModal +

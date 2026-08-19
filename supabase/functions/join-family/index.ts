@@ -3,8 +3,14 @@
 // Validates the code, creates the member row in the family,
 // and returns the family + member data so the app can log them in.
 //
-// No Supabase Auth account required — member is just a row in `members`.
-// PIN is set separately by the member after joining.
+// No Supabase Auth account of their OWN is required to join as a member —
+// PIN is what gates the profile client-side. But the calling DEVICE always
+// has a real Supabase Auth session by this point (app/_layout.tsx gates all
+// onboarding on it), and every RLS policy in this app checks
+// members.auth_user_id, not members.id — so this function stamps the
+// caller's auth.uid() onto the new member row. Multiple members (e.g. a kid
+// and a grandparent both joined from the same parent's device) can and will
+// share one auth_user_id; that's the intended model, not a bug.
 //
 // Deploy: supabase functions deploy join-family
 // Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -41,6 +47,20 @@ serve(async (req) => {
 
     if (!code || !name || !role || !avatar) {
       return json({ error: 'code, name, role, avatar required' }, 400);
+    }
+
+    // Caller's own Supabase Auth session — the app only ever calls this
+    // function after onboarding's session gate, so this should always be
+    // present. Falls back to null (member joins with no auth_user_id) rather
+    // than hard-failing, so a client that somehow lacks a session still gets
+    // a member row — just one that'll need a backfill later.
+    const authHeader = req.headers.get('Authorization');
+    let callerAuthUserId: string | null = null;
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.slice('Bearer '.length);
+      const anonClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!);
+      const { data: { user } } = await anonClient.auth.getUser(token);
+      callerAuthUserId = user?.id ?? null;
     }
 
     const supabase = createClient(
@@ -85,6 +105,7 @@ serve(async (req) => {
         avatar:          avatar,
         color:           color ?? '#9261C7',
         family_id:       invite.family_id,
+        auth_user_id:    callerAuthUserId,
         coins:           0,
         xp:              0,
         level:           1,

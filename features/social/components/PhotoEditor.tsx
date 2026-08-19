@@ -250,6 +250,14 @@ const STICKER_PACKS: StickerPack[] = [
 ];
 
 // ─── Frame definitions ─────────────────────────────────────────────────────────
+// NOTE: colors here are intentionally hardcoded, not theme tokens. This is a
+// user-facing "pick a decorative frame style" swatch grid (Paw Prints, Summer,
+// Birthday, ...) — each frame's border/banner colors are the distinct choice
+// being offered, analogous to an avatar/event color picker. They must stay
+// fixed regardless of app light/dark mode so a chosen frame always renders
+// the same way. Same reasoning applies to TEXT_COLORS / CAPTION_BGS /
+// CAPTION_COLS below, which are literal color-picker swatches for user text
+// and caption styling.
 interface FrameDef {
   id: string; label: string; emoji: string;
   borderColor: string; borderWidth: number; cornerEmoji: string;
@@ -1109,6 +1117,13 @@ function LayerRow({
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
+// NOTE: this editor's chrome (root/toolbar/panel backgrounds, borders, white
+// text/icons) is intentionally fixed-dark and does NOT use useTheme() —
+// consistent with other full-screen photo/video editors and viewers in this
+// app (e.g. features/vault/tabs/HealthTab.tsx's redact editor,
+// features/memories/ slideshow/video modals), which stay dark regardless of
+// the app's light/dark mode setting so the editing surface always reads like
+// a camera app overlay.
 const s = StyleSheet.create({
   root:       { flex: 1, backgroundColor: '#0D0D0D', alignItems: 'center' },
 

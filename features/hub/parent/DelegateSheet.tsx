@@ -1,7 +1,6 @@
 import { View, Text, Pressable } from 'react-native';
 import { Check, HeartHandshake } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
-import { BRAND } from '@/components/FamilyCubeLogo';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import { useChoreStore } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
@@ -29,7 +28,7 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
       onClose={onClose}
       title={`Delegate: ${target?.choreTitle ?? ''}`}
       subtitle="Assign to a parent"
-      accentColor={BRAND.teal}
+      accentColor={colors.parent}
       minHeight="40%"
       maxHeight="70%">
       <View style={{ gap: 10 }}>

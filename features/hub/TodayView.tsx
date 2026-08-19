@@ -1,21 +1,98 @@
 /**
  * TodayView — calm, animated top section of the parent Hub.
  * Lap-timer feel: each event is a clean row on a vertical rail.
+ *
+ * Split into two standalone pieces so ParentView can slot Quick Actions
+ * between them (matching the mock's Greeting → Quick Actions → Timeline
+ * order): GreetingHeader (name/date/summary chip, no card boundary) and
+ * TodayView itself (now just the Timeline + Approve strip, wrapped in the
+ * same collapsible SectionCard shell as every other Hub section).
  */
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, Pressable, ScrollView,
 } from 'react-native';
 import { router } from 'expo-router';
-import { BRAND } from '@/components/FamilyCubeLogo';
+import { Clock, Briefcase, CheckCircle2 } from 'lucide-react-native';
+import { SectionCard } from './hubComponents';
 import { TimelineCard } from './hubComponents';
-import { TYPO } from '@/constants/theme';
+import { TYPO, LETTER_SPACING } from '@/constants/theme';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import type { Quest } from '@/store/questStore';
 import { useEventStore } from '@/store/eventStore';
 import { localDateStr } from '@/lib/dates';
 import { isWorkEvent, hoursUntilEvent } from './hubUtils';
+
+// ── Greeting header — sits on the page background, no card boundary ────────
+
+export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCount = 0 }: {
+  colors: any; isDark: boolean; activeMember: FamilyMember;
+  // Action Needed + Household Backlog + Chore Reviews counts, lifted from
+  // ParentView — without this, "All clear" only looked at today's calendar
+  // events and could say "clear" while real items sat in sections below it.
+  // Does NOT include quest/chore approvals — those are counted below via
+  // useQuestStore directly, since ParentView's own pendingReviews figure
+  // reads the exact same underlying chores array and would double-count.
+  otherAttentionCount?: number;
+}) {
+  const { familyName } = useFamilyStore();
+  const { quests } = useQuestStore();
+  const { events } = useEventStore();
+  const firstName = activeMember.name.split(' ')[0];
+  const today = localDateStr(new Date());
+
+  const now = new Date();
+  const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
+  const monthDay = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+
+  const todayEventsCount = useMemo(() =>
+    events.filter(e => e.date === today && !isWorkEvent(e)).length,
+    [events, today]
+  );
+  const awaitingApprovalCount = useMemo(() =>
+    quests.filter(q => q.status === 'pending_approval').length,
+    [quests]
+  );
+  const needsAttention = awaitingApprovalCount + events.filter(e => e.approvalPending && !isWorkEvent(e)).length + otherAttentionCount;
+  const summaryText = todayEventsCount === 0 && needsAttention === 0
+    ? 'All clear ✓'
+    : needsAttention > 0
+      ? `${todayEventsCount} event${todayEventsCount !== 1 ? 's' : ''} today · ${needsAttention} need${needsAttention === 1 ? 's' : ''} attention`
+      : `${todayEventsCount} event${todayEventsCount !== 1 ? 's' : ''} today`;
+
+  return (
+    <View style={{ paddingHorizontal: 16, marginTop: 10, marginBottom: 20 }}>
+      <Text style={{
+        fontSize: 24, fontWeight: '800',
+        color: colors.textPrimary,
+        letterSpacing: LETTER_SPACING.display,
+      }}>
+        {getGreeting(firstName)}
+      </Text>
+      <Text style={{
+        fontSize: TYPO.label, fontWeight: '600',
+        color: colors.textSecondary,
+        marginTop: 4,
+      }}>
+        {familyName.replace(/\s*family$/i, '')} Family  ·  {weekday}, {monthDay}
+      </Text>
+      <View style={{
+        marginTop: 14,
+        backgroundColor: colors.primaryLight,
+        borderRadius: 12, paddingHorizontal: 14, paddingVertical: 9,
+        alignSelf: 'flex-start',
+      }}>
+        <Text style={{
+          fontSize: TYPO.label, fontWeight: '700',
+          color: colors.primaryText,
+        }}>
+          {summaryText}
+        </Text>
+      </View>
+    </View>
+  );
+}
 
 // ── Time-of-day helpers ───────────────────────────────────────────────────────
 
@@ -43,28 +120,33 @@ interface TodayViewProps {
   onAddQuest?: () => void;
   onAddEvent?: () => void;
   onAddGrocery?: () => void;
+  // eventId → reason, from ParentView's conflict detection — surfaced in
+  // each TimelineCard's detail sheet when that specific event has one.
+  conflictReasons?: Map<string, string>;
+  // Other parents' Work events today (never this viewer's own — a parent
+  // doesn't need to be told about their own work block) — read-only, just
+  // enough to coordinate around ("don't book me during Alex's work hours").
+  otherParentsWorkToday?: { id: string; title: string; time?: string; ownerName: string }[];
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Main component — now just the Timeline + Approve strip, wrapped in the
+// same collapsible SectionCard shell every other Hub section uses. Greeting
+// moved out to GreetingHeader above so ParentView can place Quick Actions
+// between the two, matching the mock's Greeting → Quick Actions → Timeline
+// order. ─────────────────────────────────────────────────────────────────
 
 export function TodayView({
   colors, isDark, activeMember, members,
-  onAddQuest, onAddEvent, onAddGrocery,
+  onAddQuest, onAddEvent, onAddGrocery, conflictReasons, otherParentsWorkToday = [],
 }: TodayViewProps) {
-  const { familyName } = useFamilyStore();
   const { quests, approveQuest } = useQuestStore();
   const { events, updateEvent } = useEventStore();
 
   const [showPast, setShowPast] = useState(false);
 
   const allNames   = members.map(m => m.name);
-  const firstName  = activeMember.name.split(' ')[0];
   const today      = localDateStr(new Date());
-
-  // Weekday + date string
   const now = new Date();
-  const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
-  const monthDay = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 
   // Today's non-work events
   const todayEvents = useMemo(() =>
@@ -80,90 +162,57 @@ export function TodayView({
     [quests]
   );
 
-  // Smart summary
-  const needsAttention = awaitingApproval.length + events.filter(e => e.approvalPending && !isWorkEvent(e)).length;
-  const summaryText = todayEvents.length === 0
-    ? 'All clear ✓'
-    : needsAttention > 0
-      ? `${todayEvents.length} event${todayEvents.length !== 1 ? 's' : ''} today · ${needsAttention} need${needsAttention === 1 ? 's' : ''} attention`
-      : `${todayEvents.length} event${todayEvents.length !== 1 ? 's' : ''} today`;
+  const upcoming = todayEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) > -0.5);
+  const past     = todayEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) <= -0.5);
 
   return (
-    <View style={{ marginBottom: 8 }}>
-      {/* ── Header — sits on the page background, no card boundary ── */}
-      <View style={{ paddingHorizontal: 16, marginTop: 8, marginBottom: 16 }}>
-        <Text style={{
-          fontSize: 22, fontWeight: '800',
-          color: colors.textPrimary,
-          letterSpacing: -0.3,
-        }}>
-          {getGreeting(firstName)}
-        </Text>
-        <Text style={{
-          fontSize: TYPO.label, fontWeight: '600',
-          color: colors.textSecondary,
-          marginTop: 2,
-        }}>
-          {familyName.replace(/\s*family$/i, '')} Family  ·  {weekday}, {monthDay}
-        </Text>
-        <View style={{
-          marginTop: 12,
-          backgroundColor: isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.08)',
-          borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7,
-          alignSelf: 'flex-start',
-        }}>
-          <Text style={{
-            fontSize: TYPO.label, fontWeight: '700',
-            color: isDark ? '#C7D2FE' : '#4338CA',
-          }}>
-            {summaryText}
-          </Text>
-        </View>
-      </View>
-
-      {/* ── Today timeline ── */}
-      <View style={{ paddingHorizontal: 16, marginBottom: 16 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 10 }}>
-          <View>
-            <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary }}>Today</Text>
-            <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 1 }}>
-              {now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-            </Text>
-          </View>
-          <Pressable onPress={() => router.push('/(tabs)/calendar')}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>Full schedule →</Text>
-          </Pressable>
-        </View>
-
-        {(() => {
-          const upcoming = todayEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) > -0.5);
-          const past     = todayEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) <= -0.5);
-
-          if (todayEvents.length === 0) return (
+    <View style={{ paddingHorizontal: 16 }}>
+      <SectionCard
+        icon={<Clock size={16} color={colors.primary} />}
+        title="Today's Timeline"
+        subtitle={now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+        accent={colors.primary}
+        badge={upcoming.length} badgeLabel={upcoming.length === 1 ? 'Event' : 'Events'} badgeColor={colors.primary}
+        seeAll={() => router.push('/(tabs)/calendar')} seeAllLabel="Full schedule →"
+        collapsible defaultExpanded={todayEvents.length > 1}
+        colors={colors} isDark={isDark}>
+        <View style={{ gap: 8 }}>
+          {/* Read-only — the other parent's work blocks, just enough to
+              coordinate around without exposing their actual work calendar.
+              Never shows the viewer's own Work events (see otherParentsWorkToday). */}
+          {otherParentsWorkToday.length > 0 && (
+            <View style={{ gap: 4, marginBottom: 2 }}>
+              {otherParentsWorkToday.map(w => (
+                <View key={w.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
+                  backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 10,
+                  paddingHorizontal: 10, paddingVertical: 6 }}>
+                  <Briefcase size={12} color={colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
+                    {w.ownerName} — Work{w.time ? ` · ${w.time}` : ''}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+          {todayEvents.length === 0 ? (
             <View style={{
               flexDirection: 'row', alignItems: 'center', gap: 8,
               backgroundColor: isDark ? colors.card : '#fff', borderRadius: 14,
               borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
-              paddingVertical: 12, paddingHorizontal: 14, marginBottom: 12,
+              paddingVertical: 12, paddingHorizontal: 14,
             }}>
               <Text style={{ fontSize: 16 }}>✨</Text>
               <Text style={{ fontSize: TYPO.label, fontWeight: '600', color: colors.textTertiary }}>
                 Nothing on the calendar today — enjoy the breathing room.
               </Text>
             </View>
-          );
-
-          return (
+          ) : (
             <>
               {upcoming.length === 0 ? (
-                <View style={{
-                  backgroundColor: isDark ? colors.card : '#f0fdf4',
-                  borderRadius: 14, padding: 14, marginBottom: 8,
-                  flexDirection: 'row', alignItems: 'center', gap: 10,
-                }}>
-                  <Text style={{ fontSize: 18 }}>✅</Text>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#10B981' }}>
-                    All done for today!
+                <View style={{ alignItems: 'center', paddingVertical: 12, gap: 4 }}>
+                  <CheckCircle2 size={18} color={colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center' }}>
+                    All done for today
                   </Text>
                 </View>
               ) : upcoming.map((ev, idx) => (
@@ -172,6 +221,7 @@ export function TodayView({
                   colors={colors} isDark={isDark}
                   updateEvent={updateEvent} activeName={activeMember.name}
                   isFirst={idx === 0} isLast={idx === upcoming.length - 1}
+                  conflictReason={conflictReasons?.get(ev.id)}
                 />
               ))}
 
@@ -197,53 +247,52 @@ export function TodayView({
                 </>
               )}
             </>
-          );
-        })()}
-      </View>
+          )}
 
-      {/* ── Quest approvals strip ── */}
-      {awaitingApproval.length > 0 && (
-        <View style={{ marginBottom: 16 }}>
-          <Text style={{
-            fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
-            textTransform: 'uppercase', letterSpacing: 0.8,
-            marginBottom: 8, marginHorizontal: 16,
-          }}>
-            Approve
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
-          >
-            {awaitingApproval.map(q => {
-              const kid = members.find(m => m.id === q.assignedToId);
-              return (
-                <Pressable
-                  key={q.id}
-                  onPress={() => approveQuest(q.id, activeMember.id)}
-                  style={{
-                    borderRadius: 20,
-                    backgroundColor: BRAND.purple + '15',
-                    borderWidth: 1, borderColor: BRAND.purple + '40',
-                    paddingHorizontal: 14, paddingVertical: 10,
-                    flexDirection: 'row', alignItems: 'center', gap: 8,
-                  }}
-                >
-                  <Text style={{ fontSize: 16 }}>📸</Text>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>
-                    {q.title}{kid ? ` — ${kid.name.split(' ')[0]}` : ''}
-                  </Text>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>
-                    Approve →
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+          {/* Quest approvals strip */}
+          {awaitingApproval.length > 0 && (
+            <View style={{ marginTop: 4 }}>
+              <Text style={{
+                fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                textTransform: 'uppercase', letterSpacing: 0.8,
+                marginBottom: 8,
+              }}>
+                Approve
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 10 }}
+              >
+                {awaitingApproval.map(q => {
+                  const kid = members.find(m => m.id === q.assignedToId);
+                  return (
+                    <Pressable
+                      key={q.id}
+                      onPress={() => approveQuest(q.id, activeMember.id)}
+                      style={{
+                        borderRadius: 20,
+                        backgroundColor: colors.primary + '15',
+                        borderWidth: 1, borderColor: colors.primary + '40',
+                        paddingHorizontal: 14, paddingVertical: 10,
+                        flexDirection: 'row', alignItems: 'center', gap: 8,
+                      }}
+                    >
+                      <Text style={{ fontSize: 16 }}>📸</Text>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.primary }}>
+                        {q.title}{kid ? ` — ${kid.name.split(' ')[0]}` : ''}
+                      </Text>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.primary }}>
+                        Approve →
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
         </View>
-      )}
-
+      </SectionCard>
     </View>
   );
 }

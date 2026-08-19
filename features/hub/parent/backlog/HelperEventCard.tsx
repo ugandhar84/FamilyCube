@@ -1,7 +1,7 @@
+import { useState } from 'react';
 import { View, Text, Pressable, Alert } from 'react-native';
 import { Medal, HeartPulse, BookOpen, Car, Calendar, Clock, CheckCircle2, Repeat, StickyNote } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
-import { BRAND } from '@/components/FamilyCubeLogo';
 import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
@@ -23,15 +23,21 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
 }) {
   const CatIcon = ev.category === 'Sports' ? Medal : ev.category === 'Medical' ? HeartPulse : ev.category === 'Study' ? BookOpen : ev.category === 'Ride' ? Car : Calendar;
   const kidName = members.find(m => m.id === ev.memberId)?.name.split(' ')[0] ?? '';
+  const [notesExpanded, setNotesExpanded] = useState(false);
 
   return (
     <View style={{ borderRadius: 14, borderWidth: 1,
-      borderColor: BRAND.teal + '40', backgroundColor: isDark ? '#0D2020' : '#F0FDFA',
+      borderColor: isDark ? colors.border : 'rgba(225,218,203,0.7)',
+      backgroundColor: isDark ? colors.card : '#FFFFFF',
+      borderLeftWidth: 3, borderLeftColor: colors.parent,
+      shadowColor: isDark ? '#000' : 'rgba(80,60,40,0.10)',
+      shadowOpacity: isDark ? 0.4 : 1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
+      elevation: isDark ? 3 : 2,
       padding: 12, gap: 4 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <CatIcon size={15} color={BRAND.teal} />
+        <CatIcon size={15} color={colors.parent} />
         <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{ev.title}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: ev.helperStatus === 'confirmed' ? `${CONFIRMED_GREEN}20` : '#F59E0B20',
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: ev.helperStatus === 'confirmed' ? `${CONFIRMED_GREEN}20` : colors.warning + '20',
           borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
           {ev.helperStatus === 'confirmed' ? <CheckCircle2 size={10} color={CONFIRMED_GREEN} /> : <Clock size={10} color={PENDING_AMBER} />}
           <Text style={{ fontSize: TYPO.micro, fontWeight: '700',
@@ -47,10 +53,13 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
         {ev.dropLocation ? ` → ${ev.dropLocation}` : ev.location ? ` → ${ev.location}` : ''}
       </Text>
       {ev.notes ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 24 }}>
-          <StickyNote size={10} color={colors.textTertiary} />
-          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={1}>{ev.notes}</Text>
-        </View>
+        <Pressable onPress={() => setNotesExpanded(v => !v)}
+          style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginLeft: 24 }}>
+          <StickyNote size={10} color={colors.textTertiary} style={{ marginTop: 2 }} />
+          <Text style={{ flex: 1, fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={notesExpanded ? undefined : 1}>
+            {ev.notes}
+          </Text>
+        </Pressable>
       ) : null}
       {ev.helperStatus !== 'confirmed' && (
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 6, marginLeft: 24 }}>
@@ -70,10 +79,10 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                   ]
                 );
               }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: BRAND.teal + '20', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12,
-                borderWidth: 1, borderColor: BRAND.teal + '40' }}>
-              <Repeat size={12} color={BRAND.teal} />
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.teal }}>Take Over</Text>
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.parent + '20', borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12,
+                borderWidth: 1, borderColor: colors.parent + '40' }}>
+              <Repeat size={12} color={colors.parent} />
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.parent }}>Take Over</Text>
             </Pressable>
           )}
           {ev.helper === active.name && (

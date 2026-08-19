@@ -65,6 +65,16 @@ export interface FamilyEvent {
   // driver can set it, whichever acts first.
   pickupConfirmedAt?: string;
   pickupConfirmedBy?: string;
+
+  // Audit trail — who created/last-edited/deleted this event, and when.
+  // For triage/reference, not shown as primary UI; updatedBy/updatedAt are
+  // stamped explicitly in updateEvent() rather than trigger-maintained, so
+  // a bulk/system sync can choose not to touch them.
+  createdBy?: string;
+  createdAt?: string;
+  updatedBy?: string;
+  updatedAt?: string;
+  deletedBy?: string;
 }
 
 export type StripMap = Record<string, string[]>;   // date → unique category[]
@@ -92,6 +102,14 @@ interface EventState {
   // In-memory SWR cache (date → entry)
   _dayCache: Record<string, DayCacheEntry>;
 
+  // Range fetch (Week/Agenda views) — full rows across a date span, not
+  // paginated like day detail since these windows (a week, a few upcoming
+  // weeks) are small. Keyed by "from:to" so Week and Agenda's differently-
+  // sized windows don't thrash a single shared cache slot.
+  rangeEvents:  FamilyEvent[];
+  rangeLoading: boolean;
+  _rangeCache:  Record<string, { events: FamilyEvent[]; fetchedAt: number }>;
+
   // Legacy alias used by CalendarScreen without changes
   events: FamilyEvent[];
   loaded: boolean;
@@ -100,6 +118,7 @@ interface EventState {
   selectDate:    (date: string) => Promise<void>;
   loadMoreDay:   () => Promise<void>;
   loadStrip:     (dates: string[]) => Promise<void>;
+  loadRange:     (from: string, to: string) => Promise<void>;
   prefetchDate:  (date: string) => void;
 
   // Compat shims
@@ -131,6 +150,17 @@ function getFamilyId(): string | null {
     const s = useFamilyStore.getState();
     const m = s.members.find((m: any) => m.id === s.activeMemberId) ?? s.members[0];
     return (m as any)?.familyId ?? null;
+  } catch { return null; }
+}
+
+// Same reach-into-useFamilyStore pattern as getFamilyId() above — avoids
+// threading an actor id through every addEvent/updateEvent/deleteEvent call
+// site across the app just to stamp who made the change.
+function getActiveMemberId(): string | null {
+  try {
+    const { useFamilyStore } = require('@/store/familyStore');
+    const s = useFamilyStore.getState();
+    return s.activeMemberId ?? s.members[0]?.id ?? null;
   } catch { return null; }
 }
 
@@ -179,6 +209,11 @@ export function fromRow(row: any): FamilyEvent {
     driverStatus:           row.driver_status ?? undefined,
     pickupConfirmedAt:      row.pickup_confirmed_at ?? undefined,
     pickupConfirmedBy:      row.pickup_confirmed_by ?? undefined,
+    createdBy:              row.created_by ?? undefined,
+    createdAt:              row.created_at ?? undefined,
+    updatedBy:              row.updated_by ?? undefined,
+    updatedAt:              row.updated_at ?? undefined,
+    deletedBy:              row.deleted_by ?? undefined,
   };
 }
 
@@ -219,6 +254,11 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     driver_status:              ev.driverStatus ?? null,
     pickup_confirmed_at:        ev.pickupConfirmedAt ?? null,
     pickup_confirmed_by:        ev.pickupConfirmedBy ?? null,
+    created_by:                 ev.createdBy ?? null,
+    created_at:                 ev.createdAt ?? null,
+    updated_by:                 ev.updatedBy ?? null,
+    updated_at:                 ev.updatedAt ?? null,
+    deleted_by:                 ev.deletedBy ?? null,
   };
 }
 
@@ -354,6 +394,9 @@ export const useEventStore = create<EventState>((set, get) => ({
   stripMap:    {},
   stripLoading: false,
   _dayCache:   {},
+  rangeEvents:  [],
+  rangeLoading: false,
+  _rangeCache:  {},
   events:      [],   // legacy alias
   loaded:      false, // legacy alias
 
@@ -515,6 +558,49 @@ export const useEventStore = create<EventState>((set, get) => ({
     }
   },
 
+  // ── loadRange — full event rows across a date span (Week/Agenda views) ─────
+  // Unlike day detail this isn't paginated — a week or a few upcoming weeks
+  // is a small enough result set to fetch in one shot. SWR-cached per exact
+  // [from,to] key so switching between Week's 7-day window and Agenda's
+  // wider window doesn't evict each other.
+  loadRange: async (from: string, to: string) => {
+    const key = `${from}:${to}`;
+    const cached = get()._rangeCache[key];
+    const isFresh = cached && Date.now() - cached.fetchedAt < DAY_TTL_MS;
+    if (cached) set({ rangeEvents: cached.events });
+    if (isFresh) return;
+
+    const fetchKey = `range:${key}`;
+    if (_inFlight.has(fetchKey)) return;
+    _inFlight.add(fetchKey);
+    set({ rangeLoading: true });
+    try {
+      const familyId = getFamilyId();
+      if (!familyId) { set({ rangeLoading: false }); return; }
+
+      const { data, error } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('family_id', familyId)
+        .gte('date', from)
+        .lte('date', to)
+        .is('deleted_at', null)
+        .order('date', { ascending: true })
+        .order('start_time', { ascending: true, nullsFirst: true });
+
+      if (error || !data) { set({ rangeLoading: false }); return; }
+
+      const rangeEvents = data.map(fromRow);
+      const nextCache = { ...get()._rangeCache, [key]: { events: rangeEvents, fetchedAt: Date.now() } };
+      set({ rangeEvents, rangeLoading: false, _rangeCache: nextCache });
+    } catch (e) {
+      console.warn('[eventStore] loadRange failed', e);
+      set({ rangeLoading: false });
+    } finally {
+      _inFlight.delete(fetchKey);
+    }
+  },
+
   // ── prefetchDate — silent background load into SWR cache ──────────────────
   prefetchDate: (date: string) => {
     const existing = get()._dayCache[date];
@@ -546,7 +632,11 @@ export const useEventStore = create<EventState>((set, get) => ({
 
   // ── Mutations ─────────────────────────────────────────────────────────────
   addEvent: (e) => {
-    const event: FamilyEvent = { ...e, id: 'ev' + Date.now() };
+    const event: FamilyEvent = {
+      ...e, id: 'ev' + Date.now(),
+      createdBy: e.createdBy ?? getActiveMemberId() ?? undefined,
+      createdAt: e.createdAt ?? new Date().toISOString(),
+    };
 
     // Optimistic: add to current day if same date
     if (event.date === get().currentDate) {
@@ -555,6 +645,13 @@ export const useEventStore = create<EventState>((set, get) => ({
       const entry = get()._dayCache[event.date];
       if (entry) set({ _dayCache: { ...get()._dayCache, [event.date]: { ...entry, events: next } } });
     }
+
+    // Optimistic: add to rangeEvents (Week/Agenda) if it falls in the
+    // currently loaded window — safe to always append+resort since a date
+    // outside the loaded range just wouldn't be shown by those views' own
+    // filtering anyway.
+    const rangeNext = sortByTime([...get().rangeEvents, event]);
+    set({ rangeEvents: rangeNext });
 
     // Optimistic: update strip map
     const cat = event.category;
@@ -572,6 +669,7 @@ export const useEventStore = create<EventState>((set, get) => ({
         // Rollback
         const rolledBack = get().dayEvents.filter(e => e.id !== event.id);
         set({ dayEvents: rolledBack, events: rolledBack });
+        set({ rangeEvents: get().rangeEvents.filter(e => e.id !== event.id) });
       }
     });
 
@@ -579,10 +677,26 @@ export const useEventStore = create<EventState>((set, get) => ({
   },
 
   updateEvent: (id, updates) => {
+    const prevEvent = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
+    // A parent-assigned ride that gets declined shouldn't just sit there —
+    // auto-open it to the GP/Teen pool so it's immediately claimable by
+    // someone else, instead of requiring the creating parent to notice the
+    // decline and manually flip the toggles themselves.
+    const justDeclined = updates.helperStatus === 'rejected' && prevEvent?.helperStatus !== 'rejected';
+    const autoOpenOnDecline = justDeclined && prevEvent?.category === 'Ride'
+      ? { isOpenToGrandparents: true, isOpenToTeens: true }
+      : {};
+    const stamped = {
+      ...autoOpenOnDecline,
+      ...updates,
+      updatedBy: updates.updatedBy ?? getActiveMemberId() ?? undefined,
+      updatedAt: updates.updatedAt ?? new Date().toISOString(),
+    };
     const prev = get().dayEvents;
-    const next = sortByTime(prev.map(e => e.id === id ? { ...e, ...updates } : e));
+    const next = sortByTime(prev.map(e => e.id === id ? { ...e, ...stamped } : e));
     set({ dayEvents: next, events: next });
-    const updated = next.find(e => e.id === id);
+    set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? { ...e, ...stamped } : e)) });
+    const updated = next.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
     if (updated) {
       dbUpdate(id, toRow(updated));
     }
@@ -592,7 +706,8 @@ export const useEventStore = create<EventState>((set, get) => ({
     const prev = get().dayEvents;
     const next = prev.filter(e => e.id !== id);
     set({ dayEvents: next, events: next });
-    dbUpdate(id, { deleted_at: new Date().toISOString() });
+    set({ rangeEvents: get().rangeEvents.filter(e => e.id !== id) });
+    dbUpdate(id, { deleted_at: new Date().toISOString(), deleted_by: getActiveMemberId() });
     // Also refresh strip for that date (category count may drop to zero)
     const ev = prev.find(e => e.id === id);
     if (ev?.date && ev.category) {

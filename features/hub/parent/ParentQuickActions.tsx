@@ -1,54 +1,40 @@
 import { View, Text, Pressable } from 'react-native';
-import { Sparkles, PlusCircle, Calendar, ShoppingCart } from 'lucide-react-native';
+import { Sparkles, ShieldCheck, CalendarPlus, ShoppingCart } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { TYPO } from '@/constants/theme';
-import { BRAND } from '@/components/FamilyCubeLogo';
 
-// Money-green — "Quest" quick-action icon accent, distinct from brand teal
-// used elsewhere in the hub. Not colors.success (which IS brand teal in
-// this app) — kept as one local constant.
-const MONEY_GREEN = '#10B981';
-// Sky-blue — "Grocery" quick-action icon accent, a distinct hue from the
-// brand palette; kept as one local constant instead of a bare hex.
-const SKY_BLUE = '#0ea5e9';
-
-export function ParentQuickActions({ colors, isDark, groceryCount, onScanFlyer }: {
+export function ParentQuickActions({ colors, isDark, groceryCount, onScanFlyer, onAddQuest, onAddEvent }: {
   colors: any; isDark: boolean; groceryCount: number; onScanFlyer: () => void;
+  // Open the real creation modal (manual form + voice record) right over
+  // the Hub, instead of just navigating to the Quests/Calendar tab and
+  // relying on the user to find the add button there themselves.
+  onAddQuest: () => void; onAddEvent: () => void;
 }) {
-  const tile = { flex: 1, borderRadius: 18, paddingVertical: 12, alignItems: 'center' as const, gap: 5 };
-  const secondaryTile = {
-    ...tile,
-    backgroundColor: isDark ? colors.surface : '#F1F5F9',
-    borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0',
-  };
-  const labelColor = isDark ? colors.textPrimary : '#334155';
+  // Kinfolk mock: each capsule gets its own soft-tinted background matching
+  // the section it deep-links to — not one solid tile + three identical greys.
+  const tiles = [
+    { key: 'scan', label: 'Scan Flyer', icon: Sparkles, tint: colors.accent, onPress: onScanFlyer },
+    { key: 'quest', label: 'New Chore', icon: ShieldCheck, tint: colors.parent, onPress: onAddQuest },
+    { key: 'event', label: 'Add Event', icon: CalendarPlus, tint: colors.kid, onPress: onAddEvent },
+    { key: 'grocery', label: groceryCount > 0 ? `${groceryCount} items` : 'Grocery', icon: ShoppingCart, tint: colors.primary, onPress: () => router.push('/(tabs)/grocery' as any) },
+  ];
 
   return (
-    <View style={{
-      flexDirection: 'row', gap: 8,
-      marginHorizontal: 16, marginBottom: 12,
-      backgroundColor: isDark ? colors.card : '#FFFFFF',
-      borderRadius: 24, padding: 10,
-      borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
-    }}>
-      <Pressable onPress={onScanFlyer} style={{ ...tile, backgroundColor: BRAND.purple }}>
-        <Sparkles size={18} color="#fff" />
-        <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Scan Flyer</Text>
-      </Pressable>
-      <Pressable onPress={() => router.push('/(tabs)/quests')} style={secondaryTile}>
-        <PlusCircle size={18} color={MONEY_GREEN} />
-        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: labelColor }}>Quest</Text>
-      </Pressable>
-      <Pressable onPress={() => router.push('/(tabs)/calendar')} style={secondaryTile}>
-        <Calendar size={18} color={BRAND.purple} />
-        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: labelColor }}>Event</Text>
-      </Pressable>
-      <Pressable onPress={() => router.push('/(tabs)/grocery' as any)} style={secondaryTile}>
-        <ShoppingCart size={18} color={SKY_BLUE} />
-        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: labelColor }} numberOfLines={1}>
-          {groceryCount > 0 ? `${groceryCount} items` : 'Grocery'}
-        </Text>
-      </Pressable>
+    <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 16, marginBottom: 20 }}>
+      {tiles.map(t => {
+        const Icon = t.icon;
+        return (
+          <Pressable key={t.key} onPress={t.onPress} style={{
+            flex: 1, borderRadius: 18, paddingVertical: 16, paddingHorizontal: 6, alignItems: 'center', gap: 7,
+            backgroundColor: isDark ? t.tint + '20' : t.tint + '14',
+          }}>
+            <Icon size={20} color={t.tint} />
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: t.tint }} numberOfLines={1}>
+              {t.label}
+            </Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }

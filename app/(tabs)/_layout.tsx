@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, usePathname } from 'expo-router';
 import {
   View, Text, StyleSheet, Pressable, Animated, Easing,
 } from 'react-native';
@@ -14,6 +14,8 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useHelpStore } from '@/store/helpStore';
+import { Sparkles } from 'lucide-react-native';
+import AskCubeChat from '@/components/AskCubeChat';
 
 // ── Tab icon name map ─────────────────────────────────────────────────────────
 const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
@@ -39,14 +41,14 @@ const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']>
 // same as every other role; this only changes what's one tap away in the bar.
 const TABS_DEFAULT = [
   { name: 'index',    label: 'Hub'      },
-  { name: 'quests',   label: 'Quests'   },
+  { name: 'quests',   label: 'Chores'   },
   { name: 'calendar', label: 'Schedule' },
   { name: 'chat',     label: 'Chat'     },
   { name: 'profile',  label: 'Hearth'   },
 ] as const;
 const TABS_SENIOR = [
   { name: 'index',    label: 'Hub'      },
-  { name: 'quests',   label: 'Quests'   },
+  { name: 'quests',   label: 'Chores'   },
   { name: 'calendar', label: 'Schedule' },
   { name: 'chat',     label: 'Chat'     },
   { name: 'memories', label: 'Memories' },
@@ -206,10 +208,15 @@ function CustomTabBar({ state, navigation }: any) {
 // ── Layout ────────────────────────────────────────────────────────────────────
 export default function TabLayout() {
   const { colors } = useTheme();
-  const { loaded: familyLoaded, loadFromStorage: loadFamily, members } = useFamilyStore();
+  const { loaded: familyLoaded, loadFromStorage: loadFamily, members, activeMemberId } = useFamilyStore();
   const { loaded: eventsLoaded, loadFromStorage: loadEvents } = useEventStore();
   const { loaded: questsLoaded, loadFromStorage: loadQuests } = useQuestStore();
   const { loaded: helpLoaded,   loadFromStorage: loadHelp   } = useHelpStore();
+  const [askCubeOpen, setAskCubeOpen] = useState(false);
+  const pathname = usePathname();
+  const onChatTab = pathname?.includes('/chat');
+  const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
+  const insets = useSafeAreaInsets();
 
   // Boot all stores once when the tab shell mounts — before any screen renders
   useEffect(() => {
@@ -258,6 +265,41 @@ export default function TabLayout() {
         <Tabs.Screen name="all-notifications"    options={{ href: null }} />
         <Tabs.Screen name="social-notifications" options={{ href: null }} />
       </Tabs>
+
+      {/* Ask Cube — floating agentic chat, reachable from every tab. Mounted
+          once here (not per-screen) so it overlays consistently regardless
+          of which tab is active. Parent-only: it can act broadly across the
+          household (grocery, meals, chores, schedule) on the parent's
+          behalf, which isn't something a kid/teen/GP account should be able
+          to trigger. */}
+      {activeMember?.role === 'parent' && (
+        <>
+          {/* Hidden on the Chat tab — a second AI entry point on top of the
+              family's own messaging surface was redundant/confusing there;
+              every other tab still gets the FAB. If it's already open when
+              the user navigates to Chat, leave it open rather than yanking
+              it away mid-conversation — only the launcher button hides. */}
+          {!onChatTab && (
+            <Pressable
+              onPress={() => setAskCubeOpen(true)}
+              style={{
+                position: 'absolute', right: 16, bottom: (insets.bottom || 16) + 74,
+                width: 52, height: 52, borderRadius: 26, backgroundColor: colors.primary,
+                alignItems: 'center', justifyContent: 'center',
+                shadowColor: colors.primary, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
+                elevation: 6,
+              }}>
+              <Sparkles size={22} color="#fff" />
+            </Pressable>
+          )}
+          <AskCubeChat
+            visible={askCubeOpen}
+            onClose={() => setAskCubeOpen(false)}
+            activeMember={activeMember}
+            members={members}
+          />
+        </>
+      )}
     </View>
   );
 }

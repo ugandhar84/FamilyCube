@@ -42,16 +42,16 @@ function Sparkline({ data, color }: { data: number[]; color: string }) {
 }
 
 // Funnel step
-function FunnelStep({ label, value, total, color, isLast = false }: {
-  label: string; value: number; total: number; color: string; isLast?: boolean;
+function FunnelStep({ label, value, total, color, sub, trackColor, isLast = false }: {
+  label: string; value: number; total: number; color: string; sub: string; trackColor: string; isLast?: boolean;
 }) {
   const p = pct(value, total);
   return (
     <View style={{ flex: 1, alignItems: 'center' }}>
       <Text style={[fn.val, { color }]}>{value.toLocaleString()}</Text>
-      <Text style={fn.label}>{label}</Text>
+      <Text style={[fn.label, { color: sub }]}>{label}</Text>
       {!isLast && (
-        <View style={fn.bar}>
+        <View style={[fn.bar, { backgroundColor: trackColor }]}>
           <View style={[fn.fill, { width: `${p}%`, backgroundColor: color }]} />
         </View>
       )}
@@ -72,7 +72,7 @@ function PulseTile({ emoji, label, value, color, card, sub }: any) {
 }
 
 // Management grid card
-function NavCard({ icon, label, sub: subtitle, color, badge, onPress, card, subColor, textColor }: any) {
+function NavCard({ icon, label, sub: subtitle, color, badge, onPress, card, subColor, textColor, badgeColor, badgeTextColor }: any) {
   return (
     <TouchableOpacity style={[nc.card, { backgroundColor: card }]} onPress={onPress} activeOpacity={0.75}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
@@ -80,8 +80,8 @@ function NavCard({ icon, label, sub: subtitle, color, badge, onPress, card, subC
           <Ionicons name={icon} size={20} color={color} />
         </View>
         {badge > 0 && (
-          <View style={nc.badge}>
-            <Text style={nc.badgeText}>{badge > 99 ? '99+' : badge}</Text>
+          <View style={[nc.badge, { backgroundColor: badgeColor }]}>
+            <Text style={[nc.badgeText, { color: badgeTextColor }]}>{badge > 99 ? '99+' : badge}</Text>
           </View>
         )}
       </View>
@@ -90,6 +90,27 @@ function NavCard({ icon, label, sub: subtitle, color, badge, onPress, card, subC
     </TouchableOpacity>
   );
 }
+
+// Admin-dashboard category palette. These are decorative per-section swatch
+// colors (nav grid, pulse tiles, dual/half cards) used purely to visually
+// differentiate the many admin sections/metrics — not app semantic states.
+// Where a swatch coincides with an existing semantic token (info/amber) we
+// reuse that token directly at the call site instead of duplicating it here.
+// The rest have no reasonable match among the ~6 semantic tokens in
+// constants/colors.ts, so they stay as documented fixed hex swatches.
+const DASH = {
+  purple:  '#7C5CBF', // Analytics / AI chains / DAU / Meals / Community
+  green:   '#16A34A', // Pets / consented / walks / active-pets stat
+  cyan:    '#0891B2', // Push / Grooming / Feedback
+  gray:    '#6B7280', // Media cleanup
+  indigo:  '#3C3489', // Settings
+  violet:  '#8B5CF6', // AI Chains icon accent
+  emerald: '#059669', // Pricing
+  red:     '#DC2626', // Blocked Words
+  teal:    '#26C6B0', // Species
+  goldDeep:'#C8860A', // Coins Config
+  orange:  '#FF8C55', // Sponsors / Family Links
+} as const;
 
 function fmtTime(d: Date) {
   return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
@@ -147,8 +168,8 @@ export default function AdminDashboard() {
     else loadedOnce.current = true;
   }, [load]));
 
-  const card = isDark ? '#1E1A2E' : '#FFFFFF';
-  const sub  = isDark ? '#9A8FC0' : '#8A7FAA';
+  const card = colors.card;
+  const sub  = colors.textSecondary;
   const bg   = colors.background;
 
   if (loading) {
@@ -164,27 +185,27 @@ export default function AdminDashboard() {
   const consentPct   = pct(st.usersWithConsent,  st.totalUsers);
   const healthOk     = st.pendingModeration === 0;
   const healthWarn   = st.pendingModeration > 0 && st.pendingModeration < 5;
-  const healthBadColor = healthOk ? '#16A34A' : healthWarn ? '#E8A320' : '#E24B4A';
+  const healthBadColor = healthOk ? colors.success : healthWarn ? colors.warning : colors.danger;
   const healthLabel    = healthOk ? 'All clear' : `${st.pendingModeration} pending`;
 
   const NAV = [
-    { icon: 'bar-chart-outline',     label: 'Analytics',       sub: 'Growth & engagement',       route: '/admin/analytics',         color: '#7C5CBF' },
-    { icon: 'people-outline',        label: 'Users',            sub: `${st.totalUsers} total`,    route: '/admin/users',             color: '#3B82F6' },
-    { icon: 'paw-outline',           label: 'Pets',             sub: `${st.activePets} active`,   route: '/admin/pets',              color: '#16A34A' },
-    { icon: 'gift-outline',          label: 'Recommendations',  sub: 'Picked for pet',            route: '/admin/recommendations',   color: '#E8A320' },
-    { icon: 'flag-outline',          label: 'Moderation',       sub: `${st.pendingModeration} pending`, route: '/admin/moderation', color: '#E24B4A', badge: st.pendingModeration },
-    { icon: 'notifications-outline', label: 'Push',             sub: 'Broadcast messages',        route: '/admin/push',              color: '#0891B2' },
-    { icon: 'trash-outline',         label: 'Media',            sub: 'Cleanup rules',             route: '/admin/media-retention',   color: '#6B7280' },
-    { icon: 'cash-outline',          label: 'Costs',            sub: fmtCost(st.aiCostToday) + ' today', route: '/admin/costs',   color: '#E24B4A' },
-    { icon: 'toggle-outline',        label: 'Settings',         sub: 'Feature flags',             route: '/admin/settings',          color: '#3C3489' },
-    { icon: 'git-network-outline',   label: 'AI Chains',        sub: 'Model fallback config',      route: '/admin/ai-chain',           color: '#8B5CF6' },
-    { icon: 'pricetag-outline',      label: 'Pricing',          sub: 'Plans & storage caps',      route: '/admin/pricing',           color: '#059669' },
-    { icon: 'ban-outline',           label: 'Blocked Words',    sub: 'Profanity filter',          route: '/admin/blocked-words',     color: '#DC2626' },
-    { icon: 'paw-outline',           label: 'Species',          sub: 'Enable / disable species',  route: '/admin/species',           color: '#26C6B0' },
-    { icon: 'bug-outline',           label: 'Feedback',         sub: 'Bug reports & feedback',    route: '/admin/feedback',          color: '#0891B2' },
-    { icon: 'gift-outline',          label: 'Partner Offers',   sub: 'Coupon catalogue & codes',   route: '/admin/rewards-offers',       color: '#E8A320' },
-    { icon: 'cash-outline',          label: 'Coins Config',     sub: 'Earn rates & top earners',   route: '/admin/coins-config',         color: '#C8860A' },
-    { icon: 'cloud-upload-outline',  label: 'Bulk Upload',      sub: 'Import offers & codes (CSV)', route: '/admin/rewards-bulk-upload',  color: '#7C5CBF' },
+    { icon: 'bar-chart-outline',     label: 'Analytics',       sub: 'Growth & engagement',       route: '/admin/analytics',         color: DASH.purple },
+    { icon: 'people-outline',        label: 'Users',            sub: `${st.totalUsers} total`,    route: '/admin/users',             color: colors.info },
+    { icon: 'paw-outline',           label: 'Pets',             sub: `${st.activePets} active`,   route: '/admin/pets',              color: DASH.green },
+    { icon: 'gift-outline',          label: 'Recommendations',  sub: 'Picked for pet',            route: '/admin/recommendations',   color: colors.warning },
+    { icon: 'flag-outline',          label: 'Moderation',       sub: `${st.pendingModeration} pending`, route: '/admin/moderation', color: colors.danger, badge: st.pendingModeration },
+    { icon: 'notifications-outline', label: 'Push',             sub: 'Broadcast messages',        route: '/admin/push',              color: DASH.cyan },
+    { icon: 'trash-outline',         label: 'Media',            sub: 'Cleanup rules',             route: '/admin/media-retention',   color: DASH.gray },
+    { icon: 'cash-outline',          label: 'Costs',            sub: fmtCost(st.aiCostToday) + ' today', route: '/admin/costs',   color: colors.danger },
+    { icon: 'toggle-outline',        label: 'Settings',         sub: 'Feature flags',             route: '/admin/settings',          color: DASH.indigo },
+    { icon: 'git-network-outline',   label: 'AI Chains',        sub: 'Model fallback config',      route: '/admin/ai-chain',           color: DASH.violet },
+    { icon: 'pricetag-outline',      label: 'Pricing',          sub: 'Plans & storage caps',      route: '/admin/pricing',           color: DASH.emerald },
+    { icon: 'ban-outline',           label: 'Blocked Words',    sub: 'Profanity filter',          route: '/admin/blocked-words',     color: DASH.red },
+    { icon: 'paw-outline',           label: 'Species',          sub: 'Enable / disable species',  route: '/admin/species',           color: DASH.teal },
+    { icon: 'bug-outline',           label: 'Feedback',         sub: 'Bug reports & feedback',    route: '/admin/feedback',          color: DASH.cyan },
+    { icon: 'gift-outline',          label: 'Partner Offers',   sub: 'Coupon catalogue & codes',   route: '/admin/rewards-offers',       color: colors.warning },
+    { icon: 'cash-outline',          label: 'Coins Config',     sub: 'Earn rates & top earners',   route: '/admin/coins-config',         color: DASH.goldDeep },
+    { icon: 'cloud-upload-outline',  label: 'Bulk Upload',      sub: 'Import offers & codes (CSV)', route: '/admin/rewards-bulk-upload',  color: DASH.purple },
   ] as const;
 
   return (
@@ -225,14 +246,14 @@ export default function AdminDashboard() {
           {st.pendingModeration > 0 && (
             <TouchableOpacity
               onPress={() => router.push('/admin/moderation')}
-              style={[s.alertBanner, { backgroundColor: st.pendingModeration >= 5 ? '#E24B4A18' : '#E8A32018', borderColor: st.pendingModeration >= 5 ? '#E24B4A44' : '#E8A32044' }]}
+              style={[s.alertBanner, { backgroundColor: (st.pendingModeration >= 5 ? colors.danger : colors.warning) + '18', borderColor: (st.pendingModeration >= 5 ? colors.danger : colors.warning) + '44' }]}
               activeOpacity={0.8}
             >
-              <Ionicons name="warning-outline" size={18} color={st.pendingModeration >= 5 ? '#E24B4A' : '#E8A320'} />
-              <Text style={[s.alertText, { color: st.pendingModeration >= 5 ? '#E24B4A' : '#D97706' }]}>
+              <Ionicons name="warning-outline" size={18} color={st.pendingModeration >= 5 ? colors.danger : colors.warning} />
+              <Text style={[s.alertText, { color: st.pendingModeration >= 5 ? colors.danger : colors.warning }]}>
                 {st.pendingModeration} {st.pendingModeration === 1 ? 'post needs' : 'posts need'} moderation review
               </Text>
-              <Ionicons name="chevron-forward" size={14} color={st.pendingModeration >= 5 ? '#E24B4A' : '#D97706'} style={{ marginLeft: 'auto' }} />
+              <Ionicons name="chevron-forward" size={14} color={st.pendingModeration >= 5 ? colors.danger : colors.warning} style={{ marginLeft: 'auto' }} />
             </TouchableOpacity>
           )}
 
@@ -243,18 +264,18 @@ export default function AdminDashboard() {
                 <Text style={[s.heroLabel, { color: sub }]}>TOTAL USERS</Text>
                 <Text style={[s.heroVal, { color: colors.textPrimary }]}>{st.totalUsers.toLocaleString()}</Text>
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 4, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <Text style={[s.heroBadge, { color: '#7C5CBF' }]}>+{st.newUsersToday} today</Text>
-                  <Text style={[s.heroBadge, { color: '#3B82F6' }]}>+{st.newUsersWeek} this week</Text>
+                  <Text style={[s.heroBadge, { color: DASH.purple }]}>+{st.newUsersToday} today</Text>
+                  <Text style={[s.heroBadge, { color: colors.info }]}>+{st.newUsersWeek} this week</Text>
                   {st.weeklyGrowthPct > 0 && (
-                    <View style={{ backgroundColor: '#16A34A18', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
-                      <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: '#16A34A' }}>↑{st.weeklyGrowthPct}% WoW</Text>
+                    <View style={{ backgroundColor: DASH.green + '18', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                      <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: DASH.green }}>↑{st.weeklyGrowthPct}% WoW</Text>
                     </View>
                   )}
                 </View>
               </View>
               <View style={{ alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
                 <Text style={[s.heroLabel, { color: sub }]}>7-DAY SIGNUPS</Text>
-                <Sparkline data={st.signupTrend} color="#7C5CBF" />
+                <Sparkline data={st.signupTrend} color={DASH.purple} />
               </View>
             </View>
 
@@ -264,8 +285,8 @@ export default function AdminDashboard() {
                 <Text style={[s.heroLabel, { color: sub, marginBottom: 8 }]}>RECENT JOINS</Text>
                 {st.recentSignups.map(u => (
                   <View key={u.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                    <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: '#7C5CBF22', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: '#7C5CBF' }}>
+                    <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: DASH.purple + '22', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: DASH.purple }}>
                         {u.name ? u.name.charAt(0).toUpperCase() : '?'}
                       </Text>
                     </View>
@@ -281,20 +302,20 @@ export default function AdminDashboard() {
             {/* Onboarding funnel */}
             <View style={[s.funnelRow, { borderTopColor: colors.border }]}>
               <View style={{ flex: 1, alignItems: 'center' }}>
-                <Text style={[fn.val, { color: '#3B82F6' }]}>{st.totalUsers.toLocaleString()}</Text>
-                <Text style={fn.label}>Signed up</Text>
+                <Text style={[fn.val, { color: colors.info }]}>{st.totalUsers.toLocaleString()}</Text>
+                <Text style={[fn.label, { color: sub }]}>Signed up</Text>
               </View>
               <Ionicons name="chevron-forward" size={14} color={sub} />
               <View style={{ flex: 1, alignItems: 'center' }}>
-                <Text style={[fn.val, { color: '#7C5CBF' }]}>{st.usersOnboarded.toLocaleString()}</Text>
-                <Text style={fn.label}>Onboarded</Text>
-                <Text style={[fn.pct, { color: '#7C5CBF' }]}>{onboardedPct}%</Text>
+                <Text style={[fn.val, { color: DASH.purple }]}>{st.usersOnboarded.toLocaleString()}</Text>
+                <Text style={[fn.label, { color: sub }]}>Onboarded</Text>
+                <Text style={[fn.pct, { color: DASH.purple }]}>{onboardedPct}%</Text>
               </View>
               <Ionicons name="chevron-forward" size={14} color={sub} />
               <View style={{ flex: 1, alignItems: 'center' }}>
-                <Text style={[fn.val, { color: '#16A34A' }]}>{st.usersWithConsent.toLocaleString()}</Text>
-                <Text style={fn.label}>Consented</Text>
-                <Text style={[fn.pct, { color: '#16A34A' }]}>{consentPct}%</Text>
+                <Text style={[fn.val, { color: DASH.green }]}>{st.usersWithConsent.toLocaleString()}</Text>
+                <Text style={[fn.label, { color: sub }]}>Consented</Text>
+                <Text style={[fn.pct, { color: DASH.green }]}>{consentPct}%</Text>
               </View>
             </View>
           </View>
@@ -303,35 +324,35 @@ export default function AdminDashboard() {
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
             {st.pendingModeration > 0 && (
               <TouchableOpacity onPress={() => router.push('/admin/moderation')}
-                style={[qa.btn, { backgroundColor: '#E24B4A12', borderColor: '#E24B4A33' }]}>
-                <Ionicons name="flag-outline" size={17} color="#E24B4A" />
-                <Text style={[qa.label, { color: '#E24B4A' }]}>Review {st.pendingModeration}</Text>
+                style={[qa.btn, { backgroundColor: colors.danger + '12', borderColor: colors.danger + '33' }]}>
+                <Ionicons name="flag-outline" size={17} color={colors.danger} />
+                <Text style={[qa.label, { color: colors.danger }]}>Review {st.pendingModeration}</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity onPress={() => router.push('/admin/push')}
-              style={[qa.btn, { backgroundColor: '#0891B212', borderColor: '#0891B233' }]}>
-              <Ionicons name="megaphone-outline" size={17} color="#0891B2" />
-              <Text style={[qa.label, { color: '#0891B2' }]}>Push</Text>
+              style={[qa.btn, { backgroundColor: DASH.cyan + '12', borderColor: DASH.cyan + '33' }]}>
+              <Ionicons name="megaphone-outline" size={17} color={DASH.cyan} />
+              <Text style={[qa.label, { color: DASH.cyan }]}>Push</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => router.push('/admin/sponsored')}
-              style={[qa.btn, { backgroundColor: '#FF8C5512', borderColor: '#FF8C5533' }]}>
-              <Ionicons name="star-outline" size={17} color="#FF8C55" />
-              <Text style={[qa.label, { color: '#FF8C55' }]}>Sponsors</Text>
+              style={[qa.btn, { backgroundColor: DASH.orange + '12', borderColor: DASH.orange + '33' }]}>
+              <Ionicons name="star-outline" size={17} color={DASH.orange} />
+              <Text style={[qa.label, { color: DASH.orange }]}>Sponsors</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => router.push('/admin/users')}
-              style={[qa.btn, { backgroundColor: '#3B82F612', borderColor: '#3B82F633' }]}>
-              <Ionicons name="people-outline" size={17} color="#3B82F6" />
-              <Text style={[qa.label, { color: '#3B82F6' }]}>Users</Text>
+              style={[qa.btn, { backgroundColor: colors.info + '12', borderColor: colors.info + '33' }]}>
+              <Ionicons name="people-outline" size={17} color={colors.info} />
+              <Text style={[qa.label, { color: colors.info }]}>Users</Text>
             </TouchableOpacity>
           </View>
 
           {/* ── Pets + Family hero card ── */}
           <View style={[s.dualCard, { backgroundColor: card }]}>
             <View style={s.dualHalf}>
-              <View style={[s.dualIcon, { backgroundColor: '#16A34A18' }]}>
-                <Ionicons name="paw" size={18} color="#16A34A" />
+              <View style={[s.dualIcon, { backgroundColor: DASH.green + '18' }]}>
+                <Ionicons name="paw" size={18} color={DASH.green} />
               </View>
-              <Text style={[s.dualVal, { color: '#16A34A' }]}>{st.activePets.toLocaleString()}</Text>
+              <Text style={[s.dualVal, { color: DASH.green }]}>{st.activePets.toLocaleString()}</Text>
               <Text style={[s.dualLabel, { color: colors.textPrimary }]}>Active Pets</Text>
               <Text style={[s.dualSub, { color: sub }]}>{st.avgPetsPerUser}× per user · {st.totalPets} total</Text>
               {st.speciesBreakdown.length > 0 && (
@@ -341,8 +362,8 @@ export default function AdminDashboard() {
                     return (
                       <View key={species} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                         <Text style={{ fontSize: TYPO.body, width: 18 }}>{speciesEmoji(species)}</Text>
-                        <View style={{ flex: 1, height: 4, backgroundColor: colors.skeleton ?? '#E5E0F5', borderRadius: 2, overflow: 'hidden' }}>
-                          <View style={{ width: `${(count / maxCount) * 100}%`, height: 4, backgroundColor: '#16A34A', borderRadius: 2 }} />
+                        <View style={{ flex: 1, height: 4, backgroundColor: colors.skeleton, borderRadius: 2, overflow: 'hidden' }}>
+                          <View style={{ width: `${(count / maxCount) * 100}%`, height: 4, backgroundColor: DASH.green, borderRadius: 2 }} />
                         </View>
                         <Text style={{ fontSize: TYPO.body, color: sub, width: 22, textAlign: 'right' }}>{count}</Text>
                       </View>
@@ -353,10 +374,10 @@ export default function AdminDashboard() {
             </View>
             <View style={[s.dualDivider, { backgroundColor: colors.border }]} />
             <View style={s.dualHalf}>
-              <View style={[s.dualIcon, { backgroundColor: '#FF8C5518' }]}>
-                <Ionicons name="people" size={18} color="#FF8C55" />
+              <View style={[s.dualIcon, { backgroundColor: DASH.orange + '18' }]}>
+                <Ionicons name="people" size={18} color={DASH.orange} />
               </View>
-              <Text style={[s.dualVal, { color: '#FF8C55' }]}>{st.totalFamilyLinks.toLocaleString()}</Text>
+              <Text style={[s.dualVal, { color: DASH.orange }]}>{st.totalFamilyLinks.toLocaleString()}</Text>
               <Text style={[s.dualLabel, { color: colors.textPrimary }]}>Family Links</Text>
               <Text style={[s.dualSub, { color: sub }]}>Shared pet care connections</Text>
             </View>
@@ -365,14 +386,14 @@ export default function AdminDashboard() {
           {/* ── Today's pulse ── */}
           <Text style={[s.section, { color: sub }]}>TODAY'S PULSE</Text>
           <View style={s.pulseRow}>
-            <PulseTile emoji="😊" label="Mood scans" value={st.moodScansToday} color="#E8A320" card={card} sub={sub} />
-            <PulseTile emoji="🍽️"  label="Meals"     value={st.feedLogsToday}  color="#7C5CBF" card={card} sub={sub} />
-            <PulseTile emoji="🚶" label="Walks"      value={st.walksToday}     color="#16A34A" card={card} sub={sub} />
-            <PulseTile emoji="✂️"  label="Grooming"  value={st.groomToday}     color="#0891B2" card={card} sub={sub} />
+            <PulseTile emoji="😊" label="Mood scans" value={st.moodScansToday} color={colors.warning} card={card} sub={sub} />
+            <PulseTile emoji="🍽️"  label="Meals"     value={st.feedLogsToday}  color={DASH.purple} card={card} sub={sub} />
+            <PulseTile emoji="🚶" label="Walks"      value={st.walksToday}     color={DASH.green} card={card} sub={sub} />
+            <PulseTile emoji="✂️"  label="Grooming"  value={st.groomToday}     color={DASH.cyan} card={card} sub={sub} />
           </View>
           <View style={[s.pulseRow, { marginTop: -4 }]}>
-            <PulseTile emoji="📸" label="Posts"    value={st.postsToday}   color="#3B82F6" card={card} sub={sub} />
-            <PulseTile emoji="🤖" label="AI calls" value={st.aiCallsToday} color="#E24B4A" card={card} sub={sub} />
+            <PulseTile emoji="📸" label="Posts"    value={st.postsToday}   color={colors.info} card={card} sub={sub} />
+            <PulseTile emoji="🤖" label="AI calls" value={st.aiCallsToday} color={colors.danger} card={card} sub={sub} />
             <View style={{ flex: 1 }} />
             <View style={{ flex: 1 }} />
           </View>
@@ -382,19 +403,19 @@ export default function AdminDashboard() {
           <View style={[s.heroCard, { backgroundColor: card, padding: 14 }]}>
             <View style={{ flexDirection: 'row', gap: 0 }}>
               <View style={{ flex: 1, alignItems: 'center', paddingVertical: 4 }}>
-                <Text style={{ fontSize: TYPO.hero, fontWeight: '800', color: '#7C5CBF' }}>{st.dauToday.toLocaleString()}</Text>
+                <Text style={{ fontSize: TYPO.hero, fontWeight: '800', color: DASH.purple }}>{st.dauToday.toLocaleString()}</Text>
                 <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: sub, marginTop: 2 }}>DAU today</Text>
                 <Text style={{ fontSize: TYPO.body, color: sub + 'AA', marginTop: 1 }}>meal-logged users</Text>
               </View>
               <View style={{ width: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
               <View style={{ flex: 1, alignItems: 'center', paddingVertical: 4 }}>
-                <Text style={{ fontSize: TYPO.hero, fontWeight: '800', color: '#3B82F6' }}>{st.wauLast7.toLocaleString()}</Text>
+                <Text style={{ fontSize: TYPO.hero, fontWeight: '800', color: colors.info }}>{st.wauLast7.toLocaleString()}</Text>
                 <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: sub, marginTop: 2 }}>WAU (7d)</Text>
                 <Text style={{ fontSize: TYPO.body, color: sub + 'AA', marginTop: 1 }}>active last 7 days</Text>
               </View>
               <View style={{ width: StyleSheet.hairlineWidth, backgroundColor: colors.border }} />
               <View style={{ flex: 1, alignItems: 'center', paddingVertical: 4 }}>
-                <Text style={{ fontSize: TYPO.hero, fontWeight: '800', color: '#16A34A' }}>
+                <Text style={{ fontSize: TYPO.hero, fontWeight: '800', color: DASH.green }}>
                   {st.totalUsers > 0 ? Math.round((st.dauToday / st.totalUsers) * 100) : 0}%
                 </Text>
                 <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: sub, marginTop: 2 }}>Eng. rate</Text>
@@ -405,14 +426,14 @@ export default function AdminDashboard() {
 
           {/* AI cost today callout */}
           <View style={[s.costBar, { backgroundColor: card }]}>
-            <View style={[s.costIcon, { backgroundColor: '#E24B4A18' }]}>
-              <Ionicons name="flash" size={16} color="#E24B4A" />
+            <View style={[s.costIcon, { backgroundColor: colors.danger + '18' }]}>
+              <Ionicons name="flash" size={16} color={colors.danger} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[s.costLabel, { color: colors.textPrimary }]}>AI cost today</Text>
               <Text style={[s.costSub, { color: sub }]}>{st.aiCallsToday} calls across Gemini + DeepSeek</Text>
             </View>
-            <Text style={[s.costVal, { color: st.aiCostToday > 1 ? '#E24B4A' : '#16A34A' }]}>
+            <Text style={[s.costVal, { color: st.aiCostToday > 1 ? colors.danger : DASH.green }]}>
               {fmtCost(st.aiCostToday)}
             </Text>
             <TouchableOpacity onPress={() => router.push('/admin/costs')} style={{ padding: 4 }}>
@@ -423,25 +444,25 @@ export default function AdminDashboard() {
           {/* ── Sponsored + Content ── */}
           <View style={s.rowCards}>
             <View style={[s.halfCard, { backgroundColor: card }]}>
-              <View style={[s.halfIcon, { backgroundColor: '#FF8C5518' }]}>
-                <Ionicons name="megaphone" size={16} color="#FF8C55" />
+              <View style={[s.halfIcon, { backgroundColor: DASH.orange + '18' }]}>
+                <Ionicons name="megaphone" size={16} color={DASH.orange} />
               </View>
-              <Text style={[s.halfVal, { color: '#FF8C55' }]}>{st.activeSponsored}</Text>
+              <Text style={[s.halfVal, { color: DASH.orange }]}>{st.activeSponsored}</Text>
               <Text style={[s.halfLabel, { color: colors.textPrimary }]}>Sponsored</Text>
               <Text style={[s.halfSub, { color: sub }]}>Active listings</Text>
-              <TouchableOpacity onPress={() => router.push('/admin/sponsored')} style={[s.halfBtn, { borderColor: '#FF8C5544' }]}>
-                <Text style={[s.halfBtnText, { color: '#FF8C55' }]}>Manage →</Text>
+              <TouchableOpacity onPress={() => router.push('/admin/sponsored')} style={[s.halfBtn, { borderColor: DASH.orange + '44' }]}>
+                <Text style={[s.halfBtnText, { color: DASH.orange }]}>Manage →</Text>
               </TouchableOpacity>
             </View>
             <View style={[s.halfCard, { backgroundColor: card }]}>
-              <View style={[s.halfIcon, { backgroundColor: '#7C5CBF18' }]}>
-                <Ionicons name="chatbubbles" size={16} color="#7C5CBF" />
+              <View style={[s.halfIcon, { backgroundColor: DASH.purple + '18' }]}>
+                <Ionicons name="chatbubbles" size={16} color={DASH.purple} />
               </View>
-              <Text style={[s.halfVal, { color: '#7C5CBF' }]}>{st.totalPosts.toLocaleString()}</Text>
+              <Text style={[s.halfVal, { color: DASH.purple }]}>{st.totalPosts.toLocaleString()}</Text>
               <Text style={[s.halfLabel, { color: colors.textPrimary }]}>Community</Text>
               <Text style={[s.halfSub, { color: sub }]}>Total posts</Text>
-              <TouchableOpacity onPress={() => router.push('/admin/moderation')} style={[s.halfBtn, { borderColor: '#7C5CBF44' }]}>
-                <Text style={[s.halfBtnText, { color: '#7C5CBF' }]}>Moderate →</Text>
+              <TouchableOpacity onPress={() => router.push('/admin/moderation')} style={[s.halfBtn, { borderColor: DASH.purple + '44' }]}>
+                <Text style={[s.halfBtnText, { color: DASH.purple }]}>Moderate →</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -460,6 +481,8 @@ export default function AdminDashboard() {
                 card={card}
                 subColor={sub}
                 textColor={colors.textPrimary}
+                badgeColor={colors.danger}
+                badgeTextColor={colors.textInverse}
                 onPress={() => router.push(item.route as any)}
               />
             ))}
@@ -473,7 +496,7 @@ export default function AdminDashboard() {
           style={{ position: 'absolute', bottom: 24, right: 20, width: 44, height: 44, borderRadius: 22,
             backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
             shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 6 }}>
-          <Ionicons name="chevron-up" size={22} color="#fff" />
+          <Ionicons name="chevron-up" size={22} color={colors.textInverse} />
         </TouchableOpacity>
       )}
     </SafeAreaView>
@@ -538,8 +561,8 @@ const qa = StyleSheet.create({
 
 const fn = StyleSheet.create({
   val:   { fontSize: TYPO.heading, fontWeight: '800' },
-  label: { fontSize: TYPO.body, fontWeight: '600', color: '#9A8FC0', marginTop: 2, textAlign: 'center' },
-  bar:   { height: 3, width: '80%', borderRadius: 2, backgroundColor: '#E5E0F5', marginTop: 5, overflow: 'hidden' },
+  label: { fontSize: TYPO.body, fontWeight: '600', marginTop: 2, textAlign: 'center' },
+  bar:   { height: 3, width: '80%', borderRadius: 2, marginTop: 5, overflow: 'hidden' },
   fill:  { height: 3, borderRadius: 2 },
   pct:   { fontSize: TYPO.body, fontWeight: '700', marginTop: 2 },
 });
@@ -556,6 +579,6 @@ const nc = StyleSheet.create({
   icon:      { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   label:     { fontSize: TYPO.body, fontWeight: '700' },
   sub:       { fontSize: TYPO.body },
-  badge:     { backgroundColor: '#E24B4A', borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
-  badgeText: { color: '#fff', fontSize: TYPO.body, fontWeight: '800' },
+  badge:     { borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
+  badgeText: { fontSize: TYPO.body, fontWeight: '800' },
 });

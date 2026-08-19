@@ -1,194 +1,197 @@
-// ── Family Cube — Design Tokens (matched to logo)  ───────────────────────────
+// ── Family Cube — Design Tokens (Kinfolk palette) ────────────────────────────
 //
-// Logo cube faces:
-//   Top    (House / Organize): Amber    #F5A623
-//   Left   (Family / Connect): Teal     #00BBA4
-//   Right  (Care / Grow):      Purple   #9261C7
+// Adapted from the "Kinfolk" reference: warm editorial terracotta/sage/
+// lavender/amber on cashmere neutrals, replacing the earlier cool purple/
+// teal/pink cube palette. Token NAMES are unchanged (primary/parent/kid/
+// accent/etc.) so no component code needs to change — only the hex values
+// moved. See components/FamilyCubeLogo.tsx's BRAND constant, which mirrors
+// these same values for call sites that reach for BRAND.* directly instead
+// of useTheme().
 //
-// Wordmark:
-//   "family" = Navy  #1E2D6B
-//   "cube"   = Teal→Pink→Purple gradient
-//
-// Tagline:  CONNECT=#00BBA4  ORGANIZE=#F5A623  CARE=#F04E98  GROW=#9261C7
+// Role mapping:
+//   primary (terracotta) — main brand, primary actions
+//   sage    (parent/teal slot) — calm/positive, parent role accent
+//   amber   (kid slot)         — warmth, kid role accent
+//   lavender (accent/pink slot) — third accent, highlights
 //
 // CONNECT. ORGANIZE. CARE. GROW.
 
 export const lightColors = {
-  // ── Brand primaries ───────────────────────────────────────────────────
-  primary:      '#9261C7',        // Purple (main brand, right cube face)
-  primaryLight: '#F0E8FA',
-  primaryDark:  '#6A3FA0',
-  primaryMid:   '#A97DD4',
-  primaryText:  '#9261C7',
+  // ── Brand primaries — Terracotta ──────────────────────────────────────
+  primary:      '#DF613C',        // Terracotta (main brand, primary actions)
+  primaryLight: '#FBEADF',
+  primaryDark:  '#C54A27',
+  primaryMid:   '#EE8058',
+  primaryText:  '#C54A27',
 
-  // ── Teal — Connect ────────────────────────────────────────────────────
-  teal:         '#00BBA4',
-  tealLight:    '#D6F5F1',
-  tealDark:     '#008C7A',
+  // ── Teal slot — Sage (Connect / calm / parent) ─────────────────────────
+  teal:         '#3D7A5A',
+  tealLight:    '#E1EFE7',
+  tealDark:     '#2E5F45',
 
-  // ── Amber — Organize ─────────────────────────────────────────────────
-  amber:        '#F5A623',
-  amberLight:   '#FEF0D3',
-  amberDark:    '#C47D0B',
+  // ── Amber — Organize (kids earn coins) ─────────────────────────────────
+  amber:        '#D97706',
+  amberLight:   '#FDF1D6',
+  amberDark:    '#B45309',
 
-  // ── Pink — Care ───────────────────────────────────────────────────────
-  pink:         '#F04E98',
-  pinkLight:    '#FCE4F1',
-  pinkDark:     '#BE2C74',
+  // ── Pink slot — Lavender (Care / third accent) ─────────────────────────
+  pink:         '#7B5EA7',
+  pinkLight:    '#EFE8F8',
+  pinkDark:     '#62468C',
 
-  // ── Navy — wordmark ───────────────────────────────────────────────────
-  navy:         '#1E2D6B',
-  navyLight:    '#E8EAF6',
+  // ── Navy slot — warm near-black (wordmark / text) ──────────────────────
+  navy:         '#2C2722',
+  navyLight:    '#F2ECE1',
 
   // ── Role accents (mapped to brand) ────────────────────────────────────
-  parent:       '#00BBA4',        // Teal = Connect = parents
-  parentLight:  '#D6F5F1',
-  parentDark:   '#008C7A',
+  parent:       '#3D7A5A',        // Sage = Connect = parents
+  parentLight:  '#E1EFE7',
+  parentDark:   '#2E5F45',
 
-  kid:          '#F5A623',        // Amber = Organize = kids earn coins
-  kidLight:     '#FEF0D3',
-  kidDark:      '#C47D0B',
+  kid:          '#D97706',        // Amber = Organize = kids earn coins
+  kidLight:     '#FDF1D6',
+  kidDark:      '#B45309',
 
   // ── Semantics ─────────────────────────────────────────────────────────
-  danger:       '#EF4444',
-  dangerLight:  '#FEE2E2',
-  dangerDark:   '#991B1B',
-  warning:      '#F5A623',
-  warningLight: '#FEF0D3',
-  warningDark:  '#C47D0B',
-  success:      '#00BBA4',
-  successLight: '#D6F5F1',
-  successDark:  '#008C7A',
+  danger:       '#C54A27',
+  dangerLight:  '#FBEADF',
+  dangerDark:   '#9A3A1E',
+  warning:      '#D97706',
+  warningLight: '#FDF1D6',
+  warningDark:  '#B45309',
+  success:      '#3D7A5A',
+  successLight: '#E1EFE7',
+  successDark:  '#2E5F45',
   info:         '#3B82F6',
   infoLight:    '#DBEAFE',
   infoDark:     '#1D4ED8',
 
-  // ── Accent (pink / care) ──────────────────────────────────────────────
-  accent:       '#F04E98',
-  accentLight:  '#FCE4F1',
-  accentDark:   '#BE2C74',
+  // ── Accent (lavender / care) ────────────────────────────────────────────
+  accent:       '#7B5EA7',
+  accentLight:  '#EFE8F8',
+  accentDark:   '#62468C',
 
-  // ── Surfaces ──────────────────────────────────────────────────────────
-  background:   '#F8FAFC',
-  surface:      '#F1F5F9',
+  // ── Surfaces — warm cashmere neutrals ───────────────────────────────────
+  background:   '#FAF8F4',
+  surface:      '#F2ECE1',
   card:         '#FFFFFF',
-  overlay:      'rgba(30,45,107,0.45)',
+  overlay:      'rgba(44,39,34,0.45)',
 
   // ── Borders ───────────────────────────────────────────────────────────
-  border:       'rgba(146,97,199,0.15)',
-  borderMed:    'rgba(146,97,199,0.28)',
-  borderStrong: 'rgba(146,97,199,0.50)',
+  border:       'rgba(223,97,60,0.15)',
+  borderMed:    'rgba(223,97,60,0.28)',
+  borderStrong: 'rgba(223,97,60,0.50)',
 
   // ── Text ──────────────────────────────────────────────────────────────
-  textPrimary:   '#1E2D6B',
-  textSecondary: '#64748B',
-  textTertiary:  '#94A3B8',
+  textPrimary:   '#2C2722',
+  textSecondary: '#6B5F52',
+  textTertiary:  '#A69A8A',
   textInverse:   '#FFFFFF',
-  textDisabled:  '#CBD5E1',
+  textDisabled:  '#D5CCBE',
 
   // ── Tab bar ───────────────────────────────────────────────────────────
   tabBar:       '#FFFFFF',
-  tabBarBorder: 'rgba(146,97,199,0.12)',
-  tabActive:    '#9261C7',
-  tabInactive:  '#94A3B8',
+  tabBarBorder: 'rgba(223,97,60,0.12)',
+  tabActive:    '#DF613C',
+  tabInactive:  '#A69A8A',
 
   // ── Status bar ────────────────────────────────────────────────────────
   statusBar:    'dark' as 'light' | 'dark',
 
   // ── Inputs ────────────────────────────────────────────────────────────
-  inputBg:      '#F1F5F9',
-  inputBorder:  'rgba(146,97,199,0.25)',
-  placeholder:  '#94A3B8',
+  inputBg:      '#F2ECE1',
+  inputBorder:  'rgba(223,97,60,0.25)',
+  placeholder:  '#A69A8A',
 
   // ── Skeleton ──────────────────────────────────────────────────────────
-  skeleton:          '#E2E8F0',
-  skeletonHighlight: '#F1F5F9',
+  skeleton:          '#E5DFC8',
+  skeletonHighlight: '#F2ECE1',
 
-  // ── Legacy compat ─────────────────────────────────────────────────────
-  purple:      '#9261C7',
-  purpleLight: '#F0E8FA',
-  purpleDark:  '#6A3FA0',
+  // ── Legacy compat (aliases old "purple" name to the new primary hue) ───
+  purple:      '#DF613C',
+  purpleLight: '#FBEADF',
+  purpleDark:  '#C54A27',
 };
 
 export const darkColors: typeof lightColors = {
-  primary:      '#B98EDB',
-  primaryLight: 'rgba(185,142,219,0.18)',
-  primaryDark:  '#D4B8ED',
-  primaryMid:   '#C9A5E4',
-  primaryText:  '#D4B8ED',
+  primary:      '#EE8058',
+  primaryLight: 'rgba(238,128,88,0.18)',
+  primaryDark:  '#F5A87E',
+  primaryMid:   '#F0946A',
+  primaryText:  '#F5A87E',
 
-  teal:         '#2DD4BF',
-  tealLight:    'rgba(45,212,191,0.18)',
-  tealDark:     '#5EEAD4',
+  teal:         '#5FA37D',
+  tealLight:    'rgba(95,163,125,0.18)',
+  tealDark:     '#8AC4A5',
 
-  amber:        '#FCD34D',
-  amberLight:   'rgba(252,211,77,0.18)',
-  amberDark:    '#FDE68A',
+  amber:        '#F5A85A',
+  amberLight:   'rgba(245,168,90,0.18)',
+  amberDark:    '#FBCB94',
 
-  pink:         '#F472B6',
-  pinkLight:    'rgba(244,114,182,0.18)',
-  pinkDark:     '#FBCFE8',
+  pink:         '#A78BC9',
+  pinkLight:    'rgba(167,139,201,0.18)',
+  pinkDark:     '#CBB8E0',
 
-  navy:         '#A5B4FC',
-  navyLight:    'rgba(165,180,252,0.15)',
+  navy:         '#EDE7DE',
+  navyLight:    'rgba(237,231,222,0.12)',
 
-  parent:       '#2DD4BF',
-  parentLight:  'rgba(45,212,191,0.18)',
-  parentDark:   '#5EEAD4',
+  parent:       '#5FA37D',
+  parentLight:  'rgba(95,163,125,0.18)',
+  parentDark:   '#8AC4A5',
 
-  kid:          '#FCD34D',
-  kidLight:     'rgba(252,211,77,0.18)',
-  kidDark:      '#FDE68A',
+  kid:          '#F5A85A',
+  kidLight:     'rgba(245,168,90,0.18)',
+  kidDark:      '#FBCB94',
 
-  danger:       '#F87171',
-  dangerLight:  'rgba(248,113,113,0.18)',
-  dangerDark:   '#FCA5A5',
-  warning:      '#FCD34D',
-  warningLight: 'rgba(252,211,77,0.18)',
-  warningDark:  '#FDE68A',
-  success:      '#2DD4BF',
-  successLight: 'rgba(45,212,191,0.18)',
-  successDark:  '#5EEAD4',
+  danger:       '#EE8058',
+  dangerLight:  'rgba(238,128,88,0.18)',
+  dangerDark:   '#F5A87E',
+  warning:      '#F5A85A',
+  warningLight: 'rgba(245,168,90,0.18)',
+  warningDark:  '#FBCB94',
+  success:      '#5FA37D',
+  successLight: 'rgba(95,163,125,0.18)',
+  successDark:  '#8AC4A5',
   info:         '#60A5FA',
   infoLight:    'rgba(96,165,250,0.18)',
   infoDark:     '#93C5FD',
 
-  accent:       '#F472B6',
-  accentLight:  'rgba(244,114,182,0.18)',
-  accentDark:   '#FBCFE8',
+  accent:       '#A78BC9',
+  accentLight:  'rgba(167,139,201,0.18)',
+  accentDark:   '#CBB8E0',
 
-  background:   '#0B0F1A',
-  surface:      '#161C2D',
-  card:         '#1E2640',
+  background:   '#0E0C13',
+  surface:      '#17151D',
+  card:         '#1D1A24',
   overlay:      'rgba(0,0,0,0.65)',
 
-  border:       'rgba(185,142,219,0.15)',
-  borderMed:    'rgba(185,142,219,0.28)',
-  borderStrong: 'rgba(185,142,219,0.45)',
+  border:       'rgba(238,128,88,0.15)',
+  borderMed:    'rgba(238,128,88,0.28)',
+  borderStrong: 'rgba(238,128,88,0.45)',
 
-  textPrimary:   '#F8FAFC',
-  textSecondary: '#94A3B8',
-  textTertiary:  '#64748B',
-  textInverse:   '#0F172A',
-  textDisabled:  '#475569',
+  textPrimary:   '#FDFCF9',
+  textSecondary: '#B8AC9C',
+  textTertiary:  '#7A6E60',
+  textInverse:   '#1A1714',
+  textDisabled:  '#4A4038',
 
-  tabBar:       '#161C2D',
-  tabBarBorder: 'rgba(185,142,219,0.12)',
-  tabActive:    '#B98EDB',
-  tabInactive:  '#64748B',
+  tabBar:       '#17151D',
+  tabBarBorder: 'rgba(238,128,88,0.12)',
+  tabActive:    '#EE8058',
+  tabInactive:  '#7A6E60',
 
   statusBar:    'light' as const,
 
-  inputBg:      '#1E2640',
-  inputBorder:  'rgba(185,142,219,0.25)',
-  placeholder:  '#64748B',
+  inputBg:      '#1D1A24',
+  inputBorder:  'rgba(238,128,88,0.25)',
+  placeholder:  '#7A6E60',
 
-  skeleton:          '#1E2640',
-  skeletonHighlight: '#2A3452',
+  skeleton:          '#1D1A24',
+  skeletonHighlight: '#2A2632',
 
-  purple:      '#B98EDB',
-  purpleLight: 'rgba(185,142,219,0.18)',
-  purpleDark:  '#D4B8ED',
+  purple:      '#EE8058',
+  purpleLight: 'rgba(238,128,88,0.18)',
+  purpleDark:  '#F5A87E',
 };
 
 export type ThemeColors = typeof lightColors;

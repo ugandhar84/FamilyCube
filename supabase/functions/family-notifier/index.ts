@@ -69,21 +69,21 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
   switch (type) {
     case 'quest_approved':
       return {
-        title: '✅ Quest Approved!',
+        title: '✅ Chore Approved!',
         body: `"${p.questTitle}" was approved${p.coins ? ` — +${p.coins}🪙 added to your wallet!` : ''}`,
         sound: 'default',
         data: { screen: 'Quests', questId: p.questId },
       };
     case 'quest_declined':
       return {
-        title: '❌ Quest Needs Redo',
+        title: '❌ Chore Needs Redo',
         body: `"${p.questTitle}" was declined${p.reason ? `: ${p.reason}` : ' — check the feedback and try again.'}`,
         sound: 'default',
         data: { screen: 'Quests', questId: p.questId },
       };
     case 'quest_claimed':
       return {
-        title: '🙋 Quest Claimed',
+        title: '🙋 Chore Claimed',
         body: `${p.kidName} just claimed "${p.questTitle}"`,
         data: { screen: 'Quests', questId: p.questId },
       };
@@ -117,13 +117,13 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
       };
     case 'deadline_reminder':
       return {
-        title: '📅 Quest Due Today',
+        title: '📅 Chore Due Today',
         body: `Don't forget: "${p.questTitle}" (+${p.coins}🪙) is due today!`,
         data: { screen: 'Quests', questId: p.questId },
       };
     case 'deadline_overdue':
       return {
-        title: '🚨 Quest Overdue',
+        title: '🚨 Chore Overdue',
         body: `"${p.questTitle}" is ${p.daysOverdue}d overdue — finish it or it will be reassigned!`,
         sound: 'default',
         data: { screen: 'Quests', questId: p.questId },
@@ -137,7 +137,7 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
       };
     case 'force_assigned':
       return {
-        title: '📋 New Quest Assigned',
+        title: '📋 New Chore Assigned',
         body: `A parent reassigned "${p.questTitle}" to you — complete it to earn ${p.coins}🪙!`,
         sound: 'default',
         data: { screen: 'Quests', questId: p.questId },
@@ -175,7 +175,7 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
       };
     case 'chore_ghosted':
       return {
-        title: '👻 Quest Ghosted',
+        title: '👻 Chore Ghosted',
         body: `${p.kidName} claimed "${p.questTitle}" but hasn't started — it may be reassigned`,
         data: { screen: 'Quests', questId: p.questId },
       };

@@ -5,7 +5,7 @@ import { TYPO } from '@/constants/theme';
 // and by CollapsibleQuestCard (questCard / accentBar).
 export const s = StyleSheet.create({
   titleRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1 },
-  title:       { fontSize: TYPO.heading, fontWeight: '900' },
+  title:       { fontSize: TYPO.heading, fontWeight: '900', letterSpacing: -0.3 },
   headerBtn:   { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
 
 
@@ -28,40 +28,41 @@ export const s = StyleSheet.create({
   cheerName:   { fontSize: TYPO.caption, fontWeight: '700', flex: 1 },
   highFiveBtn: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 7 },
 
-  // ── Quest card ──────────────────────────────────────────────────────────────
+  // ── Chore card — frosted glass shell ──────────────────────────────────────
   questCard:   {
-    borderRadius: 20, borderWidth: 1, overflow: 'hidden',
-    flexDirection: 'row',
+    borderRadius: 28, borderWidth: 1, overflow: 'hidden',
     marginBottom: 0,
-    // subtle shadow
-    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    // Soft colored glow instead of a flat black shadow — shadowColor is set
+    // per-card to the accent color at the call site, giving each state a
+    // faint tinted lift rather than a generic dark drop shadow.
+    shadowOpacity: 0.10, shadowRadius: 14, shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
-  accentBar:   { width: 4, borderRadius: 0 },
+  accentBar:   { width: 4, borderRadius: 0 }, // kept for any lingering call sites; new cards use the inset glow line instead
   coinPill:    {
     alignItems: 'center', justifyContent: 'center',
-    borderRadius: 16, borderWidth: 1,
+    borderRadius: 14, borderWidth: 1,
     paddingHorizontal: 10, paddingVertical: 8,
     minWidth: 56,
   },
   coinPillSm:  {
     alignItems: 'center', justifyContent: 'center',
-    borderRadius: 12, borderWidth: 1,
+    borderRadius: 10, borderWidth: 1,
     paddingHorizontal: 8, paddingVertical: 5,
   },
-  badge:       { borderRadius: 20, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
-  badgeText:   { fontSize: TYPO.micro, fontWeight: '700' },
-  questTitle:  { fontSize: TYPO.subheading, fontWeight: '800', lineHeight: 22 },
-  metaRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, paddingTop: 10, marginTop: 4 },
+  badge:       { borderRadius: 20, borderWidth: 1, paddingHorizontal: 9, paddingVertical: 3 },
+  badgeText:   { fontSize: TYPO.micro, fontWeight: '800', letterSpacing: 0.3 },
+  questTitle:  { fontSize: TYPO.body, fontWeight: '800', lineHeight: 19, letterSpacing: -0.2 },
+  metaRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, paddingTop: 12, marginTop: 6 },
   metaAvatar:  { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  declineBox:  { flexDirection: 'row', gap: 6, alignItems: 'flex-start', borderRadius: 12, borderWidth: 1, padding: 8, marginTop: 6 },
+  declineBox:  { flexDirection: 'row', gap: 6, alignItems: 'flex-start', borderRadius: 14, borderWidth: 1, padding: 10, marginTop: 8 },
   declineText: { fontSize: TYPO.label, fontWeight: '600', lineHeight: 18 },
-  actionStrip: { flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, borderTopWidth: 1, paddingTop: 10, marginTop: 10 },
-  actionBtn:   { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20 },
+  actionStrip: { flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, borderTopWidth: 1, paddingTop: 10, marginTop: 8 },
+  actionBtn:   { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 18 },
   actionBtnText: { fontSize: TYPO.label, fontWeight: '800', color: '#fff' },
-  paidBadge:   { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6 },
+  paidBadge:   { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 18, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6 },
   paidText:    { fontSize: TYPO.label, fontWeight: '700' },
-  emptyBox:    { borderRadius: 16, borderWidth: 1, padding: 24, alignItems: 'center' },
+  emptyBox:    { borderRadius: 20, borderWidth: 1, padding: 26, alignItems: 'center' },
   emptyText:   { fontSize: TYPO.caption, textAlign: 'center' },
   // ── Cheer card ──────────────────────────────────────────────────────────────
   catBadge:    { borderRadius: 20, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2 },

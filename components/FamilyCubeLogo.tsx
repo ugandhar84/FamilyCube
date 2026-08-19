@@ -1,24 +1,39 @@
 /**
  * FamilyCubeLogo — v3
  * Pixel-matched to brand reference:
- *   Top  (Amber)  : house + chimney + 4-pane window
- *   Left (Teal)   : family silhouette (2 adults + child + 2 hearts)
- *   Right (Purple): cupped hands holding heart
+ *   Top  (Lavender)   : house + chimney + 4-pane window
+ *   Left (Sage)        : family silhouette (2 adults + child + 2 hearts)
+ *   Right (Terracotta): cupped hands holding heart
  * Rounded cube faces, solid-filled white icons.
+ *
+ * Face colors chosen for hue separation, not just token inheritance: the
+ * Kinfolk palette's amber and terracotta sit only ~18° apart on the hue
+ * wheel (both warm orange), which visually blurs on adjacent isometric
+ * faces at the cube's small render size (30-36px in the header). Lavender
+ * gives ~115-135° separation from both terracotta and sage, so all three
+ * faces read as genuinely distinct colors at a glance. Amber stays in use
+ * elsewhere (kid-role accent, warning states) — just not on this cube.
  */
 import React from 'react';
 import { View, Text } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop, Circle, Rect } from 'react-native-svg';
 
+// Mirrors constants/colors.ts's light-mode Kinfolk palette — kept as a
+// plain literal (not theme-aware) for the many call sites that reach for
+// BRAND.* directly instead of useTheme(), e.g. plain functions like
+// hubUtils.ts's catColor() that can't call hooks. Components that CAN use
+// useTheme() should prefer colors.primary/colors.parent/etc. over BRAND.*
+// so they get the correct value per light/dark theme.
 export const BRAND = {
-  amber:  '#F5A623',
-  amber2: '#FFB830',
-  teal:   '#00BBA4',
-  teal2:  '#2DD4BF',
-  purple: '#9261C7',
-  purple2:'#B98EDB',
-  pink:   '#F04E98',
-  navy:   '#1E2D6B',
+  amber:  '#D97706',
+  amber2: '#F5A85A',
+  teal:   '#3D7A5A',
+  teal2:  '#5FA37D',
+  purple: '#DF613C',
+  purple2:'#EE8058',
+  pink:   '#7B5EA7',
+  pink2:  '#9B82C0',
+  navy:   '#2C2722',
   white:  '#FFFFFF',
 } as const;
 
@@ -37,8 +52,8 @@ export function CubeMark({ size = 100, uid = 'a' }: { size?: number; uid?: strin
     <Svg width={size} height={h} viewBox="0 0 200 236">
       <Defs>
         <LinearGradient id={`top_${uid}`} x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0%"   stopColor={BRAND.amber2} />
-          <Stop offset="100%" stopColor={BRAND.amber} />
+          <Stop offset="0%"   stopColor={BRAND.pink2} />
+          <Stop offset="100%" stopColor={BRAND.pink} />
         </LinearGradient>
         <LinearGradient id={`left_${uid}`} x1="0" y1="0" x2="1" y2="1">
           <Stop offset="0%"   stopColor={BRAND.teal2} />
@@ -50,7 +65,7 @@ export function CubeMark({ size = 100, uid = 'a' }: { size?: number; uid?: strin
         </LinearGradient>
       </Defs>
 
-      {/* ══ TOP FACE — Amber — House ══ */}
+      {/* ══ TOP FACE — Lavender — House ══ */}
       <Path d={TOP_FACE} fill={`url(#top_${uid})`} />
       {/* Chimney (sticks above roofline) */}
       <Rect x={117} y={26} width={12} height={20} fill={BRAND.white} rx={2.5} opacity={0.95} />
@@ -58,13 +73,13 @@ export function CubeMark({ size = 100, uid = 'a' }: { size?: number; uid?: strin
       <Path d="M100,37 L142,62 L58,62 Z" fill={BRAND.white} opacity={0.95} />
       {/* Wall body */}
       <Rect x={60} y={61} width={80} height={36} fill={BRAND.white} rx={2.5} opacity={0.95} />
-      {/* 4-pane window — amber squares cut into white wall */}
-      <Rect x={67} y={66} width={18} height={13} fill={BRAND.amber} rx={2} opacity={0.92} />
-      <Rect x={89} y={66} width={18} height={13} fill={BRAND.amber} rx={2} opacity={0.92} />
-      <Rect x={67} y={82} width={18} height={11} fill={BRAND.amber} rx={2} opacity={0.92} />
-      <Rect x={89} y={82} width={18} height={11} fill={BRAND.amber} rx={2} opacity={0.92} />
+      {/* 4-pane window — lavender squares cut into white wall */}
+      <Rect x={67} y={66} width={18} height={13} fill={BRAND.pink} rx={2} opacity={0.92} />
+      <Rect x={89} y={66} width={18} height={13} fill={BRAND.pink} rx={2} opacity={0.92} />
+      <Rect x={67} y={82} width={18} height={11} fill={BRAND.pink} rx={2} opacity={0.92} />
+      <Rect x={89} y={82} width={18} height={11} fill={BRAND.pink} rx={2} opacity={0.92} />
 
-      {/* ══ LEFT FACE — Teal — Family ══ */}
+      {/* ══ LEFT FACE — Sage — Family ══ */}
       <Path d={LEFT_FACE} fill={`url(#left_${uid})`} />
 
       {/* Heart above left adult */}
@@ -101,7 +116,7 @@ export function CubeMark({ size = 100, uid = 'a' }: { size?: number; uid?: strin
       {/* Child body */}
       <Path d="M44,183 C44,174 64,174 64,183 L66,204 L42,204 Z" fill={BRAND.white} opacity={0.82} />
 
-      {/* ══ RIGHT FACE — Purple — Care (hands + heart) ══ */}
+      {/* ══ RIGHT FACE — Terracotta — Care (hands + heart) ══ */}
       <Path d={RIGHT_FACE} fill={`url(#right_${uid})`} />
 
       {/* Large heart */}

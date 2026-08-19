@@ -63,7 +63,7 @@ const CAT_EMOJI: Record<string, string> = {
   Bakery: '🥐', Seafood: '🐟', Deli: '🥪', 'Frozen Meals': '🧊', Other: '📦',
 };
 
-function CatIcon({ category, size = 20, color = '#7C3AED' }: { category?: string; size?: number; color?: string }) {
+function CatIcon({ category, size = 20, color }: { category?: string; size?: number; color?: string }) {
   const Ic = CAT_ICON[category ?? 'Other'] ?? ShoppingCart;
   return <Ic size={size} color={color} strokeWidth={1.8} />;
 }
@@ -173,10 +173,10 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark, ed
     onClose();
   };
 
-  const sheetBg = isDark ? '#141829' : '#FFFFFF';
-  const border  = isDark ? 'rgba(124,58,237,0.18)' : '#E5E7EB';
-  const inputBg = isDark ? '#1E2340' : '#F9FAFB';
-  const P = colors.primary ?? '#7C3AED';
+  const sheetBg = colors.card;
+  const border  = colors.border;
+  const inputBg = colors.surface;
+  const P = colors.primary;
 
   // Filter suggestions by typed name
   const filteredSuggestions = name.trim().length > 0
@@ -192,11 +192,11 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark, ed
       footer={
         <Pressable onPress={handleSave} disabled={!name.trim() || saving}
           style={{ borderRadius: 16, paddingVertical: 14, alignItems: 'center',
-            backgroundColor: (!name.trim() || saving) ? (isDark ? '#374151' : '#D1D5DB') : P,
+            backgroundColor: (!name.trim() || saving) ? colors.textDisabled : P,
             shadowColor: P, shadowOpacity: name.trim() ? 0.4 : 0, shadowRadius: 10, elevation: 4 }}>
           {saving
-            ? <ActivityIndicator color="#FFF" size="small" />
-            : <Text style={{ fontSize: 15, fontWeight: '800', color: '#FFF', letterSpacing: 0.3 }}>
+            ? <ActivityIndicator color={colors.textInverse} size="small" />
+            : <Text style={{ fontSize: 15, fontWeight: '800', color: colors.textInverse, letterSpacing: 0.3 }}>
                 {isEdit ? '✅ Save Changes' : '+ Add to List'}
               </Text>}
         </Pressable>
@@ -209,7 +209,7 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark, ed
             <TextInput
               style={{ flex: 1, fontSize: 15, color: colors.textPrimary, paddingVertical: 12 }}
               placeholder="Item name (e.g. Atta, Milk, Turmeric)"
-              placeholderTextColor={colors.textMuted ?? '#9CA3AF'}
+              placeholderTextColor={colors.textTertiary}
               value={name} onChangeText={setName} autoFocus
             />
             {name.length > 0 && (
@@ -223,11 +223,11 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark, ed
           {!isEdit && filteredSuggestions.length > 0 && (
             <View style={{ marginBottom: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: '#C4B5FD',
+                <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: colors.primaryLight,
                   alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{ fontSize: 9 }}>✨</Text>
                 </View>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: '#9CA3AF', letterSpacing: 0.5 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary, letterSpacing: 0.5 }}>
                   {aiLoading ? 'Loading suggestions…' : 'QUICK ADD'}
                 </Text>
               </View>
@@ -237,7 +237,7 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark, ed
                     <Pressable key={s.name} onPress={() => { setName(s.name); setCat(s.cat); }}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
                         paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
-                        backgroundColor: name === s.name ? P + '25' : (isDark ? '#1E2340' : '#F3F4F6'),
+                        backgroundColor: name === s.name ? P + '25' : colors.surface,
                         borderWidth: 1, borderColor: name === s.name ? P : 'transparent' }}>
                       <Text style={{ fontSize: 15 }}>{s.emoji}</Text>
                       <Text style={{ fontSize: 13, fontWeight: '600', color: name === s.name ? P : colors.textPrimary }}>
@@ -258,7 +258,7 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark, ed
               <TextInput
                 style={{ flex: 1, fontSize: 14, color: colors.textPrimary, paddingVertical: 10 }}
                 placeholder="Qty (2 kg, 1 doz…)"
-                placeholderTextColor={colors.textMuted ?? '#9CA3AF'}
+                placeholderTextColor={colors.textTertiary}
                 value={qty} onChangeText={setQty}
               />
             </View>
@@ -268,7 +268,7 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark, ed
               <TextInput
                 style={{ flex: 1, fontSize: 14, color: colors.textPrimary, paddingVertical: 10 }}
                 placeholder="Store (optional)"
-                placeholderTextColor={colors.textMuted ?? '#9CA3AF'}
+                placeholderTextColor={colors.textTertiary}
                 value={store} onChangeText={setStore}
               />
             </View>
@@ -281,10 +281,10 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark, ed
                 <Pressable key={c} onPress={() => setCat(cat === c ? '' : c)}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
                     paddingHorizontal: 11, paddingVertical: 6, borderRadius: 20,
-                    backgroundColor: cat === c ? P : (isDark ? '#1E2340' : '#F3F4F6'),
+                    backgroundColor: cat === c ? P : colors.surface,
                     borderWidth: 1, borderColor: cat === c ? P : 'transparent' }}>
                   <Text style={{ fontSize: 13 }}>{CAT_EMOJI[c] ?? '📦'}</Text>
-                  <Text style={{ fontSize: 12, fontWeight: '600', color: cat === c ? '#FFF' : colors.textSecondary }}>{c}</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: cat === c ? colors.textInverse : colors.textSecondary }}>{c}</Text>
                 </Pressable>
               ))}
             </View>
@@ -296,7 +296,7 @@ function AddItemSheet({ visible, onClose, familyId, memberId, colors, isDark, ed
             <TextInput
               style={{ fontSize: 14, color: colors.textPrimary, paddingVertical: 10, minHeight: 50 }}
               placeholder="Notes — e.g. organic only, from Patel's (optional)"
-              placeholderTextColor={colors.textMuted ?? '#9CA3AF'}
+              placeholderTextColor={colors.textTertiary}
               value={notes} onChangeText={setNotes} multiline
             />
           </View>
@@ -333,9 +333,9 @@ function CreateRunSheet({ visible, onClose, familyId, memberId, colors, isDark, 
     if (run) { setName(''); setStore(''); onCreated(run); }
   };
 
-  const sheetBg = isDark ? '#1A1A2E' : '#FFFFFF';
-  const border  = isDark ? '#2D2D4E' : '#E5E7EB';
-  const inputBg = isDark ? '#252540' : '#F9FAFB';
+  const sheetBg = colors.card;
+  const border  = colors.border;
+  const inputBg = colors.surface;
 
   return (
     <AppBottomSheet
@@ -346,10 +346,10 @@ function CreateRunSheet({ visible, onClose, familyId, memberId, colors, isDark, 
         <Pressable
           onPress={handleSave}
           disabled={!store.trim() || saving}
-          style={[sh.btn, { backgroundColor: (!store.trim() || saving) ? '#9CA3AF' : colors.primary }]}
+          style={[sh.btn, { backgroundColor: (!store.trim() || saving) ? colors.textDisabled : colors.primary }]}
         >
           {saving
-            ? <ActivityIndicator color="#FFF" size="small" />
+            ? <ActivityIndicator color={colors.textInverse} size="small" />
             : <Text style={sh.btnText}>Create Run</Text>}
         </Pressable>
       }
@@ -357,7 +357,7 @@ function CreateRunSheet({ visible, onClose, familyId, memberId, colors, isDark, 
           <TextInput
             style={[sh.input, { backgroundColor: inputBg, borderColor: border, color: colors.textPrimary }]}
             placeholder="Store name (e.g. Costco, Patel Brothers)"
-            placeholderTextColor={colors.textMuted ?? '#9CA3AF'}
+            placeholderTextColor={colors.textTertiary}
             value={store} onChangeText={setStore} autoFocus
           />
 
@@ -370,7 +370,7 @@ function CreateRunSheet({ visible, onClose, familyId, memberId, colors, isDark, 
                   onPress={() => setStore(s)}
                   style={[sh.catChip, { backgroundColor: store === s ? colors.primary : inputBg, borderColor: store === s ? colors.primary : border }]}
                 >
-                  <Text style={{ fontSize: 12, color: store === s ? '#FFF' : colors.textSecondary }}>🛒 {s}</Text>
+                  <Text style={{ fontSize: 12, color: store === s ? colors.textInverse : colors.textSecondary }}>🛒 {s}</Text>
                 </Pressable>
               ))}
             </View>
@@ -379,7 +379,7 @@ function CreateRunSheet({ visible, onClose, familyId, memberId, colors, isDark, 
           <TextInput
             style={[sh.input, { backgroundColor: inputBg, borderColor: border, color: colors.textPrimary }]}
             placeholder="Run name (optional — e.g. Diwali party groceries)"
-            placeholderTextColor={colors.textMuted ?? '#9CA3AF'}
+            placeholderTextColor={colors.textTertiary}
             value={name} onChangeText={setName}
           />
     </AppBottomSheet>
@@ -482,10 +482,10 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
 
   if (!run) return null;
 
-  const sheetBg  = isDark ? '#1A1A2E' : '#FFFFFF';
-  const border   = isDark ? '#2D2D4E' : '#E5E7EB';
-  const rowBg    = isDark ? '#1F1F38' : '#F9FAFB';
-  const checkedColor = isDark ? '#22C55E' : '#16A34A';
+  const sheetBg  = colors.card;
+  const border   = colors.border;
+  const rowBg    = colors.surface;
+  const checkedColor = colors.success;
 
   const checkedCount = runItems.filter(ri => ri.checkedInRun).length;
   const isActive = run.status === 'active';
@@ -667,8 +667,8 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
             <View style={{ flex: 1 }}>
               <Text style={[sh.title, { color: colors.textPrimary, marginBottom: 2 }]}>{run.name}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={[rd.statusBadge, { backgroundColor: isActive ? '#DCFCE7' : isDone ? '#F3F4F6' : '#EEF2FF' }]}>
-                  <Text style={[rd.statusText, { color: isActive ? '#16A34A' : isDone ? '#6B7280' : colors.primary }]}>
+                <View style={[rd.statusBadge, { backgroundColor: isActive ? colors.successLight : isDone ? colors.surface : colors.primaryLight }]}>
+                  <Text style={[rd.statusText, { color: isActive ? colors.success : isDone ? colors.textSecondary : colors.primary }]}>
                     {isActive ? '🛒 Shopping now' : isDone ? '✅ Done' : '📋 Draft'}
                   </Text>
                 </View>
@@ -683,7 +683,7 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
           {/* Progress bar */}
           {runItems.length > 0 && (
             <View style={{ marginBottom: 12 }}>
-              <View style={[rd.progressBar, { backgroundColor: isDark ? '#252540' : '#E5E7EB' }]}>
+              <View style={[rd.progressBar, { backgroundColor: colors.surface }]}>
                 <View style={[rd.progressFill, { width: `${runItems.length ? (checkedCount / runItems.length) * 100 : 0}%`, backgroundColor: colors.primary }]} />
               </View>
               <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 4 }}>
@@ -694,10 +694,10 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
 
           {/* Sub-tabs */}
           {!isDone && (
-            <View style={[rd.tabRow, { borderColor: border, backgroundColor: isDark ? '#252540' : '#F3F4F6' }]}>
+            <View style={[rd.tabRow, { borderColor: border, backgroundColor: colors.surface }]}>
               {(['items', 'add', 'receipt'] as const).map(t => (
                 <Pressable key={t} onPress={() => setTab(t)} style={[rd.tabBtn, tab === t && { backgroundColor: colors.primary }]}>
-                  <Text style={[rd.tabText, { color: tab === t ? '#FFF' : colors.textSecondary }]}>
+                  <Text style={[rd.tabText, { color: tab === t ? colors.textInverse : colors.textSecondary }]}>
                     {t === 'items' ? `List (${runItems.length})` : t === 'add' ? '+ Add' : '🧾 Receipt'}
                   </Text>
                 </Pressable>
@@ -714,7 +714,7 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
                   <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textPrimary }}>No items yet</Text>
                   <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>Tap "+ Add" above to add items from your grocery list.</Text>
                   <Pressable onPress={() => setTab('add')} style={{ backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 24, marginTop: 4 }}>
-                    <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 14 }}>+ Add Items</Text>
+                    <Text style={{ color: colors.textInverse, fontWeight: '700', fontSize: 14 }}>+ Add Items</Text>
                   </Pressable>
                 </View>
               ) : (
@@ -725,20 +725,20 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
                       key={ri.itemId}
                       onPress={() => !isDone && !isNotFound && toggleCheck(ri)}
                       style={[rd.itemRow, {
-                        backgroundColor: isNotFound ? (isDark ? '#1a0a0a' : '#FEF2F2') : rowBg,
-                        borderColor: isNotFound ? '#FCA5A5' : border,
+                        backgroundColor: isNotFound ? colors.dangerLight : rowBg,
+                        borderColor: isNotFound ? colors.danger : border,
                         opacity: isNotFound ? 0.75 : 1,
                       }]}
                     >
                       {/* Checkbox */}
                       <View style={[rd.checkbox, {
-                        borderColor: isNotFound ? '#EF4444' : ri.checkedInRun ? checkedColor : border,
-                        backgroundColor: isNotFound ? '#FEE2E2' : ri.checkedInRun ? checkedColor : 'transparent',
+                        borderColor: isNotFound ? colors.danger : ri.checkedInRun ? checkedColor : border,
+                        backgroundColor: isNotFound ? colors.dangerLight : ri.checkedInRun ? checkedColor : 'transparent',
                       }]}>
                         {isNotFound
                           ? <Text style={{ fontSize: 10 }}>✕</Text>
                           : ri.checkedInRun
-                            ? <Ionicons name="checkmark" size={14} color="#FFF" />
+                            ? <Ionicons name="checkmark" size={14} color={colors.textInverse} />
                             : loadingId === ri.itemId
                               ? <ActivityIndicator size="small" color={colors.primary} />
                               : null}
@@ -747,14 +747,14 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
                       {/* Item info */}
                       <View style={{ flex: 1 }}>
                         <Text style={[rd.itemName, {
-                          color: isNotFound ? '#EF4444' : colors.textPrimary,
+                          color: isNotFound ? colors.danger : colors.textPrimary,
                           textDecorationLine: ri.checkedInRun ? 'line-through' : 'none',
                           opacity: ri.checkedInRun ? 0.5 : 1,
                         }]}>
                           {ri.item?.name ?? ri.itemId}
                         </Text>
                         {isNotFound
-                          ? <Text style={{ fontSize: 11, color: '#EF4444', fontWeight: '600', marginTop: 1 }}>Not found here — stays on list</Text>
+                          ? <Text style={{ fontSize: 11, color: colors.danger, fontWeight: '600', marginTop: 1 }}>Not found here — stays on list</Text>
                           : ri.item?.quantity
                             ? <Text style={{ fontSize: 12, color: colors.textSecondary }}>{ri.item.quantity}</Text>
                             : null}
@@ -783,11 +783,11 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
                             hitSlop={6}
                             style={{
                               paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
-                              backgroundColor: isDark ? '#1E293B' : '#FFF7ED',
-                              borderWidth: 1, borderColor: '#FB923C',
+                              backgroundColor: colors.warningLight,
+                              borderWidth: 1, borderColor: colors.warning,
                             }}
                           >
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: '#EA580C' }}>↩️ Return</Text>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.warningDark }}>↩️ Return</Text>
                           </Pressable>
                         )}
                         {/* Not found toggle — only on active runs */}
@@ -797,12 +797,12 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
                             hitSlop={6}
                             style={{
                               paddingHorizontal: 7, paddingVertical: 4, borderRadius: 8,
-                              backgroundColor: isNotFound ? '#FEE2E2' : (isDark ? '#1E293B' : '#F1F5F9'),
+                              backgroundColor: isNotFound ? colors.dangerLight : colors.surface,
                               borderWidth: 1,
-                              borderColor: isNotFound ? '#FCA5A5' : (isDark ? '#334155' : '#E2E8F0'),
+                              borderColor: isNotFound ? colors.danger : colors.border,
                             }}
                           >
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: isNotFound ? '#EF4444' : colors.textTertiary }}>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: isNotFound ? colors.danger : colors.textTertiary }}>
                               {isNotFound ? 'Undo' : 'Not here'}
                             </Text>
                           </Pressable>
@@ -810,7 +810,7 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
                         {/* Remove — only on active runs */}
                         {!isDone && (
                           <Pressable onPress={() => removeItemFromRun(run.id, ri.itemId)} style={{ padding: 4 }}>
-                            <Ionicons name="close-circle-outline" size={18} color={colors.textMuted ?? '#9CA3AF'} />
+                            <Ionicons name="close-circle-outline" size={18} color={colors.textTertiary} />
                           </Pressable>
                         )}
                       </View>
@@ -839,7 +839,7 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 14, color: colors.textPrimary }}>{item.name}</Text>
                       {item.quantity && <Text style={{ fontSize: 12, color: colors.textSecondary }}>{item.quantity}</Text>}
-                      {item.storePreference && <Text style={{ fontSize: 11, color: colors.textMuted ?? '#9CA3AF' }}>🏪 {item.storePreference}</Text>}
+                      {item.storePreference && <Text style={{ fontSize: 11, color: colors.textTertiary }}>🏪 {item.storePreference}</Text>}
                     </View>
                     <View style={[rd.addBtn, { borderColor: colors.primary }]}>
                       <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '600' }}>+ Add</Text>
@@ -872,7 +872,7 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
                     </View>
                   )}
                   {receiptAnalysis && !analyzingReceipt && (
-                    <View style={{ backgroundColor: isDark ? '#1a1035' : '#f5f3ff', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colors.border }}>
+                    <View style={{ backgroundColor: colors.primaryLight, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colors.border }}>
                       {receiptAnalysis.total && (
                         <Text style={{ fontSize: 16, fontWeight: '800', color: colors.textPrimary, marginBottom: 10 }}>
                           Total: ${receiptAnalysis.total}
@@ -901,7 +901,7 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
           {!isDone && (
             <View style={{ gap: 8, marginTop: 12 }}>
               {run.status === 'draft' && (
-                <Pressable onPress={() => startRun(run.id, memberId)} style={[sh.btn, { backgroundColor: '#16A34A' }]}>
+                <Pressable onPress={() => startRun(run.id, memberId)} style={[sh.btn, { backgroundColor: colors.success }]}>
                   <Text style={sh.btnText}>🛒 Start Shopping</Text>
                 </Pressable>
               )}
@@ -912,17 +912,17 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     <Pressable onPress={handleSwitchStore}
                       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        borderWidth: 1.5, borderColor: isDark ? '#334155' : '#E2E8F0',
+                        borderWidth: 1.5, borderColor: colors.border,
                         borderRadius: 10, paddingVertical: 10,
-                        backgroundColor: isDark ? '#1E293B' : '#F8FAFC' }}>
+                        backgroundColor: colors.surface }}>
                       <Text style={{ fontSize: 14 }}>🏪</Text>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>Switch Store</Text>
                     </Pressable>
                     <Pressable onPress={handleHandOff}
                       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        borderWidth: 1.5, borderColor: isDark ? '#334155' : '#E2E8F0',
+                        borderWidth: 1.5, borderColor: colors.border,
                         borderRadius: 10, paddingVertical: 10,
-                        backgroundColor: isDark ? '#1E293B' : '#F8FAFC' }}>
+                        backgroundColor: colors.surface }}>
                       <Text style={{ fontSize: 14 }}>🤝</Text>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>Hand Off</Text>
                     </Pressable>
@@ -930,9 +930,9 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
 
                   {/* Not-found summary */}
                   {notFoundIds.size > 0 && (
-                    <View style={{ backgroundColor: isDark ? '#1a0a0a' : '#FEF2F2', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
-                      borderWidth: 1, borderColor: '#FCA5A5' }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#DC2626' }}>
+                    <View style={{ backgroundColor: colors.dangerLight, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+                      borderWidth: 1, borderColor: colors.danger }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.danger }}>
                         ⚠️ {notFoundIds.size} item{notFoundIds.size > 1 ? 's' : ''} not found at {run.store} — will stay on your list
                       </Text>
                     </View>
@@ -957,12 +957,14 @@ function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, colors,
 
 // ─── Item Card ────────────────────────────────────────────────────────────────
 
-const CAT_DOT_COLOR: Record<string, string> = {
-  Produce: '#14B8A6', Dairy: '#14B8A6', Meat: '#14B8A6', Frozen: '#14B8A6',
-  Grains: '#F59E0B', Snacks: '#F59E0B', Beverages: '#F59E0B',
-  Cleaning: '#7C3AED', 'Personal Care': '#7C3AED', Spices: '#7C3AED',
-  Other: '#9CA3AF',
-};
+function catDotColor(colors: any): Record<string, string> {
+  return {
+    Produce: colors.teal, Dairy: colors.teal, Meat: colors.teal, Frozen: colors.teal,
+    Grains: colors.amber, Snacks: colors.amber, Beverages: colors.amber,
+    Cleaning: colors.primary, 'Personal Care': colors.primary, Spices: colors.primary,
+    Other: colors.textTertiary,
+  };
+}
 
 function fmtProvenance(item: GroceryItem, members: any[]) {
   const time = new Date(item.createdAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
@@ -981,7 +983,7 @@ function ItemCard({ item, members, selected, selecting, onBuy, onLongPress, onTo
   colors: any; isDark: boolean;
   priceInfo?: { price: number | null; unit: string | null; source: 'kroger' | 'estimate' | 'unknown' };
 }) {
-  const dotColor = CAT_DOT_COLOR[item.category ?? 'Other'] ?? '#9CA3AF';
+  const dotColor = catDotColor(colors)[item.category ?? 'Other'] ?? colors.textTertiary;
   const isBought = item.isBought;
   const sepColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)';
 
@@ -993,7 +995,7 @@ function ItemCard({ item, members, selected, selecting, onBuy, onLongPress, onTo
       style={({ pressed }) => ({
         flexDirection: 'row', alignItems: 'center',
         paddingVertical: 11, paddingHorizontal: 16,
-        backgroundColor: pressed ? (isDark ? 'rgba(124,58,237,0.07)' : '#FAF8FF') : 'transparent',
+        backgroundColor: pressed ? (isDark ? 'rgba(124,58,237,0.07)' : colors.primaryLight) : 'transparent',
         opacity: isBought ? 0.45 : 1,
         borderBottomWidth: isLast ? 0 : StyleSheet.hairlineWidth,
         borderBottomColor: sepColor,
@@ -1002,12 +1004,12 @@ function ItemCard({ item, members, selected, selecting, onBuy, onLongPress, onTo
       {/* Left: checkbox or dot */}
       <View style={{ width: 28, alignItems: 'center', marginRight: 12 }}>
         {selecting ? (
-          <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: selected ? '#7C3AED' : (isDark ? '#475569' : '#CBD5E1'), backgroundColor: selected ? '#7C3AED' : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-            {selected && <Ionicons name="checkmark" size={12} color="#fff" />}
+          <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+            {selected && <Ionicons name="checkmark" size={12} color={colors.textInverse} />}
           </View>
         ) : (
-          <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: (CAT_DOT_COLOR[item.category ?? 'Other'] ?? '#9CA3AF') + '1A', alignItems: 'center', justifyContent: 'center' }}>
-            <CatIcon category={item.category} size={18} color={CAT_DOT_COLOR[item.category ?? 'Other'] ?? '#9CA3AF'} />
+          <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: (catDotColor(colors)[item.category ?? 'Other'] ?? colors.textTertiary) + '1A', alignItems: 'center', justifyContent: 'center' }}>
+            <CatIcon category={item.category} size={18} color={catDotColor(colors)[item.category ?? 'Other'] ?? colors.textTertiary} />
           </View>
         )}
       </View>
@@ -1019,7 +1021,7 @@ function ItemCard({ item, members, selected, selecting, onBuy, onLongPress, onTo
         </Text>
         {/* Subtitle: qty · store · AI badge */}
         {(item.quantity || item.storePreference || item.aiGenerated || item.notes) && (
-          <Text style={{ fontSize: 12, color: isDark ? '#64748B' : '#94A3B8', marginTop: 2 }} numberOfLines={1}>
+          <Text style={{ fontSize: 12, color: colors.textTertiary, marginTop: 2 }} numberOfLines={1}>
             {[
               item.quantity,
               item.storePreference,
@@ -1033,12 +1035,12 @@ function ItemCard({ item, members, selected, selecting, onBuy, onLongPress, onTo
       {/* Right: price + buy */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         {priceInfo?.price != null && (
-          <Text style={{ fontSize: 12, fontWeight: '800', color: priceInfo.source === 'kroger' ? '#15803D' : '#B45309' }}>
+          <Text style={{ fontSize: 12, fontWeight: '800', color: priceInfo.source === 'kroger' ? colors.success : colors.warningDark }}>
             ${priceInfo.price.toFixed(2)}
           </Text>
         )}
-        <Pressable onPress={onBuy} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isBought ? (isDark ? '#064E3B' : '#D1FAE5') : (isDark ? '#0F172A' : '#F1F5F9'), alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: isBought ? '#10B981' : (isDark ? '#1E293B' : '#E2E8F0') }}>
-          <Ionicons name="checkmark" size={15} color={isBought ? '#10B981' : (isDark ? '#475569' : '#CBD5E1')} />
+        <Pressable onPress={onBuy} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isBought ? colors.successLight : colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: isBought ? colors.success : colors.border }}>
+          <Ionicons name="checkmark" size={15} color={isBought ? colors.success : colors.textTertiary} />
         </Pressable>
       </View>
     </Pressable>
@@ -1051,8 +1053,8 @@ function RunCard({ run, onPress, onDelete, colors, isDark }: {
   run: GroceryRun; onPress: () => void; onDelete?: () => void;
   colors: any; isDark: boolean;
 }) {
-  const cardBg = isDark ? '#1F1F38' : '#FFFFFF';
-  const border = isDark ? '#2D2D4E' : '#E5E7EB';
+  const cardBg = colors.card;
+  const border = colors.border;
   const isActive = run.status === 'active';
   const isDone   = run.status === 'done';
 
@@ -1062,21 +1064,21 @@ function RunCard({ run, onPress, onDelete, colors, isDark }: {
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={[rc.name, { color: colors.textPrimary }]}>{run.name}</Text>
-          <View style={[rc.badge, { backgroundColor: isActive ? '#DCFCE7' : isDone ? '#F3F4F6' : '#EEF2FF' }]}>
-            <Text style={[rc.badgeText, { color: isActive ? '#16A34A' : isDone ? '#6B7280' : colors.primary }]}>
+          <View style={[rc.badge, { backgroundColor: isActive ? colors.successLight : isDone ? colors.surface : colors.primaryLight }]}>
+            <Text style={[rc.badgeText, { color: isActive ? colors.success : isDone ? colors.textSecondary : colors.primary }]}>
               {isActive ? 'LIVE' : isDone ? 'DONE' : 'DRAFT'}
             </Text>
           </View>
         </View>
         <Text style={[rc.store, { color: colors.textSecondary }]}>🏪 {run.store}</Text>
-        {run.plannedAt && <Text style={[rc.store, { color: colors.textMuted ?? '#9CA3AF' }]}>📅 {new Date(run.plannedAt).toLocaleDateString()}</Text>}
-        <Text style={[rc.ago, { color: colors.textMuted ?? '#9CA3AF' }]}>{fmtDate(run.createdAt)}</Text>
+        {run.plannedAt && <Text style={[rc.store, { color: colors.textTertiary }]}>📅 {new Date(run.plannedAt).toLocaleDateString()}</Text>}
+        <Text style={[rc.ago, { color: colors.textTertiary }]}>{fmtDate(run.createdAt)}</Text>
       </View>
       <View style={{ gap: 6, alignItems: 'flex-end' }}>
-        <Ionicons name="chevron-forward" size={18} color={colors.textMuted ?? '#9CA3AF'} />
+        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
         {!isActive && onDelete && (
           <Pressable onPress={onDelete} style={{ padding: 4 }}>
-            <Ionicons name="trash-outline" size={16} color="#EF4444" />
+            <Ionicons name="trash-outline" size={16} color={colors.danger} />
           </Pressable>
         )}
       </View>
@@ -1115,9 +1117,9 @@ function AiPanel({ familyId, memberId, existingItems, colors, isDark, onClose, o
 
   const existingNames = useMemo(() => new Set(existingItems.map(i => i.name.toLowerCase().trim())), [existingItems]);
   const P      = colors.primary;
-  const panelBg = isDark ? '#1a1035' : '#f5f3ff';
-  const chipBg  = isDark ? '#2d1a5e' : '#ede9fe';
-  const border  = isDark ? '#4C1D95' : '#DDD6FE';
+  const panelBg = colors.primaryLight;
+  const chipBg  = colors.primaryLight;
+  const border  = colors.border;
 
   const runAiGenerate = async (text: string) => {
     if (!text.trim()) return;
@@ -1174,7 +1176,7 @@ function AiPanel({ familyId, memberId, existingItems, colors, isDark, onClose, o
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>CubeAI</Text>
             <View style={{ backgroundColor: P, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
-              <Text style={{ fontSize: 9, color: '#fff', fontWeight: '700' }}>ACTIVE</Text>
+              <Text style={{ fontSize: 9, color: colors.textInverse, fontWeight: '700' }}>ACTIVE</Text>
             </View>
           </View>
           <Text style={{ fontSize: 11, color: colors.textSecondary }}>Suggest items for your list</Text>
@@ -1204,13 +1206,13 @@ function AiPanel({ familyId, memberId, existingItems, colors, isDark, onClose, o
           value={aiPrompt} onChangeText={setAiPrompt}
           placeholder="Describe what you need…"
           placeholderTextColor={colors.placeholder}
-          style={{ flex: 1, backgroundColor: isDark ? '#2d1a5e' : '#fff', borderRadius: 10, borderWidth: 1, borderColor: border,
+          style={{ flex: 1, backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: border,
             paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: colors.textPrimary }}
           returnKeyType="go" onSubmitEditing={() => runAiGenerate(aiPrompt)}
         />
         <Pressable onPress={() => runAiGenerate(aiPrompt)} disabled={!aiPrompt.trim() || aiLoading}
           style={{ backgroundColor: aiPrompt.trim() && !aiLoading ? P : colors.border, borderRadius: 10, paddingHorizontal: 14, justifyContent: 'center' }}>
-          {aiLoading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Go</Text>}
+          {aiLoading ? <ActivityIndicator color={colors.textInverse} size="small" /> : <Text style={{ color: colors.textInverse, fontWeight: '700' }}>Go</Text>}
         </Pressable>
       </View>
 
@@ -1218,7 +1220,7 @@ function AiPanel({ familyId, memberId, existingItems, colors, isDark, onClose, o
       {aiSuggested.map((item, i) => (
         <View key={i}>
           {aiEditingIdx === i ? (
-            <View style={{ backgroundColor: isDark ? '#2d1a5e' : '#fff', borderRadius: 10, borderWidth: 1, borderColor: border, padding: 10, marginBottom: 6 }}>
+            <View style={{ backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: border, padding: 10, marginBottom: 6 }}>
               <TextInput value={aiEditName} onChangeText={setAiEditName}
                 style={{ fontSize: 14, color: colors.textPrimary, borderBottomWidth: 1, borderBottomColor: border, paddingBottom: 4, marginBottom: 8 }} />
               <TextInput value={aiEditQty} onChangeText={setAiEditQty} placeholder="Qty"
@@ -1230,7 +1232,7 @@ function AiPanel({ familyId, memberId, existingItems, colors, isDark, onClose, o
                   updated[i] = { ...updated[i], name: aiEditName.trim() || updated[i].name, quantity: aiEditQty.trim() || updated[i].quantity };
                   setAiSuggested(updated); setAiEditingIdx(null);
                 }} style={{ flex: 1, backgroundColor: P, borderRadius: 8, paddingVertical: 7, alignItems: 'center' }}>
-                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Save</Text>
+                  <Text style={{ color: colors.textInverse, fontWeight: '700', fontSize: 13 }}>Save</Text>
                 </Pressable>
                 <Pressable onPress={() => setAiEditingIdx(null)}
                   style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 8, paddingVertical: 7, alignItems: 'center', borderWidth: 1, borderColor: colors.border }}>
@@ -1261,7 +1263,7 @@ function AiPanel({ familyId, memberId, existingItems, colors, isDark, onClose, o
                   </Pressable>
                   <Pressable onPress={() => { setAiSuggested(prev => prev.filter((_, j) => j !== i)); setAiSelected(prev => { const n = new Set(prev); n.delete(i); return n; }); }}
                     style={{ padding: 6 }}>
-                    <Ionicons name="trash-outline" size={15} color="#ef4444" />
+                    <Ionicons name="trash-outline" size={15} color={colors.danger} />
                   </Pressable>
                 </>
               )}
@@ -1293,8 +1295,8 @@ function ItemDetailSheet({ item, members, onClose, onEdit, onBuy, onDelete, colo
   priceInfo?: { price: number | null; unit: string | null; source: 'kroger' | 'estimate' | 'unknown' };
 }) {
   if (!item) return null;
-  const dotColor = CAT_DOT_COLOR[item.category ?? 'Other'] ?? '#9CA3AF';
-  const sheetBg  = isDark ? '#1A1F35' : '#FFFFFF';
+  const dotColor = catDotColor(colors)[item.category ?? 'Other'] ?? colors.textTertiary;
+  const sheetBg  = colors.card;
 
   return (
     <Modal visible={!!item} transparent animationType="slide" onRequestClose={onClose}>

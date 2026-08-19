@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { ChevronUp, ChevronDown, ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins } from 'lucide-react-native';
+import { ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
-import { BRAND } from '@/components/FamilyCubeLogo';
 import { useChoreStore } from '@/store/choreStore';
 import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
+import { SectionCard } from '../hubComponents';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
 
@@ -30,9 +30,9 @@ function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQues
 
   return (
     <View style={{ borderRadius: 16, overflow: 'hidden',
-      borderWidth: 1.5, borderColor: BRAND.teal + '40',
-      backgroundColor: isDark ? BRAND.teal + '08' : BRAND.teal + '06' }}>
-      <View style={{ backgroundColor: BRAND.teal, paddingHorizontal: 14, paddingVertical: 8,
+      borderWidth: 1.5, borderColor: colors.parent + '40',
+      backgroundColor: isDark ? colors.parent + '08' : colors.parent + '06' }}>
+      <View style={{ backgroundColor: colors.parent, paddingHorizontal: 14, paddingVertical: 8,
         flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         {c.questMode === 'virtual' ? <Laptop size={15} color="#fff" /> : <Leaf size={15} color="#fff" />}
         <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>
@@ -57,9 +57,9 @@ function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQues
         )}
         <View style={{ flexDirection: 'row', gap: 6 }}>
           {[
-            { label: 'Spend', val: Math.floor(pts * 0.5), color: BRAND.amber },
+            { label: 'Spend', val: Math.floor(pts * 0.5), color: colors.kid },
             { label: 'Save',  val: Math.floor(pts * 0.4), color: MONEY_GREEN },
-            { label: 'Give',  val: pts - Math.floor(pts * 0.5) - Math.floor(pts * 0.4), color: BRAND.purple },
+            { label: 'Give',  val: pts - Math.floor(pts * 0.5) - Math.floor(pts * 0.4), color: colors.primary },
           ].map(j => (
             <View key={j.label} style={{ flex: 1, alignItems: 'center', borderRadius: 8,
               backgroundColor: j.color + '12', paddingVertical: 6,
@@ -73,12 +73,12 @@ function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQues
           <Pressable
             onPress={() => declineGrandparentQuestAsParent(c.id, active.id, 'Not suitable')}
             style={{ flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 12,
-              borderWidth: 1.5, borderColor: isDark ? colors.border : '#E2E8F0' }}>
+              borderWidth: 1.5, borderColor: colors.border }}>
             <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Decline</Text>
           </Pressable>
           <Pressable
             onPress={() => approveGrandparentQuestAsParent(c.id, active.id)}
-            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 12, backgroundColor: BRAND.teal }}>
+            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 12, backgroundColor: colors.parent }}>
             <CheckCircle2 size={14} color="#fff" />
             <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Approve & Publish to Kid</Text>
           </Pressable>
@@ -98,7 +98,7 @@ function GpTurnedDownCard({ c, members, colors, isDark }: {
 
   return (
     <View style={{ borderRadius: 14, padding: 12, gap: 8,
-      backgroundColor: isDark ? `${colors.danger}10` : '#FEF2F2',
+      backgroundColor: isDark ? `${colors.danger}10` : colors.dangerLight,
       borderWidth: 1.5, borderColor: `${colors.danger}30` }}>
       <View>
         <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
@@ -112,14 +112,14 @@ function GpTurnedDownCard({ c, members, colors, isDark }: {
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <Pressable onPress={() => setExpanded(e => !e)}
           style={{ flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center',
-            borderWidth: 1.5, borderColor: BRAND.amber + '60' }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.amber }}>Reassign</Text>
+            borderWidth: 1.5, borderColor: colors.warning + '60' }}>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warning }}>Reassign</Text>
         </Pressable>
         <Pressable onPress={() => useChoreStore.getState().updateChore(c.id, {
           status: 'todo', isPool: true, assignedToId: undefined,
           targetChildIds: [], rejectionReason: undefined,
         })}
-          style={{ flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center', backgroundColor: BRAND.teal }}>
+          style={{ flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center', backgroundColor: colors.parent }}>
           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Open to Any Kid</Text>
         </Pressable>
       </View>
@@ -133,8 +133,8 @@ function GpTurnedDownCard({ c, members, colors, isDark }: {
               });
             }}
               style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
-                borderWidth: 1.5, borderColor: BRAND.amber + '50', backgroundColor: BRAND.amber + '10' }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.amber }}>{k.name.split(' ')[0]}</Text>
+                borderWidth: 1.5, borderColor: colors.warning + '50', backgroundColor: colors.warning + '10' }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.warning }}>{k.name.split(' ')[0]}</Text>
             </Pressable>
           ))}
         </View>
@@ -156,45 +156,19 @@ export function ChoreReviewSection({
   const gpDeclined = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'declined');
   const badgeCount = pendingReviewsCount + gpPending.length;
 
-  // Collapsed by default — auto-opens once there's more than one thing
-  // waiting on review. A single pending item is legible from the badge
-  // alone; a real backlog is worth the screen space.
-  const [expanded, setExpanded] = useState(false);
-  useEffect(() => {
-    if (badgeCount > 1) setExpanded(true);
-  }, [badgeCount > 1]);
-
   return (
     <View style={{ paddingHorizontal: 16 }}>
-      <View style={{
-        backgroundColor: colors.card,
-        borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
-        overflow: 'hidden', marginBottom: 12,
-      }}>
-        <Pressable onPress={() => setExpanded(e => !e)}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
-          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: BRAND.teal + '20', alignItems: 'center', justifyContent: 'center' }}>
-            <ClipboardList size={20} color={BRAND.teal} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>Chore Reviews</Text>
-              {badgeCount > 0 && (
-                <View style={{ backgroundColor: BRAND.teal, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2 }}>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: '#fff' }}>{badgeCount}</Text>
-                </View>
-              )}
-            </View>
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
-              {badgeCount > 0 ? `${badgeCount} pending approval` : 'All caught up'}
-            </Text>
-          </View>
-          {expanded ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
-        </Pressable>
-        {expanded && (
-          <View style={{ paddingBottom: 8 }}>
+      <SectionCard
+        icon={<ClipboardList size={16} color={colors.parent} />}
+        title="Chore Reviews"
+        subtitle={badgeCount === 0 ? 'All caught up' : undefined}
+        accent={colors.parent}
+        badge={badgeCount} badgeLabel="Pending" badgeColor={colors.parent}
+        collapsible defaultExpanded={badgeCount > 1}
+        colors={colors} isDark={isDark}>
+          <View style={{ gap: 8 }}>
             {gpPending.length > 0 && (
-              <View style={{ marginHorizontal: 14, marginBottom: 12, gap: 8 }}>
+              <View style={{ gap: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                   <HeartHandshake size={12} color={colors.textTertiary} />
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
@@ -214,7 +188,7 @@ export function ChoreReviewSection({
                 Hub), shown here so the parent isn't relying on chat alone to
                 notice and can reassign or open it up without leaving the Hub. */}
             {gpDeclined.length > 0 && (
-              <View style={{ marginHorizontal: 14, marginBottom: 12, gap: 8 }}>
+              <View style={{ gap: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                   <HandCoins size={12} color={colors.textTertiary} />
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
@@ -230,8 +204,7 @@ export function ChoreReviewSection({
 
             <ParentReviewDeck parent={active} members={members} colors={colors} isDark={isDark} />
           </View>
-        )}
-      </View>
+      </SectionCard>
     </View>
   );
 }

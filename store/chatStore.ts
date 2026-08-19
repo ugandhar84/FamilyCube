@@ -34,6 +34,15 @@ export interface ChatMessage {
   // Document attachment
   documentUri?: string;
   documentName?: string;
+  // Structured card payload (e.g. a shared meal/event/quest from Ask Cube)
+  // — rendered as a read-only card instead of the plain text bubble.
+  // Plaintext, unlike `text`, since it's app-rendered structured data, not
+  // free-form prose that needs E2E encryption.
+  systemEvent?: { type: string; payload: Record<string, any> };
+  // Set by the async AI moderation pass (moderate-message edge function),
+  // never by the client directly. Parent-only UI shows a small indicator —
+  // the message itself stays visible to everyone as sent.
+  moderationFlag?: { severity: string; reason: string; flagged_at: string };
 }
 
 // DB row shape — "text" column stores AES-256-GCM ciphertext
@@ -56,6 +65,8 @@ interface DBRow {
   location_pin?: { address: string; lat: number; lng: number } | null;
   document_url?: string | null;
   document_name?: string | null;
+  system_event?: { type: string; payload: Record<string, any> } | null;
+  moderation_flag?: { severity: string; reason: string; flagged_at: string } | null;
 }
 
 const PAGE_SIZE    = 100;
@@ -79,6 +90,8 @@ async function rowToMessage(row: DBRow): Promise<ChatMessage> {
     locationPin:   row.location_pin ?? undefined,
     documentUri:   row.document_url ?? undefined,
     documentName:  row.document_name ?? undefined,
+    systemEvent:   row.system_event ?? undefined,
+    moderationFlag: row.moderation_flag ?? undefined,
   };
 }
 
@@ -112,6 +125,7 @@ interface ChatState {
     locationPin?: { address: string; lat: number; lng: number },
     voiceUri?: string,
     documentUri?: string, documentName?: string,
+    systemEvent?: { type: string; payload: Record<string, any> },
   ) => Promise<void>;
 
   addReaction:   (channelId: string, messageId: string, emoji: string, memberId: string) => Promise<void>;
@@ -269,7 +283,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // ── Send ──────────────────────────────────────────────────────────────────
 
-  sendMessage: async (channelId, senderId, text, imageUri, mediaType, replyTo, voiceDuration, locationPin, voiceUri, documentUri, documentName) => {
+  sendMessage: async (channelId, senderId, text, imageUri, mediaType, replyTo, voiceDuration, locationPin, voiceUri, documentUri, documentName, systemEvent) => {
     const ciphertext   = await encryptMessage(text);
     const blind_index  = await buildBlindIndex(text);
 
@@ -293,6 +307,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       locationPin,
       documentUri,
       documentName,
+      systemEvent,
     };
     get()._upsertMessage(channelId, optimistic);
 
@@ -313,6 +328,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         location_pin: locationPin ?? null,
         document_url:  documentUri ?? null,
         document_name: documentName ?? null,
+        system_event:  systemEvent ?? null,
+        is_system:     !!systemEvent,
         // voice_url omitted from initial insert — added via background update after upload
       };
       const { error } = await supabase.from('chat_messages').insert(row);
@@ -323,6 +340,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
         supabase.functions
           .invoke('mention-notify', { body: { messageId: msgId, channelId, senderId, text, mentions } })
           .catch(e => console.warn('[chatStore] mention-notify failed:', e?.message));
+      }
+      // Layer 2 moderation — fire-and-forget, runs AFTER the message is
+      // already visible; only ever adds a parent-only flag, never blocks
+      // or removes anything. Plain text messages only (a system_event card
+      // or voice/image-only message has no prose to judge).
+      if (text?.trim() && !systemEvent) {
+        supabase.functions
+          .invoke('moderate-message', { body: { table: 'chat_messages', messageId: msgId, text } })
+          .catch(e => console.warn('[chatStore] moderate-message failed:', e?.message));
       }
       // Realtime subscription will deliver the real row and upsert it (replacing optimistic)
     } catch (err) {

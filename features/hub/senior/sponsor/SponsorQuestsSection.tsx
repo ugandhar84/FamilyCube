@@ -59,12 +59,12 @@ export function SponsorQuestsSection({
       <SectionCard
         large
         icon={<Star size={18} color={BRAND.teal} />}
-        title="Quests I Sponsor"
+        title="Chores I Sponsor"
         subtitle={pendingGpApproval.length > 0
           ? `${pendingGpApproval.length} waiting for you to check`
-          : 'Set up a quest or a savings match'}
+          : 'Set up a chore or a savings match'}
         badge={(pendingGpApproval.length) || undefined} badgeColor={BRAND.teal}
-        actionBtn={{ label: 'New Quest', onPress: onOpenCreateQuestModal }}
+        actionBtn={{ label: 'New Chore', onPress: onOpenCreateQuestModal }}
         collapsible defaultExpanded={pendingGpApproval.length > 0}
         colors={colors} isDark={isDark}>
 

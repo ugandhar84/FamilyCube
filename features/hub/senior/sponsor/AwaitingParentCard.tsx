@@ -34,10 +34,10 @@ export function AwaitingParentCard({ quests, colors, isDark }: {
           </View>
           {/* Still their own quest, nobody's acted on it yet — safe to pull back. */}
           <Pressable onPress={() => Alert.alert(
-            'Cancel this quest?',
+            'Cancel this chore?',
             `"${c.title}" will be removed before a parent even reviews it.`,
             [{ text: 'Keep it', style: 'cancel' },
-             { text: 'Cancel Quest', style: 'destructive', onPress: () => useChoreStore.getState().deleteChore(c.id) }],
+             { text: 'Cancel Chore', style: 'destructive', onPress: () => useChoreStore.getState().deleteChore(c.id) }],
           )}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <X size={16} color={colors.danger} />

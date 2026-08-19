@@ -13,8 +13,10 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { useTheme } from '@/lib/ThemeContext';
+import { useFamilyStore } from '@/store/familyStore';
+import { LETTER_SPACING } from '@/constants/theme';
 import { IconCubeMark, BRAND } from './FamilyCubeLogo';
-import PersonaSwitcherSheet from './PersonaSwitcherSheet';
+import PersonaSwitcherDropdown from './PersonaSwitcherDropdown';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -173,6 +175,15 @@ interface AppHeaderProps {
   onSettingsPress?: () => void;
 }
 
+function RefreshIcon({ color }: { color: string }) {
+  return (
+    <Svg width={11} height={11} viewBox="0 0 24 24">
+      <Path d="M23 4v6h-6M1 20v-6h6" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <Path d="M3.5 9A9 9 0 0121 15M20.5 15A9 9 0 013 9" stroke={color} strokeWidth={2.5} strokeLinecap="round" fill="none" />
+    </Svg>
+  );
+}
+
 export default function AppHeader({
   memberName    = 'Member',
   memberRole    = 'parent',
@@ -182,38 +193,64 @@ export default function AppHeader({
   onSettingsPress,
 }: AppHeaderProps) {
   const { colors, isDark } = useTheme();
+  const { familyName } = useFamilyStore();
   const role = ROLE_CONFIG[memberRole] ?? ROLE_CONFIG.parent;
   const [showSwitcher, setShowSwitcher] = React.useState(false);
+  const initial = (memberName.trim()[0] ?? '?').toUpperCase();
 
   const handlePersonaPress = () => {
-    setShowSwitcher(true);
+    setShowSwitcher(v => !v);
     onPersonaPress?.();
   };
 
   return (
-    <>
-    <PersonaSwitcherSheet visible={showSwitcher} onClose={() => setShowSwitcher(false)} />
+    <View style={{ position: 'relative', zIndex: 30 }}>
     <View style={[s.bar, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
 
-      {/* LEFT: cube icon + persona pill */}
+      {/* LEFT: persona header (two-line: name+mode, family+switch) — the
+          animated cube mark used to live here; it's reserved for loading
+          states now instead, so the header leads straight with identity. */}
       <View style={s.left}>
-        <AnimatedCubeMark size={36} />
-
         <TouchableOpacity
-          style={[s.pill, { backgroundColor: colors.card, borderColor: colors.border }]}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}
           onPress={handlePersonaPress}
           activeOpacity={0.75}
         >
-          <View style={[s.avatarRing, { borderColor: role.color }]}>
-            <PersonIcon color={colors.textSecondary} />
+          <View style={{ position: 'relative' }}>
+            <View style={{
+              width: 34, height: 34, borderRadius: 11,
+              backgroundColor: role.color, alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Text style={{ fontSize: 15, fontWeight: '800', color: '#fff' }}>{initial}</Text>
+            </View>
+            <View style={{
+              position: 'absolute', bottom: -2, right: -2, width: 11, height: 11, borderRadius: 6,
+              backgroundColor: colors.success, borderWidth: 2, borderColor: colors.background,
+            }} />
           </View>
-          <View>
-            <Text style={[s.pillName, { color: colors.textPrimary }]} numberOfLines={1}>
-              {memberName}
-            </Text>
-            <Text style={[s.pillRole, { color: role.color }]}>{role.label}</Text>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={[s.pillName, { color: colors.textPrimary, maxWidth: undefined }]} numberOfLines={1}>
+                {memberName}
+              </Text>
+              <View style={{ backgroundColor: role.color + '18', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: LETTER_SPACING.badge, color: role.color }}>{role.label}</Text>
+              </View>
+              <View style={{
+                width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: colors.surface,
+                transform: [{ rotate: showSwitcher ? '180deg' : '0deg' }],
+              }}>
+                <ChevronDown color={colors.textSecondary} />
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 }}>
+              <Text style={{ fontSize: 12, color: colors.textSecondary }} numberOfLines={1}>{familyName}</Text>
+              <Text style={{ fontSize: 12, color: colors.textTertiary }}>·</Text>
+              <RefreshIcon color={colors.primary} />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>Switch Profile</Text>
+            </View>
           </View>
-          <ChevronDown color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
@@ -238,7 +275,9 @@ export default function AppHeader({
         </TouchableOpacity>
       </View>
     </View>
-    </>
+
+    <PersonaSwitcherDropdown visible={showSwitcher} onClose={() => setShowSwitcher(false)} />
+    </View>
   );
 }
 

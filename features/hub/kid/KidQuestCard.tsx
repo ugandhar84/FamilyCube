@@ -80,8 +80,8 @@ export function KidQuestCard({
       {q.status === 'pending_approval' && (
         <Text style={{ fontSize: KID.body, color: BRAND.amber }}>
           {q.questType === 'grandparent_quest'
-            ? 'Waiting on a grandparent to review this quest.'
-            : 'Waiting on a parent to review this quest.'}
+            ? 'Waiting on a grandparent to review this chore.'
+            : 'Waiting on a parent to review this chore.'}
         </Text>
       )}
       {isDeclined && q.declineReason && (

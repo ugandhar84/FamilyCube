@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { View, Text, Pressable, TextInput } from 'react-native';
 import { Clock, Construction, Repeat, MessageCircle } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
-import { BRAND } from '@/components/FamilyCubeLogo';
 import AppBottomSheet from '@/components/AppBottomSheet';
 
 // Violet — "Snooze" action accent, deliberately distinct from BRAND.purple
@@ -31,7 +30,7 @@ export function PushbackSheet({ target, colors, isDark, onClose, respondToParent
       onClose={() => { setDetail(''); onClose(); }}
       title={`Respond: ${target?.choreTitle ?? ''}`}
       subtitle="2 bounces locks this task for an offline chat"
-      accentColor={BRAND.amber}
+      accentColor={colors.warning}
       minHeight="45%"
       maxHeight="75%">
       <View style={{ gap: 16 }}>
@@ -52,8 +51,8 @@ export function PushbackSheet({ target, colors, isDark, onClose, respondToParent
           {([
             { action: 'SNOOZE',  label: 'Snooze 48h',   Icon: Clock,        color: SNOOZE_VIOLET },
             { action: 'BLOCKER', label: 'Blocker',       Icon: Construction, color: colors.danger },
-            { action: 'TRADE',   label: 'Trade tasks',   Icon: Repeat,       color: BRAND.amber },
-            { action: 'DISCUSS', label: 'Discuss later', Icon: MessageCircle, color: BRAND.teal },
+            { action: 'TRADE',   label: 'Trade tasks',   Icon: Repeat,       color: colors.warning },
+            { action: 'DISCUSS', label: 'Discuss later', Icon: MessageCircle, color: colors.parent },
           ] as const).map(({ action, label, Icon, color }) => (
             <Pressable key={action} onPress={() => handle(action)}
               style={{

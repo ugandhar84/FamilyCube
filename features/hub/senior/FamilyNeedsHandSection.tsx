@@ -6,6 +6,7 @@ import { CollapsibleCard } from '../hubComponents';
 import { fmtTime, hoursUntilEvent } from '../hubUtils';
 import { GP } from './seniorTheme';
 import type { FamilyMember } from '@/store/familyStore';
+import { useEventStore } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { ChoreTask } from '@/store/choreStore';
 import type { KidRequest } from '@/store/kidRequestStore';
@@ -64,7 +65,16 @@ export function FamilyNeedsHandSection({
               </View>
             )}
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false, helper: active.name, helperStatus: 'confirmed' })}
+              <Pressable onPress={() => {
+                // Race-safe: this open request is visible to every eligible
+                // GP at once, so two grandparents can both tap "I'll Drive"
+                // within the same round-trip window — claimHelperSlot's
+                // conditional DB write (only succeeds while helper_status is
+                // still unset) makes sure only the actual first-to-land
+                // claim sticks, rather than both devices' optimistic state
+                // showing themselves as the confirmed helper.
+                useEventStore.getState().claimHelperSlot(ev.id, 'helper', active.name, { approvalPending: false });
+              }}
                 style={{ flex: 1, backgroundColor: BRAND.purple, paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                 <Car size={14} color="#fff" />
                 <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>

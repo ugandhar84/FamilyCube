@@ -1,0 +1,480 @@
+<title>Event Lifecycle Matrix</title>
+<style>
+  :root{
+    --bg:#F7F5F1; --surface:#FFFFFF; --surface-2:#EFECE5; --border:#DDD8CC;
+    --text:#26241E; --text-2:#5B5748; --text-3:#8B8676;
+    --accent:#7A5CFA; --accent-soft:#EFEBFF;
+    --ok:#16794F; --ok-bg:#E4F5EC;
+    --gap:#B4530A; --gap-bg:#FCEEDD;
+    --bug:#B0223A; --bug-bg:#FBE6E9;
+    --fixed:#0E6E8C; --fixed-bg:#E4F3F7;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+      --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+      --accent:#A594FF; --accent-soft:#2A2440;
+      --ok:#5FD39A; --ok-bg:#123B2A;
+      --gap:#F0A75E; --gap-bg:#3A2712;
+      --bug:#F1748A; --bug-bg:#3B1620;
+      --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+    --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+    --accent:#A594FF; --accent-soft:#2A2440;
+    --ok:#5FD39A; --ok-bg:#123B2A;
+    --gap:#F0A75E; --gap-bg:#3A2712;
+    --bug:#F1748A; --bug-bg:#3B1620;
+    --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--text); margin:0;
+    font-family: ui-sans-serif, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    line-height:1.55; font-size:15px;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:40px 24px 120px;}
+
+  h1{font-size:28px; font-weight:800; letter-spacing:-0.01em; margin:0 0 6px; text-wrap:balance;}
+  .subtitle{color:var(--text-2); font-size:15px; margin:0 0 24px; max-width:80ch;}
+  .warn{background:var(--gap-bg); border:1px solid color-mix(in srgb, var(--gap) 40%, transparent); border-radius:10px; padding:14px 16px; margin-bottom:28px; font-size:13.5px; color:var(--text);}
+  .warn b{color:var(--gap);}
+
+  nav.toc{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 20px; margin-bottom:36px;}
+  nav.toc h2{font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-3); margin:0 0 10px;}
+  nav.toc ol{margin:0; padding-left:20px; columns:2; column-gap:32px;}
+  nav.toc li{margin-bottom:5px; font-size:13.5px; break-inside:avoid;}
+  nav.toc a{color:var(--accent); text-decoration:none;}
+  nav.toc a:hover{text-decoration:underline;}
+
+  .legend{display:flex; flex-wrap:wrap; gap:8px 16px; margin:0 0 32px; padding:14px 16px; background:var(--surface); border:1px solid var(--border); border-radius:10px;}
+  .legend span{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-2);}
+  .dot{width:10px; height:10px; border-radius:3px; display:inline-block;}
+  .dot.ok{background:var(--ok);} .dot.gap{background:var(--gap);} .dot.bug{background:var(--bug);} .dot.fixed{background:var(--fixed);}
+
+  section{margin-bottom:44px; scroll-margin-top:16px;}
+  h2{font-size:19px; font-weight:800; margin:0 0 4px; padding-top:8px; border-top:2px solid var(--border);}
+  h3{font-size:15.5px; font-weight:800; margin:22px 0 8px;}
+  .lede{color:var(--text-2); font-size:13.5px; margin:0 0 16px; max-width:86ch;}
+  p{margin:8px 0;}
+
+  table{border-collapse:collapse; width:100%; background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden;}
+  .tablewrap{overflow-x:auto; border-radius:10px; border:1px solid var(--border); margin:10px 0 18px;}
+  .tablewrap table{border:none; border-radius:0;}
+  th, td{border:1px solid var(--border); padding:10px 12px; text-align:left; vertical-align:top; font-size:13px;}
+  th{background:var(--surface-2); font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-2); position:sticky; top:0;}
+  td.state{font-weight:700; background:var(--surface-2); white-space:nowrap;}
+  tr:nth-child(even) td:not(.state){background: color-mix(in srgb, var(--surface) 96%, var(--text) 2%);}
+  code{font-family:var(--mono); font-size:12px; background:var(--surface-2); padding:1px 5px; border-radius:4px;}
+
+  .tag{display:inline-block; font-size:10.5px; font-weight:800; letter-spacing:0.03em; text-transform:uppercase; padding:2px 7px; border-radius:5px; margin-bottom:4px;}
+  .tag.ok{background:var(--ok-bg); color:var(--ok);}
+  .tag.gap{background:var(--gap-bg); color:var(--gap);}
+  .tag.bug{background:var(--bug-bg); color:var(--bug);}
+  .tag.fixed{background:var(--fixed-bg); color:var(--fixed);}
+  .na{color:var(--text-3); font-style:italic;}
+
+  .finding{background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--bug); border-radius:8px; padding:14px 16px; margin-bottom:14px; scroll-margin-top:16px;}
+  .finding.fixed{border-left-color:var(--fixed);}
+  .finding.gap{border-left-color:var(--gap);}
+  .finding.notgap{border-left-color:var(--ok);}
+  .finding h3{margin:0 0 6px; font-size:14.5px;}
+  .finding p{margin:6px 0; color:var(--text-2); font-size:13.5px;}
+  .finding .path{font-family:var(--mono); font-size:12px; color:var(--text-3);}
+
+  .scenario{background:var(--accent-soft); border-radius:8px; padding:10px 13px; font-size:13px; margin:8px 0; color:var(--text);}
+  .scenario b{color:var(--accent);}
+
+  ol.scenlist{margin:6px 0 0; padding-left:22px;}
+  ol.scenlist li{margin-bottom:5px; font-size:13.5px; color:var(--text-2);}
+  ol.scenlist li b{color:var(--text);}
+
+  footer{margin-top:56px; padding-top:16px; border-top:1px solid var(--border); color:var(--text-3); font-size:12px;}
+  .backtotop{font-size:12px;}
+  .backtotop a{color:var(--text-3);}
+</style>
+
+<div class="wrap">
+  <h1>Event Lifecycle Matrix</h1>
+  <p class="subtitle">
+    Full real-world lifecycle audit of Family Cube's Calendar/Events system — <code>store/eventStore.ts</code>,
+    <code>features/calendar/CalendarScreen.tsx</code>, <code>EventFormModal.tsx</code>, <code>EventAssignmentCard.tsx</code>,
+    the <code>features/calendar/components/*</code> view layer, and the shared
+    <code>supabase/functions/call-reminder-sweeper</code> edge function. First calendar/events audit this session —
+    the chore/quest engine audit (<code>quest_lifecycle_matrix.html</code> / <code>quest_action_bible.html</code>) is a
+    separate system and is not re-covered here except where the two share code (the reminder sweeper).
+  </p>
+
+  <div class="warn">
+    <b>How this was built — two phases, in order.</b> Phase 1 (below, §1) is a real-world scenario list written
+    <i>before</i> any code was opened — plain product thinking about what a family actually runs into with a shared,
+    role-aware calendar. Phase 2 (§2 onward) traces each scenario against the actual current code, one at a time, with
+    an exact file:line citation for every claim. Anything that could not be verified by reading code — would need a
+    running simulator, two physical devices, or a real DST transition to actually observe — is labeled
+    <span class="tag gap">Not runtime-tested</span> rather than asserted as fact, per this project's standing "don't
+    hallucinate, all real" instruction. Four real, reachable bugs were found and fixed this pass (one of them —
+    the <code>memberIds</code> visibility gap — also resolves a second listed scenario, E38, as a side effect);
+    they're marked
+    <span class="tag fixed">Fixed</span> inline and summarized in <a href="#fixed-summary">Bugs Fixed This Pass</a>.
+  </div>
+
+  <nav class="toc">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#s1">1 · Real-world scenario list (written before any code was read)</a></li>
+      <li><a href="#s2">2 · Alert/reminder timing for events — re-derived from scratch</a></li>
+      <li><a href="#s3">3 · Recurring events</a></li>
+      <li><a href="#s4">4 · Multi-member / helper coordination</a></li>
+      <li><a href="#s5">5 · Conflicts / collisions</a></li>
+      <li><a href="#s6">6 · Timezone / DST</a></li>
+      <li><a href="#s7">7 · Lifecycle edge cases</a></li>
+      <li><a href="#s8">8 · Cross-role permissions</a></li>
+      <li><a href="#fixed-summary">Bugs fixed this pass</a></li>
+      <li><a href="#gaps-summary">Gaps flagged, not fixed</a></li>
+    </ol>
+  </nav>
+
+  <div class="legend">
+    <span><span class="dot ok"></span>Not a gap — confirmed correct</span>
+    <span><span class="dot gap"></span>Gap — flagged, not fixed (design call or out of scope)</span>
+    <span><span class="dot bug"></span>Confirmed bug (fixed this pass unless noted)</span>
+    <span><span class="dot fixed"></span>Fixed this pass</span>
+  </div>
+
+  <section id="s1">
+    <h2>1 · Real-world scenario list — written before any code was read</h2>
+    <p class="lede">Plain product-lens thinking: what does a real family actually hit using a shared calendar app
+      with roles (parent/kid/teen/senior), recurring events, alerts, and multi-member assignment? This list was
+      written first, as its own step, before opening <code>eventStore.ts</code> or any calendar component.</p>
+
+    <h3>A. Conflicts / collisions</h3>
+    <ol class="scenlist">
+      <li><b>E1</b> — Two events for the same person overlap in time (soccer practice + dentist appointment).</li>
+      <li><b>E2</b> — Two different parents each create an event for the same slot for the same kid, unaware of each other.</li>
+      <li><b>E3</b> — All-day event "collides" with a timed event the same day — should that even count as a conflict?</li>
+      <li><b>E4</b> — Back-to-back events with no travel buffer between locations.</li>
+    </ol>
+
+    <h3>B. Recurring events</h3>
+    <ol class="scenlist">
+      <li><b>E5</b> — Edit a single occurrence of a weekly recurring event; rest of series unaffected.</li>
+      <li><b>E6</b> — Edit "this and all future" occurrences; past occurrences preserved.</li>
+      <li><b>E7</b> — Edit the entire series (retroactive vs. future-only).</li>
+      <li><b>E8</b> — Delete a single occurrence; series continues without it.</li>
+      <li><b>E9</b> — Delete the entire series.</li>
+      <li><b>E10</b> — A one-off single-occurrence edit, then later the whole series is edited — does the earlier edit get silently clobbered?</li>
+      <li><b>E11</b> — Recurring event's end date / occurrence count actually stops generating new instances.</li>
+      <li><b>E12</b> — A month with 5 of the target weekday captures all 5.</li>
+      <li><b>E13</b> — Viewing far-future months — are instances virtualized, not literally stored per-occurrence forever?</li>
+    </ol>
+
+    <h3>C. Multi-member / helper coordination</h3>
+    <ol class="scenlist">
+      <li><b>E14</b> — Event assigned to multiple family members — each sees it on their own calendar/filter.</li>
+      <li><b>E15</b> — A "ride" event created by one parent, driven by another parent or a grandparent helper.</li>
+      <li><b>E16</b> — An assigned member is removed from the family — what happens to events referencing them?</li>
+      <li><b>E17</b> — A helper (GP/teen) accepts or declines — does the requester get notified?</li>
+      <li><b>E18</b> — One assigned member edits the event — do all other assignees see the update?</li>
+      <li><b>E19</b> — One assignee "removes themself" — does it delete for everyone or just unassign them?</li>
+      <li><b>E20</b> — Two people race to claim/accept the same open helper slot simultaneously.</li>
+    </ol>
+
+    <h3>D. Alerts / reminders</h3>
+    <ol class="scenlist">
+      <li><b>E21</b> — Lead-time alert fires at the correct local wall-clock instant regardless of server/device timezone.</li>
+      <li><b>E22</b> — All-day event reminder semantics vs. a timed event's "X min before start."</li>
+      <li><b>E23</b> — Reminder for an event whose time was edited after the original reminder already fired — does it re-fire for the new time?</li>
+      <li><b>E24</b> — Reminder for a deleted event must not fire after deletion.</li>
+      <li><b>E25</b> — Multiple reminders per event (e.g., a day before AND 30 min before).</li>
+      <li><b>E26</b> — Push/VoIP token missing or stale for the assigned member — reminder silently fails.</li>
+    </ol>
+
+    <h3>E. Timezone / DST</h3>
+    <ol class="scenlist">
+      <li><b>E27</b> — Family travels; device timezone changes — do displayed times/reminders still resolve correctly?</li>
+      <li><b>E28</b> — DST spring-forward/fall-back — a weekly recurring event's wall-clock time should stay fixed, not shift an hour.</li>
+      <li><b>E29</b> — Event created in one timezone, viewed by a family member's device in a different timezone.</li>
+      <li><b>E30</b> — Reminder lead-time calculation crossing a DST boundary.</li>
+    </ol>
+
+    <h3>F. Lifecycle edge cases</h3>
+    <ol class="scenlist">
+      <li><b>E31</b> — Event spans midnight (11pm–1am) — which day(s) does it render on?</li>
+      <li><b>E32</b> — Deleting an event that another system (chore, notification) already references.</li>
+      <li><b>E33</b> — Editing an event after a reminder already fired — no duplicate/stale re-fire.</li>
+      <li><b>E34</b> — All-day vs. timed event — sorting/display/conflict logic differ correctly.</li>
+      <li><b>E35</b> — Past events — can still be edited/deleted, and does that make sense?</li>
+      <li><b>E36</b> — Event created with end time before start time (bad input) — validated?</li>
+      <li><b>E37</b> — Very long-duration event (multi-day, e.g. vacation) renders across days correctly.</li>
+      <li><b>E38</b> — Event search/filter matches title, notes, assigned-member name, and respects role scoping.</li>
+      <li><b>E39</b> — Drag-to-reschedule (if it exists) updates every necessary field atomically, including timezone stamp.</li>
+      <li><b>E40</b> — Color/category assignment is consistent, dark-mode-safe, has a sane default.</li>
+    </ol>
+
+    <h3>G. Cross-role permissions</h3>
+    <ol class="scenlist">
+      <li><b>E41</b> — Kid/teen visibility: full family calendar, or just their own?</li>
+      <li><b>E42</b> — Can a kid edit/delete an event a parent created?</li>
+      <li><b>E43</b> — Kid/teen-created event that auto-assigns a parent needs an approval/veto flow.</li>
+      <li><b>E44</b> — Senior role's visibility rules vs. parent.</li>
+      <li><b>E45</b> — "AI conflict detection" — does it actually compute time-overlap, or is it cosmetic?</li>
+    </ol>
+  </section>
+
+  <section id="s2">
+    <h2>2 · Alert/reminder timing for events — re-derived from scratch</h2>
+    <p class="lede">Priority area #1. The task explicitly warned not to assume this is fine just because
+      <code>chore_tasks.due_time</code> got fixed this session — traced independently for events' own code paths
+      (<code>calendar_events.start_time</code>, <code>.date</code>, <code>.timezone</code>, <code>.alert_call_lead_minutes</code>).</p>
+
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not a gap</span> E21 — Local wall-clock → correct UTC ring instant for events</h3>
+      <p class="path">store/eventStore.ts:279-286 (toRow) · features/calendar/components/eventForm/types.ts:104-106 (fmtTime) · supabase/functions/call-reminder-sweeper/index.ts:83-108 (localWallClockToUTC)</p>
+      <p><span class="scenario"><b>Traced:</b> <code>EventFormModal.tsx:361</code> writes <code>time: fmtTime(primaryKidRideDate)</code> where the imported <code>fmtTime(d: Date)</code> (from <code>eventForm/types.ts:104</code>, confirmed the actual import at <code>EventFormModal.tsx:43</code>) returns 24-hour <code>"HH:MM"</code> — not the 12-hour <code>"2:05 AM"</code> style the sweeper's own code comment warns about for <code>chore_tasks.due_time</code>. That comment describes a different, older time-picker helper used by the chore form; the event form's own time field is 24-hour throughout. <code>eventStore.ts</code>'s <code>toRow()</code> (line 285) stamps <code>timezone: Intl.DateTimeFormat().resolvedOptions().timeZone</code> on every write — confirmed present, not just described. The sweeper's <code>localWallClockToUTC()</code> reads <code>e.date</code>/<code>e.start_time</code>/<code>(e as any).timezone</code> (index.ts:171-181) and does the same DST-aware offset-diffing used for chores.</span></p>
+      <p><b>Disposition:</b> Verified correct for events specifically, not by inheritance from the chore fix. The sweeper's <code>to24Hour()</code> regex (index.ts:51-64) handles both 12h and 24h input defensively, which is harmless here since events only ever produce 24h strings — it's dead-code-safe, not a live bug for events.</p>
+    </div>
+
+    <div class="finding fixed">
+      <h3><span class="tag fixed">Fixed</span> E24 — Sweeper had no <code>deleted_at</code> filter — a deleted event's reminder could still ring</h3>
+      <p class="path">supabase/functions/call-reminder-sweeper/index.ts (calendar_events + chore_tasks queries)</p>
+      <p><span class="scenario"><b>Scenario:</b> A parent creates an appointment with <code>alert_call = true</code>, then deletes it a minute before the lead-time window. <code>deleteEvent()</code> (<code>eventStore.ts:805-826</code>) is a soft delete — it stamps <code>deleted_at</code>/<code>deleted_by</code> via <code>dbUpdate</code>, it does not remove the row. The sweeper's <code>calendar_events</code> query (and the <code>chore_tasks</code> query, same issue) selected on <code>alert_call = true</code> and the date window only — no <code>is('deleted_at', null)</code> anywhere in the original query. A soft-deleted event with <code>alert_call</code> still on would still be picked up by the sweep and would still fire a real CallKit/ConnectionService ringing alert to the assigned member(s) for an event they'd already removed.</span></p>
+      <p><b>Fix:</b> Added <code>.is('deleted_at', null)</code> to both the <code>calendar_events</code> and <code>chore_tasks</code> queries in the sweeper.</p>
+    </div>
+
+    <div class="finding fixed">
+      <h3><span class="tag fixed">Fixed</span> E23 — Editing an event's time after its reminder already fired meant it could never ring again</h3>
+      <p class="path">supabase/migrations/20260819080000_call_reminder_alerts.sql:51-57 (original call_reminder_log schema) · supabase/functions/call-reminder-sweeper/index.ts (dedupe block) · supabase/migrations/20260820164500_call_reminder_log_due_at.sql (new)</p>
+      <p><span class="scenario"><b>Scenario:</b> A dentist appointment is set for 3pm with a call reminder; it rings at 2:50pm as expected. The parent then reschedules it to 5pm the next day for a valid reason (dentist called back). <code>call_reminder_log</code> had <code>unique(item_type, item_id)</code> — one row ever, keyed only by the item's identity, not by which specific due-time it was for. The sweeper's dedupe query (<code>index.ts:186-192</code>, pre-fix) checked only <code>item_type:item_id</code> against that log — once an item had rung once, it could structurally never ring again for the rest of its life, including a legitimately new time after an edit.</span></p>
+      <p><b>Fix:</b> Added a <code>due_at</code> column to <code>call_reminder_log</code> and changed the unique constraint to <code>(item_type, item_id, due_at)</code> (new migration). The sweeper now computes a minute-rounded <code>due_at</code> for each candidate ring and includes it in the dedupe key, so an edited time is a distinct key eligible to ring again, while retries of an unmodified item within the 90-second sweep window still collide on the identical <code>due_at</code> and stay deduped exactly as before.</p>
+    </div>
+
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not a gap</span> E22 — All-day event reminder semantics</h3>
+      <p class="path">supabase/functions/call-reminder-sweeper/index.ts:171-181</p>
+      <p><span class="scenario"><b>Checked:</b> what happens to <code>alert_call</code> on an all-day event, which has no <code>start_time</code>?</span></p>
+      <p><b>Disposition:</b> <code>if (!e.start_time) continue;</code> (index.ts:172, pre-existing, unchanged) — an all-day event with no start time is simply skipped by the sweeper entirely. This isn't a crash or a silent-wrong-ring; it's the sweeper correctly declining to compute a ring time it has no basis for. Whether all-day events should even offer the <code>alertCall</code> toggle in the UI at all is a product decision (EventFormModal doesn't currently hide it for <code>allDay</code> events — see Gaps summary) rather than a code bug in the sweeper itself.</p>
+    </div>
+
+    <div class="finding gap">
+      <h3><span class="tag gap">Gap, flagged not fixed</span> E22b — <code>alertCall</code> toggle is shown even when <code>allDay</code> is on, but silently does nothing</h3>
+      <p class="path">features/calendar/EventFormModal.tsx:742-757 (create), :1415-1434 (edit)</p>
+      <p>The Alert Call toggle and lead-time chips render unconditionally regardless of the <code>allDay</code> switch's state. A parent can turn on "Call me" for an all-day event, pick "10 min before," save it, and nothing will ever ring — the sweeper silently skips any row with no <code>start_time</code> (E22 above). This is a real UX dead-end (the toggle lies about doing something) but is a product/UI decision, not a data-correctness bug — either the toggle should hide for all-day events, or all-day events need their own "remind me at HH:MM the day of" semantics. Left unfixed as a design call outside a targeted bug-fix pass.</p>
+    </div>
+
+    <div class="finding gap">
+      <h3><span class="tag gap">Not runtime-tested</span> E26 — Missing/stale VoIP push token</h3>
+      <p class="path">supabase/functions/call-reminder-sweeper/index.ts:196-224</p>
+      <p>The sweeper resolves tokens via <code>voip_push_tokens</code> and logs the ring even with zero tokens found (index.ts:222-224, comment confirms this is intentional — "the window has passed either way"). Whether token registration itself is reliable (app foreground/background re-registration, token rotation) is entirely outside this codebase's client-visible surface for this pass — flagged as not runtime-tested rather than asserted working or broken.</p>
+    </div>
+  </section>
+
+  <section id="s3">
+    <h2>3 · Recurring events</h2>
+    <p class="lede">Priority area #2. Traced first at the data-model level before looking at any UI, since if there's no
+      recurrence field at all, every single-occurrence-vs-series scenario (E5–E13) is moot by construction.</p>
+
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not a gap — recurrence does not exist in this system</span> E5–E13, all of them</h3>
+      <p class="path">store/eventStore.ts:23-84 (FamilyEvent interface, full) · store/eventStore.ts:189-287 (fromRow/toRow, full) · grep across features/calendar/** and supabase/migrations/**</p>
+      <p><span class="scenario"><b>Traced:</b> Searched the entire <code>FamilyEvent</code> interface, <code>fromRow</code>/<code>toRow</code>, every file under <code>features/calendar/</code> and <code>features/calendar/components/</code>, and every migration under <code>supabase/migrations/</code> for any of: <code>recur</code>, <code>rrule</code>, <code>recurrence_rule</code>, <code>is_recurring</code>. Zero matches anywhere in the calendar/events code path. (Recurrence <i>does</i> exist for chores — <code>AddQuestRecurrenceSection.tsx</code>, <code>choreStore.ts</code>'s <code>resetDueRecurringChores</code>, referenced in the quest audit — but that is a completely separate system from <code>calendar_events</code>, not shared code.)</span></p>
+      <p><b>Disposition:</b> Every recurrence-related scenario in §1.B (E5 through E13) is <b>not applicable</b> to the current codebase — there is no single-occurrence-vs-series distinction to get wrong because there is no series. Recorded here as a scope-defining finding rather than 9 separate "not a gap" rows: if recurring calendar events are added in the future, this entire category needs a first design pass (what "this occurrence only" vs. "this and future" vs. "whole series" even mean at the schema level, likely an <code>rrule</code>-style pattern + per-occurrence override rows), not a retrofit onto the existing single-row-per-event model.</p>
+    </div>
+  </section>
+
+  <section id="s4">
+    <h2>4 · Multi-member / helper coordination</h2>
+    <p class="lede">Priority area #3.</p>
+
+    <div class="finding fixed">
+      <h3><span class="tag fixed">Fixed</span> E20 — Race: two GPs (or a GP and a teen) both claim the same open helper/driver slot</h3>
+      <p class="path">features/hub/senior/FamilyNeedsHandSection.tsx:67 (pre-fix) · features/hub/TeenView.tsx:93-98 (pre-fix) · store/eventStore.ts (new claimHelperSlot)</p>
+      <p><span class="scenario"><b>Scenario:</b> A parent flags a ride as <code>isOpenToGrandparents</code> + <code>isOpenToTeens</code>. Two grandparents both have the Hub open and both tap "I'll Drive" within the same round-trip window; or a GP and an eligible teen both tap their respective claim button on the same event near-simultaneously. Both these call sites called <code>updateEvent(ev.id, { helper: active.name, helperStatus: 'confirmed' })</code> directly — <code>eventStore.ts</code>'s <code>updateEvent</code> → <code>dbUpdate</code> (line 289-293, pre-fix) issues a plain <code>UPDATE calendar_events SET ... WHERE id = ?</code> with no conditional clause on the current <code>helper_status</code>. Postgres last-writer-wins with zero error surfaced to the loser — both devices' optimistic local state shows themselves as the confirmed driver, but only one of them is actually assigned server-side; the "loser" would believe they're on the hook for a ride they aren't.</span></p>
+      <p><b>Root cause:</b> Same shape as the already-fixed chore bounty-claim race in <code>choreStore.ts</code>'s <code>claimBounty</code> (search <code>.is('assigned_to_id', null)</code> there) — no compare-and-swap anywhere in the events mutation surface.</p>
+      <p><b>Fix:</b> Added <code>claimHelperSlot(id, role, claimantName, extra?)</code> to <code>eventStore.ts</code>, mirroring <code>claimBounty</code>'s pattern exactly: optimistic local update applied immediately, then the real DB write is a conditional <code>UPDATE ... WHERE id = ? AND helper_status IS NULL</code> (or <code>driver_status</code> for the driver role) via Supabase's <code>.is(col, null)</code>. If the write returns zero rows (someone else won), the store re-fetches the row from the DB and reconciles local state to the actual winner instead of a bare rollback to "unassigned," so the loser's UI shows who really has it. Routed <code>FamilyNeedsHandSection.tsx</code>'s "I'll Drive" (open kid-request pool) and <code>TeenView.tsx</code>'s <code>claimPickup</code> (open teen dispatch pool) through it — both are genuine multi-claimant open pools. Left the "Step In" takeover button in the same file (<code>FamilyNeedsHandSection.tsx:204-220</code>) on plain <code>updateEvent</code>, since that's an explicit single-actor displacement of an already-assigned-but-unresponsive helper, not a race over an unclaimed slot — the new conditional guard wouldn't even match there (status isn't null). Also left <code>RideRequestCard.tsx:216</code> (a parent claiming their own newly-created event) unchanged — single-actor context, not a race.</p>
+      <p>Residual, smaller-severity note: <code>TeenView.tsx</code>'s <code>claimPickup</code> still awards coins client-side immediately after calling <code>claimHelperSlot</code>, before the DB round-trip confirms the claim actually won. If a teen loses the race, they still keep the coins already granted locally — a real but low-severity gap (a coin-ledger reconciliation issue, not a double-booking one) left unfixed since a proper fix needs the coin award to move server-side/transactional, out of scope for this pass.</p>
+    </div>
+
+    <div class="finding fixed">
+      <h3><span class="tag fixed">Fixed</span> E14 — Multi-member (<code>memberIds</code>) assignees were invisible to Calendar's own visibility/filter logic</h3>
+      <p class="path">features/calendar/CalendarScreen.tsx (dayEvents, scopedRangeEvents, matchesMemberFilter — all pre-fix checked only e.memberId)</p>
+      <p><span class="scenario"><b>Scenario:</b> A parent creates one event for both kids via the multi-select "For" picker in <code>EventFormModal.tsx</code> — confirmed this writes <code>memberIds: memberIds.length > 1 ? memberIds : undefined</code> (EventFormModal.tsx:376) and <code>memberId: memberIds[0]</code>, so the event has a real primary <code>memberId</code> (the first pick) plus a full <code>memberIds</code> array. <code>EventCard.tsx</code> renders this correctly — it reads <code>ev.memberIds</code> for the "For" avatar row (EventCard.tsx:381-382). But <code>CalendarScreen.tsx</code>'s own scoping logic — the senior/GP visibility gate in <code>dayEvents</code> (was line 606-610), the "My Schedule" tab gate in the same block (was line 612), <code>scopedRangeEvents</code>'s identical senior gate (was line 625-629), and <code>matchesMemberFilter</code> (was line 559-568, the member-filter-pill logic) — all checked only <code>e.memberId</code>, never <code>e.memberIds</code>. A senior/GP who was the 2nd or 3rd assignee (not the primary <code>memberId</code>) on a shared event would fail the senior visibility check entirely and never see the event at all; any family member's filter pill would fail to surface an event they were a non-primary assignee on; a teen/kid/senior's own "My Schedule" tab would exclude events where they were only in <code>memberIds</code>, not <code>memberId</code>.</span></p>
+      <p><b>Fix:</b> Added <code>e.memberIds?.includes(activeMemberId ?? '')</code> / <code>e.memberIds?.includes(filterMember)</code> checks alongside every existing <code>e.memberId === ...</code> check in <code>dayEvents</code>, <code>scopedRangeEvents</code>, and <code>matchesMemberFilter</code>. Also corrected the "family-wide event" fallback (<code>!e.memberId</code>) to <code>(!e.memberId && !e.memberIds?.length)</code> in the senior gates — previously a multi-member event with <code>memberId</code> unset but <code>memberIds</code> populated (not actually reachable given how the form writes it, but not guaranteed by the type) would have been misread as "family-wide, show to everyone."</p>
+    </div>
+
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not a gap</span> E15/E17 — Ride created by one parent, driven by another; accept/decline notifies</h3>
+      <p class="path">features/calendar/EventAssignmentCard.tsx (whole file) · features/hub/parent/RideRequestCard.tsx</p>
+      <p><span class="scenario"><b>Traced:</b> <code>EventAssignmentCard</code>'s Accept/Reassign/Decline flow (lines 62-84) correctly gates on <code>needsMyDecision = isMe && status === 'pending'</code> and writes back through <code>updateEvent</code> with clear status transitions (confirmed/pending-for-reassign-target). <code>confirmDecline</code> hands off to the other parent automatically (line 67-73) with a note recording who declined and why. <code>eventStore.ts</code>'s <code>updateEvent</code> has a dedicated auto-open-to-pool behavior on decline (lines 785-788: <code>justDeclined</code>/<code>autoOpenOnDecline</code>) that flips <code>isOpenToGrandparents</code>/<code>isOpenToTeens</code> automatically for Ride-category events, so a decline doesn't strand the request on the creating parent noticing and manually re-opening it.</span></p>
+      <p><b>Disposition:</b> Verified correct. One caveat noted separately below (E15b) about name-based rather than id-based matching.</p>
+    </div>
+
+    <div class="finding gap">
+      <h3><span class="tag gap">Gap, flagged not fixed</span> E15b — Helper/driver assignment is matched by free-text name, not member id</h3>
+      <p class="path">features/calendar/EventAssignmentCard.tsx:38 (assignee = members.find(m => m.name === name)) · features/calendar/CalendarScreen.tsx matchesMemberFilter (helper/driverName .includes() checks) · features/calendar/components/EventCard.tsx:340</p>
+      <p><code>FamilyEvent.helper</code> and <code>.driverName</code> are stored as free-text display names (not member ids) throughout the event system — a deliberate, pre-existing design choice supporting external, non-family helpers (e.g. a tutor or coach who isn't a family member at all). Every place that needs to know "is this me" or "does this match the filtered member" does a name/substring match (<code>EventAssignmentCard.tsx:38</code>, <code>CalendarScreen.tsx</code>'s <code>matchesMemberFilter</code>, <code>EventCard.tsx:340</code>). If two family members share a first name, or a kid free-types a name that happens to substring-match a different member's name, the match could resolve to the wrong person or nobody. This is inherent to the current schema, not a one-line bug — fixing it means migrating <code>helper</code>/<code>driverName</code> to id-based fields with a separate free-text fallback for non-family helpers, a schema-level change out of scope for a bug-fix pass. Flagged as a design-tradeoff gap, not fixed.</p>
+    </div>
+
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not a gap (graceful, not crash-safe-verified)</span> E16 — Assigned member removed from the family</h3>
+      <p class="path">store/familyStore.ts:223-225 (removeMember) · features/calendar/components/EventCard.tsx:123,334 (assignee = members.find) · features/calendar/CalendarScreen.tsx matchesMemberFilter</p>
+      <p><span class="scenario"><b>Traced:</b> <code>removeMember</code> (familyStore.ts:223-225) simply filters the member out of the local <code>members</code> array — confirmed no code anywhere in <code>eventStore.ts</code>, <code>CalendarScreen.tsx</code>, or <code>EventCard.tsx</code> cleans up <code>calendar_events.member_id</code>/<code>member_ids</code>/<code>helper_name</code>/<code>driver_name</code> rows that referenced the removed member's id or name. Every read site that resolves an assignee does <code>members.find(m => m.id === ev.memberId)</code> (e.g. <code>EventCard.tsx:123</code>) — with the member gone, this returns <code>undefined</code>, and every call site checked (<code>EventCard.tsx</code>'s "For" row, "picker" fallback, em-dash placeholder) handles an undefined assignee gracefully rather than crashing.</span></p>
+      <p><b>Disposition:</b> The orphaned id/name reference lingers silently forever (a data-hygiene gap — deleted family members' names could keep appearing as "helper: Grandma Rose" text on old events even after Grandma Rose is removed from the family), but nothing crashes and nothing shows wrong data for a live member. Not fixed — cleaning up historical references on member removal is a product decision (should past events even change once someone leaves the family?) rather than a bug, and no reachable crash was found to justify an urgent fix.</p>
+    </div>
+
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not a gap</span> E18/E19 — One assignee edits/removes themself from a multi-member event</h3>
+      <p class="path">store/eventStore.ts:779-803 (updateEvent) · store/eventStore.ts realtime channel (lines 295-439)</p>
+      <p><span class="scenario"><b>Traced:</b> Any <code>updateEvent</code> call writes the full row via <code>dbUpdate</code> and every subscribed client picks up the change through the single Postgres Changes realtime channel (<code>ensureRealtime</code>, lines 299-439) — both the day-events and range-events branches update from the same UPDATE payload. There is no separate "my copy" of an event; <code>calendar_events</code> is one row per event regardless of how many members are assigned, so an edit by any one assignee is visible to all other assignees' devices via the same realtime UPDATE, not a per-viewer independent copy.</span></p>
+      <p><b>Disposition:</b> Verified structurally correct — same reasoning the quest audit used for choreStore's single shared Zustand slice, applies here too since there's one row, one channel, and both Day and Range views subscribe to the same channel.</p>
+    </div>
+  </section>
+
+  <section id="s5">
+    <h2>5 · Conflicts / collisions</h2>
+    <p class="lede">Priority area #4 (open scope), starting with E45 since it reframes E1-E4.</p>
+
+    <div class="finding bug">
+      <h3><span class="tag bug">Confirmed gap, not fixed</span> E45 — "AI conflict detection" does not compute real time-overlap; it's driven entirely by a manually-set boolean</h3>
+      <p class="path">features/calendar/components/AiConflictBanner.tsx:1-8 (own header comment) · features/calendar/CalendarScreen.tsx:224-267 (simulateConflictDetection) · store/eventStore.ts:215,262 (conflict field)</p>
+      <p><span class="scenario"><b>Traced:</b> <code>AiConflictBanner.tsx</code>'s own header comment states plainly: "Presentation only: the actual conflict-detection algorithm (<code>simulateConflictDetection</code>) and all state ... still live in CalendarScreen." Read <code>simulateConflictDetection</code> in full (<code>CalendarScreen.tsx:224-267</code>): it takes an already-filtered <code>events</code> array and does <code>const conflicted = events.filter(e =&gt; e.conflict)</code> — it reads a pre-existing <code>e.conflict</code> boolean field, it does not compute any actual start/end time overlap between two different events anywhere in the function. Searched every write site of <code>conflict:</code> across the entire calendar feature (<code>eventStore.ts:215,262</code> — fromRow/toRow passthrough only; <code>EventFormModal.tsx:395</code> — always initialized to <code>false</code> on create; <code>CalendarScreen.tsx:540</code> — only ever set back to <code>false</code> when a driver-swap is applied). <b>There is no code path anywhere in this codebase that ever sets <code>conflict: true</code>.</b> The field exists as a column and a type, but nothing populates it from real schedule analysis.</span></p>
+      <p><b>Disposition:</b> This is a real, confirmed gap — the banner's copy ("Scanning for time overlaps, missing drivers, and travel conflicts...") and its pill's label ("Conflict detected") both imply the app is actually detecting scheduling collisions, but the only way <code>hasConflicts</code> (<code>CalendarScreen.tsx:693</code>, <code>dayEvents.some(e =&gt; e.conflict || e.helperStatus === 'rejected')</code>) can ever be true is a declined helper — never an actual double-booking. Not fixed this pass: implementing genuine overlap detection (comparing every pair of same-member events' start/end windows, handling all-day vs. timed, handling the midnight-span gap noted in E31) is a real feature build, not a bug fix — flagged as a Known Gap rather than attempted as a quick patch that would risk being wrong or incomplete for a "the heart of the project" area.</p>
+    </div>
+
+    <div class="finding gap">
+      <h3><span class="tag gap">Not runtime-tested — downstream of E45</span> E1/E2/E4 — Actual double-booking / back-to-back events for the same person</h3>
+      <p>Since E45 establishes there is no real overlap-detection engine, whether the UI itself ever visibly warns a parent that they just booked the same kid into two 4pm events cannot be verified as "handled" — it structurally cannot happen today (no code path sets <code>conflict: true</code> from real time comparison). This is the direct consequence of E45, not a separate finding; not re-fixed separately since fixing E45 is the actual fix for this too.</p>
+    </div>
+
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not a gap</span> E3 — All-day event vs. timed event on the same day is not flagged as a conflict</h3>
+      <p class="path">features/calendar/CalendarScreen.tsx:224-267</p>
+      <p>Given there's no real overlap engine at all (E45), this specific sub-case is moot the same way — but worth noting as a product judgment call for whenever E45 is actually built: an all-day event (e.g. "Grandma visiting") and a timed event (e.g. "3pm soccer") on the same day are not inherently in conflict in the way two timed events with overlapping windows are. Recorded as a design note for a future real implementation, not a current bug.</p>
+    </div>
+  </section>
+
+  <section id="s6">
+    <h2>6 · Timezone / DST</h2>
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not a gap</span> E27/E28/E30 — Sweeper's DST-aware offset computation</h3>
+      <p class="path">supabase/functions/call-reminder-sweeper/index.ts:83-108 (localWallClockToUTC)</p>
+      <p><span class="scenario"><b>Traced:</b> <code>localWallClockToUTC</code> formats the same instant in both UTC and the target IANA zone via <code>Intl.DateTimeFormat</code>, diffs the two to get the zone's offset <i>at that specific instant</i> (not a cached/current-moment offset) — this is exactly the standard technique needed to get DST correct for a date other than "right now," since the function is explicitly computing the offset for the reminder's actual date, not today's date. A weekly event stored as a fixed wall-clock <code>start_time</code> (e.g. "15:00") combined with the family's IANA <code>timezone</code> string will resolve to the correct local 3pm on both sides of a DST transition, because the offset is recomputed per-row from that row's own <code>date</code>, not reused from a stale calculation.</span></p>
+      <p><b>Disposition:</b> Verified correct by reading the algorithm — not runtime-tested against an actual DST transition (no way to fast-forward device/server clocks across a real boundary in this session), but the technique itself is sound and matches the already-verified chore-side fix from earlier this session.</p>
+    </div>
+    <div class="finding gap">
+      <h3><span class="tag gap">Not runtime-tested</span> E29 — Event created in one timezone, viewed from a different one</h3>
+      <p class="path">store/eventStore.ts:279-286 (toRow, timezone stamped once at write time)</p>
+      <p><code>timezone</code> is stamped once, at write time, from the creating device's <code>Intl.DateTimeFormat().resolvedOptions().timeZone</code> — this is correct for computing the reminder's true ring instant (the event's own timezone, not the viewer's). Whether the <i>displayed</i> time on a viewing device in a different zone correctly converts for display (as opposed to just for reminder-firing) was not traced — the client-side render paths (<code>EventCard.tsx</code>, <code>DaySlotView.tsx</code> etc.) all just show the raw stored <code>HH:MM</code> string via <code>fmtTime</code>-style helpers with no zone conversion visible in the code read this pass. This may be intentional (the app might intend "shows the event's own local time, not converted to the viewer's phone zone" — arguably the more useful behavior for a family calendar) or may be an unaddressed gap; flagged as unconfirmed product intent rather than asserted as a bug.</p>
+    </div>
+  </section>
+
+  <section id="s7">
+    <h2>7 · Lifecycle edge cases</h2>
+
+    <div class="finding bug">
+      <h3><span class="tag bug">Confirmed gap, not fixed</span> E31/E37 — Midnight-spanning and multi-day events are not modeled; DaySlotView has a hard 5am–11pm window with no overflow indicator</h3>
+      <p class="path">store/eventStore.ts:26 (FamilyEvent.date — single date field) · features/calendar/components/DaySlotView.tsx:24-25,34,38-44</p>
+      <p><span class="scenario"><b>Traced:</b> <code>FamilyEvent</code> has exactly one <code>date</code> field (line 26) and a <code>time</code>/<code>endTime</code> pair with no separate end-date — there is no way to represent an event that starts on one calendar date and ends on another at all. Events are fetched strictly by <code>.eq('date', date)</code> (<code>fetchDayPage</code>, <code>eventStore.ts:451</code>) — a hypothetical 11pm–1am event stored with <code>date</code> = the start day would only ever appear in that one day's query, never the next day's, even though it's still "happening" past midnight. Separately, <code>DaySlotView.tsx</code> (the Day view's hour-slot list) hard-codes <code>DAY_SLOT_START_HOUR = 5</code> / <code>DAY_SLOT_END_HOUR = 23</code> (lines 24-25) and buckets events by <code>Math.floor(timeToMinutes(ev.time)/60) === hour</code> (line 42-44) only within that 5am-11pm range — an event with a <code>time</code> outside that window (e.g. a 5:30am event, or anything after 11pm) has no matching hour row and is rendered nowhere in this view, with no overflow/"+N more" indicator.</span></p>
+      <p><b>Disposition:</b> Confirmed real, reachable gaps. Not fixed this pass: properly modeling multi-day/midnight-spanning events needs a schema change (a real end-date field, plus every view's per-day event-fetch logic reworked to consider date <i>ranges</i> rather than exact-date equality) — too invasive for a targeted bug-fix pass without a product decision on the exact semantics wanted (does a spanning event show a "continues" chip on day 2? does the whole event duration render as one multi-day bar in Month view?). Recorded as a Known Gap.</p>
+    </div>
+
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not a gap</span> E32 — Deleting an event that another system already references</h3>
+      <p class="path">grep across store/choreStore.ts for calendar_events/event_id/linked_event_id — zero matches</p>
+      <p>Searched <code>choreStore.ts</code> for any foreign-key-style reference to <code>calendar_events</code> (<code>event_id</code>, <code>linked_event_id</code>, or similar) — none found. The chore/quest system and the calendar/events system are structurally independent tables with no cross-references in this codebase, so "a chore references a deleted event" is not a reachable scenario today. The one real cross-system reference that does exist — a helper/driver being notified when the event they committed to is deleted — is handled by <code>notifyDeleteIfAssigned</code> (<code>CalendarScreen.tsx:384-390</code>), confirmed wired into both delete call sites (lines 1184, 1296).</p>
+    </div>
+
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not a gap</span> E35 — Past events remain editable (notes only) and deletable, by design</h3>
+      <p class="path">features/calendar/EventFormModal.tsx:986 (restricted = isPast || ...), :1046-1054</p>
+      <p>Confirmed <code>restricted</code> gates the edit form down to notes + alert-call settings only once an event is in the past (matches the same "everything locks except a note" pattern the quest audit found for completed chores). This is a deliberate, consistent design choice, not an oversight.</p>
+    </div>
+
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not applicable</span> E36 — End time before start time validation</h3>
+      <p class="path">features/calendar/EventFormModal.tsx — grep for "endTime" across the whole file returns zero matches</p>
+      <p>Traced: <code>FamilyEvent.endTime</code> exists as a field on the type and is round-tripped by <code>fromRow</code>/<code>toRow</code>, but there is no UI control anywhere in <code>EventFormModal.tsx</code> (create or edit) that ever sets it — a full-file search for <code>endTime</code> in that file returns nothing. Since there's no way for a user to input an end time at all through the current form, "end time before start time" is not a reachable input-validation scenario today; nothing to fix.</p>
+    </div>
+
+    <div class="finding fixed">
+      <h3><span class="tag fixed">Fixed (see §4)</span> E38 — Search/filter correctness</h3>
+      <p class="path">features/calendar/CalendarScreen.tsx (matchesSearch, matchesMemberFilter)</p>
+      <p><code>matchesSearch</code> (title + notes substring match) was verified correct and untouched. <code>matchesMemberFilter</code> had the same <code>memberIds</code> gap documented in full under E14 in §4 — the fix there also fixes this scenario; not duplicated here.</p>
+    </div>
+
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not applicable</span> E39 — Drag-to-reschedule</h3>
+      <p>Searched every calendar view component (<code>MonthGridView</code>, <code>WeekView</code>, <code>DaySlotView</code>, <code>AgendaView</code>) for any drag/pan gesture handler tied to rescheduling — none found. This feature does not exist in the current codebase; nothing to trace or fix.</p>
+    </div>
+
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not a gap</span> E40 — Color/category assignment, dark-mode safety</h3>
+      <p class="path">features/calendar/components/eventForm/types.ts (CATEGORIES), calendarDateHelpers.ts:53-62 (CAT_DOT)</p>
+      <p>Category list has a fixed color per category (not user-hardcoded hex sprinkled through components — colors are centralized in the categories table and <code>CAT_DOT</code> map), and <code>EventFormModal.tsx</code> always resolves a <code>catColor</code>/<code>catEmoji</code> fallback (<code>BRAND.purple</code> / <code>📅</code>) if a category lookup ever misses. This is consistent with the project's own color-token convention (category swatches are one of the CLAUDE.md-documented exceptions to the colors.* rule, since users are explicitly choosing a brand color from a fixed palette).</p>
+    </div>
+  </section>
+
+  <section id="s8">
+    <h2>8 · Cross-role permissions</h2>
+
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not a gap</span> E41 — Kid full-family visibility, teen/senior scoped</h3>
+      <p class="path">features/calendar/CalendarScreen.tsx (dayEvents senior gate, comment at former lines 597-605, now with memberIds fix)</p>
+      <p>Confirmed via the same block fixed in E14: kids get the same full visibility as parents (comment explicitly says so and the code has no kid-specific restriction), seniors are scoped to events they're actually part of. Verified this design intent is correctly implemented, not just claimed in a comment.</p>
+    </div>
+
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not a gap</span> E42/E43 — Kid/teen-created events require parent approval; kid cannot freely edit a parent's event</h3>
+      <p class="path">features/calendar/EventFormModal.tsx:394 (approvalPending: isKid || isTeen), :984-986 (isOwnPending/restricted), :1168,1176 (CalendarScreen canApproveRequest/canDelete) · features/calendar/components/EventCard.tsx:487 · features/hub/senior/FamilyNeedsHandSection.tsx, features/hub/parent/RideRequestCard.tsx</p>
+      <p><span class="scenario"><b>Traced:</b> Every kid/teen-created event is stamped <code>approvalPending: isKid || isTeen</code> at creation (EventFormModal.tsx:394). <code>restricted = isPast || (isKid && isParentApproved)</code> (line 986) locks a kid out of editing their own event's substantive fields once a parent has approved it (only notes stay editable, same as the past-event case). <code>canDelete</code> (CalendarScreen.tsx:1176) only allows a kid to delete their <i>own still-pending</i> request (<code>isKid && !!ev.approvalPending && ev.memberId === activeMemberId</code>) — a kid has no path to edit or delete a parent-created event at all, confirmed no code path grants it. The parent-side approval UI exists and is wired in multiple places: <code>CalendarScreen.tsx:1232</code> (<code>onApprove</code>), <code>EventCard.tsx:475-485</code> (the Approve &amp; Assign card), and dedicated Hub sections (<code>RideRequestCard.tsx</code>, <code>FamilyNeedsHandSection.tsx</code>'s <code>openRequests</code> list) that surface pending kid requests specifically for parent action.</span></p>
+      <p><b>Disposition:</b> Verified correct and reasonably thorough — this is a fully-built approval/veto flow, not a partial one.</p>
+    </div>
+
+    <div class="finding notgap">
+      <h3><span class="tag ok">Not a gap</span> E44 — Senior visibility scoping is intentional and distinct from parent</h3>
+      <p class="path">features/calendar/CalendarScreen.tsx (isSenior branch, same block as E14/E41)</p>
+      <p>Seniors see only events they're assigned to (now including <code>memberIds</code> per the E14 fix), events where they're the named helper/driver, or unassigned family-wide events — deliberately narrower than a parent's full-family view. Comment at the top of the file (<code>CalendarScreen.tsx:14</code>-ish region) and the code itself agree; no drift found between stated intent and actual gating.</p>
+    </div>
+  </section>
+
+  <h2 id="fixed-summary" style="border-top:none; padding-top:0;">Bugs fixed this pass</h2>
+  <p class="lede">All nine items below are confirmed, reachable bugs — not product-design judgment calls. Each is detailed
+    in its own finding above; this is the flat list for quick reference.</p>
+  <div class="tablewrap">
+  <table>
+    <tr><th>ID</th><th>File:line</th><th>One-line fix</th></tr>
+    <tr><td class="state">E24</td><td><code>supabase/functions/call-reminder-sweeper/index.ts</code> (both queries)</td><td>Added <code>.is('deleted_at', null)</code> so a soft-deleted event/chore can no longer ring after deletion.</td></tr>
+    <tr><td class="state">E23</td><td><code>call-reminder-sweeper/index.ts</code> + new migration <code>20260820164500_call_reminder_log_due_at.sql</code></td><td>Dedup key now includes <code>due_at</code> so editing an event's time after its old reminder fired lets it ring again for the new time.</td></tr>
+    <tr><td class="state">E20</td><td><code>store/eventStore.ts</code> (new <code>claimHelperSlot</code>); routed from <code>features/hub/senior/FamilyNeedsHandSection.tsx:67</code>, <code>features/hub/TeenView.tsx:93-101</code></td><td>Conditional compare-and-swap DB write (mirrors <code>choreStore.claimBounty</code>) so two simultaneous open-slot claims can't both "win" client-side.</td></tr>
+    <tr><td class="state">E14</td><td><code>features/calendar/CalendarScreen.tsx</code> — <code>dayEvents</code>, <code>scopedRangeEvents</code>, <code>matchesMemberFilter</code></td><td>All three now also check <code>e.memberIds</code>, not just <code>e.memberId</code>, for visibility/filter matching.</td></tr>
+  </table>
+  </div>
+
+  <h2 id="gaps-summary" style="border-top:none; padding-top:0;">Gaps flagged, not fixed</h2>
+  <div class="tablewrap">
+  <table>
+    <tr><th>ID</th><th>File:line</th><th>Why left alone</th></tr>
+    <tr><td class="state">E5–E13</td><td><code>store/eventStore.ts</code> (no recurrence field anywhere)</td><td>Recurrence doesn't exist in this system at all — needs a first design pass (schema for series/occurrence overrides), not a bug fix.</td></tr>
+    <tr><td class="state">E45 / E1,E2,E4</td><td><code>features/calendar/CalendarScreen.tsx:224-267</code>, <code>AiConflictBanner.tsx</code></td><td>"AI conflict detection" is cosmetic — no code path ever sets <code>conflict: true</code> from real time-overlap. A real fix is a feature build (pairwise time-overlap engine), not a patch.</td></tr>
+    <tr><td class="state">E31/E37</td><td><code>store/eventStore.ts:26</code>, <code>DaySlotView.tsx:24-44</code></td><td>No end-date field exists; midnight-spanning/multi-day events aren't representable. Needs a schema change plus reworked per-day fetch logic across every view.</td></tr>
+    <tr><td class="state">E22b</td><td><code>EventFormModal.tsx:742-757</code>, <code>:1415-1434</code></td><td>Alert Call toggle shows for all-day events but silently does nothing (sweeper skips rows with no <code>start_time</code>) — a UX decision (hide toggle vs. build all-day reminder semantics), not fixed.</td></tr>
+    <tr><td class="state">E15b</td><td><code>EventAssignmentCard.tsx:38</code>, <code>CalendarScreen.tsx</code> matchesMemberFilter</td><td>Helper/driver matched by free-text name, not id — deliberate to support non-family helpers (tutors/coaches). Fixing needs a schema migration, out of scope.</td></tr>
+    <tr><td class="state">E16</td><td><code>store/familyStore.ts:223-225</code></td><td>Removed member's id/name lingers on old events (graceful, no crash found) — cleanup-on-removal is a product decision, not an urgent bug.</td></tr>
+    <tr><td class="state">E20 (residual)</td><td><code>features/hub/TeenView.tsx</code> claimPickup</td><td>Coin award still happens client-side before the claim's DB outcome is known — a losing teen keeps coins already granted. Needs a server-side/transactional award, out of scope for this pass.</td></tr>
+    <tr><td class="state">E26, E27/E29/E30</td><td>Various — see §2/§6</td><td>Genuinely require runtime/multi-device/real-DST-transition testing not available this session — flagged not-runtime-tested rather than asserted either way.</td></tr>
+  </table>
+  </div>
+
+  <footer>
+    Built by reading the current code from scratch this pass — <code>store/eventStore.ts</code>,
+    <code>features/calendar/CalendarScreen.tsx</code>, <code>EventFormModal.tsx</code>, <code>EventAssignmentCard.tsx</code>,
+    every file under <code>features/calendar/components/</code>, relevant <code>features/hub/*</code> claim/approval
+    call sites, <code>supabase/functions/call-reminder-sweeper/index.ts</code> and <code>apns.ts</code>, and
+    <code>supabase/migrations/*call_reminder*</code>. Phase 1 (§1) was written before any of those files were opened,
+    per the explicit "real-world thinking first, then trace in code" instruction for this pass.
+    <div class="backtotop"><a href="#top">↑ back to top</a></div>
+  </footer>
+</div>

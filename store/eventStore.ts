@@ -142,6 +142,18 @@ interface EventState {
   addEvent:    (e: Omit<FamilyEvent, 'id'>) => string;
   updateEvent: (id: string, updates: Partial<FamilyEvent>) => void;
   deleteEvent: (id: string) => void;
+
+  // Race-safe claim of an open helper/driver slot (GP "I'll Drive" on an
+  // isOpenToGrandparents ride, Teen "I'll take it" on an isOpenToTeens
+  // pickup, etc.) — see claimHelperSlot's own comment for why this can't
+  // just be a plain updateEvent() call.
+  claimHelperSlot: (
+    id: string,
+    role: 'helper' | 'driver',
+    claimantName: string,
+    extra?: Partial<FamilyEvent>,
+    onWon?: () => void,
+  ) => void;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -800,6 +812,80 @@ export const useEventStore = create<EventState>((set, get) => ({
     if (updated) {
       dbUpdate(id, toRow(updated));
     }
+  },
+
+  // ── claimHelperSlot — compare-and-swap claim of an open GP/Teen slot ───────
+  // Two grandparents both looking at the same isOpenToGrandparents ride (or
+  // a GP and a teen both eligible for the same isOpenToTeens pickup) can
+  // both tap "I'll Drive"/"I'll take it" within the same round-trip window.
+  // Routing that through the plain updateEvent()/dbUpdate() path — an
+  // unconditional `UPDATE ... WHERE id = ?` — means Postgres just
+  // last-writer-wins with no error surfaced to the loser: both devices'
+  // optimistic local state would show themselves as the confirmed
+  // helper/driver, but only one of them actually "won" server-side, and the
+  // loser would silently keep believing they're on the hook for a ride they
+  // aren't actually assigned to. Same race shape as choreStore.ts's
+  // claimBounty() (search `.is('assigned_to_id', null)` there) — mirrors
+  // that pattern: apply the optimistic update locally exactly like
+  // updateEvent would, but send the real DB write with a conditional WHERE
+  // that only the current still-open state (both statuses currently unset)
+  // can satisfy, and roll back the optimistic claim if the 0-row result
+  // shows someone else already landed first.
+  claimHelperSlot: (id, role, claimantName, extra, onWon) => {
+    const statusField = role === 'driver' ? 'driverStatus' : 'helperStatus';
+    const nameField    = role === 'driver' ? 'driverName'   : 'helper';
+    const dbStatusCol  = role === 'driver' ? 'driver_status' : 'helper_status';
+    const dbNameCol    = role === 'driver' ? 'driver_name'   : 'helper_name';
+
+    const patch: Partial<FamilyEvent> = {
+      ...extra,
+      [nameField]:   claimantName,
+      [statusField]: 'confirmed',
+      updatedBy: getActiveMemberId() ?? undefined,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const prevDay = get().dayEvents;
+    const nextDay = sortByTime(prevDay.map(e => e.id === id ? { ...e, ...patch } : e));
+    set({ dayEvents: nextDay, events: nextDay });
+    set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? { ...e, ...patch } : e)) });
+
+    const dbPatch: Record<string, unknown> = { [dbNameCol]: claimantName, [dbStatusCol]: 'confirmed' };
+    if (extra) {
+      const merged = nextDay.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
+      if (merged) Object.assign(dbPatch, toRow(merged));
+    }
+
+    supabase.from('calendar_events')
+      .update(dbPatch)
+      .eq('id', id)
+      .is(dbStatusCol, null)
+      .select('id')
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn('[eventStore] claimHelperSlot DB update failed', id, error.message);
+          return;
+        }
+        if (!data || data.length === 0) {
+          console.warn('[eventStore] claimHelperSlot lost the race on', id, '— rolling back local claim');
+          // Re-fetch the row so the loser's UI reflects who actually won,
+          // instead of just reverting to an unassigned/open state that no
+          // longer matches the DB either.
+          supabase.from('calendar_events').select('*').eq('id', id).single().then(({ data: row }) => {
+            if (!row) return;
+            const fresh = fromRow(row);
+            const rollbackDay = get().dayEvents.map(e => e.id === id ? fresh : e);
+            set({ dayEvents: sortByTime(rollbackDay), events: sortByTime(rollbackDay) });
+            set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? fresh : e)) });
+            return;
+          });
+          return;
+        }
+        // Claim actually landed in the DB — safe for the caller to do
+        // anything gated on genuinely winning (e.g. awarding ride coins),
+        // instead of doing it optimistically before the outcome is known.
+        onWon?.();
+      });
   },
 
   deleteEvent: (id) => {

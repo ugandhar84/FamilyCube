@@ -131,6 +131,10 @@ serve(async (req) => {
     const dateWindow = [yesterdayStr, todayStr, tomorrowStr];
 
     // ── Chores due today (±1 day, see dateWindow) with alert_call on ─────────
+    // No deleted_at filter here — unlike calendar_events, chore_tasks has no
+    // such column; deleteChore() in choreStore.ts issues a real DELETE, so a
+    // removed chore's row (and its alert_call flag with it) is gone outright
+    // and can never be returned by this query in the first place.
     const { data: chores } = await supabase
       .from('chore_tasks')
       .select('id, title, due_date, due_time, timezone, alert_call, alert_call_lead_minutes, assigned_to_id, status')
@@ -146,11 +150,22 @@ serve(async (req) => {
     // to24Hour()-based check below is the only correctness-bearing filter;
     // this table is small enough per family that scanning today's
     // alert_call rows without the extra prefilter is cheap.
+    //
+    // is('deleted_at', null) — calendar_events is soft-deleted (deleteEvent()
+    // in eventStore.ts stamps deleted_at rather than issuing a real DELETE).
+    // Without this filter, deleting an event after its alert_call reminder
+    // was scheduled but before the sweep runs did nothing to stop the ring —
+    // the row was still returned here, the sweep would still fire a real
+    // CallKit/ConnectionService ringing alert for an event the user had
+    // already removed. updated_at is also pulled in now so it can be used
+    // (see below) to detect an edited start time and avoid the mirror bug of
+    // never re-ringing after a time change.
     const { data: events } = await supabase
       .from('calendar_events')
-      .select('id, title, date, start_time, timezone, alert_call, alert_call_lead_minutes, member_id, member_ids')
+      .select('id, title, date, start_time, timezone, alert_call, alert_call_lead_minutes, member_id, member_ids, updated_at')
       .eq('alert_call', true)
-      .in('date', dateWindow);
+      .in('date', dateWindow)
+      .is('deleted_at', null);
 
     const targets: RingTarget[] = [];
 
@@ -182,13 +197,27 @@ serve(async (req) => {
 
     if (targets.length === 0) return json({ ok: true, rung: 0 });
 
-    // ── Dedupe against call_reminder_log (one ring per item) ─────────────────
+    // ── Dedupe against call_reminder_log (one ring per item PER due time) ────
+    // Keyed by (item_type, item_id, due_at) rather than just (item_type,
+    // item_id) — the latter permanently "used up" an item's one-and-only
+    // ring the first time it ever fired. If a parent edited an event's
+    // start_time AFTER its original reminder had already rung (e.g. moved
+    // a 3pm dentist appointment to 5pm the next day), the old log row for
+    // that item_id/item_type pair was still there, so the sweep would skip
+    // it forever afterward — the new, later time would silently never ring.
+    // Including due_at (rounded to the minute, since dueAt already carries
+    // whole-minute precision from wall-clock parsing) makes an edited time
+    // a distinct key that's eligible to ring again, while same-run retries
+    // of an unmodified item still collide on the identical due_at and stay
+    // deduped. See supabase/migrations/*_call_reminder_log_due_at.sql for
+    // the matching unique-constraint change (item_type,item_id,due_at).
+    const dueAtKey = (d: Date) => new Date(Math.floor(d.getTime() / 60000) * 60000).toISOString();
     const { data: alreadyRung } = await supabase
       .from('call_reminder_log')
-      .select('item_type, item_id')
+      .select('item_type, item_id, due_at')
       .in('item_id', targets.map(t => t.itemId));
-    const rungSet = new Set((alreadyRung ?? []).map((r: any) => `${r.item_type}:${r.item_id}`));
-    const toRing = targets.filter(t => !rungSet.has(`${t.itemType}:${t.itemId}`));
+    const rungSet = new Set((alreadyRung ?? []).map((r: any) => `${r.item_type}:${r.item_id}:${r.due_at}`));
+    const toRing = targets.filter(t => !rungSet.has(`${t.itemType}:${t.itemId}:${dueAtKey(t.dueAt)}`));
     if (toRing.length === 0) return json({ ok: true, rung: 0, alreadyRung: targets.length });
 
     // ── Resolve VoIP tokens for each target's members ─────────────────────────
@@ -221,10 +250,12 @@ serve(async (req) => {
       results.push({ itemType: t.itemType, itemId: t.itemId, title: t.title, delivery });
       // Log even if delivery had zero tokens (no device registered) — the
       // window has passed either way, and re-ringing 90s later on a retry
-      // sweep would be a duplicate, not a fix.
+      // sweep would be a duplicate, not a fix. due_at is part of the key
+      // now (see the comment above the dedupe query) so an edit that moves
+      // the item to a new time is free to ring again on its own schedule.
       await supabase.from('call_reminder_log').upsert(
-        { item_type: t.itemType, item_id: t.itemId, fired_at: new Date().toISOString() },
-        { onConflict: 'item_type,item_id' },
+        { item_type: t.itemType, item_id: t.itemId, due_at: dueAtKey(t.dueAt), fired_at: new Date().toISOString() },
+        { onConflict: 'item_type,item_id,due_at' },
       );
       rung++;
     }

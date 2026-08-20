@@ -92,9 +92,18 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
 
   const claimPickup = (evId: string) => {
     const ev = events.find(e => e.id === evId);
-    updateEvent(evId, { helper: active.name, helperStatus: 'confirmed' });
     const coins = ev?.rideCoins ?? rideEarnings;
-    if (coins > 0) awardCoins(active.id, coins, 'mainCoins');
+    // Race-safe: any teen who has this pool open could tap "I'll take it"
+    // on the same isOpenToTeens pickup within the same round-trip window —
+    // claimHelperSlot does a conditional DB write (only succeeds if
+    // helper_status is still unset) instead of an unconditional update, so
+    // the loser's optimistic local claim gets rolled back to the real
+    // winner instead of both teens' devices showing themselves as confirmed.
+    // Coins are awarded only via onWon — a teen who loses the race must not
+    // keep coins for a ride they were never actually confirmed on.
+    useEventStore.getState().claimHelperSlot(evId, 'helper', active.name, undefined, () => {
+      if (coins > 0) awardCoins(active.id, coins, 'mainCoins');
+    });
   };
 
   // A claimed run had no way to back out once confirmed — same rejected-state

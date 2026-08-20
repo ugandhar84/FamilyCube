@@ -558,8 +558,13 @@ export default function CalendarScreen() {
   const filterMemberName = filterMember ? members.find(m => m.id === filterMember)?.name : undefined;
   const matchesMemberFilter = (e: FamilyEvent) => {
     if (!filterMember) return true;
-    if (!e.memberId) return true; // family-wide events always show
+    if (!e.memberId && !e.memberIds?.length) return true; // family-wide events always show
     if (e.memberId === filterMember) return true;
+    // Multi-member assignment — e.memberIds carries every assignee for an
+    // event assigned to 2+ family members (EventFormModal's multi-select
+    // "For" picker). This was previously unchecked here, so the 2nd/3rd+
+    // assignee on a shared event never matched their own filter pill.
+    if (e.memberIds?.includes(filterMember)) return true;
     if (filterMemberName) {
       const first = filterMemberName.split(' ')[0];
       if (e.helper && (e.helper.includes(filterMemberName) || e.helper.includes(first))) return true;
@@ -598,18 +603,25 @@ export default function CalendarScreen() {
         // siblings' events (e.g. "what's Leo up to today"), not just their
         // own. Kids just don't get the member-filter/view-mode toolbar UI.
         // Senior/GP: restricted to only schedules they're actually part of
-        // — assigned to them, they're the named helper/driver, or the
-        // event has no assignee at all (family-wide). Previously this also
-        // OR'd in `!(e as any).isPrivate`, a field that doesn't exist on
+        // — assigned to them, they're the named helper/driver, they're one
+        // of a multi-member event's assignees (e.memberIds — previously
+        // unchecked here, so a senior who was the 2nd/3rd assignee on a
+        // shared event never saw it at all), or the event has no assignee
+        // at all (family-wide). Previously this also OR'd in
+        // `!(e as any).isPrivate`, a field that doesn't exist on
         // FamilyEvent — that condition was always true, silently giving
         // every senior full visibility regardless of the other checks.
         (!isSenior || (
           e.memberId === activeMemberId ||
+          e.memberIds?.includes(activeMemberId ?? '') ||
           (e.helper && (e.helper.includes(activeMemberName) || activeMemberName.includes(e.helper.split(' ')[0]))) ||
-          !e.memberId
+          (!e.memberId && !e.memberIds?.length)
         )) &&
         // My Schedule / All tabs (kid/teen/senior only — parents always see all)
-        (isParent || scheduleFilter === 'all' || e.memberId === activeMemberId || !e.memberId) &&
+        (isParent || scheduleFilter === 'all' ||
+          e.memberId === activeMemberId ||
+          e.memberIds?.includes(activeMemberId ?? '') ||
+          (!e.memberId && !e.memberIds?.length)) &&
         matchesMemberFilter(e) &&
         matchesSearch(e))
       .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
@@ -622,15 +634,20 @@ export default function CalendarScreen() {
   const scopedRangeEvents = useMemo(() => {
     return rangeEvents.filter(e =>
       e.category !== 'Holiday' &&
+      // Same memberIds fix as dayEvents above — a senior/GP who's one of a
+      // multi-member event's assignees (not the sole e.memberId) previously
+      // never matched here either, so a shared event silently vanished from
+      // their Week/Agenda views too.
       (!isSenior || (
         e.memberId === activeMemberId ||
+        e.memberIds?.includes(activeMemberId ?? '') ||
         (e.helper && (e.helper.includes(activeMemberName) || activeMemberName.includes(e.helper.split(' ')[0]))) ||
-        !e.memberId
+        (!e.memberId && !e.memberIds?.length)
       )) &&
       matchesMemberFilter(e) &&
       matchesSearch(e)
     );
-  }, [rangeEvents, isSenior, activeMemberName, filterMember, filterMemberName, searchQuery]);
+  }, [rangeEvents, isSenior, activeMemberName, activeMemberId, filterMember, filterMemberName, searchQuery]);
 
   // Events where senior can volunteer as helper (has a pending/no helper, dated today or future)
   // seniorOpenRides removed — ride volunteering now lives in Hub > Helper Dispatch

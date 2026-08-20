@@ -69,13 +69,25 @@ serve(async (req) => {
     const notifications: { type: string; questTitle: string; to: string; dryRun: boolean }[] = [];
 
     const now = Date.now();
-    const fire = async (type: string, tokens: string[], fId: string, payload: Record<string, unknown>) => {
+    // `soft` — spec 7.5's "softer, delayed" tone for the minor+same-day
+    // parent escalation: no sound, unlike every other push this sweeper
+    // sends. family-notifier's buildMessage() only applies `sound:
+    // 'default'` when the caller's payload doesn't already carry a sound
+    // key for types that hardcode it in the switch (deadline_overdue does),
+    // so this alone isn't enough to silence deadline_overdue's own
+    // hardcoded sound — passed through as an explicit payload field so a
+    // future softer-tone rendering can key off it without new plumbing.
+    const fire = async (type: string, tokens: string[], fId: string, payload: Record<string, unknown>, opts?: { soft?: boolean }) => {
       notifications.push({ type, questTitle: payload.questTitle as string, to: tokens.join(','), dryRun });
       if (dryRun) return;
       await fetch(notifierUrl, {
         method: 'POST',
         headers: notifierHeaders,
-        body: JSON.stringify({ type, tokens, familyId: fId, payload, persist: true }),
+        body: JSON.stringify({
+          type, tokens, familyId: fId,
+          payload: opts?.soft ? { ...payload, soft: true } : payload,
+          persist: true,
+        }),
       });
     };
 
@@ -83,6 +95,13 @@ serve(async (req) => {
       const assignee = q.assigned_to_id ? memberMap[q.assigned_to_id] : null;
       const daysOverdue = Math.max(0, Math.floor((now - new Date(q.due_date).getTime()) / 86400_000));
       const isHighPriority = q.priority === 'urgent' || q.priority === 'high';
+      // 7.5 — parent escalation is about WHO holds the chore and HOW LATE
+      // it is, not how the chore happened to be flagged. Raw DB role
+      // values (see store/familyStore.ts fromRow()/toRow()): a minor is
+      // 'child' or 'teenager', never the app-level 'kid'/'teen'.
+      const assigneeIsMinor = assignee?.role === 'child' || assignee?.role === 'teenager';
+      const isSameDayMiss = daysOverdue === 0 || (q.due_date === today);
+      const shouldEscalateToParent = assigneeIsMinor && isSameDayMiss;
       const parentTokens = parentTokensByFamily[q.family_id] ?? [];
       const kidTokens = assignee?.expo_push_token ? [assignee.expo_push_token] : [];
 
@@ -91,10 +110,14 @@ serve(async (req) => {
         if (daysOverdue === 0) {
           await fire('deadline_reminder', kidTokens, q.family_id, { questTitle: q.title, questId: q.id, coins: q.coins });
         } else {
-          // Overdue + unstarted → warn kid + alert parent if high priority
+          // Overdue + unstarted → warn kid + a softer, delayed heads-up to
+          // parents, but only when the assignee is a minor and the miss is
+          // same-day — a next-week chore that's merely high-priority
+          // shouldn't escalate, and a parent/senior's own self-assigned
+          // task never should.
           await fire('deadline_overdue', kidTokens, q.family_id, { questTitle: q.title, questId: q.id, daysOverdue });
-          if (isHighPriority) {
-            await fire('deadline_overdue', parentTokens, q.family_id, { questTitle: q.title, questId: q.id, daysOverdue, kidName: assignee?.name ?? 'A kid' });
+          if (shouldEscalateToParent) {
+            await fire('deadline_overdue', parentTokens, q.family_id, { questTitle: q.title, questId: q.id, daysOverdue, kidName: assignee?.name ?? 'A kid' }, { soft: true });
           }
         }
       }

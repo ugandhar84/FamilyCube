@@ -122,12 +122,24 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         data: { screen: 'Quests', questId: p.questId },
       };
     case 'deadline_overdue':
-      return {
-        title: '🚨 Chore Overdue',
-        body: `"${p.questTitle}" is ${p.daysOverdue}d overdue — finish it or it will be reassigned!`,
-        sound: 'default',
-        data: { screen: 'Quests', questId: p.questId },
-      };
+      // 7.5 — the minor+same-day parent escalation (chore-deadline-notifier)
+      // wants a softer, delayed "heads up, not yet done" tone rather than
+      // the same urgent/sound delivery as the assignee's own overdue push —
+      // signaled via payload.soft so this one type can render two ways
+      // without a new notification type.
+      return p.soft
+        ? {
+            title: '👀 Heads Up',
+            body: `${p.kidName ?? 'Your child'} hasn't finished "${p.questTitle}" yet (due today) — no need to step in yet, just flagging it.`,
+            sound: null,
+            data: { screen: 'Quests', questId: p.questId },
+          }
+        : {
+            title: '🚨 Chore Overdue',
+            body: `"${p.questTitle}" is ${p.daysOverdue}d overdue — finish it or it will be reassigned!`,
+            sound: 'default',
+            data: { screen: 'Quests', questId: p.questId },
+          };
     case 'penalty_applied':
       return {
         title: '🪙 Coins Deducted',
@@ -333,11 +345,14 @@ serve(async (req) => {
 
     if (!pushTokens.length && !resolvedMemberIds.length && familyId) {
       if (NOTIFY_PARENTS.includes(type)) {
+        // Raw DB role values, not app-level names — see
+        // store/familyStore.ts fromRow()/toRow() for the mapping. The DB
+        // never stores 'senior', only 'grandparent'.
         const { data: parents } = await supabase
           .from('members')
           .select('id, expo_push_token')
           .eq('family_id', familyId)
-          .in('role', ['parent', 'senior'])
+          .in('role', ['parent', 'grandparent'])
           .not('expo_push_token', 'is', null);
         resolvedMemberIds = (parents ?? []).map((m: any) => m.id);
         pushTokens = (parents ?? []).map((m: any) => m.expo_push_token).filter(Boolean);

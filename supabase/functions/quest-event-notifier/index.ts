@@ -50,6 +50,7 @@ serve(async (req) => {
       bonusExpiresAt, // ISO string
       declineReason, // string — for declined
       coinPenalty, // number — for penalty
+      inviteGrandparents, // boolean — for quest_posted, whether seniors are eligible too
     } = await req.json() as Record<string, any>;
 
     if (!event || !familyId) return json({ ok: false, error: 'event and familyId required' }, 400);
@@ -74,7 +75,14 @@ serve(async (req) => {
     const memberIds = (ids: (string | undefined | null)[]) =>
       ids.filter(Boolean) as string[];
 
-    const approverIds   = (members ?? []).filter(m => m.role === 'parent' || m.role === 'senior').map(m => m.id);
+    // Role values here are the RAW DB strings (this queries `members`
+    // directly, not through familyStore.ts's fromRow() mapper that
+    // translates DB → app-level role names) — DB uses 'parent' /
+    // 'grandparent' / 'child' / 'teenager', never 'senior' / 'kid' / 'teen'.
+    // See store/familyStore.ts fromRow()/toRow() for the authoritative
+    // mapping. Comparing against the app-level names here meant every
+    // approver-resolution silently matched zero grandparents.
+    const approverIds   = (members ?? []).filter(m => m.role === 'parent' || m.role === 'grandparent').map(m => m.id);
     const triggerer     = triggeredById ? memberMap[triggeredById] : null;
     const assignee      = assigneeId    ? memberMap[assigneeId]    : null;
     const newAssignee   = newAssigneeId ? memberMap[newAssigneeId] : null;
@@ -102,6 +110,22 @@ serve(async (req) => {
     const base = { questId, questTitle };
 
     switch (event) {
+
+      case 'quest_posted': {
+        // A new claimable pool quest was posted — tell every kid/teen who
+        // could claim it (and, if the quest is GP-eligible, every senior
+        // too). Not fired for directly-assigned chores — those already get
+        // their own signal via quest_assigned.
+        const eligibleIds = (members ?? [])
+          .filter((m: any) => m.role === 'child' || m.role === 'teenager' || (inviteGrandparents && m.role === 'grandparent'))
+          .map((m: any) => m.id);
+        await fire('quest_posted', eligibleIds, {
+          ...base,
+          title: '🆕 New Quest Available!',
+          body: `"${questTitle}" was just posted to the pool — be first to claim it!`,
+        });
+        break;
+      }
 
       case 'quest_assigned':
         // Parent added a new quest and assigned it to a kid
@@ -202,7 +226,7 @@ serve(async (req) => {
         // Parent activated flash bonus — notify assignee (or all kids if pool)
         const kidIds = assigneeId
           ? [assigneeId]
-          : (members ?? []).filter((m: any) => m.role === 'kid').map((m: any) => m.id);
+          : (members ?? []).filter((m: any) => m.role === 'child').map((m: any) => m.id);
         const expiresHours = bonusExpiresAt
           ? Math.round((new Date(bonusExpiresAt).getTime() - Date.now()) / 3600_000)
           : 2;

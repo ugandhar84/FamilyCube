@@ -1030,6 +1030,27 @@ export const useEventStore = create<EventState>((set, get) => ({
         // anything gated on genuinely winning (e.g. awarding ride coins),
         // instead of doing it optimistically before the outcome is known.
         onWon?.();
+
+        // Notify the event creator their open slot was just filled — this
+        // only runs on the confirmed winner's branch (0-row losers return
+        // above and never reach here), so exactly one notification fires
+        // per slot, not one per optimistic local claim. Same
+        // require()-based cross-store call as choreStore.ts's
+        // declineGrandparentQuest/recallParentQuest (no static import, to
+        // avoid a store-to-store import cycle).
+        try {
+          const merged = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
+          const creatorId = merged?.createdBy;
+          const claimantId = getActiveMemberId();
+          if (creatorId && creatorId !== claimantId) {
+            const { useChatStore } = require('@/store/chatStore');
+            const roleLabel = role === 'driver' ? 'driver' : 'helper';
+            useChatStore.getState().sendMessage(creatorId, claimantId ?? creatorId,
+              `✅ ${claimantName} confirmed as ${roleLabel} for "${merged?.title ?? 'your event'}"`);
+          }
+        } catch (e) {
+          console.warn('[eventStore] claimHelperSlot creator notification failed', e);
+        }
       });
   },
 

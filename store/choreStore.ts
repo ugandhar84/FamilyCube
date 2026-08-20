@@ -384,6 +384,26 @@ const getActiveMemberRole = (): string | null => {
   } catch { return null; }
 };
 
+// ─── Helper: notify parents/seniors that a chore was submitted for review ─────
+// 7.2 — submitChore/resubmitChore/submitGrandparentQuest all flip status to a
+// pending-review state with no notification to whoever needs to act on it.
+// quest-event-notifier's 'quest_submitted' case already resolves parents +
+// seniors (grandparents) and builds the right copy — this just invokes it,
+// mirroring the fire-and-forget shape already used at this file's other
+// quest-event-notifier call sites (cheerChore/appreciationPing).
+const notifyQuestSubmitted = (chore: ChoreTask) => {
+  if (!chore.familyId) return;
+  supabase.functions.invoke('quest-event-notifier', {
+    body: {
+      event: 'quest_submitted',
+      questId: chore.id,
+      questTitle: chore.title,
+      familyId: chore.familyId,
+      assigneeId: chore.assignedToId ?? null,
+    },
+  }).catch(e => console.warn('[choreStore] quest_submitted notify', e?.message));
+};
+
 // ─── DB row mappers ───────────────────────────────────────────────────────────
 
 function choreFromRow(row: any): ChoreTask {
@@ -1081,6 +1101,25 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     });
     _choreInsertPromises.set(chore.id, insertPromise);
 
+    // 7.1 — a newly-posted claimable POOL quest gets zero signal to eligible
+    // kids/teens (and seniors, if GP-eligible) otherwise — they'd only see
+    // it if they happened to open the tab. A directly-assigned chore
+    // already has its own separate signal via the assignment itself, so
+    // this only fires for the unassigned/pool case. Same fire-and-forget
+    // invoke shape as the other quest-event-notifier call sites in this
+    // file (cheerChore/appreciationPing above).
+    if (chore.isPool && !chore.assignedToId && familyId) {
+      supabase.functions.invoke('quest-event-notifier', {
+        body: {
+          event: 'quest_posted',
+          questId: chore.id,
+          questTitle: chore.title,
+          familyId,
+          inviteGrandparents: chore.inviteGrandparents ?? false,
+        },
+      }).catch(e => console.warn('[choreStore] addChore quest_posted notify', e?.message));
+    }
+
     return chore;
   },
 
@@ -1366,6 +1405,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       submittedAt:             now,
       approvalWindowExpiresAt: expiry,
     });
+    notifyQuestSubmitted(chore);
     return true;
   },
 
@@ -1416,6 +1456,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       submittedAt:             now,
       approvalWindowExpiresAt: expiry,
     });
+    notifyQuestSubmitted(chore);
   },
 
   // Citizenship 0-pt tasks: tap = immediate complete, no review needed
@@ -1450,6 +1491,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       submissionPhotoUrl: opts?.photoUrl,
       submittedAt:        now,
     });
+    notifyQuestSubmitted(chore);
   },
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1576,6 +1618,45 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       // never depends on WHICH role happened to tap Approve.
       const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
       get().awardPoints(chore.assignedToId, choreId, pointsToAward, chore.xpReward, wallet);
+    }
+
+    // 7.3 — approval pays out real coins but previously fired zero
+    // notification. quest-event-notifier's 'quest_approved' case (which
+    // also fires 'coins_awarded' when total > 0) already has the "Approved!
+    // +N coins" copy built — reuse it rather than writing new copy.
+    // coins must reflect what was ACTUALLY paid, not pointsToAward
+    // unconditionally — a Teen-created quest still flagged
+    // rewardPendingReview (1.13) skips the real awardPoints call above, so
+    // sending pointsToAward here would tell the assignee they got coins
+    // they haven't actually received yet.
+    if (chore.familyId && chore.assignedToId) {
+      const coinsActuallyPaid = chore.rewardPendingReview ? 0 : pointsToAward;
+      supabase.functions.invoke('quest-event-notifier', {
+        body: {
+          event: 'quest_approved',
+          questId: chore.id,
+          questTitle: chore.title,
+          familyId: chore.familyId,
+          assigneeId: chore.assignedToId,
+          coins: coinsActuallyPaid,
+        },
+      }).catch(e => console.warn('[choreStore] approveChore quest_approved notify', e?.message));
+    }
+
+    // GP-sponsored quest → also tell the sponsoring grandparent it was
+    // approved, mirroring declineGrandparentQuest's established
+    // sponsor-notification pattern (chatStore.sendMessage via
+    // require()-based cross-store call, not the edge function).
+    if (chore.sponsorUserId) {
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const { useChatStore } = require('./chatStore');
+        const kid = useFamilyStore.getState().members.find((m: any) => m.id === chore.assignedToId);
+        useChatStore.getState().sendMessage(chore.sponsorUserId, reviewerId,
+          `🎉 ${kid?.name?.split(' ')[0] ?? 'Your grandchild'} completed "${chore.title}" — approved!`);
+      } catch (e) {
+        console.warn('[choreStore] approveChore sponsor notification failed', e);
+      }
     }
 
     // responsibility_history — same append-only audit trail the

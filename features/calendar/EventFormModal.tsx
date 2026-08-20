@@ -104,6 +104,16 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
   const [alertCall,            setAlertCall]            = useState(false);
   const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(10);
 
+  // Repeats — weekly-on-specific-weekdays is the primary case (a school
+  // class, recurring practice); daily/monthly are simpler variants of the
+  // same underlying generator (see addRecurringEvent in eventStore.ts).
+  // 'none' is the default — this control is opt-in, same as chores' own
+  // Repeats picker never defaults to a recurring frequency.
+  const [repeatFreq, setRepeatFreq] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none');
+  const [repeatDays, setRepeatDays] = useState<number[]>([]); // 0=Sun..6=Sat, weekly only
+  const [repeatEndDate, setRepeatEndDate] = useState<Date | null>(null);
+  const [showRepeatEndDatePick, setShowRepeatEndDatePick] = useState(false);
+
   // Category-specific
   const [memberIds,      setMemberIds]      = useState<string[]>(prefill?.memberId ? [prefill.memberId] : (isKid ? [activeMemberId] : []));
   const [helperId,       setHelperId]       = useState<string | undefined>();
@@ -355,7 +365,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
       }
     }
 
-    const newEventId = addEvent({
+    const eventInput: Omit<FamilyEvent, 'id'> = {
       title:           finalTitle,
       date:            localDateStr(primaryKidRideDate),
       time:            allDay ? undefined : fmtTime(primaryKidRideDate),
@@ -403,7 +413,19 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
       driverName:      !isKid ? (driverName.trim() || undefined) : undefined,
       driverStatus:    !isKid && driverName.trim() ? (driverId === activeMemberId ? 'confirmed' : 'pending') : undefined,
       alertCall, alertCallLeadMinutes,
-    });
+    };
+
+    // Recurring — weekly with no explicit day picked defaults to the
+    // create-date's own weekday (matches generateOccurrenceDates' own
+    // fallback), so a parent who just picks "Weekly" without touching the
+    // day row still gets the obviously-intended "same day every week."
+    const newEventId = repeatFreq === 'none'
+      ? addEvent(eventInput)
+      : useEventStore.getState().addRecurringEvent(eventInput, {
+          frequency: repeatFreq,
+          days: repeatFreq === 'weekly' ? (repeatDays.length ? repeatDays : [primaryKidRideDate.getDay()]) : undefined,
+          endDate: repeatEndDate ? localDateStr(repeatEndDate) : undefined,
+        });
 
     // Persist custom title so it appears in future suggestions for this family
     if (category === 'Other' && finalTitle && familyId) {
@@ -736,6 +758,72 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               />
             </View>
 
+            {/* Repeats — weekly-on-weekdays is the headline case (a school
+                class on Mon/Wed/Fri); daily/monthly are one-tap variants.
+                Materializes real rows via addRecurringEvent, same
+                architecture chores' own recurrence uses. */}
+            <View style={{ marginBottom: 16, paddingHorizontal: 4 }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
+                🔁 Repeats
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {([
+                  { key: 'none' as const,    label: 'One-time' },
+                  { key: 'daily' as const,   label: 'Daily' },
+                  { key: 'weekly' as const,  label: 'Weekly' },
+                  { key: 'monthly' as const, label: 'Monthly' },
+                ]).map(({ key, label }) => (
+                  <TouchableOpacity key={key}
+                    onPress={() => setRepeatFreq(key)}
+                    style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, paddingVertical: 8, alignItems: 'center',
+                      borderColor: repeatFreq === key ? catColor : colors.border,
+                      backgroundColor: repeatFreq === key ? catColor + '20' : 'transparent' }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '800',
+                      color: repeatFreq === key ? catColor : colors.textSecondary }}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {repeatFreq === 'weekly' && (
+                <View style={{ flexDirection: 'row', gap: 4, marginTop: 8 }}>
+                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, dow) => {
+                    const active = repeatDays.includes(dow);
+                    return (
+                      <TouchableOpacity key={dow}
+                        onPress={() => setRepeatDays(days => active ? days.filter(d => d !== dow) : [...days, dow].sort())}
+                        style={{ flex: 1, borderRadius: 8, borderWidth: 1.5, paddingVertical: 8, alignItems: 'center',
+                          borderColor: active ? catColor : colors.border,
+                          backgroundColor: active ? catColor : 'transparent' }}>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: active ? '#fff' : colors.textSecondary }}>{label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+
+              {repeatFreq !== 'none' && (
+                <TouchableOpacity
+                  onPress={() => setShowRepeatEndDatePick(p => !p)}
+                  style={[f.dateBtn, { marginTop: 8, backgroundColor: showRepeatEndDatePick ? catColor + '20' : colors.surface, borderColor: showRepeatEndDatePick ? catColor : colors.border }]}>
+                  <Text style={{ fontSize: 13 }}>🏁</Text>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+                    {repeatEndDate ? `Until ${fmtDisplay(repeatEndDate)}` : 'No end date (12 weeks ahead)'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              {showRepeatEndDatePick && (
+                <PickerOverlay
+                  showDate showTime={false}
+                  value={repeatEndDate ?? eventDate}
+                  onChangeDate={d => setRepeatEndDate(new Date(d))}
+                  onChangeTime={() => {}}
+                  onDone={() => setShowRepeatEndDatePick(false)}
+                  accentColor={catColor} colors={colors}
+                  minimumDate={eventDate}
+                />
+              )}
+            </View>
+
             {/* Call-style reminder — opt-in, rings via CallKit/ConnectionService */}
             {!allDay && (
               <>
@@ -954,7 +1042,13 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   event: FamilyEvent;
   activeMemberId: string;
   onClose: () => void;
-  onDelete?: () => void;
+  // scope is only ever passed for a recurring occurrence ('this'/
+  // 'following'/'all' — see handleDelete's own Alert); the caller (
+  // CalendarScreen) owns the actual deleteEvent/deleteEventScoped call so
+  // it can also fire its own notifyDeleteIfAssigned exactly once regardless
+  // of which path was taken, instead of duplicating that notification logic
+  // inside this form component.
+  onDelete?: (scope?: 'this' | 'following' | 'all') => void;
 }) {
   const { colors, isDark } = useTheme();
   const { updateEvent } = useEventStore();
@@ -1096,6 +1190,28 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       patch.notes = notes.trim() || undefined;
     }
     if (Object.keys(patch).length > 0) {
+      // A recurring occurrence's edit needs to know whether it applies to
+      // just this one, this-and-future, or the whole series — a plain
+      // updateEvent() would only ever touch the single row being viewed.
+      // Ask only when the patch could plausibly matter to siblings in the
+      // series (i.e. anything beyond a one-off note); a notes-only tweak on
+      // a single occurrence is common enough (kid's after-school request
+      // this Wednesday only) that always prompting would be more friction
+      // than the feature is worth for that case.
+      const notesOnly = Object.keys(patch).length === 1 && 'notes' in patch;
+      if (event.seriesId && !notesOnly) {
+        Alert.alert(
+          'Repeating Event',
+          'Apply this change to just this event, or the whole series?',
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => setSaving(false) },
+            { text: 'Just this one', onPress: () => { useEventStore.getState().updateEventScoped(event.id, patch, 'this'); setSaving(false); onClose(); } },
+            { text: 'This and following', onPress: () => { useEventStore.getState().updateEventScoped(event.id, patch, 'following'); setSaving(false); onClose(); } },
+            { text: 'All events', onPress: () => { useEventStore.getState().updateEventScoped(event.id, patch, 'all'); setSaving(false); onClose(); } },
+          ],
+        );
+        return;
+      }
       updateEvent(event.id, patch);
     }
     setSaving(false);
@@ -1104,6 +1220,19 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
 
   const handleDelete = () => {
     if (restricted) return; // blocked in UI
+    if (event.seriesId) {
+      Alert.alert(
+        'Repeating Event',
+        `Delete just this occurrence of "${event.title}", or the whole series?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Just this one', style: 'destructive', onPress: () => { onDelete?.('this'); onClose(); } },
+          { text: 'This and following', style: 'destructive', onPress: () => { onDelete?.('following'); onClose(); } },
+          { text: 'All events', style: 'destructive', onPress: () => { onDelete?.('all'); onClose(); } },
+        ],
+      );
+      return;
+    }
     Alert.alert(
       isOwnPending ? 'Withdraw Request' : 'Delete Event',
       isOwnPending

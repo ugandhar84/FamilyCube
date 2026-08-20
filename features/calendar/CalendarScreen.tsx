@@ -30,6 +30,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useEventStore, FamilyEvent, EventType, StripMap } from '@/store/eventStore';
+import { supabase } from '@/lib/supabase';
 import AppHeader from '@/components/AppHeader';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -403,6 +404,41 @@ export default function CalendarScreen() {
     storeSelectDate(selectedDate);
     const days = get15Days(selectedDate);
     loadStrip(days);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Recurring series only materialize occurrences up to a rolling window
+  // (RECURRENCE_WINDOW_DAYS in eventStore.ts) — without something to push
+  // that window forward, an ongoing "every Mon/Wed/Fri" class would
+  // eventually run out of future rows for a family that just hasn't
+  // recently opened the Calendar tab. Opening it is the natural, reliable
+  // trigger for that extension (nobody expects a perfectly-populated
+  // calendar from an app they haven't opened in months with zero
+  // interaction) — check for any anchor whose last materialized occurrence
+  // is getting close to today and extend it.
+  React.useEffect(() => {
+    const soon = toDateStr(addDays(new Date(), 21)); // extend once <3 weeks of runway remains
+    supabase.from('calendar_events')
+      .select('id, series_id')
+      .eq('is_series_anchor', true)
+      .is('deleted_at', null)
+      .then(({ data: anchors, error }) => {
+        if (error || !anchors?.length) return;
+        for (const a of anchors) {
+          if (!a.series_id) continue;
+          supabase.from('calendar_events')
+            .select('date')
+            .eq('series_id', a.series_id)
+            .is('deleted_at', null)
+            .order('date', { ascending: false })
+            .limit(1)
+            .then(({ data: latest }) => {
+              if (latest?.[0]?.date && latest[0].date < soon) {
+                useEventStore.getState().extendRecurringSeries(a.series_id as string);
+              }
+            });
+        }
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [filterMember, setFilterMember] = useState<string | null>(null);
@@ -1310,7 +1346,12 @@ export default function CalendarScreen() {
           event={editEv}
           activeMemberId={activeMember?.id ?? ''}
           onClose={() => setEditEv(null)}
-          onDelete={() => { notifyDeleteIfAssigned(editEv); deleteEvent(editEv.id); setEditEv(null); }}
+          onDelete={(scope) => {
+            notifyDeleteIfAssigned(editEv);
+            if (scope) useEventStore.getState().deleteEventScoped(editEv.id, scope);
+            else deleteEvent(editEv.id);
+            setEditEv(null);
+          }}
         />
       )}
 

@@ -20,6 +20,18 @@ import { supabase } from '@/lib/supabase';
 export type EventType    = 'event' | 'reminder' | 'appointment' | 'birthday';
 export type HelperStatus = 'pending' | 'confirmed' | 'rejected';
 
+// Weekly-on-specific-weekdays is the primary real-world case this exists
+// for (a school class or practice on Mon/Wed/Fri) — daily and monthly are
+// supported too since they're simple variations of the same generator, but
+// weekly+days is the one with actual UI for picking which days. 0 = Sunday,
+// matching Date.getDay().
+export interface EventRecurrenceRule {
+  frequency: 'daily' | 'weekly' | 'monthly';
+  days?: number[];      // weekly only — which weekdays (0=Sun..6=Sat), e.g. [1,3,5] for Mon/Wed/Fri
+  endDate?: string;      // 'YYYY-MM-DD' — repeat until (and including) this date; omitted = no end date
+  occurrences?: number;  // alternative to endDate — repeat this many times total, then stop
+}
+
 export interface FamilyEvent {
   id: string;
   title: string;
@@ -81,6 +93,17 @@ export interface FamilyEvent {
   // before `time`. 0 = "on time".
   alertCall?: boolean;
   alertCallLeadMinutes?: number;
+
+  // Recurrence — materialized-rows model (see the migration comment in
+  // supabase/migrations/*_calendar_events_recurrence.sql). seriesId links
+  // every occurrence generated from the same recurring event; it's the
+  // first-created occurrence's own id, reused as the anchor. recurrenceRule
+  // is only ever populated on the anchor row (isSeriesAnchor === true) —
+  // other occurrences carry seriesId to be findable/editable-as-a-series
+  // but don't duplicate the rule itself.
+  seriesId?: string;
+  recurrenceRule?: EventRecurrenceRule;
+  isSeriesAnchor?: boolean;
 }
 
 export type StripMap = Record<string, string[]>;   // date → unique category[]
@@ -142,6 +165,24 @@ interface EventState {
   addEvent:    (e: Omit<FamilyEvent, 'id'>) => string;
   updateEvent: (id: string, updates: Partial<FamilyEvent>) => void;
   deleteEvent: (id: string) => void;
+
+  // Creates a recurring event: the first occurrence (on `first.date`) plus
+  // every future occurrence implied by `rule`, materialized as real rows up
+  // to a rolling window (see generateOccurrenceDates's own comment for why
+  // a window instead of generating to endDate/occurrences all at once).
+  // Returns the id of the first (anchor) occurrence.
+  addRecurringEvent: (first: Omit<FamilyEvent, 'id'>, rule: EventRecurrenceRule) => string;
+
+  // Extends an existing series' materialized rows further into the future —
+  // call periodically (e.g. on Calendar tab focus) so an ongoing "every
+  // Mon/Wed/Fri" class always has upcoming occurrences visible, not just
+  // whatever existed at creation time.
+  extendRecurringSeries: (seriesId: string) => void;
+
+  // Edit/delete scope for a recurring occurrence — mirrors the standard
+  // calendar UX choice ("This event" / "This and following" / "All events").
+  updateEventScoped: (id: string, updates: Partial<FamilyEvent>, scope: 'this' | 'following' | 'all') => void;
+  deleteEventScoped: (id: string, scope: 'this' | 'following' | 'all') => void;
 
   // Race-safe claim of an open helper/driver slot (GP "I'll Drive" on an
   // isOpenToGrandparents ride, Teen "I'll take it" on an isOpenToTeens
@@ -241,6 +282,9 @@ export function fromRow(row: any): FamilyEvent {
     deletedBy:              row.deleted_by ?? undefined,
     alertCall:              row.alert_call ?? false,
     alertCallLeadMinutes:   row.alert_call_lead_minutes ?? 10,
+    seriesId:               row.series_id ?? undefined,
+    recurrenceRule:         (typeof row.recurrence_rule === 'object' && row.recurrence_rule) ? row.recurrence_rule : undefined,
+    isSeriesAnchor:         row.is_series_anchor ?? false,
   };
 }
 
@@ -295,6 +339,9 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     // any family not literally in UTC got the wrong absolute ring time —
     // see the matching, more detailed comment in choreStore.ts's addChore.
     timezone:                   Intl.DateTimeFormat().resolvedOptions().timeZone,
+    series_id:                  ev.seriesId ?? null,
+    recurrence_rule:            ev.recurrenceRule ?? null,
+    is_series_anchor:           ev.isSeriesAnchor ?? false,
   };
 }
 
@@ -910,6 +957,96 @@ export const useEventStore = create<EventState>((set, get) => ({
         !(r.date === ev.date && r.category === ev.category && r.memberId === ev.memberId)) });
     }
   },
+
+  addRecurringEvent: (first, rule) => {
+    const anchorId = get().addEvent({ ...first, recurrenceRule: rule, isSeriesAnchor: true });
+    // seriesId is stamped as a follow-up updateEvent rather than folded into
+    // the initial addEvent() call because the anchor's own id (what
+    // seriesId needs to be) doesn't exist until addEvent creates it.
+    get().updateEvent(anchorId, { seriesId: anchorId });
+
+    const dates = generateOccurrenceDates(first.date, rule, 1);
+    for (const date of dates) {
+      // Each occurrence is a full independent row — editing/completing one
+      // (e.g. adding a note to Wednesday's class only) never touches the
+      // others, same independence guarantee the chore team-clone pattern
+      // established elsewhere in this app. Only seriesId links them; the
+      // rule itself lives solely on the anchor.
+      get().addEvent({ ...first, date, seriesId: anchorId, isSeriesAnchor: false, recurrenceRule: undefined });
+    }
+    return anchorId;
+  },
+
+  extendRecurringSeries: (seriesId) => {
+    const anchor = get().dayEvents.find(e => e.id === seriesId && e.isSeriesAnchor)
+      ?? get().rangeEvents.find(e => e.id === seriesId && e.isSeriesAnchor);
+    if (!anchor?.recurrenceRule) {
+      console.warn('[eventStore] extendRecurringSeries: anchor not loaded or not a series anchor', seriesId);
+      return;
+    }
+    supabase.from('calendar_events')
+      .select('date')
+      .eq('series_id', seriesId)
+      .is('deleted_at', null)
+      .order('date', { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        const latestDate = data?.[0]?.date ?? anchor.date;
+        supabase.from('calendar_events')
+          .select('id', { count: 'exact', head: true })
+          .eq('series_id', seriesId)
+          .is('deleted_at', null)
+          .then(({ count }) => {
+            const dates = generateOccurrenceDates(latestDate, anchor.recurrenceRule!, count ?? 1);
+            const { id: _anchorId, ...anchorRest } = anchor;
+            for (const date of dates) {
+              get().addEvent({
+                ...anchorRest, date, seriesId, isSeriesAnchor: false, recurrenceRule: undefined,
+              });
+            }
+          });
+      });
+  },
+
+  updateEventScoped: (id, updates, scope) => {
+    if (scope === 'this') {
+      // A single-occurrence edit that touches recurrence-defining fields
+      // (making it its own thing) should detach it from the series rather
+      // than silently leaving a stray seriesId pointing at rows it no
+      // longer resembles — mirrors how team-clone chores are independent
+      // rows sharing only a teamGroupId, not additional constraints.
+      get().updateEvent(id, updates);
+      return;
+    }
+    const target = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
+    if (!target?.seriesId) { get().updateEvent(id, updates); return; }
+
+    supabase.from('calendar_events')
+      .select('id, date')
+      .eq('series_id', target.seriesId)
+      .is('deleted_at', null)
+      .then(({ data, error }) => {
+        if (error || !data) { console.warn('[eventStore] updateEventScoped: series lookup failed', error?.message); return; }
+        const ids = (scope === 'all' ? data : data.filter(r => r.date >= target.date)).map(r => r.id);
+        for (const rowId of ids) get().updateEvent(rowId, updates);
+      });
+  },
+
+  deleteEventScoped: (id, scope) => {
+    if (scope === 'this') { get().deleteEvent(id); return; }
+    const target = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
+    if (!target?.seriesId) { get().deleteEvent(id); return; }
+
+    supabase.from('calendar_events')
+      .select('id, date')
+      .eq('series_id', target.seriesId)
+      .is('deleted_at', null)
+      .then(({ data, error }) => {
+        if (error || !data) { console.warn('[eventStore] deleteEventScoped: series lookup failed', error?.message); return; }
+        const ids = (scope === 'all' ? data : data.filter(r => r.date >= target.date)).map(r => r.id);
+        for (const rowId of ids) get().deleteEvent(rowId);
+      });
+  },
 }));
 
 // ── Util ──────────────────────────────────────────────────────────────────────
@@ -917,4 +1054,56 @@ function offsetDate(dateStr: string, days: number): string {
   const [y, m, d] = dateStr.split('-').map(Number);
   const dt = new Date(y, m - 1, d + days);
   return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+}
+
+// How far ahead to materialize occurrence rows for an open-ended (or
+// long-dated-end) recurring event. A weekly school class run indefinitely
+// would otherwise need either an unbounded insert now (most of which the
+// family will never see, and which can never pick up a later mid-series
+// edit to the rule) or virtual expansion everywhere (the larger-blast-radius
+// option deliberately not chosen for this feature — see the migration's own
+// comment). A rolling window means extendRecurringSeries just needs calling
+// periodically to keep pushing the horizon forward.
+const RECURRENCE_WINDOW_DAYS = 84; // 12 weeks
+
+// Every date `rule` implies strictly AFTER `fromDate`, capped by the window,
+// rule.endDate, and rule.occurrences (whichever is most restrictive).
+function generateOccurrenceDates(fromDate: string, rule: EventRecurrenceRule, existingCount: number): string[] {
+  const windowEnd = offsetDate(fromDate, RECURRENCE_WINDOW_DAYS);
+  const hardEnd = rule.endDate && rule.endDate < windowEnd ? rule.endDate : windowEnd;
+  const remaining = rule.occurrences != null ? Math.max(0, rule.occurrences - existingCount) : Infinity;
+
+  const dates: string[] = [];
+  if (rule.frequency === 'daily') {
+    let cursor = offsetDate(fromDate, 1);
+    while (cursor <= hardEnd && dates.length < remaining) {
+      dates.push(cursor);
+      cursor = offsetDate(cursor, 1);
+    }
+  } else if (rule.frequency === 'weekly') {
+    const days = rule.days?.length ? rule.days : [new Date(`${fromDate}T00:00:00`).getDay()];
+    let cursor = offsetDate(fromDate, 1);
+    while (cursor <= hardEnd && dates.length < remaining) {
+      const dow = new Date(`${cursor}T00:00:00`).getDay();
+      if (days.includes(dow)) dates.push(cursor);
+      cursor = offsetDate(cursor, 1);
+    }
+  } else if (rule.frequency === 'monthly') {
+    const [, , dStr] = fromDate.split('-');
+    const dayOfMonth = Number(dStr);
+    let [y, m] = fromDate.split('-').map(Number);
+    while (dates.length < remaining) {
+      m += 1;
+      if (m > 12) { m = 1; y += 1; }
+      // Clamp to the month's actual last day (e.g. rule anchored on the
+      // 31st skips to the last day of a 30-day month rather than rolling
+      // over into the next month).
+      const lastDayOfMonth = new Date(y, m, 0).getDate();
+      const day = Math.min(dayOfMonth, lastDayOfMonth);
+      const candidate = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      if (candidate > hardEnd) break;
+      dates.push(candidate);
+    }
+  }
+  return dates;
 }

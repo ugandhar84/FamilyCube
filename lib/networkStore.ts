@@ -27,6 +27,19 @@ export function markNetworkOnline() {
   _failureCount = 0;
   if (useNetworkStore.getState().isOffline) {
     useNetworkStore.getState().setOffline(false);
+    // Offline → online transition: retry anything chatStore.sendMessage
+    // queued to AsyncStorage while a send failed. Previously nothing ever
+    // read that queue back — a message composed while offline was queued
+    // once and then silently lost forever, with no error shown to the
+    // sender (see chatStore's OFFLINE_KEY). Lazy require to avoid a
+    // circular import (networkStore is imported by lib/supabase.ts, which
+    // chatStore itself depends on transitively), same pattern choreStore
+    // already uses for its own cross-store require.
+    try {
+      const { useChatStore } = require('@/store/chatStore');
+      useChatStore.getState().flushOfflineQueue?.().catch((e: any) =>
+        console.warn('[networkStore] flushOfflineQueue failed:', e?.message));
+    } catch { /* chatStore not mounted yet */ }
   }
 }
 

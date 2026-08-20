@@ -1505,6 +1505,19 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       console.warn('[choreStore] Cash-out below minimum', points);
       return;
     }
+    // A kid could otherwise request a cash-out for more points than they
+    // actually have — nothing previously checked requested points against
+    // getMemberBalance before writing the CASH_OUT transaction that
+    // immediately counts against their balance (see getMemberBalance's
+    // reducer below, which treats every CASH_OUT row as an instant
+    // deduction regardless of approval state). Block it here the same way
+    // the UI's CashOutSheet already clamps its slider to bal.total — this
+    // is the store-level guard the client-only clamp had no backstop for.
+    const bal = get().getMemberBalance(userId);
+    if (points > bal.total) {
+      console.warn('[choreStore] Cash-out exceeds balance', points, bal.total);
+      return;
+    }
 
     const { spend, save, give } = calculateJarSplit(points, settings, override);
 
@@ -1557,6 +1570,12 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   denyCashOut: (transactionId) => {
+    // Tagging the row "[Denied]" is now also the actual reversal — see
+    // getMemberBalance above, which excludes any CASH_OUT transaction whose
+    // notes contain "[Denied]" from the running balance. Previously the tag
+    // was cosmetic only: the deduction requestCashOut applied the moment the
+    // request was filed stayed in effect forever, silently shrinking the
+    // kid's wallet even on a denied request.
     set(s => ({
       transactions: s.transactions.map(tx =>
         tx.id === transactionId
@@ -2284,7 +2303,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   getMemberBalance: (memberId) => {
-    const txs = get().transactions.filter(t => t.userId === memberId);
+    // A denied cash-out must stop counting against the balance — denyCashOut
+    // only ever tagged the transaction's notes with "[Denied]" and never
+    // reversed the deduction this reducer applies for every CASH_OUT row,
+    // so a denied request permanently shrank the kid's wallet with no way
+    // back (the UI's own "Deny" confirm text — "Funds stay in their
+    // wallet" — was actively false). A denied CASH_OUT is excluded here so
+    // it no longer subtracts; approved/still-pending ones still do, since
+    // the money is genuinely earmarked the moment a request is filed.
+    const txs = get().transactions.filter(t =>
+      t.userId === memberId && !(t.transactionType === 'CASH_OUT' && t.notes?.includes('[Denied]'))
+    );
     const spend = txs.reduce((sum, t) => {
       if (t.transactionType === 'EARNED') return sum + t.spendAllocation;
       if (t.transactionType === 'CASH_OUT') return sum - t.spendAllocation;

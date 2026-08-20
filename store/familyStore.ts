@@ -246,18 +246,45 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   },
 
   deductCoins: (memberId, amount, wallet) => {
+    // Store-screen redemption race: two devices (or two rapid taps) reading
+    // the same stale local balance could both pass their own client-side
+    // "can afford it" check and both call deductCoins before either write
+    // round-trips — the previous plain `.update()` had no WHERE guard tying
+    // it to the balance it was actually computed against, so the second
+    // write would just silently re-subtract from whatever the first write
+    // already left, letting a kid redeem more than their real balance ever
+    // covered. Same class of gap as claimBounty's pool-claim race: a
+    // conditional write, guarded on the exact prior value this deduction
+    // was computed from, so only the deduction that still finds a
+    // sufficient balance in Postgres actually lands; the loser's optimistic
+    // local deduction is rolled back instead of silently overwriting.
+    const before = get().members.find(m => m.id === memberId);
+    const priorValue = before?.[wallet] ?? 0;
     const next = get().members.map(m =>
       m.id === memberId ? { ...m, [wallet]: Math.max(0, (m[wallet] ?? 0) - amount) } : m
     );
     set({ members: next });
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     const updated = next.find(m => m.id === memberId);
-    if (updated) {
-      supabase.from('members')
-        .update({ [wallet === 'mainCoins' ? 'main_coins' : 'gp_coins']: updated[wallet] })
-        .eq('id', memberId)
-        .then(({ error }) => { if (error) console.warn('[familyStore] deductCoins', error.message); });
-    }
+    if (!updated) return;
+    const column = wallet === 'mainCoins' ? 'main_coins' : 'gp_coins';
+    supabase.from('members')
+      .update({ [column]: updated[wallet] })
+      .eq('id', memberId)
+      .gte(column, amount) // only succeeds if the DB's current balance can still cover this deduction
+      .select('id')
+      .then(({ data, error }) => {
+        if (error) { console.warn('[familyStore] deductCoins', error.message); return; }
+        if (!data || data.length === 0) {
+          console.warn('[familyStore] deductCoins lost the race on', memberId, wallet, '— rolling back local deduction');
+          set(s => ({
+            members: s.members.map(m =>
+              m.id === memberId ? { ...m, [wallet]: priorValue } : m
+            ),
+          }));
+          AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(get().members));
+        }
+      });
   },
 
   setMemberPin: async (id, pin) => {

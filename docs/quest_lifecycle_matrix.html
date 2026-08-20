@@ -629,6 +629,148 @@
     <p><code>deleteChore</code> now force-closes (<code>status: 'COMPLETED'</code>) any <code>parent_quest_assignments</code> row still referencing the chore being deleted, both locally and via <code>dbUpdate</code>, before deleting the chore row itself — same supersede pattern as N4/<code>addParentQuest</code>. No more permanently orphaned assignment rows left behind after a delete.</p>
   </div>
 
+  <section>
+    <h2>10 · Points/coins economy end-to-end (third pass — new ground)</h2>
+    <p class="lede">Traced awardPoints → cash-out request → parent approval/denial → settlement, and the reward-store
+      redemption path, neither of which either prior pass opened in full. Read in full for this section:
+      <code>store/rewardStore.ts</code> (entire file, 324 lines — not previously audited), the cash-out block of
+      <code>store/choreStore.ts</code> (requestCashOut/settleCashOut/approveCashOut/denyCashOut/getMemberBalance/
+      getPendingCashOuts), <code>features/store/StoreScreen.tsx</code>, <code>features/chores/ChildChoreBoard.tsx</code>'s
+      WalletStrip/CashOutSheet, and <code>features/chores/ParentReviewDeck.tsx</code>'s CashOutCard.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Scenario</th><th>Finding</th><th>Verdict</th></tr>
+      <tr>
+        <td class="state">Kid requests a cash-out for more points than they actually have</td>
+        <td><code>requestCashOut</code> (<code>store/choreStore.ts:1502</code>, pre-fix) only checked <code>points &lt; settings.minCashoutPoints</code> — it never compared the requested amount against <code>getMemberBalance(userId).total</code> at all. The UI-side <code>CashOutSheet</code> does clamp its slider (<code>amount = Math.min(bal.total, ...)</code>, <code>ChildChoreBoard.tsx:874</code>), but that's a render-time clamp on one device's possibly-stale local balance, not a store-level guard — and <code>requestCashOut</code> is a plain exported store action any caller could invoke directly with an arbitrary number.</td>
+        <td><span class="tag fixed">Fixed</span> — see Finding N8.</td>
+      </tr>
+      <tr>
+        <td class="state">Does approving a cash-out have race protection (two parents approving/denying the same request)?</td>
+        <td><code>approveCashOut</code>/<code>denyCashOut</code> (<code>choreStore.ts:1561-1587</code>) both do an unconditional <code>dbUpdate('point_transactions', transactionId, { notes: ... })</code> — no compare-and-swap, no check of the transaction's current notes/state before writing. If Parent A denies and Parent B approves within the same round-trip window, whichever <code>dbUpdate</code> lands last in Postgres wins outright (each overwrites the <code>notes</code> column rather than appending server-side — the local optimistic `set()` appends, but the actual DB write is a plain overwrite), with no error surfaced to either parent.</td>
+        <td><span class="tag gap">Real gap, NOT runtime-tested</span> — same root cause as N5/N9-edge-case (no optimistic locking anywhere in this store), but judged lower severity than the claim/response races that already got a scoped CAS fix: the financial blast radius here is bounded (worst case a request ends up tagged both <code>[Approved]</code> and <code>[Denied]</code>, an ambiguous-but-not-silently-lost state that a parent reviewing history would notice, not a case where money vanishes or gets double-paid), and a two-parents-acting-in-the-same-second collision is a narrow window. Flagged, not fixed this pass — would need the same <code>.eq('notes', previousNotes)</code>-style guard as N5 if it becomes a real complaint.</td>
+      </tr>
+      <tr>
+        <td class="state">Denying a cash-out — does the kid actually keep their points?</td>
+        <td><code>denyCashOut</code> (pre-fix) only appended <code>[Denied]</code> to the transaction's <code>notes</code> string. <code>getMemberBalance</code> (<code>choreStore.ts:2299</code>, pre-fix) treated <b>every</b> <code>CASH_OUT</code>-type transaction as an immediate, permanent deduction with no exception for a denied one — so the deduction <code>requestCashOut</code> applied the instant the request was filed was never reversed. The Deny confirmation dialog's own copy in <code>ParentReviewDeck.tsx:269</code> — "Funds stay in their wallet" — was actively false: a denied request permanently shrank the kid's spend/save/give balance forever, identical in effect to an approved one.</td>
+        <td><span class="tag fixed">Fixed</span> — see Finding N9. This was the most severe finding of this pass — not a race or an edge case, but a guaranteed, always-reachable bug on the ordinary "parent says no" path.</td>
+      </tr>
+      <tr>
+        <td class="state">Chore that already paid out points gets un-approved/reset afterward — clawback or double-payout?</td>
+        <td>Checked every status-transition function for a path that can move a chore backward out of <code>approved</code>/<code>auto_approved</code>. <code>requestRedo</code> (<code>choreStore.ts:1239</code>) guards on <code>chore.status !== 'pending_approval'</code> — it can never fire against an already-<code>approved</code> chore. <code>resetDueRecurringChores</code> (<code>choreStore.ts:1380</code>) only resets an <code>approved</code> recurring chore's fields (<code>status</code>, <code>submittedAt</code>, etc.) back to <code>todo</code> for its <i>next</i> cycle — it does not call <code>awardPoints</code> again for the cycle that already paid, and does not reverse the prior payout either.</td>
+        <td><span class="tag ok">Not a gap</span> — confirmed no code path exists that either claws back or double-pays points for a chore that already reached <code>approved</code>. The two candidate mechanisms for "un-approving" a chore both structurally can't reach an already-paid row.</td>
+      </tr>
+      <tr>
+        <td class="state">GP errand receipt reimbursement — does acknowledging reimbursement pay out points a second time?</td>
+        <td><code>acknowledgeGPReimbursement</code> (<code>choreStore.ts:1158</code>) only sets <code>receiptReimbursedAt</code> — it's a parent-side "I paid this GP back in real cash outside the app" acknowledgment for the dollar amount on the receipt, entirely separate from the chore's own points/coins reward. The actual points payout for a GP errand happens exactly once, through the same <code>approveChore</code> → <code>awardPoints</code> path every other chore uses, when the parent approves the <code>pending_approval</code> submission <code>submitGPErrandReceipt</code> (<code>choreStore.ts:1144</code>) moved it into.</td>
+        <td><span class="tag ok">Not a gap</span> — receipt reimbursement (dollars) and points/coins reward are two independent payouts by design, each fires exactly once, confirmed by reading both functions in full.</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>11 · Reward store redemption (third pass — new ground, previously unaudited)</h2>
+    <p class="lede"><code>store/rewardStore.ts</code> and <code>features/store/StoreScreen.tsx</code> had not been opened
+      in either prior pass. Traced the full redeem flow against the actual current balance, not just render-time state.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Scenario</th><th>Finding</th><th>Verdict</th></tr>
+      <tr>
+        <td class="state">Does redeeming a reward check the kid's real balance at redemption time, not just render time?</td>
+        <td><code>redeemReward</code> (<code>store/rewardStore.ts:175-209</code>) checks <code>available</code>, <code>expiresAt</code>, <code>eligibleMemberIds</code>, <code>maxPerMember</code>, and <code>stock</code> — it never once references coins/balance; <code>Reward</code>/<code>Redemption</code> have no coupling to <code>familyStore</code> at all. The actual "can afford it" check lives entirely client-side in <code>StoreScreen.handleRedeem</code> (<code>StoreScreen.tsx:335-360</code>), comparing the reward's cost against <code>myCoins</code> — a value read from <code>activeMember</code> in local Zustand state, i.e. whatever this device last synced, not a live re-fetch. The actual deduction, <code>deductCoins</code> (<code>store/familyStore.ts:248</code>, pre-fix), was a plain unconditional <code>UPDATE members SET main_coins = &lt;value computed from local state&gt;</code> with no <code>WHERE</code> clause tying the write to the balance it was computed from.</td>
+        <td><span class="tag fixed">Fixed</span> — see Finding N10.</td>
+      </tr>
+      <tr>
+        <td class="state">Race between a redemption and a parent's real-time balance-affecting action (e.g. approving another chore) landing at the same moment</td>
+        <td>Same root cause as the claim/balance races already found elsewhere: two writes computed from the same stale local snapshot, no compare-and-swap. Concretely — kid has 90 coins, requests a 100-coin reward's sibling-gift redemption while a parent is mid-approval of a chore that would push them to 150; if the redemption's local balance read happens before the approval's optimistic local credit lands, the client-side "can afford it" check in <code>StoreScreen</code> would correctly block it that instant, so this specific ordering isn't exploitable. The actual exploitable case is two redemptions (not a redemption vs. an award) racing each other — see N10 below, which is the same fix.</td>
+        <td><span class="tag fixed">Fixed</span> — covered by the same N10 fix (guarded conditional write on <code>deductCoins</code>), since the underlying vulnerability (no CAS on the coin-balance write) is identical regardless of which two operations are racing.</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>12 · Offline/reconnect, auto-approval settings drift, and notification badge (third pass — new ground)</h2>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Scenario</th><th>Finding</th><th>Verdict</th></tr>
+      <tr>
+        <td class="state">Does a chat message queued while offline ever actually get sent once back online?</td>
+        <td><code>chatStore.sendMessage</code>'s catch block (<code>store/chatStore.ts:464-479</code>, pre-fix) pushes the failed send to <code>AsyncStorage</code> under <code>OFFLINE_KEY</code> — but a full-repo grep confirmed <code>OFFLINE_KEY</code> was read in exactly the two lines that write it, and nowhere else. Nothing in the app ever read the queue back, on reconnect or otherwise — despite the file's own top-of-file comment calling it "AsyncStorage write-ahead cache for offline compose queue," implying a flush was intended but never built.</td>
+        <td><span class="tag fixed">Fixed</span> — see Finding N11. This is distinct from (not a duplicate of) N6: N6 is about optimistic local state never rolling back after a failed write; this is about a message that both failed AND was deliberately queued for exactly this purpose being permanently silently dropped instead of retried — the queuing code existed and worked, but had no consumer.</td>
+      </tr>
+      <tr>
+        <td class="state">Does every <code>sendMessage</code> call added by prior passes correctly increment the unread badge?</td>
+        <td>Checked <code>useNotifStore</code> (<code>store/notifStore.ts</code>) in full: its <code>unreadCount</code> is driven entirely by server state — <code>fetchAll</code>/<code>fetchUnreadCount</code> query <code>notification_logs</code>, and <code>increment</code>/<code>decrement</code>/<code>prependNotification</code> are called only from realtime-subscription handlers elsewhere in the app, never from <code>chatStore</code>. <code>chatStore.sendMessage</code> itself never touches <code>notification_logs</code> or <code>useNotifStore</code> directly — a chat message's push/badge delivery to other family members is entirely a server-side concern (DB trigger or notification pipeline outside this session's read scope), not a client responsibility <code>sendMessage</code> could "forget."</td>
+        <td><span class="tag ok">Not a gap</span> — the premise doesn't hold: the badge was never wired to fire per-<code>sendMessage</code>-call on the client, by design, so a new <code>sendMessage</code> call added anywhere in prior passes could not have bypassed a client-side badge increment that doesn't exist. (The actual server-side notification pipeline that presumably fires on <code>chat_messages</code> insert was not opened this pass — no <code>.sql</code> trigger or edge function tied to it was found under <code>supabase/functions</code> by name; flagged as out of this session's read scope, not asserted as broken.)</td>
+      </tr>
+      <tr>
+        <td class="state">Household settings changed mid-flight — does an in-progress chore/cash-out use the OLD or NEW settings inconsistently?</td>
+        <td>Traced every consumer of <code>HouseholdSettings</code>. Client-side, both <code>awardPoints</code> and <code>requestCashOut</code> read <code>get().householdSettings</code> fresh at call time and snapshot the computed spend/save/give split onto the transaction row immediately (<code>calculateJarSplit</code>, <code>choreStore.ts:454</code>) — correct, immutable-once-recorded behavior, no drift possible there. However, the <code>chore-auto-approve</code> edge function (<code>supabase/functions/chore-auto-approve/index.ts</code>, pre-fix) hardcoded a 50/40/10 Spend/Save/Give split (<code>const spend = Math.round(pts * 0.5)</code> etc., matching <code>DEFAULT_SETTINGS</code>'s own defaults, which is exactly why this went unnoticed) instead of reading each family's actual <code>families.spend_allocation_pct</code>/<code>save_allocation_pct</code>/<code>give_allocation_pct</code> row. A parent-approved chore always honored a changed allocation setting; a chore that instead timed out and was auto-approved by this cron silently used the stale default forever.</td>
+        <td><span class="tag fixed">Fixed</span> — see Finding N12.</td>
+      </tr>
+      <tr>
+        <td class="state">Same edge function — does an auto-approved chore's payout actually reach the kid's spendable wallet?</td>
+        <td>While reading <code>chore-auto-approve</code> for the settings-drift check above, found a second, more severe issue in the same function: it only ever inserted a <code>point_transactions</code> row — it never called the <code>award_coins</code> RPC or touched <code>members.coins</code>/<code>main_coins</code> at all. <code>getMemberBalance</code> (the jar-balance view, sums <code>point_transactions</code>) would show the payout, but <code>members.main_coins</code> — what <code>StoreScreen</code>'s <code>myCoins</code> and Kid Hub's wallet display actually read — would never move for a chore that auto-approved via 24h timeout, versus a manually-approved chore which pays out through both paths via <code>choreStore.awardPoints</code> (<code>choreStore.ts:1461</code>, calls <code>award_coins</code> RPC).</td>
+        <td><span class="tag fixed">Fixed</span> — see Finding N13. Bundled with N12 since both live in the same function and the same edit; listed separately because they're independent bugs with independent blast radii (one is a wrong-number bug, the other is a money-never-arrives bug).</td>
+      </tr>
+      <tr>
+        <td class="state">Two grandparents in the same household — does sponsoring/claiming still work correctly with 2+ GPs?</td>
+        <td>Re-verified (not newly discovered — this exact question was checked in the second pass's "Not a gap" writeup on non-sponsor GP visibility) via <code>SponsorQuestsSection</code>'s <code>mySponsored</code> filter and <code>QuestsScreen.tsx</code>'s senior filter, both keyed on <code>sponsorUserId === active.id</code>. No id-collision or shared-state path found between two GPs' sponsored quests — each sponsor's quests, including two different GPs simultaneously sponsoring quests for the same grandchild, are fully independent rows keyed by their own <code>sponsorUserId</code>.</td>
+        <td><span class="tag ok">Not a gap</span> — re-confirmed by direct code read this pass, no new issue found.</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <h2 style="border-top:none; padding-top:0;">New findings this pass (N8–N13)</h2>
+  <p class="lede">Continuing the numbering from the second pass's N1–N7. All of N8, N9, N10, N12, and N13 were fixed in code
+    this pass. The one new gap raised this pass (cash-out approve/deny race) was flagged and left alone, with rationale,
+    consistent with how N5/N6 were originally scoped before this session's user gave explicit direction to resolve them.</p>
+
+  <div class="finding fixed">
+    <h3><span class="tag fixed">Fixed</span> N8 — requestCashOut never checked the requester's actual balance</h3>
+    <p class="path">store/choreStore.ts (requestCashOut)</p>
+    <p><b>Fix:</b> added a guard comparing the requested <code>points</code> against <code>get().getMemberBalance(userId).total</code> before creating the <code>CASH_OUT</code> transaction, mirroring the existing <code>points &lt; settings.minCashoutPoints</code> guard immediately above it. A request exceeding the real balance is now rejected with a console warning and no transaction is written, the same failure shape the minimum-points guard already used.</p>
+  </div>
+
+  <div class="finding fixed">
+    <h3><span class="tag fixed">Fixed</span> N9 — Denying a cash-out never actually returned the points to the kid's wallet</h3>
+    <p class="path">store/choreStore.ts (denyCashOut, getMemberBalance)</p>
+    <p><b>Fix:</b> <code>getMemberBalance</code>'s transaction filter now excludes any <code>CASH_OUT</code> transaction whose <code>notes</code> contain <code>[Denied]</code> from the running spend/save/give totals, so a denied request stops counting against the balance the moment it's denied. <code>denyCashOut</code> itself is unchanged (it already tagged the row this way) — the fix is entirely in making that tag actually mean something to the balance calculation, rather than adding a second write path that could itself race with the tag write.</p>
+  </div>
+
+  <div class="finding gap">
+    <h3><span class="tag gap">Gap, flagged, not fixed</span> Cash-out approve/deny has no compare-and-swap between two parents</h3>
+    <p class="path">store/choreStore.ts (approveCashOut, denyCashOut)</p>
+    <p>Same missing-CAS root cause as N5, but judged lower severity than the claim/response races that got the scoped fix: the worst outcome is an ambiguous double-tagged transaction (<code>[Approved][Denied]</code> or vice versa depending on write order), not silently lost or duplicated money, and the collision window is two parents acting on the exact same request within the same round-trip. Not fixed this pass — would need the same <code>.eq('notes', previousNotes)</code>-style guard already established by N5 if it surfaces as a real issue.</p>
+  </div>
+
+  <div class="finding fixed">
+    <h3><span class="tag fixed">Fixed</span> N10 — Reward Store redemption had no server-guarded balance check, only a client-side render-time comparison</h3>
+    <p class="path">store/familyStore.ts (deductCoins) · store/rewardStore.ts (redeemReward, unchanged — balance was never its job) · features/store/StoreScreen.tsx (redeemFrom, unchanged)</p>
+    <p><b>Fix:</b> <code>deductCoins</code> now sends its own guarded write instead of the previous plain <code>.update()</code> — the query adds <code>.gte(column, amount)</code> against whichever wallet column is being spent from, so the write only succeeds in Postgres if that wallet's current stored balance can still cover the deduction being applied. A 0-row result (lost race, or the local balance was already stale) rolls the optimistic local deduction back to its prior known value and logs a warning, mirroring <code>claimBounty</code>'s exact shape. <code>redeemReward</code> and <code>StoreScreen.redeemFrom</code> were left as-is: the Redemption record it creates is a claim-of-intent (comparable to a claimed pool bounty existing before its own DB CAS confirms), and <code>deductCoins</code>'s new guard is the actual money-moving operation and the real backstop against overdraft.</p>
+  </div>
+
+  <div class="finding fixed">
+    <h3><span class="tag fixed">Fixed</span> N11 — Chat's offline send queue was write-only; queued messages were silently lost forever, never retried</h3>
+    <p class="path">store/chatStore.ts (flushOfflineQueue, new) · lib/networkStore.ts (markNetworkOnline)</p>
+    <p><b>Fix:</b> added <code>flushOfflineQueue</code> to <code>chatStore</code>, which drains <code>OFFLINE_KEY</code>, retries each queued send via a fresh <code>chat_messages</code> insert, and re-queues only the ones that still fail. Wired it into <code>lib/networkStore.ts</code>'s <code>markNetworkOnline</code> — the function <code>lib/supabase.ts</code>'s fetch wrapper already calls on the very first successful request after a run of failures — so the flush fires on the actual offline→online transition (a stronger signal than app-foreground, which was the only other candidate hook available; no <code>NetInfo</code> dependency exists in this project). Used a lazy <code>require('@/store/chatStore')</code> inside <code>markNetworkOnline</code> to avoid a circular import, the same cross-store pattern <code>choreStore.awardPoints</code> already uses for <code>familyStore</code>.</p>
+  </div>
+
+  <div class="finding fixed">
+    <h3><span class="tag fixed">Fixed</span> N12 — chore-auto-approve hardcoded a 50/40/10 jar split instead of reading the family's real allocation settings</h3>
+    <p class="path">supabase/functions/chore-auto-approve/index.ts</p>
+    <p><b>Fix:</b> the function now batch-loads <code>spend_allocation_pct</code>/<code>save_allocation_pct</code>/<code>give_allocation_pct</code> from <code>families</code> for every distinct <code>family_id</code> among the expired chores in one query, and computes each payout's split from that family's real settings (falling back to 50/40/10 only if a family row wasn't found), using the same floor-then-remainder math as the client's <code>calculateJarSplit</code> so the two paths can't drift in rounding behavior either.</p>
+  </div>
+
+  <div class="finding fixed">
+    <h3><span class="tag fixed">Fixed</span> N13 — chore-auto-approve never credited the kid's actual spendable coin wallet</h3>
+    <p class="path">supabase/functions/chore-auto-approve/index.ts</p>
+    <p><b>Fix:</b> added an <code>award_coins</code> RPC call (same RPC and same call shape <code>choreStore.awardPoints</code> already uses client-side) alongside the existing <code>point_transactions</code> insert, so an auto-approved chore now credits <code>members.coins</code>/<code>main_coins</code>/<code>xp</code> exactly like a manually-approved one does. An RPC failure is recorded in the function's existing <code>errors</code> array rather than silently swallowed.</p>
+  </div>
+
   <footer>
     Built by reading the current state of: store/choreStore.ts, store/choreAdapter.ts, features/quests/QuestsScreen.tsx,
     features/quests/components/QuestCard.tsx, features/hub/{KidView,TeenView,SeniorView,ParentView}.tsx, and all
@@ -662,6 +804,28 @@
     as out of bounds; the other ~38 mutators in the file still have no rollback, which remains an accepted
     characteristic of this store, not silently fixed. <code>npx tsc --noEmit</code> confirmed 0 errors after this
     pass's fixes too.
+    <br><br>
+    <b>Fourth pass (sections 10–12, findings N8–N13)</b> widened the audit to ground neither prior pass had opened:
+    the points/coins economy end-to-end (<code>requestCashOut</code>/<code>approveCashOut</code>/<code>denyCashOut</code>),
+    the Reward Store redemption path (<code>store/rewardStore.ts</code> and <code>features/store/StoreScreen.tsx</code>,
+    both untouched by any prior pass), the chat offline-send queue's reconnect behavior, and household-settings
+    drift between the client's chore-approval path and the <code>chore-auto-approve</code> cron edge function. Read
+    in full for this pass: <code>store/rewardStore.ts</code> (entire file), <code>features/store/StoreScreen.tsx</code>,
+    <code>features/chores/ChildChoreBoard.tsx</code>'s WalletStrip/CashOutSheet, <code>features/chores/ParentReviewDeck.tsx</code>'s
+    CashOutCard, <code>store/notifStore.ts</code>, <code>store/chatStore.ts</code> in full, <code>lib/networkStore.ts</code>,
+    <code>lib/supabase.ts</code>'s fetch wrapper, <code>supabase/functions/chore-auto-approve/index.ts</code>, and the
+    migration <code>supabase/migrations/20260817000007_align_coin_balances.sql</code> (to confirm the real
+    <code>award_coins</code> RPC signature and the <code>members.main_coins</code>/<code>gp_coins</code> column history).
+    Five confirmed bugs were found and fixed (N8, N9, N10, N12, N13); N9 in particular — a denied cash-out never
+    actually returning the points, despite the UI's own confirm dialog claiming otherwise — was judged the most
+    severe finding across all three passes, since unlike the concurrency-window bugs found earlier, it fires on
+    every single ordinary "parent denies a cash-out" action, not just a race. One new gap (cash-out approve/deny
+    has no compare-and-swap between two parents) was flagged and deliberately left unfixed, same rationale class as
+    the original N5/N6 scoping: bounded blast radius, narrow window, and the same guard shape already established
+    by N5 is available to apply later if it ever surfaces as a real complaint. Two areas were checked and confirmed
+    correct with no changes needed: a chore that already paid out points has no code path back to an un-approved
+    state (so no clawback/double-payout risk exists), and multi-grandparent households were re-verified to have no
+    cross-sponsor state leakage. <code>npx tsc --noEmit</code> confirmed 0 errors after this pass's fixes.
     <div class="backtotop"><a href="#top">↑ back to top</a></div>
   </footer>
 </div>

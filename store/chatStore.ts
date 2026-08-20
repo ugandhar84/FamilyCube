@@ -151,6 +151,13 @@ interface ChatState {
   search:        (channelId: string, query: string) => Promise<void>;
   clearSearch:   (channelId: string) => void;
 
+  // Retries every message queued to OFFLINE_KEY by a failed sendMessage —
+  // previously nothing in the app ever read this key back, so a message
+  // sent while offline was queued once and then permanently lost (silently
+  // dropped, not retried) the moment the device came back online. Call on
+  // app-foreground / reconnect. Safe to call anytime; no-ops if queue empty.
+  flushOfflineQueue: () => Promise<void>;
+
   // Internal: called by realtime handler
   _upsertMessage: (channelId: string, msg: ChatMessage) => void;
   _removeMessage: (channelId: string, msgId: string) => void;
@@ -553,6 +560,59 @@ export const useChatStore = create<ChatState>((set, get) => ({
         [channelId]: { ...(s.channels[channelId] ?? emptyChannel()), searchResults: null, searching: false },
       },
     }));
+  },
+
+  // ── Offline retry ─────────────────────────────────────────────────────────
+
+  flushOfflineQueue: async () => {
+    let offline: { channelId: string; senderId: string; ciphertext: string; blind_index: string[]; imageUri?: string; mediaType?: 'image' | 'video' }[];
+    try {
+      offline = JSON.parse(await AsyncStorage.getItem(OFFLINE_KEY) ?? '[]');
+    } catch {
+      offline = [];
+    }
+    if (offline.length === 0) return;
+
+    // Clear the queue up front and only re-queue what still fails — avoids
+    // a duplicate send if flush is triggered twice in quick succession
+    // (e.g. two AppState 'active' events) while a previous flush is still
+    // in flight.
+    await AsyncStorage.setItem(OFFLINE_KEY, JSON.stringify([]));
+
+    const stillFailed: typeof offline = [];
+    for (const item of offline) {
+      const now = new Date().toISOString();
+      const msgId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+      });
+      try {
+        const { error } = await supabase.from('chat_messages').insert({
+          id:          msgId,
+          channel_id:  item.channelId,
+          sender_id:   item.senderId,
+          text:        item.ciphertext,
+          blind_index: item.blind_index,
+          timestamp:   now,
+          created_at:  now,
+          image_url:   item.imageUri ?? null,
+          media_type:  item.mediaType ?? null,
+        });
+        if (error) throw error;
+        // Realtime subscription (if that channel is currently loaded) will
+        // deliver and upsert the real row; no local optimistic insert here
+        // since the original optimistic bubble was already removed when
+        // this item was first queued.
+      } catch (err) {
+        console.warn('[chatStore] flushOfflineQueue: retry failed, re-queueing', err);
+        stillFailed.push(item);
+      }
+    }
+
+    if (stillFailed.length > 0) {
+      const current = JSON.parse(await AsyncStorage.getItem(OFFLINE_KEY) ?? '[]');
+      await AsyncStorage.setItem(OFFLINE_KEY, JSON.stringify([...current, ...stillFailed]));
+    }
   },
 
   // ── Internal helpers ──────────────────────────────────────────────────────

@@ -13,6 +13,26 @@
 // Rewritten against chore_tasks (this app's real chore table) with verified
 // column names.
 //
+// FIXED (round 3 audit): this function also (a) hardcoded a 50/40/10
+// Spend/Save/Give split instead of reading each family's actual
+// spend_allocation_pct/save_allocation_pct/give_allocation_pct from the
+// `families` table — a parent-approved chore (store/choreStore.ts
+// awardPoints → calculateJarSplit) always used the family's live settings,
+// but a chore that instead timed out and was auto-approved by this cron
+// silently used the default split forever, even after a parent changed
+// their household's allocation percentages. This only ever showed up once a
+// family strayed from the 50/40/10 default, which is exactly why it went
+// unnoticed. (b) never called the award_coins RPC or touched
+// members.coins/main_coins at all — it only inserted a point_transactions
+// row, so an auto-approved chore's points showed up in the jar-balance view
+// (which sums point_transactions) but never actually credited the kid's
+// spendable Perks Store wallet (members.main_coins), permanently
+// under-crediting it relative to a manually-approved chore, which pays out
+// through both paths via choreStore's awardPoints. Both are fixed below:
+// the split now reads the family's row from `families`, and each payout now
+// also calls award_coins so member.coins/main_coins/xp move in lockstep
+// with a manual approval, exactly like migration 20260817000007 established.
+//
 // Cron schedule (Supabase Dashboard → Edge Functions → Schedule):
 //   every 30 minutes: */30 * * * *
 //
@@ -59,6 +79,25 @@ serve(async (req) => {
       return json({ auto_approved: 0, message: 'Nothing to auto-approve.' });
     }
 
+    // ── 1b. Load each distinct family's real allocation split ────────────────
+    // Previously hardcoded to 50/40/10 regardless of what a parent actually
+    // configured in Household Settings (families.spend/save/give_allocation_pct).
+    const familyIds = [...new Set(expired.map(c => c.family_id).filter(Boolean))];
+    const { data: families, error: famErr } = familyIds.length
+      ? await supabase
+          .from('families')
+          .select('id, spend_allocation_pct, save_allocation_pct, give_allocation_pct')
+          .in('id', familyIds)
+      : { data: [], error: null };
+    if (famErr) console.warn('[chore-auto-approve] failed to load family allocation settings:', famErr.message);
+    const allocByFamily = new Map<string, { spendPct: number; savePct: number; givePct: number }>(
+      (families ?? []).map(f => [f.id, {
+        spendPct: f.spend_allocation_pct ?? 50,
+        savePct:  f.save_allocation_pct  ?? 40,
+        givePct:  f.give_allocation_pct  ?? 10,
+      }]),
+    );
+
     const approved: string[] = [];
     const errors: string[]   = [];
 
@@ -84,12 +123,15 @@ serve(async (req) => {
         continue;
       }
 
-      // Credit points — split 50/40/10 Spend/Save/Give per spec
+      // Credit points — split using the family's real, current allocation
+      // settings (falls back to the 50/40/10 default only if the family row
+      // wasn't found/loaded, matching HouseholdSettings' own defaults).
       const pts = chore.coins_reward ?? 0;
       if (pts > 0 && chore.assigned_to_id) {
-        const spend = Math.round(pts * 0.5);
-        const save  = Math.round(pts * 0.4);
-        const give  = pts - spend - save;
+        const alloc = allocByFamily.get(chore.family_id) ?? { spendPct: 50, savePct: 40, givePct: 10 };
+        const spend = Math.floor(pts * (alloc.spendPct / 100));
+        const save  = Math.floor(pts * (alloc.savePct  / 100));
+        const give  = pts - spend - save; // remainder ensures sum = pts, same as calculateJarSplit client-side
 
         await supabase.from('point_transactions').insert({
           user_id:           chore.assigned_to_id,
@@ -102,6 +144,20 @@ serve(async (req) => {
           notes:             `Auto-approved: ${chore.title}`,
           created_at:        now,
         });
+
+        // Actually credit the kid's spendable wallet. point_transactions
+        // alone only feeds the jar-balance view (getMemberBalance sums it) —
+        // members.coins/main_coins (what the Perks Store and Kid Hub
+        // balance actually read) is a separate column the award_coins RPC
+        // is responsible for, and this function used to never call it,
+        // silently leaving an auto-approved chore's payout invisible in the
+        // Store while still counting in the jar-balance breakdown.
+        const { error: awardErr } = await supabase.rpc('award_coins', {
+          member_id:   chore.assigned_to_id,
+          coins_delta: pts,
+          xp_delta:    0,
+        });
+        if (awardErr) errors.push(`${chore.id}: award_coins failed: ${awardErr.message}`);
 
         // responsibility_history — same append-only audit trail the
         // Responsibility Engine writes to on every assignment/completion,

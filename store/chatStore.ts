@@ -73,6 +73,42 @@ const PAGE_SIZE    = 100;
 const OLDER_SIZE   = 50;
 const OFFLINE_KEY  = '@familycube_chat_offline_v1';
 
+// ─── DM channel-id fix (critical privacy bug) ──────────────────────────────
+// A DM "channel" was previously keyed by ONLY the other party's member id
+// (e.g. sendMessage(priyaId, alexId, ...) wrote channel_id = priyaId) — that
+// value is identical no matter who's the sender, so Alex's DM with Priya
+// and Maya's DM with Priya collapsed into the SAME channel_id, meaning they
+// were, in the database, literally the same conversation. Every family
+// member with a DM to the same person shared one thread.
+//
+// dmChannelId() makes the id unique PER PAIR — both member ids, sorted so
+// the value is identical regardless of which side computes it — instead of
+// per-counterpart. ChatScreen.tsx's channel strip already calls this
+// directly when building its DM tiles.
+export function dmChannelId(idA: string, idB: string): string {
+  return `dm_${[idA, idB].sort().join('_')}`;
+}
+
+// Fixed, non-DM channel ids — never rewritten, always used as-is. Matches
+// every id literal in features/chat/components/constants.ts's
+// GROUP_CHANNELS/buildGroupChannels.
+const GROUP_CHANNEL_IDS = new Set(['all', 'parents', 'seniors_a', 'seniors_b', 'seniors_all']);
+
+// The ~51 existing call sites across the app (choreStore, eventStore,
+// kidRequestStore, etc.) all call sendMessage(recipientMemberId, senderId,
+// ...) — the pre-existing, still-correct CALLING convention (pass who
+// should receive it). What was broken is that this raw recipient id then
+// got used AS the channel_id verbatim. Rather than rewrite every call site
+// (and risk missing one, silently reintroducing the bug), sendMessage
+// itself now normalizes: if the given channelId isn't a known fixed group
+// channel and isn't already a dm_ composite id, treat it as "recipient id"
+// and rewrite to the real pair-channel before writing anything.
+function normalizeDmChannelId(channelId: string, senderId: string): string {
+  if (GROUP_CHANNEL_IDS.has(channelId) || channelId.startsWith('dm_')) return channelId;
+  if (!senderId || channelId === senderId) return channelId; // no pair to form
+  return dmChannelId(channelId, senderId);
+}
+
 async function rowToMessage(row: DBRow): Promise<ChatMessage> {
   const cipher = row.ciphertext ?? row.text ?? '';
   return {
@@ -401,6 +437,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Send ──────────────────────────────────────────────────────────────────
 
   sendMessage: async (channelId, senderId, text, imageUri, mediaType, replyTo, voiceDuration, locationPin, voiceUri, documentUri, documentName, systemEvent) => {
+    // Critical fix: every existing call site across the app (choreStore,
+    // eventStore, kidRequestStore, etc. — ~51 of them) calls this as
+    // sendMessage(recipientMemberId, senderId, ...), which is still the
+    // correct CALLING convention (pass who should get it) — what was wrong
+    // is that raw recipient id then got used directly as channel_id,
+    // colliding with every other sender's DM to that same person. Normalize
+    // here, once, so every existing caller is fixed without needing to
+    // touch each one individually (and risk missing some).
+    channelId = normalizeDmChannelId(channelId, senderId);
     const ciphertext   = await encryptMessage(text);
     const blind_index  = await buildBlindIndex(text);
 

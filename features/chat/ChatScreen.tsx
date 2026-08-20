@@ -34,7 +34,7 @@ import AppHeader from '@/components/AppHeader';
 import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import { useChatStore, ChatMessage } from '@/store/chatStore';
+import { useChatStore, ChatMessage, dmChannelId } from '@/store/chatStore';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { checkProfanity } from '@/lib/contentModeration';
 import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
@@ -160,11 +160,23 @@ export default function ChatScreen() {
 
   const allChannels = [
     ...groupChannels,
-    ...coParents.map(p => ({ id: p.id, label: `💬 ${p.name.split(' ')[0]}`, isDM: true, lock: false })),
-    ...kids.map(k => ({ id: k.id, label: `💬 ${k.name.split(' ')[0]}`, isDM: true, lock: false })),
+    // CRITICAL FIX: a DM's id used to be just the OTHER party's member id
+    // (`p.id`/`k.id`) — that value is identical no matter who's viewing,
+    // so Alex's "DM with Priya" and Maya's "DM with Priya" resolved to the
+    // exact same channel_id and were, in the database, literally the same
+    // conversation thread. dmChannelId() below makes the id unique PER
+    // PAIR (both member ids, sorted so it's the same value regardless of
+    // who opens it from which side) instead of per-counterpart.
+    ...coParents.map(p => ({ id: dmChannelId(activeMemberId ?? '', p.id), otherId: p.id, label: `💬 ${p.name.split(' ')[0]}`, isDM: true, lock: false })),
+    ...kids.map(k => ({ id: dmChannelId(activeMemberId ?? '', k.id), otherId: k.id, label: `💬 ${k.name.split(' ')[0]}`, isDM: true, lock: false })),
   ];
   const FULL_LABELS: Record<string, string> = Object.fromEntries(groupChannels.map(ch => [ch.id, ch.label]));
-  const channelLabel = FULL_LABELS[channelId] ?? `💬 ${memberMap[channelId]?.name?.split(' ')[0] ?? ''}`;
+  // channelLabel used to look up memberMap[channelId] directly, relying on
+  // channelId itself being a raw member id — now that DM ids are a
+  // composite pair-id, resolve the OTHER party via the matching
+  // allChannels entry's otherId instead.
+  const dmOtherId = (allChannels.find(c => c.id === channelId) as any)?.otherId;
+  const channelLabel = FULL_LABELS[channelId] ?? `💬 ${memberMap[dmOtherId ?? channelId]?.name?.split(' ')[0] ?? ''}`;
 
   // A senior landing on the default 'all' channel (e.g. fresh login) gets
   // bounced to the combined Grand Squad channel instead, since #all-family
@@ -473,17 +485,32 @@ export default function ChatScreen() {
         </View>
       </Animated.View>
 
-      {/* ── Channel sub-header: label + member avatars ── */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, gap: 8, backgroundColor: colors.card, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+      {/* ── Channel sub-header: label + member avatars ──
+          zIndex/elevation below 1 so this sibling row reliably renders
+          UNDER the persona switcher dropdown (absolutely positioned inside
+          AppHeader above, zIndex 50) instead of bleeding through it — a
+          parent's zIndex alone doesn't guarantee ordering against a
+          sibling subtree without matching zIndex/elevation of its own,
+          especially on Android. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, gap: 8, backgroundColor: colors.card, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, zIndex: 0, elevation: 0 }}>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
           <ShieldCheck size={12} color="#10b981" />
           <Text style={{ fontSize: 12, fontWeight: '800', color: colors.primary }} numberOfLines={1}>{channelLabel}</Text>
-          <Text style={{ fontSize: 10, color: colors.textTertiary }}>· {members.length} members</Text>
+          {/* A DM's participant count/avatars must be scoped to the 2
+              people actually in it, not the whole family — this
+              previously showed members.length/members unconditionally,
+              which for a 1-1 DM misleadingly displayed "5 members" and
+              every family member's avatar, undermining the fact that a
+              DM is actually private. */}
+          {!dmOtherId && <Text style={{ fontSize: 10, color: colors.textTertiary }}>· {members.length} members</Text>}
         </View>
 
         {/* Avatar cluster — solid separator border so no ring bleed */}
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {members.slice(0, 5).map((m: any, i: number) => {
+          {(dmOtherId
+            ? [activeMember, memberMap[dmOtherId]].filter(Boolean)
+            : members
+          ).slice(0, 5).map((m: any, i: number) => {
             const sep = colors.card;
             return (
               <View key={m.id} style={{

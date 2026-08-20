@@ -345,6 +345,15 @@ export interface NotificationLog {
     | 'playdate_resend' | 'playdate_withdrawal' | 'playdate_reminder'
     | 'playdate_proposal' | 'playdate_proposal_declined' | 'playdate_proposal_cancelled'
     | 'chat_message'
+    // ── Family Cube quest/chore lifecycle (quest-event-notifier + chore-deadline-notifier) ──
+    | 'quest_posted' | 'quest_assigned' | 'quest_claimed' | 'quest_submitted'
+    | 'quest_approved' | 'quest_declined' | 'quest_reopened' | 'force_assigned'
+    | 'bonus_activated' | 'bonus_expiring' | 'bonus_expired_penalty'
+    | 'coins_awarded' | 'penalty_applied' | 'chore_ghosted'
+    | 'deadline_reminder' | 'deadline_overdue'
+    | 'help_requested' | 'help_resolved'
+    | 'reward_redeemed' | 'reward_decision'
+    | 'kid_request' | 'kid_request_decision'
     | (string & {});
   title: string;
   body: string;

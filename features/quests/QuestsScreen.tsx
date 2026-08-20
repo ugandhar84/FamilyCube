@@ -31,6 +31,8 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import type { Quest } from '@/store/questStore';
 import AppHeader from '@/components/AppHeader';
+import NotificationPanel from '@/components/NotificationPanel';
+import { useNotifStore } from '@/store/notifStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import { todayLocal, parseLocalDate, withinLast24h, parseTimeInput } from '@/lib/dates';
@@ -116,6 +118,8 @@ export default function QuestsScreen() {
     q.isAdultTask && q.assignedToId && q.assignedToId !== activeMember.id
   ) : [];
   const adultQuestCardIds = new Set([...myAdultQuests, ...othersAdultQuests].map(q => q.id));
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false);
+  const unreadNotifCount = useNotifStore(s => s.unreadCount);
   const [pushbackSheet, setPushbackSheet] = useState<{ assignmentId: string; choreTitle: string; assignedBy: string; assignedTo: string } | null>(null);
   const [delegateFromLocked, setDelegateFromLocked] = useState<{ choreId: string; choreTitle: string } | null>(null);
   const isSenior         = activeMember?.role === 'senior';
@@ -695,10 +699,11 @@ export default function QuestsScreen() {
       <AppHeader
         memberName={activeMember?.name}
         memberRole={activeMember?.role === 'kid' || activeMember?.role === 'teen' ? 'kid' : activeMember?.role === 'senior' ? 'senior' : 'parent'}
-        notifCount={0}
+        notifCount={unreadNotifCount}
         onPersonaPress={undefined}
-        onBellPress={() => {}}
+        onBellPress={() => setNotifPanelOpen(true)}
       />
+      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
       <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>

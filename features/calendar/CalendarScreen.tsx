@@ -32,6 +32,8 @@ import type { FamilyMember } from '@/store/familyStore';
 import { useEventStore, FamilyEvent, EventType, StripMap, isEventSensitive, canViewSensitiveEventDetail } from '@/store/eventStore';
 import { supabase } from '@/lib/supabase';
 import AppHeader from '@/components/AppHeader';
+import NotificationPanel from '@/components/NotificationPanel';
+import { useNotifStore } from '@/store/notifStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { TYPO } from '@/constants/theme';
@@ -465,6 +467,8 @@ export default function CalendarScreen() {
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false);
+  const unreadNotifCount = useNotifStore(s => s.unreadCount);
   const [filterMember, setFilterMember] = useState<string | null>(null);
   // Parents keep the pre-existing behavior — see everyone by default, filter
   // per family member. My Schedule/All is only a kid/teen/senior concept.
@@ -730,10 +734,11 @@ export default function CalendarScreen() {
       <AppHeader
         memberName={activeMember?.name}
         memberRole={isKid ? 'kid' : isSenior ? 'senior' : 'parent'}
-        notifCount={0}
+        notifCount={unreadNotifCount}
         onPersonaPress={switchMember}
-        onBellPress={() => {}}
+        onBellPress={() => setNotifPanelOpen(true)}
       />
+      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
       {/* ── Main Scroll: title + AI + member filter + timeline ──
           No stickyHeaderIndices here anymore — it was pinned to index 1,

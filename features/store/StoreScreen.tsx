@@ -13,6 +13,8 @@ import { useRewardStore, Reward } from '@/store/rewardStore';
 import { useChoreStore } from '@/store/choreStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import AppHeader from '@/components/AppHeader';
+import NotificationPanel from '@/components/NotificationPanel';
+import { useNotifStore } from '@/store/notifStore';
 import { Flame } from 'lucide-react-native';
 
 // ─── Category config ──────────────────────────────────────────────────────────
@@ -318,6 +320,8 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
   const { rewards, loadFromStorage: loadRewards, addReward, updateReward, deleteReward, redeemReward } = useRewardStore();
   const pointsToFiatRatio = useChoreStore(s => s.householdSettings.pointsToFiatRatio);
 
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false);
+  const unreadNotifCount = useNotifStore(s => s.unreadCount);
   const [showCreate,  setShowCreate]  = useState(false);
   const [editing,     setEditing]     = useState<Reward | null>(null);
   const [showAiPanel, setShowAiPanel] = useState(false);
@@ -421,10 +425,12 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
         <AppHeader
           memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
           memberRole={activeMember?.role ?? 'parent'}
-          notifCount={0}
+          notifCount={unreadNotifCount}
           onPersonaPress={() => setSwitcherOpen(true)}
+          onBellPress={() => setNotifPanelOpen(true)}
         />
       )}
+      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
       <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}>

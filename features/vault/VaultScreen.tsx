@@ -19,6 +19,8 @@ import { useAuthStore } from '@/store/authStore';
 import { useRewardStore } from '@/store/rewardStore';
 import type { MemberRole } from '@/store/familyStore';
 import AppHeader from '@/components/AppHeader';
+import NotificationPanel from '@/components/NotificationPanel';
+import { useNotifStore } from '@/store/notifStore';
 
 import GpsTabComp      from './tabs/GpsTab';
 import HealthTabComp   from './tabs/HealthTab';
@@ -196,6 +198,8 @@ export default function VaultScreen() {
   const coins = activeMember?.coins ?? 0;
 
   const [openFeature, setOpenFeature] = useState<Feature | null>(null);
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false);
+  const unreadNotifCount = useNotifStore(s => s.unreadCount);
 
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
 
@@ -238,9 +242,11 @@ export default function VaultScreen() {
       <AppHeader
         memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
         memberRole={role as 'parent' | 'kid' | 'senior'}
-        onBellPress={() => {}}
+        notifCount={unreadNotifCount}
+        onBellPress={() => setNotifPanelOpen(true)}
         onPersonaPress={() => {}}
       />
+      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
       <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 60 }}>

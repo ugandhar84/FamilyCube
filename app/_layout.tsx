@@ -36,6 +36,7 @@ import PaywallSheet from '@/components/PaywallSheet';
 import PickerLoadingOverlay from '@/components/PickerLoadingOverlay';
 import { usePaywallSheetStore } from '@/store/paywallSheetStore';
 import { useNotifStore } from '@/store/notifStore';
+import NotificationPanel, { routeForNotification } from '@/components/NotificationPanel';
 import { useFamilyStore } from '@/store/familyStore';
 import {
   setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
@@ -688,6 +689,38 @@ function RootNavigator() {
     return () => { supabase.removeChannel(ch); };
   }, [rtUserId]);
 
+  // In-app notification toast — light, top-anchored, auto-dismissing card.
+  // Fed by two independent sources below:
+  //   1. The `global-notif-${rtUserId}` realtime channel (DB INSERT into
+  //      notification_logs) — has the full row (type/data), so tapping it
+  //      can route to the right screen.
+  //   2. The OS foreground push listener — fires purely off the push
+  //      payload (title/body only, no guaranteed `data`), for the rare case
+  //      a push arrives without (or before) its DB row being visible here.
+  const [inAppNotif, setInAppNotif] = useState<{ title: string; body?: string; type?: string; data?: Record<string, any> } | null>(null);
+  const inAppTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inAppSlide = useSharedValue(-80);
+  const inAppStyle = useAnimatedStyle(() => ({ transform: [{ translateY: inAppSlide.value }] }));
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false);
+
+  const showInAppToast = (n: { title: string; body?: string; type?: string; data?: Record<string, any> }) => {
+    setInAppNotif(n);
+    inAppSlide.value = withTiming(0, { duration: 300 });
+    if (inAppTimerRef.current) clearTimeout(inAppTimerRef.current);
+    inAppTimerRef.current = setTimeout(() => {
+      inAppSlide.value = withTiming(-80, { duration: 250 }, (done) => {
+        if (done) runOnJS(setInAppNotif)(null);
+      });
+    }, 3500);
+  };
+
+  const dismissInAppToast = () => {
+    if (inAppTimerRef.current) clearTimeout(inAppTimerRef.current);
+    inAppSlide.value = withTiming(-80, { duration: 250 }, (done) => {
+      if (done) runOnJS(setInAppNotif)(null);
+    });
+  };
+
   useEffect(() => {
     if (!rtUserId) return;
     const ch = supabase
@@ -695,8 +728,10 @@ function RootNavigator() {
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notification_logs', filter: `user_id=eq.${rtUserId}` },
         (payload) => {
+          const row = payload.new as any;
           useNotifStore.getState().increment();
-          useNotifStore.getState().prependNotification(payload.new as any);
+          useNotifStore.getState().prependNotification(row);
+          showInAppToast({ title: row?.title ?? 'New notification', body: row?.body, type: row?.type, data: row?.data });
         },
       )
       .subscribe();
@@ -704,28 +739,17 @@ function RootNavigator() {
   }, [rtUserId]);
 
   // Foreground push listener — fires when a push arrives while the app is open.
-  // The realtime subscription above handles DB inserts; this handles the OS push.
-  const [inAppNotif, setInAppNotif] = useState<{ title: string; body?: string } | null>(null);
-  const inAppTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inAppSlide = useSharedValue(-80);
-  const inAppStyle = useAnimatedStyle(() => ({ transform: [{ translateY: inAppSlide.value }] }));
-
   useEffect(() => {
     if (!rtUserId) return;
     const sub = addNotificationReceivedListener((notification) => {
       // Don't call increment() here — the realtime notification_logs INSERT listener
       // already increments the badge when the DB row is written. Calling it here too
       // would double-count every foreground push (one increment per channel).
-      const title = notification?.request?.content?.title ?? 'New notification';
-      const body  = notification?.request?.content?.body ?? undefined;
-      setInAppNotif({ title, body });
-      inAppSlide.value = withTiming(0, { duration: 300 });
-      if (inAppTimerRef.current) clearTimeout(inAppTimerRef.current);
-      inAppTimerRef.current = setTimeout(() => {
-        inAppSlide.value = withTiming(-80, { duration: 250 }, (done) => {
-          if (done) runOnJS(setInAppNotif)(null);
-        });
-      }, 4000);
+      const content = notification?.request?.content;
+      const title = content?.title ?? 'New notification';
+      const body  = content?.body ?? undefined;
+      const data  = (content?.data ?? undefined) as Record<string, any> | undefined;
+      showInAppToast({ title, body, type: data?.type, data });
     });
     return () => {
       sub.remove();
@@ -843,35 +867,48 @@ function RootNavigator() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={colors.background} translucent={false} />
 
-      {/* In-app notification banner — slides down when a push arrives while app is open */}
+      {/* In-app notification toast — light, top-anchored, auto-dismissing.
+          Tapping it opens the notification panel (or routes straight to the
+          relevant tab when the type/data resolve to one) and dismisses. */}
       {inAppNotif && (
         <Animated.View style={[inAppToastStyles.wrapper, inAppStyle]} pointerEvents="box-none">
           <SafeAreaView pointerEvents="box-none">
             <TouchableOpacity
               activeOpacity={0.92}
               onPress={() => {
-                if (inAppTimerRef.current) clearTimeout(inAppTimerRef.current);
-                inAppSlide.value = withTiming(-80, { duration: 250 }, (done) => {
-                  if (done) runOnJS(setInAppNotif)(null);
-                });
+                dismissInAppToast();
+                const dest = inAppNotif.type ? routeForNotification(inAppNotif.type, inAppNotif.data) : null;
+                if (dest) {
+                  router.push(dest as any);
+                } else {
+                  setNotifPanelOpen(true);
+                }
               }}
-              style={inAppToastStyles.card}
+              style={[inAppToastStyles.card, {
+                backgroundColor: isDark ? 'rgba(30,38,64,0.97)' : 'rgba(255,255,255,0.97)',
+                shadowColor: isDark ? '#000' : '#3D2068',
+              }]}
             >
               <Image source={require('../assets/icon.png')} style={inAppToastStyles.icon} />
               <View style={inAppToastStyles.textCol}>
                 <View style={inAppToastStyles.titleRow}>
-                  <Text style={inAppToastStyles.appName}>FAMILY CUBE</Text>
-                  <Text style={inAppToastStyles.time}>now</Text>
+                  <Text style={[inAppToastStyles.appName, { color: colors.textTertiary }]}>FAMILY CUBE</Text>
+                  <Text style={[inAppToastStyles.time, { color: colors.textTertiary }]}>now</Text>
                 </View>
-                <Text style={inAppToastStyles.title} numberOfLines={1}>{inAppNotif.title}</Text>
+                <Text style={[inAppToastStyles.title, { color: colors.textPrimary }]} numberOfLines={1}>{inAppNotif.title}</Text>
                 {!!inAppNotif.body && (
-                  <Text style={inAppToastStyles.body} numberOfLines={2}>{inAppNotif.body}</Text>
+                  <Text style={[inAppToastStyles.body, { color: colors.textSecondary }]} numberOfLines={2}>{inAppNotif.body}</Text>
                 )}
               </View>
             </TouchableOpacity>
           </SafeAreaView>
         </Animated.View>
       )}
+
+      {/* Global notification panel — openable from the toast above, or any
+          AppHeader bell. Mounted once here so the toast can trigger it
+          regardless of which tab is currently active. */}
+      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
       <Stack
         screenOptions={{

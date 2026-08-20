@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable, RefreshControl, Alert } from 'react-native';
+import { View, Text, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
@@ -11,6 +11,8 @@ import { useRewardStore } from '@/store/rewardStore';
 import { useChatStore } from '@/store/chatStore';
 import { useTripStore } from '@/store/tripStore';
 import AppHeader from '@/components/AppHeader';
+import NotificationPanel from '@/components/NotificationPanel';
+import { useNotifStore } from '@/store/notifStore';
 import HelpRequestModal from '@/components/HelpRequestModal';
 import FlyerScannerModal from '@/components/FlyerScannerModal';
 import PinEntryModal from '@/components/PinEntryModal';
@@ -40,6 +42,8 @@ export default function HubScreen() {
   const [helpModalVisible, setHelpModal]   = useState(false);
   const [flyerVisible, setFlyerVisible]    = useState(false);
   const [enRouteVisible, setEnRouteVisible]= useState(false);
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false);
+  const unreadNotifCount = useNotifStore(s => s.unreadCount);
 
   useEffect(() => {
     if (!loaded) loadFromStorage();
@@ -137,11 +141,13 @@ export default function HubScreen() {
       <AppHeader
         memberName={active.name.split(' ')[0]}
         memberRole={active.role as 'parent' | 'kid' | 'teen' | 'senior'}
-        onBellPress={() => Alert.alert('Nudge Center', 'Dinner ready · Meds · Pickup · Chore check')}
+        notifCount={unreadNotifCount}
+        onBellPress={() => setNotifPanelOpen(true)}
         // GP's bottom nav swaps Profile/Apps for Memories — this is their
         // only remaining path to settings/PIN, since the tab is gone.
         onSettingsPress={isSenior ? () => router.push('/profile') : undefined}
       />
+      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
       <AppsQuickAccessPills role={active.role} colors={colors} isDark={isDark} />
 

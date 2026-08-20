@@ -173,6 +173,14 @@ interface AppHeaderProps {
   // their bottom nav (currently: senior/GP, which trades that tab slot for
   // Memories) — omitted everywhere else so the icon doesn't appear twice.
   onSettingsPress?: () => void;
+  // Real rendered height of this header instance, measured via onLayout —
+  // NotificationPanel (a screen-independent Modal with no knowledge of any
+  // particular screen's layout) uses this to sit its top edge exactly below
+  // the header instead of a guessed constant, which drifted screen-to-screen
+  // (this component's own content height varies slightly by role/name
+  // length) and made the panel overlap the header/bell instead of clearing
+  // it.
+  onHeightChange?: (height: number) => void;
 }
 
 function RefreshIcon({ color }: { color: string }) {
@@ -191,6 +199,7 @@ export default function AppHeader({
   onPersonaPress,
   onBellPress,
   onSettingsPress,
+  onHeightChange,
 }: AppHeaderProps) {
   const { colors, isDark } = useTheme();
   const { familyName } = useFamilyStore();
@@ -204,30 +213,37 @@ export default function AppHeader({
   };
 
   return (
-    <View style={{ position: 'relative', zIndex: 30 }}>
+    <View style={{ position: 'relative', zIndex: 30 }}
+      onLayout={onHeightChange ? (e) => onHeightChange(e.nativeEvent.layout.height) : undefined}>
     <View style={[s.bar, { backgroundColor: colors.background }]}>
 
       {/* LEFT: persona header (two-line: name+mode, family+switch) — the
           animated cube mark used to live here; it's reserved for loading
           states now instead, so the header leads straight with identity. */}
-      <View style={s.left}>
-        <TouchableOpacity
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}
-          onPress={handlePersonaPress}
-          activeOpacity={0.75}
-        >
-          <View style={{ position: 'relative' }}>
-            <View style={{
-              width: 34, height: 34, borderRadius: 11,
-              backgroundColor: role.color, alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Text style={{ fontSize: 15, fontWeight: '800', color: '#fff' }}>{initial}</Text>
+      <View style={[s.left, { flex: 1, marginRight: 8 }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+          {/* Avatar — tappable, opens the switcher (same action as the
+              "Switch Profile" row below). Name/role badge are now plain
+              display text, not part of the tap target — previously the
+              whole block (including the name/badge, which look like
+              labels, not buttons) was one giant TouchableOpacity, so a tap
+              anywhere in that area opened the switcher even when nowhere
+              near the actual "Switch Profile" affordance. */}
+          <TouchableOpacity onPress={handlePersonaPress} activeOpacity={0.75}
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+            <View style={{ position: 'relative' }}>
+              <View style={{
+                width: 34, height: 34, borderRadius: 11,
+                backgroundColor: role.color, alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Text style={{ fontSize: 15, fontWeight: '800', color: '#fff' }}>{initial}</Text>
+              </View>
+              <View style={{
+                position: 'absolute', bottom: -2, right: -2, width: 11, height: 11, borderRadius: 6,
+                backgroundColor: colors.success, borderWidth: 2, borderColor: colors.background,
+              }} />
             </View>
-            <View style={{
-              position: 'absolute', bottom: -2, right: -2, width: 11, height: 11, borderRadius: 6,
-              backgroundColor: colors.success, borderWidth: 2, borderColor: colors.background,
-            }} />
-          </View>
+          </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Text style={[s.pillName, { color: colors.textPrimary, maxWidth: undefined }]} numberOfLines={1}>
@@ -236,22 +252,26 @@ export default function AppHeader({
               <View style={{ backgroundColor: role.color + '18', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
                 <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: LETTER_SPACING.badge, color: role.color }}>{role.label}</Text>
               </View>
+            </View>
+            <TouchableOpacity
+              onPress={handlePersonaPress} activeOpacity={0.75}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1, alignSelf: 'flex-start' }}
+              hitSlop={{ top: 4, bottom: 6, left: 4, right: 4 }}
+            >
+              <Text style={{ fontSize: 12, color: colors.textSecondary }} numberOfLines={1}>{familyName}</Text>
+              <Text style={{ fontSize: 12, color: colors.textTertiary }}>·</Text>
+              <RefreshIcon color={colors.primary} />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>Switch Profile</Text>
               <View style={{
-                width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+                width: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
                 backgroundColor: colors.surface,
                 transform: [{ rotate: showSwitcher ? '180deg' : '0deg' }],
               }}>
                 <ChevronDown color={colors.textSecondary} />
               </View>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 }}>
-              <Text style={{ fontSize: 12, color: colors.textSecondary }} numberOfLines={1}>{familyName}</Text>
-              <Text style={{ fontSize: 12, color: colors.textTertiary }}>·</Text>
-              <RefreshIcon color={colors.primary} />
-              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>Switch Profile</Text>
-            </View>
+            </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        </View>
       </View>
 
       {/* RIGHT: settings (only for roles without a Profile tab) + bell */}
@@ -266,12 +286,19 @@ export default function AppHeader({
           </TouchableOpacity>
         )}
         <TouchableOpacity
-          style={[s.bell, { backgroundColor: isDark ? 'rgba(245,166,35,0.22)' : '#FEF0D3' }]}
+          style={[s.bell, { backgroundColor: isDark ? 'rgba(245,166,35,0.22)' : '#FEF0D3', marginRight: 2 }]}
           onPress={onBellPress}
           activeOpacity={0.8}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 2 }}
         >
           <BellIcon color={BRAND.amber} />
-          {notifCount > 0 && <View style={s.badge} />}
+          {notifCount > 0 && (
+            <View style={[s.badge, notifCount > 9 ? s.badgeWide : null]}>
+              <Text style={s.badgeText} numberOfLines={1}>
+                {notifCount > 99 ? '99+' : String(notifCount)}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -347,13 +374,26 @@ const s = StyleSheet.create({
   },
   badge: {
     position: 'absolute',
-    top: 7,
-    right: 7,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: 2,
+    right: 2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#EF4444',
     borderWidth: 1.5,
     borderColor: '#FFFFFF',
+  },
+  badgeWide: {
+    minWidth: 20,
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    lineHeight: 11,
   },
 });

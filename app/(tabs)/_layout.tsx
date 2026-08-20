@@ -10,6 +10,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { tabBarAnim, showTabBar } from '@/lib/tabBarVisibility';
 import TravelBanner from '@/components/TravelBanner';
 import { useNotifStore } from '@/store/notifStore';
+import { useChatStore } from '@/store/chatStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
@@ -88,7 +89,14 @@ function AnimatedTabIcon({ name, focused, activeColor, inactiveColor }: {
 function CustomTabBar({ state, navigation }: any) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  const unreadCount = useNotifStore(s => s.unreadCount);
+  // Chat tab shows a plain unread DOT, not a count — distinct from the
+  // AppHeader bell's numeric badge (general app notifications: quest
+  // posted/approved/etc.). Reads chatStore's own per-channel unread
+  // tracking, not notifStore's unreadCount — those used to be the same
+  // number, conflating "you have an app notification" with "you have an
+  // unread chat message," which are genuinely different things.
+  const chatUnreadCounts = useChatStore(s => s.unreadCounts);
+  const hasUnreadChat = Object.values(chatUnreadCounts).some(n => n > 0);
   const lastNavTime = useRef(0);
   const { members, activeMemberId } = useFamilyStore();
   const isSenior = members.find(m => m.id === activeMemberId)?.role === 'senior';
@@ -161,7 +169,7 @@ function CustomTabBar({ state, navigation }: any) {
         {TABS.map(({ name, label }, index) => {
           const focused = activeTabIndex === index;
           const route   = state.routes.find((r: any) => r.name === name);
-          const showBadge = name === 'chat' && unreadCount > 0;
+          const showBadge = name === 'chat' && hasUnreadChat;
 
           return (
             <Pressable
@@ -183,11 +191,7 @@ function CustomTabBar({ state, navigation }: any) {
                   inactiveColor={inactiveColor}
                 />
                 {showBadge && (
-                  <View style={[styles.badge, { backgroundColor: colors.danger }]}>
-                    <Text style={styles.badgeText}>
-                      {unreadCount > 9 ? '9+' : String(unreadCount)}
-                    </Text>
-                  </View>
+                  <View style={[styles.dotBadge, { backgroundColor: colors.danger }]} />
                 )}
               </View>
               <Text style={[
@@ -340,23 +344,14 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 12,
   },
-  badge: {
+  dotBadge: {
     position: 'absolute',
-    top: -4,
-    right: -7,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
+    top: -2,
+    right: -4,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
     borderWidth: 1.5,
     borderColor: '#fff',
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 9,
-    fontWeight: '800',
-    lineHeight: 13,
   },
 });

@@ -31,6 +31,8 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import AppHeader from '@/components/AppHeader';
+import NotificationPanel from '@/components/NotificationPanel';
+import { useNotifStore } from '@/store/notifStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { useChatStore, ChatMessage } from '@/store/chatStore';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
@@ -61,6 +63,8 @@ export default function ChatScreen() {
   } = useChatStore();
   const { addItem: addGrocery } = useGroceryStore();
 
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false);
+  const unreadNotifCount = useNotifStore(s => s.unreadCount);
   const [channelId, setChannelId]         = useState('all');
   const [pinnedChannels, setPinnedChannels] = useState<string[]>([]);
   const [text, setText]                   = useState('');
@@ -426,9 +430,11 @@ export default function ChatScreen() {
         <AppHeader
           memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
           memberRole={activeMember?.role ?? 'parent'}
-          notifCount={0}
+          notifCount={unreadNotifCount}
           onPersonaPress={() => setSwitcherOpen(true)}
+          onBellPress={() => setNotifPanelOpen(true)}
         />
+        <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
         {/* ── Channel strip ── */}
         <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 }}>

@@ -1,17 +1,19 @@
 import { useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
-import { ChevronUp, ChevronDown, Clock } from 'lucide-react-native';
+import { View, Text, Pressable, Alert } from 'react-native';
+import { ChevronUp, ChevronDown, Clock, Undo2 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 
-// A task I delegated that's still waiting on the other parent — no actions
-// here (nothing for the assigner to do but wait, or nudge via the assigned
-// card elsewhere), just visibility, since previously this state had none
-// at all: the assigner had no way to tell "I assigned this" from "nothing
-// happened yet."
-export function OutgoingPendingCard({ a, chore, members, colors, isDark }: {
+// A task I delegated that's still waiting on the other parent. Still
+// PENDING (not yet accepted/bounced) gets a Recall action — the delegator
+// can always take a still-open delegation back, per spec 1.3/6.5; once
+// bounced/accepted there's a live negotiation or commitment in progress,
+// so recall isn't offered (reassign via DelegateSheet is the equivalent
+// action for those states).
+export function OutgoingPendingCard({ a, chore, members, colors, isDark, onRecall }: {
   a: ParentQuestAssignment; chore: ChoreTask; members: FamilyMember[]; colors: any; isDark: boolean;
+  onRecall?: () => void;
 }) {
   const [isExp, setExp] = useState(false);
   const assignee = members.find(m => m.id === a.assignedTo);
@@ -48,8 +50,23 @@ export function OutgoingPendingCard({ a, chore, members, colors, isDark }: {
         {isExp ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />}
       </Pressable>
       {isExp && chore.description && (
-        <View style={{ borderTopWidth: 1, borderTopColor: colors.border, padding: 12 }}>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.border, padding: 12, paddingBottom: onRecall ? 0 : 12 }}>
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{chore.description}</Text>
+        </View>
+      )}
+      {onRecall && (
+        <View style={{ paddingHorizontal: 12, paddingBottom: 12, paddingTop: isExp && chore.description ? 8 : 0 }}>
+          <Pressable
+            onPress={() => Alert.alert(
+              'Take this back?',
+              `"${chore.title}" will be un-delegated and assigned back to you. ${assignee?.name?.split(' ')[0] ?? 'They'} will be notified.`,
+              [{ text: 'Cancel', style: 'cancel' }, { text: 'Recall', onPress: onRecall }],
+            )}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+              borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingVertical: 8 }}>
+            <Undo2 size={13} color={colors.textSecondary} />
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Recall</Text>
+          </Pressable>
         </View>
       )}
     </View>

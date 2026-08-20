@@ -20,7 +20,7 @@ export function HouseholdBacklogSection({
   active, members, colors, isDark,
   questPool, myAdultQuests, othersAdultQuests, myDirectPending, myLockedItems, myAccepted, myOutgoingPending, myHelperEvents,
   systemBIds, parentAssignments,
-  updateQuest, updateEvent, completeParentQuest, respondToParentQuest, cancelLockedAssignment, appreciationPing, handlePullTask,
+  updateQuest, updateEvent, completeParentQuest, respondToParentQuest, cancelLockedAssignment, recallParentQuest, appreciationPing, handlePullTask,
   onAddTask, onDelegate, onRespond,
 }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
@@ -35,6 +35,7 @@ export function HouseholdBacklogSection({
   completeParentQuest: (assignmentId: string, completedBy: string) => void;
   respondToParentQuest: (id: string, response: { action: 'ACCEPT' }) => void;
   cancelLockedAssignment: (assignmentId: string) => void;
+  recallParentQuest: (assignmentId: string, recallerId: string) => void;
   appreciationPing: (assignmentId: string, fromId: string, message: string) => void;
   handlePullTask: (chore: ChoreTask) => void;
   onAddTask: () => void;
@@ -124,7 +125,8 @@ export function HouseholdBacklogSection({
                   const chore = allChores.find(c => c.id === a.choreId);
                   if (!chore) return null;
                   return (
-                    <OutgoingPendingCard key={a.id} a={a} chore={chore} members={members} colors={colors} isDark={isDark} />
+                    <OutgoingPendingCard key={a.id} a={a} chore={chore} members={members} colors={colors} isDark={isDark}
+                      onRecall={a.status === 'PENDING' ? () => recallParentQuest(a.id, active.id) : undefined} />
                   );
                 })}
               </View>

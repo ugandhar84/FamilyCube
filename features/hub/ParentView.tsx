@@ -47,7 +47,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
 
   const {
     parentAssignments, createAndAddParentQuest, addParentQuest,
-    respondToParentQuest, completeParentQuest, cancelLockedAssignment, appreciationPing, getParentQuestPool,
+    respondToParentQuest, completeParentQuest, cancelLockedAssignment, recallParentQuest, appreciationPing, getParentQuestPool,
     getPendingCashOuts, chores, addChore, getParentReviewDeck,
     approveGrandparentQuestAsParent, declineGrandparentQuestAsParent, grandparentApproveAndCheer,
     getMyDirectPending, getMyLockedItems, getMyAccepted, getMyOutgoingPending, getActiveAssignmentChoreIds,
@@ -410,7 +410,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         myHelperEvents={myHelperEvents} systemBIds={systemBIds} parentAssignments={parentAssignments}
         updateQuest={updateQuest} updateEvent={updateEvent}
         completeParentQuest={completeParentQuest} respondToParentQuest={respondToParentQuest}
-        cancelLockedAssignment={cancelLockedAssignment}
+        cancelLockedAssignment={cancelLockedAssignment} recallParentQuest={recallParentQuest}
         appreciationPing={appreciationPing} handlePullTask={handlePullTask}
         onAddTask={() => setShowAddTask(true)}
         onDelegate={(choreId, choreTitle) => setDelegateSheet({ choreId, choreTitle })}

@@ -575,6 +575,12 @@ interface ChoreState {
   // assignment DECLINED (finally giving that status a real use), and
   // reopens the chore in the pool for anyone to take or re-delegate.
   cancelLockedAssignment: (assignmentId: string) => void;
+  // The delegator taking back a still-PENDING (not yet accepted) System-A
+  // delegation — distinct from cancelLockedAssignment, which is for a
+  // locked (two-bounce) assignment. A delegator should always be able to
+  // recall their own delegation without the delegate's permission; the
+  // delegate is notified rather than having it silently vanish.
+  recallParentQuest:   (assignmentId: string, recallerId: string) => void;
   appreciationPing:    (assignmentId: string, fromId: string, message: string) => void;
 
   // ── Grandparent actions ───────────────────────────────────────────────────
@@ -2257,6 +2263,47 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // it naturally re-enters the open pool now that no live assignment
     // references it (getActiveAssignmentChoreIds no longer includes it
     // since DECLINED is a terminal status).
+  },
+
+  // Recall — the delegator takes back a still-PENDING (not yet accepted)
+  // delegation. Only PENDING is recallable: once accepted the delegate has
+  // committed to it (recall at that point would be a "reassign" decision,
+  // a different, already-existing flow via DelegateSheet). See spec 1.3/6.5.
+  recallParentQuest: (assignmentId, recallerId) => {
+    const now = new Date().toISOString();
+    const assignment = get().parentAssignments.find(a => a.id === assignmentId);
+    if (!assignment) {
+      console.warn(`[choreStore] recallParentQuest ABORTED — no assignment found with id=${assignmentId}`);
+      return;
+    }
+    if (assignment.assignedBy !== recallerId) {
+      console.warn(`[choreStore] recallParentQuest ABORTED — ${recallerId} is not the delegator of ${assignmentId}`);
+      return;
+    }
+    if (assignment.status !== 'PENDING') {
+      console.warn(`[choreStore] recallParentQuest ABORTED — assignment ${assignmentId} is not PENDING (status=${assignment.status})`);
+      return;
+    }
+    set(s => ({
+      parentAssignments: s.parentAssignments.map(a =>
+        a.id === assignmentId ? { ...a, status: 'DECLINED', updatedAt: now } : a
+      ),
+    }));
+    dbUpdate('parent_quest_assignments', assignmentId, { status: 'DECLINED', updated_at: now });
+    // Reassign the underlying chore straight back to the recaller — they
+    // said "I'll just do it myself," not "reopen this to the family pool."
+    get().updateChore(assignment.choreId, { assignedToId: recallerId, status: 'todo' });
+
+    try {
+      const { useFamilyStore } = require('./familyStore');
+      const { useChatStore } = require('./chatStore');
+      const recaller = useFamilyStore.getState().members.find((m: any) => m.id === recallerId);
+      const chore = get().chores.find(c => c.id === assignment.choreId);
+      useChatStore.getState().sendMessage(assignment.assignedTo, recallerId,
+        `↩️ ${recaller?.name?.split(' ')[0] ?? 'They'} took back "${chore?.title ?? 'that task'}" — no action needed from you.`);
+    } catch (e) {
+      console.warn('[choreStore] recallParentQuest notify failed', e);
+    }
   },
 
   appreciationPing: (assignmentId, fromId, message) => {

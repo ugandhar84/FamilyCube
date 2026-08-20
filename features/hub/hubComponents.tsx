@@ -8,7 +8,7 @@ import AppBottomSheet from '@/components/AppBottomSheet';
 import {
   ChevronDown, ChevronUp, Pencil, Calendar,
   MapPin, AlertOctagon, Car, Navigation, AlertTriangle, X, User,
-  Users, Backpack, Bell, Repeat,
+  Users, Backpack, Bell, Repeat, Check,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useTheme } from '@/lib/ThemeContext';
@@ -733,13 +733,41 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
             </View>
           )}
 
-          {/* For / assignees — bumped */}
+          {/* For / assignees — bumped. A plain attendee (not the named
+              driver/helper, who already gets a full accept/decline flow
+              elsewhere on this sheet) has no ownership of the event, so
+              this is informational + a lightweight Acknowledge, not a
+              decision. */}
           {forLabel && allAssignees.length > 0 && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{forLabel}:</Text>
-              {allAssignees.map(m => (
-                <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} size={24} ringColor={cc} ringWidth={1.5} />
-              ))}
+            <View style={{ gap: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{forLabel}:</Text>
+                {allAssignees.map(m => {
+                  const acked = ev.acknowledgedBy?.includes(m.id);
+                  return (
+                    <View key={m.id} style={{ alignItems: 'center' }}>
+                      <FamilyAvatar name={m.name} emoji={m.emoji} size={24} ringColor={acked ? '#10B981' : cc} ringWidth={1.5} />
+                      {acked && (
+                        <View style={{ position: 'absolute', bottom: -2, right: -2, width: 12, height: 12, borderRadius: 6,
+                          backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.card }}>
+                          <Check size={7} color="#fff" />
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+              {!isPast && viewerMember && allAssignees.some(m => m.id === viewerMember.id) &&
+                !ev.acknowledgedBy?.includes(viewerMember.id) && (
+                <Pressable
+                  onPress={() => updateEvent(ev.id, { acknowledgedBy: [...(ev.acknowledgedBy ?? []), viewerMember.id] })}
+                  style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5,
+                    borderRadius: 10, borderWidth: 1, borderColor: cc + '50', backgroundColor: cc + '12',
+                    paddingHorizontal: 10, paddingVertical: 6 }}>
+                  <Check size={12} color={cc} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: cc }}>Acknowledge</Text>
+                </Pressable>
+              )}
             </View>
           )}
 

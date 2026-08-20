@@ -104,6 +104,14 @@ export interface FamilyEvent {
   seriesId?: string;
   recurrenceRule?: EventRecurrenceRule;
   isSeriesAnchor?: boolean;
+
+  // Multi-member attendee acknowledgment — memberIds of everyone (other
+  // than the named driver/helper, which already has its own full accept/
+  // decline flow via EventAssignmentCard-equivalent status fields) who has
+  // tapped "Acknowledge" to confirm they've seen this event and know
+  // they're attending. Purely informational, no accept/decline branching —
+  // a plain attendee doesn't own the event the way a driver does.
+  acknowledgedBy?: string[];
 }
 
 export type StripMap = Record<string, string[]>;   // date → unique category[]
@@ -285,6 +293,7 @@ export function fromRow(row: any): FamilyEvent {
     seriesId:               row.series_id ?? undefined,
     recurrenceRule:         (typeof row.recurrence_rule === 'object' && row.recurrence_rule) ? row.recurrence_rule : undefined,
     isSeriesAnchor:         row.is_series_anchor ?? false,
+    acknowledgedBy:         Array.isArray(row.acknowledged_by) ? row.acknowledged_by : [],
   };
 }
 
@@ -342,6 +351,7 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     series_id:                  ev.seriesId ?? null,
     recurrence_rule:            ev.recurrenceRule ?? null,
     is_series_anchor:           ev.isSeriesAnchor ?? false,
+    acknowledged_by:            ev.acknowledgedBy ?? [],
   };
 }
 

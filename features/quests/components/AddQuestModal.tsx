@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  TextInput, Modal, ActivityIndicator, Platform, Switch, KeyboardAvoidingView,
+  TextInput, Modal, ActivityIndicator, Platform, KeyboardAvoidingView, Switch,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Pressable } from 'react-native';
@@ -12,19 +12,20 @@ import { useFamilyStore } from '@/store/familyStore';
 // import { useQuestStore } from '@/store/questStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import type { QuestCategory, QuestDifficulty, QuestType } from '@/store/questStore';
-import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import { localDateStr } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
 import { fetchCustomCategories, fetchCustomSuggestions, recordCustomSuggestion, CustomCategory } from '@/lib/familyCustomCategories';
 import { useGroceryStore } from '@/store/groceryStore';
-import { DEFAULT_GROCERY_ITEMS, DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { QUEST_SUGGESTIONS, ALL_CATEGORIES, CATEGORY_META, fmtDateLabel, fmtTimeLabel } from './questFormShared';
 import {
   resolveDomainFromLooseLabel, fetchSubcategoriesForDomain, previewAssignment, applyAssignment,
   type ResponsibilityCategory, type AssignmentSuggestion,
 } from '@/lib/responsibilityCategories';
+import { AddQuestGrocerySection } from './AddQuestGrocerySection';
+import { AddQuestRecurrenceSection } from './AddQuestRecurrenceSection';
+import { AddQuestAssignSection } from './AddQuestAssignSection';
 
 // Word-boundary match, not bare substring containment — "load" must not
 // match inside "unload". A plain .includes() let "Unload the dishwasher"
@@ -95,7 +96,14 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   // Routine chore setup
   const [isRoutine,    setIsRoutine]    = useState(false);
   const [routineType,  setRoutineType]  = useState<'citizenship' | 'routine' | 'bounty' | 'shopping'>('routine');
-  const [routineFreq,  setRoutineFreq]  = useState<'daily' | 'weekly' | 'monthly' | 'first_come' | 'once'>('daily');
+  // Defaults to 'once' — 'daily' must be an explicit tap on the Repeats
+  // picker (only shown once Recurring Chore / an adult task's own Repeats
+  // row is engaged). Defaulting this to 'daily' silently made every new
+  // quest recurring even when the user never touched the recurrence UI at
+  // all, since line ~347 below feeds routineFreq into `recurrence`
+  // unconditionally regardless of whether isRoutine/isAdultTask ever showed
+  // the picker.
+  const [routineFreq,  setRoutineFreq]  = useState<'daily' | 'weekly' | 'monthly' | 'first_come' | 'once'>('once');
 
   // Shopping quest item list
   const [shoppingLines, setShoppingLines] = useState<string[]>(['']);
@@ -258,6 +266,10 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   const [dueDate,      setDueDate]      = useState<Date>(() => prefill?.dueDate ? new Date(prefill.dueDate + 'T18:00:00') : defaultDue());
   const [showDatePick, setShowDatePick] = useState(false);
   const [showTimePick, setShowTimePick] = useState(false);
+  // Call-style reminder — opt-in, rings the assignee via CallKit/
+  // ConnectionService this many minutes before dueTime.
+  const [alertCall,           setAlertCall]           = useState(false);
+  const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(10);
 
   const onDateChange = (_: any, selected?: Date) => {
     setShowDatePick(Platform.OS === 'ios'); // keep open on iOS (inline), close on Android
@@ -285,7 +297,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
     setShowDatePick(false); setShowTimePick(false);
     setLinkGroceries(false); setGroceryItems([]); setSelectedItemIds(new Set()); setNewGroceryLines([]);
     setFocusedLineIdx(null); setFocusedField(null);
-    setIsRoutine(false); setRoutineType('routine'); setRoutineFreq('daily');
+    setIsRoutine(false); setRoutineType('routine'); setRoutineFreq('once');
     setInviteGrandparent(false);
   };
 
@@ -348,6 +360,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
       status: 'todo',
       dueDate: localDateStr(dueDate),
       dueTime: fmtTimeLabel(dueDate),
+      alertCall, alertCallLeadMinutes,
       photoRequired: routineType === 'shopping' ? true : photoReq,
       createdById: activeMemberId,
       isAdultTask,
@@ -686,179 +699,17 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
 
             {/* ── Grocery list attachment (Errand / Shopping) ── */}
             {isGroceryCategory && (
-              <View style={{ marginBottom: 12 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: linkGroceries ? 8 : 0 }}>
-                  <Text style={[aq.label, { color: colors.textSecondary, marginBottom: 0 }]}>🛍️ Attach grocery list</Text>
-                  <Switch value={linkGroceries} onValueChange={v => { setLinkGroceries(v); if (!v) setGroceryListOpen(false); }}
-                    trackColor={{ false: colors.border, true: BRAND.purple + '80' }}
-                    thumbColor={linkGroceries ? BRAND.purple : colors.textTertiary} />
-                </View>
-                {linkGroceries && (
-                  <>
-                    {/* Existing pending items grouped by store — collapsible */}
-                    {loadingGroceries ? (
-                      <ActivityIndicator color={BRAND.purple} style={{ marginVertical: 8 }} />
-                    ) : groceryItems.length > 0 ? (
-                      <>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6 }}>
-                          From your list ({groceryItems.length})
-                        </Text>
-                        {(() => {
-                          const groups: Record<string, typeof groceryItems> = {};
-                          for (const item of groceryItems) {
-                            const key = item.storePreference || 'Any store';
-                            if (!groups[key]) groups[key] = [];
-                            groups[key].push(item);
-                          }
-                          return Object.entries(groups)
-                            .sort(([a], [b]) => a === 'Any store' ? 1 : b === 'Any store' ? -1 : a.localeCompare(b))
-                            .map(([store, items]) => {
-                              const storeOpen     = expandedStores.has(store);
-                              const storeSelected = items.every(i => selectedItemIds.has(i.id));
-                              const storePartial  = !storeSelected && items.some(i => selectedItemIds.has(i.id));
-                              const toggleStore = () => setExpandedStores(prev => {
-                                const next = new Set(prev);
-                                storeOpen ? next.delete(store) : next.add(store);
-                                return next;
-                              });
-                              return (
-                                <View key={store} style={{ marginBottom: 4 }}>
-                                  {/* Store header — tap to expand/collapse */}
-                                  <Pressable onPress={toggleStore}
-                                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-                                      backgroundColor: storeSelected ? BRAND.purple + '15' : (storePartial ? BRAND.purple + '08' : isDark ? '#252540' : '#F3F4F6'),
-                                      borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12,
-                                      borderWidth: 1, borderColor: storeSelected ? BRAND.purple + '60' : (storePartial ? BRAND.purple + '30' : colors.border) }}
-                                  >
-                                    <Text style={{ fontSize: 14 }}>🏪</Text>
-                                    <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: storeSelected ? BRAND.purple : colors.textPrimary }}>{store}</Text>
-                                    <Text style={{ fontSize: 11, color: colors.textSecondary, marginRight: 6 }}>{items.filter(i => selectedItemIds.has(i.id)).length}/{items.length}</Text>
-                                    {/* Select-all checkbox */}
-                                    <Pressable
-                                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 0 }}
-                                      onPress={() => {
-                                        const next = new Set(selectedItemIds);
-                                        if (storeSelected) items.forEach(i => next.delete(i.id));
-                                        else items.forEach(i => next.add(i.id));
-                                        setSelectedItemIds(next);
-                                      }}>
-                                      <View style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 2,
-                                        borderColor: (storeSelected || storePartial) ? BRAND.purple : colors.border,
-                                        backgroundColor: storeSelected ? BRAND.purple : 'transparent',
-                                        alignItems: 'center', justifyContent: 'center' }}>
-                                        {storeSelected && <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '900' }}>✓</Text>}
-                                        {storePartial && <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: BRAND.purple }} />}
-                                      </View>
-                                    </Pressable>
-                                    <Text style={{ fontSize: 11, color: colors.textTertiary, marginLeft: 4 }}>{storeOpen ? '▲' : '▼'}</Text>
-                                  </Pressable>
-                                  {/* Items — shown only when store expanded */}
-                                  {storeOpen && items.map(item => {
-                                    const selected = selectedItemIds.has(item.id);
-                                    return (
-                                      <Pressable key={item.id}
-                                        onPress={() => { const next = new Set(selectedItemIds); selected ? next.delete(item.id) : next.add(item.id); setSelectedItemIds(next); }}
-                                        style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: 12, paddingLeft: 26,
-                                          backgroundColor: selected ? BRAND.purple + '10' : colors.surface,
-                                          borderRadius: 8, marginTop: 2, borderWidth: 1, borderColor: selected ? BRAND.purple + '40' : colors.border }}
-                                      >
-                                        <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: 2,
-                                          borderColor: selected ? BRAND.purple : colors.border,
-                                          backgroundColor: selected ? BRAND.purple : 'transparent',
-                                          alignItems: 'center', justifyContent: 'center', marginRight: 9 }}>
-                                          {selected && <Text style={{ color: '#FFF', fontSize: 9, fontWeight: '900' }}>✓</Text>}
-                                        </View>
-                                        <Text style={{ flex: 1, fontSize: 13, color: colors.textPrimary, fontWeight: selected ? '600' : '400' }}>{item.name}</Text>
-                                        {item.quantity ? <Text style={{ fontSize: 11, color: colors.textSecondary }}>{item.quantity}</Text> : null}
-                                      </Pressable>
-                                    );
-                                  })}
-                                </View>
-                              );
-                            });
-                        })()}
-                      </>
-                    ) : null}
-
-                    {/* New items inline */}
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: groceryItems.length > 0 ? 8 : 0, marginBottom: 6 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Add new items</Text>
-                      <Pressable onPress={() => setNewGroceryLines(prev => [{ name: '', qty: '', store: '' }, ...prev])}
-                        style={{ backgroundColor: BRAND.purple, borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10 }}>
-                        <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '700' }}>+ Add item</Text>
-                      </Pressable>
-                    </View>
-                    {newGroceryLines.length === 0 ? (
-                      <Pressable onPress={() => setNewGroceryLines([{ name: '', qty: '', store: '' }])}
-                        style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: BRAND.purple + '60', borderRadius: 10, paddingVertical: 12, alignItems: 'center' }}>
-                        <Text style={{ color: BRAND.purple, fontSize: 13 }}>+ Tap to add grocery items</Text>
-                      </Pressable>
-                    ) : newGroceryLines.map((line, idx) => {
-                      const allItemPool = [...new Set([...cachedItemNames, ...DEFAULT_GROCERY_ITEMS])];
-                      const allStorePool = [...new Set([...cachedStores, ...DEFAULT_GROCERY_STORES])];
-                      const nameSuggs  = line.name.trim().length > 0
-                        ? allItemPool.filter(n => n.toLowerCase().includes(line.name.toLowerCase()) && n.toLowerCase() !== line.name.toLowerCase()).slice(0, 6)
-                        : [];
-                      const storeSuggs = line.store.trim().length === 0
-                        ? allStorePool.slice(0, 6)
-                        : allStorePool.filter(s => s.toLowerCase().includes(line.store.toLowerCase()) && s.toLowerCase() !== line.store.toLowerCase()).slice(0, 6);
-                      const showNameSuggs  = focusedLineIdx === idx && focusedField === 'name'  && nameSuggs.length > 0;
-                      const showStoreSuggs = focusedLineIdx === idx && focusedField === 'store' && storeSuggs.length > 0;
-                      return (
-                        <View key={idx} style={{ marginBottom: 8 }}>
-                          <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 4 }}>
-                            <TextInput
-                              style={[aq.input, { flex: 2.5, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'name' ? BRAND.purple : colors.borderMed, marginBottom: 0 }]}
-                              placeholder="Item name" placeholderTextColor={colors.textTertiary}
-                              value={line.name}
-                              onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, name: v } : l))}
-                              onFocus={() => { setFocusedLineIdx(idx); setFocusedField('name'); }}
-                              onBlur={() => { setFocusedLineIdx(null); setFocusedField(null); }}
-                            />
-                            <TextInput
-                              style={[aq.input, { flex: 1, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed, marginBottom: 0 }]}
-                              placeholder="Qty" placeholderTextColor={colors.textTertiary}
-                              value={line.qty}
-                              onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, qty: v } : l))}
-                            />
-                            <Pressable onPress={() => setNewGroceryLines(prev => prev.filter((_, i) => i !== idx))} style={{ padding: 6 }}>
-                              <Text style={{ color: colors.textTertiary, fontSize: 18 }}>×</Text>
-                            </Pressable>
-                          </View>
-                          {showNameSuggs && (
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" style={{ marginBottom: 4 }}>
-                              {nameSuggs.map(s => (
-                                <Pressable key={s} onPress={() => { setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, name: s } : l)); setFocusedField(null); }}
-                                  style={{ backgroundColor: BRAND.purple + '15', borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10, marginRight: 6, borderWidth: 1, borderColor: BRAND.purple + '40' }}>
-                                  <Text style={{ fontSize: 12, color: BRAND.purple, fontWeight: '600' }}>{s}</Text>
-                                </Pressable>
-                              ))}
-                            </ScrollView>
-                          )}
-                          <TextInput
-                            style={[aq.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'store' ? BRAND.purple : colors.borderMed, marginBottom: 0 }]}
-                            placeholder="🏪 Store (e.g. Walmart)" placeholderTextColor={colors.textTertiary}
-                            value={line.store}
-                            onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, store: v } : l))}
-                            onFocus={() => { setFocusedLineIdx(idx); setFocusedField('store'); }}
-                            onBlur={() => { setFocusedLineIdx(null); setFocusedField(null); }}
-                          />
-                          {showStoreSuggs && (
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" style={{ marginTop: 4 }}>
-                              {storeSuggs.map(s => (
-                                <Pressable key={s} onPress={() => { setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, store: s } : l)); setFocusedField(null); }}
-                                  style={{ backgroundColor: isDark ? '#252540' : '#F3F4F6', borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10, marginRight: 6, borderWidth: 1, borderColor: colors.border }}>
-                                  <Text style={{ fontSize: 12, color: colors.textPrimary }}>🏪 {s}</Text>
-                                </Pressable>
-                              ))}
-                            </ScrollView>
-                          )}
-                        </View>
-                      );
-                    })}
-                  </>
-                )}
-              </View>
+              <AddQuestGrocerySection
+                colors={colors} isDark={isDark}
+                linkGroceries={linkGroceries} setLinkGroceries={setLinkGroceries} setGroceryListOpen={setGroceryListOpen}
+                loadingGroceries={loadingGroceries} groceryItems={groceryItems}
+                expandedStores={expandedStores} setExpandedStores={setExpandedStores}
+                selectedItemIds={selectedItemIds} setSelectedItemIds={setSelectedItemIds}
+                newGroceryLines={newGroceryLines} setNewGroceryLines={setNewGroceryLines}
+                focusedLineIdx={focusedLineIdx} setFocusedLineIdx={setFocusedLineIdx}
+                focusedField={focusedField} setFocusedField={setFocusedField}
+                cachedItemNames={cachedItemNames} cachedStores={cachedStores}
+              />
             )}
 
             {/* Coins + Bonus + Photo required — one compact row.
@@ -1002,347 +853,55 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               </Modal>
             )}
 
-            {/* Parent Only / GP Welcome — two compact, related switches sitting
-                side-by-side instead of two heavy full-width toggle rows.
-                Renamed from "Adult Task" / "Invite Grandparent" for clarity. */}
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-              <TouchableOpacity
-                style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12,
-                  backgroundColor: isAdultTask ? colors.primaryLight : colors.surface,
-                  borderWidth: 1.5, borderColor: isAdultTask ? colors.primary : colors.border }}
-                onPress={() => toggleAdultTask(!isAdultTask)}
-                activeOpacity={0.8}
-              >
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isAdultTask ? colors.primary : colors.textPrimary }}>
-                  👨‍👩 Parent Only
-                </Text>
-                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1, textAlign: 'center' }}>
-                  Hidden from kids
-                </Text>
+            {/* Call-style reminder — opt-in, rings via CallKit/ConnectionService */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: alertCall ? 8 : 14 }}>
+              <TouchableOpacity onPress={() => setAlertCall(v => !v)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                <Ionicons name={alertCall ? 'call' : 'call-outline'} size={18} color={alertCall ? BRAND.purple : colors.textSecondary} />
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>Call to remind</Text>
               </TouchableOpacity>
-
-              <TouchableOpacity
-                style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12,
-                  backgroundColor: inviteGrandparent ? colors.amberLight : colors.surface,
-                  borderWidth: 1.5, borderColor: inviteGrandparent ? colors.amber : colors.border }}
-                onPress={() => toggleGPInvite(!inviteGrandparent)}
-                activeOpacity={0.8}
-              >
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: inviteGrandparent ? colors.amber : colors.textPrimary }}>
-                  👴 GP Welcome
-                </Text>
-                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1, textAlign: 'center' }}>
-                  {inviteGrandparent ? 'Can claim it' : 'Let GP claim it'}
-                </Text>
-              </TouchableOpacity>
+              <Switch value={alertCall} onValueChange={setAlertCall} trackColor={{ true: BRAND.purple }} />
             </View>
-
-            {/* Repeats — a parent-only task can recur too (routineFreq already
-                feeds the same recurrence field the kid-chore path uses,
-                approveChore already resets ANY chore back to todo on its
-                cycle regardless of who it's assigned to — this control was
-                simply missing from the UI for the adult-task path).
-                No explicit "One-time" chip — that's just the default when
-                nothing here is selected, tapping an active chip again
-                deselects it back to one-time. */}
-            {isAdultTask && (
-              <View style={{ marginBottom: 14 }}>
-                <Text style={[aq.label, { color: colors.textSecondary }]}>
-                  Repeats{'  '}
-                  <Text style={{ fontWeight: '400', color: colors.textTertiary }}>
-                    {routineFreq === 'once' ? 'one-time' : ''}
-                  </Text>
-                </Text>
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  {([
-                    { key: 'daily',   label: '📅 Daily' },
-                    { key: 'weekly',  label: '🗓 Weekly' },
-                    { key: 'monthly', label: '📆 Monthly' },
-                  ] as const).map(({ key, label }) => (
-                    <TouchableOpacity key={key}
-                      onPress={() => setRoutineFreq(f => f === key ? 'once' : key)}
-                      style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, paddingVertical: 8, alignItems: 'center',
-                        borderColor: routineFreq === key ? colors.primary : colors.border,
-                        backgroundColor: routineFreq === key ? colors.primaryLight : 'transparent' }}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '800',
-                        color: routineFreq === key ? colors.primary : colors.textSecondary }}>{label}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+            {alertCall && (
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                {[0, 5, 10].map(mins => (
+                  <TouchableOpacity key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
+                    style={[aq.datePill, {
+                      backgroundColor: alertCallLeadMinutes === mins ? BRAND.purple + '20' : pillBg,
+                      borderColor: alertCallLeadMinutes === mins ? BRAND.purple : pillBdr,
+                    }]}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: alertCallLeadMinutes === mins ? BRAND.purple : colors.textPrimary }}>
+                      {mins === 0 ? 'On time' : `${mins} min before`}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
             )}
 
-            {/* Routine Chore Setup */}
-            {!isAdultTask && (
-              <View style={{ marginBottom: 14 }}>
-                <TouchableOpacity
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-                    paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12,
-                    backgroundColor: isRoutine ? colors.tealLight : colors.surface,
-                    borderWidth: 1.5, borderColor: isRoutine ? BRAND.teal : colors.border }}
-                  onPress={() => setIsRoutine(r => !r)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: isRoutine ? BRAND.teal : colors.textPrimary, flex: 1 }}>
-                    🔄 Recurring Chore
-                  </Text>
-                  <View style={{ width: 38, height: 22, borderRadius: 11,
-                    backgroundColor: isRoutine ? BRAND.teal : (isDark ? '#334155' : '#CBD5E1'),
-                    justifyContent: 'center', paddingHorizontal: 2 }}>
-                    <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
-                      alignSelf: isRoutine ? 'flex-end' : 'flex-start' }} />
-                  </View>
-                </TouchableOpacity>
+            <AddQuestRecurrenceSection
+              colors={colors} isDark={isDark}
+              isAdultTask={isAdultTask} toggleAdultTask={toggleAdultTask}
+              inviteGrandparent={inviteGrandparent} toggleGPInvite={toggleGPInvite}
+              routineFreq={routineFreq} setRoutineFreq={setRoutineFreq}
+              isRoutine={isRoutine} setIsRoutine={setIsRoutine}
+              routineType={routineType} setRoutineType={setRoutineType}
+              setCoins={setCoins}
+              shoppingStore={shoppingStore} setShoppingStore={setShoppingStore}
+              shoppingBudget={shoppingBudget} setShoppingBudget={setShoppingBudget}
+              shoppingItemsOpen={shoppingItemsOpen} setShoppingItemsOpen={setShoppingItemsOpen}
+              shoppingLines={shoppingLines} updateShoppingLine={updateShoppingLine} removeShoppingLine={removeShoppingLine} addShoppingLine={addShoppingLine}
+            />
 
-                {isRoutine && (
-                  <View style={{ marginTop: 8, borderRadius: 14, borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0', overflow: 'hidden' }}>
-                    {/* Chore type row — full width, tappable cards. Each
-                        chip's own label already says what it is; the
-                        separate "context hint" paragraph that used to sit
-                        below this (re-explaining the same 4 options in
-                        prose) was redundant and dropped. */}
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                      {([
-                        { key: 'citizenship', emoji: '🌱', label: 'Citizenship', color: '#059669', bg: '#ECFDF5', bgDark: '#0a2018', freq: 'daily' as const },
-                        { key: 'routine',     emoji: '⭐', label: 'Routine',     color: BRAND.purple, bg: BRAND.purple + '12', bgDark: BRAND.purple + '20', freq: 'weekly' as const },
-                        { key: 'bounty',      emoji: '💎', label: 'Bounty',      color: BRAND.amber, bg: BRAND.amber + '12', bgDark: BRAND.amber + '20', freq: 'first_come' as const },
-                        { key: 'shopping',    emoji: '🛍️', label: 'Shopping',    color: BRAND.teal,  bg: BRAND.teal + '12', bgDark: BRAND.teal + '20', freq: 'once' as const },
-                      ] as const).map(({ key, emoji, label, color, bg, bgDark, freq }, i, arr) => (
-                        <TouchableOpacity key={key}
-                          onPress={() => { setRoutineType(key); setRoutineFreq(freq); if (key === 'citizenship') setCoins('0'); }}
-                          style={{ width: '50%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 9, gap: 5,
-                            borderRightWidth: i % 2 === 0 ? 1 : 0,
-                            borderBottomWidth: i < 2 ? 1 : 0,
-                            borderRightColor: isDark ? colors.border : '#E2E8F0',
-                            borderBottomColor: isDark ? colors.border : '#E2E8F0',
-                            backgroundColor: routineType === key ? (isDark ? bgDark : bg) : 'transparent',
-                          }}>
-                          <Text style={{ fontSize: 15 }}>{emoji}</Text>
-                          <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '900', color: routineType === key ? color : colors.textSecondary }}>{label}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    {/* Frequency — locked for citizenship, bounty, shopping */}
-                    {routineType === 'routine' && (
-                      <View style={{ flexDirection: 'row', padding: 10, gap: 6, borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#F1F5F9' }}>
-                        {([
-                          { key: 'daily',  label: '📅 Daily' },
-                          { key: 'weekly', label: '🗓 Weekly' },
-                        ] as const).map(({ key, label }) => (
-                          <TouchableOpacity key={key}
-                            onPress={() => setRoutineFreq(key)}
-                            style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, paddingVertical: 8, alignItems: 'center',
-                              borderColor: routineFreq === key ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
-                              backgroundColor: routineFreq === key ? BRAND.teal + '18' : 'transparent',
-                            }}>
-                            <Text style={{ fontSize: TYPO.label, fontWeight: '800',
-                              color: routineFreq === key ? BRAND.teal : colors.textSecondary }}>{label}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
-
-                    {/* Shopping item list */}
-                    {routineType === 'shopping' && (
-                      <View style={{ borderTopWidth: 1, borderTopColor: isDark ? colors.border : '#F1F5F9', padding: 12, gap: 10 }}>
-                        {/* Store + budget row */}
-                        <View style={{ flexDirection: 'row', gap: 8 }}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.6 }}>Store</Text>
-                            <TextInput
-                              value={shoppingStore} onChangeText={setShoppingStore}
-                              placeholder="e.g. Walmart"
-                              placeholderTextColor={colors.textTertiary}
-                              style={{ borderRadius: 10, borderWidth: 1.5, borderColor: isDark ? colors.border : '#E2E8F0',
-                                backgroundColor: isDark ? colors.card : '#fff', padding: 9,
-                                fontSize: TYPO.label, color: colors.textPrimary }}
-                            />
-                          </View>
-                          <View style={{ width: 90 }}>
-                            <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.6 }}>Budget $</Text>
-                            <TextInput
-                              value={shoppingBudget} onChangeText={setShoppingBudget}
-                              placeholder="optional" keyboardType="decimal-pad"
-                              placeholderTextColor={colors.textTertiary}
-                              style={{ borderRadius: 10, borderWidth: 1.5, borderColor: isDark ? colors.border : '#E2E8F0',
-                                backgroundColor: isDark ? colors.card : '#fff', padding: 9,
-                                fontSize: TYPO.label, color: colors.textPrimary, textAlign: 'right' }}
-                            />
-                          </View>
-                        </View>
-
-                        {/* Item list — collapsible */}
-                        <Pressable onPress={() => setShoppingItemsOpen(o => !o)}
-                          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
-                            Shopping List {shoppingLines.filter(Boolean).length > 0 ? `(${shoppingLines.filter(Boolean).length})` : ''}
-                          </Text>
-                          <Text style={{ fontSize: 13, color: BRAND.teal, fontWeight: '700' }}>
-                            {shoppingItemsOpen ? '▲ hide' : '▼ add items'}
-                          </Text>
-                        </Pressable>
-
-                        {shoppingItemsOpen && (
-                          <>
-                            {shoppingLines.map((line, i) => (
-                              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                <Text style={{ fontSize: 14, color: BRAND.teal }}>•</Text>
-                                <TextInput
-                                  value={line}
-                                  onChangeText={v => updateShoppingLine(i, v)}
-                                  placeholder={`Item ${i + 1}…`}
-                                  placeholderTextColor={colors.textTertiary}
-                                  style={{ flex: 1, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : '#E2E8F0',
-                                    paddingVertical: 7, fontSize: TYPO.label, color: colors.textPrimary }}
-                                  returnKeyType="next"
-                                  onSubmitEditing={addShoppingLine}
-                                />
-                                {shoppingLines.length > 1 && (
-                                  <Pressable onPress={() => removeShoppingLine(i)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                                    <Text style={{ fontSize: 16, color: colors.textTertiary }}>✕</Text>
-                                  </Pressable>
-                                )}
-                              </View>
-                            ))}
-                            <Pressable onPress={addShoppingLine}
-                              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 }}>
-                              <Text style={{ fontSize: 14, color: BRAND.teal, fontWeight: '800' }}>+ Add item</Text>
-                            </Pressable>
-                          </>
-                        )}
-
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>
-                          📸 Receipt photo will be required on submission
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                )}
-              </View>
-            )}
-
-            {/* Assign To — avatar circles, multi-select */}
-            <Text style={[aq.label, { color: colors.textSecondary }]}>
-              Assign To{'  '}
-              <Text style={{ fontWeight: '400', color: colors.textTertiary }}>
-                {isPool ? 'open to anyone' : assignIds.length === 0 ? 'tap to select' : assignIds.length > 1 ? `${assignIds.length} selected` : '1 selected'}
-              </Text>
-            </Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }} contentContainerStyle={{ flexDirection: 'row', gap: 12, paddingRight: 4 }}>
-              {/* Open Bounty — hidden for adult tasks */}
-              {!isAdultTask && <TouchableOpacity style={{ alignItems: 'center', gap: 4 }} onPress={() => { setIsPool(true); setAssignIds([]); }}>
-                <View style={{ position: 'relative' }}>
-                  <FamilyAvatar
-                    name="Bounty"
-                    emoji="⚡"
-                    size={40}
-                    ringColor={BRAND.amber}
-                    ringWidth={isPool ? 2.5 : 1}
-                    bgColor={isPool ? BRAND.amber + '30' : pillBg}
-                  />
-                  {isPool && (
-                    <View style={[aq.avatarCheck, { backgroundColor: BRAND.amber }]}>
-                      <Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: isPool ? BRAND.amber : colors.textTertiary }}>Bounty</Text>
-              </TouchableOpacity>}
-
-              {/* Family members — parents only for adult tasks. A
-                  grandparent only shows up here at all when GP Welcome is
-                  on — otherwise this quest was never meant to reach them,
-                  so offering them as a direct-assign target is misleading. */}
-              {members
-                .filter(m => m.role === 'senior' ? inviteGrandparent : true)
-                .filter(m => isAdultTask ? (m.role === 'parent' || m.role === 'senior') : (m.role === 'kid' || m.role === 'teen' || m.role === 'parent' || m.role === 'senior'))
-                .map(m => {
-                  const sel       = assignIds.includes(m.id) && !isPool;
-                  const roleColor = m.role === 'parent' ? BRAND.purple : m.role === 'senior' ? '#0EA5E9' : '#10B981';
-                  const siblings  = members.map(x => x.name);
-                  return (
-                    <TouchableOpacity
-                      key={m.id}
-                      style={{ alignItems: 'center', gap: 4 }}
-                      onPress={() => {
-                        setIsPool(false);
-                        const next = assignIds.includes(m.id)
-                          ? assignIds.filter(id => id !== m.id)
-                          : [...assignIds, m.id];
-                        setAssignIds(next);
-                        // Auto-mark adult task if any selected member is parent/senior
-                        const hasAdult = next.some(id => {
-                          const role = members.find(x => x.id === id)?.role;
-                          return role === 'parent' || role === 'senior';
-                        });
-                        if (hasAdult) setIsAdultTask(true);
-                        else if (!next.some(id => members.find(x => x.id === id)?.role !== 'kid')) setIsAdultTask(false);
-                      }}
-                    >
-                      <View style={{ position: 'relative' }}>
-                        <FamilyAvatar
-                          name={m.name}
-                          emoji={m.emoji}
-                          avatarUrl={(m as any).avatarUrl}
-                          siblings={siblings}
-                          size={40}
-                          ringColor={roleColor}
-                          ringWidth={sel ? 2.5 : 1}
-                          bgColor={sel ? roleColor + '25' : pillBg}
-                        />
-                        {sel && (
-                          <View style={[aq.avatarCheck, { backgroundColor: roleColor }]}>
-                            <Text style={{ fontSize: 8, color: '#fff', fontWeight: '900' }}>✓</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: sel ? roleColor : colors.textTertiary }} numberOfLines={1}>
-                        {m.id === activeMemberId ? 'Me' : m.name.split(' ')[0]}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-            </ScrollView>
-
-            {/* Pool: max claimants picker */}
-            {isPool && (
-              <View style={{ marginBottom: 14 }}>
-                <Text style={[aq.label, { color: colors.textSecondary }]}>
-                  How many kids can claim?{'  '}
-                  <Text style={{ fontWeight: '400', color: colors.textTertiary }}>
-                    {maxClaimants === 0 ? 'unlimited' : maxClaimants === 1 ? 'first come, first served' : `up to ${maxClaimants} kids`}
-                  </Text>
-                </Text>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  {[1, 2, 3, 0].map(n => (
-                    <TouchableOpacity
-                      key={n}
-                      style={{ flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: 'center', borderWidth: 1.5,
-                        borderColor: maxClaimants === n ? BRAND.amber : isDark ? '#1E293B' : '#E2E8F0',
-                        backgroundColor: maxClaimants === n ? BRAND.amber + '20' : isDark ? '#0F172A' : '#F8FAFC' }}
-                      onPress={() => setMaxClaimants(n)}
-                    >
-                      <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: maxClaimants === n ? BRAND.amber : colors.textSecondary }}>
-                        {n === 0 ? '∞' : n}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {/* Multi-assign notice */}
-            {!isPool && assignIds.length > 1 && (
-              <View style={{ marginBottom: 14, padding: 10, borderRadius: 12, backgroundColor: isDark ? '#0F172A' : '#F0FDF4', borderWidth: 1, borderColor: '#10B98130' }}>
-                <Text style={{ fontSize: TYPO.label, color: '#059669', fontWeight: '700' }}>
-                  ✅ {assignIds.length} kids assigned — each tracked independently
-                </Text>
-                <Text style={{ fontSize: TYPO.micro + 1, color: isDark ? '#6EE7B7' : '#047857', marginTop: 2 }}>
-                  Each earns +{coins || '30'}🪙 when their own submission is approved
-                </Text>
-              </View>
-            )}
+            <AddQuestAssignSection
+              colors={colors} isDark={isDark}
+              members={members} activeMemberId={activeMemberId}
+              isAdultTask={isAdultTask} setIsAdultTask={setIsAdultTask}
+              isPool={isPool} setIsPool={setIsPool}
+              assignIds={assignIds} setAssignIds={setAssignIds}
+              inviteGrandparent={inviteGrandparent}
+              maxClaimants={maxClaimants} setMaxClaimants={setMaxClaimants}
+              coins={coins}
+              pillBg={pillBg}
+            />
 
             {/* Submit */}
             <TouchableOpacity

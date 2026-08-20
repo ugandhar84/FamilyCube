@@ -136,6 +136,8 @@ export function choreToQuest(c: ChoreTask): Quest {
     cheers:           c.cheers ?? [],
     teamGroupId:      c.teamGroupId,
     sponsorUserId:    c.sponsorUserId,
+    alertCall:            c.alertCall ?? false,
+    alertCallLeadMinutes: c.alertCallLeadMinutes ?? 10,
   };
 }
 
@@ -189,6 +191,8 @@ function questInputToChoreInput(q: Partial<Quest> & Record<string, any>) {
     shoppingItems:      q.shoppingItems,
     shoppingStore:      q.shoppingStore,
     shoppingBudget:     q.shoppingBudget,
+    alertCall:            (q as any).alertCall,
+    alertCallLeadMinutes: (q as any).alertCallLeadMinutes,
   };
 }
 
@@ -206,17 +210,19 @@ export function useQuestStore() {
       return store.addChore(questInputToChoreInput(q as any) as any);
     },
 
-    submitQuest: (id: string, opts?: { note?: string; photoUrl?: string }) => {
+    // Returns false when choreStore.submitChore rejected it (recurring chore
+    // not due yet) — the GP/redo paths always succeed if reached.
+    submitQuest: (id: string, opts?: { note?: string; photoUrl?: string }): boolean => {
       const chore = store.chores.find(c => c.id === id);
       // A GP-sponsored quest is the grandparent's to review, not the parent's —
       // submitChore always routed to pending_approval (parent review deck)
       // regardless of category, so every GP quest submission was landing in
       // front of the wrong person.
-      if (chore?.categoryType === 'grandparent_quest') store.submitGrandparentQuest(id, opts);
+      if (chore?.categoryType === 'grandparent_quest') { store.submitGrandparentQuest(id, opts); return true; }
       // A parent decline maps to redo_requested in choreStore. Route the next
       // kid/teen submission through the dedicated resubmission transition.
-      else if (chore?.status === 'redo_requested') store.resubmitChore(id, opts);
-      else store.submitChore(id, opts);
+      else if (chore?.status === 'redo_requested') { store.resubmitChore(id, opts); return true; }
+      else return store.submitChore(id, opts);
     },
 
     approveQuest: (id: string, approverId: string) => {
@@ -241,6 +247,15 @@ export function useQuestStore() {
       if (updates.description   !== undefined) choreUpdates.description       = updates.description;
       if (updates.coins         !== undefined) { choreUpdates.basePoints = updates.coins; choreUpdates.coinsReward = updates.coins; }
       if (updates.dueDate       !== undefined) choreUpdates.dueDate           = updates.dueDate;
+      if (updates.dueTime       !== undefined) choreUpdates.dueTime           = updates.dueTime;
+      if (updates.alertCall            !== undefined) choreUpdates.alertCall            = updates.alertCall;
+      if (updates.alertCallLeadMinutes !== undefined) choreUpdates.alertCallLeadMinutes = updates.alertCallLeadMinutes;
+      // Only 'once'|'daily'|'weekly'|'monthly' map onto RecurrenceRule —
+      // 'weekdays'/'biweekly'/'custom' aren't offered by any recurrence
+      // picker UI today, so there's nothing to translate them from.
+      if (updates.recurrence && ['once', 'daily', 'weekly', 'monthly'].includes(updates.recurrence)) {
+        choreUpdates.recurrenceRule = { frequency: updates.recurrence as 'once' | 'daily' | 'weekly' | 'monthly' };
+      }
       if (updates.difficulty    !== undefined) choreUpdates.difficulty        = updates.difficulty;
       if (updates.photoRequired !== undefined) choreUpdates.requiresPhotoProof= updates.photoRequired;
       if (updates.assignedToId  !== undefined) choreUpdates.assignedToId      = updates.assignedToId;
@@ -292,6 +307,13 @@ useQuestStore.getState = () => {
       if (updates.maxClaimants   !== undefined) { /* no-op — pool managed by isPool flag */ }
       if (updates.bonusCoins     !== undefined) choreUpdates.bonusCoins    = updates.bonusCoins;
       if (updates.difficulty     !== undefined) choreUpdates.difficulty    = updates.difficulty;
+      if (updates.dueDate        !== undefined) choreUpdates.dueDate       = updates.dueDate;
+      if (updates.dueTime        !== undefined) choreUpdates.dueTime       = updates.dueTime;
+      if (updates.alertCall            !== undefined) choreUpdates.alertCall            = updates.alertCall;
+      if (updates.alertCallLeadMinutes !== undefined) choreUpdates.alertCallLeadMinutes = updates.alertCallLeadMinutes;
+      if (updates.recurrence && ['once', 'daily', 'weekly', 'monthly'].includes(updates.recurrence)) {
+        choreUpdates.recurrenceRule = { frequency: updates.recurrence as 'once' | 'daily' | 'weekly' | 'monthly' };
+      }
       if (updates.assignedToId   !== undefined) choreUpdates.assignedToId  = updates.assignedToId;
       if ((updates as any).isPool !== undefined) choreUpdates.isPool       = (updates as any).isPool;
       if ((updates as any).status !== undefined) {

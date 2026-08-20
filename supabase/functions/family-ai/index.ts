@@ -412,6 +412,21 @@ async function parentQa(body: Record<string, unknown>) {
   return { answer: text, sanitized };
 }
 
+async function healthQa(body: Record<string, unknown>) {
+  const { question, family } = body;
+  const sanitized = (question as string)
+    .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[EMAIL]')
+    .replace(/(\+\d{1,2}\s?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g, '[PHONE]');
+  const roster = Array.isArray(family)
+    ? (family as { name: string; role: string }[]).map(m => `${m.name} (${m.role})`).join(', ')
+    : '';
+  const prompt = `You are "Health AI", a cautious family-health information assistant — not a doctor. Family members: ${roster || 'unknown'}. Question: "${sanitized}".
+Answer in plain conversational text (no JSON, no markdown headers) using **bold** for key terms/labels and "- " bullet lines for lists, since the client renders those specially.
+Keep it concise (under ~150 words), general/informational only, and always end with a short reminder to consult a real healthcare provider for diagnosis or treatment decisions — especially for children or seniors. If the question describes a possible emergency (e.g. chest pain, difficulty breathing, severe allergic reaction, loss of consciousness), lead with telling them to call 911 or go to the ER immediately.`;
+  const text = await callAI(prompt, false);
+  return { answer: text, sanitized };
+}
+
 async function smartChores(body: Record<string, unknown>) {
   const { category, age } = body;
   const prompt = `Generate 3 age-appropriate chores for a child aged ${age} in category "${category}".
@@ -563,6 +578,7 @@ const ACTIONS: Record<string, (b: Record<string, unknown>) => Promise<unknown>> 
   reward_suggest:  rewardSuggest,
   chores_advice:   choresAdvice,
   parent_qa:       parentQa,
+  health_qa:       healthQa,
   smart_chores:    smartChores,
   grocery_ai:      groceryAi,
   extract_responsibility: extractResponsibility,

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Platform } from 'react-native';
 import { format } from 'date-fns';
 import { supabase } from '@/lib/supabase';
+import { resolveSpeechLocale } from '@/lib/units';
 
 export type VoiceState = 'idle' | 'listening' | 'processing' | 'done' | 'error';
 
@@ -179,7 +179,7 @@ export function useVoiceAppointment(onParsed: (fields: ParsedAppointment) => voi
     };
 
     try {
-      await Voice.start(Platform.OS === 'ios' ? 'en-US' : 'en-US');
+      await Voice.start(resolveSpeechLocale());
       setState('listening');
       // Auto-stop after 5 seconds
       autoStopRef.current = setTimeout(() => {

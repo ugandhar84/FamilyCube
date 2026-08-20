@@ -14,19 +14,17 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, FlatList, Pressable, StyleSheet, TextInput,
   KeyboardAvoidingView, Platform, Modal, Alert, Image, Animated, Clipboard,
-  PanResponder, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as DocumentPicker from 'expo-document-picker';
-import MapView, { Marker } from 'react-native-maps';
-import { useAudioRecorder, AudioModule, RecordingPresets, createAudioPlayer } from 'expo-audio';
+import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
 import {
-  Play, Pause, Trash2, Send, Square, CheckCheck, Search, X, XCircle,
-  ChevronDown, ChevronUp, CornerUpLeft, Copy, ShoppingCart, Pencil,
-  MessageSquare, Paperclip, Mic, Lock, ShieldCheck, Video, Plus,
-  Camera, Image as ImageIcon, MapPin, FileText, AudioLines, AlertTriangle,
+  Send, Search, X, XCircle,
+  ChevronDown, ChevronUp, CornerUpLeft, Pencil,
+  Paperclip, Mic, Lock, ShieldCheck, Video,
+  Camera, Image as ImageIcon, MapPin, FileText, AudioLines,
   type LucideIcon,
 } from 'lucide-react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -38,1130 +36,33 @@ import { useChatStore, ChatMessage } from '@/store/chatStore';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { checkProfanity } from '@/lib/contentModeration';
 import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
-import { useGroceryStore, GroceryCategory, GroceryStore } from '@/store/groceryStore';
+import { useGroceryStore } from '@/store/groceryStore';
 import { supabase } from '@/lib/supabase';
 import { RADIUS } from '@/constants/theme';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatTime(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-}
-function formatDay(iso: string) {
-  const d     = new Date(iso);
-  const today = new Date();
-  const yest  = new Date(); yest.setDate(today.getDate() - 1);
-  if (d.toDateString() === today.toDateString()) return 'Today';
-  if (d.toDateString() === yest.toDateString())  return 'Yesterday';
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function formatDuration(sec: number) {
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-// Matches colors.primary's light-mode value — these voice subcomponents
-// (VoiceNoteBubble/VoiceReviewBar/RecordingBar) don't receive the colors
-// object as a prop, so this stays a direct brand-purple constant rather
-// than threading colors through every one of them for this pass.
-const VOICE_COLOR     = '#9261C7';
-const QUICK_REACTIONS = ['❤️', '👍', '😋', '🙌', '🌟', '😂'];
-const GROUP_CHANNELS  = [
-  { id: 'all',     label: '#all-family',       isDM: false, lock: false },
-  { id: 'parents', label: '🔒 #parents-vault', isDM: false, lock: true },
-  { id: 'seniors', label: '👵 #seniors',       isDM: false, lock: false },
-];
-const GROCERY_CATS: GroceryCategory[]  = ['Produce','Dairy & Eggs','Bakery','Pantry','Frozen','Household','Snacks','Pharmacy','Pet Store','Other'];
-const GROCERY_STORES: GroceryStore[]   = ['Costco','Supermarket',"Trader Joe's",'Target','Pharmacy','Pet Store','Other'];
-
-// ─── Mention text renderer ────────────────────────────────────────────────────
-
-function highlightSearch(raw: string, query: string, baseStyle: any): React.ReactNode {
-  if (!query.trim()) return <Text style={baseStyle}>{raw}</Text>;
-  const q = query.toLowerCase();
-  const parts: React.ReactNode[] = [];
-  let cursor = 0;
-  let idx: number;
-  const lo = raw.toLowerCase();
-  while ((idx = lo.indexOf(q, cursor)) !== -1) {
-    if (idx > cursor) parts.push(<Text key={cursor}>{raw.slice(cursor, idx)}</Text>);
-    // colors isn't threaded into this pure-text utility — use the brand
-    // amber/navy hex directly rather than plumbing a theme param through
-    // every call site for a two-color search highlight.
-    parts.push(<Text key={idx} style={{ backgroundColor: '#F5A623', color: '#1E2D6B', fontWeight: '700' }}>{raw.slice(idx, idx + q.length)}</Text>);
-    cursor = idx + q.length;
-  }
-  if (cursor < raw.length) parts.push(<Text key={cursor}>{raw.slice(cursor)}</Text>);
-  return <Text style={baseStyle}>{parts}</Text>;
-}
-
-/** Strip markdown bold/italic asterisks and render @mentions inline. */
-function MentionText({ text, memberMap, myId, searchQuery, textStyle, numberOfLines, onTextLayout }: {
-  text: string; memberMap: Record<string, any>; myId: string; searchQuery?: string; textStyle: any;
-  numberOfLines?: number; onTextLayout?: (e: any) => void;
-}) {
-  // Split on mention tokens first, then strip * from plain segments
-  const parts = text.split(/(@\[[^\]]+\|[^\]]+\])/g);
-  return (
-    <Text style={textStyle} numberOfLines={numberOfLines} onTextLayout={onTextLayout}>
-      {parts.map((part, i) => {
-        const m = part.match(/^@\[([^\]]+)\|([^\]]+)\]$/);
-        if (m) {
-          const [, , id] = m;
-          const member = memberMap[id];
-          const isMe   = id === myId;
-          return (
-            <Text key={i} style={{ fontWeight: '800', color: isMe ? '#fbbf24' : '#a78bfa' }}>
-              @{member?.name?.split(' ')[0] ?? 'unknown'}
-            </Text>
-          );
-        }
-        // Render *bold* and _italic_ inline spans
-        const segments: React.ReactNode[] = [];
-        let remaining = part;
-        let si = 0;
-        const boldRe = /\*+([^*\n]+)\*+/g;
-        let bm: RegExpExecArray | null;
-        let lastIndex = 0;
-        boldRe.lastIndex = 0;
-        while ((bm = boldRe.exec(remaining)) !== null) {
-          if (bm.index > lastIndex) segments.push(<Text key={`${i}-${si++}`}>{remaining.slice(lastIndex, bm.index)}</Text>);
-          segments.push(<Text key={`${i}-${si++}`} style={{ fontWeight: '800' }}>{bm[1]}</Text>);
-          lastIndex = bm.index + bm[0].length;
-        }
-        if (lastIndex < remaining.length) segments.push(<Text key={`${i}-${si++}`}>{remaining.slice(lastIndex)}</Text>);
-        return <Text key={i}>{segments}</Text>;
-      })}
-    </Text>
-  );
-}
-
-// ─── Voice note bubble ────────────────────────────────────────────────────────
-
-// ─── Waveform helpers ─────────────────────────────────────────────────────────
-
-const WF_BARS = 36;
-const WF_H    = 36; // container height px
-
-/** Deterministic "fingerprint" waveform from a seed string (uri / msgId). */
-function seedWaveform(seed: string): number[] {
-  let h = 5381;
-  for (let i = 0; i < seed.length; i++) h = ((h << 5) + h + seed.charCodeAt(i)) & 0x7fffffff;
-  return Array.from({ length: WF_BARS }, (_, i) => {
-    const x   = i / WF_BARS;
-    const ph  = ((h >>> (i % 20)) & 0xff) / 255;
-    const raw = 0.08
-      + 0.42 * Math.abs(Math.sin(x * Math.PI * 5  + ph * Math.PI * 2))
-      + 0.28 * Math.abs(Math.sin(x * Math.PI * 9  + ph * Math.PI * 3.7))
-      + 0.14 * Math.abs(Math.sin(x * Math.PI * 14 + ph * Math.PI * 1.3));
-    return Math.min(1, raw);
-  });
-}
-
-// ─── Live waveform (recording / playing) — sine-physics at ~30fps ────────────
-
-function LiveWaveform({ active, color, trackColor, progress = 0 }: {
-  active: boolean; color: string; trackColor: string; progress?: number;
-}) {
-  const frameRef   = useRef(0);
-  const timerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [bars, setBars] = useState<number[]>(() =>
-    Array.from({ length: WF_BARS }, (_, i) => {
-      const x = i / WF_BARS;
-      return 0.08 + 0.18 * Math.abs(Math.sin(x * Math.PI * 4));
-    })
-  );
-
-  useEffect(() => {
-    if (!active) {
-      timerRef.current && clearInterval(timerRef.current);
-      // settle to quiet resting state
-      setBars(Array.from({ length: WF_BARS }, (_, i) => {
-        const x = i / WF_BARS;
-        return 0.08 + 0.14 * Math.abs(Math.sin(x * Math.PI * 5 + 0.4));
-      }));
-      return;
-    }
-    timerRef.current = setInterval(() => {
-      frameRef.current += 1;
-      const t = frameRef.current * 0.10;
-      setBars(Array.from({ length: WF_BARS }, (_, i) => {
-        const x   = i / WF_BARS;
-        const ph  = x * Math.PI * 2;
-        // Three overlapping sines → organic, non-repetitive wave
-        const raw = 0.10
-          + 0.38 * Math.abs(Math.sin(t * 1.9 + ph))
-          + 0.26 * Math.abs(Math.sin(t * 3.1 + ph * 1.6 + 0.9))
-          + 0.18 * Math.abs(Math.sin(t * 4.7 + ph * 0.7 + 1.8));
-        return Math.min(1, raw);
-      }));
-    }, 33); // ~30 fps
-    return () => { timerRef.current && clearInterval(timerRef.current); };
-  }, [active]);
-
-  const filledBars = Math.round(progress * WF_BARS);
-
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, height: WF_H, flex: 1 }}>
-      {bars.map((h, i) => (
-        <View
-          key={i}
-          style={{
-            width: 3,
-            height: Math.max(3, h * WF_H),
-            borderRadius: 2,
-            backgroundColor: i < filledBars ? color : trackColor,
-          }}
-        />
-      ))}
-    </View>
-  );
-}
-
-// ─── Static fingerprint waveform (playback) ───────────────────────────────────
-
-function FingerprintWaveform({ seed, progress, color, trackColor }: {
-  seed: string; progress: number; color: string; trackColor: string;
-}) {
-  const wf          = useRef(seedWaveform(seed)).current;
-  const filledBars  = Math.round(progress * WF_BARS);
-  // The bar at the playhead pulses slightly
-  const pulseAnim   = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    if (progress > 0 && progress < 1) {
-      Animated.loop(Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.25, duration: 280, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1,    duration: 280, useNativeDriver: true }),
-      ])).start();
-    } else {
-      pulseAnim.stopAnimation(() => pulseAnim.setValue(1));
-    }
-  }, [progress > 0 && progress < 1]);
-
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, height: WF_H, flex: 1 }}>
-      {wf.map((h, i) => {
-        const isHead = i === filledBars;
-        const barH   = Math.max(3, h * WF_H);
-        if (isHead) {
-          return (
-            <Animated.View key={i} style={{ width: 3, height: barH, borderRadius: 2,
-              backgroundColor: color, transform: [{ scaleY: pulseAnim }] }} />
-          );
-        }
-        return (
-          <View key={i} style={{ width: 3, height: barH, borderRadius: 2,
-            backgroundColor: i < filledBars ? color : trackColor }} />
-        );
-      })}
-    </View>
-  );
-}
-
-// ─── Voice note bubble (in chat) ─────────────────────────────────────────────
-
-function VoiceNoteBubble({ uri, msgId, duration, isMine, colors }: {
-  uri: string; msgId: string; duration: number; isMine: boolean; colors: any;
-}) {
-  const [playing, setPlaying]   = useState(false);
-  const [progress, setProgress] = useState(0);
-  const playerRef = useRef<ReturnType<typeof createAudioPlayer> | null>(null);
-  const tickRef   = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const toggle = useCallback(async () => {
-    if (playing) {
-      playerRef.current?.pause();
-      if (tickRef.current) clearInterval(tickRef.current);
-      setPlaying(false);
-      return;
-    }
-    // Switch audio session to playback mode so it works after a recording session
-    try { await AudioModule.setAudioModeAsync({ playsInSilentMode: true, allowsRecording: false }); } catch {}
-    playerRef.current?.remove();
-    playerRef.current = createAudioPlayer({ uri });
-    playerRef.current.play();
-    setProgress(0);
-    setPlaying(true);
-    tickRef.current = setInterval(() => {
-      const pos = playerRef.current?.currentTime ?? 0;
-      const dur = duration > 0 ? duration : 1;
-      setProgress(pos / dur);
-      if (pos >= dur - 0.15) {
-        if (tickRef.current) clearInterval(tickRef.current);
-        setPlaying(false); setProgress(0);
-      }
-    }, 80);
-  }, [playing, uri, duration]);
-
-  useEffect(() => () => {
-    if (tickRef.current) clearInterval(tickRef.current);
-    playerRef.current?.remove();
-  }, []);
-
-  const color      = isMine ? '#fff' : VOICE_COLOR;
-  const trackColor = isMine ? 'rgba(255,255,255,0.28)' : VOICE_COLOR + '30';
-  const elapsed    = playing ? progress * duration : duration;
-
-  return (
-    <Pressable onPress={toggle}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 2, paddingVertical: 4, minWidth: 200 }}>
-      {/* Play / pause button */}
-      <View style={{ width: 36, height: 36, borderRadius: 18,
-        backgroundColor: isMine ? 'rgba(255,255,255,0.18)' : VOICE_COLOR + '22',
-        alignItems: 'center', justifyContent: 'center' }}>
-        {playing ? <Pause size={18} color={color} /> : <Play size={18} color={color} />}
-      </View>
-      {/* Waveform — live while playing, static fingerprint otherwise */}
-      {playing
-        ? <LiveWaveform active color={color} trackColor={trackColor} progress={progress} />
-        : <FingerprintWaveform seed={msgId || uri} progress={progress} color={color} trackColor={trackColor} />
-      }
-      {/* Duration */}
-      <Text style={{ fontSize: 11, color: isMine ? 'rgba(255,255,255,0.8)' : colors.textSecondary,
-        minWidth: 34, textAlign: 'right', fontVariant: ['tabular-nums'] }}>
-        {formatDuration(elapsed)}
-      </Text>
-    </Pressable>
-  );
-}
-
-// ─── Voice review bar (after recording, before sending) ───────────────────────
-
-function VoiceReviewBar({ uri, duration, isDark, onSend, onDiscard }: {
-  uri: string; duration: number; isDark: boolean; onSend: () => void; onDiscard: () => void;
-}) {
-  // colors.card / colors.primary + alpha, inlined per isDark since this
-  // component doesn't receive the theme object as a prop.
-  const bg     = isDark ? '#1E2640' : '#F0E8FA';
-  const border = isDark ? '#B98EDB55' : '#9261C755';
-  const [playing, setPlaying]   = useState(false);
-  const [progress, setProgress] = useState(0);
-  const playerRef = useRef<ReturnType<typeof createAudioPlayer> | null>(null);
-  const tickRef   = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const toggle = useCallback(async () => {
-    if (playing) {
-      playerRef.current?.pause();
-      if (tickRef.current) clearInterval(tickRef.current);
-      setPlaying(false);
-      return;
-    }
-    playerRef.current?.remove();
-    playerRef.current = createAudioPlayer({ uri });
-    playerRef.current.play();
-    setProgress(0);
-    setPlaying(true);
-    tickRef.current = setInterval(() => {
-      const pos = playerRef.current?.currentTime ?? 0;
-      setProgress(pos / (duration || 1));
-      if (pos >= duration - 0.1) {
-        if (tickRef.current) clearInterval(tickRef.current);
-        setPlaying(false); setProgress(0);
-      }
-    }, 80);
-  }, [playing, uri, duration]);
-
-  useEffect(() => () => {
-    if (tickRef.current) clearInterval(tickRef.current);
-    playerRef.current?.remove();
-  }, []);
-
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12,
-      backgroundColor: bg, borderTopWidth: 1, borderTopColor: border, gap: 10 }}>
-      {/* Discard */}
-      <Pressable onPress={onDiscard} style={{ width: 36, height: 36, borderRadius: 18,
-        backgroundColor: '#EF444420', alignItems: 'center', justifyContent: 'center' }}>
-        <Trash2 size={19} color="#EF4444" />
-      </Pressable>
-      {/* Play/pause */}
-      <Pressable onPress={toggle} style={{ width: 36, height: 36, borderRadius: 18,
-        backgroundColor: VOICE_COLOR + '22', alignItems: 'center', justifyContent: 'center' }}>
-        {playing ? <Pause size={18} color={VOICE_COLOR} /> : <Play size={18} color={VOICE_COLOR} />}
-      </Pressable>
-      {/* Waveform */}
-      {playing
-        ? <LiveWaveform active color={VOICE_COLOR} trackColor={isDark ? '#4C1D9055' : '#DDD6FE'} progress={progress} />
-        : <FingerprintWaveform seed={uri} progress={progress} color={VOICE_COLOR} trackColor={isDark ? '#4C1D9055' : '#DDD6FE'} />
-      }
-      {/* Time */}
-      <Text style={{ fontSize: 12, fontWeight: '600', color: VOICE_COLOR, minWidth: 34, fontVariant: ['tabular-nums'] }}>
-        {formatDuration(playing ? progress * duration : duration)}
-      </Text>
-      {/* Send */}
-      <Pressable onPress={onSend} style={{ width: 40, height: 40, borderRadius: 20,
-        backgroundColor: VOICE_COLOR, alignItems: 'center', justifyContent: 'center',
-        shadowColor: VOICE_COLOR, shadowOpacity: 0.4, shadowRadius: 8, elevation: 4 }}>
-        <Send size={16} color="#fff" />
-      </Pressable>
-    </View>
-  );
-}
-
-// ─── Active recording bar ─────────────────────────────────────────────────────
-
-function RecordingBar({ elapsed, isDark, onStop }: {
-  elapsed: number; isDark: boolean; onStop: () => void;
-}) {
-  const bg     = isDark ? '#0f0a1e' : '#fff0f0';
-  const border = isDark ? '#7f1d1d' : '#fecaca';
-  const MAX    = 10;
-  // Blink the red dot
-  const blinkAnim = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(blinkAnim, { toValue: 0.2, duration: 500, useNativeDriver: true }),
-      Animated.timing(blinkAnim, { toValue: 1,   duration: 500, useNativeDriver: true }),
-    ]));
-    loop.start();
-    return () => loop.stop();
-  }, []);
-
-  const remaining = MAX - elapsed;
-  const showCountdown = remaining <= 3;
-
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12,
-      backgroundColor: bg, borderTopWidth: 1, borderTopColor: border, gap: 10 }}>
-      {/* Blinking REC dot */}
-      <Animated.View style={{ width: 10, height: 10, borderRadius: 5,
-        backgroundColor: '#EF4444', opacity: blinkAnim }} />
-      {/* Elapsed */}
-      <Text style={{ fontSize: 13, fontWeight: '800', color: '#EF4444', minWidth: 38, fontVariant: ['tabular-nums'] }}>
-        {formatDuration(elapsed)}
-      </Text>
-      {/* Live sine waveform — red */}
-      <LiveWaveform active color='#EF4444' trackColor={isDark ? '#7f1d1d55' : '#fca5a555'} />
-      {/* Countdown warning */}
-      {showCountdown && (
-        <Text style={{ fontSize: 12, fontWeight: '700', color: '#b91c1c', minWidth: 24 }}>
-          -{Math.ceil(remaining)}s
-        </Text>
-      )}
-      {/* Stop button */}
-      <Pressable onPress={onStop}
-        style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#EF4444',
-          alignItems: 'center', justifyContent: 'center',
-          shadowColor: '#EF4444', shadowOpacity: 0.5, shadowRadius: 8, elevation: 4 }}>
-        <Square size={16} color="#fff" fill="#fff" />
-      </Pressable>
-    </View>
-  );
-}
-
-// ─── Swipeable message bubble ─────────────────────────────────────────────────
-// Right swipe → reply (snappy: fires at 56px, snaps back instantly)
-// Left swipe  → reveal timestamp (capped at -52px, snaps back on release)
-
-const SWIPE_REPLY_THRESHOLD = 56;
-const SWIPE_MAX_RIGHT       = 72;
-const SWIPE_MAX_LEFT        = -52;
-
-function SwipeableBubble({ children, onSwipeRight, timeNode }: {
-  children: React.ReactNode; onSwipeRight: () => void; timeNode: React.ReactNode;
-}) {
-  const translateX  = useRef(new Animated.Value(0)).current;
-  const firedRef    = useRef(false);
-  const activeRef   = useRef(false);
-
-  const snapBack = () =>
-    Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 40, bounciness: 0 }).start();
-
-  const panResponder = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: () => false,
-    onMoveShouldSetPanResponder: (_, g) =>
-      Math.abs(g.dx) > 6 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
-
-    onPanResponderGrant: () => {
-      firedRef.current  = false;
-      activeRef.current = true;
-      translateX.stopAnimation();
-    },
-
-    onPanResponderMove: (_, g) => {
-      if (!activeRef.current) return;
-      if (g.dx > 0) {
-        // Right swipe — apply sqrt damping so it feels resistive past threshold
-        const capped = Math.min(g.dx, SWIPE_MAX_RIGHT);
-        const damped = capped < SWIPE_REPLY_THRESHOLD
-          ? capped
-          : SWIPE_REPLY_THRESHOLD + Math.sqrt(capped - SWIPE_REPLY_THRESHOLD) * 3;
-        translateX.setValue(Math.min(damped, SWIPE_MAX_RIGHT));
-
-        // Fire reply the instant threshold is crossed (haptic feel)
-        if (g.dx >= SWIPE_REPLY_THRESHOLD && !firedRef.current) {
-          firedRef.current = true;
-          onSwipeRight();
-        }
-      } else {
-        // Left swipe — reveal timestamp, hard cap
-        translateX.setValue(Math.max(g.dx, SWIPE_MAX_LEFT));
-      }
-    },
-
-    onPanResponderRelease: () => {
-      activeRef.current = false;
-      snapBack();
-    },
-    onPanResponderTerminate: () => {
-      activeRef.current = false;
-      snapBack();
-    },
-  })).current;
-
-  // time pill opacity/slide driven by left-swipe (negative translateX)
-  const timeOpacity = translateX.interpolate({ inputRange: [SWIPE_MAX_LEFT, -12, 0], outputRange: [1, 0.4, 0], extrapolate: 'clamp' });
-  const timeSlide   = translateX.interpolate({ inputRange: [SWIPE_MAX_LEFT, 0], outputRange: [0, 14], extrapolate: 'clamp' });
-
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <Animated.View style={{ transform: [{ translateX }], flex: 1 }} {...panResponder.panHandlers}>
-        {children}
-      </Animated.View>
-      {/* Timestamp revealed on left-swipe */}
-      <Animated.View style={{ position: 'absolute', right: 4, opacity: timeOpacity, transform: [{ translateX: timeSlide }], pointerEvents: 'none' }}>
-        {timeNode}
-      </Animated.View>
-    </View>
-  );
-}
-
-// ─── Collapsible text (10-line cap with Show more / Show less) ───────────────
-
-const COLLAPSE_LINES = 10;
-
-function CollapsibleText({ text, memberMap, myId, searchQuery, isMe, bubbleMeTxt, bubbleOtherTxt }: {
-  text: string; memberMap: Record<string, any>; myId: string; searchQuery?: string;
-  isMe: boolean; bubbleMeTxt: string; bubbleOtherTxt: string;
-}) {
-  const [collapsed, setCollapsed] = useState(true);
-  const [needsCollapse, setNeedsCollapse] = useState(false);
-  const txtColor = isMe ? bubbleMeTxt : bubbleOtherTxt;
-  const txtStyle = { fontSize: 15, lineHeight: 22, letterSpacing: 0.1, fontWeight: '400' as const, color: txtColor };
-
-  return (
-    <View>
-      <MentionText
-        text={text}
-        memberMap={memberMap}
-        myId={myId}
-        searchQuery={searchQuery}
-        textStyle={txtStyle}
-        numberOfLines={needsCollapse && collapsed ? COLLAPSE_LINES : undefined}
-        onTextLayout={(e: any) => {
-          if (!needsCollapse && e.nativeEvent.lines.length > COLLAPSE_LINES) setNeedsCollapse(true);
-        }}
-      />
-      {needsCollapse && (
-        <Pressable onPress={() => setCollapsed(v => !v)} hitSlop={8}>
-          <Text style={{ fontSize: 13, fontWeight: '700', marginTop: 4,
-            color: isMe ? 'rgba(255,255,255,0.75)' : '#9261C7' }}>
-            {collapsed ? 'Show more ▾' : 'Show less ▴'}
-          </Text>
-        </Pressable>
-      )}
-    </View>
-  );
-}
-
-// ─── Message bubble (WhatsApp style — rounded rect with tail) ────────────────
-
-const BUBBLE_R  = 16; // standard corners — matches Ask Cube's bubble radius
-const BUBBLE_SM = 4;  // tail corner (last in group)
-
-// Automated broadcast alerts (En Route pings, missed-pickup warnings, etc.)
-// are plain text with no severity field in ChatMessage/the DB — rather than
-// a schema change, senders prefix the text with one of these emoji markers
-// and the bubble picks up a matching tint. Order matters: check the more
-// urgent marker first since a message could theoretically start with either.
-const ALERT_MARKERS: { prefix: string; tint: 'danger' | 'warning' | 'success' }[] = [
-  { prefix: '🚨', tint: 'danger' },   // e.g. "Pickup not confirmed yet"
-  { prefix: '⚠️', tint: 'warning' },  // e.g. running late, needs attention
-  { prefix: '🚗', tint: 'success' },  // routine En Route / trip broadcast
-];
-
-function detectAlertTint(text: string): 'danger' | 'warning' | 'success' | null {
-  const marker = ALERT_MARKERS.find(m => text.startsWith(m.prefix));
-  return marker?.tint ?? null;
-}
-
-// ─── Shared card (read-only meal/event/quest share from Ask Cube) ─────────
-
-const SHARE_KIND_META: Record<string, { label: string; icon: string; accentKey: string }> = {
-  meal:   { label: 'Meal',   icon: '🍽️', accentKey: 'amber' },
-  event:  { label: 'Event',  icon: '📅', accentKey: 'primary' },
-  quest:  { label: 'Quest',  icon: '✅', accentKey: 'kid' },
-};
-
-function SharedCardBubble({ payload, colors, onLongPress, onPress }: { payload: any; colors: any; onLongPress: () => void; onPress?: () => void }) {
-  const kind = payload?.kind ?? 'meal';
-  const meta = SHARE_KIND_META[kind] ?? SHARE_KIND_META.meal;
-  const accent = colors[meta.accentKey] ?? colors.primary;
-  const d = payload?.data ?? {};
-
-  return (
-    <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={350}
-      style={{ width: 260, backgroundColor: colors.card, borderRadius: 16,
-        borderWidth: 1.5, borderColor: accent + '40', overflow: 'hidden' }}>
-      {(d.imageUrl || d.emoji) && (
-        <View style={{ height: 90, backgroundColor: accent + '18', alignItems: 'center', justifyContent: 'center' }}>
-          {d.imageUrl
-            ? <Image source={{ uri: d.imageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-            : <Text style={{ fontSize: 44 }}>{d.emoji}</Text>}
-        </View>
-      )}
-      <View style={{ padding: 12, gap: 6 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <Text style={{ fontSize: 13 }}>{meta.icon}</Text>
-          <Text style={{ fontSize: 10, fontWeight: '800', color: accent, textTransform: 'uppercase', letterSpacing: 0.5 }}>{meta.label}</Text>
-        </View>
-        <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }} numberOfLines={2}>{d.title}</Text>
-        {(d.day || d.mealType || d.startAt) && (
-          <Text style={{ fontSize: 11, color: colors.textSecondary }}>
-            {d.day ? `${d.day}${d.mealType ? ` · ${d.mealType}` : ''}` : new Date(d.startAt).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-          </Text>
-        )}
-      </View>
-    </Pressable>
-  );
-}
-
-function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, senderEmoji,
-  senderColor, activeMemberId, memberMap, searchQuery, colors, isDark, highlighted, isParent,
-  onLongPress, onDoubleTap, onSwipeRight, onQuoteTap, onOpenImage, onOpenVideo, onOpenSharedCard }: {
-  msg: ChatMessage; isMe: boolean; isGroupFirst: boolean; isGroupLast: boolean;
-  senderName: string; senderEmoji: string; senderColor: string;
-  activeMemberId: string; memberMap: Record<string, any>;
-  highlighted?: boolean;
-  isParent?: boolean;
-  onQuoteTap?: () => void;
-  onOpenImage?: (uri: string) => void;
-  onOpenVideo?: (uri: string) => void;
-  onOpenSharedCard?: (payload: any) => void;
-  searchQuery: string; colors: any; isDark: boolean;
-  onLongPress: () => void; onDoubleTap: () => void; onSwipeRight: () => void;
-}) {
-  const alertTint = detectAlertTint(msg.text);
-  const alertColor = alertTint === 'danger' ? colors.danger : alertTint === 'warning' ? colors.warning : alertTint === 'success' ? colors.success : null;
-
-  const bubbleMe       = colors.primary;
-  const bubbleMeTxt    = '#FFFFFF';
-  const bubbleOther    = alertColor ? (isDark ? alertColor + '20' : alertColor + '12') : colors.card;
-  const bubbleOtherTxt = colors.textPrimary;
-  const tsColor        = isMe ? 'rgba(255,255,255,0.65)' : colors.textTertiary;
-
-  const totalRx = Object.values(msg.reactions ?? {}).flat().length;
-  const isVoice = !!msg.voiceUri && !msg.text;
-
-  const lastTap = useRef(0);
-  const handlePress = () => {
-    const now = Date.now();
-    if (now - lastTap.current < 300) onDoubleTap();
-    lastTap.current = now;
-  };
-
-  // Amber highlight animation when tapping a quoted message
-  const highlightAnim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (highlighted) {
-      highlightAnim.setValue(1);
-      Animated.timing(highlightAnim, { toValue: 0, duration: 1800, useNativeDriver: false }).start();
-    }
-  }, [highlighted]);
-  const highlightBorder = highlightAnim.interpolate({ inputRange: [0, 1], outputRange: ['transparent', '#F5A623'] });
-  const highlightWidth  = highlightAnim.interpolate({ inputRange: [0, 0.05, 1], outputRange: [0, 2, 2] });
-
-  // Flat corner on the chat-side tip (last bubble in group)
-  const btlr = isMe ? BUBBLE_R : (isGroupFirst ? BUBBLE_SM : BUBBLE_R);
-  const btrr = isMe ? (isGroupFirst ? BUBBLE_SM : BUBBLE_R) : BUBBLE_R;
-  const bblr = BUBBLE_R;
-  const bbrr = BUBBLE_R;
-
-  // Timestamp + tick — inline at bottom-right of bubble (WhatsApp style)
-  const metaRow = (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3,
-      alignSelf: 'flex-end', marginTop: 4, marginBottom: -2 }}>
-      {/* Parent-only — the AI moderation pass (layer 2) flags tone issues
-          silently; the message stays visible to everyone as sent, only
-          parents see this small indicator, never a public callout. */}
-      {isParent && msg.moderationFlag && (
-        <Pressable
-          onPress={() => Alert.alert('Flagged for review', msg.moderationFlag!.reason || 'This message was flagged by AI moderation.')}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <AlertTriangle size={11} color={colors.danger} style={{ marginRight: 2 }} />
-        </Pressable>
-      )}
-      {msg.edited && <Text style={{ fontSize: 9, color: tsColor }}>edited · </Text>}
-      <Text style={{ fontSize: 10, color: tsColor }}>{formatTime(msg.timestamp)}</Text>
-      {isMe && <CheckCheck size={13} color={isDark ? '#53BDEB' : '#34B7F1'} />}
-    </View>
-  );
-
-  const swipeTimeNode = (
-    <View style={{ backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 10,
-      paddingHorizontal: 7, paddingVertical: 2 }}>
-      <Text style={{ fontSize: 10, color: '#fff', fontWeight: '600' }}>{formatTime(msg.timestamp)}</Text>
-    </View>
-  );
-
-  // Structured share (meal/event/quest from Ask Cube) — a read-only card,
-  // not the normal colored text bubble. Kept outside SwipeableBubble (no
-  // reply-swipe on a card) but keeps the same avatar/sender-name row so it
-  // still reads as part of the conversation flow.
-  if (msg.systemEvent?.type === 'shared_card') {
-    return (
-      <View style={{ flexDirection: isMe ? 'row-reverse' : 'row',
-        alignItems: 'flex-end', gap: 6, paddingHorizontal: 10,
-        marginBottom: isGroupLast ? 14 : 3, marginTop: isGroupFirst ? 8 : 0 }}>
-        {!isMe && (
-          isGroupLast
-            ? <View style={[mb.avatar, { backgroundColor: senderColor }]}>
-                <Text style={{ fontSize: senderEmoji && senderEmoji !== '👤' ? 16 : 13, color: '#fff', fontWeight: '700' }}>
-                  {senderEmoji && senderEmoji !== '👤' ? senderEmoji : senderName[0]?.toUpperCase()}
-                </Text>
-              </View>
-            : <View style={{ width: 34 }} />
-        )}
-        <View style={{ maxWidth: '82%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 2 }}>
-          {!isMe && isGroupFirst && (
-            <Text style={{ fontSize: 11, fontWeight: '800', color: senderColor, marginLeft: 4, marginBottom: 1 }}>{senderName}</Text>
-          )}
-          <SharedCardBubble payload={msg.systemEvent.payload} colors={colors} onLongPress={onLongPress}
-            onPress={() => onOpenSharedCard?.(msg.systemEvent!.payload)} />
-          {metaRow}
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <SwipeableBubble onSwipeRight={onSwipeRight} timeNode={swipeTimeNode}>
-      <View style={{ flexDirection: isMe ? 'row-reverse' : 'row',
-        alignItems: 'flex-end', gap: 6, paddingHorizontal: 10,
-        marginBottom: isGroupLast ? 14 : 3, marginTop: isGroupFirst ? 8 : 0 }}>
-
-        {/* Avatar — shown only on last bubble of group for others */}
-        {!isMe && (
-          isGroupLast
-            ? <View style={[mb.avatar, { backgroundColor: senderColor }]}>
-                <Text style={{ fontSize: senderEmoji && senderEmoji !== '👤' ? 16 : 13,
-                  color: '#fff', fontWeight: '700' }}>
-                  {senderEmoji && senderEmoji !== '👤' ? senderEmoji : senderName[0]?.toUpperCase()}
-                </Text>
-              </View>
-            : <View style={{ width: 34 }} />
-        )}
-
-        <Animated.View style={{ maxWidth: '78%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 2,
-          borderRadius: BUBBLE_R, borderWidth: highlightWidth, borderColor: highlightBorder }}>
-          {/* Sender name — above bubble, outside */}
-          {!isMe && isGroupFirst && (
-            <Text style={{ fontSize: 11, fontWeight: '800', color: senderColor, marginLeft: 4, marginBottom: 1 }}>
-              {senderName}
-            </Text>
-          )}
-
-          {/* Bubble */}
-          <Pressable
-            onPress={handlePress}
-            onLongPress={onLongPress}
-            delayLongPress={350}
-            style={{
-              backgroundColor: isMe ? bubbleMe : bubbleOther,
-              borderTopLeftRadius: btlr,
-              borderTopRightRadius: btrr,
-              borderBottomLeftRadius: bblr,
-              borderBottomRightRadius: bbrr,
-              borderWidth: isMe ? 0 : 1,
-              borderColor: alertColor ? alertColor + '50' : colors.border,
-              overflow: 'hidden',
-              padding: isVoice ? 8 : 11,
-              minWidth: msg.replyTo ? 220 : undefined,
-            }}
-          >
-            {/* Reply quote — WhatsApp inset card */}
-            {msg.replyTo && (
-              <Pressable onPress={onQuoteTap}
-                style={{
-                  flexDirection: 'row',
-                  borderRadius: 10,
-                  overflow: 'hidden',
-                  marginBottom: 8,
-                  // Outgoing: a translucent white tint pops against the solid
-                  // primary bubble; incoming: colors.surface against the card.
-                  backgroundColor: isMe ? 'rgba(255,255,255,0.16)' : colors.surface,
-                }}>
-                {/* Accent strip — sender colour */}
-                <View style={{ width: 3, backgroundColor: senderColor }} />
-                <View style={{ flex: 1, paddingHorizontal: 9, paddingVertical: 7 }}>
-                  <Text style={{ fontSize: 11, fontWeight: '800', marginBottom: 2,
-                    color: senderColor }}>
-                    {memberMap[msg.replyTo.senderId]?.name?.split(' ')[0] ?? 'Family'}
-                  </Text>
-                  <Text numberOfLines={2} style={{ fontSize: 12, lineHeight: 16,
-                    color: isMe ? 'rgba(255,255,255,0.85)' : colors.textSecondary }}>
-                    {msg.replyTo.text || '🎙️ Voice note'}
-                  </Text>
-                </View>
-              </Pressable>
-            )}
-
-            {/* Sender name — shown outside/above bubble on first in group */}
-            {!isMe && isGroupFirst && false && null}
-
-            {/* Voice note */}
-            {isVoice && msg.voiceUri ? (
-              <VoiceNoteBubble uri={msg.voiceUri} msgId={msg.id} duration={msg.voiceDuration ?? 0} isMine={isMe} colors={colors} />
-            ) : isVoice ? (
-              <Text style={{ fontSize: 14, color: isMe ? bubbleMeTxt : bubbleOtherTxt }}>
-                🎙️ Voice note ({Math.round(msg.voiceDuration ?? 0)}s)
-              </Text>
-            ) : (
-              <>
-                {/* Location pin */}
-                {msg.locationPin && (
-                  <Pressable
-                    onPress={() => {
-                      const { lat, lng, address } = msg.locationPin!;
-                      const label = encodeURIComponent(address);
-                      const appleUrl  = `maps:0,0?q=${label}&ll=${lat},${lng}`;
-                      const googleUrl = `comgooglemaps://?q=${label}&center=${lat},${lng}`;
-                      const webUrl    = `https://maps.google.com/?q=${lat},${lng}`;
-                      Linking.canOpenURL(googleUrl)
-                        .then(can => Linking.openURL(can ? googleUrl : appleUrl))
-                        .catch(() => Linking.openURL(webUrl));
-                    }}
-                    style={{ borderRadius: 12, overflow: 'hidden', width: 230, marginHorizontal: -2 }}>
-                    {/* Map snapshot — non-interactive, tap handled by outer Pressable */}
-                    <MapView
-                      style={{ width: 230, height: 140 }}
-                      initialRegion={{ latitude: msg.locationPin.lat, longitude: msg.locationPin.lng, latitudeDelta: 0.004, longitudeDelta: 0.004 }}
-                      scrollEnabled={false} zoomEnabled={false}
-                      pitchEnabled={false} rotateEnabled={false}
-                      pointerEvents="none"
-                      legalLabelInsets={{ top: 0, left: 0, bottom: -999, right: -999 }}
-                    >
-                      <Marker coordinate={{ latitude: msg.locationPin.lat, longitude: msg.locationPin.lng }} />
-                    </MapView>
-                    {/* Address footer */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
-                      paddingHorizontal: 10, paddingVertical: 8,
-                      backgroundColor: isMe ? 'rgba(0,0,0,0.28)' : colors.surface }}>
-                      <MapPin size={13} color={isMe ? '#fff' : colors.primary} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 12, fontWeight: '700',
-                          color: isMe ? '#fff' : colors.textPrimary }} numberOfLines={1}>
-                          {msg.locationPin.address}
-                        </Text>
-                        <Text style={{ fontSize: 10, color: isMe ? 'rgba(255,255,255,0.55)' : colors.textTertiary }}>
-                          Tap to open in Maps
-                        </Text>
-                      </View>
-                    </View>
-                  </Pressable>
-                )}
-                {/* Document attachment */}
-                {msg.documentUri && (
-                  <Pressable onPress={() => Linking.openURL(msg.documentUri!)}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-                    backgroundColor: isMe ? 'rgba(0,0,0,0.2)' : colors.surface,
-                    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, maxWidth: 220 }}>
-                    <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: colors.amber + '22',
-                      alignItems: 'center', justifyContent: 'center' }}>
-                      <FileText size={20} color={colors.amber} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: isMe ? '#fff' : colors.textPrimary }} numberOfLines={2}>
-                        {msg.documentName ?? 'Document'}
-                      </Text>
-                      <Text style={{ fontSize: 10, color: isMe ? 'rgba(255,255,255,0.6)' : colors.textTertiary }}>
-                        Tap to open
-                      </Text>
-                    </View>
-                  </Pressable>
-                )}
-                {/* Image / video */}
-                {msg.imageUri && (
-                  <Pressable
-                    onPress={() => msg.mediaType === 'video' ? onOpenVideo?.(msg.imageUri!) : onOpenImage?.(msg.imageUri!)}
-                    style={{ marginBottom: msg.text ? 6 : 0, borderRadius: 12, overflow: 'hidden' }}>
-                    <Image source={{ uri: msg.imageUri }} style={{ width: 210, height: 158 }} resizeMode="cover" />
-                    {msg.mediaType === 'video' && (
-                      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,
-                        alignItems: 'center', justifyContent: 'center' }}>
-                        <View style={{ backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 24, padding: 10 }}>
-                          <Play size={22} color="#fff" fill="#fff" />
-                        </View>
-                      </View>
-                    )}
-                  </Pressable>
-                )}
-                {/* Text — collapse after 10 lines */}
-                {!!msg.text && (
-                  <CollapsibleText
-                    text={msg.text}
-                    memberMap={memberMap}
-                    myId={activeMemberId}
-                    searchQuery={searchQuery}
-                    isMe={isMe}
-                    bubbleMeTxt={bubbleMeTxt}
-                    bubbleOtherTxt={bubbleOtherTxt}
-                  />
-                )}
-              </>
-            )}
-            {/* Time + tick — inside bubble, bottom-right (WhatsApp style) */}
-            {metaRow}
-          </Pressable>
-
-          {/* Reaction chips */}
-          {totalRx > 0 && (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 3, marginTop: 3 }}>
-              {Object.entries(msg.reactions ?? {}).map(([emoji, ids]) =>
-                ids.length > 0 ? (
-                  <View key={emoji} style={[mb.rxChip, {
-                    backgroundColor: ids.includes(activeMemberId) ? colors.primaryLight : colors.surface,
-                    borderColor: ids.includes(activeMemberId) ? colors.primary : 'transparent',
-                  }]}>
-                    <Text style={{ fontSize: 13 }}>{emoji}</Text>
-                    {ids.length > 1 && (
-                      <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '700' }}>{ids.length}</Text>
-                    )}
-                  </View>
-                ) : null
-              )}
-            </View>
-          )}
-        </Animated.View>
-      </View>
-    </SwipeableBubble>
-  );
-}
-
-const mb = StyleSheet.create({
-  avatar:  { width: 34, height: 34, borderRadius: 17, borderWidth: 1.5,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  rxChip:  { flexDirection: 'row', alignItems: 'center', gap: 3,
-    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 12, borderWidth: 1 },
-});
-
-// ─── Long-press action sheet ──────────────────────────────────────────────────
-
-function MessageActionSheet({ visible, msg, isMe, canEdit, colors, isDark, onClose,
-  onReact, onReply, onCopy, onEdit, onDelete, onAddGrocery }: {
-  visible: boolean; msg: ChatMessage | null; isMe: boolean; canEdit: boolean; colors: any; isDark: boolean;
-  onClose: () => void; onReact: (e: string) => void; onReply: () => void;
-  onCopy: () => void; onEdit: () => void; onDelete: () => void; onAddGrocery: () => void;
-}) {
-  if (!msg) return null;
-
-  type Action = { Icon: LucideIcon; label: string; color: string; onPress: () => void };
-  const actions: Action[] = [
-    { Icon: CornerUpLeft,  label: 'Reply',        color: colors.primary,       onPress: onReply },
-    { Icon: Copy,          label: 'Copy Text',    color: colors.textSecondary, onPress: onCopy },
-    { Icon: ShoppingCart,  label: 'Add to List',  color: '#10b981',            onPress: onAddGrocery },
-    ...(isMe && canEdit ? [
-      { Icon: Pencil,      label: 'Edit',         color: '#f59e0b',            onPress: onEdit },
-    ] : []),
-    ...(isMe ? [
-      { Icon: Trash2,      label: 'Delete',       color: '#ef4444',            onPress: onDelete },
-    ] : []),
-  ];
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={onClose}>
-        <Pressable onPress={() => {}} style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 40 }}>
-
-          {/* Quick emoji reactions */}
-          <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginBottom: 18 }}>
-            {QUICK_REACTIONS.map(e => (
-              <Pressable key={e} onPress={() => { onReact(e); onClose(); }}
-                style={{ width: 46, height: 46, borderRadius: 23,
-                  backgroundColor: colors.surface,
-                  borderWidth: 1, borderColor: colors.border,
-                  alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 24 }}>{e}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginBottom: 12 }} />
-
-          {/* Action rows */}
-          {actions.map((a, i) => (
-            <Pressable key={i} onPress={() => { a.onPress(); onClose(); }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 13, paddingHorizontal: 8, borderRadius: 12 }}>
-              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: a.color+'22',
-                alignItems: 'center', justifyContent: 'center' }}>
-                <a.Icon size={18} color={a.color} />
-              </View>
-              <Text style={{ fontSize: 15, fontWeight: '600', color: a.color }}>{a.label}</Text>
-            </Pressable>
-          ))}
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
-// ─── Grocery modal ────────────────────────────────────────────────────────────
-
-function GroceryModal({ visible, initialName, addedByMemberId, onClose, onAdd }: {
-  visible: boolean; initialName: string; addedByMemberId: string;
-  onClose: () => void; onAdd: (item: any) => void;
-}) {
-  const { colors } = useTheme();
-  const [name,  setName]  = useState(initialName);
-  const [qty,   setQty]   = useState('1');
-  const [cat,   setCat]   = useState<GroceryCategory>('Household');
-  const [store, setStore] = useState<GroceryStore>('Costco');
-  const [price, setPrice] = useState('5.99');
-  useEffect(() => { if (visible) setName(initialName); }, [visible, initialName]);
-  const submit = () => {
-    if (!name.trim()) return;
-    onAdd({ name: name.trim(), quantity: qty, category: cat, store, estimatedPrice: parseFloat(price)||5, addedByMemberId });
-    onClose();
-  };
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' }}>
-        <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, gap: 16 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <ShoppingCart size={20} color="#10b981" />
-              <Text style={{ fontSize: 17, fontWeight: '800', color: colors.textPrimary }}>Add to Shopping List</Text>
-            </View>
-            <Pressable onPress={onClose}><X size={20} color={colors.textSecondary} /></Pressable>
-          </View>
-          <View>
-            <Text style={gm.label(colors)}>Item Name</Text>
-            <TextInput style={gm.input(colors)} value={name} onChangeText={setName} autoFocus />
-          </View>
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={gm.label(colors)}>Quantity</Text>
-              <TextInput style={gm.input(colors)} value={qty} onChangeText={setQty} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={gm.label(colors)}>Est. Price ($)</Text>
-              <TextInput style={gm.input(colors)} value={price} onChangeText={setPrice} keyboardType="numeric" />
-            </View>
-          </View>
-          <View>
-            <Text style={gm.label(colors)}>Category</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-              {GROCERY_CATS.map(c => (
-                <Pressable key={c} onPress={() => setCat(c)}
-                  style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1.5,
-                    backgroundColor: cat===c ? '#10b98120' : colors.surface, borderColor: cat===c ? '#10b981' : colors.border }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: cat===c ? '#10b981' : colors.textSecondary }}>{c}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-          <View>
-            <Text style={gm.label(colors)}>Store</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-              {GROCERY_STORES.map(s => (
-                <Pressable key={s} onPress={() => setStore(s)}
-                  style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1.5,
-                    backgroundColor: store===s ? colors.primaryLight : colors.surface, borderColor: store===s ? colors.primary : colors.border }}>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: store===s ? colors.primary : colors.textSecondary }}>{s}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-          <View style={{ flexDirection: 'row', gap: 10, justifyContent: 'flex-end' }}>
-            <Pressable onPress={onClose} style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.surface }}>
-              <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancel</Text>
-            </Pressable>
-            <Pressable onPress={submit} style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: '#10b981', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Plus size={16} color="#fff" />
-              <Text style={{ color: '#fff', fontWeight: '800' }}>Save to List</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-const gm = {
-  label: (c: any) => ({ fontSize: 11, fontWeight: '700' as const, color: c.textSecondary, textTransform: 'uppercase' as const, letterSpacing: 0.4, marginBottom: 6 }),
-  input: (c: any) => ({ backgroundColor: c.surface, borderRadius: 10, borderWidth: 1, borderColor: c.border, padding: 10, fontSize: 14, color: c.textPrimary }),
-};
-
-// ─── Sidebar ──────────────────────────────────────────────────────────────────
-
-function Sidebar({ colors, isDark, channelId, setChannelId, members, currentMemberId, isParent, onClose }: {
-  colors: any; isDark: boolean; channelId: string; setChannelId: (id: string) => void;
-  members: any[]; currentMemberId: string; isParent: boolean; onClose: () => void;
-}) {
-  const bg       = isDark ? '#0f172a' : '#1e1b4b';
-  const headerBg = isDark ? '#1e293b' : '#312e81';
-  const active   = isDark ? '#4f46e5' : '#4338ca';
-  return (
-    <View style={{ width: 220, backgroundColor: bg, position: 'absolute', top: 0, bottom: 0, left: 0, zIndex: 50 }}>
-      <View style={{ backgroundColor: headerBg, paddingHorizontal: 14, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text style={{ fontSize: 14, fontWeight: '800', color: '#e2e8f0' }}>💬 Family Chat</Text>
-        <Pressable onPress={onClose} style={{ padding: 4 }}><X size={18} color="#818cf8" /></Pressable>
-      </View>
-      <View style={{ flex: 1, paddingHorizontal: 10, paddingTop: 14 }}>
-        <Text style={{ fontSize: 10, fontWeight: '700', color: '#818cf8', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Channels</Text>
-        {GROUP_CHANNELS.map(ch => {
-          if (ch.lock && !isParent) return null;
-          const isAct = channelId === ch.id;
-          return (
-            <Pressable key={ch.id} onPress={() => { setChannelId(ch.id); onClose(); }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 9, borderRadius: 10, marginBottom: 2, backgroundColor: isAct ? active : 'transparent' }}>
-              <MessageSquare size={14} color={isAct ? '#fff' : '#818cf8'} />
-              <Text style={{ fontSize: 13, fontWeight: isAct ? '700' : '500', color: isAct ? '#fff' : '#e2e8f0' }}>{ch.label}</Text>
-            </Pressable>
-          );
-        })}
-        <View style={{ height: 1, backgroundColor: '#1e3a8a', marginVertical: 14 }} />
-        <Text style={{ fontSize: 10, fontWeight: '700', color: '#818cf8', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Direct Messages</Text>
-        {members.filter(m => m.id !== currentMemberId).map(m => {
-          const isAct = channelId === m.id;
-          return (
-            <Pressable key={m.id} onPress={() => { setChannelId(m.id); onClose(); }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, marginBottom: 2, backgroundColor: isAct ? '#4f46e5' : 'transparent' }}>
-              <Text style={{ fontSize: 18 }}>{m.emoji ?? '👤'}</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 13, fontWeight: '600', color: isAct ? '#fff' : '#e2e8f0' }} numberOfLines={1}>{m.name.split(' ')[0]}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 }}>
-                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#10b981' }} />
-                  <Text style={{ fontSize: 9, color: '#818cf8' }}>Online</Text>
-                </View>
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
-      <View style={{ margin: 10, padding: 10, backgroundColor: isDark ? '#1e293b' : '#312e81', borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <ShieldCheck size={16} color="#10b981" />
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 11, fontWeight: '700', color: '#10b981' }}>E2E Encrypted</Text>
-          <Text style={{ fontSize: 10, color: '#818cf8' }}>AES-256-GCM · passcode-wrapped key</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
+import { MessageBubble } from './components/MessageBubble';
+import { MessageActionSheet } from './components/MessageActionSheet';
+import { GroceryModal } from './components/GroceryModal';
+import { RecordingBar, VoiceReviewBar } from './components/VoiceComponents';
+import { formatDay, QUICK_REACTIONS, buildGroupChannels } from './components/constants';
+import { s } from './components/styles';
+import { loadPinnedChannels, savePinnedChannels, sortChannelIds } from '@/lib/chatChannelOrder';
+import { Pin, PinOff } from 'lucide-react-native';
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function ChatScreen() {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, loaded, loadFromStorage } = useFamilyStore();
-  const { channels, loadChannel, sendMessage, addReaction, deleteMessage } = useChatStore();
+  const {
+    channels, loadChannel, sendMessage, addReaction, deleteMessage,
+    lastActivity, loadLastActivity, unreadCounts, loadUnreadCounts, markChannelRead,
+    readReceipts, loadReadReceipts, markMessagesRead,
+  } = useChatStore();
   const { addItem: addGrocery } = useGroceryStore();
 
   const [channelId, setChannelId]         = useState('all');
+  const [pinnedChannels, setPinnedChannels] = useState<string[]>([]);
   const [text, setText]                   = useState('');
   // Dictation into the text box — distinct from the separate voice-NOTE mic
   // (Mic icon, outside the input pill, records+sends an audio attachment).
@@ -1212,6 +113,7 @@ export default function ChatScreen() {
   const searchAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
+  useEffect(() => { loadPinnedChannels().then(setPinnedChannels); }, []);
   useEffect(() => { loadChannel(channelId); }, [channelId]);
   // Inverted FlatList starts at bottom — no scroll-to-end needed.
   // Only reset scroll position on channel switch.
@@ -1231,21 +133,75 @@ export default function ChatScreen() {
   const memberMap    = Object.fromEntries(members.map(m => [m.id, m]));
   const activeMember = members.find(m => m.id === activeMemberId);
   const isParent     = activeMember?.role === 'parent';
+  const isSenior     = activeMember?.role === 'senior';
   const kids         = members.filter(m => m.role !== 'parent');
 
+  // #all-family is no longer visible/postable to grandparents — they now
+  // have their own maternal/paternal + combined Grand Squad channels
+  // instead. The strip auto-sorts by most-recent-message so active
+  // conversations surface without manual scrolling; a pin (tap the pin
+  // icon while a channel is open) is the only manual override, always
+  // sorting first regardless of activity. DM tabs stay appended after
+  // group channels, in member order.
+  const rawGroupChannels = buildGroupChannels(members)
+    .filter(ch => ch.id !== 'all' || !isSenior)
+    .filter(ch => !(ch as any).seniorOnly || isSenior || isParent);
+  const groupChannels = sortChannelIds(rawGroupChannels.map(ch => ch.id), pinnedChannels, lastActivity)
+    .map(id => rawGroupChannels.find(ch => ch.id === id))
+    .filter((ch): ch is NonNullable<typeof ch> => !!ch);
+
   const allChannels = [
-    ...GROUP_CHANNELS,
+    ...groupChannels,
     ...kids.map(k => ({ id: k.id, label: `💬 ${k.name.split(' ')[0]}`, isDM: true, lock: false })),
   ];
-  const FULL_LABELS: Record<string, string> = {
-    all: '#all-family', parents: '🔒 #parents-vault', seniors: '👵 #seniors',
-  };
+  const FULL_LABELS: Record<string, string> = Object.fromEntries(groupChannels.map(ch => [ch.id, ch.label]));
   const channelLabel = FULL_LABELS[channelId] ?? `💬 ${memberMap[channelId]?.name?.split(' ')[0] ?? ''}`;
+
+  // A senior landing on the default 'all' channel (e.g. fresh login) gets
+  // bounced to the combined Grand Squad channel instead, since #all-family
+  // is no longer visible/postable to grandparents.
+  useEffect(() => {
+    if (channelId === 'all' && isSenior) setChannelId('seniors_all');
+  }, [isSenior]);
+
+  // One cheap query for last-activity + unread counts across every channel
+  // this member can see, so the strip can sort/badge correctly even for
+  // tabs never opened yet.
+  useEffect(() => {
+    const ids = allChannels.map(ch => ch.id);
+    if (ids.length > 0 && activeMemberId) {
+      loadLastActivity(ids);
+      loadUnreadCounts(ids, activeMemberId);
+    }
+  }, [members.length, isSenior, activeMemberId]);
+
+  // Opening a channel clears its own badge immediately (optimistic) and
+  // bumps the read cursor server-side.
+  useEffect(() => {
+    if (activeMemberId) markChannelRead(channelId, activeMemberId);
+  }, [channelId, activeMemberId]);
+
+  const isPinned = pinnedChannels.includes(channelId);
+  const togglePin = () => {
+    const next = isPinned ? pinnedChannels.filter(id => id !== channelId) : [...pinnedChannels, channelId];
+    setPinnedChannels(next);
+    savePinnedChannels(next);
+  };
 
   const rawMsgs = channels[channelId]?.messages ?? [];
   const msgs    = searchQuery.trim()
     ? rawMsgs.filter(m => m.text.toLowerCase().includes(searchQuery.toLowerCase()))
     : rawMsgs;
+
+  // Mark incoming messages as read once they're actually loaded/rendered
+  // for this channel — also fires when a new realtime message arrives
+  // while the channel stays open (rawMsgs.length changes).
+  useEffect(() => {
+    if (!activeMemberId || rawMsgs.length === 0) return;
+    const unread = rawMsgs.filter(m => m.senderId !== activeMemberId).map(m => m.id);
+    if (unread.length > 0) markMessagesRead(channelId, unread, activeMemberId);
+    loadReadReceipts(channelId, rawMsgs.map(m => m.id));
+  }, [channelId, rawMsgs.length, activeMemberId]);
 
   type DayGroup = { type: 'day'; label: string } | { type: 'msg'; msg: ChatMessage };
   const items: DayGroup[] = [];
@@ -1472,10 +428,12 @@ export default function ChatScreen() {
         {/* ── Channel strip ── */}
         <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 }}>
           <View style={[s.strip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 2, paddingHorizontal: 2 }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 2, paddingHorizontal: 2, alignItems: 'center' }}>
               {allChannels.map(ch => {
                 if ((ch as any).lock && !isParent) return null;
                 const act = channelId === ch.id;
+                const pinned = !(ch as any).isDM && pinnedChannels.includes(ch.id);
+                const unread = act ? 0 : (unreadCounts[ch.id] ?? 0);
                 return (
                   <Pressable key={ch.id} onPress={() => setChannelId(ch.id)}
                     style={[s.channelBtn, { backgroundColor: act ? ((ch as any).isDM ? colors.primary : colors.card) : 'transparent' }]}>
@@ -1485,9 +443,16 @@ export default function ChatScreen() {
                           backgroundColor: '#22c55e',
                           borderWidth: 1.5, borderColor: act ? colors.primary : colors.surface }} />
                       )}
+                      {pinned && <Pin size={10} color={act ? '#fff' : colors.textTertiary} fill={act ? '#fff' : colors.textTertiary} />}
                       <Text style={{ fontSize: 13, fontWeight: '700', color: act ? ((ch as any).isDM ? '#fff' : colors.textPrimary) : colors.textTertiary }}>
                         {ch.label}
                       </Text>
+                      {unread > 0 && (
+                        <View style={{ minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 4,
+                          backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ fontSize: 9, fontWeight: '800', color: '#fff' }}>{unread > 99 ? '99+' : unread}</Text>
+                        </View>
+                      )}
                     </View>
                   </Pressable>
                 );
@@ -1544,6 +509,13 @@ export default function ChatScreen() {
             </View>
           )}
         </View>
+
+        {groupChannels.some(ch => ch.id === channelId) && (
+          <Pressable onPress={togglePin}
+            style={[s.iconBtn, { backgroundColor: isPinned ? colors.primaryLight : colors.surface, borderColor: isPinned ? colors.primary : colors.border }]}>
+            {isPinned ? <PinOff size={15} color={colors.primary} /> : <Pin size={15} color={colors.textSecondary} />}
+          </Pressable>
+        )}
 
         <Pressable onPress={() => setSearchOpen(v => !v)}
           style={[s.iconBtn, { backgroundColor: searchOpen ? colors.primaryLight : colors.surface, borderColor: searchOpen ? colors.primary : colors.border }]}>
@@ -1672,6 +644,11 @@ export default function ChatScreen() {
                     isParent={isParent}
                     colors={colors} isDark={isDark}
                     highlighted={highlightedMsgId === msg.id}
+                    // Only my own messages in a GROUP channel show the reader
+                    // avatar stack — a DM's single recipient is already implied
+                    // by the double-tick, so the stack would just be clutter.
+                    readers={isMe && !(allChannels.find(c => c.id === channelId) as any)?.isDM
+                      ? (readReceipts[msg.id] ?? []).filter(id => id !== activeMemberId) : []}
                     onLongPress={() => setActionMsg(msg)}
                     onDoubleTap={() => setQuickEmojiFor(msg)}
                     onSwipeRight={() => { setReplyingTo(msg); inputRef.current?.focus(); }}
@@ -1949,29 +926,3 @@ export default function ChatScreen() {
     </SafeAreaView>
   );
 }
-
-const s = StyleSheet.create({
-  strip:      { borderRadius: 14, borderWidth: 1, padding: 4 },
-  channelBtn: { paddingHorizontal: 13, paddingVertical: 7, borderRadius: 10 },
-  iconBtn:    { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, height: 42, marginBottom: 6 },
-  dayRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 10 },
-  dayLine:    { flex: 1, height: StyleSheet.hairlineWidth },
-  dayLabel:   { fontSize: 11, fontWeight: '600', paddingHorizontal: 8 },
-  mentionBox: { position: 'absolute', bottom: 70, left: 12, right: 12, borderRadius: 14, borderWidth: 1, overflow: 'hidden',
-    shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 10, elevation: 50, zIndex: 100 },
-  inputBar:   { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 10, paddingTop: 8,
-    paddingBottom: Platform.OS === 'ios' ? 22 : 10, gap: 7, borderTopWidth: StyleSheet.hairlineWidth },
-  inputBubble:{ flex: 1, flexDirection: 'row', alignItems: 'flex-end', borderRadius: 20, borderWidth: 1,
-    paddingHorizontal: 13, paddingVertical: 5 },
-  // single line (minHeight ~36) → grows to 5 lines (~21px lineHeight × 5 = 105) then scrolls
-  input:      { flex: 1, fontSize: 14.5, lineHeight: 21, minHeight: 36, maxHeight: 111,
-    paddingVertical: Platform.OS === 'ios' ? 8 : 4, textAlignVertical: 'top' },
-  actionBtn:  { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end' },
-  sendBtn:    { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end' },
-  bareIconBtn:{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end' },
-  attachMenu: { flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 8, paddingVertical: 12, borderTopWidth: 1 },
-  attachItem: { alignItems: 'center', gap: 6, flex: 1 },
-  attachIcon: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  attachLabel:{ fontSize: 11, fontWeight: '700' },
-});

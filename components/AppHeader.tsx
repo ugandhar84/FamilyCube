@@ -205,7 +205,7 @@ export default function AppHeader({
 
   return (
     <View style={{ position: 'relative', zIndex: 30 }}>
-    <View style={[s.bar, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+    <View style={[s.bar, { backgroundColor: colors.background }]}>
 
       {/* LEFT: persona header (two-line: name+mode, family+switch) — the
           animated cube mark used to live here; it's reserved for loading
@@ -290,7 +290,6 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   left: {
     flexDirection: 'row',

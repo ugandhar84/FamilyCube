@@ -75,9 +75,21 @@ export interface FamilyEvent {
   updatedBy?: string;
   updatedAt?: string;
   deletedBy?: string;
+
+  // Call-style reminder — opt-in per event, same pattern as ChoreTask.
+  // Fires a ringing (CallKit) alert to memberId/memberIds this many minutes
+  // before `time`. 0 = "on time".
+  alertCall?: boolean;
+  alertCallLeadMinutes?: number;
 }
 
 export type StripMap = Record<string, string[]>;   // date → unique category[]
+
+// One lightweight row per event, kept alongside stripMap so the month
+// grid's dots can be re-filtered per member entirely client-side (no
+// re-fetch) when the "All Family / Alex / Maya / ..." chip changes —
+// stripMap itself stays family-wide/unfiltered as the base data.
+export interface StripRow { date: string; category: string; memberId?: string; helper?: string; driverName?: string; }
 
 // ── Cache entry ───────────────────────────────────────────────────────────────
 interface DayCacheEntry {
@@ -97,6 +109,7 @@ interface EventState {
 
   // Strip
   stripMap:     StripMap;
+  stripRows:    StripRow[];
   stripLoading: boolean;
 
   // In-memory SWR cache (date → entry)
@@ -214,6 +227,8 @@ export function fromRow(row: any): FamilyEvent {
     updatedBy:              row.updated_by ?? undefined,
     updatedAt:              row.updated_at ?? undefined,
     deletedBy:              row.deleted_by ?? undefined,
+    alertCall:              row.alert_call ?? false,
+    alertCallLeadMinutes:   row.alert_call_lead_minutes ?? 10,
   };
 }
 
@@ -259,6 +274,8 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     updated_by:                 ev.updatedBy ?? null,
     updated_at:                 ev.updatedAt ?? null,
     deleted_by:                 ev.deletedBy ?? null,
+    alert_call:                 ev.alertCall ?? false,
+    alert_call_lead_minutes:    ev.alertCallLeadMinutes ?? 10,
   };
 }
 
@@ -297,10 +314,10 @@ function ensureRealtime(
         // ── Strip map update ───────────────────────────────────────────────
         if (rowDate) {
           if (payload.eventType === 'DELETE' || isDeleted) {
-            // Re-query that date's categories (cheap: date + category only)
+            // Re-query that date's rows (still lightweight — 5 narrow columns)
             supabase
               .from('calendar_events')
-              .select('category')
+              .select('category,member_id,helper_name,driver_name')
               .eq('family_id', familyId)
               .eq('date', rowDate)
               .is('deleted_at', null)
@@ -308,12 +325,24 @@ function ensureRealtime(
                 if (!data) return;
                 const cats = [...new Set(data.map((r: any) => r.category).filter(Boolean))];
                 const next = { ...getState().stripMap, [rowDate]: cats };
-                setState({ stripMap: next });
+                const rows: StripRow[] = data.map((r: any) => ({
+                  date: rowDate, category: r.category, memberId: r.member_id ?? undefined,
+                  helper: r.helper_name ?? undefined, driverName: r.driver_name ?? undefined,
+                }));
+                const nextRows = getState().stripRows.filter(r => r.date !== rowDate).concat(rows);
+                setState({ stripMap: next, stripRows: nextRows });
                 AsyncStorage.setItem(DISK_STRIP, JSON.stringify(next));
               });
-          } else if (cat && !stripMap[rowDate]?.includes(cat)) {
-            const next = { ...stripMap, [rowDate]: [...(stripMap[rowDate] ?? []), cat] };
-            setState({ stripMap: next });
+          } else if (cat) {
+            const next = stripMap[rowDate]?.includes(cat)
+              ? stripMap
+              : { ...stripMap, [rowDate]: [...(stripMap[rowDate] ?? []), cat] };
+            const newRowEntry: StripRow = {
+              date: rowDate, category: cat, memberId: newRow?.member_id ?? undefined,
+              helper: newRow?.helper_name ?? undefined, driverName: newRow?.driver_name ?? undefined,
+            };
+            const nextRows = [...getState().stripRows, newRowEntry];
+            setState({ stripMap: next, stripRows: nextRows });
             AsyncStorage.setItem(DISK_STRIP, JSON.stringify(next));
           }
         }
@@ -437,6 +466,7 @@ export const useEventStore = create<EventState>((set, get) => ({
   dayLoading:  false,
   hasMore:     false,
   stripMap:    {},
+  stripRows:   [],
   stripLoading: false,
   _dayCache:   {},
   rangeEvents:  [],
@@ -567,9 +597,15 @@ export const useEventStore = create<EventState>((set, get) => ({
       const familyId = getFamilyId();
       if (!familyId) { set({ stripLoading: false }); return; }
 
+      // member_id/helper_name/driver_name added (still a lightweight query,
+      // just 3 more narrow columns) so the month grid can filter its dots
+      // per member client-side — previously this only carried date+category,
+      // so switching the "All Family / Alex / Maya / ..." chip never
+      // affected which days showed dots at all, even when the filtered
+      // member had zero events that day.
       const { data, error } = await supabase
         .from('calendar_events')
-        .select('date,category')        // only 2 columns — minimal payload
+        .select('date,category,member_id,helper_name,driver_name')
         .eq('family_id', familyId)
         .gte('date', from)
         .lte('date', to)
@@ -578,12 +614,19 @@ export const useEventStore = create<EventState>((set, get) => ({
       if (error || !data) { set({ stripLoading: false }); return; }
 
       const map: StripMap = {};
+      const rows: StripRow[] = [];
       for (const row of data) {
         const d = String(row.date).slice(0, 10);
         const c = row.category as string;
         if (!c || !d) continue;
         if (!map[d]) map[d] = [];
         if (!map[d].includes(c)) map[d].push(c);
+        rows.push({
+          date: d, category: c,
+          memberId: (row as any).member_id ?? undefined,
+          helper: (row as any).helper_name ?? undefined,
+          driverName: (row as any).driver_name ?? undefined,
+        });
       }
       // Every date in [from, to] is authoritatively refreshed by this fetch
       // — start from the old map, but explicitly clear each date in range
@@ -593,7 +636,8 @@ export const useEventStore = create<EventState>((set, get) => ({
       const next = { ...get().stripMap };
       for (const d of dates) delete next[d];
       Object.assign(next, map);
-      set({ stripMap: next, stripLoading: false, _stripFetchedAt: Date.now() } as any);
+      const nextRows = get().stripRows.filter(r => !dates.includes(r.date)).concat(rows);
+      set({ stripMap: next, stripRows: nextRows, stripLoading: false, _stripFetchedAt: Date.now() } as any);
       AsyncStorage.setItem(DISK_STRIP, JSON.stringify(next));
     } catch (e) {
       console.warn('[eventStore] loadStrip failed', e);
@@ -704,8 +748,12 @@ export const useEventStore = create<EventState>((set, get) => ({
       const sm = { ...get().stripMap };
       if (!sm[event.date]?.includes(cat)) {
         sm[event.date] = [...(sm[event.date] ?? []), cat];
-        set({ stripMap: sm });
       }
+      const stripRows = [...get().stripRows, {
+        date: event.date, category: cat, memberId: event.memberId,
+        helper: event.helper, driverName: event.driverName,
+      }];
+      set({ stripMap: sm, stripRows });
     }
 
     supabase.from('calendar_events').insert([toRow(event)]).then(({ error }) => {
@@ -763,6 +811,10 @@ export const useEventStore = create<EventState>((set, get) => ({
         set({ stripMap: sm });
         AsyncStorage.setItem(DISK_STRIP, JSON.stringify(sm));
       }
+      // Drop this event's row from stripRows too — otherwise a deleted
+      // event keeps producing a per-member dot forever.
+      set({ stripRows: get().stripRows.filter(r =>
+        !(r.date === ev.date && r.category === ev.category && r.memberId === ev.memberId)) });
     }
   },
 }));

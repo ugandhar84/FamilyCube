@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { resolveSpeechLocale } from '@/lib/units';
 
 // Plain speech-to-text capture — no AI classification step, unlike
 // useVoiceIntake (which always routes the transcript through family-ai's
@@ -12,6 +13,11 @@ const MAX_RECORDING_MS = 60_000;
 // UI purposes (e.g. enabling Send) — NOT a stop timer. Recognition keeps
 // running the whole time the mic is on; a mid-sentence pause under a few
 // seconds is completely normal and must not truncate the transcript.
+// Deliberately generous — a native English speaker rarely needs it, but a
+// non-native speaker, someone composing a longer thought, or anyone with a
+// speech difference commonly pauses well past 2s mid-sentence. This value
+// only enables the Send button (see silenceReady below); it never
+// auto-sends anything itself.
 const SILENCE_READY_MS = 2_000;
 
 export function useVoiceDictation(onSilenceReady?: (transcript: string) => void) {
@@ -83,9 +89,11 @@ export function useVoiceDictation(onSilenceReady?: (transcript: string) => void)
     // recognizer is still willing to keep listening — restart immediately
     // rather than dropping into 'idle' (which would silently stop capturing
     // words mid-sentence, the exact "cutting off" symptom).
+    const speechLocale = resolveSpeechLocale();
+
     Voice.onSpeechEnd = () => {
       if (autoStopRef.current === null) return; // start() already tore this down via stop()
-      Voice.start('en-US').catch(() => {});
+      Voice.start(speechLocale).catch(() => {});
     };
     Voice.onSpeechError = (e: any) => {
       const msg: string = e?.error?.message ?? e?.error?.code ?? '';
@@ -93,7 +101,7 @@ export function useVoiceDictation(onSilenceReady?: (transcript: string) => void)
       if (benign) {
         // Restart on a benign timeout/no-speech error instead of stopping —
         // same reasoning as onSpeechEnd above.
-        if (autoStopRef.current !== null) Voice.start('en-US').catch(() => {});
+        if (autoStopRef.current !== null) Voice.start(speechLocale).catch(() => {});
         return;
       }
       setError(msg || 'Speech recognition failed.');
@@ -101,7 +109,7 @@ export function useVoiceDictation(onSilenceReady?: (transcript: string) => void)
     };
 
     try {
-      await Voice.start('en-US');
+      await Voice.start(speechLocale);
       setState('listening');
       autoStopRef.current = setTimeout(() => { Voice?.stop?.().catch(() => {}); autoStopRef.current = null; setState('idle'); }, MAX_RECORDING_MS);
       armSilenceTimer(); // also catches "never said anything at all"

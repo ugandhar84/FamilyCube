@@ -12,9 +12,8 @@ import React, { useState, useMemo } from 'react';
 import {
   View, Text, Pressable, ScrollView,
 } from 'react-native';
-import { router } from 'expo-router';
 import { Clock, Briefcase, CheckCircle2 } from 'lucide-react-native';
-import { SectionCard } from './hubComponents';
+import { SectionCard, LiveDot } from './hubComponents';
 import { TimelineCard } from './hubComponents';
 import { TYPO, LETTER_SPACING } from '@/constants/theme';
 import { useFamilyStore, type FamilyMember } from '@/store/familyStore';
@@ -173,7 +172,6 @@ export function TodayView({
         subtitle={now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
         accent={colors.primary}
         badge={upcoming.length} badgeLabel={upcoming.length === 1 ? 'Event' : 'Events'} badgeColor={colors.primary}
-        seeAll={() => router.push('/(tabs)/calendar')} seeAllLabel="Full schedule →"
         collapsible defaultExpanded={todayEvents.length > 1}
         colors={colors} isDark={isDark}>
         <View style={{ gap: 8 }}>
@@ -195,17 +193,9 @@ export function TodayView({
             </View>
           )}
           {todayEvents.length === 0 ? (
-            <View style={{
-              flexDirection: 'row', alignItems: 'center', gap: 8,
-              backgroundColor: isDark ? colors.card : '#fff', borderRadius: 14,
-              borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
-              paddingVertical: 12, paddingHorizontal: 14,
-            }}>
-              <Text style={{ fontSize: 16 }}>✨</Text>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '600', color: colors.textTertiary }}>
-                Nothing on the calendar today — enjoy the breathing room.
-              </Text>
-            </View>
+            <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
+              Nothing on the calendar today — enjoy the breathing room.
+            </Text>
           ) : (
             <>
               {upcoming.length === 0 ? (
@@ -215,17 +205,38 @@ export function TodayView({
                     All done for today
                   </Text>
                 </View>
-              ) : upcoming.map((ev, idx) => (
-                <TimelineCard
-                  key={ev.id} ev={ev} members={members} allNames={allNames}
-                  colors={colors} isDark={isDark}
-                  updateEvent={updateEvent} activeName={activeMember.name}
-                  isFirst={idx === 0} isLast={idx === upcoming.length - 1}
-                  conflictReason={conflictReasons?.get(ev.id)}
-                />
-              ))}
+              ) : (
+                <>
+                  {/* "Live now" marker — where "now" falls in today's
+                      schedule, sitting above the next upcoming event. */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <View style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 6,
+                      backgroundColor: colors.success + '18', borderRadius: 20,
+                      paddingVertical: 5, paddingHorizontal: 10,
+                    }}>
+                      <LiveDot color={colors.success} />
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: colors.success, letterSpacing: 0.3 }}>
+                        LIVE NOW · {now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1, height: 1, backgroundColor: colors.success + '30' }} />
+                  </View>
+                  {upcoming.map((ev, idx) => (
+                    <TimelineCard
+                      key={ev.id} ev={ev} members={members} allNames={allNames}
+                      colors={colors} isDark={isDark}
+                      updateEvent={updateEvent} activeName={activeMember.name}
+                      isFirst={idx === 0} isLast={idx === upcoming.length - 1}
+                      conflictReason={conflictReasons?.get(ev.id)}
+                    />
+                  ))}
+                </>
+              )}
 
-              {past.length > 0 && (
+              {/* Completed events stay tucked away once there's something
+                  still ahead today — only surfaced once nothing's upcoming. */}
+              {past.length > 0 && upcoming.length === 0 && (
                 <>
                   <Pressable
                     onPress={() => setShowPast(v => !v)}

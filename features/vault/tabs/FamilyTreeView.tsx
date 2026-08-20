@@ -1,203 +1,149 @@
 /**
- * FamilyTreeView — generational tree layout for the roster, modeled on a
- * standard family-tree diagram: each couple joined by a short horizontal
- * line, a vertical drop from their midpoint to a bar spanning their
- * children, then a vertical drop into each child. Three rows: grandparents
- * (grouped/paired under whichever parent they're linked to, via
- * members.linked_parent_id), parents (joined as a couple if there are
- * exactly two), and kids (shared by both parents — never split by lineage).
- *
- * Positions are computed once as plain x-coordinates (not flexbox guesses)
- * so the connector lines in TreeConnectors line up exactly under the nodes
- * they connect, the same way the reference diagram does.
+ * FamilyTreeView — card-grid family visualization, grouped by generation:
+ * Grandparents split into Paternal/Maternal columns (via each GP's
+ * linked_parent_id — whichever parent they're linked to determines their
+ * side; unlinked GPs get their own column so they're never dropped),
+ * Parents shown side by side, Kids/Teens in a 3-across grid. Replaces the
+ * old connector-line diagram with plain cards — clearer at this scale and
+ * far less brittle than hand-computed x/y connector math.
  */
-import { View, Text, ScrollView } from 'react-native';
-import { TreeNode, NODE_W, NODE_GAP } from './TreeNode';
-import { CoupleLine, GenerationLinks, GENERATION_GAP, lineColor } from './TreeConnectors';
+import { View, Text } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Heart } from 'lucide-react-native';
+import { MemberCard } from './MemberCard';
 import type { FamilyMember } from '@/store/familyStore';
 
-const COUPLE_GAP = 40; // horizontal gap between two people in a couple / between family clusters
-// Actual node content (56px avatar + 2 margin + ~14 name line + 2 margin +
-// ~12 icon row) runs to about 86px — 88 gives it a couple px of real
-// breathing room instead of the near-zero clearance that let the
-// GENERATION_GAP connector visually overlap the avatar below/above it.
-const NODE_ROW_HEIGHT = 88;
-
-interface Placed { m: FamilyMember; x: number }
-
-// Lays out a list of members left-to-right starting at `startX`, returning
-// their center-x positions and the total width consumed.
-function layoutRow(members: FamilyMember[], startX: number, gap = NODE_GAP): { placed: Placed[]; width: number } {
-  const placed: Placed[] = [];
-  let x = startX;
-  members.forEach((m, i) => {
-    placed.push({ m, x: x + NODE_W / 2 });
-    x += NODE_W + gap;
-  });
-  return { placed, width: members.length > 0 ? x - gap - startX : 0 };
+function GenGroup({ label, colors, children }: { label: string; colors: any; children: React.ReactNode }) {
+  return (
+    <View style={{ gap: 8 }}>
+      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+        {label}
+      </Text>
+      {children}
+    </View>
+  );
 }
 
-export function FamilyTreeView({ members, activeMemberId, isParent, colors, isDark, onEdit, onPin }: {
+// Small vertical gradient bar between generation groups — a lighter echo
+// of the mock's connector-line dividers, without resurrecting the old
+// hand-computed x/y coordinate math to draw exact node-to-node lines.
+// `align` positions it under whichever column actually has content on both
+// sides of the seam (e.g. Mary → Priya, both in the right column) instead
+// of always sitting dead-center regardless of where the cards really are.
+function GenDivider({ from, to, align = 'center' }: { from: string; to: string; align?: 'left' | 'center' | 'right' }) {
+  return (
+    <View style={{ flexDirection: 'row', justifyContent: align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center', paddingHorizontal: '25%' }}>
+      <LinearGradient colors={[from, to]} style={{ width: 2, height: 16, borderRadius: 1 }} />
+    </View>
+  );
+}
+
+export function FamilyTreeView({ members, activeMemberId, isParent, colors, isDark, onView, onEdit, onPin }: {
   members: FamilyMember[]; activeMemberId: string | null | undefined; isParent: boolean;
   colors: any; isDark: boolean;
-  onEdit: (m: FamilyMember) => void; onPin: (m: FamilyMember) => void;
+  onView: (m: FamilyMember) => void; onEdit: (m: FamilyMember) => void; onPin: (m: FamilyMember) => void;
 }) {
   const grandparents = members.filter(m => m.role === 'senior');
   const parents       = members.filter(m => m.role === 'parent');
   const kids           = members.filter(m => m.role === 'kid' || m.role === 'teen');
-  const line = lineColor(isDark, colors);
+  const allNames = members.map(m => m.name);
 
-  // Grandparents grouped under their linked parent — unlinked GPs form
-  // their own cluster at the far left so they never silently disappear.
-  const gpByParent = new Map<string, FamilyMember[]>();
-  const unlinkedGps: FamilyMember[] = [];
-  for (const gp of grandparents) {
-    if (gp.linkedParentId && parents.some(p => p.id === gp.linkedParentId)) {
-      const list = gpByParent.get(gp.linkedParentId) ?? [];
-      list.push(gp);
-      gpByParent.set(gp.linkedParentId, list);
-    } else {
-      unlinkedGps.push(gp);
-    }
-  }
+  // Side = whichever parent this GP is linked to — a GP linked to Priya's
+  // id lands under Priya's column specifically, never "between" both
+  // parents. "Maternal"/"Paternal" is derived from THAT linked parent's own
+  // relationship (Mother → Maternal, Father → Paternal), not from array
+  // position, so it stays correct regardless of which parent comes first.
+  const sideForGp = (gp: FamilyMember): 'a' | 'b' | 'unlinked' => {
+    if (!gp.linkedParentId) return 'unlinked';
+    if (gp.linkedParentId === parents[0]?.id) return 'a';
+    if (gp.linkedParentId === parents[1]?.id) return 'b';
+    return 'unlinked';
+  };
+  const sideLabel = (p?: FamilyMember): string | undefined =>
+    p?.relationship === 'Mother' ? 'Maternal' : p?.relationship === 'Father' ? 'Paternal' : undefined;
+  const gpSideA = grandparents.filter(gp => sideForGp(gp) === 'a');
+  const gpSideB = grandparents.filter(gp => sideForGp(gp) === 'b');
+  const gpUnlinked = grandparents.filter(gp => sideForGp(gp) === 'unlinked');
 
-  // ── Compute parent row positions first (everything else anchors to it) ──
-  const parentsLayout = layoutRow(parents, 0, COUPLE_GAP);
-  const parentPositions = new Map(parentsLayout.placed.map(p => [p.m.id, p.x]));
-
-  // ── Grandparent clusters, one per parent, centered above that parent ──
-  const gpClusters: { parentId: string; placed: Placed[]; clusterCenterX: number }[] = [];
-  for (const p of parents) {
-    const gps = gpByParent.get(p.id) ?? [];
-    if (gps.length === 0) continue;
-    const { placed, width } = layoutRow(gps, 0);
-    const parentX = parentPositions.get(p.id) ?? 0;
-    const clusterCenterX = width / 2;
-    // Shift this cluster so it's centered exactly above its parent's x.
-    const shift = parentX - clusterCenterX;
-    const shiftedPlaced = placed.map(pl => ({ ...pl, x: pl.x + shift }));
-    gpClusters.push({ parentId: p.id, placed: shiftedPlaced, clusterCenterX: parentX });
-  }
-  // Unlinked GPs get their own cluster to the left of everything, so they
-  // never overlap a linked cluster.
-  let unlinkedPlaced: Placed[] = [];
-  if (unlinkedGps.length > 0) {
-    const minParentX = parentsLayout.placed[0]?.x ?? 0;
-    const leftEdge = Math.min(0, minParentX) - (unlinkedGps.length * (NODE_W + NODE_GAP)) - COUPLE_GAP;
-    const { placed } = layoutRow(unlinkedGps, leftEdge);
-    unlinkedPlaced = placed;
-  }
-
-  // ── Kid row, centered under the parents as a whole ──
-  const kidsLayoutRaw = layoutRow(kids, 0);
-  const parentsSpanCenter = parents.length > 0
-    ? ((parentsLayout.placed[0]?.x ?? 0) + (parentsLayout.placed[parentsLayout.placed.length - 1]?.x ?? 0)) / 2
-    : 0;
-  const kidsCenter = kidsLayoutRaw.width / 2;
-  const kidsShift = parentsSpanCenter - kidsCenter;
-  const kidsPlaced = kidsLayoutRaw.placed.map(pl => ({ ...pl, x: pl.x + kidsShift }));
-
-  // ── Overall bounds, so we can offset everything into positive space ──
-  const allX = [
-    ...parentsLayout.placed.map(p => p.x),
-    ...gpClusters.flatMap(c => c.placed.map(p => p.x)),
-    ...unlinkedPlaced.map(p => p.x),
-    ...kidsPlaced.map(p => p.x),
-  ];
-  const minX = allX.length ? Math.min(...allX) - NODE_W / 2 - 10 : 0;
-  const maxX = allX.length ? Math.max(...allX) + NODE_W / 2 + 10 : 300;
-  const totalWidth = maxX - minX;
-  const offset = (x: number) => x - minX;
-
-  const renderNode = (m: FamilyMember) => (
-    <TreeNode key={m.id} m={m} isActive={m.id === activeMemberId} isParentViewer={isParent}
-      colors={colors} isDark={isDark}
+  const renderCard = (m: FamilyMember, sidePrefix?: string) => (
+    <MemberCard key={m.id} m={m} isActive={m.id === activeMemberId} isParentViewer={isParent}
+      colors={colors} isDark={isDark} siblings={allNames} sidePrefix={sidePrefix}
+      onPress={() => onView(m)}
       onLongPress={() => { if (isParent) onEdit(m); }}
       onPinPress={() => onPin(m)} />
   );
 
-  const hasGrandparentRow = grandparents.length > 0;
-
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 8, paddingHorizontal: 4 }}>
-      <View style={{ width: totalWidth }}>
-
-        {hasGrandparentRow && (
-          <>
-            {/* Grandparent row */}
-            <View style={{ height: NODE_ROW_HEIGHT }}>
-              {gpClusters.flatMap(c => c.placed).concat(unlinkedPlaced).map(({ m, x }) => (
-                <View key={m.id} style={{ position: 'absolute', left: offset(x) - NODE_W / 2, top: 0, width: NODE_W }}>
-                  {renderNode(m)}
-                </View>
-              ))}
-              {unlinkedGps.length > 0 && unlinkedPlaced.length > 0 && (
-                <Text style={{
-                  position: 'absolute', top: 78,
-                  left: offset((unlinkedPlaced[0].x + unlinkedPlaced[unlinkedPlaced.length - 1].x) / 2) - 40, width: 80,
-                  fontSize: 8, color: colors.textTertiary, textAlign: 'center', fontStyle: 'italic',
-                }}>unlinked</Text>
-              )}
-              {/* Couple line for GP pairs within each cluster (2 GPs -> 1 parent) */}
-              {gpClusters.filter(c => c.placed.length === 2).map(c => (
-                <CoupleLine key={c.parentId} x1={offset(c.placed[0].x)} x2={offset(c.placed[1].x)} y={28} color={line} />
-              ))}
+    <View style={{ gap: 16 }}>
+      {grandparents.length > 0 && (
+        <GenGroup label={`Grandparents (${grandparents.length})`} colors={colors}>
+          {/* Two columns, spatially aligned under the matching parent card
+              below — a GP linked to the left parent renders in the left
+              column, right parent's GPs render in the right column. The
+              alignment itself shows the link, no box/label needed. */}
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            <View style={{ flex: 1, alignItems: 'center', gap: 6 }}>
+              {gpSideA.map(gp => renderCard(gp, sideLabel(parents[0])))}
             </View>
-            {/* Bridge: each GP cluster's center down to its parent */}
-            <View style={{ height: GENERATION_GAP }}>
-              {gpClusters.map(c => {
-                const clusterX = c.placed.length === 2
-                  ? (c.placed[0].x + c.placed[1].x) / 2
-                  : c.placed[0]?.x ?? c.clusterCenterX;
-                const parentX = parentPositions.get(c.parentId) ?? clusterX;
-                const segMinX = Math.min(offset(clusterX), offset(parentX));
-                return (
-                  <View key={c.parentId} style={{ position: 'absolute', left: segMinX, top: 0 }}>
-                    <GenerationLinks fromX={offset(clusterX) - segMinX} toXs={[offset(parentX) - segMinX]} color={line} />
-                  </View>
-                );
-              })}
+            <View style={{ flex: 1, alignItems: 'center', gap: 6 }}>
+              {gpSideB.map(gp => renderCard(gp, sideLabel(parents[1])))}
             </View>
-          </>
-        )}
-
-        {/* Parent row */}
-        <View style={{ height: NODE_ROW_HEIGHT }}>
-          {parentsLayout.placed.map(({ m, x }) => (
-            <View key={m.id} style={{ position: 'absolute', left: offset(x) - NODE_W / 2, top: 0, width: NODE_W }}>
-              {renderNode(m)}
+          </View>
+          {gpUnlinked.length > 0 && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {gpUnlinked.map(gp => renderCard(gp))}
             </View>
-          ))}
-          {parents.length === 2 && (
-            <CoupleLine x1={offset(parentsLayout.placed[0].x)} x2={offset(parentsLayout.placed[1].x)} y={28} color={line} />
           )}
-        </View>
+        </GenGroup>
+      )}
 
-        {/* Bridge: parents (as a couple midpoint) down to the kid row */}
-        {kids.length > 0 && parents.length > 0 && (() => {
-          const fromX = offset(parentsSpanCenter);
-          const toXs = kidsPlaced.map(p => offset(p.x));
-          const segMinX = Math.min(fromX, ...toXs);
-          return (
-            <View style={{ height: GENERATION_GAP }}>
-              <View style={{ position: 'absolute', left: segMinX, top: 0 }}>
-                <GenerationLinks fromX={fromX - segMinX} toXs={toXs.map(x => x - segMinX)} color={line} />
+      {grandparents.length > 0 && parents.length > 0 && (
+        <GenDivider from={colors.amber} to={colors.parent}
+          align={gpSideA.length > 0 && gpSideB.length === 0 ? 'left' : gpSideB.length > 0 && gpSideA.length === 0 ? 'right' : 'center'} />
+      )}
+
+      {parents.length > 0 && (
+        <GenGroup label={`Parents (${parents.length})`} colors={colors}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, position: 'relative' }}>
+            {/* Same flex:1-column structure as the grandparent row above,
+                so each parent lands directly under their own linked GPs. */}
+            <View style={{ flex: 1, alignItems: 'center' }}>{parents[0] && renderCard(parents[0])}</View>
+            {parents[1] && <View style={{ flex: 1, alignItems: 'center' }}>{renderCard(parents[1])}</View>}
+            {/* Heart badge — overlaps Priya's (second parent's) card left
+                edge specifically, reading as "attached to Priya" rather
+                than a neutral marker floating between both cards. Fixed
+                rose/pink-red (no true rose token in this palette —
+                everything maps to the lavender/terracotta brand system). */}
+            {parents.length === 2 && (
+              <View style={{
+                position: 'absolute', left: '50%', top: '50%',
+                width: 24, height: 24, borderRadius: 12, marginLeft: -10, marginTop: -12,
+                alignItems: 'center', justifyContent: 'center',
+                backgroundColor: '#F43F5E', borderWidth: 2, borderColor: colors.card,
+                zIndex: 1,
+              }}>
+                <Heart size={12} color="#fff" fill="#fff" />
               </View>
-            </View>
-          );
-        })()}
+            )}
+          </View>
+        </GenGroup>
+      )}
 
-        {/* Kid/teen row */}
-        {kids.length > 0 && (
-          <View style={{ height: NODE_ROW_HEIGHT }}>
-            {kidsPlaced.map(({ m, x }) => (
-              <View key={m.id} style={{ position: 'absolute', left: offset(x) - NODE_W / 2, top: 0, width: NODE_W }}>
-                {renderNode(m)}
+      {parents.length > 0 && kids.length > 0 && (
+        <GenDivider from={colors.pink} to={colors.success} />
+      )}
+
+      {kids.length > 0 && (
+        <GenGroup label={`Kids (${kids.length})`} colors={colors}>
+          <View style={{ flexDirection: 'row', gap: 6, flexWrap: kids.length > 3 ? 'wrap' : 'nowrap' }}>
+            {kids.map(k => (
+              <View key={k.id} style={{ width: kids.length > 3 ? '31%' : undefined, flex: kids.length > 3 ? undefined : 1 }}>
+                {renderCard(k)}
               </View>
             ))}
           </View>
-        )}
-      </View>
-    </ScrollView>
+        </GenGroup>
+      )}
+    </View>
   );
 }

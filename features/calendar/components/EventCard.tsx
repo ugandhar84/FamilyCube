@@ -18,8 +18,8 @@
  * results (computed by the caller with the shared helpers) so this file
  * owns no business logic — purely presentational.
  */
-import React from 'react';
-import { View, Text, TouchableOpacity, Platform, StyleSheet, Linking } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, Platform, StyleSheet, Linking, Animated, Easing } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -29,7 +29,7 @@ import FamilyAvatar from '@/components/FamilyAvatar';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { s } from './calendarCardStyles';
-import { isEventPast } from './calendarDateHelpers';
+import { isEventPast, isEventNow } from './calendarDateHelpers';
 
 // Filled map-pin — real SVG, replacing the 📍 emoji used as a location icon.
 function MapPinIcon({ c, size = 13 }: { c: string; size?: number }) {
@@ -110,9 +110,16 @@ export interface EventCardRowProps {
   timeStyle?: 'boxed' | 'inline';
   showCategory?: boolean;
   showLocation?: boolean;
+  /** Adds the pending/confirmed/declined helper-status row below the top
+   * row (ported from Hub's TimelineCard) — used by the Hub timeline, off
+   * by default for Calendar's Agenda/Week which keep the compact layout. */
+  showHelperStatus?: boolean;
+  /** Viewer's own role — declined-driver gets the loud "Declined" treatment
+   * only for parents; kids/teens see a neutral "No driver yet" instead. */
+  isViewerParent?: boolean;
 }
 
-export function EventCardRow({ ev, members, colors, isDark, onPress, timeStyle = 'inline', showCategory = false, showLocation = true }: EventCardRowProps) {
+export function EventCardRow({ ev, members, colors, isDark, onPress, timeStyle = 'inline', showCategory = false, showLocation = true, showHelperStatus = false, isViewerParent = false }: EventCardRowProps) {
   const assignee = members.find(m => m.id === ev.memberId);
   const rs = roleStyle(assignee?.role, colors);
   const timeParts = fmtTimePartsLocal(ev.time);
@@ -128,17 +135,56 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, timeStyle =
   // existing opacity:0.5 treatment for completed events, applied here so
   // Agenda (and any other row-variant caller) gets it too.
   const isPast = isEventPast(ev.date, ev.time);
+  // Currently happening — start time has arrived, end (or default 60-min
+  // window) hasn't. Takes priority over the pending/issue border tint since
+  // "this is going on right now" is the most time-critical thing to signal.
+  const isNow = isEventNow(ev.date, ev.time, ev.endTime);
+
+  const helperPending  = ev.helperStatus === 'pending';
+  const helperRejected = ev.helperStatus === 'rejected';
+  const showAlarm      = helperRejected && isViewerParent;
+  const helperMissing  = !ev.helper && !!ev.location;
+
+  // Slow glow pulse for the "happening now" card — light green border/wash
+  // that breathes in and out rather than a hard blink.
+  const nowPulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!isNow) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(nowPulse, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+        Animated.timing(nowPulse, { toValue: 0, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isNow, nowPulse]);
 
   if (timeStyle === 'boxed') {
-    return (
-      <TouchableOpacity onPress={onPress}
-        style={{
-          borderRadius: 16, borderWidth: 1, borderColor: rs.dot + '35',
+    const hasIssue = showHelperStatus && ((helperMissing && !isPast) || (showAlarm && !isPast));
+    const NOW_GREEN = '#22C55E';
+    const animatedBorderColor = nowPulse.interpolate({ inputRange: [0, 1], outputRange: [NOW_GREEN + '55', NOW_GREEN + 'B0'] });
+    const animatedBg = nowPulse.interpolate({ inputRange: [0, 1], outputRange: [NOW_GREEN + '0C', NOW_GREEN + '1C'] });
+    const Container: any = isNow ? Animated.View : View;
+    const containerStyle = isNow
+      ? { borderRadius: 16, borderWidth: 1.5, borderColor: animatedBorderColor, backgroundColor: animatedBg, paddingHorizontal: 12, paddingVertical: 10, gap: 8 }
+      : {
+          borderRadius: 16, borderWidth: 1,
+          borderColor: hasIssue ? colors.danger + '45' : (helperPending && !isPast && showHelperStatus) ? colors.warning + '45' : rs.dot + '35',
           backgroundColor: isDark ? colors.card : colors.card,
-          padding: 10,
+          paddingHorizontal: 12, paddingVertical: 10, gap: 8,
           opacity: isPast ? 0.5 : 1,
-        }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        };
+    return (
+      <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
+        <Container style={containerStyle}>
+          {isNow && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: -2 }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: NOW_GREEN }} />
+              <Text style={{ fontSize: 9, fontWeight: '900', color: NOW_GREEN, letterSpacing: 0.4 }}>HAPPENING NOW</Text>
+            </View>
+          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <View style={{ width: 40, height: 40, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
             backgroundColor: isDark ? rs.dot + '1A' : rs.badge, borderWidth: 1, borderColor: rs.dot + '40' }}>
             <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: rs.text }}>{timeParts.time}</Text>
@@ -166,23 +212,64 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, timeStyle =
               from growing an extra row just to fit a second avatar. Centered
               against the row's own height (matches the time chip/title). */}
           {(assignee || driver) && (
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              {assignee && (
-                <FamilyAvatar name={assignee.name} emoji={assignee.emoji} avatarUrl={(assignee as any).avatarUrl}
-                  siblings={members.map(m => m.name)} size={26} ringColor={rs.dot} ringWidth={1.5} />
-              )}
-              {driver && (
-                <View style={{
-                  marginLeft: assignee ? -10 : 0,
-                  borderRadius: 15, borderWidth: 2, borderColor: colors.card,
-                }}>
-                  <FamilyAvatar name={driver.name} emoji={driver.emoji} avatarUrl={(driver as any).avatarUrl}
-                    siblings={members.map(m => m.name)} size={26} ringColor={colors.info} ringWidth={1.5} />
-                </View>
+            <View style={{ alignItems: 'flex-end', gap: 3 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {assignee && (
+                  <FamilyAvatar name={assignee.name} emoji={assignee.emoji} avatarUrl={(assignee as any).avatarUrl}
+                    siblings={members.map(m => m.name)} size={26} ringColor={rs.dot} ringWidth={1.5} />
+                )}
+                {driver && (
+                  <View style={{
+                    marginLeft: assignee ? -10 : 0,
+                    borderRadius: 15, borderWidth: 2, borderColor: colors.card,
+                  }}>
+                    <FamilyAvatar name={driver.name} emoji={driver.emoji} avatarUrl={(driver as any).avatarUrl}
+                      siblings={members.map(m => m.name)} size={26} ringColor={colors.info} ringWidth={1.5} />
+                  </View>
+                )}
+              </View>
+              {/* Status pill — sits under the avatar cluster instead of a
+                  separate "Accompanied by: Name" text line, since the
+                  avatar already shows who; the pill only needs to answer
+                  "are they confirmed yet". */}
+              {showHelperStatus && driver && ev.helperStatus && (
+                <>
+                  {ev.helperStatus === 'confirmed' && (
+                    <View style={{ backgroundColor: colors.success + '18', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 }}>
+                      <Text style={{ fontSize: 9, fontWeight: '800', color: colors.success }}>Confirmed ✓</Text>
+                    </View>
+                  )}
+                  {helperPending && (
+                    <View style={{ backgroundColor: colors.warning + '20', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 }}>
+                      <Text style={{ fontSize: 9, fontWeight: '800', color: colors.warningDark }}>⏳ Awaiting</Text>
+                    </View>
+                  )}
+                  {showAlarm && (
+                    <View style={{ backgroundColor: colors.danger + '25', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1, borderWidth: 1, borderColor: colors.danger + '40' }}>
+                      <Text style={{ fontSize: 9, fontWeight: '900', color: colors.danger }}>Declined ✕</Text>
+                    </View>
+                  )}
+                </>
               )}
             </View>
           )}
         </View>
+
+        {showHelperStatus && showAlarm && ev.declineReason && (
+          <Text style={{ fontSize: TYPO.micro, color: colors.danger, fontStyle: 'italic' }}>
+            "{ev.declineReason}"
+          </Text>
+        )}
+
+        {/* Needs driver warning — no helper assigned at all */}
+        {showHelperStatus && !isPast && helperMissing && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
+            backgroundColor: colors.danger + '12', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5,
+            borderWidth: 1, borderColor: colors.danger + '30' }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.danger }}>⚠ No driver assigned — tap to fix</Text>
+          </View>
+        )}
+        </Container>
       </TouchableOpacity>
     );
   }

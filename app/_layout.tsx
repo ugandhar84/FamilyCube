@@ -2,7 +2,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { showAlert } from '@/components/AppAlert';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';
-import { StyleSheet, AppState, LogBox, Linking, Modal, View, Text, TouchableOpacity, SafeAreaView, Image } from 'react-native';
+import { StyleSheet, AppState, LogBox, Linking, Modal, View, Text, TouchableOpacity, SafeAreaView, Image, Platform } from 'react-native';
 import FamilyCubeSplashScreen from '@/components/FamilyCubeSplashScreen';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
@@ -37,6 +37,11 @@ import PickerLoadingOverlay from '@/components/PickerLoadingOverlay';
 import { usePaywallSheetStore } from '@/store/paywallSheetStore';
 import { useNotifStore } from '@/store/notifStore';
 import { useFamilyStore } from '@/store/familyStore';
+import {
+  setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
+  registerAndroidVoipToken, listenForForegroundCallReminder,
+  trackIncomingCallPayloads, onCallAnswered,
+} from '@/lib/callAlert';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -754,6 +759,36 @@ function RootNavigator() {
     return () => sub.remove();
   }, []);
 
+  // Call-style reminder alerts — CallKeep setup + VoIP token registration +
+  // answer routing. iOS's actual wake-on-killed-app path runs natively in
+  // AppDelegate.swift before JS ever loads; this just keeps the token fresh
+  // and routes to the post-answer screen once CallKit hands control to JS.
+  const activeMemberId = useFamilyStore(s => s.activeMemberId);
+  useEffect(() => {
+    setupCallAlerts();
+    const untrack = trackIncomingCallPayloads();
+    const unanswer = onCallAnswered((payload) => {
+      router.push({
+        pathname: '/call-alert',
+        params: { itemType: payload.itemType, itemId: payload.itemId, callUUID: payload.callUUID },
+      } as any);
+    });
+    return () => { untrack(); unanswer(); };
+  }, []);
+
+  useEffect(() => {
+    if (!activeMemberId) return;
+    const familyId = useFamilyStore.getState().members.find(m => m.id === activeMemberId)?.familyId;
+    if (!familyId) return;
+    if (Platform.OS === 'ios') {
+      const unlisten = listenForVoipToken((token) => saveVoipTokenToMember(activeMemberId, familyId, token));
+      return unlisten;
+    }
+    registerAndroidVoipToken(activeMemberId, familyId).catch(() => {});
+    const unforeground = listenForForegroundCallReminder();
+    return unforeground;
+  }, [activeMemberId]);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={colors.background} translucent={false} />
@@ -814,6 +849,7 @@ function RootNavigator() {
         <Stack.Screen name="playdate/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="event/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="hub/help-history" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="call-alert" options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'fade', gestureEnabled: false }} />
       </Stack>
 
 

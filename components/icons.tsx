@@ -226,7 +226,7 @@ export const I = {
       <Path d="M16,11.5 L18,11.5 M6,11.5 L8,11.5" stroke={c} strokeWidth={1.5} strokeLinecap="round" fill="none" />
     </Svg>
   ),
-  Hearth: ({ c, size = 14 }: { c: string; size?: number }) => (
+  Apps: ({ c, size = 14 }: { c: string; size?: number }) => (
     <Svg width={size} height={size} viewBox="0 0 24 24">
       <Path d="M3,7 L12,3 L21,7 V17 L12,21 L3,17 V7 Z" stroke={c} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
       <Path d="M12,3 L12,21 M3,7 L21,17 M21,7 L3,17" stroke={c} strokeWidth={1.5} strokeLinecap="round" fill="none" />

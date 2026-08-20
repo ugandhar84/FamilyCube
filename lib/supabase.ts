@@ -181,7 +181,16 @@ async function encodeBody(
   if (base64Data) {
     const binary = atob(base64Data);
     const bytes  = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    // Chunked with a yield back to the event loop every 64KB — a full-size
+    // compressed photo's base64 string can be 500K+ chars, and doing this
+    // char-by-char decode in one unbroken synchronous pass blocks the JS
+    // thread (no touches, no animations) for the whole duration.
+    const CHUNK = 65536;
+    for (let start = 0; start < binary.length; start += CHUNK) {
+      const end = Math.min(start + CHUNK, binary.length);
+      for (let i = start; i < end; i++) bytes[i] = binary.charCodeAt(i);
+      if (end < binary.length) await new Promise(resolve => setTimeout(resolve, 0));
+    }
     return bytes.buffer;
   }
   return fetch(localUri).then(r => r.blob());
@@ -307,6 +316,76 @@ export async function uploadSponsoredAsset(
   const body = await encodeBody(compressed.uri, compressed.base64 ?? null);
   const path = `sponsored/${type}/${Date.now()}.jpg`;
   return uploadToStorage(path, body, 'image/jpeg', false);
+}
+
+// ── Family memory photo ───────────────────────────────────────────────────────
+// Uses the real 'family-photos' bucket (private — not the 'pets'/'pet-media'
+// buckets referenced elsewhere in this file, which don't exist in this
+// project's Supabase instance). Path starts with the uploader's own auth
+// uid because the bucket's RLS delete policy checks
+// auth.uid() = storage.foldername(name)[1] — objects.name's first path
+// segment must be the uploader's uid for them to ever delete it later.
+// Read access (SELECT policy) only requires being authenticated, not
+// necessarily in the same family — signed URLs add a second layer so a
+// leaked/guessed path alone still isn't enough without the token.
+const MEMORIES_BUCKET = 'family-photos';
+const MEMORIES_SIGNED_URL_EXPIRY_SECONDS = 31_536_000; // 1 year
+
+export async function uploadFamilyMemoryPhoto(
+  familyId: string,
+  localUri: string,
+  suffix?: number,
+): Promise<string> {
+  console.log('[uploadFamilyMemoryPhoto] start, localUri:', localUri, 'familyId:', familyId);
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('No session');
+  console.log('[uploadFamilyMemoryPhoto] session user:', session.user.id);
+  let compressed;
+  try {
+    compressed = await compressImage(localUri, COMPRESS.gallery);
+    console.log('[uploadFamilyMemoryPhoto] compressed ok, uri:', compressed.uri, 'b64 length:', compressed.base64?.length);
+  } catch (compressErr: any) {
+    console.error('[uploadFamilyMemoryPhoto] ❌ compressImage failed:', compressErr?.message, compressErr);
+    throw compressErr;
+  }
+  const body = await encodeBody(compressed.uri, compressed.base64 ?? null);
+  const path = `${session.user.id}/${familyId}/memories/${Date.now()}${suffix !== undefined ? `_${suffix}` : ''}.jpg`;
+  console.log('[uploadFamilyMemoryPhoto] storage path:', path);
+
+  const bodySize = body instanceof ArrayBuffer ? body.byteLength : (body as Blob).size;
+  console.log('[uploadFamilyMemoryPhoto] encoded body size:', bodySize);
+  if (bodySize === 0) throw new Error('Encoded upload body is 0 bytes — the source file may be empty or unreadable.');
+
+  const { error: upErr } = await supabase.storage
+    .from(MEMORIES_BUCKET)
+    .upload(path, body, { upsert: false, contentType: 'image/jpeg' });
+  if (upErr) {
+    console.error('[uploadFamilyMemoryPhoto] ❌ storage upload error:', upErr.message, upErr);
+    throw new Error(upErr.message);
+  }
+  console.log('[uploadFamilyMemoryPhoto] ✅ upload ok, requesting signed URL…');
+
+  // createSignedUrl called immediately after upload() can 404 with "Object
+  // not found" — read-after-write lag on the storage backend's read path,
+  // not a real missing object (confirmed: the upload itself reports
+  // success, and a moment later the same path resolves fine). Retry a
+  // few times with a short backoff instead of failing the whole post.
+  let signed: { signedUrl: string } | null = null;
+  let signErr: any = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 400 * attempt));
+    const res = await supabase.storage.from(MEMORIES_BUCKET).createSignedUrl(path, MEMORIES_SIGNED_URL_EXPIRY_SECONDS);
+    signed = res.data;
+    signErr = res.error;
+    if (signed?.signedUrl) break;
+    console.log(`[uploadFamilyMemoryPhoto] createSignedUrl attempt ${attempt + 1} failed, retrying…`, signErr?.message);
+  }
+  if (!signed?.signedUrl) {
+    console.error('[uploadFamilyMemoryPhoto] ❌ createSignedUrl error after retries:', signErr?.message, signErr);
+    throw new Error(signErr?.message ?? 'Failed to sign URL');
+  }
+  console.log('[uploadFamilyMemoryPhoto] ✅ signed URL ready');
+  return signed.signedUrl;
 }
 
 // ── Recommendation / sponsored media (image, GIF, or video) ─────────────────

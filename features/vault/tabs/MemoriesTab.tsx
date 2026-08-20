@@ -1,147 +1,267 @@
-import { useEffect, useState, useCallback } from 'react';
-import { todayLocal } from '@/lib/dates';
+/**
+ * MemoriesTab — private family photo feed. Post up to 2 photos + a caption;
+ * multi-photo posts render as a swipeable carousel (MemoryMedia — capped
+ * height, cropped to fill, unlike the social feed's PostMedia which sizes
+ * to the source photo's own aspect ratio) with dot indicators. Not a public
+ * social feed — no comments-from-strangers, no discovery, just the family's
+ * own scrapbook. Seniors get read-only access (readOnly prop).
+ */
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator,
-  Modal, ScrollView, KeyboardAvoidingView, Platform,
+  View, Text, StyleSheet, TouchableOpacity, TextInput,
+  Image as RNImage, Alert, Modal, ScrollView, KeyboardAvoidingView, Platform, Keyboard, Dimensions,
 } from 'react-native';
-import {
-  Image, Heart, Plus, Trash2, Waves, Trophy, Gamepad2, FlaskConical,
-  Star, Camera, X, BookOpen, Smile, Calendar,
-} from 'lucide-react-native';
-import { LucideIcon } from 'lucide-react-native';
-import { supabase } from '@/lib/supabase';
+import { Image as ExpoImage } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import { Image as ImageIcon, Heart, Trash2, Calendar, Camera, ImagePlus, X, Download, Layers } from 'lucide-react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { todayLocal, fmtDateShort } from '@/lib/dates';
+import { supabase, uploadFamilyMemoryPhoto } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
-import { SCard, CardHeader, AddBtn, EmptyState, BRAND } from './shared';
+import { MediaViewer } from '@/features/social/components/MediaComponents';
+import { saveMediaToDevice } from '@/lib/saveMedia';
+import CubeSpinner from '@/components/CubeSpinner';
+import FamilyAvatar from '@/components/FamilyAvatar';
+import type { FamilyMember } from '@/store/familyStore';
+import { EmptyState, BRAND } from './shared';
 
-interface Memory {
-  id: string; family_id: string; title: string; description: string | null;
-  date: string; icon_name: string; icon_color: string; tag: string | null;
-  hearts: number; hearted_by: string[]; created_by: string | null;
-}
+const { width: SCREEN_W } = Dimensions.get('window');
+// Fixed cap instead of PostMedia's dynamic source-ratio sizing — a tall
+// portrait photo was filling almost the entire screen height, which reads
+// as "one giant photo," not a scrollable feed. Every post gets the same
+// height regardless of source aspect ratio, cropped to fill (cover).
+const MEDIA_HEIGHT = 340;
 
-const ICON_MAP: Record<string, LucideIcon> = {
-  Waves: Waves, Trophy: Trophy, Gamepad2: Gamepad2,
-  FlaskConical: FlaskConical, Star: Star, Camera: Camera,
-  BookOpen: BookOpen, Smile: Smile, Image: Image, Heart: Heart,
-};
-
-const PALETTE = [
-  { name: 'Waves', color: BRAND.teal },
-  { name: 'Trophy', color: BRAND.amber },
-  { name: 'Gamepad2', color: BRAND.purple },
-  { name: 'FlaskConical', color: BRAND.emerald },
-  { name: 'Star', color: '#F59E0B' },
-  { name: 'Camera', color: BRAND.blue },
-  { name: 'BookOpen', color: BRAND.rose },
-  { name: 'Smile', color: BRAND.teal },
-];
-
-const TAGS = ['vacation', 'milestone', 'birthday', 'achievement', 'school', 'family', 'sports', 'art'];
-
-function AddMemoryModal({ visible, onClose, onSave, colors, isDark }: {
-  visible: boolean; onClose: () => void;
-  onSave: (form: { title: string; description: string; date: string; icon_name: string; icon_color: string; tag: string }) => Promise<void>;
-  colors: any; isDark: boolean;
+// ─── MemoryMedia — capped-height photo/carousel for the feed card ─────────────
+function MemoryMedia({ urls, captionOverlay, caption, onPress }: {
+  urls: string[]; captionOverlay: boolean; caption: string | null;
+  onPress: (index: number) => void;
 }) {
-  const [title, setTitle]   = useState('');
-  const [desc, setDesc]     = useState('');
-  const [date, setDate]     = useState(todayLocal());
-  const [icon, setIcon]     = useState('Trophy');
-  const [iconColor, setIconColor] = useState(BRAND.amber);
-  const [tag, setTag]       = useState('');
-  const [saving, setSaving] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
+  const slideW = SCREEN_W - 32; // matches the card's own 16px side margins
 
-  const inp = [md.inp, {
-    backgroundColor: isDark ? colors.card : '#F5F3FF',
-    borderColor: colors.border, color: colors.textPrimary,
-  }];
-
-  const handleSave = async () => {
-    if (!title.trim()) return;
-    setSaving(true);
-    await onSave({ title: title.trim(), description: desc.trim(), date, icon_name: icon, icon_color: iconColor, tag });
-    setSaving(false);
-    setTitle(''); setDesc(''); setTag('');
-    onClose();
+  const onScroll = (e: any) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / slideW);
+    if (idx !== activeIndex) setActiveIndex(idx);
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={[md.modal, { backgroundColor: isDark ? colors.background : '#FAF8FF' }]}>
-          <View style={md.header}>
-            <Text style={[md.title, { color: colors.textPrimary }]}>Add Memory</Text>
-            <TouchableOpacity onPress={onClose}><X size={18} color={colors.textSecondary} /></TouchableOpacity>
-          </View>
+    <View style={{ width: slideW, height: MEDIA_HEIGHT, backgroundColor: '#00000010' }}>
+      {urls.length > 1 ? (
+        <ScrollView ref={scrollRef} horizontal pagingEnabled showsHorizontalScrollIndicator={false}
+          onScroll={onScroll} scrollEventThrottle={16} style={{ flex: 1 }}>
+          {urls.map((u, i) => (
+            <TouchableOpacity key={u + i} activeOpacity={0.95} onPress={() => onPress(i)} style={{ width: slideW, height: MEDIA_HEIGHT }}>
+              <ExpoImage source={{ uri: u }} style={{ width: slideW, height: MEDIA_HEIGHT }}
+                contentFit="cover" cachePolicy="memory-disk" transition={180} />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      ) : (
+        <TouchableOpacity activeOpacity={0.95} onPress={() => onPress(0)} style={{ width: slideW, height: MEDIA_HEIGHT }}>
+          <ExpoImage source={{ uri: urls[0] }} style={{ width: slideW, height: MEDIA_HEIGHT }}
+            contentFit="cover" cachePolicy="memory-disk" transition={180} />
+        </TouchableOpacity>
+      )}
 
-          <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }} showsVerticalScrollIndicator={false}>
-            <View>
-              <Text style={[md.label, { color: colors.textSecondary }]}>Memory Title *</Text>
-              <TextInput value={title} onChangeText={setTitle}
-                placeholder="e.g. First Day of School" placeholderTextColor={colors.textTertiary} style={inp} />
-            </View>
-            <View>
-              <Text style={[md.label, { color: colors.textSecondary }]}>Description</Text>
-              <TextInput value={desc} onChangeText={setDesc}
-                placeholder="What made this moment special?" placeholderTextColor={colors.textTertiary}
-                style={[inp, { height: 80 }]} multiline textAlignVertical="top" />
-            </View>
-            <View>
-              <Text style={[md.label, { color: colors.textSecondary }]}>Date</Text>
-              <TextInput value={date} onChangeText={setDate}
-                placeholder="YYYY-MM-DD" placeholderTextColor={colors.textTertiary} style={inp} />
+      {captionOverlay && !!caption && (activeIndex === 0 || urls.length === 1) && (
+        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.85)']}
+          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, paddingTop: 50, paddingBottom: 14, paddingHorizontal: 14 }}
+          pointerEvents="none">
+          <Text style={{ color: '#fff', fontSize: 14, lineHeight: 20, fontWeight: '600' }} numberOfLines={3}>
+            {caption}
+          </Text>
+        </LinearGradient>
+      )}
+
+      {urls.length > 1 && (
+        <View pointerEvents="none" style={{ position: 'absolute', bottom: 10, left: 0, right: 0,
+          flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 5 }}>
+          {urls.map((_, i) => (
+            <View key={i} style={{ width: i === activeIndex ? 16 : 6, height: 6, borderRadius: 3,
+              backgroundColor: i === activeIndex ? '#fff' : 'rgba(255,255,255,0.4)' }} />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+interface Memory {
+  id: string; family_id: string; title: string; description: string | null;
+  date: string; photo_url: string | null; photo_urls: string[] | null;
+  caption_overlay: boolean;
+  hearts: number; hearted_by: string[]; created_by: string | null;
+}
+
+// ─── Compose sheet — pick up to 2 photos + a caption ───────────────────────────
+
+function ComposeMemoryModal({ visible, onClose, onPost, colors, isDark }: {
+  visible: boolean; onClose: () => void;
+  onPost: (uris: string[], caption: string, captionOverlay: boolean) => Promise<void>;
+  colors: any; isDark: boolean;
+}) {
+  const [uris, setUris]       = useState<string[]>([]);
+  const [caption, setCaption] = useState('');
+  const [captionOverlay, setCaptionOverlay] = useState(false);
+  const [posting, setPosting] = useState(false);
+
+  const reset = () => { setUris([]); setCaption(''); setCaptionOverlay(false); };
+
+  // No allowsEditing here — every other library-picker call in this codebase
+  // (ComposeSheet.tsx) skips it too; allowsEditing is only ever paired with
+  // launchCameraAsync elsewhere. Combining it with launchImageLibraryAsync
+  // froze the whole app (native picker never returned control to RN) —
+  // matching the codebase's proven working pattern instead of the
+  // untested combination.
+  const pickFromLibrary = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Photo access needed', 'Allow photo library access in Settings to add pictures.');
+      return;
+    }
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'], quality: 0.9,
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    setUris(prev => [...prev, res.assets[0].uri].slice(0, 2));
+  };
+
+  const takePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Camera access needed', 'Allow camera access in Settings to take a photo.');
+      return;
+    }
+    const res = await ImagePicker.launchCameraAsync({ quality: 0.9, allowsEditing: true, aspect: [4, 3] });
+    if (res.canceled || !res.assets?.[0]) return;
+    setUris(prev => [...prev, res.assets[0].uri].slice(0, 2));
+  };
+
+  const removeAt = (i: number) => setUris(prev => prev.filter((_, idx) => idx !== i));
+
+  const handlePost = async () => {
+    if (uris.length === 0) return;
+    console.log('[ComposeMemoryModal] handlePost tapped, uris:', uris, 'caption:', caption);
+    setPosting(true);
+    try {
+      await onPost(uris, caption.trim(), captionOverlay);
+      console.log('[ComposeMemoryModal] onPost resolved ok');
+      reset();
+      onClose();
+    } catch (e: any) {
+      console.error('[ComposeMemoryModal] ❌ post failed:', e?.message, e);
+      Alert.alert('Couldn\'t post', e?.message ?? 'Please try again.');
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const dismiss = () => { Keyboard.dismiss(); reset(); onClose(); };
+
+  // Static-height sheet (fixed maxHeight %, no content-driven measurement) —
+  // same pattern as TeenTileSheet/EventFormModal, which don't get shoved
+  // upward past their cap when the keyboard opens the way AppBottomSheet's
+  // dynamically-measured height does.
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={md.backdrop}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
+          <View style={[md.sheet, { backgroundColor: isDark ? colors.card : '#FAF8FF' }]}>
+            <View style={[md.handle, { backgroundColor: colors.border }]} />
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={[md.title, { color: colors.textPrimary, flex: 1 }]}>New Memory</Text>
+              <TouchableOpacity onPress={dismiss} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                <X size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
             </View>
 
-            {/* Icon picker */}
-            <View>
-              <Text style={[md.label, { color: colors.textSecondary }]}>Memory Icon</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-                {PALETTE.map(p => {
-                  const Ic = ICON_MAP[p.name] ?? Image;
-                  const sel = icon === p.name;
-                  return (
-                    <TouchableOpacity key={p.name} onPress={() => { setIcon(p.name); setIconColor(p.color); }}
-                      style={[md.iconBtn, {
-                        backgroundColor: sel ? p.color + '25' : 'transparent',
-                        borderColor: sel ? p.color : colors.border,
-                      }]}>
-                      <Ic size={22} color={sel ? p.color : colors.textTertiary} />
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            {/* Tag */}
-            <View>
-              <Text style={[md.label, { color: colors.textSecondary }]}>Tag</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <ScrollView keyboardShouldPersistTaps="always" showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ gap: 16, paddingBottom: 12 }}>
+              {/* Photo previews */}
+              {uris.length > 0 && (
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  {TAGS.map(t => (
-                    <TouchableOpacity key={t} onPress={() => setTag(tag === t ? '' : t)}
-                      style={[md.tagChip, {
-                        backgroundColor: tag === t ? BRAND.purple : 'transparent',
-                        borderColor: tag === t ? BRAND.purple : colors.border,
-                      }]}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', textTransform: 'capitalize',
-                        color: tag === t ? '#fff' : colors.textSecondary }}>{t}</Text>
-                    </TouchableOpacity>
+                  {uris.map((u, i) => (
+                    <View key={u + i} style={{ position: 'relative' }}>
+                      <RNImage source={{ uri: u }} style={{ width: 100, height: 100, borderRadius: 14 }} />
+                      <TouchableOpacity onPress={() => removeAt(i)}
+                        style={{ position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: 11,
+                          backgroundColor: BRAND.rose, alignItems: 'center', justifyContent: 'center' }}>
+                        <X size={12} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
                   ))}
                 </View>
-              </ScrollView>
-            </View>
-          </ScrollView>
+              )}
 
-          <View style={[md.footer, { borderColor: colors.border }]}>
-            <TouchableOpacity onPress={onClose} style={[md.cancelBtn, { borderColor: colors.border }]}>
-              <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleSave}
-              style={[md.saveBtn, { backgroundColor: BRAND.purple }]} disabled={saving}>
-              {saving
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save Memory</Text>}
-            </TouchableOpacity>
+              {/* Photo pickers */}
+              {uris.length < 2 && (
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity onPress={pickFromLibrary}
+                    style={[md.pickBtn, { borderColor: BRAND.purple + '50', backgroundColor: BRAND.purple + '10' }]}>
+                    <ImagePlus size={20} color={BRAND.purple} />
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: BRAND.purple }}>
+                      {uris.length === 0 ? 'Choose Photo' : 'Add Another'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={takePhoto}
+                    style={[md.pickBtn, { borderColor: colors.border, backgroundColor: isDark ? colors.card : '#F5F3FF' }]}>
+                    <Camera size={20} color={colors.textSecondary} />
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textSecondary }}>Take Photo</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <View>
+                <Text style={[md.label, { color: colors.textSecondary }]}>Caption</Text>
+                <TextInput value={caption} onChangeText={setCaption}
+                  placeholder="What made this moment special?" placeholderTextColor={colors.textTertiary}
+                  style={[md.inp, { backgroundColor: isDark ? colors.card : '#F5F3FF', borderColor: colors.border, color: colors.textPrimary, height: 80 }]}
+                  multiline textAlignVertical="top" />
+              </View>
+
+              {caption.trim() && uris.length > 0 && (
+                <TouchableOpacity onPress={() => setCaptionOverlay(v => !v)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1.5,
+                    borderColor: captionOverlay ? BRAND.purple : colors.border,
+                    backgroundColor: captionOverlay ? BRAND.purple + '10' : 'transparent',
+                    paddingHorizontal: 12, paddingVertical: 10 }}>
+                  <Layers size={16} color={captionOverlay ? BRAND.purple : colors.textSecondary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: captionOverlay ? BRAND.purple : colors.textPrimary }}>
+                      Show caption on photo
+                    </Text>
+                    <Text style={{ fontSize: 10, color: colors.textTertiary, marginTop: 1 }}>
+                      {captionOverlay ? 'Caption overlays the photo' : 'Caption shows below the photo'}
+                    </Text>
+                  </View>
+                  <View style={{ width: 38, height: 22, borderRadius: 11,
+                    backgroundColor: captionOverlay ? BRAND.purple : colors.border,
+                    justifyContent: 'center', paddingHorizontal: 2 }}>
+                    <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
+                      alignSelf: captionOverlay ? 'flex-end' : 'flex-start' }} />
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity onPress={dismiss} style={[md.cancelBtn, { borderColor: colors.border }]}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handlePost}
+                  style={[md.saveBtn, { backgroundColor: BRAND.purple, opacity: uris.length === 0 ? 0.5 : 1 }]}
+                  disabled={posting || uris.length === 0}>
+                  {posting
+                    ? <CubeSpinner size={18} />
+                    : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Post Memory</Text>}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -149,9 +269,131 @@ function AddMemoryModal({ visible, onClose, onSave, colors, isDark }: {
   );
 }
 
+// ─── Feed card — Instagram-style: header, full-bleed photo, actions, caption ───
+
+function MemoryPostCard({ mem, myId, poster, allMembers, siblings, colors, isDark, onHeart, onDelete, onOpenViewer }: {
+  mem: Memory; myId: string; poster?: FamilyMember; allMembers: FamilyMember[]; siblings: string[]; colors: any; isDark: boolean;
+  onHeart: () => void; onDelete: () => void;
+  onOpenViewer: (urls: string[], startIndex: number) => void;
+}) {
+  const [captionExpanded, setCaptionExpanded] = useState(false);
+  const hearted = mem.hearted_by?.includes(myId);
+  const heartColor = hearted ? BRAND.rose : colors.textSecondary;
+  // PostMedia treats photoUrl (singular) and photoUrls (plural) as separate
+  // props — its own internal allUrls only uses photoUrls when it has 2+
+  // entries, otherwise it falls back to photoUrl. Passing a single-item
+  // array as photoUrls left it with neither, so single-photo posts
+  // silently rendered nothing.
+  const hasMulti = !!mem.photo_urls?.length && mem.photo_urls.length > 1;
+  if (!mem.photo_url && !hasMulti) return null;
+  const allUrls = hasMulti ? mem.photo_urls! : [mem.photo_url!];
+
+  // Same suppression rule as the social feed's PostCard: when the caption
+  // is shown as an overlay ON the photo, don't also repeat it below —
+  // only show the below-image block when there's no overlay, or the
+  // overlay didn't actually have text to show.
+  const showBelowCaption = !!mem.description && !mem.caption_overlay;
+
+  return (
+    <View style={{ marginHorizontal: 16, marginBottom: 16, borderRadius: 22, overflow: 'hidden',
+      backgroundColor: colors.card, borderWidth: 1.5, borderColor: BRAND.purple + (isDark ? '35' : '25'),
+      shadowColor: BRAND.purple, shadowOpacity: isDark ? 0 : 0.1, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 3 }}>
+      {/* Frosted-glass wash, matching the app's established glass-card pattern
+          (VaultScreen tiles / MemberCard / SCard) instead of a plain white
+          box — keeps this feeling like part of THIS app, not a generic
+          social-media clone. */}
+      <LinearGradient colors={[BRAND.purple + '14', BRAND.purple + '00']}
+        start={{ x: 0, y: 0 }} end={{ x: 0.6, y: 1 }}
+        style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+      {Platform.OS === 'ios' ? (
+        <BlurView intensity={14} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+      ) : (
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.card + (isDark ? 'CC' : 'E6') }]} pointerEvents="none" />
+      )}
+
+      {/* Header — avatar + name + date, standing clear of the media below */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12 }}>
+        <FamilyAvatar name={poster?.name ?? 'Family'} emoji={poster?.emoji} avatarUrl={poster?.avatarUrl}
+          siblings={siblings} size={38} ringColor={BRAND.purple} ringWidth={1.5} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
+            {poster?.name?.split(' ')[0] ?? 'Family'}
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 }}>
+            <Calendar size={10} color={colors.textTertiary} />
+            <Text style={{ fontSize: 11, color: colors.textTertiary }}>{fmtDateShort(mem.date)}</Text>
+          </View>
+        </View>
+        <TouchableOpacity onPress={onDelete} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Trash2 size={15} color={colors.textTertiary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Photo — capped height (MEDIA_HEIGHT), cropped to fill, clipped to
+          the card's own rounded corners */}
+      <View style={{ alignItems: 'center' }}>
+        <MemoryMedia urls={allUrls} captionOverlay={mem.caption_overlay} caption={mem.description}
+          onPress={(index) => onOpenViewer(allUrls, index)} />
+      </View>
+
+      {/* Action row — heart toggle + who-hearted (tap the names/avatars to
+          see who, mem.hearted_by already stores the member ids). */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingTop: 12 }}>
+        <TouchableOpacity onPress={onHeart} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Heart size={22} color={heartColor} fill={hearted ? BRAND.rose : 'transparent'} />
+        </TouchableOpacity>
+        {mem.hearts > 0 && (
+          <TouchableOpacity
+            onPress={() => {
+              const names = (mem.hearted_by ?? [])
+                .map(id => allMembers.find(m => m.id === id)?.name?.split(' ')[0])
+                .filter(Boolean);
+              Alert.alert('Hearted by', names.length ? names.join(', ') : `${mem.hearts} ${mem.hearts === 1 ? 'person' : 'people'}`);
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ flexDirection: 'row' }}>
+              {(mem.hearted_by ?? []).slice(0, 3).map((id, i) => {
+                const m = allMembers.find(x => x.id === id);
+                if (!m) return null;
+                return (
+                  <View key={id} style={{ marginLeft: i > 0 ? -8 : 0, borderRadius: 12, borderWidth: 2, borderColor: colors.card }}>
+                    <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl}
+                      siblings={siblings} size={20} ringColor={BRAND.rose} ringWidth={1} />
+                  </View>
+                );
+              })}
+            </View>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>
+              {mem.hearts} {mem.hearts === 1 ? 'heart' : 'hearts'}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Below-image caption — Instagram style: bold name + text, expandable */}
+      {showBelowCaption && (
+        <TouchableOpacity activeOpacity={1} onPress={() => setCaptionExpanded(v => !v)}
+          style={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 14 }}>
+          <Text style={{ fontSize: 13, lineHeight: 19, color: colors.textPrimary }} numberOfLines={captionExpanded ? 0 : 3}>
+            <Text style={{ fontWeight: '800' }}>{poster?.name?.split(' ')[0] ?? 'Family'} </Text>
+            {mem.description}
+          </Text>
+          {!captionExpanded && (mem.description?.length ?? 0) > 90 && (
+            <Text style={{ fontSize: 12, color: BRAND.purple, marginTop: 2, fontWeight: '700' }}>more</Text>
+          )}
+        </TouchableOpacity>
+      )}
+      {!showBelowCaption && <View style={{ height: 14 }} />}
+    </View>
+  );
+}
+
+// ─── MemoriesTab ────────────────────────────────────────────────────────────────
+
 export default function MemoriesTab({ colors, isDark, readOnly = false }: { colors: any; isDark: boolean; readOnly?: boolean }) {
   const { members, activeMemberId } = useFamilyStore();
   const familyId = (members[0] as any)?.familyId ?? 'family-1';
+  const myId = activeMemberId ?? members[0]?.id ?? '';
 
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -159,24 +401,45 @@ export default function MemoriesTab({ colors, isDark, readOnly = false }: { colo
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('family_memories')
-      .select('*').eq('family_id', familyId).order('date', { ascending: false });
+    // `date` alone (day-granularity, no time) ties for every post made the
+    // same day — order by created_at too so same-day posts still sort
+    // newest-first instead of an unspecified tie order.
+    const { data, error } = await supabase.from('family_memories')
+      .select('*').eq('family_id', familyId)
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (error) console.error('[MemoriesTab] load failed:', error.message, error);
     if (data) setMemories(data as Memory[]);
     setLoading(false);
   }, [familyId]);
 
   useEffect(() => { load(); }, [load]);
 
-  const addMemory = async (form: any) => {
-    const { data } = await supabase.from('family_memories').insert({
-      family_id: familyId, created_by: activeMemberId ?? members[0]?.id,
-      ...form, hearts: 0, hearted_by: [],
+  const postMemory = async (uris: string[], caption: string, captionOverlay: boolean) => {
+    const urls = await Promise.all(uris.map((u, i) => uploadFamilyMemoryPhoto(familyId, u, uris.length > 1 ? i : undefined)));
+    // No title field in the photo-first compose flow — `title` is NOT NULL
+    // at the DB level, so fall back to something reasonable when there's no
+    // caption to reuse. `description` is the actual caption text.
+    const { data, error } = await supabase.from('family_memories').insert({
+      family_id: familyId, created_by: myId,
+      title: caption || 'Family memory', description: caption || null,
+      date: todayLocal(),
+      photo_url: urls[0], photo_urls: urls.length > 1 ? urls : null,
+      caption_overlay: captionOverlay,
+      hearts: 0, hearted_by: [],
     }).select().single();
+    // Previously this discarded `error` and just checked `if (data)` — an
+    // RLS-denied insert returns data:null with no thrown exception, so the
+    // compose sheet closed as if it had succeeded while nothing was ever
+    // saved. Throw so the caller's catch block surfaces the real cause.
+    if (error) {
+      console.error('[MemoriesTab] postMemory insert failed:', error.message, error);
+      throw new Error(error.message);
+    }
     if (data) setMemories(prev => [data as Memory, ...prev]);
   };
 
   const heartMemory = async (mem: Memory) => {
-    const myId = activeMemberId ?? members[0]?.id ?? '';
     const alreadyHearted = mem.hearted_by?.includes(myId);
     const newHearts = alreadyHearted ? mem.hearts - 1 : mem.hearts + 1;
     const newHearted = alreadyHearted
@@ -191,112 +454,105 @@ export default function MemoriesTab({ colors, isDark, readOnly = false }: { colo
     }
   };
 
-  const deleteMemory = async (id: string) => {
-    await supabase.from('family_memories').delete().eq('id', id);
-    setMemories(prev => prev.filter(m => m.id !== id));
+  const deleteMemory = (id: string) => {
+    Alert.alert('Remove memory', 'Delete this post? This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await supabase.from('family_memories').delete().eq('id', id);
+        setMemories(prev => prev.filter(m => m.id !== id));
+      }},
+    ]);
+  };
+
+  const [viewer, setViewer] = useState<{ urls: string[]; index: number } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const openViewer = (urls: string[], startIndex: number) => setViewer({ urls, index: startIndex });
+
+  const handleSave = async () => {
+    if (!viewer) return;
+    setSaving(true);
+    try {
+      const result = await saveMediaToDevice(viewer.urls[viewer.index], 'photo');
+      if (result === 'saved') Alert.alert('Saved', 'Photo saved to your library.');
+    } catch (e: any) {
+      Alert.alert('Couldn\'t save', e?.message ?? 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) return (
-    <SCard colors={colors} isDark={isDark}>
-      <CardHeader Icon={Image} iconColor={BRAND.purple} title="Family Memories" colors={colors} />
-      <ActivityIndicator color={BRAND.purple} style={{ marginVertical: 24 }} />
-    </SCard>
+    <View style={{ alignItems: 'center', marginVertical: 40 }}>
+      <CubeSpinner size={28} />
+    </View>
   );
 
   return (
     <>
-      <SCard colors={colors} isDark={isDark}>
-        <CardHeader Icon={Image} iconColor={BRAND.purple} title="Family Memories"
-          badge={`${memories.length}`} badgeColor={BRAND.purple} colors={colors} />
+      {/* Header — plain, on the canvas, not boxed like a settings card */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, marginBottom: 12 }}>
+        <ImageIcon size={16} color={BRAND.purple} />
+        <Text style={{ fontSize: 15, fontWeight: '900', color: colors.textPrimary, flex: 1 }}>Family Memories</Text>
+        {!readOnly && (
+          <TouchableOpacity onPress={() => setShowModal(true)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: BRAND.purple,
+              borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>
+            <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>+ Post</Text>
+          </TouchableOpacity>
+        )}
+      </View>
 
-        {memories.length === 0
-          ? <EmptyState Icon={Image} label="Capture your first family memory" colors={colors} />
-          : (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
-              {memories.map(mem => {
-                const Ic = ICON_MAP[mem.icon_name] ?? Image;
-                const myId = activeMemberId ?? members[0]?.id ?? '';
-                const hearted = mem.hearted_by?.includes(myId);
-                const heartColor = hearted ? BRAND.rose : colors.textTertiary;
+      {memories.length === 0 ? (
+        <View style={{ paddingHorizontal: 16 }}>
+          <EmptyState Icon={ImageIcon} label="Post your first family memory" colors={colors} />
+        </View>
+      ) : (
+        <View>
+          {memories.map(mem => (
+            <MemoryPostCard key={mem.id} mem={mem} myId={myId}
+              poster={members.find(m => m.id === mem.created_by)} allMembers={members} siblings={members.map(m => m.name)}
+              colors={colors} isDark={isDark}
+              onHeart={() => heartMemory(mem)} onDelete={() => deleteMemory(mem.id)}
+              onOpenViewer={openViewer} />
+          ))}
+        </View>
+      )}
 
-                return (
-                  <View key={mem.id} style={[me.card, {
-                    backgroundColor: isDark ? colors.card : '#FAFAFA',
-                    borderColor: colors.border,
-                  }]}>
-                    {/* Gradient-style thumbnail */}
-                    <View style={[me.thumb, { backgroundColor: mem.icon_color + '25' }]}>
-                      <Ic size={32} color={mem.icon_color} />
-                    </View>
+      <ComposeMemoryModal visible={showModal} onClose={() => setShowModal(false)}
+        onPost={postMemory} colors={colors} isDark={isDark} />
 
-                    <View style={{ padding: 10 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '900', color: colors.textPrimary }} numberOfLines={2}>
-                        {mem.title}
-                      </Text>
-                      {mem.description && (
-                        <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 3 }} numberOfLines={2}>
-                          {mem.description}
-                        </Text>
-                      )}
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 }}>
-                        <Calendar size={10} color={colors.textTertiary} />
-                        <Text style={{ fontSize: 10, color: colors.textTertiary }}>{mem.date}</Text>
-                        {mem.tag && (
-                          <View style={[me.tag, { backgroundColor: BRAND.purple + '20' }]}>
-                            <Text style={{ fontSize: 9, fontWeight: '800', color: BRAND.purple, textTransform: 'capitalize' }}>
-                              {mem.tag}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-                        <TouchableOpacity onPress={() => heartMemory(mem)}
-                          style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <Heart size={16} color={heartColor} fill={hearted ? BRAND.rose : 'transparent'} />
-                          <Text style={{ fontSize: 12, fontWeight: '800', color: heartColor }}>
-                            {mem.hearts}
-                          </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => deleteMemory(mem.id)}>
-                          <Trash2 size={13} color={BRAND.rose + 'AA'} />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          )}
-
-        {!readOnly && <AddBtn label="Add Memory" onPress={() => setShowModal(true)} color={BRAND.purple} />}
-      </SCard>
-
-      <AddMemoryModal visible={showModal} onClose={() => setShowModal(false)}
-        onSave={addMemory} colors={colors} isDark={isDark} />
+      {/* Fullscreen viewer with save-to-device */}
+      {viewer && (
+        <>
+          <MediaViewer visible mediaType="photo" uri={viewer.urls[viewer.index]}
+            urls={viewer.urls.length > 1 ? viewer.urls : undefined} startIndex={viewer.index}
+            onClose={() => setViewer(null)} />
+          <TouchableOpacity onPress={handleSave} disabled={saving}
+            style={{ position: 'absolute', bottom: 50, alignSelf: 'center', zIndex: 100,
+              flexDirection: 'row', alignItems: 'center', gap: 8,
+              backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 24, paddingHorizontal: 18, paddingVertical: 12 }}>
+            {saving ? <CubeSpinner size={16} /> : <Download size={16} color="#fff" />}
+            <Text style={{ fontSize: 13, fontWeight: '800', color: '#fff' }}>
+              {saving ? 'Saving…' : 'Save to Photos'}
+            </Text>
+          </TouchableOpacity>
+        </>
+      )}
     </>
   );
 }
 
-const me = StyleSheet.create({
-  card:  { width: '47%', borderRadius: 18, borderWidth: 1, overflow: 'hidden' },
-  thumb: { width: '100%', height: 100, alignItems: 'center', justifyContent: 'center' },
-  tag:   { borderRadius: 8, paddingHorizontal: 5, paddingVertical: 2 },
-});
-
 const md = StyleSheet.create({
-  modal:     { flex: 1 },
-  header:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-               paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12,
-               borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#E5E7EB' },
+  backdrop:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
+  sheet:     { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, maxHeight: '80%' },
+  handle:    { width: 44, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
   title:     { fontSize: 18, fontWeight: '900' },
   label:     { fontSize: 12, fontWeight: '700', marginBottom: 5 },
   inp:       { borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 13, paddingVertical: 10,
                fontSize: 14, fontWeight: '600' },
-  iconBtn:   { width: 52, height: 52, borderRadius: 14, borderWidth: 1.5,
-               alignItems: 'center', justifyContent: 'center' },
-  tagChip:   { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 6 },
-  footer:    { flexDirection: 'row', gap: 10, padding: 20, borderTopWidth: StyleSheet.hairlineWidth },
+  pickBtn:   { flex: 1, borderRadius: 14, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
+               gap: 6, paddingVertical: 20 },
   cancelBtn: { flex: 1, borderRadius: 14, borderWidth: 1.5, paddingVertical: 13, alignItems: 'center' },
   saveBtn:   { flex: 2, borderRadius: 14, paddingVertical: 13, alignItems: 'center' },
 });

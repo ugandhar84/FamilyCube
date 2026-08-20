@@ -15,7 +15,7 @@
 import { useState, useMemo, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Alert, Pressable, Modal, KeyboardAvoidingView, Platform,
+  StyleSheet, Alert, Pressable, Modal, KeyboardAvoidingView, Platform, Keyboard,
 } from 'react-native';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import { useTheme } from '@/lib/ThemeContext';
@@ -297,6 +297,7 @@ export function GroceryModal({ visible, onClose, active }: {
 
             <ScrollView
               keyboardShouldPersistTaps="always"
+              onScrollBeginDrag={Keyboard.dismiss}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 48 }}>
               {/* ── Category selector ── */}
@@ -498,6 +499,7 @@ export function SuppliesModal({ visible, onClose, active }: {
 
             <ScrollView
               keyboardShouldPersistTaps="always"
+              onScrollBeginDrag={Keyboard.dismiss}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 48 }}>
               {/* Urgency */}
@@ -885,6 +887,7 @@ export function AskModal({ visible, onClose, type, active }: {
 
             <ScrollView
               keyboardShouldPersistTaps="always"
+              onScrollBeginDrag={Keyboard.dismiss}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 48 }}>
               <TextInput

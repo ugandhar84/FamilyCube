@@ -82,20 +82,13 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
   // send is referenced by the voice hook's onAutoStop below, so it's kept
   // in a ref that always points at the latest closure — avoids a
   // declaration-order dependency between the two.
-  const sendRef = useRef<(text: string) => void>(() => {});
-  // Ask Cube auto-sends once the user pauses — a chat question benefits
-  // from going out immediately, unlike the family Chat tab's dictation
-  // (which only enables Send after a pause, letting the mic keep listening
-  // in case the user has more to add before actually sending).
+  // A pause only enables Send (mic keeps listening, same as the family Chat
+  // tab's dictation) rather than auto-firing the send — auto-send on a
+  // fixed pause length reads well for a native English speaker but cuts off
+  // non-native speakers, anyone composing a longer thought, or anyone with
+  // a speech difference who commonly pauses past the threshold mid-sentence.
+  // The user now explicitly taps Send when they're actually done talking.
   const voice = useVoiceDictation();
-  const lastSilenceTranscript = useRef('');
-  useEffect(() => {
-    if (voice.silenceReady && voice.liveTranscript && voice.liveTranscript !== lastSilenceTranscript.current) {
-      lastSilenceTranscript.current = voice.liveTranscript;
-      const transcript = voice.liveTranscript;
-      voice.stop().then(() => sendRef.current(transcript));
-    }
-  }, [voice.silenceReady, voice.liveTranscript]);
 
   // Resume the most recent thread when the sheet opens, instead of always
   // starting fresh — matches the "persist to a real table" decision.
@@ -177,8 +170,6 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     }
   };
-  useEffect(() => { sendRef.current = send; });
-
   // Cache of existing meals, keyed by week_of, loaded on demand as the day
   // picker's calendar moves between weeks — powers the "replace existing?"
   // confirmation without a fresh query on every date tap for a week already
@@ -408,10 +399,10 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
               <Pressable
                 onPress={async () => {
                   // Single mic control feeds the text box directly — while
-                  // listening, the box shows the live transcript; after a
-                  // short pause useVoiceDictation's onAutoStop fires send()
-                  // automatically, same as tapping the mic again to stop
-                  // manually and then tapping send.
+                  // listening, the box shows the live transcript; a pause
+                  // enables Send (silenceReady below) but the mic keeps
+                  // listening until the user taps the mic again to stop, or
+                  // taps Send to stop-and-send in one step.
                   if (voice.state === 'listening') { await voice.stop(); return; }
                   await voice.start();
                 }}
@@ -435,10 +426,20 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                 onSubmitEditing={() => send(input)}
                 returnKeyType="send"
               />
-              <Pressable onPress={() => send(input)} disabled={!input.trim() || sending}
+              <Pressable
+                onPress={async () => {
+                  if (voice.state === 'listening') {
+                    const transcript = voice.liveTranscript;
+                    await voice.stop();
+                    if (transcript.trim()) send(transcript);
+                    return;
+                  }
+                  send(input);
+                }}
+                disabled={voice.state === 'listening' ? !(voice.silenceReady && voice.liveTranscript.trim()) : (!input.trim() || sending)}
                 style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: input.trim() && !sending ? colors.primary : colors.border }}>
-                <Send size={16} color={input.trim() && !sending ? '#fff' : colors.textTertiary} />
+                  backgroundColor: (voice.state === 'listening' ? voice.silenceReady && voice.liveTranscript.trim() : input.trim() && !sending) ? colors.primary : colors.border }}>
+                <Send size={16} color={(voice.state === 'listening' ? voice.silenceReady && voice.liveTranscript.trim() : input.trim() && !sending) ? '#fff' : colors.textTertiary} />
               </Pressable>
             </View>
           </View>

@@ -8,13 +8,14 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import {
   View, Text, Pressable, TextInput, Alert,
-  ActivityIndicator, Image,
+  ActivityIndicator, Image, Modal, KeyboardAvoidingView,
+  ScrollView, Platform, Keyboard, StyleSheet, TouchableOpacity,
 } from 'react-native';
 import { CheckCircle2 } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import AppBottomSheet from '@/components/AppBottomSheet';
 import {
   useChoreStore, REJECTION_PRESETS,
   type ChoreTask, type RejectionPresetKey,
@@ -317,9 +318,36 @@ function RedoSheet({ task, visible, onClose, isDark, colors }: {
 
   if (!task) return null;
 
+  const dismiss = () => { Keyboard.dismiss(); onClose(); };
+
   return (
-    <AppBottomSheet visible={visible} onClose={onClose} title="Request Redo">
-      <View style={{ padding: 20 }}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
+          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
+            maxHeight: '90%', backgroundColor: colors.card }}>
+
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
+              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary }}>Request Redo</Text>
+              </View>
+              <TouchableOpacity
+                onPress={dismiss}
+                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                <Ionicons name="close" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="always"
+              contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
+              showsVerticalScrollIndicator={false}>
         <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary, marginBottom: 16 }}>
           {task.title}
         </Text>
@@ -389,8 +417,11 @@ function RedoSheet({ task, visible, onClose, isDark, colors }: {
             }
           </Pressable>
         </View>
-      </View>
-    </AppBottomSheet>
+            </ScrollView>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 

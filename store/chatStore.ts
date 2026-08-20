@@ -110,12 +110,29 @@ interface ChatState {
   channels: Record<string, ChannelState>;
   // subscriptions: channelId → Supabase subscription handle
   _subs: Record<string, any>;
+  // Latest message ISO timestamp per channel, keyed by channel_id — used to
+  // auto-sort the channel strip by recent activity without having to
+  // loadChannel() (and pull full message history) for every tab up front.
+  lastActivity: Record<string, string>;
+  // messageId → memberIds who have read it — drives the small avatar stack
+  // under a group message. Only populated for messages actually loaded
+  // (i.e. the currently-open channel), not globally.
+  readReceipts: Record<string, string[]>;
+  // channelId → count of messages from others sent after my last-read cursor
+  // — cheap O(1) lookup per channel via chat_channel_reads, used for the
+  // unread badge on each tab without loading that channel's messages.
+  unreadCounts: Record<string, number>;
 
   channelState: (id: string) => ChannelState;
 
   loadChannel:  (channelId: string) => Promise<void>;
   loadOlder:    (channelId: string) => Promise<void>;
   unsubscribe:  (channelId: string) => void;
+  loadLastActivity: (channelIds: string[]) => Promise<void>;
+  loadUnreadCounts: (channelIds: string[], memberId: string) => Promise<void>;
+  markChannelRead:  (channelId: string, memberId: string) => Promise<void>;
+  loadReadReceipts: (channelId: string, messageIds: string[]) => Promise<void>;
+  markMessagesRead: (channelId: string, messageIds: string[], memberId: string) => Promise<void>;
 
   sendMessage: (
     channelId: string, senderId: string, text: string,
@@ -150,8 +167,101 @@ function emptyChannel(): ChannelState {
 export const useChatStore = create<ChatState>((set, get) => ({
   channels: {},
   _subs:    {},
+  lastActivity: {},
+  readReceipts: {},
+  unreadCounts: {},
 
   channelState: (id) => get().channels[id] ?? emptyChannel(),
+
+  // One cheap query for the latest message timestamp per channel — reads
+  // chat_channels.last_message_at (kept live by the touch_chat_channel_
+  // last_message trigger) instead of scanning chat_messages, so this stays
+  // fast regardless of how much history a channel has accumulated.
+  loadLastActivity: async (channelIds) => {
+    if (channelIds.length === 0) return;
+    const { data, error } = await supabase
+      .from('chat_channels')
+      .select('id, last_message_at')
+      .in('id', channelIds);
+    if (error || !data) return;
+    const latest: Record<string, string> = {};
+    for (const row of data as { id: string; last_message_at: string | null }[]) {
+      if (row.last_message_at) latest[row.id] = row.last_message_at;
+    }
+    set(s => ({ lastActivity: { ...s.lastActivity, ...latest } }));
+  },
+
+  // O(1) per channel: count messages sent by someone else after my
+  // chat_channel_reads cursor for that channel (no cursor row = never read,
+  // so everything from others counts as unread).
+  loadUnreadCounts: async (channelIds, memberId) => {
+    if (channelIds.length === 0) return;
+    const { data: cursors } = await supabase
+      .from('chat_channel_reads')
+      .select('channel_id, last_read_at')
+      .eq('member_id', memberId)
+      .in('channel_id', channelIds);
+    const cursorMap = Object.fromEntries((cursors ?? []).map((c: any) => [c.channel_id, c.last_read_at]));
+
+    const counts = await Promise.all(channelIds.map(async (id) => {
+      let query = supabase
+        .from('chat_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('channel_id', id)
+        .neq('sender_id', memberId);
+      if (cursorMap[id]) query = query.gt('created_at', cursorMap[id]);
+      const { count } = await query;
+      return [id, count ?? 0] as const;
+    }));
+    set(s => ({ unreadCounts: { ...s.unreadCounts, ...Object.fromEntries(counts) } }));
+  },
+
+  // Bumps the read cursor to now and zeroes the badge locally — called when
+  // a channel is opened/viewed.
+  markChannelRead: async (channelId, memberId) => {
+    set(s => ({ unreadCounts: { ...s.unreadCounts, [channelId]: 0 } }));
+    await supabase.from('chat_channel_reads')
+      .upsert({ channel_id: channelId, member_id: memberId, last_read_at: new Date().toISOString() },
+        { onConflict: 'channel_id,member_id' });
+  },
+
+  // Per-message read-receipt rows for the messages currently on screen —
+  // drives the avatar stack under a group message. Also inserts a receipt
+  // for the viewer's own read of each message (upsert, so re-viewing is
+  // idempotent).
+  loadReadReceipts: async (channelId, messageIds) => {
+    if (messageIds.length === 0) return;
+    const { data } = await supabase
+      .from('chat_read_receipts')
+      .select('message_id, member_id')
+      .in('message_id', messageIds);
+    if (!data) return;
+    set(s => {
+      const next = { ...s.readReceipts };
+      for (const row of data as { message_id: string; member_id: string }[]) {
+        next[row.message_id] = [...new Set([...(next[row.message_id] ?? []), row.member_id])];
+      }
+      return { readReceipts: next };
+    });
+  },
+
+  // Writes a read-receipt row for each message not sent by me (upsert —
+  // (message_id, member_id) is unique, so re-viewing is a no-op). Called
+  // when messages actually render on screen, not just when a channel opens,
+  // so a message that arrives while the channel is open still gets marked.
+  markMessagesRead: async (channelId, messageIds, memberId) => {
+    if (messageIds.length === 0) return;
+    const now = new Date().toISOString();
+    set(s => {
+      const next = { ...s.readReceipts };
+      for (const id of messageIds) {
+        next[id] = [...new Set([...(next[id] ?? []), memberId])];
+      }
+      return { readReceipts: next };
+    });
+    const rows = messageIds.map(id => ({ message_id: id, channel_id: channelId, member_id: memberId, read_at: now }));
+    await supabase.from('chat_read_receipts').upsert(rows, { onConflict: 'message_id,member_id' });
+  },
 
   // ── Load latest page + subscribe ──────────────────────────────────────────
 
@@ -454,7 +564,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Insert in timestamp order
       const idx  = msgs.findIndex(m => m.timestamp > msg.timestamp);
       if (idx === -1) msgs.push(msg); else msgs.splice(idx, 0, msg);
-      return { channels: { ...s.channels, [channelId]: { ...ch, messages: msgs } } };
+      const prevLatest = s.lastActivity[channelId];
+      const lastActivity = (!prevLatest || msg.timestamp > prevLatest)
+        ? { ...s.lastActivity, [channelId]: msg.timestamp } : s.lastActivity;
+      return { channels: { ...s.channels, [channelId]: { ...ch, messages: msgs } }, lastActivity };
     });
   },
 

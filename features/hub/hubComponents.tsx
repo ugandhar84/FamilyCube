@@ -2,8 +2,8 @@
  * Shared primitive components for the Hub feature.
  * SectionCard, CollapsibleCard, SubCard, AlertBanner, TimelineCard, EnRouteModal.
  */
-import { useState, useEffect } from 'react';
-import { View, Text, Pressable, TextInput, StyleSheet, Alert, ScrollView, Platform, Linking, TouchableOpacity, Modal, KeyboardAvoidingView } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { View, Text, Pressable, TextInput, StyleSheet, Alert, ScrollView, Platform, Linking, TouchableOpacity, Modal, KeyboardAvoidingView, Animated, Easing, Keyboard } from 'react-native';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import {
   ChevronDown, ChevronUp, Pencil, Calendar,
@@ -12,14 +12,44 @@ import {
 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useTheme } from '@/lib/ThemeContext';
-import { TYPO, LETTER_SPACING, MONO_FONT } from '@/constants/theme';
+import { TYPO, LETTER_SPACING } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import { fmtTime, hoursUntilEvent, catColor, isWorkEvent, isHomeLocation } from './hubUtils';
-import { fmtTimeParts, fmtDateShort } from '@/lib/dates';
+import { EventCardRow } from '@/features/calendar/components/EventCard';
+import { fmtDateShort } from '@/lib/dates';
 import { relationalNameByName } from '@/lib/format';
 import { useChatStore } from '@/store/chatStore';
+
+// ─── LiveDot ──────────────────────────────────────────────────────────────────
+// Pulsing dot for "LIVE NOW" indicators — a soft outward ring pulse behind a
+// solid center dot, looping, so the marker reads as actually live rather
+// than a static status icon.
+export function LiveDot({ color, size = 7 }: { color: string; size?: number }) {
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(pulse, { toValue: 1, duration: 1400, easing: Easing.out(Easing.ease), useNativeDriver: true })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 2.4] });
+  const ringOpacity = pulse.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.5, 0.15, 0] });
+
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Animated.View style={{
+        position: 'absolute', width: size, height: size, borderRadius: size / 2,
+        backgroundColor: color, opacity: ringOpacity, transform: [{ scale: ringScale }],
+      }} />
+      <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color }} />
+    </View>
+  );
+}
 
 // ─── SectionLabel ─────────────────────────────────────────────────────────────
 
@@ -283,14 +313,11 @@ export function AlertBanner({
   activeName?: string;
 }) {
   const viewer = members.find(m => m.name === activeName);
-  // Whoever had the slot (declined or gone quiet) only finds out someone
-  // else took it by checking their own Hub again unless we say so out loud.
-  const notifyTakeover = (ev: FamilyEvent) => {
-    if (ev.helper && ev.helper !== activeName && viewer) {
-      useChatStore.getState().sendMessage('all', viewer.id,
-        `🔄 ${relationalNameByName(activeName, members)} took over "${ev.title}" (was ${relationalNameByName(ev.helper, members)}'s)`);
-    }
-  };
+  // Reassignment used to also post a "🔄 X took over Y" broadcast to family
+  // chat, but that reads as noise — the Hub itself already reflects who has
+  // it now, so this is a no-op left in place only to avoid touching every
+  // call site below.
+  const notifyTakeover = (_ev: FamilyEvent) => {};
 
   return (
     <View style={{ marginHorizontal: 16, marginBottom: 12, gap: 8 }}>
@@ -670,7 +697,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                 <X size={18} color={colors.textSecondary} />
               </Pressable>
             </View>
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
+            <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
               contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
         <View style={{ gap: 14 }}>
           {/* Category pill — the title itself already lives in AppBottomSheet's
@@ -973,15 +1000,6 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                           ? `${cancelledSelfName ?? activeName ?? 'Parent'} can't do "${helperLabel}" — "${reason}"`
                           : undefined,
                       });
-                      // Whoever had it (especially a GP/teen who claimed it
-                      // through the open pool) only finds out it moved by
-                      // checking their own Hub again unless we say so out
-                      // loud — a chat post covers every viewer at once, same
-                      // as the En Route hand-off broadcasts.
-                      if (priorHelperName && priorHelperName !== name && viewerMember) {
-                        useChatStore.getState().sendMessage('all', viewerMember.id,
-                          `🔄 ${relationalNameByName(name, members)} took over "${ev.title}" (was ${relationalNameByName(priorHelperName, members)}'s)`);
-                      }
                       setChangeOpen(false);
                       setCancelledSelfName(undefined);
                       onClose();
@@ -1014,183 +1032,21 @@ export function TimelineCard({ ev, members, allNames, colors, isDark, updateEven
 }) {
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  const cat    = ev.category ?? 'Event';
-  const hours  = hoursUntilEvent(ev.date, ev.time);
-  const isPast = hours < 0;
-  const cc     = catColor(cat);
-  const { time, ampm } = fmtTimeParts(ev.time);
-
-  const isWork         = isWorkEvent(ev);
-  const helperMissing  = !ev.helper && !!ev.location && !isWork && !isHomeLocation(ev.location);
-  const helperPending  = ev.helperStatus === 'pending';
-  const helperRejected = ev.helperStatus === 'rejected';
-  // A declined driver is a parent-level scheduling problem — to a kid/teen
-  // it should read as "no driver yet," not an alarming red flag on their
-  // own timeline. Only the parent-facing card gets the loud treatment;
-  // helperMissing (no driver ever set) stays neutral for everyone already.
+  const isPast = hoursUntilEvent(ev.date, ev.time) < 0;
   const isViewerParent = members.find(m => m.name === activeName)?.role === 'parent';
-  const showAlarm      = helperRejected && isViewerParent;
-  const hasIssue        = helperMissing || showAlarm;
-
-  const forLabel =
-    cat === 'Medical' ? 'Patient'   :
-    cat === 'Sports'  ? 'Athlete'   :
-    cat === 'Study'   ? 'Student'   :
-    cat === 'School'  ? 'Student'   :
-    cat === 'Ride'    ? 'Attending' :
-    cat === 'Work'    ? null        : 'For';
-
-  const helperLabel =
-    cat === 'Medical' ? 'Accompanied by' :
-    cat === 'Study'   ? 'Tutored by'     :
-    cat === 'School'  ? 'Dropped off by' :
-    cat === 'Sports'  ? 'Dropped off by' :
-    cat === 'Ride'    ? 'Driven by'      :
-    'Organised by';
-
-  const allAssignees = ev.memberIds?.length
-    ? members.filter(m => ev.memberIds!.includes(m.id))
-    : ev.memberId ? members.filter(m => m.id === ev.memberId) : [];
-
-  const LINE_COLOR = isDark ? colors.primary + '35' : colors.primary + '25';
 
   return (
     <>
-      <View style={{ flexDirection: 'row', minHeight: 64, opacity: isPast ? 0.45 : 1 }}>
-
-        {/* Col 1: time + AM/PM + line, all centered on the same axis */}
-        <View style={{ width: 54, alignItems: 'center', paddingTop: 14 }}>
-          <Text style={{ fontFamily: MONO_FONT, fontSize: 12, fontWeight: '900', color: isPast ? colors.textTertiary : cc, lineHeight: 15, textAlign: 'center' }}>{time}</Text>
-          <Text style={{ fontSize: 9, fontWeight: '700', color: isPast ? colors.textTertiary : cc + 'CC', lineHeight: 11, textAlign: 'center' }}>{ampm}</Text>
-          {!isLast && (
-            <View style={{ flex: 1, width: 1.5, marginTop: 6, backgroundColor: LINE_COLOR }} />
-          )}
-        </View>
-
-        {/* Col 2: event card */}
-        <TouchableOpacity
-          activeOpacity={0.82}
+      {/* Card sits flush with the section's own 16px frame — the card's
+          own time chip (from EventCardRow) replaces the old separate
+          time-axis column, so nothing needs to be inset for it. */}
+      <View style={{ marginBottom: isLast ? 4 : 10, opacity: isPast ? 0.45 : 1 }}>
+        <EventCardRow
+          ev={ev} members={members} colors={colors} isDark={isDark}
           onPress={() => setSheetOpen(true)}
-          style={{
-            flex: 1, marginLeft: 8, marginBottom: isLast ? 4 : 10,
-            backgroundColor: isDark ? colors.card : '#FFFFFF',
-            borderRadius: 14, borderWidth: 1,
-            borderColor: (hasIssue && !isPast) ? colors.danger + '45'
-                       : (helperPending && !isPast) ? colors.warning + '45'
-                       : (isDark ? colors.border : 'rgba(225,218,203,0.7)'),
-            borderLeftWidth: 3,
-            borderLeftColor: (hasIssue && !isPast) ? colors.danger
-                           : (helperPending && !isPast) ? colors.warning
-                           : cc,
-            paddingHorizontal: 12, paddingVertical: 10, gap: 5,
-            // Kinfolk "tactile card" elevation — flat borders alone read too
-            // plain against the warm cashmere background on a real device.
-            shadowColor: isDark ? '#000' : 'rgba(80,60,40,0.10)',
-            shadowOpacity: isPast ? 0 : (isDark ? 0.4 : 1),
-            shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
-            elevation: isPast ? 0 : (isDark ? 3 : 2),
-          }}>
-
-          {/* Row 1: category chip + title */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-            <View style={{ backgroundColor: cc + '1A', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: cc + '44' }}>
-              <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: cc, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                {isPast ? '✓ Done' : cat}
-              </Text>
-            </View>
-            <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
-              {ev.title}
-            </Text>
-          </View>
-
-          {/* Row 2: For label + assignee chips + location */}
-          {forLabel && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>{forLabel}:</Text>
-              {allAssignees.length > 0 ? allAssignees.map(m => (
-                <FamilyAvatar key={m.id} name={m.name} emoji={m.emoji} size={18} ringColor={cc} ringWidth={1.5} />
-              )) : (
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>—</Text>
-              )}
-              {ev.location && !isHomeLocation(ev.location) && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                  <MapPin size={11} color={isDark ? '#34D399' : '#059669'} />
-                  <LocationLink addr={ev.location} color={isDark ? '#34D399' : '#059669'} fontSize={TYPO.label} />
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Row 3: helper status */}
-          {ev.helper && !ev.approvalPending && (() => {
-            const helperMember = members.find(m => m.name === ev.helper);
-            return (
-            <View style={{ gap: 3 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              {/* Avatar with warning badge overlay when declined */}
-              <View style={{ position: 'relative' }}>
-                <FamilyAvatar
-                  name={ev.helper} emoji={helperMember?.emoji} avatarUrl={helperMember?.avatarUrl}
-                  siblings={allNames} size={26}
-                  ringColor={showAlarm ? colors.danger : helperPending ? colors.warning : helperRejected ? colors.border : colors.success}
-                  ringWidth={2}
-                />
-                {showAlarm && (
-                  <View style={{
-                    position: 'absolute', top: -3, right: -3,
-                    backgroundColor: colors.danger, borderRadius: 7,
-                    width: 14, height: 14,
-                    alignItems: 'center', justifyContent: 'center',
-                    borderWidth: 1.5, borderColor: isDark ? colors.card : '#fff',
-                  }}>
-                    <Text style={{ fontSize: 8, color: '#fff', fontWeight: '900', lineHeight: 10 }}>!</Text>
-                  </View>
-                )}
-              </View>
-              <Text style={{ fontSize: TYPO.label, color: showAlarm ? colors.danger : colors.textSecondary, flex: 1 }}>
-                {helperLabel}{' '}
-                <Text style={{ fontWeight: '700', color: showAlarm ? colors.danger : colors.textPrimary }}>{relationalNameByName(ev.helper, members)}</Text>
-              </Text>
-              {ev.helperStatus === 'confirmed' && (
-                <View style={{ backgroundColor: colors.success + '18', borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2 }}>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.success }}>Confirmed ✓</Text>
-                </View>
-              )}
-              {ev.helperStatus === 'pending' && (
-                <View style={{ backgroundColor: colors.warning + '20', borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2 }}>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.warningDark }}>⏳ Awaiting</Text>
-                </View>
-              )}
-              {ev.helperStatus === 'rejected' && !showAlarm && (
-                <View style={{ backgroundColor: colors.surface, borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2 }}>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary }}>No driver yet</Text>
-                </View>
-              )}
-              {showAlarm && (
-                <View style={{ backgroundColor: colors.danger + '25', borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: colors.danger + '40' }}>
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: colors.danger }}>Declined ✕</Text>
-                </View>
-              )}
-            </View>
-            {showAlarm && ev.declineReason && (
-              <Text style={{ fontSize: TYPO.micro, color: colors.danger, fontStyle: 'italic' }}>
-                "{ev.declineReason}"
-              </Text>
-            )}
-            </View>
-            );
-          })()}
-
-          {/* Needs driver warning — no helper assigned at all */}
-          {!isPast && helperMissing && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5,
-              backgroundColor: colors.danger + '12', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5,
-              borderWidth: 1, borderColor: colors.danger + '30' }}>
-              <AlertTriangle size={11} color={colors.danger} />
-              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.danger }}>No driver assigned — tap to fix</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+          timeStyle="boxed" showCategory showLocation
+          showHelperStatus isViewerParent={isViewerParent}
+        />
       </View>
 
       {sheetOpen && (

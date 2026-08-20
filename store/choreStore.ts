@@ -79,6 +79,11 @@ export interface ChoreTask {
   instanceDate?: string;
   dueDate?: string;
   dueTime?: string;
+  // Call-style reminder — opt-in per chore. Fires a real (VoIP push /
+  // CallKit) ringing alert to the assignee this many minutes before dueTime,
+  // not just a normal push. 0 = "on time" (fires at the due moment itself).
+  alertCall?: boolean;
+  alertCallLeadMinutes?: number;
   redoCount: number;
   submissionNote?: string;
   proofNotes?: string;
@@ -348,6 +353,8 @@ function choreFromRow(row: any): ChoreTask {
     instanceDate:            row.instance_date ?? undefined,
     dueDate:                 row.due_date ?? undefined,
     dueTime:                 row.due_time ?? undefined,
+    alertCall:               row.alert_call ?? false,
+    alertCallLeadMinutes:    row.alert_call_lead_minutes ?? 10,
     redoCount:               row.redo_count ?? 0,
     submissionNote:          row.submission_note ?? undefined,
     proofNotes:              row.proof_notes ?? undefined,
@@ -485,7 +492,10 @@ interface ChoreState {
 
   // ── Child actions ──────────────────────────────────────────────────────────
   claimBounty:              (choreId: string, childId: string) => void;
-  submitChore:              (choreId: string, opts?: { photoUrl?: string; note?: string }) => void;
+  // Returns false (and does nothing) if the chore isn't submittable yet —
+  // currently: a recurring chore whose due_date is still in the future.
+  // One-time chores and on/after-due-date recurring chores always succeed.
+  submitChore:              (choreId: string, opts?: { photoUrl?: string; note?: string }) => boolean;
   resubmitChore:            (choreId: string, opts?: { photoUrl?: string; note?: string }) => void;
   instantCompleteChore:     (choreId: string, childId: string) => void;
   startGrandparentQuest:    (choreId: string, childId: string) => void;
@@ -804,6 +814,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       instance_date:            chore.instanceDate,
       due_date:                 chore.dueDate,
       due_time:                 chore.dueTime,
+      alert_call:               chore.alertCall ?? false,
+      alert_call_lead_minutes:  chore.alertCallLeadMinutes ?? 10,
       approval_window_expires_at: autoExpire,
       created_at:               now,
       shopping_items:           (partial as any).shoppingItems ?? null,
@@ -820,48 +832,57 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
 
-    // Map to DB fields
+    // Map to DB fields. Uses `in` (key presence), not `!== undefined`, so a
+    // caller that explicitly passes `{ approvedAt: undefined }` to CLEAR a
+    // field (e.g. resetDueRecurringChores rolling a chore back to 'todo')
+    // actually writes SQL NULL, instead of the key silently being dropped
+    // from the patch — which previously left approved_at/reviewed_at/
+    // reviewed_by_id/submitted_at stale in the DB after a status reset,
+    // desyncing status ('todo') from those leftover approval fields the
+    // next time syncFromDB() overwrote local state with the DB's version.
     const patch: Record<string, unknown> = {};
-    if (updates.title              !== undefined) patch.title                    = updates.title;
-    if (updates.description        !== undefined) patch.description              = updates.description;
-    if (updates.status             !== undefined) patch.status                   = updates.status;
-    if (updates.assignedToId       !== undefined) patch.assigned_to_id           = updates.assignedToId;
-    if (updates.isPool             !== undefined) patch.is_pool                  = updates.isPool;
-    if (updates.targetChildIds     !== undefined) patch.target_child_ids         = updates.targetChildIds;
-    if (updates.coinsSplitPerKid   !== undefined) patch.coins_split_per_kid       = updates.coinsSplitPerKid;
-    if (updates.teamGroupId        !== undefined) patch.team_group_id             = updates.teamGroupId;
-    if (updates.categoryType       !== undefined) patch.category_type            = updates.categoryType;
-    if (updates.category           !== undefined) patch.category                 = updates.category;
-    if (updates.basePoints         !== undefined) patch.base_points              = updates.basePoints;
-    if (updates.coinsReward        !== undefined) patch.coins_reward             = updates.coinsReward;
-    if (updates.bonusCoins         !== undefined) patch.bonus_coins              = updates.bonusCoins;
-    if (updates.difficulty         !== undefined) patch.difficulty               = updates.difficulty;
-    if (updates.dueDate            !== undefined) patch.due_date                 = updates.dueDate;
-    if (updates.dueTime            !== undefined) patch.due_time                 = updates.dueTime;
-    if (updates.requiresPhotoProof !== undefined) patch.requires_photo           = updates.requiresPhotoProof;
-    if (updates.inviteGrandparents !== undefined) patch.invite_grandparents      = updates.inviteGrandparents;
-    if (updates.recurrenceRule     !== undefined) patch.recurrence_rule          = updates.recurrenceRule;
-    if (updates.shoppingItems        !== undefined) patch.shopping_items             = updates.shoppingItems;
-    if (updates.shoppingStore        !== undefined) patch.shopping_store             = updates.shoppingStore;
-    if (updates.shoppingBudget       !== undefined) patch.shopping_budget            = updates.shoppingBudget;
-    if ((updates as any).openToGP    !== undefined) patch.open_to_gp                = (updates as any).openToGP;
-    if (updates.receiptPhotoUrl      !== undefined) patch.receipt_photo_url          = updates.receiptPhotoUrl;
-    if (updates.receiptAmount        !== undefined) patch.receipt_amount             = updates.receiptAmount;
-    if (updates.receiptNote          !== undefined) patch.receipt_note               = updates.receiptNote;
-    if (updates.receiptSubmittedAt   !== undefined) patch.receipt_submitted_at       = updates.receiptSubmittedAt;
-    if (updates.receiptReimbursedAt  !== undefined) patch.receipt_reimbursed_at      = updates.receiptReimbursedAt;
-    if (updates.submissionNote     !== undefined) patch.submission_note          = updates.submissionNote;
-    if (updates.proofNotes         !== undefined) patch.proof_notes              = updates.proofNotes;
-    if (updates.submissionPhotoUrl !== undefined) patch.submission_photo_url     = updates.submissionPhotoUrl;
-    if (updates.rejectionReason    !== undefined) patch.rejection_reason         = updates.rejectionReason;
-    if (updates.parentNote         !== undefined) patch.parent_note              = updates.parentNote;
-    if (updates.submittedAt        !== undefined) patch.submitted_at             = updates.submittedAt;
-    if (updates.approvedAt         !== undefined) patch.approved_at              = updates.approvedAt;
-    if (updates.reviewedAt         !== undefined) patch.reviewed_at              = updates.reviewedAt;
-    if (updates.reviewedById       !== undefined) patch.reviewed_by_id           = updates.reviewedById;
-    if (updates.declinedAt         !== undefined) patch.declined_at              = updates.declinedAt;
-    if (updates.redoCount          !== undefined) patch.redo_count               = updates.redoCount;
-    if (updates.cheers             !== undefined) patch.cheered_by               = updates.cheers;
+    if ('title'              in updates) patch.title                    = updates.title;
+    if ('description'        in updates) patch.description              = updates.description;
+    if ('status'             in updates) patch.status                   = updates.status;
+    if ('assignedToId'       in updates) patch.assigned_to_id           = updates.assignedToId ?? null;
+    if ('isPool'             in updates) patch.is_pool                  = updates.isPool;
+    if ('targetChildIds'     in updates) patch.target_child_ids         = updates.targetChildIds;
+    if ('coinsSplitPerKid'   in updates) patch.coins_split_per_kid       = updates.coinsSplitPerKid;
+    if ('teamGroupId'        in updates) patch.team_group_id             = updates.teamGroupId;
+    if ('categoryType'       in updates) patch.category_type            = updates.categoryType;
+    if ('category'           in updates) patch.category                 = updates.category;
+    if ('basePoints'         in updates) patch.base_points              = updates.basePoints;
+    if ('coinsReward'        in updates) patch.coins_reward             = updates.coinsReward;
+    if ('bonusCoins'         in updates) patch.bonus_coins              = updates.bonusCoins;
+    if ('difficulty'         in updates) patch.difficulty               = updates.difficulty;
+    if ('dueDate'            in updates) patch.due_date                 = updates.dueDate;
+    if ('dueTime'            in updates) patch.due_time                 = updates.dueTime;
+    if ('alertCall'          in updates) patch.alert_call               = updates.alertCall ?? false;
+    if ('alertCallLeadMinutes' in updates) patch.alert_call_lead_minutes = updates.alertCallLeadMinutes ?? 10;
+    if ('requiresPhotoProof' in updates) patch.requires_photo           = updates.requiresPhotoProof;
+    if ('inviteGrandparents' in updates) patch.invite_grandparents      = updates.inviteGrandparents;
+    if ('recurrenceRule'     in updates) patch.recurrence_rule          = updates.recurrenceRule;
+    if ('shoppingItems'        in updates) patch.shopping_items             = updates.shoppingItems;
+    if ('shoppingStore'        in updates) patch.shopping_store             = updates.shoppingStore;
+    if ('shoppingBudget'       in updates) patch.shopping_budget            = updates.shoppingBudget;
+    if ('openToGP'    in (updates as any)) patch.open_to_gp                = (updates as any).openToGP;
+    if ('receiptPhotoUrl'      in updates) patch.receipt_photo_url          = updates.receiptPhotoUrl ?? null;
+    if ('receiptAmount'        in updates) patch.receipt_amount             = updates.receiptAmount ?? null;
+    if ('receiptNote'          in updates) patch.receipt_note               = updates.receiptNote ?? null;
+    if ('receiptSubmittedAt'   in updates) patch.receipt_submitted_at       = updates.receiptSubmittedAt ?? null;
+    if ('receiptReimbursedAt'  in updates) patch.receipt_reimbursed_at      = updates.receiptReimbursedAt ?? null;
+    if ('submissionNote'     in updates) patch.submission_note          = updates.submissionNote ?? null;
+    if ('proofNotes'         in updates) patch.proof_notes              = updates.proofNotes ?? null;
+    if ('submissionPhotoUrl' in updates) patch.submission_photo_url     = updates.submissionPhotoUrl ?? null;
+    if ('rejectionReason'    in updates) patch.rejection_reason         = updates.rejectionReason ?? null;
+    if ('parentNote'         in updates) patch.parent_note              = updates.parentNote ?? null;
+    if ('submittedAt'        in updates) patch.submitted_at             = updates.submittedAt ?? null;
+    if ('approvedAt'         in updates) patch.approved_at              = updates.approvedAt ?? null;
+    if ('reviewedAt'         in updates) patch.reviewed_at              = updates.reviewedAt ?? null;
+    if ('reviewedById'       in updates) patch.reviewed_by_id           = updates.reviewedById ?? null;
+    if ('declinedAt'         in updates) patch.declined_at              = updates.declinedAt ?? null;
+    if ('redoCount'          in updates) patch.redo_count               = updates.redoCount;
+    if ('cheers'             in updates) patch.cheered_by               = updates.cheers;
     if (Object.keys(patch).length > 0) dbUpdate('chore_tasks', id, patch);
   },
 
@@ -890,7 +911,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
   submitChore: (choreId, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
-    if (!chore || !['todo', 'in_progress'].includes(chore.status)) return;
+    if (!chore || !['todo', 'in_progress'].includes(chore.status)) return false;
+
+    // A recurring chore can't be submitted for a cycle that hasn't started
+    // yet (e.g. tapping today on next month's instance) — on-time and late
+    // (overdue/catch-up) submission are both fine, matching how "overdue"
+    // is already defined elsewhere (dueDate <= today). One-time chores
+    // (frequency 'once', or no recurrenceRule) are never gated by this.
+    const freq = chore.recurrenceRule?.frequency;
+    if (freq && freq !== 'once' && chore.dueDate && chore.dueDate > localDateStr(new Date())) {
+      return false;
+    }
 
     // Spec: if redo_count >= 2, auto-approve immediately — no more manual review
     if ((chore.redoCount ?? 0) >= 2) {
@@ -898,7 +929,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       get().updateChore(choreId, { status: 'auto_approved', approvedAt: now, reviewedAt: now });
       const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
       if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward);
-      return;
+      return true;
     }
 
     const now = new Date().toISOString();
@@ -912,6 +943,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       submittedAt:             now,
       approvalWindowExpiresAt: expiry,
     });
+    return true;
   },
 
   resubmitChore: (choreId, opts) => {
@@ -1728,6 +1760,36 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
   addGrandparentMatch: (match) => {
     const now = new Date().toISOString();
+    // DB has a unique constraint on (grandparent_id, child_id, match_type) —
+    // re-saving a match rule for the same grandkid+type (e.g. adjusting the
+    // percentage/cap) previously always attempted a fresh INSERT and hit
+    // that constraint, failing silently (console warning only, nothing
+    // shown to the user, so the sheet just appeared to do nothing). Now
+    // treat an existing match for that same combination as an edit.
+    const existing = get().grandparentMatches.find(m =>
+      m.grandparentId === match.grandparentId &&
+      m.childId === match.childId &&
+      m.matchType === match.matchType
+    );
+    if (existing) {
+      const updated: GrandparentMatch = {
+        ...existing,
+        matchValue: match.matchValue,
+        matchJar: match.matchJar,
+        goalTarget: match.goalTarget,
+        maxMonthlyContribution: match.maxMonthlyContribution,
+        isActive: true,
+      };
+      set(s => ({ grandparentMatches: s.grandparentMatches.map(m => m.id === existing.id ? updated : m) }));
+      dbUpdate('grandparent_matches', existing.id, {
+        match_value:              updated.matchValue,
+        match_jar:                updated.matchJar,
+        goal_target:              updated.goalTarget,
+        max_monthly_contribution: updated.maxMonthlyContribution,
+        is_active:                true,
+      });
+      return;
+    }
     const newMatch: GrandparentMatch = {
       ...match,
       id:                    genId(),

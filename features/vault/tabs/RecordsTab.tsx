@@ -267,14 +267,14 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
 
   // ── Guards ────────────────────────────────────────────────────────────────────
   if (!familyId || familyId === 'family-1') return (
-    <SCard colors={colors} isDark={isDark}>
+    <SCard colors={colors} isDark={isDark} accent={BRAND.teal}>
       <CardHeader Icon={FolderOpen} iconColor={BRAND.teal} title="Medical Records" colors={colors} />
       <EmptyState Icon={Lock} label="Sign in and join a family vault to access medical records" colors={colors} />
     </SCard>
   );
 
   if (loading) return (
-    <SCard colors={colors} isDark={isDark}>
+    <SCard colors={colors} isDark={isDark} accent={BRAND.teal}>
       <CardHeader Icon={FolderOpen} iconColor={BRAND.teal} title="Medical Records" colors={colors}
         onAction={() => setShowAdd(true)} actionLabel="Upload" />
       <ActivityIndicator color={BRAND.teal} style={{ marginVertical: 24 }} />
@@ -282,7 +282,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
   );
 
   if (loadError) return (
-    <SCard colors={colors} isDark={isDark}>
+    <SCard colors={colors} isDark={isDark} accent={BRAND.teal}>
       <CardHeader Icon={FolderOpen} iconColor={BRAND.teal} title="Medical Records" colors={colors}
         onAction={() => setShowAdd(true)} actionLabel="Upload" />
       <View style={{ alignItems: 'center', paddingVertical: 24, gap: 10 }}>
@@ -301,7 +301,7 @@ export default function RecordsTab({ colors, isDark }: { colors: any; isDark: bo
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <>
-      <SCard colors={colors} isDark={isDark}>
+      <SCard colors={colors} isDark={isDark} accent={BRAND.teal}>
         <CardHeader Icon={FolderOpen} iconColor={BRAND.teal} title="Medical Records"
           badge={`${records.length}`} badgeColor={BRAND.teal} colors={colors}
           onAction={() => setShowAdd(true)} actionLabel="Upload" />

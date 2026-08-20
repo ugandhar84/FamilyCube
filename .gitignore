@@ -10,6 +10,8 @@ expo-env.d.ts
 .env.local
 .env*.local
 supabase/functions/.env
+google-services.json
+GoogleService-Info.plist
 
 # Dependencies
 node_modules/

@@ -2,10 +2,11 @@ import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   TextInput, Modal, ActivityIndicator, Alert, Platform,
+  KeyboardAvoidingView, Keyboard, StyleSheet, Switch,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTheme } from '@/lib/ThemeContext';
-import AppBottomSheet from '@/components/AppBottomSheet';
 import { useFamilyStore } from '@/store/familyStore';
 import type { Quest, QuestCategory, QuestDifficulty } from '@/store/questStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -56,9 +57,17 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   const [isAdultTask,       setIsAdultTask]        = useState(quest.isAdultTask ?? false);
   const [inviteGrandparent, setInviteGrandparent] = useState(quest.inviteGrandparents ?? false);
   const [dueDate,           setDueDate]           = useState<Date>(parseDue);
+  // Always shown regardless of whether recurrence was ever set — a chore
+  // can silently carry a recurrence_rule (e.g. from a prior form default
+  // bug) with no way to see or clear it otherwise.
+  const [routineFreq,       setRoutineFreq]        = useState<'once' | 'daily' | 'weekly' | 'monthly'>(
+    (['once', 'daily', 'weekly', 'monthly'] as const).includes(quest.recurrence as any) ? (quest.recurrence as any) : 'once'
+  );
   const [showDatePick, setShowDatePick] = useState(false);
   const [showTimePick, setShowTimePick] = useState(false);
   const [saving,       setSaving]       = useState(false);
+  const [alertCall,           setAlertCall]           = useState(quest.alertCall ?? false);
+  const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(quest.alertCallLeadMinutes ?? 10);
 
   const pillBg  = isDark ? colors.surface : '#F1F5F9';
   const pillBdr = isDark ? colors.border  : '#E2E8F0';
@@ -114,6 +123,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
         dueTime: fmtTimeLabel(dueDate),
         assignedToId: !isPool && assignIds.length === 1 ? assignIds[0] : undefined,
         assignedToIds: !isPool && assignIds.length > 1 ? assignIds : [],
+        alertCall, alertCallLeadMinutes,
       };
     } else {
       if (!title.trim()) { setSaving(false); return; }
@@ -132,20 +142,56 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
         inviteGrandparents: inviteGrandparent || undefined,
         dueDate: localDateStr(dueDate),
         dueTime: fmtTimeLabel(dueDate),
+        recurrence: routineFreq,
+        alertCall, alertCallLeadMinutes,
       };
     }
     onSave(quest.id, patch);
     setSaving(false);
   };
 
+  const dismiss = () => { Keyboard.dismiss(); onClose(); };
+
   return (
-    <AppBottomSheet
-      visible
-      onClose={onClose}
-      title={locked ? 'Adjust Chore' : 'Edit Chore'}
-      subtitle={locked ? 'Reassign or adjust coins' : 'Edit title, assignment & more'}
-      minHeight="75%"
-    >
+    <Modal visible transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
+          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
+            maxHeight: '90%', backgroundColor: colors.card }}>
+
+            {/* Drag handle */}
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
+
+            {/* Fixed header */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
+              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary }}>
+                  {locked ? 'Adjust Chore' : 'Edit Chore'}
+                </Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', marginTop: 2, color: colors.primary ?? BRAND.purple }}>
+                  {locked ? 'Reassign or adjust coins' : 'Edit title, assignment & more'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={dismiss}
+                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                <Ionicons name="close" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Scrollable body — no `flex: 1` here: the sheet container above
+                isn't itself flex-laid-out (just a maxHeight cap, matching
+                EventFormModal's proven pattern), so flex:1 on this ScrollView
+                has nothing to grow into and collapses to zero height instead. */}
+            <ScrollView
+              keyboardShouldPersistTaps="always"
+              onScrollBeginDrag={Keyboard.dismiss}
+              contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
+              showsVerticalScrollIndicator={false}>
 
               {/* Title */}
               <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
@@ -397,6 +443,61 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                 </Modal>
               )}
 
+              {/* Call-style reminder — allowed even in restricted edit mode,
+                  since it's not a sensitive field like title/coins. */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: alertCall ? 8 : 14 }}>
+                <TouchableOpacity onPress={() => setAlertCall(v => !v)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                  <Ionicons name={alertCall ? 'call' : 'call-outline'} size={18} color={alertCall ? BRAND.purple : colors.textSecondary} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>Call to remind</Text>
+                </TouchableOpacity>
+                <Switch value={alertCall} onValueChange={setAlertCall} trackColor={{ true: BRAND.purple }} />
+              </View>
+              {alertCall && (
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                  {[0, 5, 10].map(mins => (
+                    <TouchableOpacity key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
+                      style={[aq.datePill, {
+                        backgroundColor: alertCallLeadMinutes === mins ? BRAND.purple + '20' : pillBg,
+                        borderColor: alertCallLeadMinutes === mins ? BRAND.purple : pillBdr,
+                      }]}>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: alertCallLeadMinutes === mins ? BRAND.purple : colors.textPrimary }}>
+                        {mins === 0 ? 'On time' : `${mins} min before`}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* Repeats — always shown, even if recurrence was never
+                  explicitly set (or was set by accident, e.g. a past form
+                  default bug) so it's never invisible from this sheet. */}
+              <Text style={[aq.label, { color: colors.textSecondary }]}>Repeats</Text>
+              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
+                {([
+                  { key: 'once',    label: 'One-time' },
+                  { key: 'daily',   label: '📅 Daily' },
+                  { key: 'weekly',  label: '🗓 Weekly' },
+                  { key: 'monthly', label: '📆 Monthly' },
+                ] as const).map(({ key, label }) => (
+                  <TouchableOpacity key={key} disabled={locked}
+                    onPress={() => setRoutineFreq(key)}
+                    style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, paddingVertical: 8, alignItems: 'center',
+                      opacity: locked && routineFreq !== key ? 0.4 : 1,
+                      borderColor: routineFreq === key ? BRAND.purple : colors.border,
+                      backgroundColor: routineFreq === key ? BRAND.purple + '18' : 'transparent' }}>
+                    <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '800',
+                      color: routineFreq === key ? BRAND.purple : colors.textSecondary }}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {!locked && routineFreq !== (quest.recurrence ?? 'once') && (
+                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: -8, marginBottom: 14 }}>
+                  {routineFreq === 'once'
+                    ? "This turns off repeating — future occurrences won't be generated."
+                    : `This chore will repeat ${routineFreq} going forward. Only future occurrences are affected — today's task stays as-is.`}
+                </Text>
+              )}
+
               {/* Adult Task toggle — always visible so locked (Adjust) mode still shows the flags */}
               {(
                 <TouchableOpacity
@@ -550,6 +651,10 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                 </TouchableOpacity>
               </View>
 
-    </AppBottomSheet>
+            </ScrollView>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }

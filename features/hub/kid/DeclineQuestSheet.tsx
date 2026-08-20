@@ -1,6 +1,9 @@
 import { useState } from 'react';
-import { View, Text, Pressable, TextInput } from 'react-native';
-import AppBottomSheet from '@/components/AppBottomSheet';
+import {
+  View, Text, Pressable, TextInput, Modal,
+  KeyboardAvoidingView, ScrollView, Platform, Keyboard,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useChoreStore } from '@/store/choreStore';
 import { useChatStore } from '@/store/chatStore';
 import { KID } from './kidTheme';
@@ -18,55 +21,90 @@ export function DeclineQuestSheet({ target, active, members, colors, isDark, onC
 }) {
   const [note, setNote] = useState('');
   const close = () => { setNote(''); onClose(); };
+  const dismiss = () => { Keyboard.dismiss(); close(); };
 
   return (
-    <AppBottomSheet
-      visible={!!target}
-      onClose={close}
-      title="Not this one?"
-      subtitle={target?.title}
-      accentColor={colors.danger}
-      minHeight="45%"
-      bodyPaddingBottom={16}
-    >
-      <View style={{ gap: 12 }}>
-        <Text style={{ fontSize: KID.sub, color: colors.textSecondary }}>
-          Tell them why — it goes back to whoever set the quest, and a grown-up can reassign it.
-        </Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {PRESETS.map(preset => (
-            <Pressable key={preset} onPress={() => setNote(preset)}
-              style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
-                backgroundColor: note === preset ? colors.danger : (isDark ? colors.surface : '#FEF2F2'),
-                borderWidth: 1.5, borderColor: note === preset ? colors.danger : `${colors.danger}30` }}>
-              <Text style={{ fontSize: KID.tiny, fontWeight: '700', color: note === preset ? '#fff' : colors.danger }}>{preset}</Text>
-            </Pressable>
-          ))}
+    <Modal visible={!!target} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+          <Pressable style={{ flex: 1 }} onPress={dismiss} />
+          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
+            maxHeight: '90%', backgroundColor: colors.card }}>
+
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
+              borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary }}>Not this one?</Text>
+                {target?.title ? (
+                  <Text style={{ fontSize: 13, fontWeight: '700', marginTop: 2, color: colors.danger }}>{target.title}</Text>
+                ) : null}
+              </View>
+              <Pressable
+                onPress={dismiss}
+                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                <Ionicons name="close" size={18} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="always"
+              contentContainerStyle={{ padding: 20, paddingBottom: 16 }}
+              showsVerticalScrollIndicator={false}>
+              <View style={{ gap: 12 }}>
+                <Text style={{ fontSize: KID.sub, color: colors.textSecondary }}>
+                  Tell them why — it goes back to whoever set the quest, and a grown-up can reassign it.
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {PRESETS.map(preset => (
+                    <Pressable key={preset} onPress={() => setNote(preset)}
+                      style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
+                        backgroundColor: note === preset ? colors.danger : (isDark ? colors.surface : '#FEF2F2'),
+                        borderWidth: 1.5, borderColor: note === preset ? colors.danger : `${colors.danger}30` }}>
+                      <Text style={{ fontSize: KID.tiny, fontWeight: '700', color: note === preset ? '#fff' : colors.danger }}>{preset}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <View style={{ borderRadius: 12, borderWidth: 1.5, borderColor: isDark ? colors.border : '#E8E8F0',
+                  backgroundColor: isDark ? colors.surface : '#FAFAFA', paddingHorizontal: 12, paddingVertical: 10 }}>
+                  <TextInput value={note} onChangeText={setNote}
+                    placeholder="Add your own reason…" placeholderTextColor={colors.textTertiary}
+                    style={{ fontSize: KID.body, color: colors.textPrimary, minHeight: 44 }} multiline />
+                </View>
+                <Pressable
+                  disabled={!note.trim()}
+                  onPress={() => {
+                    if (!target) return;
+                    const finalNote = note.trim();
+                    declineGrandparentQuest(target.id, active.id, finalNote);
+                    const sponsor = useChoreStore.getState().chores.find(c => c.id === target.id)?.sponsorUserId;
+                    const sponsorName = members.find(m => m.id === sponsor)?.name.split(' ')[0];
+                    // This decline note is addressed to whoever sponsored/assigned the
+                    // quest (often a grandparent) — send it to their 1:1 DM instead of
+                    // the family-wide channel, which kids can also read.
+                    if (sponsor) {
+                      useChatStore.getState().sendMessage(sponsor, active.id,
+                        `🙏 ${active.name.split(' ')[0]} can't take "${target.title}" — "${finalNote}"`);
+                    } else {
+                      useChatStore.getState().sendMessage('all', active.id,
+                        `🙏 ${active.name.split(' ')[0]} can't take "${target.title}" — "${finalNote}"`);
+                    }
+                    close();
+                  }}
+                  style={{ borderRadius: 14, paddingVertical: 14, alignItems: 'center',
+                    backgroundColor: note.trim() ? colors.danger : colors.border,
+                    opacity: note.trim() ? 1 : 0.5 }}>
+                  <Text style={{ fontSize: KID.body, fontWeight: '900', color: '#fff' }}>Send it back</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+
+          </View>
         </View>
-        <View style={{ borderRadius: 12, borderWidth: 1.5, borderColor: isDark ? colors.border : '#E8E8F0',
-          backgroundColor: isDark ? colors.surface : '#FAFAFA', paddingHorizontal: 12, paddingVertical: 10 }}>
-          <TextInput value={note} onChangeText={setNote}
-            placeholder="Add your own reason…" placeholderTextColor={colors.textTertiary}
-            style={{ fontSize: KID.body, color: colors.textPrimary, minHeight: 44 }} multiline />
-        </View>
-        <Pressable
-          disabled={!note.trim()}
-          onPress={() => {
-            if (!target) return;
-            const finalNote = note.trim();
-            declineGrandparentQuest(target.id, active.id, finalNote);
-            const sponsor = useChoreStore.getState().chores.find(c => c.id === target.id)?.sponsorUserId;
-            const sponsorName = members.find(m => m.id === sponsor)?.name.split(' ')[0];
-            useChatStore.getState().sendMessage('all', active.id,
-              `🙏 ${active.name.split(' ')[0]} can't take "${target.title}"${sponsorName ? ` from ${sponsorName}` : ''} — "${finalNote}"`);
-            close();
-          }}
-          style={{ borderRadius: 14, paddingVertical: 14, alignItems: 'center',
-            backgroundColor: note.trim() ? colors.danger : colors.border,
-            opacity: note.trim() ? 1 : 0.5 }}>
-          <Text style={{ fontSize: KID.body, fontWeight: '900', color: '#fff' }}>Send it back</Text>
-        </Pressable>
-      </View>
-    </AppBottomSheet>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }

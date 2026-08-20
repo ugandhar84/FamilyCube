@@ -1,3 +1,18 @@
+// Device locale as a BCP-47 tag (e.g. "es-ES", "hi-IN") for on-device speech
+// recognition (@react-native-voice/voice's Voice.start(locale)) — every
+// voice-capture hook in the app used to hardcode 'en-US' regardless of the
+// user's actual language, silently producing poor/garbage transcripts for
+// any non-English speaker. Falls back to 'en-US' only if Intl can't resolve
+// a usable region-qualified locale.
+export function resolveSpeechLocale(): string {
+  try {
+    const locale = Intl.DateTimeFormat().resolvedOptions().locale;
+    return locale && locale.includes('-') ? locale : (locale || 'en-US');
+  } catch {
+    return 'en-US';
+  }
+}
+
 // Detect whether the device locale uses imperial (miles) or metric (km).
 // Imperial countries: US, Liberia (LR), Myanmar (MM), UK (GB) uses miles for road distances.
 const IMPERIAL_COUNTRIES = new Set(['US', 'LR', 'MM', 'GB']);

@@ -8,6 +8,7 @@ import { useEventStore } from '@/store/eventStore';
 import { useRewardStore } from '@/store/rewardStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
+import { withinLast24h } from '@/lib/dates';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
 import { useChatStore } from '@/store/chatStore';
 import { localToday, fmtTime, hoursUntilEvent } from './hubUtils';
@@ -167,7 +168,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest, active
     if (!q.assignedToId || !siblingKids.some(s => s.id === q.assignedToId)) return false;
     if ((q.cheers ?? []).some(c => c.memberId === active.id)) return false;
     const when = q.approvedAt ?? q.completedAt;
-    return !!when && when.slice(0, 10) === today;
+    return withinLast24h(when);
   }).slice(0, 5);
 
   // Cheers landed on my own completed quests — surfaced as a celebration banner

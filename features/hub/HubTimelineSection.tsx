@@ -1,8 +1,6 @@
 import { useState, useMemo } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { router } from 'expo-router';
-import { BRAND } from '@/components/FamilyCubeLogo';
-import { TimelineCard } from './hubComponents';
+import { TimelineCard, LiveDot } from './hubComponents';
 import { TYPO } from '@/constants/theme';
 import { isWorkEvent, hoursUntilEvent } from './hubUtils';
 import { localDateStr } from '@/lib/dates';
@@ -46,32 +44,42 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
 
   return (
     <View style={{ paddingHorizontal: 16, marginBottom: 16 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 10 }}>
-        <View>
-          <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary }}>Today</Text>
-          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 1 }}>
-            {now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-          </Text>
-        </View>
-        <Pressable onPress={() => router.push('/(tabs)/calendar')}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>Full schedule →</Text>
-        </Pressable>
+      <View style={{ marginBottom: 10 }}>
+        <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary }}>Today</Text>
+        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 1 }}>
+          {now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+        </Text>
       </View>
 
       {todayEvents.length === 0 ? (
-        <View style={{
-          flexDirection: 'row', alignItems: 'center', gap: 8,
-          backgroundColor: isDark ? colors.card : '#fff', borderRadius: 14,
-          borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
-          paddingVertical: 12, paddingHorizontal: 14,
-        }}>
-          <Text style={{ fontSize: 16 }}>✨</Text>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '600', color: colors.textTertiary }}>
-            Nothing on the calendar today — enjoy the breathing room.
-          </Text>
-        </View>
+        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
+          Nothing on the calendar today — enjoy the breathing room.
+        </Text>
       ) : (
         <>
+          {/* "Live now" marker — sits above the next upcoming event, i.e.
+              where "now" actually falls in the day's schedule. Only shown
+              once there's something left today; a day that's entirely
+              past just falls straight into the "completed" section. */}
+          {upcoming.length > 0 && (
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', gap: 8,
+              marginBottom: 10,
+            }}>
+              <View style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                backgroundColor: colors.success + '18', borderRadius: 20,
+                paddingVertical: 5, paddingHorizontal: 10,
+              }}>
+                <LiveDot color={colors.success} />
+                <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: colors.success, letterSpacing: 0.3 }}>
+                  LIVE NOW · {now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                </Text>
+              </View>
+              <View style={{ flex: 1, height: 1, backgroundColor: colors.success + '30' }} />
+            </View>
+          )}
+
           {upcoming.length === 0 ? (
             <View style={{
               backgroundColor: isDark ? colors.card : '#f0fdf4',
@@ -92,7 +100,11 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
             />
           ))}
 
-          {past.length > 0 && (
+          {/* Completed events stay out of the way once there's something
+              still ahead today — no point scrolling past what's done to
+              get to what's next. Only surfaced (via the toggle) once the
+              day has nothing left upcoming. */}
+          {past.length > 0 && upcoming.length === 0 && (
             <>
               <Pressable
                 onPress={() => setShowPast(v => !v)}

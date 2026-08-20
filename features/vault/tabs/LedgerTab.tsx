@@ -228,7 +228,7 @@ export default function LedgerTab({ colors, isDark }: { colors: any; isDark: boo
   return (
     <>
       {/* ── Family Coin Summary ──────────────────────── */}
-      <SCard colors={colors} isDark={isDark}>
+      <SCard colors={colors} isDark={isDark} accent={BRAND.amber}>
         <CardHeader Icon={ScrollText} iconColor={BRAND.amber} title="Family Coin Ledger"
           badge={`${totalCoins} total`} badgeColor={BRAND.amber} colors={colors} />
 
@@ -288,7 +288,7 @@ export default function LedgerTab({ colors, isDark }: { colors: any; isDark: boo
 
       {/* ── Transaction Log ──────────────────────────── */}
       {txLog.length > 0 && (
-        <SCard colors={colors} isDark={isDark}>
+        <SCard colors={colors} isDark={isDark} accent={BRAND.amber}>
           <CardHeader Icon={TrendingUp} iconColor={BRAND.purple} title="Recent Transfers"
             badge={`${txLog.length}`} badgeColor={BRAND.purple} colors={colors} />
           {txLog.map((tx, i) => (

@@ -67,7 +67,7 @@ export function HouseholdBacklogSection({
         subtitle="pull what you can handle"
         accent={colors.warning}
         badge={badgeCount} badgeLabel="Active" badgeColor={colors.warning}
-        collapsible defaultExpanded={myPendingCount > 0}
+        collapsible defaultExpanded={myPendingCount > 1}
         colors={colors} isDark={isDark}>
         <View style={{ gap: 8 }}>
             {myAdultQuests.length > 0 && (

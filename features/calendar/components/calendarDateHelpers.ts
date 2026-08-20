@@ -25,6 +25,27 @@ export function isEventPast(date: string, time?: string | null): boolean {
   const now = new Date();
   return h < now.getHours() || (h === now.getHours() && m <= now.getMinutes());
 }
+
+// Whether an event is happening right now — start time has arrived but its
+// end (or, when no endTime is set, a 10-minute default window) hasn't.
+// Drives the "live now" glow treatment on event cards.
+export function isEventNow(date: string, time?: string | null, endTime?: string | null): boolean {
+  if (!time) return false;
+  const today = toDateStr(new Date());
+  if (date !== today) return false;
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const [sh, sm] = time.split(':').map(Number);
+  const startMin = sh * 60 + (sm || 0);
+  let endMin: number;
+  if (endTime) {
+    const [eh, em] = endTime.split(':').map(Number);
+    endMin = eh * 60 + (em || 0);
+  } else {
+    endMin = startMin + 10;
+  }
+  return nowMin >= startMin && nowMin < endMin;
+}
 // Mon-first ordering
 export const DAY_SHORT = ['MON','TUE','WED','THU','FRI','SAT','SUN'];
 

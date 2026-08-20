@@ -2,11 +2,11 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, StyleSheet, Alert,
+  Modal, KeyboardAvoidingView, Platform, Keyboard,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker    from 'expo-image-picker';
 import { X, Lock, Shield, FileText, Camera, Image, FolderOpen } from 'lucide-react-native';
-import AppBottomSheet from '@/components/AppBottomSheet';
 import { BRAND } from '../tabs/shared';
 import { RecordForm, TAGS, BLANK_FORM, memberColor, fmtSize } from './types';
 
@@ -104,28 +104,26 @@ export default function AddRecordModal({
   const inp = [s.inp, { backgroundColor: isDark ? colors.surface : '#F8FAFC', borderColor: colors.border, color: colors.textPrimary }];
 
   return (
-    <AppBottomSheet
-      visible={visible}
-      onClose={onClose}
-      title="Upload Medical Record"
-      footer={
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <TouchableOpacity onPress={onClose} style={[s.cancelBtn, { borderColor: colors.border }]}>
-            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleSave} disabled={saving}
-            style={[s.saveBtn, { backgroundColor: BRAND.teal, opacity: saving ? 0.65 : 1 }]}>
-            {saving
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save to Vault</Text>}
-          </TouchableOpacity>
-        </View>
-      }
-      minHeight="70%"
-      maxHeight="92%"
-    >
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
+            maxHeight: '92%', backgroundColor: colors.card }}>
+
+            {/* Drag handle */}
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
+
+            {/* Fixed header */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
+              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+              <Text style={{ flex: 1, fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>Upload Medical Record</Text>
+            </View>
+
+            <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16 }}>
             {/* Vault notice */}
-            <View style={[s.vaultBadge, { backgroundColor: BRAND.teal + '12' }]}>
+            <View style={[s.vaultBadge, { backgroundColor: BRAND.teal + '12', marginHorizontal: 0 }]}>
               <Shield size={12} color={BRAND.teal} />
               <Text style={{ fontSize: 11, color: BRAND.teal, fontWeight: '700', flex: 1 }}>
                 Encrypted · protected by your family vault · never shared externally
@@ -249,7 +247,25 @@ export default function AddRecordModal({
                   placeholderTextColor={colors.textTertiary}
                   style={[inp, { height: 72, textAlignVertical: 'top', paddingTop: 10 }]} multiline />
               </View>
-    </AppBottomSheet>
+            </ScrollView>
+
+            {/* Fixed footer */}
+            <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 20,
+              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+              <TouchableOpacity onPress={onClose} style={[s.cancelBtn, { borderColor: colors.border }]}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleSave} disabled={saving}
+                style={[s.saveBtn, { backgroundColor: BRAND.teal, opacity: saving ? 0.65 : 1 }]}>
+                {saving
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Save to Vault</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 

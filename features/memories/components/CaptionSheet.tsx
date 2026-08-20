@@ -7,10 +7,9 @@ import React from 'react';
 import { TYPO } from '@/constants/theme';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  TextInput,
+  TextInput, Modal, KeyboardAvoidingView, Platform, Keyboard, StyleSheet,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import AppBottomSheet from '@/components/AppBottomSheet';
 
 interface CaptionSheetProps {
   visible: boolean;
@@ -26,26 +25,30 @@ const CaptionSheet = React.memo(function CaptionSheet({
   visible, pendingAssets, captionInput, existingCaptions,
   colors, onChangeCaption, onSubmit,
 }: CaptionSheetProps) {
+  const dismiss = () => onSubmit(true);
+
   return (
-    <AppBottomSheet
-      visible={visible}
-      onClose={() => onSubmit(true)}
-      title="Add a caption"
-      footer={
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <TouchableOpacity onPress={() => onSubmit(true)}
-            style={{ flex: 1, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingVertical: 13, alignItems: 'center' }}>
-            <Text style={{ fontSize: TYPO.body, fontWeight: '600', color: colors.textSecondary }}>Skip</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => onSubmit(false)}
-            style={{ flex: 2, borderRadius: 14, backgroundColor: colors.primary, paddingVertical: 13, alignItems: 'center' }}>
-            <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: '#fff' }}>
-              Upload{pendingAssets && pendingAssets.length > 1 ? ` ${pendingAssets.length} photos` : ''}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      }
-    >
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
+          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
+            maxHeight: '90%', backgroundColor: colors.card }}>
+
+            {/* Drag handle */}
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
+
+            {/* Fixed header */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
+              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+              <Text style={{ flex: 1, fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary }}>Add a caption</Text>
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="always"
+              onScrollBeginDrag={Keyboard.dismiss}
+              contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
+              showsVerticalScrollIndicator={false}>
               {pendingAssets && pendingAssets.length > 1 && (
                 <View style={{ backgroundColor: `${colors.primary}18`, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start', marginBottom: 12 }}>
                   <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.primaryText ?? colors.primary }}>{pendingAssets.length} photos</Text>
@@ -88,8 +91,26 @@ const CaptionSheet = React.memo(function CaptionSheet({
                   </ScrollView>
                 </View>
               )}
+            </ScrollView>
 
-    </AppBottomSheet>
+            {/* Fixed footer — Skip / Upload */}
+            <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 20,
+              borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+              <TouchableOpacity onPress={() => onSubmit(true)}
+                style={{ flex: 1, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingVertical: 13, alignItems: 'center' }}>
+                <Text style={{ fontSize: TYPO.body, fontWeight: '600', color: colors.textSecondary }}>Skip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => onSubmit(false)}
+                style={{ flex: 2, borderRadius: 14, backgroundColor: colors.primary, paddingVertical: 13, alignItems: 'center' }}>
+                <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: '#fff' }}>
+                  Upload{pendingAssets && pendingAssets.length > 1 ? ` ${pendingAssets.length} photos` : ''}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 });
 

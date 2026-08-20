@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Platform } from 'react-native';
 import { familyAi, ExtractResponsibilityResult } from '@/lib/familyAiService';
+import { resolveSpeechLocale } from '@/lib/units';
 
 // Same speech-capture shape as useVoiceAppointment.ts (health/appointments'
 // voice intake) — this hook is the equivalent entry point for the shared
@@ -167,7 +167,7 @@ export function useVoiceIntake(onParsed: (result: ExtractResponsibilityResult) =
     };
 
     try {
-      await Voice.start(Platform.OS === 'ios' ? 'en-US' : 'en-US');
+      await Voice.start(resolveSpeechLocale());
       setState('listening');
       autoStopRef.current = setTimeout(() => {
         Voice?.stop?.().catch(() => {});

@@ -29,7 +29,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { useEventStore, FamilyEvent, EventType } from '@/store/eventStore';
+import { useEventStore, FamilyEvent, EventType, StripMap } from '@/store/eventStore';
 import AppHeader from '@/components/AppHeader';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -286,190 +286,6 @@ function FadeInView({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ─── Add Event Modal ──────────────────────────────────────────────────────────
-const EVENT_TYPES: EventType[] = ['event', 'reminder', 'appointment', 'birthday'];
-const EVENT_TYPE_LABEL: Record<EventType, string> = {
-  event: '🎉 Event', reminder: '🔔 Reminder', appointment: '📋 Appointment', birthday: '🎂 Birthday',
-};
-const EVENT_CATS = ['Event', 'Medical', 'Work', 'Sports', 'Study', 'Ride'];
-
-// AddEventModal and AskHelpModal replaced by EventFormAdd / EditEventModal from EventFormModal.tsx
-
-function _OldAddEventModal({ visible, selectedDate, colors, isDark, onClose, onSave }: {
-  visible: boolean; selectedDate: string;
-  colors: any; isDark: boolean; onClose: () => void; onSave: (d: any) => void;
-}) {
-  const [title,    setTitle]    = useState('');
-  const [time,     setTime]     = useState('');
-  const [date,     setDate]     = useState(selectedDate);
-  const [type,     setType]     = useState<EventType>('event');
-  const [category, setCategory] = useState('Event');
-  const [location, setLocation] = useState('');
-  const [helper,   setHelper]   = useState('');
-  const [saving,   setSaving]   = useState(false);
-
-  React.useEffect(() => { if (visible) setDate(selectedDate); }, [visible, selectedDate]);
-
-  const submit = async () => {
-    if (!title.trim()) return;
-    setSaving(true);
-    await new Promise(r => setTimeout(r, 500));
-    onSave({
-      title: title.trim(), date, time: time || undefined, type, category,
-      location: location || undefined,
-      helper: helper || undefined,
-      helperStatus: helper ? 'pending' : undefined,
-      approvalPending: false, conflict: false,
-    });
-    setSaving(false);
-    onClose();
-    setTitle(''); setTime(''); setLocation(''); setHelper('');
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={ae.overlay}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-          <View style={[ae.sheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[ae.handle, { backgroundColor: colors.border }]} />
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <Text style={[ae.title, { color: colors.textPrimary }]}>+ Add Event</Text>
-              <TouchableOpacity onPress={onClose}><I.X c={colors.textSecondary} /></TouchableOpacity>
-            </View>
-
-            <Text style={[ae.label, { color: colors.textSecondary }]}>TITLE *</Text>
-            <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: title.trim() ? colors.border : '#EF444480', backgroundColor: isDark ? colors.surface : '#F9F8FD' }]}
-              placeholder="e.g. Soccer Practice" placeholderTextColor={colors.textTertiary} value={title} onChangeText={setTitle} />
-
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={[ae.label, { color: colors.textSecondary }]}>DATE</Text>
-                <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F9F8FD', marginBottom: 0 }]}
-                  value={date} onChangeText={setDate} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[ae.label, { color: colors.textSecondary }]}>TIME (e.g. 3:30 PM)</Text>
-                <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F9F8FD', marginBottom: 0 }]}
-                  placeholder="3:30 PM" placeholderTextColor={colors.textTertiary} value={time} onChangeText={setTime} keyboardType="numbers-and-punctuation" />
-              </View>
-            </View>
-
-            <Text style={[ae.label, { color: colors.textSecondary, marginTop: 12 }]}>CATEGORY</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-              <View style={{ flexDirection: 'row', gap: 7 }}>
-                {EVENT_CATS.map(c => {
-                  const cs = catStyle(c, isDark);
-                  return (
-                    <TouchableOpacity key={c} onPress={() => setCategory(c)}
-                      style={[ae.catChip, { backgroundColor: category === c ? cs.badge : isDark ? colors.surface : '#F5F4FA', borderColor: category === c ? cs.dot : isDark ? colors.border : '#E2E8F0' }]}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: category === c ? cs.text : colors.textTertiary }}>{c}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </ScrollView>
-
-            <Text style={[ae.label, { color: colors.textSecondary }]}>LOCATION (optional)</Text>
-            <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F9F8FD' }]}
-              placeholder="e.g. Riverside Park" placeholderTextColor={colors.textTertiary} value={location} onChangeText={setLocation} />
-
-            <Text style={[ae.label, { color: colors.textSecondary }]}>
-              {category === 'Medical' ? '🏥 ACCOMPANIED BY (optional)'
-                : category === 'Study'  ? '📚 TUTOR NAME (optional)'
-                : category === 'Sports' ? '🚗 DROP-OFF BY (optional)'
-                : category === 'Ride'   ? '🚗 DRIVEN BY (optional)'
-                : '🤝 ORGANISED BY (optional)'}
-            </Text>
-            <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F9F8FD' }]}
-              placeholder="e.g. Priya (Mom)" placeholderTextColor={colors.textTertiary} value={helper} onChangeText={setHelper} />
-
-            <TouchableOpacity style={[ae.submitBtn, { backgroundColor: title.trim() ? BRAND.purple : colors.border, opacity: saving ? 0.7 : 1 }]}
-              onPress={submit} disabled={saving || !title.trim()}>
-              {saving ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={{ color: '#fff', fontSize: TYPO.caption, fontWeight: '900' }}>Add to Family Schedule</Text>}
-            </TouchableOpacity>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-const ae = StyleSheet.create({
-  overlay:   { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.65)' },
-  sheet:     { borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, padding: 20, paddingBottom: 44 },
-  handle:    { width: 44, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 18 },
-  title:     { fontSize: 16, fontWeight: '900' },
-  label:     { fontSize: TYPO.label, fontWeight: '700', letterSpacing: 0.6, marginBottom: 6, marginTop: 8 },
-  input:     { borderWidth: 1.5, borderRadius: 14, padding: 11, fontSize: 13, marginBottom: 10 },
-  catChip:   { borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 6 },
-  submitBtn: { borderRadius: 16, paddingVertical: 14, alignItems: 'center', marginTop: 8, flexDirection: 'row', justifyContent: 'center', gap: 8 },
-});
-
-// AskHelpModal replaced by EventFormAdd (kid path shows simplified Ride/Study form)
-function _OldAskHelpModal({ visible, selectedDate, activeMemberId, colors, isDark, onClose, onSave }: {
-  visible: boolean; selectedDate: string; activeMemberId: string;
-  colors: any; isDark: boolean; onClose: () => void; onSave: (d: any) => void;
-}) {
-  const [what,    setWhat]    = useState('');
-  const [time,    setTime]    = useState('');
-  const [location,setLocation]= useState('');
-  const [saving,  setSaving]  = useState(false);
-
-  const submit = async () => {
-    if (!what.trim()) return;
-    setSaving(true);
-    await new Promise(r => setTimeout(r, 500));
-    onSave({
-      title: what.trim(), date: selectedDate, time: time || undefined,
-      location: location || undefined,
-      type: 'event' as EventType, category: 'Ride',
-      memberId: activeMemberId, approvalPending: true, conflict: false,
-      helperRequestedBy: 'Kid',
-    });
-    setSaving(false);
-    onClose(); setWhat(''); setTime(''); setLocation('');
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={ae.overlay}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-          <View style={[ae.sheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[ae.handle, { backgroundColor: colors.border }]} />
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <Text style={[ae.title, { color: colors.textPrimary }]}>🚗 Ask for Help / Ride</Text>
-              <TouchableOpacity onPress={onClose}><I.X c={colors.textSecondary} /></TouchableOpacity>
-            </View>
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginBottom: 14 }}>
-              Tell a parent what you need — they'll get a notification to approve and assign a driver.
-            </Text>
-
-            <Text style={[ae.label, { color: colors.textSecondary }]}>WHAT DO YOU NEED? *</Text>
-            <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: what.trim() ? colors.border : '#F59E0B80', backgroundColor: isDark ? colors.surface : '#FFFBEB' }]}
-              placeholder="e.g. Ride to soccer practice" placeholderTextColor={colors.textTertiary} value={what} onChangeText={setWhat} />
-
-            <Text style={[ae.label, { color: colors.textSecondary }]}>TIME (e.g. 3:30 PM)</Text>
-            <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F9F8FD' }]}
-              placeholder="3:30 PM" placeholderTextColor={colors.textTertiary} value={time} onChangeText={setTime} keyboardType="numbers-and-punctuation" />
-
-            <Text style={[ae.label, { color: colors.textSecondary }]}>LOCATION (optional)</Text>
-            <TextInput style={[ae.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F9F8FD' }]}
-              placeholder="e.g. Riverside Park" placeholderTextColor={colors.textTertiary} value={location} onChangeText={setLocation} />
-
-            <TouchableOpacity style={[ae.submitBtn, { backgroundColor: what.trim() ? BRAND.amber : colors.border, opacity: saving ? 0.7 : 1 }]}
-              onPress={submit} disabled={saving || !what.trim()}>
-              {saving ? <ActivityIndicator color="#0F172A" size="small" />
-                : <Text style={{ color: '#0F172A', fontSize: TYPO.caption, fontWeight: '900' }}>Send Request to Parent</Text>}
-            </TouchableOpacity>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
-
 // ─── Swipeable event card wrapper ────────────────────────────────────────────
 // Swipe left to reveal delete. Only shown for future events (per RBAC).
 function SwipeableEventCard({ children, onDelete, onLongPress, onPress, canDelete }: {
@@ -547,7 +363,7 @@ export default function CalendarScreen() {
   const { members, activeMemberId, setActiveMember } = useFamilyStore();
   const {
     events, dayLoading, hasMore,
-    stripMap,
+    stripMap, stripRows,
     rangeEvents, rangeLoading,
     addEvent, updateEvent, deleteEvent,
     selectDate: storeSelectDate, loadMoreDay, loadStrip, loadRange,
@@ -752,6 +568,27 @@ export default function CalendarScreen() {
     return false;
   };
 
+  // Same matching rule as matchesMemberFilter above, applied to the
+  // lightweight strip rows so the month grid's per-day dots respect
+  // whichever member chip is selected instead of always showing every
+  // family event's dot regardless of filter — dots used to be entirely
+  // unfiltered since stripMap only ever carried date+category.
+  const filteredStripMap = useMemo(() => {
+    if (!filterMember) return stripMap;
+    const first = filterMemberName?.split(' ')[0];
+    const map: StripMap = {};
+    for (const r of stripRows) {
+      const matches = !r.memberId
+        || r.memberId === filterMember
+        || (filterMemberName && r.helper && (r.helper.includes(filterMemberName) || (first && r.helper.includes(first))))
+        || (filterMemberName && r.driverName && (r.driverName.includes(filterMemberName) || (first && r.driverName.includes(first))));
+      if (!matches) continue;
+      if (!map[r.date]) map[r.date] = [];
+      if (!map[r.date].includes(r.category)) map[r.date].push(r.category);
+    }
+    return map;
+  }, [stripMap, stripRows, filterMember, filterMemberName]);
+
   // Filtered events for selected day
   const dayEvents = useMemo(() => {
     return events
@@ -804,7 +641,7 @@ export default function CalendarScreen() {
   const cardBord = isDark ? '#1E293B' : '#E2E8F0';
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: isDark ? colors.background : '#F5F4FA' }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <AppHeader
         memberName={activeMember?.name}
         memberRole={isKid ? 'kid' : isSenior ? 'senior' : 'parent'}
@@ -996,7 +833,7 @@ export default function CalendarScreen() {
             <MonthGridView
               monthDate={monthCursor}
               selected={selectedDate}
-              stripMap={stripMap}
+              stripMap={filteredStripMap}
               colors={colors} isDark={isDark}
               onSelectDay={(d) => { setSelectedDate(d); storeSelectDate(d); }}
               onChangeMonth={(delta) => setMonthCursor(prev => {
@@ -1035,6 +872,7 @@ export default function CalendarScreen() {
                 members={members}
                 colors={colors} isDark={isDark}
                 onSelectEvent={(ev) => setDetailEv(ev)}
+                isViewerParent={isParent}
               />
             )}
           </FadeInView>

@@ -1,6 +1,7 @@
 import { View, Text, Pressable } from 'react-native';
 import { ChevronDown, Star, Coins, Users } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import { withinLast24h } from '@/lib/dates';
 import { SectionCard } from '../../hubComponents';
 import { GP } from '../seniorTheme';
 import { MatchRulesCard } from './MatchRulesCard';
@@ -46,11 +47,15 @@ export function SponsorQuestsSection({
   const inProgress = mySponsored('in_progress');
   // grandparentApproveAndCheer sets 'completed', not 'approved' — this
   // filter must include all three verified statuses or a GP's own verified
-  // quests never show up here at all.
+  // quests never show up here at all. Only shown on the Hub for 24h after
+  // completion — the chore itself stays fully visible forever in the
+  // Chores tab's own history/status tabs, this is just the Hub's
+  // "recently done" glanceable view, same 24h window as the Cheer section.
   const done = chores.filter(c =>
     c.categoryType === 'grandparent_quest' &&
     c.sponsorUserId === active.id &&
-    ['approved', 'auto_approved', 'completed'].includes(c.status)
+    ['approved', 'auto_approved', 'completed'].includes(c.status) &&
+    withinLast24h(c.approvedAt ?? c.reviewedAt ?? c.createdAt)
   );
   const totalSponsored = mySponsored().length;
 

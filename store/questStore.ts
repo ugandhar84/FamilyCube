@@ -108,6 +108,10 @@ export interface Quest {
   awaitingParentApproval?: boolean;
   dueDate?:         string;
   dueTime?:         string;
+  // Call-style reminder — opt-in, rings the assignee via CallKit/
+  // ConnectionService this many minutes before dueTime.
+  alertCall?:            boolean;
+  alertCallLeadMinutes?: number;
 
   startedAt?:       string;
   claimedAt?:       string;

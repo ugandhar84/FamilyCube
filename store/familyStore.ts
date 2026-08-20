@@ -8,11 +8,26 @@ import { supabase } from '@/lib/supabase';
 
 export type MemberRole = 'parent' | 'kid' | 'teen' | 'senior';
 
+// Purely descriptive — how a member relates to the family, shown on their
+// roster card / tree node. Grouped so a picker can show only the options
+// that make sense for the role being edited (a 'kid' shouldn't see
+// "Grandmother" as an option, etc). Never used for permissions — `role`
+// alone drives RBAC everywhere else in the app. Kept to the straightforward
+// 2-parent / up-to-4-grandparent household this app actually models —
+// no blended-family variants unless real usage asks for them.
+export const RELATIONSHIPS_BY_ROLE: Record<MemberRole, string[]> = {
+  parent: ['Mother', 'Father'],
+  kid:    ['Daughter', 'Son'],
+  teen:   ['Daughter', 'Son'],
+  senior: ['Grandmother', 'Grandfather'],
+};
+
 export interface FamilyMember {
   id: string;
   name: string;
   role: MemberRole;
   subRole?: string;     // e.g. 'Dad', 'Mom', 'Grandpa' — display label, not a gate
+  relationship?: string; // e.g. 'Mother', 'Stepson' — purely descriptive, never a permission gate (role is)
   emoji?: string;       // stored as `avatar` in DB when it's an emoji
   avatarUrl?: string;   // stored as `avatar` when it's a URL
   coins: number;
@@ -81,6 +96,7 @@ function fromRow(row: any): FamilyMember {
     name:            row.name,
     role:            row.role === 'child' ? 'kid' : row.role === 'grandparent' ? 'senior' : row.role === 'teenager' ? 'teen' : row.role as MemberRole,
     subRole:         row.sub_role ?? undefined,
+    relationship:    row.relationship ?? undefined,
     // '' (empty string) is how the DB represents "never picked one" for
     // some rows, not just null/undefined — `?? undefined` alone leaves it
     // as '' in that case, which every consumer that does `m.emoji ?? X`
@@ -117,6 +133,7 @@ function toRow(m: FamilyMember) {
     name:     m.name,
     role:     m.role === 'kid' ? 'child' : m.role === 'teen' ? 'teenager' : m.role === 'senior' ? 'grandparent' : m.role,
     sub_role: m.subRole ?? null,
+    relationship: m.relationship ?? null,
     avatar: m.avatarUrl ?? m.emoji ?? '👤',
     coins: m.coins,
     main_coins: m.mainCoins,

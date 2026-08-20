@@ -10,8 +10,10 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   View, Text, Pressable, ScrollView, TextInput,
   Alert, ActivityIndicator, TouchableOpacity, Image,
+  Modal, KeyboardAvoidingView, Platform, Keyboard, StyleSheet,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import {
   Sprout, Star, Gem, ShoppingBag, HeartHandshake, Lock,
   Check, Camera, Image as ImageIcon, Clock, HandMetal, Play, Undo2,
@@ -21,7 +23,6 @@ import {
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO, RADIUS, SPACING } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
-import AppBottomSheet from '@/components/AppBottomSheet';
 import {
   useChoreStore, BADGE_DEFINITIONS, type ChoreTask, type ChoreCategoryType,
 } from '@/store/choreStore';
@@ -485,7 +486,11 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
       } else if (isRedo) {
         resubmitChore(task.id, opts);
       } else {
-        submitChore(task.id, opts);
+        const ok = submitChore(task.id, opts);
+        if (!ok) {
+          Alert.alert('Not due yet', "This chore's next turn hasn't started yet — check back on its due date.");
+          return;
+        }
       }
       setNote(''); setPhotoUri(null);
       onClose();
@@ -496,9 +501,36 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
 
   if (!task) return null;
 
+  const dismiss = () => { Keyboard.dismiss(); onClose(); };
+
   return (
-    <AppBottomSheet visible={visible} onClose={onClose} title={title}>
-      <View style={{ padding: 20 }}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
+          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
+            maxHeight: '90%', backgroundColor: colors.card }}>
+
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
+              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary }}>{title}</Text>
+              </View>
+              <TouchableOpacity
+                onPress={dismiss}
+                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                <Ionicons name="close" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="always"
+              contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
+              showsVerticalScrollIndicator={false}>
         <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary, marginBottom: 4 }}>
           {task.title}
         </Text>
@@ -639,8 +671,11 @@ function SubmitSheet({ task, childId, visible, onClose, isDark, colors }: {
             Add a photo to unlock the submit button
           </Text>
         )}
-      </View>
-    </AppBottomSheet>
+            </ScrollView>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -853,9 +888,36 @@ function CashOutSheet({ memberId, visible, onClose, isDark, colors }: {
     onClose();
   };
 
+  const dismiss = () => { Keyboard.dismiss(); setStep('amount'); onClose(); };
+
   return (
-    <AppBottomSheet visible={visible} onClose={() => { setStep('amount'); onClose(); }} title="Cash Out Points">
-      <View style={{ padding: 20 }}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
+          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
+            maxHeight: '90%', backgroundColor: colors.card }}>
+
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
+              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary }}>Cash Out Points</Text>
+              </View>
+              <TouchableOpacity
+                onPress={dismiss}
+                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                <Ionicons name="close" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="always"
+              contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
+              showsVerticalScrollIndicator={false}>
         {step === 'amount' ? (
           <>
             <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
@@ -975,8 +1037,11 @@ function CashOutSheet({ memberId, visible, onClose, isDark, colors }: {
             </View>
           </>
         )}
-      </View>
-    </AppBottomSheet>
+            </ScrollView>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 

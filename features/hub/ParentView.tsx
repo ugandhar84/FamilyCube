@@ -17,6 +17,7 @@ import type { ChoreTask } from '@/store/choreStore';
 
 import { ParentQuickActions } from './parent/ParentQuickActions';
 import { HouseholdSnapshotCard } from './parent/HouseholdSnapshotCard';
+import { FamilyRadarSection } from './parent/FamilyRadarSection';
 import { EnRouteBanner } from './parent/EnRouteBanner';
 import { ActionNeededSection } from './parent/ActionNeededSection';
 import { GpCanHelpSection } from './parent/GpCanHelpSection';
@@ -427,7 +428,8 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       ) : (
         <EnRouteBanner
           colors={colors} isDark={isDark}
-          onDispatchRide={(etaMinutes) => onDispatchDirect(nextRide?.memberId, etaMinutes)}
+          members={members} activeMemberId={active.id}
+          onDispatchRide={(etaMinutes, memberId) => onDispatchDirect(memberId ?? nextRide?.memberId, etaMinutes)}
           onPickupDone={onPickupDone}
           onCancelTrip={onCancelTrip}
           nextRide={nextRide ? {
@@ -441,6 +443,10 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
           activeTrip={activeTrip} onUpdateEta={onUpdateEta}
         />
       )}
+
+      <View style={pad}>
+        <FamilyRadarSection members={members} colors={colors} isDark={isDark} />
+      </View>
 
       <View style={pad}>
         <HouseholdSnapshotCard

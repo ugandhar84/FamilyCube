@@ -20,6 +20,8 @@ import { SeniorView } from './SeniorView';
 import { TeenView } from './TeenView';
 import { EnRouteModal } from './hubComponents';
 import { fmtClock } from './hubUtils';
+import GlobalCelebration from '@/components/GlobalCelebration';
+import { AppsQuickAccessPills } from './AppsQuickAccessPills';
 
 export default function HubScreen() {
   const router = useRouter();
@@ -60,13 +62,14 @@ export default function HubScreen() {
   const driverName = driver?.name.split(' ')[0] ?? 'Someone';
   const kidName     = pickup?.name.split(' ')[0] ?? 'Family';
 
-  // Broadcast En Route to family chat, 30s after the driver last touched
-  // the ETA (dispatch or any slider adjustment) — debounced so dragging
-  // doesn't spam the chat with every intermediate value. 🚗 prefix maps to
-  // a routine/success tint in ChatScreen's MessageBubble. Every family
-  // member's device runs this same effect off the synced trip row, but
-  // only the driver's device actually has a reason to fire it — guarded by
-  // activeMemberId matching the driver so it isn't posted once per viewer.
+  // Broadcast En Route to family chat once, 30s into the trip — keyed on
+  // trip.startedAt only (not etaMinutes) so later ETA slider adjustments
+  // don't repost a near-duplicate message every time the driver nudges it.
+  // 🚗 prefix maps to a routine/success tint in ChatScreen's MessageBubble.
+  // Every family member's device runs this same effect off the synced trip
+  // row, but only the driver's device actually has a reason to fire it —
+  // guarded by activeMemberId matching the driver so it isn't posted once
+  // per viewer.
   useEffect(() => {
     if (!trip || activeMemberId !== trip.driverMemberId) return;
     const msg = `🚗 ${driverName} en route to pick up ${kidName} · ETA ${trip.etaMinutes} min`;
@@ -74,7 +77,7 @@ export default function HubScreen() {
       useChatStore.getState().sendMessage('all', trip.driverMemberId, msg);
     }, 30_000);
     return () => clearTimeout(id);
-  }, [trip?.etaMinutes, trip?.startedAt, trip?.driverMemberId, activeMemberId]);
+  }, [trip?.startedAt, trip?.driverMemberId, activeMemberId]);
 
   // One-time alarming alert if a trip runs 5+ min past its ETA with no
   // Pickup Done confirmation — checked every 15s while a trip is active.
@@ -127,10 +130,12 @@ export default function HubScreen() {
         memberName={active.name.split(' ')[0]}
         memberRole={active.role as 'parent' | 'kid' | 'teen' | 'senior'}
         onBellPress={() => Alert.alert('Nudge Center', 'Dinner ready · Meds · Pickup · Chore check')}
-        // GP's bottom nav swaps Profile/Hearth for Memories — this is their
+        // GP's bottom nav swaps Profile/Apps for Memories — this is their
         // only remaining path to settings/PIN, since the tab is gone.
         onSettingsPress={isSenior ? () => router.push('/profile') : undefined}
       />
+
+      <AppsQuickAccessPills role={active.role} colors={colors} isDark={isDark} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -141,7 +146,7 @@ export default function HubScreen() {
         keyboardShouldPersistTaps="handled"
         style={{ backgroundColor: colors.background }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-        contentContainerStyle={{ paddingTop: 16, paddingBottom: 60 }}
+        contentContainerStyle={{ paddingTop: 2, paddingBottom: 60 }}
       >
         {isParent && (
           <ParentView
@@ -184,6 +189,8 @@ export default function HubScreen() {
           />
         )}
       </ScrollView>
+
+      <GlobalCelebration />
 
       <HelpRequestModal visible={helpModalVisible} onClose={() => setHelpModal(false)} />
       <FlyerScannerModal visible={flyerVisible} onClose={() => setFlyerVisible(false)} />

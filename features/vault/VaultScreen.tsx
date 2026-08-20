@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Alert,
-  StyleSheet,
+  StyleSheet, Platform,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams } from 'expo-router';
 import {
   Radio, Pill, ChefHat, Image as ImageIcon, ScrollText,
   Users, LogOut, FolderOpen, Gift, ChevronRight,
@@ -93,13 +96,15 @@ function FeatureDetail({
             {role === 'kid' && feature.id === 'health' ? 'My Active Medications' : feature.subtitle}
           </Text>
         </View>
-        <View style={{ backgroundColor: isDark ? feature.bgDark : feature.bg,
-          borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
-          borderWidth: 1, borderColor: feature.accent + '30' }}>
-          <Text style={{ fontSize: 12, fontWeight: '800', color: feature.accent }}>
-            {activeMember?.name?.split(' ')[0] ?? 'You'}
-          </Text>
-        </View>
+        {feature.id !== 'gps' && feature.id !== 'health' && (
+          <View style={{ backgroundColor: isDark ? feature.bgDark : feature.bg,
+            borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
+            borderWidth: 1, borderColor: feature.accent + '30' }}>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: feature.accent }}>
+              {activeMember?.name?.split(' ')[0] ?? 'You'}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Content */}
@@ -107,10 +112,14 @@ function FeatureDetail({
         <GroceryScreen hideHeader />
       ) : feature.id === 'store' ? (
         <StoreScreen hideHeader />
+      ) : feature.id === 'gps' ? (
+        // Own layout, not the shared ScrollView — the map wants to fill
+        // most of the screen at the top with details scrollable below it,
+        // not be squeezed into a padded scroll column like the other tabs.
+        <GpsTabComp colors={colors} isDark={isDark} />
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 80, paddingTop: 14 }}>
-          {feature.id === 'gps'      && <GpsTabComp      colors={colors} isDark={isDark} />}
           {feature.id === 'school'   && <SchoolTabComp   colors={colors} isDark={isDark} isKid={role === 'kid'} />}
           {feature.id === 'health'   && <HealthTabComp   colors={colors} isDark={isDark} kidView={role === 'kid'} />}
           {feature.id === 'records'  && <RecordsTabComp  colors={colors} isDark={isDark} />}
@@ -127,40 +136,49 @@ function FeatureDetail({
 // ─── Tile ─────────────────────────────────────────────────────────────────────
 
 function Tile({
-  feature, isDark, onPress, badge,
+  feature, colors, isDark, onPress, badge,
 }: {
   feature: Feature;
+  colors: any;
   isDark: boolean;
   onPress: () => void;
   badge?: number;
 }) {
-  const bg = isDark ? feature.bgDark : feature.bg;
   const TIcon = feature.Icon;
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.82}
-      style={[tileS.tile, { backgroundColor: bg, borderColor: feature.accent + (isDark ? '35' : '25') }]}>
+      style={[tileS.tile, { backgroundColor: colors.card, borderColor: feature.accent + (isDark ? '40' : '30'), shadowColor: feature.accent }]}>
+      <LinearGradient
+        colors={[feature.accent + '16', feature.accent + '00']}
+        start={{ x: 0, y: 0 }} end={{ x: 0.6, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      />
+      {Platform.OS === 'ios' ? (
+        <BlurView intensity={18} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+      ) : (
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.card + (isDark ? 'CC' : 'E6') }]} pointerEvents="none" />
+      )}
+      <View style={{ height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)' }} pointerEvents="none" />
+
       {badge != null && badge > 0 && (
         <View style={[tileS.badge, { backgroundColor: feature.accent }]}>
           <Text style={tileS.badgeText}>{badge > 99 ? '99+' : badge}</Text>
         </View>
       )}
       {/* Icon circle */}
-      <View style={{ width: 52, height: 52, borderRadius: 16, marginBottom: 10,
-        backgroundColor: feature.accent + '18', borderWidth: 1.5, borderColor: feature.accent + '30',
+      <View style={{ width: 38, height: 38, borderRadius: 12, marginBottom: 7,
+        backgroundColor: feature.accent + '1C', borderWidth: 1, borderColor: feature.accent + '35',
         alignItems: 'center', justifyContent: 'center' }}>
-        <TIcon size={24} color={feature.accent} />
+        <TIcon size={17} color={feature.accent} />
       </View>
-      <Text style={{ fontSize: 15, fontWeight: '900', color: feature.accent, letterSpacing: -0.2 }}>
+      <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.1, textAlign: 'center' }} numberOfLines={1}>
         {feature.label}
       </Text>
-      <Text style={{ fontSize: 11, color: feature.accent + 'AA', fontWeight: '600', marginTop: 3,
+      <Text style={{ fontSize: 9.5, color: colors.textTertiary, fontWeight: '600', marginTop: 2,
         textAlign: 'center' }} numberOfLines={2}>
         {feature.subtitle}
       </Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 10 }}>
-        <Text style={{ fontSize: 10, color: feature.accent + '80', fontWeight: '700' }}>Open</Text>
-        <ChevronRight size={10} color={feature.accent + '80'} />
-      </View>
     </TouchableOpacity>
   );
 }
@@ -172,6 +190,9 @@ export default function VaultScreen() {
   const { members, activeMemberId, loaded, loadFromStorage } = useFamilyStore();
   const { signOut } = useAuthStore();
   const rewards = useRewardStore(s => s.rewards);
+  // Lets Hub's quick-access pills deep-link straight into a feature (e.g.
+  // /(tabs)/profile?openFeature=health) instead of landing on the grid.
+  const params = useLocalSearchParams<{ openFeature?: string }>();
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const role: MemberRole = activeMember?.role ?? 'parent';
@@ -180,6 +201,12 @@ export default function VaultScreen() {
   const [openFeature, setOpenFeature] = useState<Feature | null>(null);
 
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
+
+  useEffect(() => {
+    if (!params.openFeature) return;
+    const match = FEATURES.find(f => f.id === params.openFeature && f.roles.includes(role));
+    if (match) setOpenFeature(match);
+  }, [params.openFeature, role]);
 
   const visibleFeatures = FEATURES.filter(f => f.roles.includes(role));
 
@@ -192,8 +219,6 @@ export default function VaultScreen() {
     if (id === 'store') return pendingRewards;
     return 0;
   };
-
-  const bg = isDark ? '#0B0F1A' : '#F3F0FB';
 
   // When a feature is open, render it inline (bottom nav stays visible)
   if (openFeature) {
@@ -212,7 +237,7 @@ export default function VaultScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: bg }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <AppHeader
         memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
         memberRole={role as 'parent' | 'kid' | 'senior'}
@@ -228,19 +253,19 @@ export default function VaultScreen() {
           justifyContent: 'space-between', paddingVertical: 18 }}>
           <View>
             <Text style={{ fontSize: 22, fontWeight: '800', color: colors.textPrimary,
-              letterSpacing: -0.3 }}>Family Vault</Text>
+              letterSpacing: -0.3 }}>Apps</Text>
             <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
               {role === 'senior' ? 'Family Memories' : `${visibleFeatures.length} features`}
             </Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             {coins > 0 && (
-              <View style={{ backgroundColor: isDark ? '#2D2008' : '#FFFBEB',
+              <View style={{ backgroundColor: isDark ? colors.amber + '20' : colors.amberLight,
                 borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
-                borderWidth: 1, borderColor: '#F59E0B40',
+                borderWidth: 1, borderColor: colors.amber + '40',
                 flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Coins size={13} color="#F59E0B" />
-                <Text style={{ fontSize: 13, fontWeight: '800', color: '#F59E0B' }}>{coins}</Text>
+                <Coins size={13} color={colors.amber} />
+                <Text style={{ fontSize: 13, fontWeight: '800', color: colors.amber }}>{coins}</Text>
               </View>
             )}
             <TouchableOpacity onPress={() => Alert.alert('Sign Out', 'Sign out of Family Cube?', [
@@ -252,12 +277,13 @@ export default function VaultScreen() {
           </View>
         </View>
 
-        {/* Feature grid — 2 columns */}
+        {/* Feature grid — 3 columns, compact glass tiles */}
         <View style={gridS.grid}>
           {visibleFeatures.map(f => (
             <View key={f.id} style={gridS.cell}>
               <Tile
                 feature={f}
+                colors={colors}
                 isDark={isDark}
                 onPress={() => setOpenFeature(f)}
                 badge={getBadge(f.id)}
@@ -273,24 +299,24 @@ export default function VaultScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const gridS = StyleSheet.create({
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  cell: { width: '47%' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  cell: { width: '31%' },
 });
 
 const tileS = StyleSheet.create({
   tile: {
-    borderRadius: 24, borderWidth: 1.5, padding: 18,
-    alignItems: 'center',
-    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 10,
-    shadowOffset: { width: 0, height: 3 }, elevation: 3,
+    borderRadius: 18, borderWidth: 1.5, padding: 12,
+    alignItems: 'center', overflow: 'hidden',
+    shadowOpacity: 0.12, shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 }, elevation: 3,
     position: 'relative',
   },
   badge: {
-    position: 'absolute', top: 10, right: 10,
-    minWidth: 20, height: 20, borderRadius: 10,
+    position: 'absolute', top: 8, right: 8,
+    minWidth: 18, height: 18, borderRadius: 9,
     alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 5,
+    paddingHorizontal: 4, zIndex: 1,
   },
-  badgeText: { fontSize: 10, fontWeight: '900', color: '#fff' },
+  badgeText: { fontSize: 9, fontWeight: '900', color: '#fff' },
 });
 

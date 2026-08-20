@@ -7,10 +7,12 @@
 import { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  Pressable, Alert, ScrollView,
+  Pressable, Alert, ScrollView, Platform, StyleSheet,
+  Modal, KeyboardAvoidingView, Keyboard,
 } from 'react-native';
-import { Plus, Trash2, ChevronDown } from 'lucide-react-native';
-import AppBottomSheet from '@/components/AppBottomSheet';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Plus, Trash2, ChevronDown, X } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import { useSchoolStore, type ClassPeriod, type KidSchedule, subjectColor } from '@/store/schoolStore';
@@ -252,23 +254,38 @@ export function SchoolScheduleModal({ visible, memberId, memberName, isParent, c
     onClose();
   };
 
+  const dismiss = () => { Keyboard.dismiss(); onClose(); };
+
   return (
-    <AppBottomSheet
-      visible={visible}
-      onClose={onClose}
-      title={`📚 ${memberName}'s Schedule`}
-      minHeight="92%"
-      maxHeight="92%"
-      bodyPaddingBottom={20}
-      footer={
-        <TouchableOpacity onPress={save}
-          style={{ borderRadius: 16, paddingVertical: 15, alignItems: 'center', backgroundColor: BRAND.purple }}>
-          <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: '#fff' }}>
-            {existing ? 'Save Changes' : 'Save Schedule'}
-          </Text>
-        </TouchableOpacity>
-      }
-    >
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
+          <Pressable style={{ flex: 1 }} onPress={dismiss} />
+          <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
+            maxHeight: '92%', backgroundColor: colors.card }}>
+
+            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
+              borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary }}>
+                  {`📚 ${memberName}'s Schedule`}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={dismiss}
+                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                <X size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="always"
+              contentContainerStyle={{ padding: 20, paddingBottom: 20 }}
+              showsVerticalScrollIndicator={false}>
       <View style={{ gap: 14, paddingHorizontal: 4 }}>
         {/* School info */}
         <View style={{ gap: 10 }}>
@@ -357,7 +374,22 @@ export function SchoolScheduleModal({ visible, memberId, memberName, isParent, c
           </TouchableOpacity>
         </View>
       </View>
-    </AppBottomSheet>
+            </ScrollView>
+
+            {/* Sticky footer */}
+            <View style={{ padding: 16, paddingBottom: 28, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
+              <TouchableOpacity onPress={save}
+                style={{ borderRadius: 16, paddingVertical: 15, alignItems: 'center', backgroundColor: BRAND.purple }}>
+                <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: '#fff' }}>
+                  {existing ? 'Save Changes' : 'Save Schedule'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -469,8 +501,23 @@ export function SchoolScheduleCard({ memberId, memberName, isParent, colors, isD
 
   return (
     <>
-      <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderRadius: 18,
-        borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', overflow: 'hidden' }}>
+      <View style={{ backgroundColor: colors.card, borderRadius: 18,
+        borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+        shadowColor: colors.textPrimary, shadowOpacity: 0.06, shadowRadius: 12,
+        shadowOffset: { width: 0, height: 3 }, elevation: 3 }}>
+        <LinearGradient
+          colors={[colors.primary + '0C', colors.primary + '00']}
+          start={{ x: 0, y: 0 }} end={{ x: 0.6, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+          pointerEvents="none"
+        />
+        {Platform.OS === 'ios' ? (
+          <BlurView intensity={18} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+        ) : (
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.card + (isDark ? 'CC' : 'E6') }]} pointerEvents="none" />
+        )}
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)' }} pointerEvents="none" />
 
         {/* Header row */}
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, gap: 10 }}>

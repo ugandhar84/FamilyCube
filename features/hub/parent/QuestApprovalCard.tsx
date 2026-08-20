@@ -4,6 +4,7 @@ import { Camera, Coins, X, AlertTriangle } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { CollapsibleCard, QuestLiveness } from '../hubComponents';
+import { useCelebrationStore } from '@/store/celebrationStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
 
@@ -104,7 +105,7 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
           <X size={13} color={colors.danger} />
           <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.danger }}>Decline</Text>
         </Pressable>
-        <Pressable onPress={() => approveQuest(q.id, active.id)}
+        <Pressable onPress={() => { approveQuest(q.id, active.id); useCelebrationStore.getState().trigger(); }}
           style={{ flex: 2, backgroundColor: colors.primary, paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
           <Coins size={14} color="#fff" />
           <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>

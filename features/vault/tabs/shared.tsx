@@ -1,5 +1,7 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { LucideIcon, Check, Clock } from 'lucide-react-native';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 
 export const BRAND = {
   purple:  '#7C3AED',
@@ -10,16 +12,40 @@ export const BRAND = {
   blue:    '#3B82F6',
 };
 
-export function SCard({ children, colors, isDark, style }: {
-  children: React.ReactNode; colors: any; isDark: boolean; style?: any;
+// Frosted-glass shell — BlurView + gradient-wash + soft top-highlight
+// pattern shared with VaultScreen's Tile and EventCardTimeline. Defaults to
+// a neutral wash (colors.primary at low opacity) so most sub-screens read
+// as one consistent surface, but a screen with its own strong brand color
+// (e.g. Records' teal) can pass `accent` to tint the wash/border with that
+// color instead — glossy AND on-brand, rather than flattened to neutral.
+export function SCard({ children, colors, isDark, style, accent }: {
+  children: React.ReactNode; colors: any; isDark: boolean; style?: any; accent?: string;
 }) {
+  const wash = accent ?? colors.primary;
   return (
     <View style={[sh.scard, {
-      backgroundColor: isDark ? colors.card : '#FFFFFF',
-      borderColor: isDark ? colors.border : '#EDE9FE',
-      shadowColor: BRAND.purple, ...style,
+      backgroundColor: colors.card,
+      borderColor: accent ? accent + '35' : colors.border,
+      shadowColor: accent ?? colors.textPrimary,
+      overflow: 'hidden',
+      ...style,
     }]}>
-      {children}
+      <LinearGradient
+        colors={[wash + (accent ? '1C' : '0C'), wash + '00']}
+        start={{ x: 0, y: 0 }} end={{ x: 0.6, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      />
+      {Platform.OS === 'ios' ? (
+        <BlurView intensity={18} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+      ) : (
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.card + (isDark ? 'CC' : 'E6') }]} pointerEvents="none" />
+      )}
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+        backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)' }} pointerEvents="none" />
+      <View style={{ padding: 16 }}>
+        {children}
+      </View>
     </View>
   );
 }
@@ -105,7 +131,7 @@ export function EmptyState({ Icon, label, colors }: { Icon: LucideIcon; label: s
 }
 
 const sh = StyleSheet.create({
-  scard:           { borderRadius: 22, borderWidth: 1.5, padding: 16,
+  scard:           { borderRadius: 22, borderWidth: 1.5,
                      shadowOpacity: 0.06, shadowRadius: 12,
                      shadowOffset: { width: 0, height: 3 }, elevation: 3 },
   cardHeaderRow:   { flexDirection: 'row', alignItems: 'center', gap: 8 },

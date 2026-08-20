@@ -6,9 +6,10 @@ import {
 import Svg, { Path, Circle, Rect, Polyline, Line } from 'react-native-svg';
 import { Users, Mail } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
-import { useFamilyStore, MemberRole } from '@/store/familyStore';
+import { useFamilyStore, MemberRole, RELATIONSHIPS_BY_ROLE } from '@/store/familyStore';
 import { SCard, CardHeader, MemberAvatar, StatusPill, BRAND } from './shared';
 import { FamilyTreeView } from './FamilyTreeView';
+import { MemberProfileSheet } from './MemberProfileSheet';
 
 // ─── SVG Icons ────────────────────────────────────────────────────────────────
 const I = {
@@ -117,7 +118,7 @@ function PinModal({ member, onClose, onSave, colors, isDark }: {
 
 function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, onDelete, colors, isDark }: {
   member: any; allMembers: any[]; onClose: () => void;
-  onSave: (memberId: string, name: string, role: string, hasCar: boolean, rideEarnings: number, groceryEarnings: number, subRole?: string) => Promise<void>;
+  onSave: (memberId: string, name: string, role: string, hasCar: boolean, rideEarnings: number, groceryEarnings: number, subRole?: string, relationship?: string) => Promise<void>;
   onLinkParent: (memberId: string, parentId: string) => void;
   onDelete: (memberId: string) => Promise<void>;
   colors: any; isDark: boolean;
@@ -144,10 +145,21 @@ function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, on
   // derived relationally everywhere it's displayed (see lib/format.ts's
   // relationalName), disambiguated by first name if two seniors share it.
   const [subRole, setSubRole] = useState(member.subRole as string | undefined);
+  // Purely descriptive — how this member relates to the family (Mother,
+  // Stepson, Grandmother, etc). Never gates anything; `role` alone drives
+  // permissions. Resets when the role chip changes so a stale option from
+  // a different role's list can't linger (e.g. "Grandmother" surviving a
+  // switch from senior to parent).
+  const [relationship, setRelationship] = useState(member.relationship as string | undefined);
   const [saving, setSaving] = useState(false);
   const parentOptions = allMembers.filter(m => m.role === 'parent');
 
   const ROLES = ['parent', 'child', 'teenager', 'senior'];
+  // EditMemberModal's role chips use 'child'/'teenager' (not this app's
+  // MemberRole vocabulary) — translate before looking up the relationship
+  // options list, which is keyed by the real MemberRole.
+  const roleForRelationships: MemberRole = role === 'child' ? 'kid' : role === 'teenager' ? 'teen' : (role as MemberRole);
+  const relationshipOptions = RELATIONSHIPS_BY_ROLE[roleForRelationships] ?? [];
 
   const inp = [p.inp, {
     backgroundColor: isDark ? colors.card : '#F5F3FF',
@@ -173,7 +185,17 @@ function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, on
           <Text style={[p.label, { color: colors.textSecondary, marginTop: 12 }]}>Role</Text>
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 4 }}>
             {ROLES.map(r => (
-              <TouchableOpacity key={r} onPress={() => setRole(r)}
+              <TouchableOpacity key={r} onPress={() => {
+                setRole(r);
+                // A relationship option only makes sense for the role it was
+                // listed under — e.g. "Grandmother" shouldn't survive a
+                // switch to "parent". Clear it if it's no longer valid so
+                // Save never silently persists a mismatched label.
+                const nextRole: MemberRole = r === 'child' ? 'kid' : r === 'teenager' ? 'teen' : (r as MemberRole);
+                if (relationship && !RELATIONSHIPS_BY_ROLE[nextRole]?.includes(relationship)) {
+                  setRelationship(undefined);
+                }
+              }}
                 style={[p.roleChip, {
                   backgroundColor: role === r ? BRAND.purple : 'transparent',
                   borderColor: role === r ? BRAND.purple : colors.border,
@@ -182,6 +204,26 @@ function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, on
                   color: role === r ? '#fff' : colors.textSecondary }}>{r}</Text>
               </TouchableOpacity>
             ))}
+          </View>
+
+          {/* Relationship — purely descriptive (shown on the tree/roster
+              card), scoped to options that make sense for the selected
+              role. Never gates permissions; role alone does that. */}
+          <Text style={[p.label, { color: colors.textSecondary, marginTop: 12 }]}>Relationship</Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+            {relationshipOptions.map(opt => {
+              const picked = relationship === opt;
+              return (
+                <TouchableOpacity key={opt} onPress={() => setRelationship(picked ? undefined : opt)}
+                  style={[p.roleChip, {
+                    backgroundColor: picked ? BRAND.teal : 'transparent',
+                    borderColor: picked ? BRAND.teal : colors.border,
+                  }]}>
+                  <Text style={{ fontSize: 13, fontWeight: '700',
+                    color: picked ? '#fff' : colors.textSecondary }}>{opt}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {/* Can Drive — controls whether this member shows up as pickable in
@@ -285,7 +327,7 @@ function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, on
             <TouchableOpacity
               onPress={async () => {
                 setSaving(true);
-                await onSave(member.id, name, role, hasCar, parseInt(rideEarnings) || 50, parseInt(groceryEarnings) || 30, subRole);
+                await onSave(member.id, name, role, hasCar, parseInt(rideEarnings) || 50, parseInt(groceryEarnings) || 30, subRole, relationship);
                 setSaving(false); onClose();
               }}
               style={[p.saveBtn, { backgroundColor: BRAND.purple }]} disabled={saving}>
@@ -332,6 +374,7 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
   const [copied, setCopied]       = useState<string | null>(null);
   const [pinTarget, setPinTarget] = useState<any | null>(null);
   const [editTarget, setEditTarget] = useState<any | null>(null);
+  const [viewTarget, setViewTarget] = useState<any | null>(null);
   const [showPins, setShowPins]   = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
@@ -377,7 +420,7 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
     removeMember(memberId);
   };
 
-  const saveMember = async (memberId: string, name: string, role: string, hasCar: boolean, rideEarningsPerRun: number, groceryEarningsPerRun: number, subRole?: string) => {
+  const saveMember = async (memberId: string, name: string, role: string, hasCar: boolean, rideEarningsPerRun: number, groceryEarningsPerRun: number, subRole?: string, relationship?: string) => {
     // EditMemberModal's role chips use 'senior' (matching this app's own
     // MemberRole vocabulary), but the DB's members_role_check only allows
     // 'grandparent' — writing 'senior' straight through failed the
@@ -391,6 +434,7 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
       name, role: dbRole, has_car: hasCar,
       ride_earnings_per_run: rideEarningsPerRun, grocery_earnings_per_run: groceryEarningsPerRun,
       sub_role: subRole ?? null,
+      relationship: relationship ?? null,
     }).eq('id', memberId);
     if (error) {
       console.warn('[RosterTab] saveMember failed', error.message);
@@ -398,7 +442,7 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
       return;
     }
     const appRole: MemberRole = role === 'child' ? 'kid' : role === 'teenager' ? 'teen' : role as MemberRole;
-    updateMember(memberId, { name, role: appRole, hasCar, rideEarningsPerRun, groceryEarningsPerRun, subRole });
+    updateMember(memberId, { name, role: appRole, hasCar, rideEarningsPerRun, groceryEarningsPerRun, subRole, relationship });
   };
 
   const togglePin = (id: string) => setShowPins(s => ({ ...s, [id]: !s[id] }));
@@ -423,21 +467,25 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
 
   return (
     <>
-      {/* ── Members — family tree layout ─────────────── */}
-      <SCard colors={colors} isDark={isDark}>
-        <CardHeader Icon={Users} iconColor={BRAND.purple} title="Family Tree"
-          badge={`${members.length}`} badgeColor={BRAND.purple} colors={colors} />
+      {/* ── Members — family tree layout, on the plain canvas (no outer
+          card boundary), matching the reference mock's flat layout ── */}
+      <View style={{ gap: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Users size={16} color={BRAND.purple} />
+          <Text style={{ fontSize: 15, fontWeight: '900', color: colors.textPrimary, flex: 1 }}>Family Tree</Text>
+          <View style={{ backgroundColor: BRAND.purple + '20', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.purple }}>{members.length}</Text>
+          </View>
+        </View>
         <FamilyTreeView
           members={members} activeMemberId={activeMemberId} isParent={isParent}
           colors={colors} isDark={isDark}
-          onEdit={setEditTarget} onPin={setPinTarget}
+          onView={setViewTarget} onEdit={setEditTarget} onPin={setPinTarget}
         />
-        {isParent && (
-          <Text style={{ fontSize: 10, color: colors.textTertiary, textAlign: 'center', marginTop: 4 }}>
-            Long-press anyone to edit · tap the key icon for PIN
-          </Text>
-        )}
-      </SCard>
+        <Text style={{ fontSize: 10, color: colors.textTertiary, textAlign: 'center' }}>
+          Tap anyone to view · {isParent ? 'long-press to edit · ' : ''}tap the key icon for PIN
+        </Text>
+      </View>
 
       {/* ── Invites ──────────────────────────────────── */}
       {isParent && (
@@ -516,6 +564,10 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
         <EditMemberModal member={editTarget} allMembers={members} onClose={() => setEditTarget(null)}
           onSave={saveMember} onLinkParent={(id, parentId) => updateMember(id, { linkedParentId: parentId })}
           onDelete={deleteMember} colors={colors} isDark={isDark} />
+      )}
+      {viewTarget && (
+        <MemberProfileSheet member={viewTarget} siblings={members.map(m => m.name)}
+          visible onClose={() => setViewTarget(null)} colors={colors} isDark={isDark} />
       )}
     </>
   );

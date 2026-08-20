@@ -18,238 +18,38 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  Modal, KeyboardAvoidingView, Platform, StyleSheet, Alert,
+  Modal, KeyboardAvoidingView, Platform, Alert,
   Switch, ActivityIndicator, Pressable,
 } from 'react-native';
 import { supabase } from '@/lib/supabase';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, FamilyEvent, EventType, HelperStatus } from '@/store/eventStore';
 import { useGroceryStore } from '@/store/groceryStore';
-import { DEFAULT_GROCERY_ITEMS, DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
-import FamilyAvatar from '@/components/FamilyAvatar';
-import Svg, { Path, Circle } from 'react-native-svg';
 
-// ─── Icons ─────────────────────────────────────────────────────────────────────
-const X = ({ c, size = 14 }: { c: string; size?: number }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24">
-    <Path d="M6 6l12 12M18 6L6 18" stroke={c} strokeWidth={2} strokeLinecap="round" />
-  </Svg>
-);
-
-// ─── Category definitions ──────────────────────────────────────────────────────
-export type EventCategory = 'Medical' | 'Sports' | 'Study' | 'Ride' | 'Work' | 'Event' | 'Birthday' | 'Errand' | 'Other';
-
-// 'Work' intentionally excluded — it's parent-personal, not family-facing
-// (see isWorkEvent, which already filters it out of every family timeline).
-// The EventCategory type value and its filter stay in place for any
-// existing Work events already saved; this list is just what's offered
-// going forward.
-// Category swatches are intentionally hardcoded hex — this is a per-category
-// color legend (8 distinct categories) with no matching semantic token in
-// constants/colors.ts (only ~6 semantic tokens exist: danger/warning/success/
-// info/primary/accent). Collapsing 8 categories onto 6 tokens would make two
-// categories visually indistinguishable, so these stay as documented swatches
-// rather than guessing a wrong semantic mapping. Module-level constant — can't
-// call useTheme() here anyway.
-const CATEGORIES: { key: EventCategory; emoji: string; label: string; color: string }[] = [
-  { key: 'Medical',  emoji: '🏥', label: 'Medical',  color: '#EF4444' },
-  { key: 'Sports',   emoji: '🏅', label: 'Sports',   color: '#F59E0B' },
-  { key: 'Study',    emoji: '📚', label: 'Study',    color: '#3B82F6' },
-  { key: 'Ride',     emoji: '🚗', label: 'Ride',     color: '#10B981' },
-  { key: 'Event',    emoji: '🎉', label: 'Event',    color: '#6C5CE7' },
-  { key: 'Birthday', emoji: '🎂', label: 'Birthday', color: '#F59E0B' },
-  { key: 'Errand',   emoji: '🛒', label: 'Errand',   color: '#0EA5E9' },
-  { key: 'Other',    emoji: '✨', label: 'Other',    color: '#64748B' },
-];
-
-// ─── Smart suggestions ─────────────────────────────────────────────────────────
-const SUGGESTIONS: Record<EventCategory, { title: string; hint: string }[]> = {
-  Medical:  [
-    { title: 'Dentist appointment',   hint: '🦷 Routine checkup' },
-    { title: 'Vaccine checkup',       hint: '💉 Immunisation' },
-    { title: 'Eye exam',              hint: '👁️ Annual vision test' },
-    { title: 'Pediatric checkup',     hint: '🩺 Annual well-child' },
-    { title: 'Therapy session',       hint: '💙 Counselling' },
-    { title: 'Orthodontist visit',    hint: '😬 Braces checkup' },
-    { title: 'Allergy shot',          hint: '💊 Regular shot' },
-  ],
-  Sports:   [
-    { title: 'Soccer practice',       hint: '⚽ Weekly training' },
-    { title: 'Swimming lesson',       hint: '🏊 Coached session' },
-    { title: 'Basketball game',       hint: '🏀 Match day' },
-    { title: 'Tennis lesson',         hint: '🎾 Court session' },
-    { title: 'Cricket match',         hint: '🏏 Tournament' },
-    { title: 'Gymnastics class',      hint: '🤸 Skills training' },
-    { title: 'Karate practice',       hint: '🥋 Belt training' },
-  ],
-  Study:    [
-    { title: 'Math tutoring',         hint: '➕ Numbers session' },
-    { title: 'Science study',         hint: '🔬 Lab review' },
-    { title: 'English tutoring',      hint: '📖 Writing & reading' },
-    { title: 'Hindi practice',        hint: '🪔 Language session' },
-    { title: 'Coding lesson',         hint: '💻 Programming' },
-    { title: 'SAT / exam prep',       hint: '📝 Test readiness' },
-    { title: 'Music lesson',          hint: '🎵 Instrument practice' },
-  ],
-  Ride:     [
-    { title: 'Ride to school',        hint: '🏫 Morning drop' },
-    { title: 'Ride home from practice', hint: '🏠 After training' },
-    { title: 'Pickup from chess club', hint: '♟️ Club pickup' },
-    { title: 'Ride to friend\'s place', hint: '👫 Social trip' },
-    { title: 'Airport pickup',        hint: '✈️ Terminal run' },
-    { title: 'Library drop-off',      hint: '📚 Study session' },
-  ],
-  Work:     [
-    { title: 'Team meeting',          hint: '👥 Office sync' },
-    { title: 'Work presentation',     hint: '📊 Board deck' },
-    { title: 'Conference call',       hint: '📞 Remote meeting' },
-    { title: 'Office errand',         hint: '🏢 Quick run' },
-    { title: 'Client visit',          hint: '🤝 Site meeting' },
-    { title: 'Doctor visit',          hint: '🩺 Own health' },
-  ],
-  Event:    [
-    { title: 'Family game night',     hint: '🎲 Board games' },
-    { title: 'Movie night',           hint: '🎬 Film evening' },
-    { title: 'Family dinner',         hint: '🍽️ Table time' },
-    { title: 'Weekend outing',        hint: '🌳 Outside fun' },
-    { title: 'House party',           hint: '🏠 Hosting guests' },
-  ],
-  Birthday: [
-    { title: 'Birthday party',        hint: '🎁 Celebration' },
-    { title: 'Birthday dinner',       hint: '🎂 Family meal' },
-    { title: 'Friend\'s birthday',   hint: '🎊 Guest at party' },
-  ],
-  Errand: [
-    { title: 'Grocery run',           hint: '🛒 Supermarket' },
-    { title: 'Shopping trip',         hint: '🛍️ Mall / stores' },
-    { title: 'Pharmacy pickup',       hint: '💊 Medicines' },
-    { title: 'Bank errand',           hint: '🏦 Branch visit' },
-    { title: 'Post office run',       hint: '📮 Drop / collect' },
-    { title: 'Car service drop-off',  hint: '🔧 Garage' },
-  ],
-  Other: [],
-};
-
-// ─── Sport type chips ──────────────────────────────────────────────────────────
-const SPORT_TYPES = ['Soccer','Basketball','Swimming','Tennis','Cricket','Gymnastics','Karate','Rugby','Athletics','Badminton','Cycling'];
-const SUBJECTS    = ['Math','Science','English','Hindi','Coding','Music','Art','History','Geography','Economics'];
-const APPT_TYPES  = ['Routine checkup','Vaccine','Dental','Eye exam','Therapy','Ortho','Allergy','Blood test','Specialist'];
-
-// ─── Date / time helpers ───────────────────────────────────────────────────────
-function localDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-function fmtTime(d: Date): string {
-  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-}
-function fmtLocalDateTimeStamp(d: Date): string {
-  return `${localDateStr(d)}T${fmtTime(d)}`;
-}
-function fmtDisplay(d: Date): string {
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-}
-function fmtTimeDisplay(d: Date): string {
-  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-}
-
-// ─── Shared chip ───────────────────────────────────────────────────────────────
-function Chip({ label, active, color, onPress, small }: {
-  label: string; active: boolean; color: string;
-  onPress: () => void; small?: boolean;
-}) {
-  const { colors, isDark } = useTheme();
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      style={{
-        borderRadius: 20, borderWidth: 1.5, paddingHorizontal: small ? 10 : 12, paddingVertical: small ? 5 : 7,
-        backgroundColor: active ? color + '20' : (isDark ? colors.surface : colors.inputBg),
-        borderColor: active ? color : (isDark ? colors.border : '#E2E8F0'),
-      }}
-    >
-      <Text style={{ fontSize: small ? TYPO.micro : TYPO.label, fontWeight: '700', color: active ? color : colors.textSecondary }}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
-// ─── Multi-select member picker ────────────────────────────────────────────────
-function MemberPicker({ label, selectedIds, members, onToggle, onSelectAll, colors, isDark, siblings, lockedIds }: {
-  label: string; selectedIds: string[];
-  members: any[]; onToggle: (id: string) => void; onSelectAll?: () => void;
-  colors: any; isDark: boolean; siblings: string[];
-  lockedIds?: string[];  // IDs that cannot be deselected
-}) {
-  const locked = lockedIds ?? [];
-  const allSelected = members.length > 0 && members.every(m => selectedIds.includes(m.id));
-  return (
-    <View style={{ marginBottom: 14 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <Text style={[f.label, { color: colors.textSecondary }]}>{label}</Text>
-        {onSelectAll && members.length > 1 && (
-          <TouchableOpacity onPress={onSelectAll}
-            style={{ backgroundColor: allSelected ? BRAND.purple + '22' : (isDark ? '#1E293B' : '#F1F5F9'), borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: allSelected ? BRAND.purple : (isDark ? '#334155' : '#E2E8F0') }}>
-            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: allSelected ? BRAND.purple : colors.textTertiary }}>
-              {allSelected ? '✓ All' : 'All'}
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: 'row', gap: 12 }}>
-        {members.map(m => {
-          const sel = selectedIds.includes(m.id);
-          const isLocked = locked.includes(m.id);
-          return (
-            <TouchableOpacity
-              key={m.id}
-              style={{ alignItems: 'center', gap: 4, opacity: isLocked ? 1 : 1 }}
-              onPress={() => !isLocked && onToggle(m.id)}
-              disabled={isLocked}
-            >
-              <View style={{ position: 'relative' }}>
-                <FamilyAvatar
-                  name={m.name} emoji={m.emoji} avatarUrl={(m as any).avatarUrl}
-                  siblings={siblings} size={44}
-                  ringColor={sel ? BRAND.purple : (isDark ? '#64748B' : '#94A3B8')}
-                  ringWidth={sel ? 2.5 : 0}
-                  bgColor={sel ? BRAND.purple + '20' : (isDark ? '#1E293B' : '#F1F5F9')}
-                />
-                {isLocked && sel && (
-                  <View style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: 8, backgroundColor: colors.warning, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 9, color: colors.textInverse, fontWeight: '900' }}>🔒</Text>
-                  </View>
-                )}
-                {!isLocked && sel && (
-                  <View style={{ position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: 8, backgroundColor: BRAND.purple, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 9, color: colors.textInverse, fontWeight: '900' }}>✓</Text>
-                  </View>
-                )}
-              </View>
-              <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: sel ? BRAND.purple : colors.textTertiary }} numberOfLines={1}>
-                {m.name.split(' ')[0]}
-              </Text>
-              {isLocked && (
-                <Text style={{ fontSize: 8, color: colors.warning, fontWeight: '800', marginTop: -2 }}>Locked</Text>
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-    </View>
-  );
-}
+import { X } from './components/eventForm/Icons';
+import Chip from './components/eventForm/Chip';
+import MemberPicker from './components/eventForm/MemberPicker';
+import PickerOverlay from './components/eventForm/PickerOverlay';
+import GroceryLinkSection from './components/eventForm/GroceryLinkSection';
+import CategoryFields from './components/eventForm/CategoryFields';
+import HelperAssignmentSection from './components/eventForm/HelperAssignmentSection';
+import { f } from './components/eventForm/styles';
+import {
+  EventCategory, CATEGORIES, SUGGESTIONS, SPORT_TYPES, SUBJECTS, APPT_TYPES,
+  localDateStr, fmtTime, fmtLocalDateTimeStamp, fmtDisplay, fmtTimeDisplay,
+} from './components/eventForm/types';
+export type { EventCategory } from './components/eventForm/types';
 
 // ─── Family-specific custom categories/suggestions — backed by DB ─────────────
 import { fetchCustomSuggestions, recordCustomSuggestion, fetchCustomCategories, CustomCategory } from '@/lib/familyCustomCategories';
 import {
   lookupCategoryDefaultsByLooseLabel, resolveDomainFromLooseLabel, fetchSubcategoriesForDomain,
-  previewAssignment, applyAssignment, type ResponsibilityCategory, type AssignmentSuggestion,
+  applyAssignment, type ResponsibilityCategory, type AssignmentSuggestion,
 } from '@/lib/responsibilityCategories';
+import AssignmentSuggestionCard from './components/eventForm/AssignmentSuggestionCard';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // AddEventModal
@@ -301,6 +101,8 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
   const [showDatePick,   setShowDatePick]   = useState(false);
   const [showTimePick,   setShowTimePick]   = useState(false);
   const [allDay,         setAllDay]         = useState(false);
+  const [alertCall,            setAlertCall]            = useState(false);
+  const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(10);
 
   // Category-specific
   const [memberIds,      setMemberIds]      = useState<string[]>(prefill?.memberId ? [prefill.memberId] : (isKid ? [activeMemberId] : []));
@@ -600,6 +402,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
       rideRequired:    !isKid && !!driverName.trim(),
       driverName:      !isKid ? (driverName.trim() || undefined) : undefined,
       driverStatus:    !isKid && driverName.trim() ? (driverId === activeMemberId ? 'confirmed' : 'pending') : undefined,
+      alertCall, alertCallLeadMinutes,
     });
 
     // Persist custom title so it appears in future suggestions for this family
@@ -832,80 +635,13 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               </View>
             )}
 
-            {/* ── Assignment suggestion — calls the live Responsibility Engine
-                 (process-task-assignment) so a parent can see who this would
-                 likely go to before saving. Always a dry run — nothing is
-                 assigned or written until the form is actually submitted. ── */}
             {!isKid && !isTeen && familyId && (
-              <View style={{ marginBottom: 14 }}>
-                <TouchableOpacity
-                  onPress={async () => {
-                    setLoadingSuggestion(true);
-                    setAssignmentSuggestion(null);
-                    const result = await previewAssignment({
-                      taskId: `preview-${Date.now()}`,
-                      taskType: 'event',
-                      familyId,
-                      category: subcategoryId ?? resolveDomainFromLooseLabel(category),
-                    });
-                    setAssignmentSuggestion(result);
-                    setLoadingSuggestion(false);
-                  }}
-                  disabled={loadingSuggestion}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    borderRadius: 14, paddingVertical: 11, borderWidth: 1.5, borderStyle: 'dashed',
-                    borderColor: BRAND.purple + '60', backgroundColor: isDark ? colors.surface : '#F8F5FF',
-                    opacity: loadingSuggestion ? 0.6 : 1,
-                  }}
-                >
-                  {loadingSuggestion
-                    ? <ActivityIndicator size="small" color={BRAND.purple} />
-                    : <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>
-                        ✨ Who would this go to?
-                      </Text>
-                  }
-                </TouchableOpacity>
-
-                {assignmentSuggestion && (
-                  <View style={{
-                    marginTop: 8, borderRadius: 14, padding: 12,
-                    backgroundColor: isDark ? colors.surface : '#F8FAFC',
-                    borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0',
-                  }}>
-                    {assignmentSuggestion.error ? (
-                      <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
-                        {assignmentSuggestion.error}
-                      </Text>
-                    ) : assignmentSuggestion.decisionType === 'blocked' ? (
-                      <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                        {assignmentSuggestion.reason ?? 'No eligible family member found for this.'}
-                      </Text>
-                    ) : (
-                      <>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>
-                          {assignmentSuggestion.decisionType === 'auto' ? '✅ Would auto-assign to ' :
-                           assignmentSuggestion.decisionType === 'suggest' ? '💡 Suggested: ' : '🤔 Close call — '}
-                          {assignmentSuggestion.explanation.selected ?? '—'}
-                        </Text>
-                        {assignmentSuggestion.candidates.filter(c => !c.excluded).length > 1 && (
-                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 3 }}>
-                            {assignmentSuggestion.candidates
-                              .filter(c => !c.excluded)
-                              .map(c => `${c.memberName} (${Math.round(c.score)})`)
-                              .join(' · ')}
-                          </Text>
-                        )}
-                        {assignmentSuggestion.explanation.excludedReasons.length > 0 && (
-                          <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4 }}>
-                            {assignmentSuggestion.explanation.excludedReasons.map(e => `${e.member}: ${e.reason}`).join(' · ')}
-                          </Text>
-                        )}
-                      </>
-                    )}
-                  </View>
-                )}
-              </View>
+              <AssignmentSuggestionCard
+                colors={colors} isDark={isDark} familyId={familyId}
+                category={category} subcategoryId={subcategoryId}
+                loadingSuggestion={loadingSuggestion} setLoadingSuggestion={setLoadingSuggestion}
+                assignmentSuggestion={assignmentSuggestion} setAssignmentSuggestion={setAssignmentSuggestion}
+              />
             )}
 
             {/* ── Title ── */}
@@ -980,40 +716,15 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
             </View>
 
             {/* Picker overlay — floats above form, no layout shift */}
-            {(showDatePick || showTimePick) && (
-              <Modal transparent animationType="fade" visible onRequestClose={() => { setShowDatePick(false); setShowTimePick(false); }}>
-                <TouchableOpacity style={f.pickerOverlay} activeOpacity={1} onPress={() => { setShowDatePick(false); setShowTimePick(false); }}>
-                  <TouchableOpacity activeOpacity={1} style={[f.pickerCard, { backgroundColor: colors.card }]}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
-                      <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>
-                        {showDatePick ? '📅 Pick a Date' : '🕐 Pick a Time'}
-                      </Text>
-                      <TouchableOpacity onPress={() => { setShowDatePick(false); setShowTimePick(false); }}>
-                        <Text style={{ color: catColor, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
-                      </TouchableOpacity>
-                    </View>
-                    {showDatePick && (
-                      <DateTimePicker
-                        value={eventDate} mode="date" display="spinner"
-                        minimumDate={new Date()}
-                        onChange={(_, d) => { if (d) { const m = new Date(d); m.setHours(eventDate.getHours(), eventDate.getMinutes()); setEventDate(m); } }}
-                        textColor={colors.textPrimary}
-                        style={{ height: 180, width: '100%' }}
-                      />
-                    )}
-                    {showTimePick && (
-                      <DateTimePicker
-                        value={eventDate} mode="time" display="spinner"
-                        is24Hour={false}
-                        onChange={(_, d) => { if (d) { const m = new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setEventDate(m); } }}
-                        textColor={colors.textPrimary}
-                        style={{ height: 180, width: '100%' }}
-                      />
-                    )}
-                  </TouchableOpacity>
-                </TouchableOpacity>
-              </Modal>
-            )}
+            <PickerOverlay
+              showDate={showDatePick} showTime={showTimePick}
+              value={eventDate}
+              onChangeDate={d => { const m = new Date(d); m.setHours(eventDate.getHours(), eventDate.getMinutes()); setEventDate(m); }}
+              onChangeTime={d => { const m = new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setEventDate(m); }}
+              onDone={() => { setShowDatePick(false); setShowTimePick(false); }}
+              accentColor={catColor} colors={colors}
+              minimumDate={new Date()}
+            />
 
             {/* All day toggle */}
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingHorizontal: 4 }}>
@@ -1025,616 +736,65 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               />
             </View>
 
-            {/* ── MEDICAL fields ── */}
-            {category === 'Medical' && (
+            {/* Call-style reminder — opt-in, rings via CallKit/ConnectionService */}
+            {!allDay && (
               <>
-                <Text style={[f.sectionLabel, { color: catColor }]}>🏥 Medical details</Text>
-
-                {/* Appointment type */}
-                <Text style={[f.label, { color: colors.textSecondary }]}>Appointment type</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-                  <View style={{ flexDirection: 'row', gap: 7 }}>
-                    {APPT_TYPES.map(t => <Chip key={t} label={t} active={apptType === t} color={catColor} onPress={() => setApptType(p => p === t ? '' : t)} small />)}
-                  </View>
-                </ScrollView>
-
-                {/* Doctor + clinic in one row */}
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[f.label, { color: colors.textSecondary }]}>🩺 Doctor</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                      placeholder="Dr. Smith" placeholderTextColor={colors.textTertiary}
-                      value={doctorName} onChangeText={setDoctorName} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[f.label, { color: colors.textSecondary }]}>📍 Clinic</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                      placeholder="Clinic name" placeholderTextColor={colors.textTertiary}
-                      value={clinicLocation} onChangeText={setClinicLocation} />
-                  </View>
-                </View>
-              </>
-            )}
-
-            {/* ── SPORTS fields ── */}
-            {category === 'Sports' && (
-              <>
-                <Text style={[f.sectionLabel, { color: catColor }]}>🏅 Sports details</Text>
-
-                <Text style={[f.label, { color: colors.textSecondary }]}>Sport</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-                  <View style={{ flexDirection: 'row', gap: 7 }}>
-                    {SPORT_TYPES.map(t => <Chip key={t} label={t} active={sportType === t} color={catColor} onPress={() => setSportType(p => p === t ? '' : t)} small />)}
-                  </View>
-                </ScrollView>
-
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[f.label, { color: colors.textSecondary }]}>🏅 Coach</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                      placeholder="Coach Williams" placeholderTextColor={colors.textTertiary}
-                      value={coachName} onChangeText={setCoachName} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[f.label, { color: colors.textSecondary }]}>📍 Venue</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                      placeholder="Riverside Park" placeholderTextColor={colors.textTertiary}
-                      value={venueLocation} onChangeText={setVenueLocation} />
-                  </View>
-                </View>
-
-                <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
-                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                  placeholder="Home / School" placeholderTextColor={colors.textTertiary}
-                  value={pickupLocation} onChangeText={setPickupLocation} />
-
-                {/* Kit reminder */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingHorizontal: 4 }}>
-                  <View>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>🎒 Kit reminder</Text>
-                    <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>Notify player to pack gear beforehand</Text>
-                  </View>
-                  <Switch value={kitReminder} onValueChange={setKitReminder}
-                    trackColor={{ false: colors.border, true: catColor + '80' }}
-                    thumbColor={kitReminder ? catColor : colors.textTertiary} />
-                </View>
-              </>
-            )}
-
-            {/* ── STUDY fields ── */}
-            {category === 'Study' && (
-              <>
-                <Text style={[f.sectionLabel, { color: catColor }]}>📚 Study details</Text>
-
-                <Text style={[f.label, { color: colors.textSecondary }]}>Subject</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-                  <View style={{ flexDirection: 'row', gap: 7 }}>
-                    {SUBJECTS.map(s => <Chip key={s} label={s} active={subject === s} color={catColor} onPress={() => setSubject(p => p === s ? '' : s)} small />)}
-                  </View>
-                </ScrollView>
-
-                <Text style={[f.label, { color: colors.textSecondary }]}>📚 Tutor name</Text>
-                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                  placeholder="Mr. Kumar" placeholderTextColor={colors.textTertiary}
-                  value={tutorName} onChangeText={setTutorName} />
-
-                {/* Online toggle */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingHorizontal: 4 }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>🖥️ Online session</Text>
-                  <Switch value={isOnline} onValueChange={setIsOnline}
-                    trackColor={{ false: colors.border, true: catColor + '80' }}
-                    thumbColor={isOnline ? catColor : colors.textTertiary} />
-                </View>
-                {isOnline ? (
-                  <>
-                    <Text style={[f.label, { color: colors.textSecondary }]}>🔗 Meeting link</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                      placeholder="https://zoom.us/j/..." placeholderTextColor={colors.textTertiary}
-                      value={meetingUrl} onChangeText={setMeetingUrl} keyboardType="url" autoCapitalize="none" />
-                  </>
-                ) : (
-                  <>
-                    <Text style={[f.label, { color: colors.textSecondary }]}>📍 Location</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                      placeholder="Home / Library" placeholderTextColor={colors.textTertiary}
-                      value={venueLocation} onChangeText={setVenueLocation} />
-                    {/* External tutor + in-person → show drop & pickup */}
-                    {!helperId && tutorName.trim().length > 0 && (
-                      <>
-                        <View style={{ flexDirection: 'row', gap: 10 }}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
-                            <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                              placeholder="Home / School" placeholderTextColor={colors.textTertiary}
-                              value={pickupLocation} onChangeText={setPickupLocation} />
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[f.label, { color: colors.textSecondary }]}>🏁 Drop to</Text>
-                            <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                              placeholder="Tutor's place / Library" placeholderTextColor={colors.textTertiary}
-                              value={dropLocation} onChangeText={setDropLocation} />
-                          </View>
-                        </View>
-                        {!isKid && (
-                          <View style={{ marginBottom: 14, gap: 8 }}>
-                            <MemberPicker
-                              label="🚗 Drive Assignment"
-                              selectedIds={driverId ? [driverId] : []}
-                              members={adults}
-                              onToggle={handleDriverSelect}
-                              colors={colors} isDark={isDark} siblings={siblings}
-                            />
-                            {!driverId && (
-                              <TextInput
-                                style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                                placeholder="Or type a name (e.g. external driver)"
-                                placeholderTextColor={colors.textTertiary}
-                                value={driverName}
-                                onChangeText={t => { setDriverName(t); if (!t) setDriverId(undefined); }}
-                              />
-                            )}
-                          </View>
-                        )}
-                        <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Return pickup (optional)</Text>
-                        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
-                          <TouchableOpacity
-                            style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                            onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
-                          >
-                            <Text style={{ fontSize: 13 }}>📅</Text>
-                            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
-                              {returnDate ? fmtDisplay(returnDate) : 'Return date'}
-                            </Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[f.dateBtn, { flex: 2, backgroundColor: showReturnTimePick ? catColor + '20' : colors.surface, borderColor: showReturnTimePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                            onPress={() => { setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
-                          >
-                            <Text style={{ fontSize: 13 }}>🕐</Text>
-                            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnTimePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
-                              {returnDate ? fmtTimeDisplay(returnDate) : 'Time'}
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      </>
-                    )}
-                  </>
-                )}
-              </>
-            )}
-
-            {/* ── RIDE fields ── */}
-            {category === 'Ride' && (
-              <>
-                <Text style={[f.sectionLabel, { color: catColor }]}>🚗 Ride details</Text>
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                      placeholder="Home / School" placeholderTextColor={colors.textTertiary}
-                      value={pickupLocation} onChangeText={setPickupLocation} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[f.label, { color: colors.textSecondary }]}>🏁 Drop to</Text>
-                    <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface,
-                      borderColor: dropLocation ? colors.borderMed : colors.warning + '60' }]}
-                      placeholder="Chess Club, Oak St" placeholderTextColor={colors.textTertiary}
-                      value={dropLocation} onChangeText={setDropLocation} />
-                  </View>
-                </View>
-                <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Return pickup (optional)</Text>
-                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
-                  <TouchableOpacity
-                    style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                    onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
-                  >
-                    <Text style={{ fontSize: 13 }}>📅</Text>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
-                      {returnDate ? fmtDisplay(returnDate) : 'Return date'}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[f.dateBtn, { flex: 2, backgroundColor: showReturnTimePick ? catColor + '20' : colors.surface, borderColor: showReturnTimePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                    onPress={() => { setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
-                  >
-                    <Text style={{ fontSize: 13 }}>🕐</Text>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnTimePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
-                      {returnDate ? fmtTimeDisplay(returnDate) : 'Time'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                {(showReturnDatePick || showReturnTimePick) && (
-                  <Modal transparent animationType="fade" visible onRequestClose={() => { setShowReturnDatePick(false); setShowReturnTimePick(false); }}>
-                    <TouchableOpacity style={f.pickerOverlay} activeOpacity={1} onPress={() => { setShowReturnDatePick(false); setShowReturnTimePick(false); }}>
-                      <TouchableOpacity activeOpacity={1} style={[f.pickerCard, { backgroundColor: colors.card }]}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
-                          <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>
-                            {showReturnDatePick ? '📅 Return Date' : '🕐 Return Time'}
-                          </Text>
-                          <TouchableOpacity onPress={() => { setShowReturnDatePick(false); setShowReturnTimePick(false); }}>
-                            <Text style={{ color: catColor, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
-                          </TouchableOpacity>
-                        </View>
-                        {showReturnDatePick && (
-                          <DateTimePicker
-                            value={returnDate ?? eventDate}
-                            mode="date" display="spinner"
-                            minimumDate={new Date()}
-                            onChange={(_, d) => { if (d) { const m = returnDate ? new Date(returnDate) : new Date(eventDate); m.setFullYear(d.getFullYear(), d.getMonth(), d.getDate()); setReturnDate(m); } }}
-                            textColor={colors.textPrimary}
-                            style={{ height: 180, width: '100%' }}
-                          />
-                        )}
-                        {showReturnTimePick && (
-                          <DateTimePicker
-                            value={returnDate ?? eventDate}
-                            mode="time" display="spinner" is24Hour={false}
-                            onChange={(_, d) => { if (d) { const m = returnDate ? new Date(returnDate) : new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setReturnDate(m); } }}
-                            textColor={colors.textPrimary}
-                            style={{ height: 180, width: '100%' }}
-                          />
-                        )}
-                      </TouchableOpacity>
-                    </TouchableOpacity>
-                  </Modal>
-                )}
-
-                {/* ── GP + Teen toggles always shown for Ride (parent/senior only) ── */}
-                {!isKid && !isTeen && (
-                  <View style={{ gap: 10, marginTop: 4, marginBottom: 14 }}>
-                    {/* Grandparents Welcome. Border/track/toggle fill use colors.warning
-                        (closest token to the amber highlight). The darker on-tint text
-                        shades (#92400E / #B45309) have no token equivalent — the
-                        semantic palette only defines one amber value per mode, not a
-                        separate darker "text on amber tint" shade — so those two stay
-                        documented hardcoded hex rather than guessing a mismatched token. */}
-                    <TouchableOpacity
-                      onPress={() => { setGpTeenToggledByUser(true); setOpenToGrandparents(g => !g); }}
-                      activeOpacity={0.8}
-                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                        paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14,
-                        borderWidth: 1.5,
-                        borderColor: openToGrandparents ? colors.warning : (isDark ? colors.border : '#E2E8F0'),
-                        backgroundColor: openToGrandparents ? (isDark ? '#2D1800' : colors.warningLight) : (isDark ? colors.surface : '#F9FAFB'),
-                      }}>
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: openToGrandparents ? '#92400E' : colors.textPrimary }}>
-                          👴👵 Grandparents Welcome
-                        </Text>
-                        <Text style={{ fontSize: TYPO.label, color: openToGrandparents ? '#B45309' : colors.textSecondary }}>
-                          {openToGrandparents ? 'GPs can claim this ride or pass, no pressure' : 'Off · only visible to parents'}
-                        </Text>
-                      </View>
-                      <View style={{ width: 44, height: 26, borderRadius: 13,
-                        backgroundColor: openToGrandparents ? colors.warning : (isDark ? '#334155' : '#CBD5E1'),
-                        justifyContent: 'center', paddingHorizontal: 3 }}>
-                        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
-                          alignSelf: openToGrandparents ? 'flex-end' : 'flex-start' }} />
-                      </View>
-                    </TouchableOpacity>
-
-                    {/* Teen driver — only if teens exist in family */}
-                    {/* Indigo (#6366F1 family) is the Teen-Welcome legend color used
-                        throughout this file. constants/colors.ts has no indigo/violet
-                        token — only 6 semantic tokens (danger/warning/success/info/
-                        primary/accent), none of which is a close hue match — so this
-                        stays a documented hardcoded swatch rather than guessing a
-                        wrong semantic color onto it. */}
-                    {members.some(m => m.role === 'teen') && (
-                      <TouchableOpacity
-                        onPress={() => { setGpTeenToggledByUser(true); setOpenToTeens(t => !t); }}
-                        activeOpacity={0.8}
-                        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                          paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14,
-                          borderWidth: 1.5,
-                          borderColor: openToTeens ? '#6366F1' : (isDark ? colors.border : '#E2E8F0'),
-                          backgroundColor: openToTeens ? (isDark ? '#1E1B4B' : '#EEF2FF') : (isDark ? colors.surface : '#F9FAFB'),
-                        }}>
-                        <View style={{ flex: 1, gap: 2 }}>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: openToTeens ? '#3730A3' : colors.textPrimary }}>
-                            🚗 Teen Driver Welcome
-                          </Text>
-                          <Text style={{ fontSize: TYPO.label, color: openToTeens ? '#4338CA' : colors.textSecondary }}>
-                            {openToTeens ? 'Teen can drive · set coins below' : 'Off · teen driver not offered'}
-                          </Text>
-                        </View>
-                        <View style={{ width: 44, height: 26, borderRadius: 13,
-                          backgroundColor: openToTeens ? '#6366F1' : (isDark ? '#334155' : '#CBD5E1'),
-                          justifyContent: 'center', paddingHorizontal: 3 }}>
-                          <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
-                            alignSelf: openToTeens ? 'flex-end' : 'flex-start' }} />
-                        </View>
-                      </TouchableOpacity>
-                    )}
-                    {openToTeens && members.some(m => m.role === 'teen') && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 }}>
-                        <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, flex: 1 }}>🪙 Coins for teen driver</Text>
-                        <TextInput
-                          style={[f.input, { flex: 0, width: 80, textAlign: 'center', color: colors.textPrimary, backgroundColor: colors.surface, borderColor: '#6366F1' }]}
-                          keyboardType="numeric" maxLength={4}
-                          placeholder="0" placeholderTextColor={colors.textTertiary}
-                          value={rideCoinsTeen} onChangeText={setRideCoinsTeen}
-                        />
-                      </View>
-                    )}
-                  </View>
-                )}
-              </>
-            )}
-
-            {/* ── EVENT / BIRTHDAY fields ── */}
-            {(category === 'Event' || category === 'Birthday') && (
-              <>
-                <Text style={[f.sectionLabel, { color: catColor }]}>
-                  {category === 'Birthday' ? '🎂 Party details' : '🎉 Event details'}
-                </Text>
-                <Text style={[f.label, { color: colors.textSecondary }]}>📍 Location</Text>
-                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                  placeholder={category === 'Birthday' ? "Friend's house / venue" : 'Living Room / Park / Restaurant'}
-                  placeholderTextColor={colors.textTertiary}
-                  value={generalLocation} onChangeText={setGeneralLocation} />
-                {category === 'Birthday' && (
-                  <>
-                    <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Return pickup (optional)</Text>
-                    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
-                      <TouchableOpacity
-                        style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                        onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
-                      >
-                        <Text style={{ fontSize: 13 }}>📅</Text>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
-                          {returnDate ? fmtDisplay(returnDate) : 'Pickup date'}
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[f.dateBtn, { flex: 2, backgroundColor: showReturnTimePick ? catColor + '20' : colors.surface, borderColor: showReturnTimePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                        onPress={() => { setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
-                      >
-                        <Text style={{ fontSize: 13 }}>🕐</Text>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnTimePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
-                          {returnDate ? fmtTimeDisplay(returnDate) : 'Time'}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </>
-                )}
-              </>
-            )}
-
-            {/* ── ERRAND fields ── */}
-            {category === 'Errand' && (
-              <>
-                <Text style={[f.sectionLabel, { color: catColor }]}>🛒 Errand details</Text>
-                <Text style={[f.label, { color: colors.textSecondary }]}>📍 Where</Text>
-                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                  placeholder="Supermarket / Mall / Pharmacy" placeholderTextColor={colors.textTertiary}
-                  value={generalLocation} onChangeText={setGeneralLocation} />
-                <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Expected return (optional)</Text>
-                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
-                  <TouchableOpacity
-                    style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                    onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
-                  >
-                    <Text style={{ fontSize: 13 }}>📅</Text>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
-                      {returnDate ? fmtDisplay(returnDate) : 'Return date'}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[f.dateBtn, { flex: 2, backgroundColor: showReturnTimePick ? catColor + '20' : colors.surface, borderColor: showReturnTimePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                    onPress={() => { setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
-                  >
-                    <Text style={{ fontSize: 13 }}>🕐</Text>
-                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnTimePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
-                      {returnDate ? fmtTimeDisplay(returnDate) : 'Time'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* ── Link grocery list ── */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <Text style={[f.label, { color: colors.textSecondary, marginBottom: 0 }]}>🛍️ Attach grocery list</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: alertCall ? 8 : 16, paddingHorizontal: 4 }}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>📞 Call to remind</Text>
                   <Switch
-                    value={linkGroceries}
-                    onValueChange={setLinkGroceries}
+                    value={alertCall} onValueChange={setAlertCall}
                     trackColor={{ false: colors.border, true: catColor + '80' }}
-                    thumbColor={linkGroceries ? catColor : colors.textTertiary}
+                    thumbColor={alertCall ? catColor : colors.textTertiary}
                   />
                 </View>
-
-                {linkGroceries && (
-                  <>
-                    {/* ── Existing pending items ── */}
-                    {loadingGroceries ? (
-                      <ActivityIndicator color={catColor} style={{ marginVertical: 8 }} />
-                    ) : groceryItems.length > 0 ? (
-                      <>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                          <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
-                            From your list
-                          </Text>
-                          <Pressable onPress={() => {
-                            if (selectedItemIds.size === groceryItems.length) setSelectedItemIds(new Set());
-                            else setSelectedItemIds(new Set(groceryItems.map(i => i.id)));
-                          }}>
-                            <Text style={{ fontSize: 12, color: catColor, fontWeight: '700' }}>
-                              {selectedItemIds.size === groceryItems.length ? 'Deselect all' : 'Select all'}
-                            </Text>
-                          </Pressable>
-                        </View>
-                        {(() => {
-                          const groups: Record<string, typeof groceryItems> = {};
-                          for (const item of groceryItems) {
-                            const key = item.storePreference || 'Any store';
-                            if (!groups[key]) groups[key] = [];
-                            groups[key].push(item);
-                          }
-                          return Object.entries(groups)
-                            .sort(([a], [b]) => a === 'Any store' ? 1 : b === 'Any store' ? -1 : a.localeCompare(b))
-                            .map(([store, items]) => {
-                              const storeSelected = items.every(i => selectedItemIds.has(i.id));
-                              const storePartial  = !storeSelected && items.some(i => selectedItemIds.has(i.id));
-                              return (
-                                <View key={store} style={{ marginBottom: 10 }}>
-                                  <Pressable
-                                    onPress={() => {
-                                      const next = new Set(selectedItemIds);
-                                      if (storeSelected) items.forEach(i => next.delete(i.id));
-                                      else items.forEach(i => next.add(i.id));
-                                      setSelectedItemIds(next);
-                                    }}
-                                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-                                      backgroundColor: storeSelected ? catColor + '15' : (storePartial ? catColor + '08' : isDark ? '#252540' : '#F3F4F6'),
-                                      borderRadius: 10, paddingVertical: 7, paddingHorizontal: 12, marginBottom: 3,
-                                      borderWidth: 1, borderColor: storeSelected ? catColor + '60' : (storePartial ? catColor + '30' : colors.border) }}
-                                  >
-                                    <Text style={{ fontSize: 14 }}>🏪</Text>
-                                    <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: storeSelected ? catColor : colors.textPrimary }}>{store}</Text>
-                                    <Text style={{ fontSize: 11, color: colors.textSecondary }}>
-                                      {items.filter(i => selectedItemIds.has(i.id)).length}/{items.length}
-                                    </Text>
-                                    <View style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 2,
-                                      borderColor: (storeSelected || storePartial) ? catColor : colors.border,
-                                      backgroundColor: storeSelected ? catColor : 'transparent',
-                                      alignItems: 'center', justifyContent: 'center' }}>
-                                      {storeSelected && <Text style={{ color: colors.textInverse, fontSize: 10, fontWeight: '900' }}>✓</Text>}
-                                      {storePartial && <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: catColor }} />}
-                                    </View>
-                                  </Pressable>
-                                  {items.map(item => {
-                                    const selected = selectedItemIds.has(item.id);
-                                    return (
-                                      <Pressable
-                                        key={item.id}
-                                        onPress={() => {
-                                          const next = new Set(selectedItemIds);
-                                          selected ? next.delete(item.id) : next.add(item.id);
-                                          setSelectedItemIds(next);
-                                        }}
-                                        style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: 12,
-                                          paddingLeft: 26, backgroundColor: selected ? catColor + '10' : colors.surface,
-                                          borderRadius: 8, marginBottom: 2,
-                                          borderWidth: 1, borderColor: selected ? catColor + '40' : colors.border }}
-                                      >
-                                        <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: 2,
-                                          borderColor: selected ? catColor : colors.border,
-                                          backgroundColor: selected ? catColor : 'transparent',
-                                          alignItems: 'center', justifyContent: 'center', marginRight: 9 }}>
-                                          {selected && <Text style={{ color: colors.textInverse, fontSize: 9, fontWeight: '900' }}>✓</Text>}
-                                        </View>
-                                        <Text style={{ flex: 1, fontSize: 13, color: colors.textPrimary, fontWeight: selected ? '600' : '400' }}>{item.name}</Text>
-                                        {item.quantity ? <Text style={{ fontSize: 11, color: colors.textSecondary }}>{item.quantity}</Text> : null}
-                                      </Pressable>
-                                    );
-                                  })}
-                                </View>
-                              );
-                            });
-                        })()}
-                      </>
-                    ) : null}
-
-                    {/* ── New items typed inline ── */}
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: groceryItems.length > 0 ? 10 : 0, marginBottom: 6 }}>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
-                        Add new items
-                      </Text>
-                      <Pressable onPress={() => setNewGroceryLines(prev => [...prev, { name: '', qty: '', store: generalLocation.trim() || '' }])}
-                        style={{ backgroundColor: catColor, borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10 }}>
-                        <Text style={{ color: colors.textInverse, fontSize: 12, fontWeight: '700' }}>+ Add item</Text>
-                      </Pressable>
-                    </View>
-                    {newGroceryLines.length === 0 ? (
-                      <Pressable onPress={() => setNewGroceryLines([{ name: '', qty: '', store: generalLocation.trim() || '' }])}
-                        style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: catColor + '60', borderRadius: 10,
-                          paddingVertical: 12, alignItems: 'center' }}>
-                        <Text style={{ color: catColor, fontSize: 13 }}>+ Tap to add grocery items</Text>
-                      </Pressable>
-                    ) : (
-                      newGroceryLines.map((line, idx) => {
-                        const allItemPool = [...new Set([...cachedItemNames, ...DEFAULT_GROCERY_ITEMS])];
-                        const allStorePool = [...new Set([...cachedStores, ...DEFAULT_GROCERY_STORES])];
-                        const nameSuggs = line.name.trim().length > 0
-                          ? allItemPool.filter(n => n.toLowerCase().includes(line.name.toLowerCase()) && n.toLowerCase() !== line.name.toLowerCase()).slice(0, 6)
-                          : [];
-                        const storeSuggs = line.store.trim().length === 0
-                          ? allStorePool.slice(0, 6)
-                          : allStorePool.filter(s => s.toLowerCase().includes(line.store.toLowerCase()) && s.toLowerCase() !== line.store.toLowerCase()).slice(0, 6);
-                        const showNameSuggs  = focusedLineIdx === idx && focusedField === 'name'  && nameSuggs.length > 0;
-                        const showStoreSuggs = focusedLineIdx === idx && focusedField === 'store' && storeSuggs.length > 0;
-
-                        return (
-                          <View key={idx} style={{ marginBottom: 8 }}>
-                            {/* Row 1: name + qty + delete */}
-                            <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 4 }}>
-                              <TextInput
-                                style={[f.input, { flex: 2.5, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'name' ? catColor : colors.borderMed, marginBottom: 0 }]}
-                                placeholder="Item name" placeholderTextColor={colors.textTertiary}
-                                value={line.name}
-                                onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, name: v } : l))}
-                                onFocus={() => { setFocusedLineIdx(idx); setFocusedField('name'); }}
-                                onBlur={() => { setFocusedLineIdx(null); setFocusedField(null); }}
-                              />
-                              <TextInput
-                                style={[f.input, { flex: 1, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed, marginBottom: 0 }]}
-                                placeholder="Qty" placeholderTextColor={colors.textTertiary}
-                                value={line.qty}
-                                onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, qty: v } : l))}
-                              />
-                              <Pressable onPress={() => setNewGroceryLines(prev => prev.filter((_, i) => i !== idx))} style={{ padding: 6 }}>
-                                <X c={colors.textTertiary} size={16} />
-                              </Pressable>
-                            </View>
-                            {/* Name suggestions */}
-                            {showNameSuggs && (
-                              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" style={{ marginBottom: 4 }}>
-                                {nameSuggs.map(s => (
-                                  <Pressable key={s} onPress={() => { setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, name: s } : l)); setFocusedField(null); }}
-                                    style={{ backgroundColor: catColor + '15', borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10, marginRight: 6, borderWidth: 1, borderColor: catColor + '40' }}>
-                                    <Text style={{ fontSize: 12, color: catColor, fontWeight: '600' }}>{s}</Text>
-                                  </Pressable>
-                                ))}
-                              </ScrollView>
-                            )}
-                            {/* Row 2: store field */}
-                            <TextInput
-                              style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'store' ? catColor : colors.borderMed, marginBottom: 0 }]}
-                              placeholder="🏪 Store (e.g. Walmart, Costco)" placeholderTextColor={colors.textTertiary}
-                              value={line.store}
-                              onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, store: v } : l))}
-                              onFocus={() => { setFocusedLineIdx(idx); setFocusedField('store'); }}
-                              onBlur={() => { setFocusedLineIdx(null); setFocusedField(null); }}
-                            />
-                            {/* Store suggestions */}
-                            {showStoreSuggs && (
-                              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" style={{ marginTop: 4 }}>
-                                {storeSuggs.map(s => (
-                                  <Pressable key={s} onPress={() => { setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, store: s } : l)); setFocusedField(null); }}
-                                    style={{ backgroundColor: isDark ? '#252540' : '#F3F4F6', borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10, marginRight: 6, borderWidth: 1, borderColor: colors.border }}>
-                                    <Text style={{ fontSize: 12, color: colors.textPrimary }}>🏪 {s}</Text>
-                                  </Pressable>
-                                ))}
-                              </ScrollView>
-                            )}
-                          </View>
-                        );
-                      })
-                    )}
-                  </>
+                {alertCall && (
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16, paddingHorizontal: 4 }}>
+                    {[0, 5, 10].map(mins => (
+                      <TouchableOpacity key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
+                        style={[f.dateBtn, { flex: 1, backgroundColor: alertCallLeadMinutes === mins ? catColor + '20' : colors.surface, borderColor: alertCallLeadMinutes === mins ? catColor : colors.border }]}>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: alertCallLeadMinutes === mins ? catColor : colors.textPrimary }}>
+                          {mins === 0 ? 'On time' : `${mins} min before`}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 )}
               </>
             )}
 
-            {/* ── OTHER fields ── */}
-            {category === 'Other' && (
-              <>
-                <Text style={[f.sectionLabel, { color: catColor }]}>✨ Custom event</Text>
-                <Text style={[f.label, { color: colors.textSecondary }]}>📍 Location (optional)</Text>
-                <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                  placeholder="Where is this happening?" placeholderTextColor={colors.textTertiary}
-                  value={generalLocation} onChangeText={setGeneralLocation} />
-              </>
-            )}
+            <CategoryFields
+              category={category} catColor={catColor} colors={colors} isDark={isDark} siblings={siblings} adults={adults} isKid={isKid}
+              apptType={apptType} setApptType={setApptType} doctorName={doctorName} setDoctorName={setDoctorName}
+              clinicLocation={clinicLocation} setClinicLocation={setClinicLocation}
+              sportType={sportType} setSportType={setSportType} coachName={coachName} setCoachName={setCoachName}
+              venueLocation={venueLocation} setVenueLocation={setVenueLocation}
+              pickupLocation={pickupLocation} setPickupLocation={setPickupLocation}
+              kitReminder={kitReminder} setKitReminder={setKitReminder}
+              subject={subject} setSubject={setSubject} tutorName={tutorName} setTutorName={setTutorName}
+              isOnline={isOnline} setIsOnline={setIsOnline} meetingUrl={meetingUrl} setMeetingUrl={setMeetingUrl}
+              helperId={helperId} dropLocation={dropLocation} setDropLocation={setDropLocation}
+              driverId={driverId} driverName={driverName} setDriverName={setDriverName} setDriverId={setDriverId}
+              handleDriverSelect={handleDriverSelect}
+              eventDate={eventDate}
+              returnDate={returnDate} setReturnDate={setReturnDate}
+              showReturnDatePick={showReturnDatePick} setShowReturnDatePick={setShowReturnDatePick}
+              showReturnTimePick={showReturnTimePick} setShowReturnTimePick={setShowReturnTimePick}
+              showDatePick={showDatePick} setShowDatePick={setShowDatePick}
+              showTimePick={showTimePick} setShowTimePick={setShowTimePick}
+              isTeen={isTeen} members={members}
+              openToGrandparents={openToGrandparents} setOpenToGrandparents={setOpenToGrandparents}
+              openToTeens={openToTeens} setOpenToTeens={setOpenToTeens}
+              setGpTeenToggledByUser={setGpTeenToggledByUser}
+              rideCoinsTeen={rideCoinsTeen} setRideCoinsTeen={setRideCoinsTeen}
+              generalLocation={generalLocation} setGeneralLocation={setGeneralLocation}
+              linkGroceries={linkGroceries} setLinkGroceries={setLinkGroceries}
+              loadingGroceries={loadingGroceries} groceryItems={groceryItems}
+              selectedItemIds={selectedItemIds} setSelectedItemIds={setSelectedItemIds}
+              newGroceryLines={newGroceryLines} setNewGroceryLines={setNewGroceryLines}
+              focusedLineIdx={focusedLineIdx} setFocusedLineIdx={setFocusedLineIdx}
+              focusedField={focusedField} setFocusedField={setFocusedField}
+              cachedItemNames={cachedItemNames} cachedStores={cachedStores}
+            />
 
             {/* ── For (member picker — multi-select) ── */}
             {category !== 'Event' && !isKid && (
@@ -1659,229 +819,20 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               />
             )}
 
-            {/* ── Helper assignment (parent only; kid sees "Parent will assign") ── */}
             {(isKid || (category !== 'Work' && category !== 'Event')) && (
-              <>
-                {isKid ? (
-                  <View style={{ gap: 10 }}>
-                    {/* ── Ride needed toggle ── */}
-                    <TouchableOpacity
-                      onPress={() => { setKidRideNeeded(r => !r); if (kidRideNeeded) { setKidDropoffOn(false); setKidPickupOn(false); } }}
-                      activeOpacity={0.8}
-                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                        paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
-                        borderColor: kidRideNeeded ? catColor : (isDark ? colors.border : '#E2E8F0'),
-                        backgroundColor: kidRideNeeded ? catColor + '18' : (isDark ? colors.surface : '#F9FAFB') }}>
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: kidRideNeeded ? catColor : colors.textPrimary }}>
-                          🚗 Ride needed?
-                        </Text>
-                        <Text style={{ fontSize: TYPO.label, color: kidRideNeeded ? catColor : colors.textSecondary }}>
-                          {kidRideNeeded ? 'Yes — set drop-off / pickup below' : 'Off · I have my own way there'}
-                        </Text>
-                      </View>
-                      <View style={{ width: 44, height: 26, borderRadius: 13,
-                        backgroundColor: kidRideNeeded ? catColor : (isDark ? '#334155' : '#CBD5E1'),
-                        justifyContent: 'center', paddingHorizontal: 3 }}>
-                        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
-                          alignSelf: kidRideNeeded ? 'flex-end' : 'flex-start' }} />
-                      </View>
-                    </TouchableOpacity>
-
-                    {kidRideNeeded && (
-                      <View style={{ gap: 10, paddingLeft: 8 }}>
-
-                        {/* ── Drop-off toggle + date/time ── */}
-                        <TouchableOpacity
-                          onPress={() => { setKidDropoffOn(d => !d); if (kidDropoffOn) setKidDropoffDate(null); }}
-                          activeOpacity={0.8}
-                          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                            paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5,
-                            borderColor: kidDropoffOn ? colors.success : (isDark ? colors.border : '#E2E8F0'),
-                            backgroundColor: kidDropoffOn ? colors.success + '12' : (isDark ? colors.surface : '#F9FAFB') }}>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: kidDropoffOn ? colors.success : colors.textPrimary }}>
-                            📍 Drop-off needed
-                          </Text>
-                          <View style={{ width: 40, height: 24, borderRadius: 12,
-                            backgroundColor: kidDropoffOn ? colors.success : (isDark ? '#334155' : '#CBD5E1'),
-                            justifyContent: 'center', paddingHorizontal: 3 }}>
-                            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: colors.textInverse,
-                              alignSelf: kidDropoffOn ? 'flex-end' : 'flex-start' }} />
-                          </View>
-                        </TouchableOpacity>
-
-                        {kidDropoffOn && (
-                          <View style={{ gap: 6, paddingLeft: 6 }}>
-                            <Text style={[f.label, { color: colors.textSecondary }]}>📅 Drop-off date &amp; time</Text>
-                            <View style={{ flexDirection: 'row', gap: 8 }}>
-                              <TouchableOpacity
-                                onPress={() => { setShowKidDropDate(p => !p); setShowKidDropTime(false); setShowKidPickDate(false); setShowKidPickTime(false); if (!kidDropoffDate) setKidDropoffDate(new Date(eventDate)); }}
-                                style={[f.dateBtn, { flex: 3, borderColor: showKidDropDate ? colors.success : (kidDropoffDate ? colors.success + '80' : colors.border), backgroundColor: showKidDropDate ? colors.success + '15' : colors.surface }]}>
-                                <Text style={{ fontSize: 13 }}>📅</Text>
-                                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidDropDate ? colors.success : (kidDropoffDate ? colors.textPrimary : colors.textTertiary) }}>
-                                  {kidDropoffDate ? fmtDisplay(kidDropoffDate) : 'Pick date'}
-                                </Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                onPress={() => { setShowKidDropTime(p => !p); setShowKidDropDate(false); setShowKidPickDate(false); setShowKidPickTime(false); if (!kidDropoffDate) setKidDropoffDate(new Date(eventDate)); }}
-                                style={[f.dateBtn, { flex: 2, borderColor: showKidDropTime ? colors.success : (kidDropoffDate ? colors.success + '80' : colors.border), backgroundColor: showKidDropTime ? colors.success + '15' : colors.surface }]}>
-                                <Text style={{ fontSize: 13 }}>🕐</Text>
-                                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidDropTime ? colors.success : (kidDropoffDate ? colors.textPrimary : colors.textTertiary) }}>
-                                  {kidDropoffDate ? fmtTimeDisplay(kidDropoffDate) : 'Time'}
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
-                            {(showKidDropDate || showKidDropTime) && (
-                              <Modal transparent animationType="fade" visible onRequestClose={() => { setShowKidDropDate(false); setShowKidDropTime(false); }}>
-                                <TouchableOpacity style={f.pickerOverlay} activeOpacity={1} onPress={() => { setShowKidDropDate(false); setShowKidDropTime(false); }}>
-                                  <TouchableOpacity activeOpacity={1} style={[f.pickerCard, { backgroundColor: colors.card }]}>
-                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
-                                      <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>
-                                        {showKidDropDate ? '📅 Drop-off Date' : '🕐 Drop-off Time'}
-                                      </Text>
-                                      <TouchableOpacity onPress={() => { setShowKidDropDate(false); setShowKidDropTime(false); }}>
-                                        <Text style={{ color: colors.success, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
-                                      </TouchableOpacity>
-                                    </View>
-                                    {showKidDropDate && (
-                                      <DateTimePicker
-                                        value={kidDropoffDate ?? eventDate} mode="date" display="spinner"
-                                        minimumDate={new Date()}
-                                        onChange={(_, d) => { if (d) { const m = kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate); m.setFullYear(d.getFullYear(), d.getMonth(), d.getDate()); setKidDropoffDate(m); } }}
-                                        textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
-                                      />
-                                    )}
-                                    {showKidDropTime && (
-                                      <DateTimePicker
-                                        value={kidDropoffDate ?? eventDate} mode="time" display="spinner" is24Hour={false}
-                                        onChange={(_, d) => { if (d) { const m = kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setKidDropoffDate(m); } }}
-                                        textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
-                                      />
-                                    )}
-                                  </TouchableOpacity>
-                                </TouchableOpacity>
-                              </Modal>
-                            )}
-                          </View>
-                        )}
-
-                        {/* ── Pickup toggle + date/time ── */}
-                        <TouchableOpacity
-                          onPress={() => { setKidPickupOn(p => !p); if (kidPickupOn) setKidPickupDate(null); }}
-                          activeOpacity={0.8}
-                          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                            paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5,
-                            borderColor: kidPickupOn ? '#6366F1' : (isDark ? colors.border : '#E2E8F0'),
-                            backgroundColor: kidPickupOn ? '#6366F112' : (isDark ? colors.surface : '#F9FAFB') }}>
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: kidPickupOn ? '#4F46E5' : colors.textPrimary }}>
-                            🏁 Pickup needed
-                          </Text>
-                          <View style={{ width: 40, height: 24, borderRadius: 12,
-                            backgroundColor: kidPickupOn ? '#6366F1' : (isDark ? '#334155' : '#CBD5E1'),
-                            justifyContent: 'center', paddingHorizontal: 3 }}>
-                            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: colors.textInverse,
-                              alignSelf: kidPickupOn ? 'flex-end' : 'flex-start' }} />
-                          </View>
-                        </TouchableOpacity>
-
-                        {kidPickupOn && (
-                          <View style={{ gap: 6, paddingLeft: 6 }}>
-                            <Text style={[f.label, { color: colors.textSecondary }]}>📅 Pickup date &amp; time</Text>
-                            <View style={{ flexDirection: 'row', gap: 8 }}>
-                              <TouchableOpacity
-                                onPress={() => { setShowKidPickDate(p => !p); setShowKidPickTime(false); setShowKidDropDate(false); setShowKidDropTime(false); if (!kidPickupDate) setKidPickupDate(kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate)); }}
-                                style={[f.dateBtn, { flex: 3, borderColor: showKidPickDate ? '#6366F1' : (kidPickupDate ? '#6366F180' : colors.border), backgroundColor: showKidPickDate ? '#6366F115' : colors.surface }]}>
-                                <Text style={{ fontSize: 13 }}>📅</Text>
-                                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidPickDate ? '#4F46E5' : (kidPickupDate ? colors.textPrimary : colors.textTertiary) }}>
-                                  {kidPickupDate ? fmtDisplay(kidPickupDate) : 'Pick date'}
-                                </Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                onPress={() => { setShowKidPickTime(p => !p); setShowKidPickDate(false); setShowKidDropDate(false); setShowKidDropTime(false); if (!kidPickupDate) setKidPickupDate(kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate)); }}
-                                style={[f.dateBtn, { flex: 2, borderColor: showKidPickTime ? '#6366F1' : (kidPickupDate ? '#6366F180' : colors.border), backgroundColor: showKidPickTime ? '#6366F115' : colors.surface }]}>
-                                <Text style={{ fontSize: 13 }}>🕐</Text>
-                                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidPickTime ? '#4F46E5' : (kidPickupDate ? colors.textPrimary : colors.textTertiary) }}>
-                                  {kidPickupDate ? fmtTimeDisplay(kidPickupDate) : 'Time'}
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
-                            {(showKidPickDate || showKidPickTime) && (
-                              <Modal transparent animationType="fade" visible onRequestClose={() => { setShowKidPickDate(false); setShowKidPickTime(false); }}>
-                                <TouchableOpacity style={f.pickerOverlay} activeOpacity={1} onPress={() => { setShowKidPickDate(false); setShowKidPickTime(false); }}>
-                                  <TouchableOpacity activeOpacity={1} style={[f.pickerCard, { backgroundColor: colors.card }]}>
-                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
-                                      <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>
-                                        {showKidPickDate ? '📅 Pickup Date' : '🕐 Pickup Time'}
-                                      </Text>
-                                      <TouchableOpacity onPress={() => { setShowKidPickDate(false); setShowKidPickTime(false); }}>
-                                        <Text style={{ color: '#6366F1', fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
-                                      </TouchableOpacity>
-                                    </View>
-                                    {showKidPickDate && (
-                                      <DateTimePicker
-                                        value={kidPickupDate ?? (kidDropoffDate ?? eventDate)} mode="date" display="spinner"
-                                        minimumDate={new Date()}
-                                        onChange={(_, d) => { if (d) { const m = kidPickupDate ? new Date(kidPickupDate) : (kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate)); m.setFullYear(d.getFullYear(), d.getMonth(), d.getDate()); setKidPickupDate(m); } }}
-                                        textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
-                                      />
-                                    )}
-                                    {showKidPickTime && (
-                                      <DateTimePicker
-                                        value={kidPickupDate ?? (kidDropoffDate ?? eventDate)} mode="time" display="spinner" is24Hour={false}
-                                        onChange={(_, d) => { if (d) { const m = kidPickupDate ? new Date(kidPickupDate) : (kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate)); m.setHours(d.getHours(), d.getMinutes()); setKidPickupDate(m); } }}
-                                        textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
-                                      />
-                                    )}
-                                  </TouchableOpacity>
-                                </TouchableOpacity>
-                              </Modal>
-                            )}
-                          </View>
-                        )}
-                      </View>
-                    )}
-
-                    <View style={[f.kidNote, { backgroundColor: isDark ? '#1C1700' : colors.warningLight, borderColor: colors.warning + '40', marginTop: 4 }]}>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.amber }}>
-                        👋 Parent will review &amp; assign a driver
-                      </Text>
-                      <Text style={{ fontSize: TYPO.label, color: colors.amber, opacity: 0.8, marginTop: 2 }}>
-                        {!kidRideNeeded        ? 'No ride requested — you have your own way there.' :
-                         kidDropoffOn && kidPickupOn ? '2 events will be created (drop-off + pickup) — parent assigns each.' :
-                         kidDropoffOn          ? 'A drop-off event will be created for parent to assign.' :
-                         kidPickupOn           ? 'A pickup event will be created for parent to assign.' :
-                                                'Toggle drop-off or pickup below.'}
-                      </Text>
-                    </View>
-                  </View>
-                ) : (
-                  <MemberPicker
-                    label={
-                      category === 'Medical'  ? '🏥 Accompanied by (adult)' :
-                      category === 'Study'    ? '📚 Or pick a family tutor' :
-                      category === 'Sports'   ? '🚗 Drop-off by (adult)' :
-                      category === 'Birthday' ? '🚗 Driven by / accompanying' :
-                      '🚗 Driven by (adult)'
-                    }
-                    selectedIds={helperId ? [helperId] : []}
-                    members={adults}
-                    onToggle={handleHelperSelect}
-                    colors={colors} isDark={isDark} siblings={siblings}
-                  />
-                )}
-                {/* Manual name entry for external helpers (coaches, escorts, etc.) —
-                    Study skips this: its dedicated "Tutor name" field above is the
-                    single source of truth, synced into `helper` at submit time. */}
-                {!isKid && category !== 'Study' && (
-                  <TextInput
-                    style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed, marginTop: -8 }]}
-                    placeholder="Or type name (e.g. Grandma Mary)"
-                    placeholderTextColor={colors.textTertiary}
-                    value={helperName}
-                    onChangeText={t => { setHelperName(t); if (!t) setHelperId(undefined); }}
-                  />
-                )}
-              </>
+              <HelperAssignmentSection
+                isKid={isKid} category={category} catColor={catColor} colors={colors} isDark={isDark} siblings={siblings} adults={adults}
+                eventDate={eventDate}
+                kidRideNeeded={kidRideNeeded} setKidRideNeeded={setKidRideNeeded}
+                kidDropoffOn={kidDropoffOn} setKidDropoffOn={setKidDropoffOn} kidDropoffDate={kidDropoffDate} setKidDropoffDate={setKidDropoffDate}
+                kidPickupOn={kidPickupOn} setKidPickupOn={setKidPickupOn} kidPickupDate={kidPickupDate} setKidPickupDate={setKidPickupDate}
+                showKidDropDate={showKidDropDate} setShowKidDropDate={setShowKidDropDate}
+                showKidDropTime={showKidDropTime} setShowKidDropTime={setShowKidDropTime}
+                showKidPickDate={showKidPickDate} setShowKidPickDate={setShowKidPickDate}
+                showKidPickTime={showKidPickTime} setShowKidPickTime={setShowKidPickTime}
+                helperId={helperId} handleHelperSelect={handleHelperSelect}
+                helperName={helperName} setHelperName={setHelperName} setHelperId={setHelperId}
+              />
             )}
 
             {/* ── Grandparents Welcome toggle (parents only, non-Ride — Ride has inline toggles) ── */}
@@ -2063,6 +1014,8 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const [editDriverId,     setEditDriverId]     = useState<string | undefined>(
     members.find((m: any) => m.name === event.driverName)?.id
   );
+  const [alertCall,            setAlertCall]            = useState(event.alertCall ?? false);
+  const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(event.alertCallLeadMinutes ?? 10);
   const handleDriverSelect = (id: string) => {
     const m = members.find(x => x.id === id);
     setEditDriverId(id);
@@ -2092,6 +1045,8 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
     // ignore them entirely rather than trust the hidden sections are inert.
     if (restricted) {
       if (notes !== event.notes) patch.notes = notes.trim() || undefined;
+      if (alertCall !== (event.alertCall ?? false)) patch.alertCall = alertCall;
+      if (alertCallLeadMinutes !== (event.alertCallLeadMinutes ?? 10)) patch.alertCallLeadMinutes = alertCallLeadMinutes;
       if (Object.keys(patch).length > 0) updateEvent(event.id, patch);
       setSaving(false);
       onClose();
@@ -2099,6 +1054,8 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
     }
     if (isParent) {
       if (notes !== event.notes) patch.notes = notes.trim() || undefined;
+      if (alertCall !== (event.alertCall ?? false)) patch.alertCall = alertCall;
+      if (alertCallLeadMinutes !== (event.alertCallLeadMinutes ?? 10)) patch.alertCallLeadMinutes = alertCallLeadMinutes;
       if (helperName !== event.helper) {
         let newHelperName = helperName.trim();
         // Same auto-assign-to-other-parent convenience as creating a new
@@ -2454,6 +1411,33 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                 </View>
               )}
 
+              {/* Call-style reminder — allowed even when otherwise
+                  restricted (not past), same as notes. */}
+              {!isPast && !!event.time && (
+                <View style={{ gap: 6, marginBottom: 4 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>📞 Call to remind</Text>
+                    <Switch
+                      value={alertCall} onValueChange={setAlertCall}
+                      trackColor={{ false: colors.border, true: colors.primary + '80' }}
+                      thumbColor={alertCall ? colors.primary : colors.textTertiary}
+                    />
+                  </View>
+                  {alertCall && (
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {[0, 5, 10].map(mins => (
+                        <TouchableOpacity key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
+                          style={[f.dateBtn, { flex: 1, backgroundColor: alertCallLeadMinutes === mins ? colors.primary + '20' : colors.surface, borderColor: alertCallLeadMinutes === mins ? colors.primary : colors.border }]}>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: alertCallLeadMinutes === mins ? colors.primary : colors.textPrimary }}>
+                            {mins === 0 ? 'On time' : `${mins} min before`}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
+
               {/* Notes — the one field still editable once an event is past
                   (matches the quest pattern: everything locks after the
                   fact except a note). A kid-restricted event (not past,
@@ -2510,23 +1494,3 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
     </Modal>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-const f = StyleSheet.create({
-  backdrop:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
-  sheet:       { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 12, maxHeight: '75%' },
-  handle:      { width: 44, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
-  title:       { fontSize: TYPO.heading, fontWeight: '900' },
-  label:       { fontSize: TYPO.caption, fontWeight: '700', letterSpacing: 0.4, marginBottom: 6, marginTop: 10 },
-  sectionLabel:{ fontSize: TYPO.body, fontWeight: '900', letterSpacing: 0.4, marginBottom: 10, marginTop: 4 },
-  input:       { borderWidth: 1.5, borderRadius: 14, padding: 13, fontSize: TYPO.body, marginBottom: 10 },
-  multiInput:  { minHeight: 72, textAlignVertical: 'top' },
-  dateBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10 },
-  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
-  pickerCard:    { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 32 },
-  suggPill:    { flexDirection: 'row', alignItems: 'center', borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 8, flexShrink: 0 },
-  kidNote:     { borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 12 },
-  submitBtn:   { flex: 1, borderRadius: 16, paddingVertical: 14, alignItems: 'center', justifyContent: 'center',
-                 flexDirection: 'row', gap: 8, backgroundColor: BRAND.purple },
-  summaryCard: { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 8 },
-});

@@ -101,7 +101,7 @@ export default function RewardsTab({ colors, isDark }: { colors: any; isDark: bo
   return (
     <View style={{ gap: 12 }}>
       {/* Summary row */}
-      <SCard colors={colors} isDark={isDark}>
+      <SCard colors={colors} isDark={isDark} accent={BRAND.purple}>
         <CardHeader Icon={Gift} iconColor={BRAND.purple} title="Rewards Store" colors={colors}
           onAction={() => setShowAdd(true)} actionLabel="Add" />
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
@@ -144,7 +144,7 @@ export default function RewardsTab({ colors, isDark }: { colors: any; isDark: bo
 
       {/* Catalog */}
       {tab === 'catalog' && (
-        <SCard colors={colors} isDark={isDark}>
+        <SCard colors={colors} isDark={isDark} accent={BRAND.purple}>
           {rewards.length === 0
             ? <EmptyState Icon={Gift} label="No rewards yet" colors={colors} />
             : rewards.map((r: any, i: number) => (
@@ -177,7 +177,7 @@ export default function RewardsTab({ colors, isDark }: { colors: any; isDark: bo
 
       {/* Kids balances */}
       {tab === 'kids' && (
-        <SCard colors={colors} isDark={isDark}>
+        <SCard colors={colors} isDark={isDark} accent={BRAND.purple}>
           {kids.length === 0
             ? <EmptyState Icon={Coins} label="No kids yet" colors={colors} />
             : kids.map((kid, i) => (

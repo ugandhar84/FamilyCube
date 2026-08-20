@@ -44,6 +44,21 @@ export function parseDbTime(ts: string): Date {
   return new Date(hasZone ? normalized : `${normalized}Z`);
 }
 
+/**
+ * True if a DB timestamp falls within the last rolling 24 hours (not
+ * "same calendar day") — used for cheer/kudos-style feeds that should stay
+ * up exactly one day regardless of what time they happened. A calendar-day
+ * check (`ts.slice(0,10) === todayLocal()`) gives wildly inconsistent
+ * actual durations: something from 11:58pm survives 2 minutes past
+ * midnight, while something from 12:01am survives nearly 24h.
+ */
+export function withinLast24h(ts: string | null | undefined): boolean {
+  if (!ts) return false;
+  const d = parseDbTime(ts);
+  if (isNaN(d.getTime())) return false;
+  return Date.now() - d.getTime() < 24 * 60 * 60 * 1000;
+}
+
 /** format() wrapper that returns `fallback` for null/undefined/NaN dates instead of throwing. */
 export function safeFmt(ts: string | null | undefined, fmt: string, fallback = '—'): string {
   if (!ts) return fallback;

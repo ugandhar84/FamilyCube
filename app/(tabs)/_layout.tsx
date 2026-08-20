@@ -14,6 +14,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useHelpStore } from '@/store/helpStore';
+import { useUIStore } from '@/store/uiStore';
 import { Sparkles } from 'lucide-react-native';
 import AskCubeChat from '@/components/AskCubeChat';
 
@@ -23,7 +24,7 @@ const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']
   quests:   'checkbox-outline',
   calendar: 'calendar-outline',
   chat:     'chatbubbles-outline',
-  profile:  'shield-outline',
+  profile:  'apps-outline',
   memories: 'images-outline',
 };
 const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
@@ -31,12 +32,12 @@ const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']>
   quests:   'checkbox',
   calendar: 'calendar',
   chat:     'chatbubbles',
-  profile:  'shield',
+  profile:  'apps',
   memories: 'images',
 };
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
-// Grandparents get Memories in the 5th slot instead of Hearth/Profile —
+// Grandparents get Memories in the 5th slot instead of Apps/Profile —
 // settings/PIN for GP are still reachable from the Hub's profile switcher,
 // same as every other role; this only changes what's one tap away in the bar.
 const TABS_DEFAULT = [
@@ -44,7 +45,7 @@ const TABS_DEFAULT = [
   { name: 'quests',   label: 'Chores'   },
   { name: 'calendar', label: 'Schedule' },
   { name: 'chat',     label: 'Chat'     },
-  { name: 'profile',  label: 'Hearth'   },
+  { name: 'profile',  label: 'Apps'     },
 ] as const;
 const TABS_SENIOR = [
   { name: 'index',    label: 'Hub'      },
@@ -215,6 +216,7 @@ export default function TabLayout() {
   const [askCubeOpen, setAskCubeOpen] = useState(false);
   const pathname = usePathname();
   const onChatTab = pathname?.includes('/chat');
+  const fullBleedScreenActive = useUIStore(s => s.fullBleedScreenActive);
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const insets = useSafeAreaInsets();
 
@@ -279,7 +281,7 @@ export default function TabLayout() {
               every other tab still gets the FAB. If it's already open when
               the user navigates to Chat, leave it open rather than yanking
               it away mid-conversation — only the launcher button hides. */}
-          {!onChatTab && (
+          {!onChatTab && !fullBleedScreenActive && (
             <Pressable
               onPress={() => setAskCubeOpen(true)}
               style={{

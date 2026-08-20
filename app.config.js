@@ -27,7 +27,6 @@ const config = {
     buildNumber: "1",
     appleTeamId: "X4VLLWF6Q3",
     usesAppleSignIn: true,
-    backgroundModes: ["fetch"],
     entitlements: {
       "com.apple.security.application-groups": ["group.com.familycube.ios"],
     },
@@ -62,6 +61,8 @@ const config = {
       NSCameraUsageDescription: "Family Cube uses your camera for profile photos and task proof submissions.",
       NSPhotoLibraryUsageDescription: "Family Cube accesses your photos for profile pictures and task completion proof.",
       NSLocationWhenInUseUsageDescription: "Family Cube uses your location to show family members on the map and set up safe zones.",
+      NSLocationAlwaysAndWhenInUseUsageDescription: "Family Cube uses your location in the background to keep your family updated on where you are, even when the app isn't open.",
+      NSLocationAlwaysUsageDescription: "Family Cube uses your location in the background to keep your family updated on where you are, even when the app isn't open.",
       NSFaceIDUsageDescription: "Family Cube uses Face ID to sign you in quickly and securely.",
       NSPhotoLibraryAddUsageDescription: "Family Cube saves photos to your library.",
       NSCalendarsUsageDescription: "Family Cube adds family events to Calendar so you never miss them.",
@@ -69,6 +70,15 @@ const config = {
       NSRemindersUsageDescription: "Family Cube may create reminders for family tasks and events.",
       NSRemindersFullAccessUsageDescription: "Family Cube may create reminders for family tasks and events.",
       BGTaskSchedulerPermittedIdentifiers: ["com.familycube.ios.widget-refresh"],
+      // ios.backgroundModes (the "shorthand" top-level key) isn't actually
+      // implemented by any config plugin in this SDK — it's silently
+      // ignored, which left UIBackgroundModes missing "location" entirely
+      // after prebuild even though the shorthand was set. Setting the real
+      // Info.plist key directly here is what config-plugins actually reads.
+      // "voip" wakes the app on a PushKit VoIP push (call-reminder-sweeper
+      // edge function) so CallKeep can call reportNewIncomingCall() and show
+      // the native ringing UI even when the app is backgrounded/killed.
+      UIBackgroundModes: ["fetch", "location", "voip"],
     },
   },
   android: {
@@ -77,6 +87,12 @@ const config = {
     // lib/useDeviceClass.ts unlocks landscape at runtime specifically for
     // tablet-class Android devices via expo-screen-orientation.
     orientation: "portrait",
+    // Required for @react-native-firebase/messaging (Android call-reminder
+    // wake path). Download from your Firebase project's Android app
+    // settings and place at this path — the build fails without it once
+    // Firebase is configured, but is otherwise absent until you create the
+    // Firebase project.
+    googleServicesFile: process.env.GOOGLE_SERVICES_JSON ?? "./google-services.json",
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
       backgroundColor: "#6C5CE7",
@@ -100,6 +116,14 @@ const config = {
       "android.permission.READ_MEDIA_VIDEO",
       "android.permission.READ_MEDIA_AUDIO",
       "android.permission.MODIFY_AUDIO_SETTINGS",
+      // Lets the call-reminder ConnectionService UI pop over the lock
+      // screen like a real incoming call, instead of just a tray notification.
+      "android.permission.USE_FULL_SCREEN_INTENT",
+      "android.permission.FOREGROUND_SERVICE",
+      "android.permission.FOREGROUND_SERVICE_PHONE_CALL",
+      "android.permission.BIND_TELECOM_CONNECTION_SERVICE",
+      "android.permission.READ_PHONE_STATE",
+      "android.permission.MANAGE_OWN_CALLS",
     ],
   },
   web: {
@@ -149,7 +173,7 @@ const config = {
       "expo-build-properties",
       {
         ios: {
-          deploymentTarget: "16.0",
+          deploymentTarget: "17.0",
         },
         android: {
           enableMultiDex: true,
@@ -176,6 +200,10 @@ const config = {
       },
     ],
     "expo-web-browser",
+    "@react-native-firebase/app",
+    "@react-native-firebase/messaging",
+    "./plugins/withCallKeep.js",
+    "./plugins/withFirebasePodfileFixes.js",
   ],
   experiments: {
     typedRoutes: true,

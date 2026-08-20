@@ -11,6 +11,7 @@ import type { ChoreTask } from '@/store/choreStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { localToday, isWorkEvent, hoursUntilEvent } from './hubUtils';
+import { withinLast24h } from '@/lib/dates';
 import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
 
 import { GroupBand } from './senior/seniorTheme';
@@ -67,13 +68,16 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const kidsCheerable = chores.filter(c => {
     if (!['approved', 'auto_approved', 'completed'].includes(c.status)) return false;
     if (!c.assignedToId || !kids.some(k => k.id === c.assignedToId)) return false;
+    // The "already cheered" check right above already covers a quest this
+    // GP approved themselves via "Approve & Cheer" (that action writes a
+    // cheer), so it correctly drops off here without needing a separate
+    // sponsor-based exclusion. A blanket "I sponsored it" exclusion was
+    // wrong: a GP-sponsored quest a PARENT approved (not the GP's own
+    // Approve & Cheer) never got an actual cheer, so it was being silently
+    // hidden from the GP's cheer opportunity forever.
     if ((c.cheers ?? []).some(ch => ch.memberId === active.id)) return false;
-    // A quest this GP sponsored (and already personally approved via
-    // "Approve & Cheer") shouldn't also prompt them to cheer it again here —
-    // that action already happened as part of reviewing it.
-    if (c.categoryType === 'grandparent_quest' && c.sponsorUserId === active.id) return false;
     const when = c.approvedAt ?? c.reviewedAt ?? c.createdAt;
-    return !!when && when.slice(0, 10) === today;
+    return withinLast24h(when);
   });
 
   const [sosActive, setSosActive]   = useState(false);

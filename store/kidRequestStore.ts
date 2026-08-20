@@ -7,6 +7,98 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 
+// ─── Realtime subscription (V-A4) ─────────────────────────────────────────────
+// Mirrors choreStore.ts's ensureRealtime pattern: family-scoped channel name
+// (never a fixed/shared literal — avoids the channel-name-collision
+// "cannot add callbacks after subscribe()" crash a prior session fixed
+// elsewhere), a dev-hot-reload stale-channel sweep, and INSERT/UPDATE/DELETE
+// handlers that merge the incoming row into local `requests` state in place.
+let _rtChannel: ReturnType<typeof supabase.channel> | null = null;
+let _rtFamilyId = '';
+
+function rowToKidRequest(r: any): KidRequest {
+  return {
+    id:             r.id,
+    type:           r.type,
+    urgency:        r.urgency,
+    detail:         r.detail,
+    status:         r.status,
+    fromMemberId:   r.from_member_id,
+    toMemberId:     r.to_member_id    ?? undefined,
+    items:          r.items           ?? undefined,
+    requestedAt:    r.requested_at,
+    expiresAt:      r.expires_at      ?? undefined,
+    readAt:         r.read_at         ?? undefined,
+    respondedAt:    r.responded_at    ?? undefined,
+    respondedBy:    r.responded_by    ?? undefined,
+    parentNote:     r.parent_note     ?? undefined,
+    attachmentUrl:  r.attachment_url  ?? undefined,
+    assignedHelper: r.assigned_helper ?? undefined,
+    rewardCoins:    r.reward_coins    ?? undefined,
+    scheduledDate:  r.scheduled_date  ?? undefined,
+    scheduledTime:  r.scheduled_time  ?? undefined,
+    openToGP:       r.open_to_gp      ?? false,
+  };
+}
+
+function ensureRealtime(
+  familyId: string,
+  setState: (s: Partial<KidRequestState>) => void,
+  getState: () => KidRequestState,
+) {
+  if (_rtFamilyId === familyId && _rtChannel) return; // already subscribed for this family
+  if (_rtChannel) {
+    supabase.removeChannel(_rtChannel);
+    _rtChannel = null;
+  }
+  // Same hot-reload defensive sweep as choreStore.ts's ensureRealtime.
+  const staleTopic = `realtime:kid_requests:${familyId}`;
+  const stale = supabase.getChannels().filter(c => c.topic === staleTopic);
+  if (stale.length > 0) {
+    stale.forEach(c => supabase.removeChannel(c));
+  }
+  _rtFamilyId = familyId;
+
+  try {
+    _rtChannel = supabase
+      .channel(`kid_requests:${familyId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'kid_requests',
+        filter: `family_id=eq.${familyId}`,
+      }, ({ eventType, new: newRow, old: oldRow }) => {
+        const state = getState();
+        if (eventType === 'INSERT') {
+          const req = rowToKidRequest(newRow);
+          if (state.requests.some(r => r.id === req.id)) return;
+          const all = [req, ...state.requests];
+          setState({ requests: all });
+          save(all);
+        } else if (eventType === 'UPDATE') {
+          const updatedReq = rowToKidRequest(newRow);
+          // Same last-writer-wins-by-timestamp guard loadFromStorage already
+          // applies — don't clobber a more-recent local response with a
+          // realtime echo of an older write still settling.
+          const existing = state.requests.find(r => r.id === updatedReq.id);
+          if (existing?.respondedAt && updatedReq.respondedAt && existing.respondedAt > updatedReq.respondedAt) return;
+          const all = state.requests.map(r => r.id === updatedReq.id ? updatedReq : r);
+          setState({ requests: all });
+          save(all);
+        } else if (eventType === 'DELETE') {
+          const all = state.requests.filter(r => r.id !== String((oldRow as any).id));
+          setState({ requests: all });
+          save(all);
+        }
+      })
+      .subscribe((status) => {
+        console.log(`[kidRequestStore] realtime kid_requests:${familyId} subscribe status=${status}`);
+      });
+  } catch (e: any) {
+    console.warn('[kidRequestStore] ensureRealtime subscribe failed', e?.message ?? e);
+  }
+}
+
 const generateId = () =>
   'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
     const r = (Math.random() * 16) | 0;
@@ -258,6 +350,7 @@ export const useKidRequestStore = create<KidRequestState>((set, get) => ({
           });
           set({ requests, loaded: true });
           save(requests);
+          ensureRealtime(familyId, set, get);
           return;
         }
       }

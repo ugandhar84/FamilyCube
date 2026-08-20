@@ -1,0 +1,563 @@
+<title>Cross-Role Visibility Matrix</title>
+<style>
+  :root{
+    --bg:#F7F5F1; --surface:#FFFFFF; --surface-2:#EFECE5; --border:#DDD8CC;
+    --text:#26241E; --text-2:#5B5748; --text-3:#8B8676;
+    --accent:#7A5CFA; --accent-soft:#EFEBFF;
+    --ok:#16794F; --ok-bg:#E4F5EC;
+    --gap:#B4530A; --gap-bg:#FCEEDD;
+    --bug:#B0223A; --bug-bg:#FBE6E9;
+    --fixed:#0E6E8C; --fixed-bg:#E4F3F7;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+      --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+      --accent:#A594FF; --accent-soft:#2A2440;
+      --ok:#5FD39A; --ok-bg:#123B2A;
+      --gap:#F0A75E; --gap-bg:#3A2712;
+      --bug:#F1748A; --bug-bg:#3B1620;
+      --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+    --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+    --accent:#A594FF; --accent-soft:#2A2440;
+    --ok:#5FD39A; --ok-bg:#123B2A;
+    --gap:#F0A75E; --gap-bg:#3A2712;
+    --bug:#F1748A; --bug-bg:#3B1620;
+    --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--text); margin:0;
+    font-family: ui-sans-serif, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    line-height:1.55; font-size:15px;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:40px 24px 120px;}
+
+  h1{font-size:28px; font-weight:800; letter-spacing:-0.01em; margin:0 0 6px; text-wrap:balance;}
+  .subtitle{color:var(--text-2); font-size:15px; margin:0 0 24px; max-width:82ch;}
+  .warn{background:var(--gap-bg); border:1px solid color-mix(in srgb, var(--gap) 40%, transparent); border-radius:10px; padding:14px 16px; margin-bottom:28px; font-size:13.5px; color:var(--text);}
+  .warn b{color:var(--gap);}
+
+  nav.toc{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 20px; margin-bottom:36px;}
+  nav.toc h2{font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-3); margin:0 0 10px;}
+  nav.toc ol{margin:0; padding-left:20px; columns:2; column-gap:32px;}
+  nav.toc li{margin-bottom:5px; font-size:13.5px; break-inside:avoid;}
+  nav.toc a{color:var(--accent); text-decoration:none;}
+  nav.toc a:hover{text-decoration:underline;}
+
+  .legend{display:flex; flex-wrap:wrap; gap:8px 16px; margin:0 0 32px; padding:14px 16px; background:var(--surface); border:1px solid var(--border); border-radius:10px;}
+  .legend span{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-2);}
+  .dot{width:10px; height:10px; border-radius:3px; display:inline-block;}
+  .dot.ok{background:var(--ok);} .dot.gap{background:var(--gap);} .dot.bug{background:var(--bug);} .dot.fixed{background:var(--fixed);}
+
+  section{margin-bottom:44px; scroll-margin-top:16px;}
+  h2{font-size:19px; font-weight:800; margin:0 0 4px; padding-top:8px; border-top:2px solid var(--border);}
+  h3{font-size:15.5px; font-weight:800; margin:22px 0 8px;}
+  .lede{color:var(--text-2); font-size:13.5px; margin:0 0 16px; max-width:88ch;}
+  p{margin:8px 0;}
+
+  table{border-collapse:collapse; width:100%; background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden;}
+  .tablewrap{overflow-x:auto; border-radius:10px; border:1px solid var(--border); margin:10px 0 18px;}
+  .tablewrap table{border:none; border-radius:0;}
+  th, td{border:1px solid var(--border); padding:10px 12px; text-align:left; vertical-align:top; font-size:13px;}
+  th{background:var(--surface-2); font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-2); position:sticky; top:0;}
+  td.state{font-weight:700; background:var(--surface-2); white-space:nowrap;}
+  tr:nth-child(even) td:not(.state){background: color-mix(in srgb, var(--surface) 96%, var(--text) 2%);}
+  code{font-family:var(--mono); font-size:12px; background:var(--surface-2); padding:1px 5px; border-radius:4px;}
+
+  .tag{display:inline-block; font-size:10.5px; font-weight:800; letter-spacing:0.03em; text-transform:uppercase; padding:2px 7px; border-radius:5px; margin-bottom:4px;}
+  .tag.ok{background:var(--ok-bg); color:var(--ok);}
+  .tag.gap{background:var(--gap-bg); color:var(--gap);}
+  .tag.bug{background:var(--bug-bg); color:var(--bug);}
+  .tag.fixed{background:var(--fixed-bg); color:var(--fixed);}
+  .na{color:var(--text-3); font-style:italic;}
+
+  .finding{background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--bug); border-radius:8px; padding:14px 16px; margin-bottom:14px; scroll-margin-top:16px;}
+  .finding.fixed{border-left-color:var(--fixed);}
+  .finding.gap{border-left-color:var(--gap);}
+  .finding.notgap{border-left-color:var(--ok);}
+  .finding h3{margin:0 0 6px; font-size:14.5px;}
+  .finding p{margin:6px 0; color:var(--text-2); font-size:13.5px;}
+  .finding .path{font-family:var(--mono); font-size:12px; color:var(--text-3);}
+
+  .scenario{background:var(--accent-soft); border-radius:8px; padding:10px 13px; font-size:13px; margin:8px 0; color:var(--text);}
+  .scenario b{color:var(--accent);}
+
+  ol.scenlist{margin:6px 0 0; padding-left:22px;}
+  ol.scenlist li{margin-bottom:5px; font-size:13.5px; color:var(--text-2);}
+  ol.scenlist li b{color:var(--text);}
+
+  footer{margin-top:56px; padding-top:16px; border-top:1px solid var(--border); color:var(--text-3); font-size:12px;}
+  .backtotop{font-size:12px;}
+  .backtotop a{color:var(--text-3);}
+</style>
+
+<div class="wrap">
+  <h1>Cross-Role Visibility Matrix</h1>
+  <p class="subtitle">
+    Family Cube runs on multiple physical devices at once — 2 parents, 2-3 kids/teens, 1-2 grandparents, each on
+    their own phone. Every prior audit this session (<code>quest_action_bible.html</code>,
+    <code>quest_lifecycle_matrix.html</code>, <code>event_lifecycle_matrix.html</code>) traced one actor's
+    lifecycle through one scenario at a time. This pass asks a different question: when Person A takes an action,
+    what does <b>every other role</b> see on <b>their own screen</b>, <b>at that same moment</b> — live via a
+    realtime subscription, eventually via the next manual refresh, or not at all? This document does not repeat
+    findings already recorded in those three docs (the pool-claim CAS fix, the ride-slot CAS fix, the
+    <code>memberIds</code> visibility fix, etc.) except where restating the mechanism is needed to explain a new
+    simultaneity finding.
+  </p>
+
+  <div class="warn">
+    <b>How this was built — two phases, in order, per explicit instruction.</b> Phase 1 (§1) is a real-world
+    scenario list — a product researcher's lens on what a real family of 4-6 people running this app
+    simultaneously would actually hit — written before opening any additional code beyond what the three prior
+    docs already established. Phase 2 (§2 onward) traces each scenario against the current code, with an exact
+    file:line citation for every claim. Per this project's standing "don't hallucinate, all real" instruction:
+    anything that would need two physical devices or a running simulator to confirm with certainty is labeled
+    <span class="tag gap">Not runtime-tested</span> rather than asserted. <b>Update:</b> a follow-up implementation
+    pass has since fixed all five V-A findings from Phase 2 (V-A1, V-A3, V-A4, V-A5 with real code changes;
+    V-A2 re-assessed as architecturally correct, no change needed) — see each finding's own "Implemented" note
+    for what changed and <code>store/choreStore.ts</code>/<code>store/familyStore.ts</code>/<code>store/kidRequestStore.ts</code>
+    plus migration <code>20260820121500_realtime_members_kidrequests_pqa.sql</code> for the actual diffs. The
+    scenario-tracing prose below is left as originally written (including "not implemented — research pass only"
+    phrasing in a few spots) since it remains an accurate record of what was found; only the tag/verdict and a new
+    "Implemented" paragraph were added per finding to keep the document from asserting a now-stale state.
+  </div>
+
+  <nav class="toc">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#s1">1 · Phase 1 — simultaneous cross-role scenarios</a></li>
+      <li><a href="#s2">2 · Realtime infrastructure inventory</a></li>
+      <li><a href="#s3">3 · Chore state changes — cross-role visibility</a></li>
+      <li><a href="#s4">4 · Calendar / event changes — cross-role visibility</a></li>
+      <li><a href="#s5">5 · Approval &amp; payout visibility</a></li>
+      <li><a href="#s6">6 · Claim / race visibility</a></li>
+      <li><a href="#s7">7 · Helper / ride coordination</a></li>
+      <li><a href="#s8">8 · Kid-request / parent-reply visibility</a></li>
+      <li><a href="#s9">9 · System A (parent-to-parent) negotiation visibility</a></li>
+      <li><a href="#summary">Summary — confirmed gaps (V-findings)</a></li>
+    </ol>
+  </nav>
+
+  <div class="legend">
+    <span><span class="dot ok"></span>Correctly live — realtime-wired, confirmed</span>
+    <span><span class="dot gap"></span>Confirmed gap — should be live, isn't</span>
+    <span><span class="dot bug"></span>Eventually consistent — acceptable, not time-sensitive</span>
+    <span><span class="dot fixed"></span>Not runtime-tested — flagged, not asserted</span>
+  </div>
+
+  <section id="s1">
+    <h2>1 · Phase 1 — simultaneous cross-role scenarios (written before re-opening component code)</h2>
+    <p class="lede">Plain product thinking: a real family of 4-6 people, each on their own phone, all with the app
+      open at various points in the same afternoon. What does each role's screen show at the moment another role
+      acts?</p>
+
+    <h3>A. Chore state changes</h3>
+    <ol class="scenlist">
+      <li><b>V1</b> — A kid claims a pool bounty. Do siblings' Chores tabs update live to show it's taken?</li>
+      <li><b>V2</b> — A parent assigns a chore directly to a kid. Does the kid's Hub show the new chore without reopening the app?</li>
+      <li><b>V3</b> — A kid submits a chore for review. Does the parent's Chore Review deck update live, on both parents' devices if there are two?</li>
+      <li><b>V4</b> — A parent marks a chore private/parent-only after a kid already saw it as a household chore. Does it vanish from the kid's device, or linger?</li>
+      <li><b>V5</b> — A teen declines a chore back to the pool. Does a sibling browsing the pool at that moment see it appear live?</li>
+    </ol>
+
+    <h3>B. Calendar / event changes</h3>
+    <ol class="scenlist">
+      <li><b>V6</b> — A parent edits an event's time. Does the assigned kid's Calendar reflect the new time immediately, even if the kid is viewing a different day/week than the one edited?</li>
+      <li><b>V7</b> — A parent creates an event assigned to two kids (multi-select). Do both kids see it land on their own Calendar at the same time?</li>
+      <li><b>V8</b> — A kid requests a new event (needs-approval flow). Does the parent see the pending-approval badge live, or only on next open?</li>
+      <li><b>V9</b> — Two parents are both looking at the same day's Agenda view. One deletes an event. Does the other parent's screen drop it immediately?</li>
+    </ol>
+
+    <h3>C. Approval &amp; payout visibility</h3>
+    <ol class="scenlist">
+      <li><b>V10</b> — A parent approves a kid's chore submission. Does the kid see the "approved" status AND the new coin balance land in real time, or do they have to reopen the app for the coins?</li>
+      <li><b>V11</b> — A parent approves a tutor/cheer service request with a coin bonus. Same question as V10 for that separate payout path.</li>
+      <li><b>V12</b> — A second parent, viewing Household Snapshot, checks a kid's coin total right after the first parent approved a payout. Correct number, or stale?</li>
+      <li><b>V13</b> — A senior/GP submits a receipt for reimbursement. Does the sponsoring parent see a badge/notification appear live?</li>
+      <li><b>V14</b> — A parent denies a cash-out request. Does the kid's own wallet screen reflect the (correct, unblocked) balance live?</li>
+    </ol>
+
+    <h3>D. Claim / race visibility</h3>
+    <ol class="scenlist">
+      <li><b>V15</b> — Two siblings both tap "claim" on the same pool bounty within the same second. Does the loser's UI correct itself, and how fast?</li>
+      <li><b>V16</b> — A teen claims a ride pickup slot. Does a grandparent who was also eligible see it disappear from their queue immediately, or would they still see it as claimable and tap it?</li>
+      <li><b>V17</b> — Two grandparents both open a sponsored GP-quest claim screen for the same grandchild's chore at once (single-target, not team). Race outcome visibility?</li>
+    </ol>
+
+    <h3>E. Helper / ride coordination</h3>
+    <ol class="scenlist">
+      <li><b>V18</b> — A parent posts a ride request open to GPs. Does every eligible GP's Hub show it live, simultaneously?</li>
+      <li><b>V19</b> — A GP accepts a ride. Does the requesting parent's EnRoute/dispatch view update live, and does a second GP who was also eligible see the offer close out?</li>
+      <li><b>V20</b> — A driver's live location updates during a trip. Do all interested viewers (both parents, the kid being picked up) see the same position at the same time?</li>
+    </ol>
+
+    <h3>F. Kid-request / parent-reply visibility</h3>
+    <ol class="scenlist">
+      <li><b>V21</b> — A kid sends a permission/question/medical request. Does it appear on a parent's Hub live, or only after the parent's next app open?</li>
+      <li><b>V22</b> — A parent replies to a kid's request (approve/decline with a note). Does the kid see the reply live?</li>
+      <li><b>V23</b> — Two parents are both looking at the same pending kid-request. One responds. Does the other parent's card update/disappear live, or would they double-respond?</li>
+    </ol>
+
+    <h3>G. System A (parent-to-parent household-task negotiation)</h3>
+    <ol class="scenlist">
+      <li><b>V24</b> — Parent A delegates a task directly to Parent B. Does Parent B's Household Backlog show the new pending card live?</li>
+      <li><b>V25</b> — Parent B accepts/pushes back/snoozes. Does Parent A see the response live?</li>
+      <li><b>V26</b> — Two parents are both looking at the Household Backlog pool at once; one takes (self-assigns) an item. Does the other parent's pool list drop it live?</li>
+    </ol>
+  </section>
+
+  <section id="s2">
+    <h2>2 · Realtime infrastructure inventory</h2>
+    <p class="lede">Before tracing individual scenarios, establish ground truth: which stores actually have a
+      Postgres realtime subscription, and which are fetch-once/poll-only. Checked every <code>.channel(</code> and
+      <code>postgres_changes</code> call across <code>store/*.ts</code>.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Store</th><th>Realtime channel?</th><th>Channel name / table</th><th>Notes</th></tr>
+      <tr>
+        <td class="state">choreStore.ts</td>
+        <td><span class="tag ok">Yes</span></td>
+        <td><code>chores:${'{'}familyId{'}'}</code> → <code>chore_tasks</code> (<code>choreStore.ts:681-686</code>)</td>
+        <td>Family-scoped channel name (no collision risk). Covers <code>chore_tasks</code> only — see V-finding on <code>parent_quest_assignments</code> below.</td>
+      </tr>
+      <tr>
+        <td class="state">eventStore.ts</td>
+        <td><span class="tag ok">Yes</span></td>
+        <td><code>cal:${'{'}familyId{'}'}</code> → <code>calendar_events</code> (<code>eventStore.ts:367-371</code>)</td>
+        <td>Family-scoped. Two <code>.on('postgres_changes', ...)</code> handlers on one channel — one drives <code>dayEvents</code>, one drives <code>rangeEvents</code>.</td>
+      </tr>
+      <tr>
+        <td class="state">familyStore.ts</td>
+        <td><span class="tag bug">No</span></td>
+        <td class="na">none</td>
+        <td>Owns <code>members[].coins/mainCoins/gpCoins/xp</code> — the wallet balance every Hub screen displays. Zero <code>.channel(</code> calls in the entire file. See §5.</td>
+      </tr>
+      <tr>
+        <td class="state">kidRequestStore.ts</td>
+        <td><span class="tag bug">No</span></td>
+        <td class="na">none</td>
+        <td>File's own header comment says "real-time kid → parent requests" — but no <code>postgres_changes</code> subscription exists anywhere in the file. See §8.</td>
+      </tr>
+      <tr>
+        <td class="state">notifStore.ts</td>
+        <td><span class="tag bug">No</span></td>
+        <td class="na">none</td>
+        <td>Pull-based (<code>fetchUnreadCount</code>/<code>fetchAll</code>) only, per the quest lifecycle audit's earlier finding (re-confirmed, not re-traced in full this pass).</td>
+      </tr>
+      <tr>
+        <td class="state">chatStore.ts</td>
+        <td><span class="tag ok">Yes</span></td>
+        <td><code>chat:${'{'}channelId{'}'}</code> (<code>chatStore.ts:310-311</code>)</td>
+        <td>Reference point confirming this codebase does wire realtime correctly elsewhere — the gaps below are omissions, not "realtime isn't a pattern here."</td>
+      </tr>
+      <tr>
+        <td class="state">tripStore.ts</td>
+        <td><span class="tag ok">Yes</span></td>
+        <td><code>trips:${'{'}familyId{'}'}</code> (<code>tripStore.ts:77-79</code>)</td>
+        <td>Backs <code>EnRouteBanner</code>'s trip-status props. Family-scoped name.</td>
+      </tr>
+    </table>
+    </div>
+    <p><b>Channel-name-collision check (explicit ask):</b> a prior pass this session found and fixed a
+      fixed/non-randomized channel-name collision bug in 2-3 unrelated files. Checked <code>choreStore.ts</code>
+      and <code>eventStore.ts</code> specifically for the same class of issue: both use
+      <code>`chores:${'{'}familyId{'}'}`</code> / <code>`cal:${'{'}familyId{'}'}`</code> — family-scoped, not a
+      fixed literal string shared across every family/session. <code>choreStore.ts:665-675</code> additionally has
+      an explicit dev-hot-reload stale-channel sweep (checks <code>supabase.getChannels()</code> for a lingering
+      topic before resubscribing) with a comment describing exactly the "cannot add callbacks after subscribe()"
+      failure mode the other files' bug produced — <span class="tag ok">not a gap</span>, this file already has
+      defensive handling for that failure class. <code>eventStore.ts</code>'s <code>ensureRealtime</code>
+      (lines 358-365) doesn't have the identical hot-reload sweep, but its channel name is still
+      family-scoped, so the specific collision bug (fixed elsewhere this session) does not reproduce here — only
+      confirmed for the exact bug class already found, not exhaustively fuzzed.</p>
+  </section>
+
+  <section id="s3">
+    <h2>3 · Chore state changes — cross-role visibility</h2>
+    <div class="tablewrap">
+    <table>
+      <tr><th>ID</th><th>Scenario</th><th>Verdict</th></tr>
+      <tr>
+        <td class="state">V1</td>
+        <td>Kid claims pool bounty; do siblings' Chores tabs update live?</td>
+        <td><span class="tag ok">Correctly live</span> — <code>claimBounty</code>'s CAS write (already fixed in the quest lifecycle audit's N5) lands in <code>chore_tasks</code>, and every subscribed device's <code>choreStore</code> realtime UPDATE handler (<code>choreStore.ts:698-703</code>) patches the shared <code>chores</code> array unconditionally. <code>QuestsScreen.tsx</code> and every Hub quest-list component read <code>chores</code>/<code>quests</code> via a live <code>useChoreStore()</code>/<code>useQuestStore()</code> hook (confirmed for <code>HouseholdBacklogSection.tsx:54</code>, <code>ParentView.tsx</code>, <code>TeenView.tsx:44</code>), so the claimed status renders immediately, no refresh needed.</td>
+      </tr>
+      <tr>
+        <td class="state">V2</td>
+        <td>Parent assigns a chore directly to a kid; does the kid's Hub show it without reopening?</td>
+        <td><span class="tag ok">Correctly live</span> — a direct assignment is an <code>updateChore</code>/<code>addChore</code> write to <code>chore_tasks</code>, same channel as V1. The one caveat: if the chore is created with <code>categoryType: 'parent_only_quest'</code> and the kid's role isn't <code>parent</code>, the realtime <b>INSERT</b> handler explicitly re-checks role and drops it (<code>choreStore.ts:693-694</code>, <code>if (chore.isPrivateParent && role !== 'parent') return;</code>) — correct behavior for that case, not a gap.</td>
+      </tr>
+      <tr>
+        <td class="state">V3</td>
+        <td>Kid submits for review; do both parents' Chore Review decks update live?</td>
+        <td><span class="tag ok">Correctly live</span> — status flips to <code>pending_approval</code> via <code>updateChore</code>, same realtime channel; <code>ChoreReviewSection.tsx</code> and <code>QuestCard.tsx</code>'s <code>canApprove</code> branch both read the same live <code>chores</code>/<code>quests</code> array (this exact parity was already confirmed structurally in the quest lifecycle audit §6). A second parent's device gets the same UPDATE broadcast independently — no reason to expect it to differ from the first parent's.</td>
+      </tr>
+      <tr>
+        <td class="state">V4</td>
+        <td>Parent flips a household chore to parent-only after a kid already has it loaded — does it vanish from the kid's device?</td>
+        <td><span class="tag fixed">Fixed — see V-A1 below</span>. The realtime <b>UPDATE</b> handler now applies the same role filter the INSERT handler already had — a chore transitioning into <code>parent_only_quest</code>/<code>shopping</code> scope after a non-parent device already cached the row is now dropped from that device's local state instead of applied unconditionally. See V-A1.</td>
+      </tr>
+      <tr>
+        <td class="state">V5</td>
+        <td>Teen declines a chore back to pool; does a sibling browsing the pool see it appear live?</td>
+        <td><span class="tag ok">Correctly live</span> — decline is an <code>updateChore</code>/<code>reassignQuest</code> write (or, for a team-clone, a targeted <code>status: 'declined'</code> per the quest lifecycle audit's N3 fix), same realtime channel and same shared-store-hook pattern as V1.</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="s4">
+    <h2>4 · Calendar / event changes — cross-role visibility</h2>
+    <div class="tablewrap">
+    <table>
+      <tr><th>ID</th><th>Scenario</th><th>Verdict</th></tr>
+      <tr>
+        <td class="state">V6</td>
+        <td>Parent edits an event's time; does the assigned kid's Calendar update immediately, even on a different day/week view?</td>
+        <td><span class="tag gap">Partially live — see V-A2</span>. If the kid is viewing the exact day the edit touched, <code>eventStore.ts</code>'s day-view realtime handler (lines 416-447) patches <code>dayEvents</code> unconditionally and immediately — live. If the kid is viewing a <i>different</i> day (e.g. next week's Agenda, or Month view), the day-view branch explicitly no-ops for a non-matching date (<code>eventStore.ts:417-423</code>, only invalidates that date's <code>_dayCache</code> entry) and the range-view branch (lines 450-493) only applies the UPDATE if the event id is <b>already present</b> in the currently-loaded <code>rangeEvents</code> window (line 481, <code>if (!rangeEvents.find(...)) return;</code>) — an edit that moves an event's date/time such that it now falls inside a previously-viewed range but wasn't part of the original fetch would not retroactively appear. In practice this means: viewing the correct day/range = live; viewing a different day/range = correctly stale until that day is (re)loaded, which is arguably reasonable (no reason to eagerly fetch every day), but is a real "not always live" nuance worth documenting precisely rather than blanket-claiming "live."</td>
+      </tr>
+      <tr>
+        <td class="state">V7</td>
+        <td>Event assigned to two kids via multi-select; do both kids see it land at the same time?</td>
+        <td><span class="tag ok">Correctly live, contingent on the memberIds fix already shipped</span> — the event lifecycle audit's E14 fix added <code>e.memberIds?.includes(...)</code> checks to <code>CalendarScreen.tsx</code>'s visibility gates. The realtime INSERT itself (<code>eventStore.ts:426-429</code>) has no role/member filtering at all (unlike choreStore's INSERT handler) — it appends to local state for every subscriber regardless of whether they're an assignee, and the existing per-component visibility gates (already fixed for <code>memberIds</code>) are what correctly show/hide it per viewer. Confirmed consistent: both assigned kids' devices receive the same broadcast and apply the same (already-fixed) filter logic.</td>
+      </tr>
+      <tr>
+        <td class="state">V8</td>
+        <td>Kid requests an event (needs approval); does the parent see the pending badge live?</td>
+        <td><span class="tag ok">Correctly live</span> — <code>approvalPending: true</code> is a field on the same <code>calendar_events</code> row (per the event lifecycle audit's E42/E43 finding), so it rides the same realtime channel as every other event field. <code>CalendarScreen.tsx</code>'s <code>canApproveRequest</code>/approval UI reads live event state.</td>
+      </tr>
+      <tr>
+        <td class="state">V9</td>
+        <td>Two parents both viewing the same day's Agenda; one deletes. Does the other's screen drop it live?</td>
+        <td><span class="tag ok">Correctly live</span> — <code>deleteEvent</code> is a soft delete (<code>deleted_at</code> stamp via <code>dbUpdate</code>) which fires as a realtime UPDATE; the handler explicitly checks <code>isDeleted = !!newRow?.deleted_at</code> and filters the row out of both <code>dayEvents</code> (line 431-432) and <code>rangeEvents</code> (line 475-476) branches. Both parents' devices receive the identical broadcast.</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="s5">
+    <h2>5 · Approval &amp; payout visibility</h2>
+    <p class="lede">This section contains the single highest-value finding of this pass. Quest/chore <b>status</b>
+      is confirmed live end-to-end (§3). The <b>coin/points balance</b> that accompanies most approvals is a
+      different store with no realtime subscription at all, and nothing else compensates for that gap.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>ID</th><th>Scenario</th><th>Verdict</th></tr>
+      <tr>
+        <td class="state">V10</td>
+        <td>Parent approves a chore; does the kid see "approved" status AND the new coin balance land live?</td>
+        <td><span class="tag fixed">Fixed — see V-A3.</span> familyStore now has a realtime channel; coin balance changes land on every family member's device live, same as status.</td>
+      </tr>
+      <tr>
+        <td class="state">V11</td>
+        <td>Parent approves a tutor/cheer service request with a coin bonus.</td>
+        <td><span class="tag fixed">Fixed, same call site — see V-A3.</span> <code>ServiceRequestCard.tsx:23,33</code> calls <code>useFamilyStore(s =&gt; s.awardCoins)</code>, which now writes through the same realtime-covered <code>members</code> table.</td>
+      </tr>
+      <tr>
+        <td class="state">V12</td>
+        <td>Second parent checks Household Snapshot right after the first parent's approval — correct number or stale?</td>
+        <td><span class="tag fixed">Fixed, same root cause — see V-A3.</span> <code>HouseholdSnapshotCard.tsx:65</code> reads <code>kid.mainCoins ?? kid.coins</code> straight from <code>familyStore</code>'s <code>members</code> array, which now receives a realtime patch on every subscribed device, not just the one that performed the award.</td>
+      </tr>
+      <tr>
+        <td class="state">V13</td>
+        <td>GP submits a receipt for reimbursement; does the sponsoring parent see a badge appear live?</td>
+        <td><span class="tag ok">Correctly live</span> — <code>submitGPErrandReceipt</code> (<code>choreStore.ts:1144</code>) writes through <code>updateChore</code> into <code>chore_tasks</code> (moves status to <code>pending_approval</code>), same realtime channel as every other chore-status change. The parent's Chore Review deck picks it up the same way it picks up any other submission (V3). The <i>dollar reimbursement acknowledgment</i> (<code>receiptReimbursedAt</code>) is also a plain field on the same table/channel — also live.</td>
+      </tr>
+      <tr>
+        <td class="state">V14</td>
+        <td>Parent denies a cash-out; does the kid's wallet screen reflect the (correct) balance live?</td>
+        <td><span class="tag gap">Partially improved, not fully fixed — familyStore half of V-A3 is fixed, point_transactions is a separate, still-unaddressed table.</span> Cash-out transactions live in <code>point_transactions</code>, which still has no realtime subscription (out of scope for the V-A3 fix, which targeted <code>familyStore</code>/<code>members</code> specifically — <code>getMemberBalance</code>'s use of <code>point_transactions</code> was not part of the traced root cause). The wallet-field half of the balance (<code>familyStore</code>) now syncs live via the V-A3 fix; the transaction-ledger half does not. Not re-scoped or fixed in this pass — flagged as a residual gap outside V-A3's original citation.</td>
+      </tr>
+    </table>
+    </div>
+
+    <div class="finding fixed">
+      <h3><span class="tag fixed">Fixed</span> V-A3 — <code>familyStore</code> (member coin/points balances) has zero realtime subscription; payouts only ever patch the paying device's own local state</h3>
+      <p><b>Implemented:</b> added an <code>ensureRealtime</code> function to <code>store/familyStore.ts</code>, mirroring <code>choreStore.ts</code>'s pattern exactly — a family-scoped <code>members:${'{'}familyId{'}'}</code> channel (randomized per family, not a fixed literal), a dev-hot-reload stale-channel sweep, and INSERT/UPDATE/DELETE handlers that merge the incoming row into the local <code>members</code> array via <code>fromRow</code>. Wired into <code>syncFromDB</code> right after a successful fetch establishes <code>familyId</code>, so it activates on both the cold-boot and cached-boot paths (the cached path calls <code>syncFromDB</code> in the background). A migration (<code>supabase/migrations/20260820121500_realtime_members_kidrequests_pqa.sql</code>) adds <code>members</code> to the <code>supabase_realtime</code> publication — needs deployment before this fix takes effect live.</p>
+      <p class="path">store/familyStore.ts (entire file — confirmed zero <code>.channel(</code>/<code>postgres_changes</code> occurrences) · store/choreStore.ts:1432-1485 (awardPoints) · features/hub/parent/ServiceRequestCard.tsx:23,33 (awardCoins) · features/hub/HubScreen.tsx:104-115 (onRefresh)</p>
+      <p><span class="scenario"><b>Scenario:</b> Priya (parent) approves Leo's (kid) "Clean the garage" chore from her own phone. On Leo's phone, sitting on the Kid Hub at that exact moment: the chore card correctly flips to "Approved!" almost instantly — that part is genuinely live, confirmed via <code>choreStore</code>'s realtime <code>chore_tasks</code> channel. But the coin counter at the top of Leo's Hub (<code>KidView.tsx:177</code>, <code>mainCoins = active.mainCoins ?? active.coins ?? 0</code>) does not move. Leo has to force-quit and reopen the app (or wait for whatever eventually triggers a fresh app boot) before the coins he just earned show up on his own screen.</span></p>
+      <p><b>Root cause, precisely:</b> <code>awardPoints</code> (<code>choreStore.ts:1432-1485</code>) does two things: (1) an <code>award_coins</code> RPC call to Postgres — the real, correct source of truth, confirmed to land — and (2) a same-process patch of <code>useFamilyStore.setState(...)</code> (lines 1476-1485), with the function's own comment at lines 1469-1475 explicitly documenting why: <i>"familyStore's in-memory members array (what every balance display actually reads) is only ever refetched once at app boot — nothing here used to patch it, so an approved quest's payout was invisible on-screen until a full reload."</i> That in-process patch happens only inside whichever device's JS runtime called <code>awardPoints</code> — i.e. only Priya's phone. Leo's phone never receives it, because <code>familyStore.ts</code> has no <code>supabase.channel(...)</code> anywhere in the file (confirmed by reading the file in full and by a repo-wide grep for <code>.channel(</code> across <code>store/*.ts</code>).</p>
+      <p><b>No compensating refresh exists either:</b> <code>familyStore.loadFromStorage</code>/<code>syncFromDB</code> are invoked exactly once per app session, gated by <code>if (!loaded)</code> (confirmed call site: <code>HubScreen.tsx</code>'s mount effect). <code>HubScreen.tsx</code>'s pull-to-refresh handler (<code>onRefresh</code>, lines 104-115) explicitly calls <code>useChoreStore.getState().syncFromDB(true)</code> and <code>loadEvents()</code> — it does <b>not</b> call anything on <code>useFamilyStore</code>. So even Leo manually pulling to refresh his own Hub screen will not fix his own stale coin total. The app-wide foreground-refresh helper that exists in this codebase (<code>lib/useAppStateRefresh.ts</code>) is only wired into the pet-care/health feature hooks (<code>features/care/hooks/useTodayData.ts</code>, <code>features/health/hooks/useHealthData.ts</code>) — not into <code>familyStore</code>, <code>HubScreen</code>, or any chore/Hub-adjacent component.</p>
+      <p><b>Blast radius:</b> every coin-balance display in the app reads the same <code>familyStore.members</code> array and is affected identically — confirmed read sites include <code>KidView.tsx:177,161</code>, <code>TeenView.tsx:133,172,265</code>, <code>KidHeroCard.tsx</code>, <code>KidLeaderboard.tsx</code>, <code>PiggyBankSheet.tsx</code>, <code>HouseholdSnapshotCard.tsx:65</code> (a <i>second</i> parent viewing a kid's total), and <code>QuestApprovalCard.tsx:24</code> (the pending-coins preview, a different and unaffected read since it reads the quest's own <code>coins</code> field, not the balance). Every payout call site shares the identical mechanism and therefore the identical gap: <code>awardPoints</code> (chore approval, auto-approve), <code>awardCoins</code> (<code>ServiceRequestCard.tsx</code> tutor/cheer bonus, <code>TeenView.tsx:105</code> pickup-run coin award).</p>
+      <p><b>Recommended fix approach (not implemented — research pass only):</b> add a per-family <code>members:${'{'}familyId{'}'}</code> realtime channel to <code>familyStore.ts</code> subscribed to the <code>members</code> table, mirroring the exact pattern already proven correct in <code>choreStore.ts</code>'s <code>ensureRealtime</code> (family-scoped channel name, UPDATE handler patches the matching member by id in local state). This is a same-shaped fix to the one <code>choreStore</code>/<code>eventStore</code> already use twice — not a new architecture, just an omitted third application of an existing pattern.</p>
+    </div>
+  </section>
+
+  <section id="s6">
+    <h2>6 · Claim / race visibility</h2>
+    <div class="tablewrap">
+    <table>
+      <tr><th>ID</th><th>Scenario</th><th>Verdict</th></tr>
+      <tr>
+        <td class="state">V15</td>
+        <td>Two siblings tap "claim" on the same pool bounty within the same second.</td>
+        <td><span class="tag ok">Correctly live, and race-safe</span> — <code>claimBounty</code>'s CAS write (quest lifecycle audit N5) plus its rollback-on-loss logic (N6) means the losing sibling's optimistic local claim reverts, and the winner's claim is broadcast live via the same realtime channel to every device including the loser's — so the loser sees the correct final state promptly, not just "eventually." This was fixed as a write-side race in the earlier audit; the visibility angle checked here (does the loser's UI actually update, not just avoid corrupting the DB) is confirmed correct by the same code.</td>
+      </tr>
+      <tr>
+        <td class="state">V16</td>
+        <td>Teen claims a ride pickup slot — does an eligible GP who was also looking see it disappear immediately, or would they still see it as claimable and tap it (a stale-UI race, distinct from the already-fixed backend race)?</td>
+        <td><span class="tag ok">Correctly live, and race-safe — same CAS/rollback pattern as V15, applied to events.</span> <code>claimHelperSlot</code> (<code>store/eventStore.ts</code>, added in the event lifecycle audit's E20 fix) does a conditional <code>UPDATE ... WHERE helper_status IS NULL</code>-style write; <code>features/hub/TeenView.tsx:104</code> and <code>features/hub/senior/FamilyNeedsHandSection.tsx:76</code> both route through it. The user's specific framing ("stale-UI race, distinct from the backend race") is the right question to ask, and the answer here is that it's <i>not</i> a separate exposure: the same realtime <code>cal:${'{'}familyId{'}'}</code> channel that already carries the winning claim also reaches the GP's device, so even in the narrow window between the GP's tap and the CAS response, a 0-row loss triggers the store's own reconciliation-to-actual-winner logic (not a bare "someone else has it" toast) rather than leaving a dangling stale card.</td>
+      </tr>
+      <tr>
+        <td class="state">V17</td>
+        <td>Two GPs both open the claim screen for the same single-target sponsored GP-quest at once.</td>
+        <td><span class="tag gap">Not runtime-tested — plausible gap, same root cause as the already-documented pool-claim race, but not independently re-verified this pass for the grandparent-quest-specific claim path.</span> A single-target GP quest is, by construction, targeted at exactly one kid (not two GPs racing to claim it — the earlier <code>ChoreReviewSection</code> findings establish GP quests are sponsor-scoped, one sponsor per quest). The scenario as framed (two GPs racing for the same slot) does not actually apply to single-target sponsored quests the way it does to a household pool bounty; if the real scenario intended is "two GPs both viewing an <code>inviteGrandparents</code> open-to-any-GP errand," that already routes through the same <code>chore_tasks</code>/<code>claimBounty</code>-family write path as V1/V15, which is confirmed CAS-protected. Recorded as not-independently-confirmed for this exact framing rather than asserted either way.</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="s7">
+    <h2>7 · Helper / ride coordination</h2>
+    <div class="tablewrap">
+    <table>
+      <tr><th>ID</th><th>Scenario</th><th>Verdict</th></tr>
+      <tr>
+        <td class="state">V18</td>
+        <td>Parent posts a ride request open to GPs — do all eligible GPs' Hubs show it live, simultaneously?</td>
+        <td><span class="tag ok">Correctly live</span> — the event is a plain <code>calendar_events</code> INSERT with <code>isOpenToGrandparents: true</code>, broadcast unconditionally to every subscriber on the family's <code>cal:${'{'}familyId{'}'}</code> channel; each GP's Hub component (<code>FamilyNeedsHandSection.tsx</code>) reads the live <code>events</code>/<code>rangeEvents</code> state and applies its own eligibility filter client-side, so all eligible GPs see it appear at effectively the same instant.</td>
+      </tr>
+      <tr>
+        <td class="state">V19</td>
+        <td>A GP accepts a ride — does the requesting parent's dispatch view update live, and does a second eligible GP see the offer close out?</td>
+        <td><span class="tag ok">Correctly live for both</span> — same <code>claimHelperSlot</code> CAS-and-broadcast mechanism as V16. <code>RideRequestCard.tsx</code> (parent-side) and the second GP's <code>FamilyNeedsHandSection.tsx</code> both re-render from the same live <code>eventStore</code> state.</td>
+      </tr>
+      <tr>
+        <td class="state">V20</td>
+        <td>Driver's live location updates mid-trip — do all interested viewers see the same position at the same time?</td>
+        <td><span class="tag ok">Correctly live, via a separate dedicated channel</span> — <code>EnRouteBanner.tsx:76-77</code> subscribes its own ad hoc channel (<code>enroute_driver_${'{'}driverMemberId{'}'}</code>) directly to the <code>member_locations</code> table, independent of both <code>choreStore</code> and <code>eventStore</code>. <code>features/hub/parent/FamilyRadarSection.tsx:69-70</code> and <code>features/vault/tabs/GpsTab.tsx:148-149</code> do the same for the family-wide GPS map. All three are genuinely realtime-subscribed to the same underlying table, so every viewer with the relevant screen open receives the same position updates at the same time. Not independently confirmed whether the three separate ad hoc subscriptions could ever drift from each other under connection issues — that would need runtime testing to state with certainty; flagged as <span class="tag gap">not runtime-tested</span> for the drift question specifically, while the "is it wired to realtime at all" question is confirmed yes by code.</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section id="s8">
+    <h2>8 · Kid-request / parent-reply visibility</h2>
+    <p class="lede">This section contains the second major finding of this pass. <code>kidRequestStore.ts</code>'s
+      own header comment claims real-time behavior; the actual code does not have it.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>ID</th><th>Scenario</th><th>Verdict</th></tr>
+      <tr>
+        <td class="state">V21</td>
+        <td>Kid sends a permission/question/medical/ride request — does it appear on a parent's Hub live?</td>
+        <td><span class="tag fixed">Fixed — see V-A4.</span></td>
+      </tr>
+      <tr>
+        <td class="state">V22</td>
+        <td>Parent replies (approve/decline) — does the kid see the reply live?</td>
+        <td><span class="tag fixed">Fixed, same store — see V-A4.</span></td>
+      </tr>
+      <tr>
+        <td class="state">V23</td>
+        <td>Two parents viewing the same pending kid-request; one responds. Does the other's card update/disappear live, or could they both respond?</td>
+        <td><span class="tag fixed">Fixed, same root cause — see V-A4.</span> <code>kidRequestStore</code> now has a realtime channel, so a second parent's card updates/disappears live once the first parent responds, instead of staying stale until a cold restart. Whether tapping Approve/Decline a second time on an already-resolved request (in the narrow race window before the realtime UPDATE lands) causes a visible error, a silent no-op, or an overwritten response was not traced in this pass — flagged as an open question, not asserted; the realtime fix substantially narrows but does not claim to fully eliminate that window.</td>
+      </tr>
+    </table>
+    </div>
+
+    <div class="finding fixed">
+      <h3><span class="tag fixed">Fixed</span> V-A4 — <code>kidRequestStore</code> has no realtime subscription and loads exactly once per app session, on any device, ever</h3>
+      <p><b>Implemented:</b> added an <code>ensureRealtime</code> function to <code>store/kidRequestStore.ts</code>, mirroring <code>choreStore.ts</code>'s pattern — a family-scoped <code>kid_requests:${'{'}familyId{'}'}</code> channel, hot-reload sweep, and INSERT/UPDATE/DELETE handlers that merge into the local <code>requests</code> array (with the same last-writer-wins-by-<code>respondedAt</code> guard <code>loadFromStorage</code> already used, so a realtime echo of an older write can't clobber a more recent local response still in flight). Wired into <code>loadFromStorage</code> right after the DB fetch succeeds. Same publication migration as V-A3 adds <code>kid_requests</code> to <code>supabase_realtime</code> — needs deployment.</p>
+      <p class="path">store/kidRequestStore.ts:1-4 (header comment), 89-93 (interface, no realtime action), 143-177 (Supabase upsert/delete, no channel) · features/hub/ParentView.tsx:75 · features/hub/KidView.tsx:93 · features/hub/TeenView.tsx:56 · features/hub/SeniorView.tsx:98</p>
+      <p><span class="scenario"><b>Scenario:</b> Leo (kid) taps "Ask for a ride" from his Hub, filling out a <code>KidRequest</code> (type <code>ride</code>). This correctly writes to Supabase's <code>kid_requests</code> table via <code>upsertToDb</code> (<code>kidRequestStore.ts:147-177</code>) and fires a <code>family-notifier</code> edge function invocation (lines 185-195) — so a push notification pipeline exists for this event. But the in-app Hub screen itself, for Priya (parent) sitting on her own Hub at that moment, will not show Leo's new request card appearing on its own. Priya would only see it if her app happens to not have loaded <code>kidRequestStore</code> yet at all (i.e. this is the first time her Hub mounted <code>useKidRequestStore</code> this session) — otherwise the store is already <code>loaded: true</code> and nothing ever calls <code>loadFromStorage</code> again.</span></p>
+      <p><b>Root cause, precisely:</b> every one of the four role views — <code>ParentView.tsx:75</code>, <code>KidView.tsx:93</code>, <code>TeenView.tsx:56</code>, <code>SeniorView.tsx:98</code> — gates its fetch identically: <code>if (!kidRequestsLoaded) loadKidRequests();</code>. Since <code>useKidRequestStore</code> is one shared Zustand instance for the entire app (not per-role), the very first Hub view to mount on a given device sets <code>loaded: true</code> for the rest of that app session — every other view's effect then sees <code>kidRequestsLoaded === true</code> and never fetches again. Confirmed via a full read of the store file: no <code>postgres_changes</code>/<code>.channel(</code> call exists anywhere in <code>kidRequestStore.ts</code>, and <code>HubScreen.tsx</code>'s pull-to-refresh (already checked for V-A3) does not touch <code>kidRequestStore</code> either.</p>
+      <p><b>Distinct from V-A3:</b> V-A3 (coin balances) has a real fix-shaped gap but a working async notification path is not claimed for it. Here the header comment's own claim ("real-time kid → parent requests") makes this a case where the code's intent and its actual behavior have diverged — worth flagging with extra weight since it's not just an omission but a stale/incorrect self-description in the source.</p>
+      <p><b>Recommended fix approach (not implemented — research pass only):</b> same shape as V-A3 — add a <code>kid_requests:${'{'}familyId{'}'}</code> realtime channel to <code>kidRequestStore.ts</code>, subscribed to the <code>kid_requests</code> table, patching <code>requests</code> in local state on INSERT/UPDATE/DELETE exactly like <code>choreStore</code>'s <code>ensureRealtime</code> already does for <code>chore_tasks</code>.</p>
+    </div>
+  </section>
+
+  <section id="s9">
+    <h2>9 · System A (parent-to-parent household-task negotiation) visibility</h2>
+    <p class="lede">System A's own status machine (<code>parent_quest_assignments</code>) was extensively lifecycle-audited
+      in <code>quest_lifecycle_matrix.html</code> §4 and §6 from a single-actor perspective. This section adds the
+      cross-role-simultaneity angle those passes didn't ask: is a live update from one parent's action visible on
+      the other parent's screen at that moment, or only eventually?</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>ID</th><th>Scenario</th><th>Verdict</th></tr>
+      <tr>
+        <td class="state">V24</td>
+        <td>Parent A delegates directly to Parent B — does B's Household Backlog show the new pending card live?</td>
+        <td><span class="tag fixed">Fixed, now live — see V-A5.</span></td>
+      </tr>
+      <tr>
+        <td class="state">V25</td>
+        <td>Parent B accepts / pushes back / snoozes — does A see the response live?</td>
+        <td><span class="tag fixed">Fixed, same table — see V-A5.</span></td>
+      </tr>
+      <tr>
+        <td class="state">V26</td>
+        <td>Two parents both viewing the Household Backlog pool at once; one self-assigns (PULL mode) an item. Does the other's pool list drop it live?</td>
+        <td><span class="tag bug">Split verdict, worth stating precisely.</span> The <b>chore itself</b> (<code>chore_tasks.assigned_to_id</code>, if the pool item is a plain household chore being self-claimed) IS realtime-live per §3/§6's findings. But <code>addParentQuest</code>'s PULL-mode self-claim ALSO writes a <code>parent_quest_assignments</code> row (status <code>ACCEPTED</code>) — and that half of the state is subject to the same V-A5 gap. In practice: the chore disappearing from the pool view (which is what <code>HouseholdBacklogSection</code>'s <code>questPool</code> filter — <code>!parentAssignments.find(a =&gt; ...)</code> at line 63 — actually keys off) depends on <i>both</i> pieces of state being current on the second parent's device; since <code>chore_tasks</code> is live but <code>parentAssignments</code> is not, there's a narrow but real window where the second parent's stale local <code>parentAssignments</code> (not yet reflecting the new ACCEPTED row) combined with a live-updated chore row could produce an inconsistent intermediate render. Not runtime-tested to confirm the exact visual effect of that inconsistency window; flagged as a secondary consequence of V-A5 rather than a separate root cause.</td>
+      </tr>
+    </table>
+    </div>
+
+    <div class="finding fixed">
+      <h3><span class="tag fixed">Fixed</span> V-A5 — <code>parent_quest_assignments</code> (System A's entire negotiation state) is not covered by any realtime channel</h3>
+      <p><b>Implemented:</b> added a second <code>.on('postgres_changes', ...)</code> registration to <code>choreStore.ts</code>'s existing <code>chores:${'{'}familyId{'}'}</code> channel (same channel, no new subscription needed), filtered on <code>table: 'parent_quest_assignments'</code>. Since this table has no <code>family_id</code> column of its own (RLS scopes it via a join to <code>chore_tasks.family_id</code>), the handler has no server-side family filter — RLS itself restricts which rows are ever delivered, the same trust boundary <code>syncFromDB</code>'s existing unfiltered select on this table already relies on. INSERT/UPDATE/DELETE all merge into the local <code>parentAssignments</code> array via the existing <code>parentAssignmentFromRow</code> mapper. Same publication migration as V-A3/V-A4 adds <code>parent_quest_assignments</code> to <code>supabase_realtime</code> — needs deployment.</p>
+      <p class="path">store/choreStore.ts:681-707 (ensureRealtime — table filter is <code>chore_tasks</code> only) · store/choreStore.ts:789-792 (syncFromDB fetches parent_quest_assignments, but only on demand) · features/hub/HubScreen.tsx:113 (pull-to-refresh calls choreStore.syncFromDB, which does refetch this table)</p>
+      <p><span class="scenario"><b>Scenario:</b> Alex (parent) delegates "Pay the electric bill" directly to Priya (parent) via <code>DelegateSheet</code>, which calls <code>addParentQuest(choreId, alexId, priyaId, 'DIRECT', note)</code> (<code>store/choreStore.ts:1650</code>). This inserts a new row into <code>parent_quest_assignments</code> via <code>dbInsert</code> (fire-and-forget, confirmed no realtime broadcast). Priya, sitting on her own Household Backlog at that exact moment, will not see the new <code>DirectPendingCard</code> appear. She will see it only the next time her own device calls <code>choreStore.syncFromDB</code> — either a cold app restart, or an explicit pull-to-refresh on the Hub screen (confirmed <code>HubScreen.tsx:113</code> does call <code>syncFromDB(true)</code>, which does refetch <code>parent_quest_assignments</code> per lines 789-792 — so this table IS eventually refreshed by a manual pull, unlike V-A3/V-A4's total absence of any refresh path — but it is never pushed live.</span></p>
+      <p><b>Precise scope:</b> confirmed via a full grep of the codebase for <code>parent_quest_assignments</code> — every read/write of this table lives inside <code>store/choreStore.ts</code>, and the store's single <code>ensureRealtime</code> function's <code>postgres_changes</code> filter is hardcoded to <code>table: 'chore_tasks'</code> (line 685) — there is no second <code>.on('postgres_changes', ...)</code> registration for <code>parent_quest_assignments</code> anywhere. This affects every System-A card: <code>DirectPendingCard</code>, <code>OutgoingPendingCard</code>, <code>LockedAssignmentCard</code>, <code>AcceptedQuestCard</code>, and the Snooze/Blocker/Trade/Discuss pushback states — all of them are driven by the <code>parentAssignments</code> array, all of them share this one gap.</p>
+      <p><b>Severity note:</b> lower than V-A3/V-A4 because a manual pull-to-refresh does fix it (the data isn't permanently stuck the way coin balances and kid-requests are) — but System A is specifically a <i>negotiation</i> feature between two adults who may both be actively looking at their phones deciding who does what; a negotiation UI that doesn't reflect the other party's response until a manual refresh works against the feature's own purpose more than most other gaps in this document.</p>
+      <p><b>Recommended fix approach (not implemented — research pass only):</b> add a second <code>.on('postgres_changes', { table: 'parent_quest_assignments', filter: ... }, ...)</code> handler to the same channel <code>choreStore.ts</code> already opens for <code>chore_tasks</code> (no new channel needed, since Supabase channels support multiple table subscriptions on one connection) — this is the smallest-diff fix of the three gaps in this document, since the channel and family-scoping infrastructure already exists and just needs a second <code>.on()</code> call plus a small INSERT/UPDATE/DELETE reducer for the <code>parentAssignments</code> array, mirroring the existing <code>chore_tasks</code> reducer at lines 687-706.</p>
+    </div>
+  </section>
+
+  <div class="finding fixed">
+    <h3><span class="tag fixed">Fixed</span> V-A1 — Realtime UPDATE handler for chore_tasks has no role filter (INSERT does)</h3>
+    <p class="path">store/choreStore.ts:687-696 (INSERT branch, has role filter) vs. former 698-703 (UPDATE branch, previously did not)</p>
+    <p>Full detail already given under V4 above; recorded here as its own numbered finding per the doc's ID convention. <b>Reachability check:</b> traced whether an ordinary kid-visible chore can ever transition into <code>parent_only_quest</code>/<code>shopping</code> categoryType after the kid's device already has its row cached. <code>addParentQuest</code> (the main System-A entry point) explicitly guards <code>if (!['parent_only_quest', 'shopping'].includes(chore.categoryType)) return null;</code> (<code>choreStore.ts:1661</code>) — it refuses to act on a chore that isn't already adult-flagged, so it cannot be the mechanism that flips an ordinary kid chore into private. No other <code>updateChore</code> call site that changes <code>categoryType</code> on an existing row was found in this pass's search scope. <b>Disposition:</b> the underlying handler asymmetry was real, low-severity defense-in-depth, and independently mitigated by <code>isAdultTask</code> being a derived (not cached) property everywhere it's read for rendering (<code>choreAdapter.ts:126</code>) — fixed anyway for consistency with the INSERT branch and per the user's explicit "same item shouldn't disagree across screens" instruction. <b>Implemented:</b> the realtime UPDATE handler now re-checks <code>chore.isPrivateParent && role !== 'parent'</code> the same way INSERT does; if a cached chore transitions into private scope for a non-parent viewer, that device now drops the row from local state entirely instead of applying the update unconditionally.</p>
+  </div>
+
+  <div class="finding fixed">
+    <h3><span class="tag fixed">Clarified, not a bug — no code change needed</span> V-A2 — Calendar realtime only applies live to the day/range currently loaded on that viewer's device</h3>
+    <p class="path">store/eventStore.ts:417-423 (day-view non-matching-date early return) · store/eventStore.ts:479-481 (range-view "only patch if already in loaded range")</p>
+    <p>Full detail already given under V6 above. Re-assessed per the task instruction to not over-fix a non-bug: this behavior is architecturally correct, not a gap — no app should eagerly fetch every future day's events for every family member on every write anywhere in the family. The blanket claim "the Calendar is realtime" needs the qualifier "for whatever date/range you're currently looking at," which this entry now states precisely rather than flagging as something to fix. A kid who edited a ride time for <i>next Tuesday</i> while a parent is looking at <i>today</i> will not see it until the parent navigates to that date, which then does a fresh, correct fetch — not data loss, just not proactively pushed to a view that isn't showing that data. No code change made for this finding.</p>
+  </div>
+
+  <h2 id="summary" style="border-top:none; padding-top:0;">Summary — V-findings, now fixed</h2>
+  <p class="lede">Five numbered V-findings this pass, three of them substantial (V-A3, V-A4, V-A5), two narrower/lower-severity
+    (V-A1, V-A2). All five were documented with file:line citations and a recommended fix approach in the original
+    research pass; a follow-up implementation pass has since applied real code changes for V-A1, V-A3, V-A4, and
+    V-A5, and re-assessed V-A2 as not needing a code change. See each finding's "Implemented" note above for exact
+    file:line detail.</p>
+  <div class="tablewrap">
+  <table>
+    <tr><th>ID</th><th>What</th><th>File:line</th><th>Severity</th><th>Status</th></tr>
+    <tr><td class="state">V-A3</td><td>familyStore (coin/points balances) has no realtime channel — payouts only ever land on the paying device</td><td><code>store/familyStore.ts</code> (whole file) · <code>choreStore.ts:1432-1485</code></td><td>High — affects every approval/payout scenario, no refresh path exists at all</td><td><span class="tag fixed">Fixed</span> — realtime channel added; publication migration needs deployment</td></tr>
+    <tr><td class="state">V-A4</td><td>kidRequestStore has no realtime channel and loads exactly once per app session across all roles</td><td><code>store/kidRequestStore.ts</code> (whole file) · 4 call sites gated on <code>!loaded</code></td><td>High — no refresh path exists at all; also contradicts the file's own "real-time" header comment</td><td><span class="tag fixed">Fixed</span> — realtime channel added; publication migration needs deployment</td></tr>
+    <tr><td class="state">V-A5</td><td>parent_quest_assignments (System A negotiation) not covered by choreStore's realtime channel</td><td><code>store/choreStore.ts:685</code> (filter hardcoded to chore_tasks only)</td><td>Medium — a manual pull-to-refresh does fix it, unlike V-A3/V-A4</td><td><span class="tag fixed">Fixed</span> — second table added to existing channel; publication migration needs deployment</td></tr>
+    <tr><td class="state">V-A1</td><td>Realtime UPDATE handler for chore_tasks has no role filter (INSERT does)</td><td><code>store/choreStore.ts:698-703</code></td><td>Low — defense-in-depth gap; no reachable live-data-leak path found given current call sites, and independently mitigated by derived <code>isAdultTask</code> filtering at render time</td><td><span class="tag fixed">Fixed</span> — UPDATE handler now matches INSERT's role filter</td></tr>
+    <tr><td class="state">V-A2</td><td>Calendar realtime only applies to the day/range currently loaded on the viewing device</td><td><code>store/eventStore.ts:417-423,479-481</code></td><td>Low — architecturally reasonable, just needs the caveat stated precisely rather than a blanket "live" claim</td><td><span class="tag fixed">Clarified</span> — confirmed not a bug, no code change made</td></tr>
+  </table>
+  </div>
+
+  <footer>
+    Built by reading, in this pass: the full text of <code>quest_lifecycle_matrix.html</code> and
+    <code>event_lifecycle_matrix.html</code> (to avoid duplicating their findings), <code>store/choreStore.ts</code>'s
+    realtime section and <code>awardPoints</code>/<code>addParentQuest</code> in full, <code>store/eventStore.ts</code>'s
+    entire realtime handler (both day and range branches) plus its TTL constants, <code>store/familyStore.ts</code> in
+    full (confirmed zero realtime channels), <code>store/kidRequestStore.ts</code> in full (confirmed zero realtime
+    channels despite its own header comment), <code>store/notifStore.ts</code>/<code>chatStore.ts</code>/<code>tripStore.ts</code>
+    for comparison baselines, and the following Hub/Calendar components for their store-hook vs. one-shot-fetch
+    pattern: <code>HubScreen.tsx</code>, <code>ParentView.tsx</code>, <code>KidView.tsx</code>, <code>TeenView.tsx</code>,
+    <code>SeniorView.tsx</code>, <code>HouseholdBacklogSection.tsx</code>, <code>HouseholdSnapshotCard.tsx</code>,
+    <code>DelegateSheet.tsx</code>, <code>ServiceRequestCard.tsx</code>, <code>InlineReplyCard.tsx</code>,
+    <code>RideRequestCard.tsx</code>, <code>EnRouteBanner.tsx</code>, <code>FamilyNeedsHandSection.tsx</code>,
+    <code>EventAssignmentCard.tsx</code>, and <code>CalendarScreen.tsx</code>'s range/day view wiring. Phase 1 (§1)
+    was written before opening any component beyond what the three prior docs already established, per the
+    explicit "real-world thinking first, then trace in code" instruction repeated for this pass. No code was
+    changed — this document is research/documentation only. <code>npx tsc --noEmit</code> was not run since no
+    source files were modified.
+    <div class="backtotop"><a href="#top">↑ back to top</a></div>
+  </footer>
+</div>

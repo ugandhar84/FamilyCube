@@ -37,9 +37,14 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
                 <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl}
                   siblings={allNames} size={14} ringColor={colors.primary} ringWidth={1} />
-                <Coins size={11} color={colors.kid} />
+                {/* An adult task's coins are deliberately zeroed at creation
+                    (AddQuestModal's toggleAdultTask) — parents don't earn
+                    coins for their own chores. "wants 0 coins" reads as
+                    broken rather than intentional, so a 0-coin task (adult
+                    or otherwise) just states it was completed instead. */}
+                {q.coins > 0 && <Coins size={11} color={colors.kid} />}
                 <Text style={{ fontSize: TYPO.label, color: colors.primary, fontWeight: '600' }}>
-                  {kid.name.split(' ')[0]} wants {q.coins} coins
+                  {q.coins > 0 ? `${kid.name.split(' ')[0]} wants ${q.coins} coins` : `${kid.name.split(' ')[0]} completed this`}
                 </Text>
                 {hasBonus && (
                   <View style={{ backgroundColor: colors.warningLight, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}>

@@ -6,6 +6,67 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 
+// ─── Realtime subscription (V-A3) ─────────────────────────────────────────────
+// Mirrors choreStore.ts's ensureRealtime pattern exactly: family-scoped
+// channel name (no fixed/shared literal — avoids the channel-name-collision
+// "cannot add callbacks after subscribe()" crash a prior session fixed
+// elsewhere), a dev-hot-reload stale-channel sweep, and an UPDATE handler
+// that merges the incoming row into local state in place.
+let _rtChannel: ReturnType<typeof supabase.channel> | null = null;
+let _rtFamilyId = '';
+
+function ensureRealtime(
+  familyId: string,
+  setState: (s: Partial<FamilyState>) => void,
+  getState: () => FamilyState,
+) {
+  if (_rtFamilyId === familyId && _rtChannel) return; // already subscribed for this family
+  if (_rtChannel) {
+    supabase.removeChannel(_rtChannel);
+    _rtChannel = null;
+  }
+  // Same hot-reload defensive sweep as choreStore.ts's ensureRealtime — a
+  // dev-mode reload resets this module's `let` state but the Supabase
+  // client socket can still hold a channel under this exact topic name.
+  const staleTopic = `realtime:members:${familyId}`;
+  const stale = supabase.getChannels().filter(c => c.topic === staleTopic);
+  if (stale.length > 0) {
+    stale.forEach(c => supabase.removeChannel(c));
+  }
+  _rtFamilyId = familyId;
+
+  try {
+    _rtChannel = supabase
+      .channel(`members:${familyId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'members',
+        filter: `family_id=eq.${familyId}`,
+      }, ({ eventType, new: newRow, old: oldRow }) => {
+        const state = getState();
+        if (eventType === 'INSERT') {
+          const member = fromRow(newRow);
+          if (state.members.some(m => m.id === member.id)) return;
+          setState({ members: [...state.members, member] });
+        } else if (eventType === 'UPDATE') {
+          setState({
+            members: state.members.map(m =>
+              m.id === String((newRow as any).id) ? fromRow(newRow) : m
+            ),
+          });
+        } else if (eventType === 'DELETE') {
+          setState({ members: state.members.filter(m => m.id !== String((oldRow as any).id)) });
+        }
+      })
+      .subscribe((status) => {
+        console.log(`[familyStore] realtime members:${familyId} subscribe status=${status}`);
+      });
+  } catch (e: any) {
+    console.warn('[familyStore] ensureRealtime subscribe failed', e?.message ?? e);
+  }
+}
+
 export type MemberRole = 'parent' | 'kid' | 'teen' | 'senior';
 
 // Purely descriptive — how a member relates to the family, shown on their
@@ -344,6 +405,7 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
         import('@/lib/familyCustomCategories').then(({ warmupCustomCache }) => {
           warmupCustomCache(familyId).catch(() => {});
         });
+        ensureRealtime(familyId, set, get);
       }
     } catch (e) {
       console.warn('[familyStore] syncFromDB:', e);

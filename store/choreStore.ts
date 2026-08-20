@@ -696,13 +696,54 @@ function ensureRealtime(
           if (state.chores.some(c => c.id === chore.id)) return;
           setState({ chores: [chore, ...state.chores] });
         } else if (eventType === 'UPDATE') {
+          const chore = choreFromRow(newRow);
+          // Same role filter as the INSERT branch above (V-A1) — a chore
+          // that transitions INTO parent_only_quest after a non-parent
+          // device already has the row cached must not have that update
+          // applied locally; drop the pre-existing row instead of leaving
+          // a private task's live field changes visible to a kid/senior.
+          const role = getActiveMemberRole();
+          if (chore.isPrivateParent && role !== 'parent') {
+            setState({ chores: state.chores.filter(c => c.id !== chore.id) });
+            return;
+          }
           setState({
             chores: state.chores.map(c =>
-              c.id === String(newRow.id) ? choreFromRow(newRow) : c
+              c.id === String(newRow.id) ? chore : c
             ),
           });
         } else if (eventType === 'DELETE') {
           setState({ chores: state.chores.filter(c => c.id !== String(oldRow.id)) });
+        }
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'parent_quest_assignments',
+        // parent_quest_assignments has no family_id column of its own (RLS
+        // scopes it via a join to chore_tasks.family_id — confirmed in
+        // supabase/migrations/20260815000004_parent_quest_assignments.sql)
+        // so this handler can't filter server-side by family the way the
+        // chore_tasks handler above does. RLS itself still restricts which
+        // rows actually reach this client (only rows whose chore belongs to
+        // the caller's family are ever delivered), so no additional
+        // client-side scoping is needed here — same trust boundary
+        // syncFromDB's unfiltered select on this table already relies on.
+      }, ({ eventType, new: newRow, old: oldRow }) => {
+        console.log(`[choreStore] realtime parent_quest_assignments ${eventType}`, (newRow as any)?.id ?? (oldRow as any)?.id);
+        const state = getState();
+        if (eventType === 'INSERT') {
+          const assignment = parentAssignmentFromRow(newRow);
+          if (state.parentAssignments.some(a => a.id === assignment.id)) return;
+          setState({ parentAssignments: [assignment, ...state.parentAssignments] });
+        } else if (eventType === 'UPDATE') {
+          setState({
+            parentAssignments: state.parentAssignments.map(a =>
+              a.id === String(newRow.id) ? parentAssignmentFromRow(newRow) : a
+            ),
+          });
+        } else if (eventType === 'DELETE') {
+          setState({ parentAssignments: state.parentAssignments.filter(a => a.id !== String(oldRow.id)) });
         }
       })
       .subscribe((status) => {
@@ -1048,6 +1089,35 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       return false;
     }
 
+    // A parent completing ANY chore they self-created and self-assigned
+    // (not just an Adults-Only/parent_only_quest one — a parent claiming an
+    // ordinary household chore like "Clean the stovetop" from the pool is
+    // the same case) has nobody meaningful to review it — createdById ===
+    // assignedToId means no delegation ever happened (no other parent
+    // negotiated or accepted this via System A, no kid was ever assigned
+    // it), so requiring a separate "approve" tap from the same person who
+    // just did the work is pure friction, not real oversight. A kid/teen's
+    // own chore, and any genuinely delegated adult task (createdById !==
+    // assignedToId, e.g. Priya assigns Marcus), still go through the
+    // normal pending_approval review — that review is real: it's a
+    // different person checking the work.
+    const isSelfAssignedByParent = (() => {
+      if (!chore.createdById || chore.createdById !== chore.assignedToId) return false;
+      const { useFamilyStore } = require('./familyStore');
+      const assignee = useFamilyStore.getState().members.find((m: any) => m.id === chore.assignedToId);
+      return assignee?.role === 'parent';
+    })();
+    if (isSelfAssignedByParent) {
+      const now = new Date().toISOString();
+      get().updateChore(choreId, {
+        status: 'approved', approvedAt: now, reviewedAt: now,
+        submissionNote: opts?.note, submissionPhotoUrl: opts?.photoUrl, submittedAt: now,
+      });
+      const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
+      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward);
+      return true;
+    }
+
     // Spec: if redo_count >= 2, auto-approve immediately — no more manual review
     if ((chore.redoCount ?? 0) >= 2) {
       const now = new Date().toISOString();
@@ -1074,6 +1144,27 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   resubmitChore: (choreId, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'redo_requested') return;
+
+    // Same self-assigned-by-a-parent shortcut as submitChore — see that
+    // function's comment for the full reasoning.
+    const isSelfAssignedByParentResubmit = (() => {
+      if (!chore.createdById || chore.createdById !== chore.assignedToId) return false;
+      const { useFamilyStore } = require('./familyStore');
+      const assignee = useFamilyStore.getState().members.find((m: any) => m.id === chore.assignedToId);
+      return assignee?.role === 'parent';
+    })();
+    if (isSelfAssignedByParentResubmit) {
+      const now = new Date().toISOString();
+      get().updateChore(choreId, {
+        status: 'approved', approvedAt: now, reviewedAt: now,
+        submissionNote: opts?.note ?? chore.submissionNote,
+        submissionPhotoUrl: opts?.photoUrl ?? chore.submissionPhotoUrl,
+        submittedAt: now,
+      });
+      const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
+      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward);
+      return;
+    }
 
     // Spec: redo_count >= 2 → auto-approve
     if ((chore.redoCount ?? 0) >= 2) {

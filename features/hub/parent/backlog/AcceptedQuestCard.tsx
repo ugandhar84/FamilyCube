@@ -3,12 +3,14 @@ import { View, Text, Pressable } from 'react-native';
 import { ChevronUp, ChevronDown, ThumbsUp, Check, CheckCircle2, ShoppingBag } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
+import type { FamilyMember } from '@/store/familyStore';
+import { useChatStore } from '@/store/chatStore';
 
 // A task this parent has already accepted and is working — mark it done, or
 // expand to see the shopping list / send an appreciation ping to whoever
 // assigned it.
-export function AcceptedQuestCard({ a, chore, active, colors, isDark, completeParentQuest, appreciationPing }: {
-  a: ParentQuestAssignment; chore: ChoreTask; active: { id: string }; colors: any; isDark: boolean;
+export function AcceptedQuestCard({ a, chore, active, members, colors, isDark, completeParentQuest, appreciationPing }: {
+  a: ParentQuestAssignment; chore: ChoreTask; active: { id: string }; members: FamilyMember[]; colors: any; isDark: boolean;
   completeParentQuest: (assignmentId: string, completedBy: string) => void;
   appreciationPing: (assignmentId: string, fromId: string, message: string) => void;
 }) {
@@ -36,7 +38,17 @@ export function AcceptedQuestCard({ a, chore, active, colors, isDark, completePa
         {hasDetail ? (isExp ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />) : null}
       </Pressable>
       <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
-        <Pressable onPress={() => completeParentQuest(a.id, active.id)}
+        <Pressable onPress={() => {
+          completeParentQuest(a.id, active.id);
+          // completeParentQuest itself sends no notification — the assigner
+          // (a.assignedBy) otherwise only learns their delegation was
+          // finished by noticing the card gone next time they open the app.
+          if (a.assignedBy !== active.id) {
+            const doer = members.find(m => m.id === active.id);
+            useChatStore.getState().sendMessage(a.assignedBy, active.id,
+              `✅ ${doer?.name?.split(' ')[0] ?? 'They'} finished "${chore.title}"`);
+          }
+        }}
           style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.parent, borderRadius: 10, paddingVertical: 8 }}>
           <Check size={14} color="#fff" />
           <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Done</Text>

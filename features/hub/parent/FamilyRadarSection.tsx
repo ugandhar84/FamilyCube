@@ -58,7 +58,15 @@ export function FamilyRadarSection({ members, colors, isDark }: {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    const ch = supabase.channel('hub_family_radar')
+    // A fixed channel name ('hub_family_radar') collides if this effect
+    // ever runs twice before the first subscription's cleanup completes —
+    // React Strict Mode's dev-only double-invoke of effects hits this
+    // directly, throwing "cannot add postgres_changes callbacks... after
+    // subscribe()" the moment a second .on()/.subscribe() targets the same
+    // still-active channel. A unique name per mount means two concurrent
+    // instances (real or Strict-Mode-doubled) never target the same channel.
+    const channelName = `hub_family_radar_${Math.random().toString(36).slice(2)}`;
+    const ch = supabase.channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'member_locations' }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };

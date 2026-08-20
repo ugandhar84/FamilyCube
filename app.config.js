@@ -27,6 +27,7 @@ const config = {
     buildNumber: "1",
     appleTeamId: "X4VLLWF6Q3",
     usesAppleSignIn: true,
+    googleServicesFile: process.env.GOOGLE_SERVICES_PLIST ?? "./GoogleService-Info.plist",
     entitlements: {
       "com.apple.security.application-groups": ["group.com.familycube.ios"],
     },

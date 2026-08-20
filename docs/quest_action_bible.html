@@ -1,0 +1,674 @@
+<title>Quest Action Bible</title>
+<style>
+  :root{
+    --bg:#F7F5F1; --surface:#FFFFFF; --surface-2:#EFECE5; --border:#DDD8CC;
+    --text:#26241E; --text-2:#5B5748; --text-3:#8B8676;
+    --accent:#7A5CFA; --accent-soft:#EFEBFF;
+    --ok:#16794F; --ok-bg:#E4F5EC;
+    --gap:#B4530A; --gap-bg:#FCEEDD;
+    --bug:#B0223A; --bug-bg:#FBE6E9;
+    --fixed:#0E6E8C; --fixed-bg:#E4F3F7;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+      --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+      --accent:#A594FF; --accent-soft:#2A2440;
+      --ok:#5FD39A; --ok-bg:#123B2A;
+      --gap:#F0A75E; --gap-bg:#3A2712;
+      --bug:#F1748A; --bug-bg:#3B1620;
+      --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+    --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+    --accent:#A594FF; --accent-soft:#2A2440;
+    --ok:#5FD39A; --ok-bg:#123B2A;
+    --gap:#F0A75E; --gap-bg:#3A2712;
+    --bug:#F1748A; --bug-bg:#3B1620;
+    --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+  }
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--text); margin:0;
+    font-family: ui-sans-serif, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    line-height:1.55; font-size:15px;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:40px 24px 120px;}
+  h1{font-size:30px; font-weight:800; letter-spacing:-0.01em; margin:0 0 6px;}
+  .subtitle{color:var(--text-2); font-size:15px; margin:0 0 24px; max-width:80ch;}
+  .warn{background:var(--gap-bg); border:1px solid color-mix(in srgb, var(--gap) 40%, transparent); border-radius:10px; padding:14px 16px; margin-bottom:28px; font-size:13.5px; color:var(--text);}
+  .warn b{color:var(--gap);}
+  nav.toc{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 20px; margin-bottom:36px;}
+  nav.toc h2{font-size:14px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-3); margin:0 0 10px;}
+  nav.toc ol{margin:0; padding-left:20px; columns:2; column-gap:32px;}
+  nav.toc li{margin-bottom:5px; font-size:13.5px; break-inside:avoid;}
+  nav.toc a{color:var(--accent); text-decoration:none;}
+  nav.toc a:hover{text-decoration:underline;}
+  section{margin-bottom:52px; scroll-margin-top:16px;}
+  h2{font-size:21px; font-weight:800; margin:0 0 6px; padding-top:10px; border-top:2px solid var(--border);}
+  h3{font-size:16.5px; font-weight:800; margin:26px 0 8px;}
+  h4{font-size:14px; font-weight:800; margin:18px 0 6px; color:var(--text-2);}
+  .lede{color:var(--text-2); font-size:13.5px; margin:0 0 16px; max-width:90ch;}
+  p{margin:8px 0;}
+  code{font-family:var(--mono); font-size:12px; background:var(--surface-2); padding:1px 5px; border-radius:4px;}
+  pre{background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; overflow-x:auto; font-size:12px;}
+  table{border-collapse:collapse; width:100%; background:var(--surface); border:1px solid var(--border); border-radius:10px;}
+  .tablewrap{overflow-x:auto; border-radius:10px; border:1px solid var(--border); margin:10px 0 18px;}
+  .tablewrap table{border:none;}
+  th, td{border:1px solid var(--border); padding:9px 11px; text-align:left; vertical-align:top; font-size:12.8px;}
+  th{background:var(--surface-2); font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:0.03em; color:var(--text-2); position:sticky; top:0;}
+  td.who{font-weight:700; background:var(--surface-2); white-space:nowrap;}
+  .tag{display:inline-block; font-size:10px; font-weight:800; letter-spacing:0.03em; text-transform:uppercase; padding:2px 7px; border-radius:5px; margin-bottom:3px;}
+  .tag.ok{background:var(--ok-bg); color:var(--ok);}
+  .tag.gap{background:var(--gap-bg); color:var(--gap);}
+  .tag.bug{background:var(--bug-bg); color:var(--bug);}
+  .tag.fixed{background:var(--fixed-bg); color:var(--fixed);}
+  .na{color:var(--text-3); font-style:italic;}
+  .step{background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--accent); border-radius:8px; padding:12px 16px; margin:10px 0;}
+  .step .actor{color:var(--accent); font-weight:800;}
+  .step .result{margin-top:6px; padding-top:6px; border-top:1px dashed var(--border); color:var(--text-2); font-size:13px;}
+  .step .result b{color:var(--text);}
+  .finding{background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--bug); border-radius:8px; padding:14px 16px; margin-bottom:14px;}
+  .finding.fixed{border-left-color:var(--fixed);}
+  .finding.gap{border-left-color:var(--gap);}
+  .finding h4{margin:0 0 6px;}
+  .finding p{margin:6px 0; color:var(--text-2); font-size:13.5px;}
+  .finding .path{font-family:var(--mono); font-size:11.5px; color:var(--text-3);}
+  .path{font-family:var(--mono); font-size:11.5px; color:var(--text-3);}
+  footer{margin-top:56px; padding-top:16px; border-top:1px solid var(--border); color:var(--text-3); font-size:12px;}
+  .backtotop{font-size:12px;}
+  .backtotop a{color:var(--text-3);}
+</style>
+
+<div class="wrap">
+<h1>Quest Action Bible</h1>
+<p class="subtitle">
+  Exhaustive, code-verified reference for Family Cube's quest/chore engine — every lifecycle state,
+  every viewer role, every action button, what it writes to the database, and what every other party
+  sees as a result. Supersedes <code>docs/quest_lifecycle_matrix.html</code> (that file is left as-is;
+  do not trust it for current behavior — this document was built by re-reading the current code from
+  scratch, after that doc was written).
+</p>
+
+<div class="warn">
+  <b>How to read this document.</b> Every claim traces to an actual line of code that was read during
+  this pass (file path given inline). Where behavior could not be verified by reading code — or where
+  reading the code turned up a gap or an outright bug — that is stated explicitly rather than guessed.
+  Four real bugs were found and fixed during this pass; they're marked <span class="tag fixed">Fixed</span>
+  inline and summarized in <a href="#new-bugs">New Bugs Found &amp; Fixed</a>.
+</div>
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#systems">The two systems, in one paragraph each</a></li>
+    <li><a href="#actionref">Full action reference — every store action</a></li>
+    <li><a href="#s1">Scenario 1 — Direct adult chore, full happy path</a></li>
+    <li><a href="#s2">Scenario 2 — Co-parent declines outright</a></li>
+    <li><a href="#s3">Scenario 3 — Co-parent snoozes 48h</a></li>
+    <li><a href="#s4">Scenario 4 — Two-bounce pushback → lock → reassign</a></li>
+    <li><a href="#s5">Scenario 5 — The third parent, at every state</a></li>
+    <li><a href="#s6">Scenario 6 — Kid claims pool bounty → approve/decline/resubmit</a></li>
+    <li><a href="#s7">Scenario 7 — Teen declines a direct chore</a></li>
+    <li><a href="#s8">Scenario 8 — GP sponsor quest, full lifecycle + stuck-sponsor</a></li>
+    <li><a href="#s9">Scenario 9 — GP-welcome errand (openToGP), distinct path</a></li>
+    <li><a href="#s10">Scenario 10 — Multi-assign / team-clone bounty</a></li>
+    <li><a href="#s11">Scenario 11 — Editing a quest mid-lifecycle</a></li>
+    <li><a href="#new-bugs">New bugs found &amp; fixed this pass</a></li>
+    <li><a href="#gaps">Known gaps — not fixed, flagged as-is</a></li>
+  </ol>
+</nav>
+
+<section id="systems">
+<h2>1 · The two systems, in one paragraph each</h2>
+<p><b>System A</b> — <code>parent_quest_assignments</code> table, <code>ParentQuestAssignment</code> type
+in <code>store/choreStore.ts:171</code>. Parent-to-parent negotiation only. States:
+<code>PENDING → ACCEPTED/IN_PROGRESS → COMPLETED</code>, or <code>PENDING → PARKED (unlocked, bounce 1)
+→ PARKED (locked, bounce 2) → reassigned/reopened</code>, or <code>PENDING → DECLINED</code>, or
+<code>PENDING → SNOOZED → PENDING</code>. The underlying <code>chore_tasks</code> row stays unassigned
+(<code>assigned_to_id = null</code>) until the assignment is <code>ACCEPTED</code> — this is deliberate
+(<code>addParentQuest</code>, <code>store/choreStore.ts:1606-1614</code>) so the assignee's Accept/Respond
+card actually renders instead of the chore looking pre-claimed.</p>
+<p><b>System B</b> — plain <code>chore_tasks.assigned_to_id</code> + <code>chore_tasks.status</code>, no
+accept step. Covers kid/teen chores, bounty pool, citizenship/routine, GP-sponsored quests
+(<code>grandparent_quest</code>, both the parent-safety-review gate and the GP-verification step), shopping
+quests, and GP-welcome/invited errands (<code>openToGP</code>). Whenever a task is directly assigned by a
+parent to another parent/senior (not System A DIRECT mode, not System B claim-by-kid), it also lands here
+as a plain <code>assignedToId</code> write once accepted.</p>
+<p>The two systems interlock through <code>getActiveAssignmentChoreIds()</code>
+(<code>store/choreStore.ts:2077-2082</code>) — the single source of truth for "does this chore have a live
+System-A negotiation happening." Every write path that could otherwise silently steal a chore out from
+under a pending assignment (Take It, auto-assign, Edit's reassign picker) must check this set first. This
+was gap #1 from an earlier audit pass in this same session; it is now consulted in
+<code>ParentView.tsx:282-295</code> (Household Backlog pool) and
+<code>QuestsScreen.tsx:424-429</code> (Chores tab pool) — both screens read the identical selector, so they
+cannot drift apart on this point. Verified fixed in all branches below (see Scenario 5).</p>
+</section>
+
+<section id="actionref">
+<h2>2 · Full action reference — every store action</h2>
+<p class="lede">What each action writes, and what downstream re-render every other viewer role sees as a
+result. "Notifies via chat" means an actual <code>useChatStore.getState().sendMessage(...)</code> or
+<code>supabase.functions.invoke('quest-event-notifier', ...)</code> call was found in the code — where no
+such call exists, that is stated explicitly, since several actions silently notify no one.</p>
+
+<div class="tablewrap"><table>
+<tr><th>Action</th><th>Location</th><th>Writes</th><th>Notifies?</th><th>Who sees what happens</th></tr>
+<tr><td><code>addParentQuest</code></td><td><code>choreStore.ts:1524</code></td>
+  <td>New <code>parent_quest_assignments</code> row. PULL mode: status <code>ACCEPTED</code>, chore
+  <code>assignedToId</code>+<code>status:'in_progress'</code> set immediately. DIRECT mode: status
+  <code>PENDING</code>, chore left unassigned. Any prior open assignment on the same chore is force-closed
+  to <code>COMPLETED</code> first (prevents duplicate Accept cards).</td>
+  <td>No chat message. Silent.</td>
+  <td>DIRECT: assignee's Hub/Chores tab gains a <code>DirectPendingCard</code>; assigner gains an
+  <code>OutgoingPendingCard</code> (read-only, no action). PULL: chore instantly shows as
+  <code>MyAdultQuestCard</code> for the puller, nothing for anyone else to do.</td></tr>
+<tr><td><code>respondToParentQuest</code> — ACCEPT</td><td><code>choreStore.ts:1619</code></td>
+  <td>Assignment → <code>ACCEPTED</code>. Chore → <code>assignedToId</code>+<code>status:'in_progress'</code>.</td>
+  <td>No chat message.</td>
+  <td>Assignee's card flips from <code>DirectPendingCard</code> to <code>AcceptedQuestCard</code> (Done +
+  appreciation ping). Assigner's <code>OutgoingPendingCard</code> disappears (no longer in
+  <code>getMyOutgoingPending</code>'s non-terminal set... actually it stays non-terminal but is now filtered
+  out because <code>myAccepted</code>/<code>myOutgoingPending</code> selectors split on status —
+  <code>ACCEPTED</code> only appears in <code>getMyAccepted</code>, read by the <em>assignee</em>, not the
+  assigner). The assigner gets <b>no card at all</b> once accepted — see Finding under Scenario 1.</td></tr>
+<tr><td><code>respondToParentQuest</code> — DECLINE</td><td><code>choreStore.ts:1641</code></td>
+  <td>Assignment → <code>DECLINED</code> (terminal). Chore → <code>assignedToId:undefined,
+  status:'todo'</code> (back in the pool).</td>
+  <td><b>No chat message, no notification of any kind.</b> Confirmed by reading the full function body —
+  only <code>dbUpdate</code> and local <code>set()</code>.</td>
+  <td>Chore reappears as an unclaimed <code>PoolQuestCard</code> for any parent. The original assigner gets
+  <b>zero signal</b> that it was declined unless they happen to reopen Household Backlog/Chores tab and
+  notice the item is gone from "Waiting on response" and back in the open pool. See
+  <a href="#new-bugs">New Bugs</a> — flagged as a gap, not fixed this pass (see rationale there).</td></tr>
+<tr><td><code>respondToParentQuest</code> — SNOOZE</td><td><code>choreStore.ts:1647</code></td>
+  <td>Assignment → <code>SNOOZED</code>, <code>snoozeUntil = now+48h</code>. Chore untouched (still shows
+  assignee via the assignment, not the chore row).</td>
+  <td>No chat message.</td>
+  <td>Assignee's card vanishes from <code>DirectPendingCard</code>/<code>getMyDirectPending</code> (its
+  filter excludes SNOOZED until <code>snoozeUntil &lt;= now</code>, <code>choreStore.ts:2087-2091</code>)
+  and reappears automatically once the 48h elapses — no action needed by anyone, purely time-gated.
+  Assigner sees <code>OutgoingPendingCard</code> with "Snoozed — waiting" the entire window.</td></tr>
+<tr><td><code>respondToParentQuest</code> — BLOCKER/TRADE/DISCUSS</td><td><code>choreStore.ts:1651-1665</code></td>
+  <td>Assignment → <code>PARKED</code>, <code>bounceCount+=1</code>. First bounce: stays unlocked. Second
+  bounce (<code>bounceCount&gt;=2</code>): <code>isLocked=true</code>. Chore → unassigned,
+  <code>status:'todo'</code>.</td>
+  <td>No chat message — <code>pushbackDetails</code> free-text is stored on the row and shown inline on
+  both parties' cards, but nothing is pushed to chat.</td>
+  <td>Bounce 1: assignee's card stays <code>DirectPendingCard</code> (still Accept/Respond-able — see
+  Scenario 4 for whether the assigner has any reciprocal way to respond). Assigner's card becomes
+  <code>OutgoingPendingCard</code> showing "pushed back — waiting on your response" — <b>but that card is
+  read-only, no button</b> (verified in <code>OutgoingPendingCard.tsx</code> — no <code>Pressable</code>
+  wired to any action besides expand/collapse). Bounce 2: both sides get
+  <code>LockedAssignmentCard</code> (Reassign / Reopen).</td></tr>
+<tr><td><code>completeParentQuest</code></td><td><code>choreStore.ts:1706</code></td>
+  <td>Assignment → <code>COMPLETED</code>, <code>completedAt</code>. Chore →
+  <code>status:'completed'</code>.</td>
+  <td>No chat message.</td>
+  <td>Chore disappears from both parties' Backlog/Chores-tab lists (terminal status, excluded from every
+  selector). <b>The assigner is never notified their delegated task was finished</b> — no push, no chat, no
+  badge. Flagged as a gap (see <a href="#gaps">Known Gaps</a>).</td></tr>
+<tr><td><code>cancelLockedAssignment</code></td><td><code>choreStore.ts:1730</code></td>
+  <td>Assignment → <code>DECLINED</code>, <code>isLocked=false</code>.</td>
+  <td>No chat message.</td>
+  <td>Both parties' <code>LockedAssignmentCard</code> disappears; chore re-enters the open pool (it's
+  already unassigned from the PARKED transition, and now no longer counted by
+  <code>getActiveAssignmentChoreIds</code> since DECLINED is terminal).</td></tr>
+<tr><td><code>appreciationPing</code></td><td><code>choreStore.ts:1757</code></td>
+  <td>No DB write at all — purely a notification call.</td>
+  <td><code>supabase.functions.invoke('quest-event-notifier', {event:'appreciation_ping', ...})</code> —
+  fire-and-forget edge function invocation.</td>
+  <td>Depends entirely on what that edge function does server-side — <b>not verified</b>, out of scope of
+  the client code read for this document (the edge function itself was not opened). Assumed to push a
+  notification to the assigner, not confirmed.</td></tr>
+<tr><td><code>claimBounty</code> / <code>claimQuest</code> (adapter)</td><td><code>choreStore.ts:941</code>,
+  <code>choreAdapter.ts:240</code></td>
+  <td>Chore → <code>assignedToId</code>, <code>isPool:false</code>. <code>claimQuest</code> (adapter) also
+  sets <code>status:'in_progress'</code>.</td>
+  <td>No notification.</td>
+  <td>Card disappears from the pool for everyone else; claimer's own card flips to an in-progress/submit
+  state. No one is told who claimed it beyond seeing the pool entry vanish.</td></tr>
+<tr><td><code>submitChore</code> / <code>resubmitChore</code></td><td><code>choreStore.ts:952,989</code></td>
+  <td>Status → <code>pending_approval</code> (or straight to <code>auto_approved</code> + payout if
+  <code>redoCount&gt;=2</code>). Sets <code>submissionNote/PhotoUrl/submittedAt/approvalWindowExpiresAt</code>.</td>
+  <td>No chat message.</td>
+  <td>Parent/senior's <code>ChoreReviewSection</code>/<code>ParentReviewDeck</code> gains this chore with
+  Approve/Redo buttons. Kid's own card becomes read-only "waiting on a parent."</td></tr>
+<tr><td><code>approveChore</code></td><td><code>choreStore.ts:1081</code></td>
+  <td>Status → <code>approved</code>. Awards <code>basePoints+bonusCoins</code> via <code>awardPoints</code>
+  (below). Writes a <code>responsibility_history</code> row. If shopping items exist, inserts them into
+  <code>grocery_items</code>.</td>
+  <td>No chat message about the approval itself.</td>
+  <td>Kid's card flips to a read-only "Approved" state with the paid amount; siblings gain a 24h Cheer
+  Squad window. Assignee's coin balance updates live (see <code>awardPoints</code>).</td></tr>
+<tr><td><code>requestRedo</code></td><td><code>choreStore.ts:1154</code></td>
+  <td>Status → <code>redo_requested</code> (shown client-side as <code>declined</code> via
+  <code>choreAdapter</code>'s status map). <code>redoCount+=1</code>, stores
+  <code>rejectionReason</code>. <b>Guard: only fires when <code>chore.status === 'pending_approval'</code>
+  — silently no-ops on any other status</b>, including <code>todo</code>/<code>in_progress</code>.</td>
+  <td>No chat message.</td>
+  <td>Kid sees the decline reason inline and a "Revise &amp; Resubmit" button.</td></tr>
+<tr><td><code>requestGrandparentRedo</code></td><td><code>choreStore.ts:1175</code></td>
+  <td>Same shape as <code>requestRedo</code> but guarded on
+  <code>pending_grandparent_approval</code> instead.</td>
+  <td>No chat message.</td>
+  <td>Kid's resubmit flow is shared (checks <code>status === 'redo_requested'</code> regardless of who
+  set it), so this "just works" with the existing kid-side UI.</td></tr>
+<tr><td><code>cheerChore</code></td><td><code>choreStore.ts:1189</code></td>
+  <td>Appends a <code>ChoreCheer</code> entry (memberId, optional coins/note) to the chore's
+  <code>cheers</code> array. One cheer per person, enforced client-side.</td>
+  <td><code>supabase.functions.invoke('quest-event-notifier', {event:'chore_cheered', ...})</code>.</td>
+  <td>A "🎉 Cheered by X" line appears on the chore card for everyone (<code>QuestCard.tsx:250-257</code>).
+  <b>Note:</b> the <code>coins</code> passed in <code>opts</code> are stored as metadata only —
+  <code>cheerChore</code> itself never calls <code>awardPoints</code>/writes a
+  <code>point_transactions</code> row for that amount. Callers that want the coins to actually land
+  (<code>CheerSquadSection.tsx:75</code>) call <code>awardCoins(...,'gpCoins')</code> against familyStore
+  <b>separately</b> — a different wallet field (<code>gpCoins</code>) than the
+  <code>point_transactions</code>-ledger-backed main balance <code>approveChore</code>/
+  <code>grandparentApproveAndCheer</code> use.</td></tr>
+<tr><td><code>approveGrandparentQuestAsParent</code></td><td><code>choreStore.ts:1204</code></td>
+  <td>0 targets → bounty pool (<code>isPool:true</code>). 1 target → direct assign. 2+ targets → assigns
+  first target on the original row, then <b>inserts a full independent clone chore per remaining
+  target</b> (own id, same <code>teamGroupId</code>), each eligible for the <em>full</em> point value.</td>
+  <td>No chat message.</td>
+  <td>Targeted kid(s) each see their own independent <code>todo</code> card. A sibling not targeted sees
+  nothing (their own clone, if any, is untouched by another sibling's actions — verified, see Scenario
+  10).</td></tr>
+<tr><td><code>declineGrandparentQuestAsParent</code></td><td><code>choreStore.ts:1259</code></td>
+  <td>Status → <code>declined</code>, stores reason.</td>
+  <td>No chat message.</td>
+  <td>Sponsor GP sees <code>TurnedDownCard</code> ("Open it to any grandchild"). Parent's own
+  <code>ChoreReviewSection</code> shows <code>GpTurnedDownCard</code> with Reassign/Open-to-Any-Kid.</td></tr>
+<tr><td><code>declineGrandparentQuest</code> (kid-side)</td><td><code>choreStore.ts:1810</code></td>
+  <td>Directly-assigned (no pool, no target list) → releases to family-wide bounty pool
+  (<code>isPool:true</code>). Otherwise (already pool or has a target list) → <code>status:'declined'</code>
+  outright.</td>
+  <td><b>No chat message from the store action itself</b> — every caller of this action
+  (<code>DeclineQuestSheet.tsx</code>, <code>QuestsScreen.tsx</code>'s <code>handleDeclineConfirm</code>)
+  separately calls <code>useChatStore.getState().sendMessage(sponsor.id, ...)</code> right after. If a
+  future caller forgets that follow-up call, the decline succeeds silently with zero notification —
+  the store action provides no guarantee on its own.</td>
+  <td>Sponsor's 1:1 DM gets the decline note (from the caller, not the store). Pool case: chore reappears
+  for other kids to claim.</td></tr>
+<tr><td><code>grandparentApproveAndCheer</code></td><td><code>choreStore.ts:1934</code></td>
+  <td>Status → <code>completed</code>. Awards <code>basePoints+bonusCoins</code> via
+  <code>awardPoints</code>. Increments <code>grand_champion</code> badge progress. Writes
+  <code>responsibility_history</code>.</td>
+  <td>No chat message.</td>
+  <td>Kid's balance updates; card shows "Approved" 24h Cheer window; sponsor's own Hub shows
+  <code>CompletedCard</code>.</td></tr>
+<tr><td><code>createGrandparentQuest</code></td><td><code>choreStore.ts:1768</code></td>
+  <td>New chore, <code>status:'pending_parent_approval'</code>, <code>sponsorUserId</code>,
+  <code>targetChildIds</code>, per-kid point split precomputed (not used at payout — see
+  <code>approveGrandparentQuestAsParent</code>, which pays each target the <em>full</em> amount, not the
+  split).</td>
+  <td>No chat message.</td>
+  <td>Parent's <code>ChoreReviewSection</code> gains a <code>GpSafetyReviewCard</code>. Nobody else sees
+  anything until the parent acts.</td></tr>
+<tr><td><code>createAndAddParentQuest</code></td><td><code>choreStore.ts:1834</code></td>
+  <td>New <code>parent_only_quest</code> chore; if DIRECT mode, immediately also calls
+  <code>addParentQuest(...,'DIRECT')</code> to create the System-A row.</td>
+  <td>Inherits <code>addParentQuest</code>'s "no chat" behavior.</td>
+  <td>Same as <code>addParentQuest</code> DIRECT above.</td></tr>
+<tr><td><code>awardPoints</code></td><td><code>choreStore.ts:1325</code></td>
+  <td>New <code>point_transactions</code> row (EARNED, with spend/save/give jar split). Calls Postgres RPC
+  <code>award_coins</code> (the real balance mutation — <code>members.coins/main_coins/xp</code>). Also
+  patches <code>useFamilyStore</code>'s in-memory <code>members</code> array by increment (not overwrite)
+  so the UI updates without a full reload.</td>
+  <td>N/A (internal payout helper).</td>
+  <td>Kid's Store/wallet balance reflects the new total immediately (in-memory patch), backed by the RPC
+  write server-side.</td></tr>
+<tr><td><code>updateQuest</code> (choreAdapter, both implementations)</td><td><code>choreAdapter.ts:244,322</code></td>
+  <td>Generic passthrough — maps <code>Quest</code>-shaped patch fields back onto
+  <code>ChoreTask</code>/DB columns. Notably remaps <code>isAdultTask</code> toggling in/out of
+  <code>categoryType:'parent_only_quest'</code>.</td>
+  <td>None — generic.</td>
+  <td>Depends entirely on which fields were patched.</td></tr>
+<tr><td><code>reassignQuest</code> (choreAdapter)</td><td><code>choreAdapter.ts:297,362</code></td>
+  <td><span class="tag fixed">Fixed this pass</span> Previously wrote
+  <code>assignedToId: memberId</code> verbatim — passing <code>''</code> (as QuestCard's participant
+  "Can't do this" button does) wrote an empty string to <code>assigned_to_id</code> instead of clearing it
+  to <code>NULL</code>. Now: <code>memberId || undefined</code> plus <code>isPool:true</code> when
+  unassigning, so "send back to the pool" actually behaves like an open pool item, not an
+  assigned-to-nobody-in-particular row.</td>
+  <td>None.</td>
+  <td>See fix write-up under <a href="#new-bugs">New Bugs</a>.</td></tr>
+<tr><td><code>approveParticipant</code> / <code>declineParticipant</code> / <code>reopenParticipant</code></td>
+  <td><code>choreAdapter.ts:311-313</code></td>
+  <td><b>No-op stubs.</b> <code>async (_questId, _memberId, _by) =&gt; {}</code> — confirmed by reading the
+  full adapter file; there is no chore-system implementation behind these at all.</td>
+  <td>N/A.</td>
+  <td>Buttons wired to these (QuestCard.tsx's per-participant Approve/Decline/Reopen row, lines 594-617)
+  render and are tappable, but tapping them does <b>nothing</b> — no DB write, no state change, no error.
+  See Scenario 10 and <a href="#gaps">Known Gaps</a>.</td></tr>
+<tr><td><code>createParticipants</code></td><td><code>choreAdapter.ts:310</code></td>
+  <td><b>No-op stub.</b> <code>async (_questId, _memberIds) =&gt; {}</code>.</td>
+  <td>N/A.</td>
+  <td>Called by <code>AddQuestModal.tsx:389</code> when a parent multi-selects several kids for a
+  non-pool assignment — does nothing. See Scenario 10, this is a real gap, not fixed this pass (see
+  rationale there).</td></tr>
+</table></div>
+</section>
+
+<section id="s1">
+<h2>3 · Scenario 1 — Direct adult chore, full happy path</h2>
+<p class="lede">Actors: <b>Priya</b> (parent A, assigner), <b>Marcus</b> (parent B, assignee).</p>
+
+<div class="step"><span class="actor">Priya</span> creates "Renew car registration," assigns directly to Marcus, via <code>AddQuestModal</code> (adult-task toggle on, one co-parent selected — <code>isDirectCoParentAssign</code> path, <code>AddQuestModal.tsx:358-384</code>) or the Household Backlog's <code>DelegateSheet</code>.
+<div class="result"><b>Writes:</b> new <code>chore_tasks</code> row, unassigned. New <code>parent_quest_assignments</code> row, <code>status:'PENDING'</code>, <code>assignedBy</code>=Priya, <code>assignedTo</code>=Marcus.<br>
+<b>Priya's screen (both Hub &amp; Chores tab):</b> <code>OutgoingPendingCard</code> — "Waiting on Marcus to accept," read-only.<br>
+<b>Marcus's screen (both Hub &amp; Chores tab):</b> <code>DirectPendingCard</code> — Accept / Respond buttons, from <code>getMyDirectPending</code> selector shared by both screens.</div></div>
+
+<div class="step"><span class="actor">Marcus</span> taps <b>Accept</b> on <code>DirectPendingCard</code> → <code>respondToParentQuest(a.id, {action:'ACCEPT'})</code>.
+<div class="result"><b>Writes:</b> assignment → <code>ACCEPTED</code>. Chore → <code>assignedToId</code>=Marcus, <code>status:'in_progress'</code>.<br>
+<b>Marcus's screen:</b> card becomes <code>AcceptedQuestCard</code> — Done button + "Send appreciation ping."<br>
+<b>Priya's screen:</b> her <code>OutgoingPendingCard</code> disappears (assignment no longer PENDING/SNOOZED/PARKED, the states <code>getMyOutgoingPending</code> filters on). <b>She gets no replacement card and no notification that Marcus accepted</b> — verified: <code>respondToParentQuest</code>'s ACCEPT branch does a plain DB/state update with no chat call, and no selector surfaces "my delegation that got accepted" to the assigner. This is a real gap — see <a href="#gaps">Known Gaps</a>.</div></div>
+
+<div class="step"><span class="actor">Marcus</span> taps <b>Done</b> on <code>AcceptedQuestCard</code> → <code>completeParentQuest(a.id, Marcus.id)</code>.
+<div class="result"><b>Writes:</b> assignment → <code>COMPLETED</code>. Chore → <code>status:'completed'</code>.<br>
+<b>Marcus's screen:</b> card disappears (terminal status, filtered from every non-terminal selector) — both Hub and Chores tab, same selectors.<br>
+<b>Priya's screen:</b> nothing appears or is added anywhere — no completion card, no badge, no chat message. Confirmed: <code>completeParentQuest</code> only writes the assignment/chore rows, no notification call anywhere in the function. If Priya never re-opens Household Backlog to notice the item is simply gone, she has no way to know it's done. Flagged as a gap.</div></div>
+
+<h3>Hub vs Chores tab parity check</h3>
+<p>Verified identical at every step: <code>HouseholdBacklogSection.tsx</code> and <code>QuestsScreen.tsx</code> both render <code>OutgoingPendingCard</code>/<code>DirectPendingCard</code>/<code>AcceptedQuestCard</code> from the exact same <code>getMyOutgoingPending</code>/<code>getMyDirectPending</code>/<code>getMyAccepted</code> store selectors (<code>ParentView.tsx:303-306</code>, <code>QuestsScreen.tsx:99-101,109</code>) — no independently-derived filtering exists in either screen for these states. No divergence found.</p>
+</section>
+
+<section id="s2">
+<h2>4 · Scenario 2 — Co-parent declines outright</h2>
+<p class="lede">Actors: <b>Priya</b> (assigner), <b>Marcus</b> (assignee, declines).</p>
+<div class="step">Same setup as Scenario 1. <span class="actor">Marcus</span> taps <b>Respond</b> → <code>PushbackSheet</code> opens → taps <b>Can't do it</b> (the DECLINE option, <code>PushbackSheet.tsx:84</code>) → <code>respondToParentQuest(a.id, {action:'DECLINE', details})</code>.
+<div class="result"><b>Writes:</b> assignment → <code>DECLINED</code> (terminal). Chore → <code>assignedToId:undefined, status:'todo'</code>.<br>
+<b>Marcus's screen:</b> card disappears entirely (terminal, filtered out).<br>
+<b>Priya's screen:</b> her <code>OutgoingPendingCard</code> disappears. The chore reappears as an ordinary unclaimed <code>PoolQuestCard</code> in Household Backlog / Chores tab — <b>anyone</b> (Priya, a third parent, a GP if the task is <code>openToGP</code>-eligible) can now Take It or Delegate it fresh.<br>
+<b>Notification:</b> <span class="tag bug">Confirmed gap</span> — no chat message, no push, nothing. Priya finds out only by noticing the item silently moved from "Waiting on response" back into the open pool. There is no distinction on the pool card between "never assigned" and "was assigned, got declined" — the <code>rejectionReason</code>/pushback details from the DECLINE action are not surfaced on <code>PoolQuestCard</code> at all (that card has no field for them).</div></div>
+</section>
+
+<section id="s3">
+<h2>5 · Scenario 3 — Co-parent snoozes 48h</h2>
+<p class="lede">Actors: <b>Priya</b> (assigner), <b>Marcus</b> (assignee, snoozes).</p>
+<div class="step"><span class="actor">Marcus</span> → Respond → <b>Snooze 48h</b> → <code>respondToParentQuest(a.id, {action:'SNOOZE'})</code>.
+<div class="result"><b>Writes:</b> assignment → <code>SNOOZED</code>, <code>snoozeUntil = now + 48h</code>. Chore row untouched.<br>
+<b>During the snooze window — Marcus's screen:</b> nothing at all. <code>getMyDirectPending</code>'s filter (<code>choreStore.ts:2084-2092</code>) explicitly excludes SNOOZED assignments whose <code>snoozeUntil</code> is still in the future — the task is invisible to him until it expires.<br>
+<b>During the window — Priya's screen:</b> <code>OutgoingPendingCard</code> stays visible, label "Snoozed by Marcus — waiting" (<code>OutgoingPendingCard.tsx:38-39</code>). No action available to her either — genuinely just a wait state.</div></div>
+<div class="step">48 hours pass (no explicit "un-snooze" action exists anywhere in the codebase — this was checked specifically; there is no button, only time).
+<div class="result"><b>Marcus's screen:</b> the assignment reappears in <code>getMyDirectPending</code> automatically the next time the selector runs (any store re-render/data refresh) once <code>snoozeUntil &lt;= now</code> — back to a normal <code>DirectPendingCard</code> with Accept/Respond.<br>
+<b>Priya's screen:</b> label switches from "Snoozed — waiting" back to plain "Waiting on Marcus to accept" (the <code>isBounced</code>/<code>isSnoozed</code> ternary in <code>OutgoingPendingCard.tsx:35-40</code> re-evaluates against current time on each render).<br>
+<b>Early un-snooze:</b> not possible through any UI action found — the assignee cannot manually end their own snooze early; declining or waiting out the clock are the only two paths.</div></div>
+</section>
+
+<section id="s4">
+<h2>6 · Scenario 4 — Two-bounce pushback → lock → reassign</h2>
+<p class="lede">Actors: <b>Priya</b> (assigner), <b>Marcus</b> (assignee), then <b>Alex</b> (third parent, reassign target).</p>
+
+<div class="step"><span class="actor">Marcus</span> → Respond → <b>Blocker</b> (or Trade/Discuss — all three share this branch) → <code>respondToParentQuest(a.id, {action:'BLOCKER', details:'Car is in the shop'})</code>.
+<div class="result"><b>Writes:</b> assignment → <code>PARKED</code>, <code>bounceCount:1</code>, <code>isLocked:false</code> (bounce 1 stays unlocked — <code>choreStore.ts:1656-1665</code>). Chore → unassigned, <code>status:'todo'</code>.<br>
+<b>Marcus's screen:</b> still renders as <code>DirectPendingCard</code> (still in <code>getMyDirectPending</code>'s <code>PARKED</code> branch, <code>choreStore.ts:2089</code>) — the pushback text shows inline ("Bounced: ..."), and Accept/Respond are still both available, so Marcus himself could still bounce it a second time or accept it.<br>
+<b>Priya's screen:</b> flips to <code>OutgoingPendingCard</code> with "Marcus pushed back — waiting on your response," pushback details shown italic. <span class="tag bug">Confirmed dead end</span> — this card has <b>no button of any kind</b> (verified: no <code>Pressable</code>/<code>TouchableOpacity</code> anywhere in <code>OutgoingPendingCard.tsx</code> besides the expand/collapse chevron). Priya, the person the pushback is actually addressed to, cannot respond to it from this card. Her only path forward is to wait for Marcus to either accept it himself or bounce it a second time (locking it), or to independently open <code>DelegateSheet</code> from elsewhere and reassign the underlying chore, which would create a fresh assignment and — per <code>addParentQuest</code>'s stale-assignment cleanup — force-close this PARKED one to COMPLETED. This is a real usability gap, though not a data-integrity bug (nothing breaks; there's just no direct reply button on the assigner's own card).</div></div>
+
+<div class="step"><span class="actor">Marcus</span> bounces a second time (any of Blocker/Trade/Discuss again) → <code>respondToParentQuest</code> called again on the same assignment.
+<div class="result"><b>Writes:</b> <code>bounceCount:2</code> → <code>isLocked:true</code> (two-bounce rule, <code>choreStore.ts:1662-1664</code>).<br>
+<b>Both Marcus's and Priya's screens:</b> <code>LockedAssignmentCard</code> — "Discuss offline with [other party] — bounced," Reassign + Reopen buttons, sourced from <code>getMyLockedItems</code> which explicitly includes both <code>assignedTo === memberId</code> and <code>assignedBy === memberId</code> (<code>choreStore.ts:2098-2103</code>) — this was itself an earlier-session fix (previously only the assignee could see a locked item).</div></div>
+
+<div class="step"><span class="actor">Priya</span> taps <b>Reassign</b> on her <code>LockedAssignmentCard</code> → opens <code>DelegateSheet</code>, picks <b>Alex</b> → <code>addParentQuest(choreId, Priya.id, Alex.id, 'DIRECT', note)</code>.
+<div class="result"><b>Writes:</b> <code>addParentQuest</code>'s stale-assignment sweep (<code>choreStore.ts:1548-1562</code>) finds the still-open (locked, non-terminal) PARKED assignment on this chore and force-closes it to <code>COMPLETED</code> — <b>not DECLINED</b>, which is a slightly odd terminal label for something that was actually abandoned/reassigned, but it is at least terminal so it stops showing anywhere. New assignment row created, <code>PENDING</code>, assignedTo=Alex.<br>
+<b>Alex's screen:</b> gains a fresh <code>DirectPendingCard</code>, exactly like Scenario 1's starting state.<br>
+<b>Priya's screen:</b> her <code>LockedAssignmentCard</code> is replaced by a new <code>OutgoingPendingCard</code> for the Alex assignment.<br>
+<b>Marcus's screen — the ORIGINAL assignee:</b> <span class="tag bug">Confirmed confusing gap</span>. His <code>LockedAssignmentCard</code> simply vanishes (the assignment he was party to is now COMPLETED, a terminal status excluded from <code>getMyLockedItems</code>). No message, no "this was reassigned to Alex" notice. From Marcus's point of view the task he was mid-negotiation on just silently disappeared with zero explanation. Confirmed by reading every write path in <code>addParentQuest</code> and <code>DelegateSheet.tsx</code> — no chat/notification call exists anywhere in this flow.</div></div>
+
+<div class="step">Alternative ending: <span class="actor">Priya</span> taps <b>Reopen</b> instead → <code>cancelLockedAssignment(a.id)</code>.
+<div class="result"><b>Writes:</b> assignment → <code>DECLINED</code>, <code>isLocked:false</code>.<br>
+<b>Both Priya's and Marcus's screens:</b> <code>LockedAssignmentCard</code> disappears for both. Chore reappears as an open <code>PoolQuestCard</code> for anyone (see Scenario 5 for who can now act on it).<br>
+Same "silent disappearance, no explanation" issue applies to Marcus here too.</div></div>
+</section>
+
+<section id="s5">
+<h2>7 · Scenario 5 — The third parent, at every state</h2>
+<p class="lede">Actor: <b>Alex</b>, a third parent (neither Priya nor Marcus), checking Hub and Chores tab at each state above. This directly re-verifies gap #1 from the earlier audit pass in this session ("Take It" stealing a chore out from under a pending negotiation) across every System-A state, not just plain PENDING.</p>
+
+<div class="tablewrap"><table>
+<tr><th>System-A state</th><th>Does Alex's pool show this chore?</th><th>Can Alex "Take It"?</th><th>Verified via</th></tr>
+<tr><td>PENDING (DIRECT, unaccepted)</td><td class="na">No — excluded</td><td class="na">No path exists</td>
+  <td><code>activeAssignmentChoreIds</code> (from <code>getActiveAssignmentChoreIds</code>, includes all non-<code>COMPLETED</code>/<code>DECLINED</code> assignments) filters this chore out of <code>questPool</code>/<code>filteredQuests</code> in both <code>ParentView.tsx:282-295</code> and <code>QuestsScreen.tsx:424-429</code>. Confirmed identical logic, same selector, both screens.</td></tr>
+<tr><td>ACCEPTED / IN_PROGRESS</td><td class="na">No</td><td class="na">No path exists</td>
+  <td>Same exclusion set — ACCEPTED is non-terminal, stays in <code>activeAssignmentChoreIds</code>. The chore also now has a real <code>assignedToId</code> (Marcus), so even without the exclusion it would render as <code>OthersAdultQuestCard</code> for Alex (Nudge/Reclaim only, not Take-It) rather than a pool card — belt-and-suspenders correct.</td></tr>
+<tr><td>PARKED, bounce 1 (unlocked)</td><td class="na">No</td><td class="na">No path exists</td>
+  <td>PARKED is non-terminal, stays excluded. Confirmed — this is the exact state gap #1 was originally about, and it holds here too.</td></tr>
+<tr><td>PARKED, bounce 2 (locked)</td><td class="na">No</td><td class="na">No path exists</td>
+  <td>Still non-terminal/non-DECLINED, still excluded from the pool set in both screens. Alex has literally no card for this chore at all until it's reassigned or reopened.</td></tr>
+<tr><td>SNOOZED</td><td class="na">No</td><td class="na">No path exists</td>
+  <td>SNOOZED is non-terminal, excluded regardless of whether the snooze window has expired (the pool exclusion checks assignment status/terminality, not the same time-gate <code>getMyDirectPending</code> uses).</td></tr>
+<tr><td>DECLINED (terminal) or Reopened via <code>cancelLockedAssignment</code></td><td><span class="tag ok">Yes</span></td><td><span class="tag ok">Yes — legitimately</span></td>
+  <td>DECLINED is in the terminal set, chore is unassigned+<code>status:'todo'</code>, correctly reappears as an ordinary <code>PoolQuestCard</code> for Alex (or anyone) to Take It or Delegate. This is the intended, correct end state.</td></tr>
+<tr><td>COMPLETED (via reassign-to-Alex, or via completeParentQuest)</td><td class="na">No</td><td class="na">No path exists</td>
+  <td>Terminal + chore status <code>completed</code> — excluded from every list (pool, review, backlog) in both screens.</td></tr>
+</table></div>
+<p>Conclusion: gap #1 is verified fixed across every System-A branch, not just the simple PENDING case — Alex cannot "Take It" at any point while a live negotiation is in flight, in either Hub or Chores tab.</p>
+</section>
+
+<section id="s6">
+<h2>8 · Scenario 6 — Kid claims pool bounty → approve/decline/resubmit</h2>
+<p class="lede">Actors: <b>Zoe</b> (kid), <b>Priya</b> (parent, reviewer).</p>
+
+<div class="step"><span class="actor">Zoe</span> taps <b>Claim Quest</b> on an open bounty (<code>QuestCard.tsx:670-680</code>, <code>canClaim</code>) → <code>handleClaim</code> → <code>claimQuest(id, Zoe.id)</code> (choreAdapter) → <code>updateChore(id, {status:'in_progress', assignedToId:Zoe.id, isPool:false})</code>.
+<div class="result"><b>Writes:</b> chore claimed, locked to Zoe.<br>
+<b>Other kids' screens:</b> card disappears from the pool (no longer <code>isPool</code>). Confirmed no partial-claim visibility — first tap wins outright for a single-assignee bounty.<br>
+<b>Priya's screen:</b> unclaimed-count badge on the (now-gone) pool card updates; nothing else to do yet.</div></div>
+
+<div class="step"><span class="actor">Zoe</span> completes the work, taps <b>Submit for Review</b> (photo required) → <code>SubmitQuestSheet</code> or <code>SubmitProofSheet</code> collects photo+note → <code>submitQuest(id, {photoUrl, note})</code> → <code>submitChore</code>.
+<div class="result"><b>Writes:</b> status → <code>pending_approval</code>, photo/note/submittedAt stored, <code>approvalWindowExpiresAt</code> set (auto-approve timeout).<br>
+<b>Priya's screen:</b> <code>ChoreReviewSection</code> → <code>ParentReviewDeck</code> gains a <code>QuestApprovalCard</code>/<code>ReviewCard</code> with Approve / Redo. Same card also appears inline in the Chores tab's <code>QuestCard</code> action strip (<code>canApprove</code>).</div></div>
+
+<div class="step"><span class="actor">Priya</span> taps <b>Approve</b> → <code>approveChore(id, Priya.id)</code>.
+<div class="result"><b>Writes:</b> status → <code>approved</code>. <code>awardPoints</code> fires: new <code>point_transactions</code> row, <code>award_coins</code> RPC, familyStore's in-memory <code>members</code> patched by increment.<br>
+<b>Zoe's screen:</b> card flips to a read-only "Approved" state showing the paid amount; her Store/wallet balance reflects the new total immediately (verified — the increment patch in <code>awardPoints</code> writes directly into <code>useFamilyStore</code>'s state, which the Store tab reads from the same source).</div></div>
+
+<div class="step">Decline branch: <span class="actor">Priya</span> taps <b>Redo</b> instead → <code>DeclineModal</code> collects a preset or custom reason → <code>requestRedo(id, Priya.id, reason)</code>.
+<div class="result"><b>Writes:</b> status → <code>redo_requested</code> (shown to Zoe as "declined" via the adapter's status map), <code>rejectionReason</code> stored, <code>redoCount+=1</code>.<br>
+<b>Zoe's screen:</b> decline reason shown inline in red (<code>QuestCard.tsx:543-548</code> / <code>KidQuestCard.tsx:87-91</code>), "↩ Revise &amp; Resubmit" button appears.</div></div>
+
+<div class="step"><span class="actor">Zoe</span> taps <b>Revise &amp; Resubmit</b> → same submit sheet → <code>submitQuest</code> routes (via choreAdapter's status check) to <code>resubmitChore</code> since status is <code>redo_requested</code>.
+<div class="result"><b>Writes:</b> back to <code>pending_approval</code>, new photo/note, <code>submittedAt</code> refreshed. If this is Zoe's 3rd attempt (<code>redoCount &gt;= 2</code>), <code>resubmitChore</code>'s own guard <b>auto-approves and pays immediately</b>, skipping parent review entirely (<code>choreStore.ts:993-999</code>) — a real behavior worth knowing: two redos is the ceiling before it's out of the parent's hands.<br>
+<b>Priya's screen:</b> back in the review deck (or, on the 3rd attempt, nothing to review — already paid).</div></div>
+</section>
+
+<section id="s7">
+<h2>9 · Scenario 7 — Teen assigned a chore directly, declines</h2>
+<p class="lede">Actors: <b>Priya</b> (parent), <b>Jordan</b> (16, teen, assignee).</p>
+
+<div class="step"><span class="actor">Priya</span> directly assigns "Clean the garage" to Jordan (a plain System-B assignment, not System A — <code>assignedToId</code> set directly, since this is a household chore not an adult-only task).
+<div class="result"><b>Jordan's screen — Chores tab:</b> <code>QuestCard.tsx</code> renders with <code>canKidDecline = isKidOrTeen && isTodoCard && !q.isPool && ...</code> (<code>QuestCard.tsx:87</code>) — true for a teen. Button label "Can't do this" (<code>QuestCard.tsx:719</code>) is present and tappable.<br>
+<b>Jordan's screen — Hub:</b> <span class="tag bug">Confirmed gap before this pass</span> — <code>KidQuestCard.tsx</code> (used by both <code>KidView</code> and <code>TeenView</code> via the shared <code>MyQuestsSection</code>) only ever rendered a Decline button for <code>isGpTodo</code> (a grandparent-sponsored quest). A plain assigned household chore only ever got "Mark Done → Get Paid" — no decline path existed in the Hub at all, for kids <b>or</b> teens. <span class="tag fixed">Fixed this pass</span> — see below.</div></div>
+
+<div class="step"><span class="actor">Jordan</span> taps <b>Can't do this</b> (Chores tab, pre-fix behavior) → opens <code>DeclineModal</code> → confirms a reason → <code>handleDeclineConfirm</code>.
+<div class="result"><span class="tag bug">Bug found and fixed this pass</span> — the pre-fix code called <code>declineQuest(id, ..., reason, 'custom')</code> unconditionally for any non-GP, non-participant case, which maps to <code>store.requestRedo</code>. That action's guard only fires on <code>status === 'pending_approval'</code> — but a freshly-assigned, not-yet-submitted chore is at <code>status === 'todo'</code>, exactly <code>canKidDecline</code>'s target state. The call silently no-op'd: the sheet closed, no error surfaced, but the chore stayed assigned to Jordan, untouched. See <a href="#new-bugs">New Bugs</a> for the fix.</div></div>
+</section>
+
+<section id="s8">
+<h2>10 · Scenario 8 — GP sponsor quest, full lifecycle + stuck-sponsor fallback</h2>
+<p class="lede">Actors: <b>Grandma Rosa</b> (sponsor GP), <b>Priya</b> (parent, safety reviewer), <b>Zoe</b> (kid).</p>
+
+<div class="step"><span class="actor">Rosa</span> sponsors "Bake cookies together" for Zoe via <code>SeniorView</code>'s <code>CreateQuestModal</code> or the Chores tab's Sponsor-a-Quest form → <code>createGrandparentQuest({..., childIds:[Zoe.id], sponsorId:Rosa.id})</code>.
+<div class="result"><b>Writes:</b> new chore, <code>status:'pending_parent_approval'</code>, <code>sponsorUserId</code>=Rosa, <code>targetChildIds:[Zoe.id]</code>.<br>
+<b>Rosa's screen:</b> <code>AwaitingParentCard</code> — Cancel only, nothing else to do yet.<br>
+<b>Priya's screen:</b> <code>ChoreReviewSection</code> gains a <code>GpSafetyReviewCard</code> — shows the coin-jar split preview, Decline / "Approve &amp; Publish to Kid."<br>
+<b>Zoe's screen:</b> nothing — <code>awaitingParentApproval</code> filter hides it from every kid-facing list (<code>choreAdapter.ts:83</code>, consumed in <code>QuestsScreen.tsx:451</code>).</div></div>
+
+<div class="step"><span class="actor">Priya</span> taps <b>Approve &amp; Publish</b> → <code>approveGrandparentQuestAsParent(id, Priya.id)</code>. Single target (Zoe only) → direct assign path.
+<div class="result"><b>Writes:</b> status → <code>todo</code>, <code>assignedToId</code>=Zoe, <code>isPool:false</code>.<br>
+<b>Zoe's screen:</b> new card, <code>isGpTodo</code> true in <code>KidQuestCard</code> → "I'll take it" / "Decline" buttons (<code>canAcceptGp</code> in the Chores tab's QuestCard, both widened to <code>isKidOrTeen</code>).</div></div>
+
+<div class="step"><span class="actor">Zoe</span> taps <b>I'll take it</b> → <code>startGrandparentQuest(id, Zoe.id)</code>.
+<div class="result"><b>Writes:</b> status → <code>in_progress</code>, <code>assignedToId</code>=Zoe (idempotent), <code>isPool:false</code>.<br>
+<b>Zoe's screen:</b> card becomes "Done · Submit."</div></div>
+
+<div class="step"><span class="actor">Zoe</span> bakes, taps <b>Submit</b> → <code>submitQuest</code> routes to <code>submitGrandparentQuest</code> (chore's <code>categoryType === 'grandparent_quest'</code> — <code>choreAdapter.ts:221</code>, a fix from an earlier session ensuring GP quests don't accidentally route to the plain parent review deck).
+<div class="result"><b>Writes:</b> status → <code>pending_grandparent_approval</code> (not <code>pending_approval</code> — this is the sponsor's queue, not the parent's).<br>
+<b>Zoe's screen:</b> "Waiting on a grandparent to review this chore" (<code>KidQuestCard.tsx:82-84</code>).<br>
+<b>Rosa's screen:</b> <code>SponsorQuestsSection</code>'s <code>PendingVerifyCheerCard</code> — sticker picker + Approve&amp;Cheer / Redo.<br>
+<b>Priya's screen:</b> <code>ChoreReviewSection</code>'s <code>GpAwaitingSponsorCard</code> — Nudge Rosa / fallback Approve &amp; Pay (see below).</div></div>
+
+<div class="step">Happy path: <span class="actor">Rosa</span> taps <b>Approve &amp; Cheer</b> → <code>grandparentApproveAndCheer(id, Rosa.id, sticker)</code>.
+<div class="result"><b>Writes:</b> status → <code>completed</code>. <code>awardPoints</code> fires (real payout, <code>point_transactions</code> + <code>award_coins</code> RPC). <code>grand_champion</code> badge progress +1. <code>responsibility_history</code> row.<br>
+<b>Zoe's screen:</b> Approved, paid, 24h Cheer window for siblings.</div></div>
+
+<div class="step">Stuck-sponsor branch: Rosa is traveling, doesn't open the app for 3 days. <span class="actor">Priya</span> opens <code>GpAwaitingSponsorCard</code>, taps <b>Nudge Rosa</b> → traces to <code>useChatStore.getState().sendMessage(sponsor.id, active.id, msg)</code> (<code>ChoreReviewSection.tsx:110</code>) — a real 1:1 chat message, confirmed by reading the exact call, not just a UI Alert.
+<div class="result"><b>Writes:</b> new chat message to Rosa's DM thread.<br>
+<b>Rosa's screen:</b> receives the chat message (assuming she opens the app / gets the push — the chat delivery mechanism itself wasn't re-traced in this pass, out of scope).</div></div>
+
+<div class="step">Rosa still unreachable. <span class="actor">Priya</span> taps <b>Approve &amp; Pay</b> (fallback) → confirms an Alert → <code>grandparentApproveAndCheer(id, Priya.id)</code> — <b>same function Rosa herself would call</b>, just invoked with Priya's memberId instead.
+<div class="result"><b>Writes:</b> identical to the happy path — status → <code>completed</code>, <code>awardPoints</code> fires for the real amount, badge progress increments. Confirmed by reading <code>ChoreReviewSection.tsx:114-121</code>: <code>fallbackApprove</code> calls the exact same store action, not a separate parent-side payout path — so Zoe is paid correctly regardless of who triggered it.<br>
+<b>Zoe's screen:</b> Approved, paid — indistinguishable from the sponsor having approved it herself (the completed chore doesn't record who among Rosa/Priya actually clicked, beyond the standard <code>reviewedById</code>-style field this function doesn't set — <code>grandparentApproveAndCheer</code> does not write a "reviewed by" field at all, confirmed by reading the full function body).</div></div>
+</section>
+
+<section id="s9">
+<h2>11 · Scenario 9 — GP-welcome/invited errand (<code>openToGP</code>), a distinct code path</h2>
+<p class="lede">Actors: <b>Priya</b> (parent, flags the errand), <b>Grandpa Lee</b> (any GP, claims it). This is a fundamentally different mechanism from Scenario 8 — no GP-authorship, no parent safety-review gate, no <code>grandparent_quest</code> categoryType at all. It's a plain shopping/adult chore with one extra boolean.</p>
+
+<div class="step"><span class="actor">Priya</span> creates a shopping run (or any adult task with a list), then toggles <b>"Offer to GP"</b> — found on <code>OthersAdultQuestCard.tsx:112</code> (when viewing someone else's assignment) and <code>PoolQuestCard.tsx:139-164</code> / <code>DelegateSheet.tsx:75-100</code> (when it's still unassigned). All three call the same primitive: <code>updateChore(id, {openToGP: !isGPOpen})</code>.
+<div class="result"><b>Writes:</b> plain boolean flag on the chore row, <code>open_to_gp</code>. No status change.<br>
+<b>Any GP's screen:</b> becomes visible/claimable wherever the "GP Welcome" badge is checked — confirmed via <code>QuestsScreen.tsx:466-472</code>'s senior-role filter, which explicitly includes <code>q.isAdultTask && q.inviteGrandparents === true</code>. <b>Note the field name mismatch worth flagging</b>: the toggle writes <code>openToGP</code> (chore-level, used by the shopping/errand UI), but the Chores tab's senior filter reads <code>inviteGrandparents</code> — a <em>different</em> boolean field on the same chore type, set by a <em>different</em> UI (<code>EditQuestModal</code>'s "Invite Grandparents?" toggle, <code>AddQuestModal</code>'s equivalent). These are two separately-settable flags with overlapping intent that were not unified during this trace — a GP toggled "on" via the shopping-list-specific "Offer to GP" button (<code>openToGP</code>) is <b>not confirmed to actually appear</b> in the Chores tab senior filter, which checks <code>inviteGrandparents</code>, a different field. This is flagged as an unverified/likely-gap, not fixed this pass — see <a href="#gaps">Known Gaps</a>.</div></div>
+
+<div class="step"><span class="actor">Grandpa Lee</span> claims it → <code>claimGPErrand(id, Lee.id)</code> (guarded on <code>chore.inviteGrandparents</code>, <b>not</b> <code>openToGP</code> — confirmed by reading <code>choreStore.ts:1053-1057</code>: <code>if (!chore || !chore.inviteGrandparents || chore.status !== 'todo') return;</code>). This reinforces the field-mismatch flag above — the claim action itself gates on <code>inviteGrandparents</code>, so a chore only toggled via <code>openToGP</code> (and never also through the separate Invite-Grandparents toggle) would make <code>claimGPErrand</code> silently refuse to claim it.
+<div class="result"><b>Writes (when the guard passes):</b> status → <code>in_progress</code>, <code>assignedToId</code>=Lee.<br>
+<b>Priya's screen:</b> visible in Household Backlog as <code>OthersAdultQuestCard</code> — assigned-to-Lee, same as if a co-parent had claimed it.</div></div>
+
+<div class="step"><span class="actor">Lee</span> buys the groceries, submits the receipt → <code>submitGPErrandReceipt(id, {receiptPhotoUrl, receiptAmount, receiptNote})</code>.
+<div class="result"><b>Writes:</b> status → <code>pending_approval</code> (routes to the standard parent review deck, not a GP-specific one — this errand type has no sponsor-review step, unlike Scenario 8's sponsor quests). <code>receiptSubmittedAt</code> set.<br>
+<b>Priya's screen:</b> <code>ParentReviewDeck</code>'s <code>ReviewCard</code> variant (receipt-bearing branch, <code>ParentReviewDeck.tsx:505-514</code>) — Approve routes through the ordinary <code>approveChore</code>, same payout mechanics as any other chore.</div></div>
+
+<div class="step"><span class="actor">Priya</span> approves, then taps <b>Reimbursed</b> to acknowledge → <code>acknowledgeGPReimbursement(id)</code>.
+<div class="result"><b>Writes:</b> <code>receiptReimbursedAt</code> timestamp only — no coin/money movement, purely an acknowledgment flag.<br>
+<b>Lee's screen:</b> read-only reimbursement badge.</div></div>
+</section>
+
+<section id="s10">
+<h2>12 · Scenario 10 — Multi-assign / team-clone bounty with 2+ kids</h2>
+<p class="lede">Actors: <b>Alex</b> and <b>Jamie</b> (siblings). Two genuinely different code paths produce a "multiple kids, one quest" situation — they behave very differently, and one of them does not actually work.</p>
+
+<h3>Path A — GP-sponsored quest targeted at 2+ kids (works correctly)</h3>
+<div class="step">A GP sponsors a quest for both Alex and Jamie; parent approves via <code>approveGrandparentQuestAsParent</code> with <code>targetChildIds.length &gt;= 2</code> (<code>choreStore.ts:1225-1256</code>).
+<div class="result"><b>Writes:</b> the original chore row is assigned to <code>targets[0]</code>; a full independent clone (own id, own row) is inserted for every other target, all sharing one <code>teamGroupId</code> for display grouping only.<br>
+<b>Alex's screen:</b> his own <code>todo</code> card, full point value.<br>
+<b>Jamie's screen:</b> her own separate <code>todo</code> card (different chore id), full point value, completely independent state.<br>
+<b>If Alex claims and finishes first:</b> confirmed by reading <code>approveGrandparentQuestAsParent</code>/<code>grandparentApproveAndCheer</code> — each clone pays out independently, nobody's payout is reduced by a sibling finishing or not. Jamie can still claim/complete her own clone after Alex finishes his; <code>KidQuestCard.tsx:92-98</code> shows a "Also offered to Jamie — everyone who finishes gets the full N coins" note on Alex's card.</div></div>
+
+<h3>Path B — a parent multi-selects 2+ kids in the standard Add Quest form (broken)</h3>
+<div class="step"><span class="actor">Priya</span> creates a quest, multi-selects both Alex and Jamie in <code>AddQuestModal</code>'s assignee picker (not the GP-sponsor flow — the ordinary quest creation form). <code>isMulti = !isPool && assignIds.length &gt; 1</code> (<code>AddQuestModal.tsx:333</code>).
+<div class="result"><b>Writes:</b> <code>addQuest</code> is called with <code>assignedToId: undefined, assignedToIds: [Alex.id, Jamie.id]</code>. But <code>questInputToChoreInput</code> (<code>choreAdapter.ts:170</code>) maps this onto the underlying <code>addChore</code> call with <code>assignedToId: q.assignedToId ?? q.assignedToIds?.[0]</code> — <b>only Alex (the first id) is ever written to the actual <code>chore_tasks.assigned_to_id</code> column.</b> <code>createParticipants(newQ.id, [Alex.id, Jamie.id])</code> is then called (<code>AddQuestModal.tsx:389</code>) to create the per-kid participant rows the UI expects — but <code>createParticipants</code> is a no-op stub (<code>choreAdapter.ts:310</code>): <code>async (_questId, _memberIds) =&gt; {}</code>.<br>
+<span class="tag bug">Confirmed real gap, not fixed this pass</span> — Jamie is never assigned anything at all. She sees nothing, gets nothing, and there is no participant row for her to ever act on. Alex alone is assigned the entire quest as if it were a normal single-assign chore. The multi-select UI in <code>AddQuestModal</code> silently degrades to single-assign-to-whoever-was-selected-first. This is flagged in <a href="#gaps">Known Gaps</a> rather than fixed in this pass — a real fix requires either wiring <code>createParticipants</code> to actually clone rows (mirroring the GP team-clone pattern) or removing the multi-select option from the standard form until it does, and picking the right approach needs a product decision this document isn't positioned to make silently.</div></div>
+
+<h3>Participant-level Approve/Decline/Reopen buttons — confirmed non-functional</h3>
+<p><code>QuestCard.tsx:594-617</code> renders a full per-participant action row (Approve/Decline for a submitted participant, Reopen for a declined one) whenever <code>q.participants.length &gt; 1</code>. These call <code>approveParticipant</code>/<code>declineParticipant</code>/<code>reopenParticipant</code>, all three of which are no-op stubs in <code>choreAdapter.ts:311-313</code>. Because Path B above means <code>q.participants</code> essentially never has more than one real, correctly-populated entry in practice today (the only way to get true multi-participant is the GP team-clone path, which produces separate top-level chores, not a single quest with a <code>participants</code> array), this dead UI is not commonly reachable — but it is present, tappable, and does nothing if a multi-participant quest is ever constructed by some other path. Flagged, not fixed (fixing the stubs without a real underlying participants table/schema would require substantially more work than this pass's scope).</p>
+</section>
+
+<section id="s11">
+<h2>13 · Scenario 11 — Editing a quest mid-lifecycle</h2>
+<p class="lede"><code>EditQuestModal.tsx</code> has two modes: <code>full</code> (unclaimed quests — everything editable) and <code>restricted</code> (claimed/in-progress/pending — due date, reassignment, and a few non-sensitive toggles only). Gating: <code>canEditFull = isParent && (isPoolCard || (status==='todo' && !assignedToId))</code>; <code>canEditRestricted = isParent && !isDoneCard && !isDeclined && (status is in_progress/pending_approval/todo-with-assignee)</code> (<code>QuestCard.tsx:99-102</code>).</p>
+
+<div class="tablewrap"><table>
+<tr><th>Status</th><th>Mode</th><th>Fields actually editable</th></tr>
+<tr><td>Unclaimed pool / unassigned <code>todo</code></td><td><code>full</code></td><td>Title, description, coins, bonus, category, difficulty, due date/time, repeat frequency, adult-task toggle, invite-grandparents toggle, assignee picker (including switching to pool), photo-required.</td></tr>
+<tr><td>Claimed/in-progress/pending-approval</td><td><code>restricted</code></td><td>Only due date/time, call-reminder settings, and reassignment (<code>EditQuestModal.tsx:134-142</code> — the <code>locked</code> patch branch). Title/coins/description/category are shown read-only. Confirmed the coins field explicitly renders as a locked, non-editable summary box with "locked — task claimed" caption (<code>EditQuestModal.tsx:271-276</code>).</td></tr>
+<tr><td>Approved/done/declined</td><td class="na">No edit available</td><td class="na">Neither <code>canEditFull</code> nor <code>canEditRestricted</code> is true — <code>canEdit</code> itself excludes <code>isDoneCard</code> and <code>isDeclined</code> (<code>QuestCard.tsx:103</code>). The one exception: a parent's private <code>parentNote</code> field remains editable post-approval via <code>ParentSelfNoteRow</code> (<code>QuestCard.tsx:556-560</code>) — the only field editable after settlement.</td></tr>
+</table></div>
+
+<div class="step">Verifying the "editing an in-negotiation System-A quest routes through <code>addParentQuest</code>" claim: <span class="actor">Priya</span> reassigns an adult task (currently in a live System-A DIRECT negotiation, or already accepted) to a <em>different</em> co-parent via <code>EditQuestModal</code>'s assignee picker, then taps Save.
+<div class="result"><b>Traced in <code>EditQuestModal.tsx:120-167</code>:</b> <code>reassigningAdultTask = isAdultTask && !isPool && assignIds.length===1 && assignIds[0] !== quest.assignedToId && assignIds[0] !== activeMemberId</code>. When true, the patch's own <code>assignedToId</code> is deliberately kept at the <em>old</em> value (<code>reassigningAdultTask ? quest.assignedToId : ...</code>) — the direct write is intentionally suppressed — and immediately after <code>onSave</code>, a separate call fires: <code>useChoreStore.getState().addParentQuest(quest.id, activeMemberId, assignIds[0], 'DIRECT')</code> (line 166). This is exactly the claimed behavior, verified against current code, not assumed: reassigning an adult task to a co-parent goes through the same PENDING/Accept negotiation a brand-new delegation gets, and — since <code>addParentQuest</code> always sweeps and force-closes any prior open assignment on that chore first (<code>choreStore.ts:1548-1562</code>) — a stale in-flight negotiation on the old assignee is not left dangling.</div></div>
+</section>
+
+<section id="new-bugs">
+<h2>14 · New bugs found &amp; fixed this pass</h2>
+<p class="lede">Four issues were found while tracing the scenarios above and fixed in the same pass (<code>npx tsc --noEmit</code> confirmed 0 errors after all four). These are in addition to the two fixes ("T1" and "G2") already recorded in the prior audit pass and its doc.</p>
+
+<div class="finding fixed">
+<h4><span class="tag fixed">Fixed</span> B1 — Teen declining a GP-sponsored quest on the Chores tab silently did nothing</h4>
+<p class="path">features/quests/QuestsScreen.tsx — handleDeclineConfirm, line ~623</p>
+<p><b>Scenario:</b> Jordan (16, teen) is assigned a grandparent-sponsored quest at <code>status:'todo'</code>. He taps "Decline" (rendered because <code>canAcceptGp</code>/<code>canKidDecline</code> in <code>QuestCard.tsx</code> were both correctly widened to <code>isKidOrTeen</code> in the prior "T1" fix). The confirm handler's GP-routing branch checked <code>isKid</code>, not <code>isKidOrTeen</code> — so a teen fell through to the generic <code>else</code> branch, which calls <code>declineQuest</code> → <code>store.requestRedo</code>, a function guarded to only fire on <code>status === 'pending_approval'</code>. The chore was still at <code>todo</code>. The call silently no-op'd: sheet closed, no error, chore unchanged, sponsor never notified, nothing released to the pool.</p>
+<p><b>Fix:</b> changed the branch condition from <code>isKid</code> to <code>isKidOrTeen</code>, matching the gate that renders the button in the first place.</p>
+</div>
+
+<div class="finding fixed">
+<h4><span class="tag fixed">Fixed</span> B2 — "Can't do this" on a plain assigned household chore (Chores tab) silently did nothing, for both kids and teens</h4>
+<p class="path">features/quests/QuestsScreen.tsx — handleDeclineConfirm, line ~646</p>
+<p><b>Scenario:</b> the primary, most common decline path — a kid or teen assigned an ordinary household chore (not GP, not a multi-participant row) taps "Can't do this" (<code>canKidDecline</code>, <code>QuestCard.tsx:714-721</code>) at <code>status:'todo'</code>. The confirm handler's fallback branch unconditionally called <code>declineQuest(id, ..., reason, 'custom')</code> → <code>requestRedo</code>, the same <code>pending_approval</code>-only guard as B1. Same silent no-op: the earlier "T1" fix (widening <code>isKid</code>→<code>isKidOrTeen</code> so the button rendered for teens too) never verified the underlying action actually worked for <em>either</em> role at this status — it only fixed visibility of a broken button, not the break itself.</p>
+<p><b>Fix:</b> added a branch — when the target is a kid/teen and the chore's status is not <code>pending_approval</code> (i.e. this is a pre-submission "can't do this," not a parent declining a submission), route through <code>reassignQuest(id, '', by)</code> instead — the same "send back to the pool" mechanism the multi-participant row's own inline "Can't do this" button already used successfully. A parent/senior declining an actual <code>pending_approval</code> submission still goes through <code>requestRedo</code> as before, unaffected.</p>
+</div>
+
+<div class="finding fixed">
+<h4><span class="tag fixed">Fixed</span> B3 — <code>reassignQuest('', ...)</code> wrote an empty string to <code>assigned_to_id</code> instead of NULL</h4>
+<p class="path">store/choreAdapter.ts — reassignQuest, both the hook and the static .getState() implementations</p>
+<p><b>Found while fixing B2</b> — the "send back to pool" call this pass now depends on (<code>reassignQuest(id, '', by)</code>, already used elsewhere for participant-row declines) passed <code>''</code> straight through to <code>updateChore({assignedToId: memberId})</code>. <code>updateChore</code>'s DB patch only writes <code>NULL</code> on a nullish value (<code>updates.assignedToId ?? null</code>) — an empty string is not nullish, so the chore's <code>assigned_to_id</code> column would end up literally <code>''</code> rather than actually open/unassigned, and <code>isPool</code> was never set either, so the chore would not correctly reappear as a claimable pool item.</p>
+<p><b>Fix:</b> both <code>reassignQuest</code> implementations now write <code>assignedToId: memberId || undefined</code> (so <code>''</code> maps to <code>undefined</code> → DB <code>NULL</code>) and set <code>isPool: memberId ? undefined : true</code> so an unassign genuinely reopens the chore to the pool.</p>
+</div>
+
+<div class="finding fixed">
+<h4><span class="tag fixed">Fixed</span> B4 — Hub had no decline button at all for a plain assigned household chore (kid or teen), only the Chores tab did</h4>
+<p class="path">features/hub/kid/KidQuestCard.tsx, features/hub/kid/DeclineQuestSheet.tsx</p>
+<p><b>Scenario:</b> the earlier "T1" fix from the prior audit pass was scoped to <code>QuestCard.tsx</code> (the Chores tab) only. The Hub's own kid/teen card, <code>KidQuestCard.tsx</code> (shared by both <code>KidView</code> and <code>TeenView</code> via <code>MyQuestsSection</code>), only ever rendered a Decline button inside its <code>isGpTodo</code> branch — a plain non-GP assigned chore at <code>todo</code>/<code>in_progress</code> got exactly one button, "Mark Done → Get Paid," with no escape hatch. A kid or teen who genuinely can't do an assigned chore had a decline option on the Chores tab but not on the Hub — a real Hub-vs-Chores-tab divergence, exactly the class of bug this document was asked to hunt for.</p>
+<p><b>Fix:</b> added <code>canDeclinePlain</code> (todo/in_progress/claimed, not pool, not GP) to <code>KidQuestCard.tsx</code>, rendering a paired "Mark Done" + "Can't do this" button row, wired to the existing <code>onDeclineGpQuest</code> callback (reused, not a new prop — see below). <code>DeclineQuestSheet.tsx</code>'s submit handler now branches on the target chore's own <code>categoryType</code>: <code>grandparent_quest</code> still calls <code>declineGrandparentQuest</code> exactly as before; any other category now calls <code>updateChore(id, {assignedToId:undefined, isPool:true, status:'todo'})</code> directly (the Hub has no <code>reassignQuest</code> action threaded down to this depth, so this mirrors what that action now does post-B3) plus a chat message to the family channel. Both <code>KidView.tsx</code> and <code>TeenView.tsx</code> wire this same sheet/card pair identically, so the fix covers both roles without any changes needed in either view file.</p>
+</div>
+</section>
+
+<section id="gaps">
+<h2>15 · Known gaps — flagged, not fixed this pass</h2>
+<p class="lede">Real, code-confirmed gaps that were judged out of scope for a targeted bug-fix pass (larger design decisions, or requiring schema/edge-function changes not verifiable from the client alone). Listed so they're not silently lost.</p>
+
+<div class="finding gap">
+<h4><span class="tag gap">Gap</span> System A never notifies the assigner of DECLINE, a completed hand-off, or an ACCEPT</h4>
+<p>Confirmed by reading <code>respondToParentQuest</code> and <code>completeParentQuest</code> in full — neither calls <code>sendMessage</code> nor <code>quest-event-notifier</code> anywhere. Priya (the assigner) only ever learns Marcus declined, accepted, or finished a task by noticing the card is gone/changed the next time she happens to open Household Backlog or the Chores tab. <code>cheerChore</code> and <code>appreciationPing</code> both call the notifier edge function; the core System-A transitions do not, an inconsistency worth a deliberate product decision rather than a blind fix.</p>
+</div>
+
+<div class="finding gap">
+<h4><span class="tag gap">Gap</span> A first-bounce pushback (PARKED, unlocked) gives the assigner no reply button</h4>
+<p><code>OutgoingPendingCard.tsx</code> is genuinely read-only — no <code>Pressable</code> wired to any store action besides its own expand/collapse chevron. The assigner can see the pushback text but cannot respond to it directly from that card; their only paths are to wait for the assignee to bounce again (locking it) or accept it, or to independently delegate elsewhere (which force-closes the PARKED assignment as a side effect of <code>addParentQuest</code>'s stale-assignment sweep, not as a designed "respond to pushback" flow).</p>
+</div>
+
+<div class="finding gap">
+<h4><span class="tag gap">Gap</span> The original assignee gets no explanation when a locked assignment is reassigned or reopened out from under them</h4>
+<p>Confirmed in both <code>DelegateSheet.tsx</code> and <code>cancelLockedAssignment</code> — neither fires any chat/notification call. Marcus's <code>LockedAssignmentCard</code> simply disappears once Priya reassigns to Alex or reopens to the pool; from his side, a task he was mid-negotiation on vanishes with zero explanation.</p>
+</div>
+
+<div class="finding gap">
+<h4><span class="tag gap">Gap</span> Multi-select assignment in the standard Add Quest form silently degrades to single-assign</h4>
+<p><code>createParticipants</code> is a no-op stub in <code>choreAdapter.ts</code>, and the underlying <code>addChore</code> call only ever persists the first id from a multi-select (<code>assignedToId ?? assignedToIds?.[0]</code>). Selecting Alex and Jamie both in <code>AddQuestModal</code> assigns the whole quest to whichever kid happened to be first in the array — Jamie gets nothing, sees nothing, and there is no participant row for her at all. This is a real, currently-reachable data-loss-adjacent gap (not merely a dead button) and the highest-priority item in this list for an actual fix, but implementing it correctly (participant rows vs. team-clone rows, and reconciling with the currently-dead <code>approveParticipant</code>/<code>declineParticipant</code>/<code>reopenParticipant</code> stubs) is a design decision beyond the scope of this documentation-plus-targeted-bugfix pass.</p>
+</div>
+
+<div class="finding gap">
+<h4><span class="tag gap">Gap</span> <code>approveParticipant</code> / <code>declineParticipant</code> / <code>reopenParticipant</code> are dead stubs behind a live UI</h4>
+<p><code>QuestCard.tsx</code>'s per-participant action row (Approve/Decline/Reopen, lines 594-617) renders and is tappable whenever a quest has &gt;1 participant, but all three underlying calls are no-op async functions in <code>choreAdapter.ts</code>. In practice this UI is rarely reached today because of the multi-assign gap above (there's currently no reliable way to end up with a genuine &gt;1-participant quest through the standard form), but it is real dead UI that would silently fail to do anything the moment it becomes reachable.</p>
+</div>
+
+<div class="finding gap">
+<h4><span class="tag gap">Gap</span> <code>openToGP</code> vs. <code>inviteGrandparents</code> — two different booleans with overlapping intent, not verified to be kept in sync</h4>
+<p>The shopping/errand-specific "Offer to GP" toggle (<code>PoolQuestCard.tsx</code>, <code>OthersAdultQuestCard.tsx</code>, <code>DelegateSheet.tsx</code>) writes <code>chore.openToGP</code>. <code>claimGPErrand</code>'s own guard, and the Chores tab's senior-role visibility filter (<code>QuestsScreen.tsx:466-472</code>), both check <code>chore.inviteGrandparents</code> instead — a separate field set by a different UI (<code>EditQuestModal</code>/<code>AddQuestModal</code>'s "Invite Grandparents?" toggle). No code path was found in this pass that sets both fields together from the <code>openToGP</code>-specific toggles. This was not runtime-tested (no simulator access in this session), so it is flagged as a likely-but-unconfirmed gap rather than asserted as a certain bug.</p>
+</div>
+
+<div class="finding gap">
+<h4><span class="tag gap">Gap</span> <code>declineGrandparentQuest</code>'s sponsor notification is caller-provided, not guaranteed by the store action</h4>
+<p>The store action itself sends no chat message — every current caller (<code>DeclineQuestSheet.tsx</code>, <code>QuestsScreen.tsx</code>) happens to separately call <code>sendMessage</code> right after, but nothing enforces this. A future caller of <code>declineGrandparentQuest</code> that forgets the follow-up message would silently decline the quest with zero notification to the sponsor, and there would be no compiler or runtime signal that anything was missed.</p>
+</div>
+</section>
+
+<footer>
+Built by reading, in full: <code>store/choreStore.ts</code> (2154 lines), <code>store/choreAdapter.ts</code> (367
+lines, post-fix), <code>features/quests/components/QuestCard.tsx</code>,
+<code>features/quests/QuestsScreen.tsx</code> (1112+ lines, post-fix),
+<code>features/hub/parent/backlog/{MyAdultQuestCard,OthersAdultQuestCard,DirectPendingCard,
+OutgoingPendingCard,LockedAssignmentCard,AcceptedQuestCard,PoolQuestCard,HelperEventCard}.tsx</code>,
+<code>features/hub/parent/{PushbackSheet,DelegateSheet,HouseholdBacklogSection,ChoreReviewSection,
+ActionNeededSection,GpCanHelpSection}.tsx</code>, <code>features/hub/{ParentView,KidView,TeenView}.tsx</code>,
+<code>features/hub/kid/{DeclineQuestSheet,SubmitProofSheet,MyQuestsSection,KidQuestCard}.tsx</code>,
+<code>features/hub/senior/sponsor/SponsorQuestsSection.tsx</code>,
+<code>features/hub/senior/CheerSquadSection.tsx</code>, <code>features/quests/components/{DeclineModal,
+EditQuestModal,AddQuestModal,SubmitProofSheet}.tsx</code>, <code>features/chores/ParentReviewDeck.tsx</code>.
+Not opened/verified: the <code>quest-event-notifier</code> Supabase edge function's server-side behavior,
+the <code>process-task-assignment</code>/<code>process-kid-chore-assignment</code> Responsibility Engine
+functions invoked from <code>EditQuestModal</code>'s "who would this go to?" preview, and no on-device
+runtime testing was performed (code-read verification only — this session had no simulator access).
+<code>npx tsc --noEmit</code> confirmed 0 errors after all four fixes in this pass.
+<div class="backtotop"><a href="#systems">↑ back to top</a></div>
+</footer>
+</div>

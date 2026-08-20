@@ -8,12 +8,15 @@ import type { ParentQuestAssignment } from '@/store/choreStore';
 // A parent-only quest assigned to the current parent — mark it done (closing
 // the linked assignment too, if one exists, or a second "Done" card would
 // resurface after this one disappears) or hand it off to a co-parent.
-export function MyAdultQuestCard({ q, parentAssignments, active, colors, isDark, completeParentQuest, updateQuest, onDelegate }: {
+export function MyAdultQuestCard({ q, parentAssignments, active, colors, isDark, completeParentQuest, updateQuest, onDelegate, onLongPress }: {
   q: Quest; parentAssignments: ParentQuestAssignment[]; active: { id: string };
   colors: any; isDark: boolean;
   completeParentQuest: (assignmentId: string, completedBy: string) => void;
   updateQuest: (id: string, patch: Partial<Quest>) => void;
   onDelegate: (choreId: string, title: string) => void;
+  // Optional — only the Chores tab wires this (edit-quest flow); Household
+  // Backlog has no separate edit modal for this card today.
+  onLongPress?: () => void;
 }) {
   const [isExp, setExp] = useState(false);
 
@@ -26,7 +29,7 @@ export function MyAdultQuestCard({ q, parentAssignments, active, colors, isDark,
       shadowOpacity: isDark ? 0.4 : 1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
       elevation: isDark ? 3 : 2,
     }}>
-      <Pressable onPress={() => setExp(e => !e)}
+      <Pressable onPress={() => setExp(e => !e)} onLongPress={onLongPress}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 }}>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{q.title}</Text>

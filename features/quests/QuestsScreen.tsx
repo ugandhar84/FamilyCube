@@ -18,7 +18,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert,
+  ActivityIndicator, Alert, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -33,7 +33,7 @@ import type { Quest } from '@/store/questStore';
 import AppHeader from '@/components/AppHeader';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
-import { todayLocal, parseLocalDate, withinLast24h } from '@/lib/dates';
+import { todayLocal, parseLocalDate, withinLast24h, parseTimeInput } from '@/lib/dates';
 import { useChatStore } from '@/store/chatStore';
 import { useChoreStore } from '@/store/choreStore';
 import { AiEngineBanner, AiTool } from './components/AiEngineBanner';
@@ -54,6 +54,13 @@ import {
 import { FamilyKudosStrip } from './components/FamilyKudosStrip';
 import { SiblingCheerPanel } from './components/SiblingCheerPanel';
 import { QuestCard } from './components/QuestCard';
+import { DirectPendingCard } from '../hub/parent/backlog/DirectPendingCard';
+import { OutgoingPendingCard } from '../hub/parent/backlog/OutgoingPendingCard';
+import { LockedAssignmentCard } from '../hub/parent/backlog/LockedAssignmentCard';
+import { MyAdultQuestCard } from '../hub/parent/backlog/MyAdultQuestCard';
+import { OthersAdultQuestCard } from '../hub/parent/backlog/OthersAdultQuestCard';
+import { DelegateSheet } from '../hub/parent/DelegateSheet';
+import { PushbackSheet } from '../hub/parent/PushbackSheet';
 import { SubmitQuestSheet } from './components/SubmitQuestSheet';
 import { DelegateQuestSheet } from './components/DelegateQuestSheet';
 import { KudosSheet } from './components/KudosSheet';
@@ -74,6 +81,43 @@ export default function QuestsScreen() {
   const activeMember = members.find(m => m.id === activeMemberId)
     ?? members.find(m => m.role === 'parent') ?? members[0];
   const isParent         = activeMember?.role === 'parent';
+  // A co-parent's direct assignment to me needs Accept/Respond here too —
+  // Household Backlog already has this via DirectPendingCard/PushbackSheet;
+  // the Chores tab reuses the exact same components AND the same
+  // choreStore selectors (not independently re-derived filters) so the two
+  // screens can never silently drift apart on what counts as pending/
+  // locked/outgoing.
+  const parentAssignments = useChoreStore(s => s.parentAssignments);
+  const chores             = useChoreStore(s => s.chores);
+  const respondToParentQuest = useChoreStore(s => s.respondToParentQuest);
+  const cancelLockedAssignment = useChoreStore(s => s.cancelLockedAssignment);
+  const addParentQuest = useChoreStore(s => s.addParentQuest);
+  const getMyDirectPending = useChoreStore(s => s.getMyDirectPending);
+  const getMyLockedItems   = useChoreStore(s => s.getMyLockedItems);
+  const getMyOutgoingPending = useChoreStore(s => s.getMyOutgoingPending);
+  const getActiveAssignmentChoreIds = useChoreStore(s => s.getActiveAssignmentChoreIds);
+  const myDirectPending    = isParent && activeMember ? getMyDirectPending(activeMember.id) : [];
+  const myLockedItems      = isParent && activeMember ? getMyLockedItems(activeMember.id) : [];
+  const myOutgoingPending  = isParent && activeMember ? getMyOutgoingPending(activeMember.id) : [];
+  // Same "mine assigned / assigned to another parent" split Household
+  // Backlog uses, rendered via the exact same MyAdultQuestCard/
+  // OthersAdultQuestCard components — previously the Chores tab rendered
+  // these through the generic QuestCard instead, which has no Nudge/
+  // Reclaim action at all for "assigned to a co-parent," so accepting a
+  // delegated task made it show correctly on the Hub but effectively
+  // actionless (and for the assigner, silently unreadable) in this tab.
+  const completeParentQuest = useChoreStore(s => s.completeParentQuest);
+  const myAdultQuests = isParent && activeMember ? quests.filter(q =>
+    !['done', 'approved', 'archived', 'cancelled', 'completed'].includes(q.status) &&
+    q.isAdultTask && q.assignedToId === activeMember.id
+  ) : [];
+  const othersAdultQuests = isParent && activeMember ? quests.filter(q =>
+    !['done', 'approved', 'archived', 'cancelled', 'completed'].includes(q.status) &&
+    q.isAdultTask && q.assignedToId && q.assignedToId !== activeMember.id
+  ) : [];
+  const adultQuestCardIds = new Set([...myAdultQuests, ...othersAdultQuests].map(q => q.id));
+  const [pushbackSheet, setPushbackSheet] = useState<{ assignmentId: string; choreTitle: string; assignedBy: string; assignedTo: string } | null>(null);
+  const [delegateFromLocked, setDelegateFromLocked] = useState<{ choreId: string; choreTitle: string } | null>(null);
   const isSenior         = activeMember?.role === 'senior';
   const isTeen           = activeMember?.role === 'teen';
   const isKid            = activeMember?.role === 'kid';
@@ -198,6 +242,20 @@ export default function QuestsScreen() {
 
   // Scroll ref — used to reset position on persona switch
   const scrollRef = useRef<ScrollView>(null);
+
+  // Pull-to-refresh — syncFromDB normally has a 5-minute TTL guard, so a
+  // change made outside the app (another device, a direct DB edit) can sit
+  // unseen for up to 5 minutes with no way to force it short of restarting
+  // the app. force=true here bypasses that guard.
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await useChoreStore.getState().syncFromDB(true);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // ── Reset all view state when persona switches ────────────────────────────
   const prevMemberIdRef = useRef(activeMemberId);
@@ -355,7 +413,20 @@ export default function QuestsScreen() {
 
   // ── Quest filtering ───────────────────────────────────────────────────────────
   const filteredQuests = useMemo(() => {
-    let list = quests;
+    // A chore with ANY live System-A assignment (PENDING, SNOOZED, ACCEPTED,
+    // or locked/PARKED) must never also render as a plain open/pool
+    // QuestCard with Take It/Delegate-equivalent actions — QuestCard has no
+    // concept of parentAssignments, so without this exclusion a co-parent
+    // (or the assigner themselves) could "Take It" out from under a pending
+    // DIRECT assignment. Whoever it belongs to sees it instead via the
+    // dedicated DirectPendingCard/LockedAssignmentCard/OutgoingPendingCard
+    // blocks rendered above this list.
+    const activeAssignmentChoreIds = getActiveAssignmentChoreIds();
+    // Adult tasks assigned to a specific parent (mine or a co-parent's) are
+    // rendered via MyAdultQuestCard/OthersAdultQuestCard above this list
+    // instead — QuestCard has no Nudge/Reclaim action and, until the
+    // isTodoCard fix, didn't even render an in_progress adult quest at all.
+    let list = quests.filter(q => !activeAssignmentChoreIds.has(q.id) && !adultQuestCardIds.has(q.id));
 
     // Build set of parent/senior member IDs for role-based hiding
     const adultMemberIds = new Set(members.filter(m => m.role === 'parent' || m.role === 'senior').map(m => m.id));
@@ -451,7 +522,9 @@ export default function QuestsScreen() {
       if (!q.dueDate) return Infinity;
       const ms = parseLocalDate(q.dueDate).getTime();
       if (!q.dueTime) return ms;
-      const [h, m] = q.dueTime.split(':').map(Number);
+      const parsed = parseTimeInput(q.dueTime);
+      if (!parsed) return ms;
+      const [h, m] = parsed.split(':').map(Number);
       return ms + (h * 60 + m) * 60_000;
     };
     list = [...list].sort((a, b) => {
@@ -460,7 +533,7 @@ export default function QuestsScreen() {
       return dueMs(a) - dueMs(b);
     });
     return list;
-  }, [quests, kidFilter, tabStatus, isKidOrTeen, activeMember, questId, searchQuery, dateRange]);
+  }, [quests, parentAssignments, kidFilter, tabStatus, isKidOrTeen, activeMember, questId, searchQuery, dateRange]);
 
   // ── Kid grouped sections (spec §4 dashboard layout) ───────────────────────────
   const kidSections = React.useMemo(() => {
@@ -544,19 +617,22 @@ export default function QuestsScreen() {
     setDeclineTarget(null);
     setIsDeclining(p => ({ ...p, [id]: true }));
     await new Promise(r => setTimeout(r, 300));
-    // A kid turning down a grandparent quest releases it back to the family
-    // pool rather than killing it — siblings can still pick it up.
+    // A kid OR teen turning down a grandparent quest releases it back to the
+    // family pool rather than killing it — siblings can still pick it up.
+    // This must match isKidOrTeen (same widened gate QuestCard.tsx's
+    // canKidDecline/canAcceptGp use), not isKid alone — a teen tapping
+    // "Decline" on a GP quest at status 'todo' hit the isKid-only branch's
+    // else path below, which calls declineQuest -> requestRedo, a no-op
+    // whenever status !== 'pending_approval'. The sheet closed as if it
+    // worked, but the chore stayed exactly as-is: still assigned to the
+    // teen, sponsor never notified, nothing released to the pool.
     const chore = useChoreStore.getState().chores.find(c => c.id === id);
-    if (!memberId && isKid && chore?.categoryType === 'grandparent_quest' && chore.status === 'todo') {
+    if (!memberId && isKidOrTeen && chore?.categoryType === 'grandparent_quest' && chore.status === 'todo') {
+      // declineGrandparentQuest now sends the sponsor DM itself
+      // (centralized in choreStore.ts) — only the no-sponsor family-wide
+      // fallback is still this caller's responsibility.
       useChoreStore.getState().declineGrandparentQuest(id, activeMember?.id ?? '', reason);
-      // Match the Hub's decline flow: chat is where both the parent and the
-      // sponsoring GP will actually see it — sent to the sponsor's 1:1 DM
-      // rather than the family-wide channel, which kids can also read.
-      const sponsor = chore.sponsorUserId;
-      if (sponsor) {
-        useChatStore.getState().sendMessage(sponsor, activeMember?.id ?? '',
-          `🙏 ${activeMember?.name.split(' ')[0]} can't take "${chore.title}" — "${reason}"`);
-      } else {
+      if (!chore.sponsorUserId) {
         useChatStore.getState().sendMessage('all', activeMember?.id ?? '',
           `🙏 ${activeMember?.name.split(' ')[0]} can't take "${chore.title}" — "${reason}"`);
       }
@@ -566,7 +642,20 @@ export default function QuestsScreen() {
     if (memberId) {
       // Per-participant decline
       declineParticipant(id, memberId, activeMember?.id ?? '', reason, 'custom');
+    } else if (isKidOrTeen && chore && chore.status !== 'pending_approval') {
+      // Kid/teen tapping "Can't do this" on their own assigned household
+      // chore (QuestCard's canKidDecline — status is 'todo'/'in_progress',
+      // never 'pending_approval') is NOT the same action as a parent
+      // declining a submission. declineQuest -> requestRedo only fires on
+      // status === 'pending_approval' and silently no-ops otherwise, which
+      // is exactly canKidDecline's target state -- the button appeared to
+      // work (sheet closed, no error) but never actually released the
+      // chore. Route it through the same "send back to the pool" flow the
+      // multi-participant row's own "Can't do this" button already uses.
+      reassignQuest(id, '', activeMember?.id ?? '');
     } else {
+      // Parent/senior declining a kid's pending_approval submission — a
+      // real Redo request, requestRedo's actual intended target state.
       declineQuest(id, activeMember?.id ?? '', reason, 'custom');
     }
     setIsDeclining(p => ({ ...p, [id]: false }));
@@ -593,7 +682,8 @@ export default function QuestsScreen() {
         onBellPress={() => {}}
       />
 
-      <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+      <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
 
         {/* ── Title ── */}
         <View style={[s.titleRow, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }]}>
@@ -782,6 +872,47 @@ export default function QuestsScreen() {
                 </View>
               )}
 
+              {myAdultQuests.length > 0 && activeMember && myAdultQuests.map(q => (
+                <MyAdultQuestCard key={q.id} q={q} parentAssignments={parentAssignments} active={activeMember}
+                  colors={colors} isDark={isDark} completeParentQuest={completeParentQuest}
+                  updateQuest={updateQuest} onDelegate={(choreId, choreTitle) => setDelegateFromLocked({ choreId, choreTitle })}
+                  onLongPress={() => setEditTarget(q)} />
+              ))}
+
+              {othersAdultQuests.length > 0 && activeMember && othersAdultQuests.map(q => (
+                <OthersAdultQuestCard key={q.id} q={q} active={activeMember} members={members} colors={colors} isDark={isDark} updateQuest={updateQuest}
+                  onLongPress={() => setEditTarget(q)} />
+              ))}
+
+              {myDirectPending.length > 0 && myDirectPending.map(a => {
+                const chore = chores.find(c => c.id === a.choreId);
+                if (!chore) return null;
+                return (
+                  <DirectPendingCard key={a.id} a={a} chore={chore} members={members} colors={colors} isDark={isDark}
+                    respondToParentQuest={respondToParentQuest}
+                    onRespond={(assignmentId, choreTitle, assignedBy, assignedTo) => setPushbackSheet({ assignmentId, choreTitle, assignedBy, assignedTo })} />
+                );
+              })}
+
+              {myOutgoingPending.length > 0 && myOutgoingPending.map(a => {
+                const chore = chores.find(c => c.id === a.choreId);
+                if (!chore) return null;
+                return (
+                  <OutgoingPendingCard key={a.id} a={a} chore={chore} members={members} colors={colors} isDark={isDark} />
+                );
+              })}
+
+              {myLockedItems.length > 0 && myLockedItems.map(a => {
+                const chore = chores.find(c => c.id === a.choreId);
+                if (!chore || !activeMember) return null;
+                return (
+                  <LockedAssignmentCard key={a.id} a={a} chore={chore} active={activeMember} members={members}
+                    colors={colors} isDark={isDark}
+                    onDelegate={(choreId, choreTitle) => setDelegateFromLocked({ choreId, choreTitle })}
+                    cancelLockedAssignment={cancelLockedAssignment} />
+                );
+              })}
+
               {/* Render all quests — section headers above serve as visual anchors */}
               {(kidSections
                 ? [
@@ -945,6 +1076,23 @@ export default function QuestsScreen() {
         colors={colors}
         isDark={isDark}
       />
+
+      <PushbackSheet
+        target={pushbackSheet} colors={colors} isDark={isDark}
+        onClose={() => setPushbackSheet(null)}
+        respondToParentQuest={respondToParentQuest}
+      />
+
+      {activeMember && (
+        <DelegateSheet
+          target={delegateFromLocked} colors={colors} isDark={isDark}
+          questPool={chores}
+          members={members} active={activeMember}
+          onClose={() => setDelegateFromLocked(null)}
+          updateQuest={updateQuest}
+          addParentQuest={addParentQuest}
+        />
+      )}
 
       <DelegateQuestSheet
         delegateTarget={delegateTarget}

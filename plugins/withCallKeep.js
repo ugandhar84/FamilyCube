@@ -17,21 +17,33 @@
  * version this plugin mirrors — keep the two in sync if the delegate logic
  * changes.
  */
-const { withAppDelegate, withDangerousMod } = require('@expo/config-plugins');
+const { withAppDelegate, withDangerousMod, withXcodeProject } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
 const BRIDGING_HEADER_IMPORT = '#import <RNCallKeep/RNCallKeep.h>';
 
 const PUSHKIT_IMPORT = 'import PushKit';
+const CALLKIT_IMPORT = 'import CallKit';
 
 const DELEGATE_CONFORMANCE_OLD = 'public class AppDelegate: ExpoAppDelegate {';
-const DELEGATE_CONFORMANCE_NEW = 'public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate {';
+const DELEGATE_CONFORMANCE_NEW = 'public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate, CXCallObserverDelegate {';
 
 const PROPERTY_MARKER = 'var reactNativeFactory: RCTReactNativeFactory?';
-const PROPERTY_ADDITION = `${PROPERTY_MARKER}\n  var voipRegistry: PKPushRegistry?`;
+const PROPERTY_ADDITION = `${PROPERTY_MARKER}\n  var voipRegistry: PKPushRegistry?\n  var callObserver: CXCallObserver?`;
 
 const SETUP_MARKER = 'return super.application(application, didFinishLaunchingWithOptions: launchOptions)\n  }';
+// react-native-callkeep's answerCall/getInitialEvents replay queue
+// (_delayedEvents in RNCallKeep.m) is a plain in-memory array with no
+// persistence — if the process that displayed the CallKit call and captured
+// the answer action gets torn down before this app relaunches (the
+// documented, still-open killed-app-then-answer-from-lock-screen case —
+// react-native-webrtc/react-native-callkeep#844, #190, #682), that queue is
+// gone and JS never learns the call was answered. CXCallObserver asks iOS's
+// own CallKit call registry directly, independent of which process is
+// running; UserDefaults survives the process boundary the in-memory array
+// doesn't. See callObserver(_:callChanged:) below and FCVoipToken's
+// getLastAnsweredCall.
 const SETUP_ADDITION = `RNCallKeep.setup([
       "appName": "Family Cube",
       "supportsVideo": false,
@@ -44,7 +56,25 @@ const SETUP_ADDITION = `RNCallKeep.setup([
     registry.desiredPushTypes = [.voIP]
     voipRegistry = registry
 
+    let observer = CXCallObserver()
+    observer.setDelegate(self, queue: nil)
+    callObserver = observer
+
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
+    guard call.hasConnected, !call.hasEnded else { return }
+    let uuid = call.uuid.uuidString
+    guard let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\\(uuid)"),
+          let itemId = UserDefaults.standard.string(forKey: "familycube_call_itemId_\\(uuid)") else {
+      return
+    }
+    UserDefaults.standard.set(uuid, forKey: "familycube_last_answered_call_uuid")
+    UserDefaults.standard.set(itemType, forKey: "familycube_last_answered_itemType")
+    UserDefaults.standard.set(itemId, forKey: "familycube_last_answered_itemId")
+    NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered"), object: nil,
+      userInfo: ["callUUID": uuid, "itemType": itemType, "itemId": itemId])
   }
 
   // ── PushKit — VoIP call-reminder wake ──────────────────────────────────────
@@ -66,6 +96,8 @@ const SETUP_ADDITION = `RNCallKeep.setup([
     let itemId = (payload.dictionaryPayload["itemId"] as? String) ?? ""
     let dueAtIso = (payload.dictionaryPayload["dueAtIso"] as? String) ?? ""
     let callUUID = UUID().uuidString
+    UserDefaults.standard.set(itemType, forKey: "familycube_call_itemType_\\(callUUID)")
+    UserDefaults.standard.set(itemId, forKey: "familycube_call_itemId_\\(callUUID)")
     RNCallKeep.reportNewIncomingCall(
       callUUID,
       handle: callerName,
@@ -89,17 +121,130 @@ function withCallKeepAppDelegate(config) {
     if (!contents.includes(PUSHKIT_IMPORT)) {
       contents = contents.replace('import ReactAppDependencyProvider', `import ReactAppDependencyProvider\n${PUSHKIT_IMPORT}`);
     }
-    if (!contents.includes('PKPushRegistryDelegate')) {
+    if (!contents.includes(CALLKIT_IMPORT)) {
+      contents = contents.replace(PUSHKIT_IMPORT, `${PUSHKIT_IMPORT}\n${CALLKIT_IMPORT}`);
+    }
+    if (!contents.includes('CXCallObserverDelegate')) {
       contents = contents.replace(DELEGATE_CONFORMANCE_OLD, DELEGATE_CONFORMANCE_NEW);
+      // Older builds may already have the PKPushRegistryDelegate-only
+      // conformance from before this fix — upgrade that variant too.
+      contents = contents.replace(
+        'public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate {',
+        DELEGATE_CONFORMANCE_NEW,
+      );
     }
     if (!contents.includes('var voipRegistry')) {
       contents = contents.replace(PROPERTY_MARKER, PROPERTY_ADDITION);
+    } else if (!contents.includes('var callObserver')) {
+      contents = contents.replace('var voipRegistry: PKPushRegistry?', 'var voipRegistry: PKPushRegistry?\n  var callObserver: CXCallObserver?');
     }
     if (!contents.includes('RNCallKeep.setup(')) {
       contents = contents.replace(SETUP_MARKER, SETUP_ADDITION);
+    } else if (!contents.includes('callObserver(_ callObserver: CXCallObserver')) {
+      // setup() already applied by an older version of this plugin but
+      // missing the CXCallObserver addition — insert just that piece rather
+      // than re-running the whole block (which would duplicate setup()).
+      contents = contents.replace(
+        'let registry = PKPushRegistry(queue: DispatchQueue.main)\n    registry.delegate = self\n    registry.desiredPushTypes = [.voIP]\n    voipRegistry = registry\n',
+        'let registry = PKPushRegistry(queue: DispatchQueue.main)\n    registry.delegate = self\n    registry.desiredPushTypes = [.voIP]\n    voipRegistry = registry\n\n    let observer = CXCallObserver()\n    observer.setDelegate(self, queue: nil)\n    callObserver = observer\n',
+      );
+      if (!contents.includes('func callObserver(_ callObserver: CXCallObserver')) {
+        contents = contents.replace(
+          '  // ── PushKit — VoIP call-reminder wake ──────────────────────────────────────',
+          '  public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {\n    guard call.hasConnected, !call.hasEnded else { return }\n    let uuid = call.uuid.uuidString\n    guard let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\\(uuid)"),\n          let itemId = UserDefaults.standard.string(forKey: "familycube_call_itemId_\\(uuid)") else {\n      return\n    }\n    UserDefaults.standard.set(uuid, forKey: "familycube_last_answered_call_uuid")\n    UserDefaults.standard.set(itemType, forKey: "familycube_last_answered_itemType")\n    UserDefaults.standard.set(itemId, forKey: "familycube_last_answered_itemId")\n    NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered"), object: nil,\n      userInfo: ["callUUID": uuid, "itemType": itemType, "itemId": itemId])\n  }\n\n  // ── PushKit — VoIP call-reminder wake ──────────────────────────────────────',
+        );
+      }
+    }
+    if (!contents.includes('familycube_call_itemType_')) {
+      contents = contents.replace(
+        'let callUUID = UUID().uuidString\n    RNCallKeep.reportNewIncomingCall(',
+        'let callUUID = UUID().uuidString\n    UserDefaults.standard.set(itemType, forKey: "familycube_call_itemType_\\(callUUID)")\n    UserDefaults.standard.set(itemId, forKey: "familycube_call_itemId_\\(callUUID)")\n    RNCallKeep.reportNewIncomingCall(',
+      );
     }
 
     config.modResults.contents = contents;
+    return config;
+  });
+}
+
+// PushKit hands back the VoIP token almost immediately on launch, often
+// before JS/React has finished bootstrapping — so the NotificationCenter
+// post in didUpdate can fire with zero listeners and the token is lost.
+// This tiny native module lets JS pull the cached token (written to
+// UserDefaults by AppDelegate.swift) synchronously on mount, covering that
+// startup race in addition to the live-update notification path.
+const VOIP_TOKEN_MODULE_M = `#import <React/RCTBridgeModule.h>
+
+@interface RCT_EXTERN_MODULE(FCVoipToken, NSObject)
+RCT_EXTERN_METHOD(getCachedToken:(RCTResponseSenderBlock)callback)
+RCT_EXTERN_METHOD(getLastAnsweredCall:(RCTResponseSenderBlock)callback)
+@end
+`;
+
+const VOIP_TOKEN_MODULE_SWIFT = `import Foundation
+import React
+
+@objc(FCVoipToken)
+class FCVoipToken: NSObject {
+  @objc static func requiresMainQueueSetup() -> Bool { false }
+
+  @objc func getCachedToken(_ callback: @escaping RCTResponseSenderBlock) {
+    let token = UserDefaults.standard.string(forKey: "familycube_voip_token") ?? ""
+    callback([token])
+  }
+
+  // Reads back a call answered via CXCallObserver (see AppDelegate.swift's
+  // callObserver(_:callChanged:)) — covers the killed-app-then-answered
+  // case react-native-callkeep's own getInitialEvents()/_delayedEvents
+  // replay queue cannot, since that queue is in-memory only and dies with
+  // whatever process displayed/answered the call if a different process
+  // ends up relaunching this JS. Consumes (clears) on read.
+  @objc func getLastAnsweredCall(_ callback: @escaping RCTResponseSenderBlock) {
+    let defaults = UserDefaults.standard
+    guard let callUUID = defaults.string(forKey: "familycube_last_answered_call_uuid"),
+          let itemType = defaults.string(forKey: "familycube_last_answered_itemType"),
+          let itemId = defaults.string(forKey: "familycube_last_answered_itemId") else {
+      callback([NSNull()])
+      return
+    }
+    defaults.removeObject(forKey: "familycube_last_answered_call_uuid")
+    defaults.removeObject(forKey: "familycube_last_answered_itemType")
+    defaults.removeObject(forKey: "familycube_last_answered_itemId")
+    defaults.removeObject(forKey: "familycube_call_itemType_\\(callUUID)")
+    defaults.removeObject(forKey: "familycube_call_itemId_\\(callUUID)")
+    callback([["callUUID": callUUID, "itemType": itemType, "itemId": itemId]])
+  }
+}
+`;
+
+function withVoipTokenNativeModuleFiles(config) {
+  return withDangerousMod(config, [
+    'ios',
+    async (config) => {
+      const dir = path.join(config.modRequest.platformProjectRoot, config.modRequest.projectName);
+      fs.writeFileSync(path.join(dir, 'FCVoipToken.m'), VOIP_TOKEN_MODULE_M);
+      fs.writeFileSync(path.join(dir, 'FCVoipToken.swift'), VOIP_TOKEN_MODULE_SWIFT);
+      return config;
+    },
+  ]);
+}
+
+// The plain (non-synchronized) FamilyCube PBXGroup doesn't auto-discover
+// loose files the way widget/ does — new source files need an explicit
+// PBXBuildFile + PBXFileReference + Sources-phase entry, which is what
+// withXcodeProject's addSourceFile does.
+function withVoipTokenNativeModuleProjectEntry(config) {
+  return withXcodeProject(config, (config) => {
+    const project = config.modResults;
+    const groupName = config.modRequest.projectName;
+    for (const filename of ['FCVoipToken.m', 'FCVoipToken.swift']) {
+      const alreadyPresent = Object.values(project.hash.project.objects.PBXFileReference ?? {}).some(
+        (ref) => typeof ref === 'object' && ref.path === filename,
+      );
+      if (!alreadyPresent) {
+        project.addSourceFile(`${groupName}/${filename}`, {}, project.findPBXGroupKey({ name: groupName }));
+      }
+    }
     return config;
   });
 }
@@ -127,5 +272,7 @@ function withCallKeepBridgingHeader(config) {
 module.exports = function withCallKeep(config) {
   config = withCallKeepAppDelegate(config);
   config = withCallKeepBridgingHeader(config);
+  config = withVoipTokenNativeModuleFiles(config);
+  config = withVoipTokenNativeModuleProjectEntry(config);
   return config;
 };

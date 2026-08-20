@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
+import { useChoreStore } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useChatStore } from '@/store/chatStore';
@@ -102,7 +103,14 @@ export default function HubScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([loadQuests(), loadEvents()]);
+    // loadQuests (choreAdapter's loadFromStorage) only re-reads AsyncStorage
+    // cache — it never hits the DB. Calling it alongside syncFromDB used to
+    // race the two: loadQuests' local disk read is faster than syncFromDB's
+    // network round-trip, so it would resolve second and clobber the fresh
+    // DB data right back to the stale cached copy. syncFromDB already
+    // rewrites AsyncStorage itself once it has fresh data, so there's
+    // nothing for loadQuests to add here — drop it.
+    await Promise.all([useChoreStore.getState().syncFromDB(true), loadEvents()]);
     setRefreshing(false);
   }, []);
 

@@ -45,6 +45,14 @@ export function KidQuestCard({
   const meta = questStatusMeta(q, colors);
   // A grandparent quest waits on the kid's yes/no before it counts as started.
   const isGpTodo = q.questType === 'grandparent_quest' && q.status === 'todo' && !isPool;
+  // A plain household chore directly assigned to this kid/teen, not yet
+  // submitted — same flat "can't do this -> back to pool" escape hatch the
+  // Chores tab's QuestCard.tsx canKidDecline already offers, previously
+  // missing here entirely (only isGpTodo got a Decline button in this Hub
+  // card, so a kid/teen with a genuinely-can't-do assigned chore had no
+  // button anywhere in the Hub, only on the separate Chores tab).
+  const canDeclinePlain = !isGpTodo && !isPool
+    && (q.status === 'todo' || q.status === 'in_progress' || q.status === 'claimed');
   // Bounty offered to a shortlist of siblings — each earns the full coins
   // independently; nobody's payout depends on the others finishing.
   const teamMates = q.teamGroupId ? allQuests.filter(t => t.teamGroupId === q.teamGroupId && t.id !== q.id) : [];
@@ -126,6 +134,21 @@ export function KidQuestCard({
               <Zap size={15} color="#fff" fill="#ffffff30" />
               <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>Start Quest</Text>
             </Pressable>
+          ) : canDeclinePlain ? (
+            <>
+              <Pressable onPress={() => onSubmit(q)}
+                style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  borderRadius: 10, backgroundColor: MONEY_GREEN, paddingVertical: 13 }}>
+                {q.photoRequired ? <Camera size={15} color="#fff" /> : <CheckCircle2 size={15} color="#fff" />}
+                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>
+                  {q.photoRequired ? 'Take Photo to Get Paid' : 'Mark Done → Get Paid'}
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => onDeclineGpQuest(q)}
+                style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: `${colors.danger}50`, paddingVertical: 13, alignItems: 'center' }}>
+                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.danger }}>Can't do this</Text>
+              </Pressable>
+            </>
           ) : isDeclined ? (
             <Pressable onPress={() => onSubmit(q)}
               style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,

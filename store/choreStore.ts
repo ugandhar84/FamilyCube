@@ -179,6 +179,7 @@ export interface ParentQuestAssignment {
   isLocked: boolean;
   actionablePushback?: PushbackType;
   pushbackDetails?: string;
+  note?: string;
   completedAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -293,11 +294,20 @@ const CACHE_KEY_TRANSACTIONS = '@familycube_transactions_v1';
 const CACHE_KEY_BADGES       = '@familycube_badges_v1';
 const CACHE_KEY_SETTINGS     = '@familycube_household_settings_v1';
 const CACHE_KEY_ASSIGNMENTS  = '@familycube_parent_assignments_v1';
-const CACHE_TTL = 5 * 60_000;
+const CACHE_TTL = 60_000;
 
 let _fetchedAt = 0;
 let _rtChannel: ReturnType<typeof supabase.channel> | null = null;
 let _rtFamilyId = '';
+
+// addChore's DB insert is fire-and-forget for its own caller (returns the
+// chore synchronously so existing call sites don't need to change), but a
+// dependent insert that RLS-checks the chore's existence server-side (e.g.
+// addParentQuest's parent_quest_assignments row) needs to wait for the
+// actual commit, not just the local state update — otherwise it can race
+// ahead and get rejected because the chore doesn't exist from the DB's
+// point of view yet. Keyed by chore id, cleared once read.
+const _choreInsertPromises = new Map<string, Promise<{ ok: boolean }>>();
 
 // ─── Helper: resolve family ID ────────────────────────────────────────────────
 
@@ -423,6 +433,7 @@ function parentAssignmentFromRow(row: any): ParentQuestAssignment {
     isLocked:            row.is_locked ?? false,
     actionablePushback:  row.actionable_pushback ?? undefined,
     pushbackDetails:     row.pushback_details ?? undefined,
+    note:                row.note ?? undefined,
     completedAt:         row.completed_at ?? undefined,
     createdAt:           row.created_at ?? new Date().toISOString(),
     updatedAt:           row.updated_at ?? new Date().toISOString(),
@@ -483,7 +494,7 @@ interface ChoreState {
 
   // Data loading
   loadFromStorage:     () => Promise<void>;
-  syncFromDB:          () => Promise<void>;
+  syncFromDB:          (force?: boolean) => Promise<void>;
 
   // ── Chore CRUD ─────────────────────────────────────────────────────────────
   addChore:            (chore: Omit<ChoreTask, 'id' | 'createdAt' | 'isPrivateParent' | 'redoCount'>) => ChoreTask;
@@ -531,13 +542,20 @@ interface ChoreState {
   getBadgeProgress:    (userId: string) => UserBadge[];
 
   // ── Parent-only quests ────────────────────────────────────────────────────
-  addParentQuest:      (choreId: string, assignedBy: string, assignedTo?: string, mode?: 'PULL' | 'DIRECT') => ParentQuestAssignment | null;
+  addParentQuest:      (choreId: string, assignedBy: string, assignedTo?: string, mode?: 'PULL' | 'DIRECT', note?: string) => ParentQuestAssignment | null;
   createAndAddParentQuest: (task: { title: string; description?: string; dueDate?: string; assignedTo?: string; mode: 'PULL' | 'DIRECT'; createdById: string }) => ChoreTask;
   respondToParentQuest:(assignmentId: string, response: {
-    action: 'ACCEPT' | 'SNOOZE' | 'BLOCKER' | 'TRADE' | 'DISCUSS';
+    action: 'ACCEPT' | 'DECLINE' | 'SNOOZE' | 'BLOCKER' | 'TRADE' | 'DISCUSS';
     details?: string;
   }) => void;
   completeParentQuest: (assignmentId: string, completedBy: string) => void;
+  // Only exit from a locked (two-bounce) assignment — previously there was
+  // none at all, so a bounced task just sat there permanently with a
+  // "discuss offline" label and no button to actually move past it once
+  // that offline conversation happened. Clears the lock, marks the
+  // assignment DECLINED (finally giving that status a real use), and
+  // reopens the chore in the pool for anyone to take or re-delegate.
+  cancelLockedAssignment: (assignmentId: string) => void;
   appreciationPing:    (assignmentId: string, fromId: string, message: string) => void;
 
   // ── Grandparent actions ───────────────────────────────────────────────────
@@ -564,6 +582,18 @@ interface ChoreState {
   getParentQuestPool:  () => ChoreTask[];
   getMemberBalance:    (memberId: string) => { spend: number; save: number; give: number; total: number };
   getPendingCashOuts:  () => PointTransaction[];
+  // ── System-A (parent_quest_assignments) shared selectors ──────────────────
+  // Single source of truth for "does this chore have a live negotiation
+  // going on" — every write path that could otherwise silently steal or
+  // clobber a DIRECT assignment (Take It, auto-assign, Edit's reassign
+  // picker) must check this first instead of only looking at the chore's
+  // own assignedToId, which System A deliberately leaves empty until
+  // accepted.
+  getActiveAssignmentChoreIds: () => Set<string>;
+  getMyDirectPending: (memberId: string) => ParentQuestAssignment[];
+  getMyLockedItems:   (memberId: string) => ParentQuestAssignment[];
+  getMyAccepted:      (memberId: string) => ParentQuestAssignment[];
+  getMyOutgoingPending: (memberId: string) => ParentQuestAssignment[];
 }
 
 // ─── Default settings ─────────────────────────────────────────────────────────
@@ -589,12 +619,21 @@ function dbUpdate(table: string, id: string, patch: Record<string, unknown>) {
   });
 }
 
-function dbInsert(table: string, row: Record<string, unknown>) {
+// Fire-and-forget by default (existing callers don't await this and never
+// see a rejection) — but returns a promise that resolves once the write
+// settles, so a caller that chains a dependent insert (e.g. an assignment
+// row that RLS-checks the chore it references) can wait for the actual DB
+// commit instead of just the local state update.
+function dbInsert(table: string, row: Record<string, unknown>): Promise<{ ok: boolean }> {
   _fetchedAt = 0;
   console.log(`[choreStore] → DB insert ${table}`, row);
-  supabase.from(table).insert(row).then(({ error }) => {
-    if (error) console.warn(`[choreStore] ✗ DB insert ${table} FAILED`, error.message, '| row:', row);
-    else console.log(`[choreStore] ✓ DB insert ${table} ok (id=${row.id})`);
+  return Promise.resolve(supabase.from(table).insert(row)).then(({ error }) => {
+    if (error) {
+      console.warn(`[choreStore] ✗ DB insert ${table} FAILED`, error.message, '| row:', row);
+      return { ok: false };
+    }
+    console.log(`[choreStore] ✓ DB insert ${table} ok (id=${row.id})`);
+    return { ok: true };
   });
 }
 
@@ -707,8 +746,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
-  syncFromDB: async () => {
-    if (Date.now() - _fetchedAt < CACHE_TTL) return;
+  syncFromDB: async (force = false) => {
+    if (!force && Date.now() - _fetchedAt < CACHE_TTL) return;
     const familyId = getFamilyId();
     if (!familyId) return;
 
@@ -791,7 +830,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify([chore, ...get().chores]));
 
     // DB insert — map back to snake_case schema fields
-    dbInsert('chore_tasks', {
+    const insertPromise = dbInsert('chore_tasks', {
       id:                       chore.id,
       title:                    chore.title,
       description:              chore.description,
@@ -822,11 +861,24 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       shopping_store:           (partial as any).shoppingStore ?? null,
       shopping_budget:          (partial as any).shoppingBudget ?? null,
     });
+    _choreInsertPromises.set(chore.id, insertPromise);
 
     return chore;
   },
 
-  updateChore: (id, updates) => {
+  updateChore: (id, rawUpdates) => {
+    // openToGP (the "Offer to GP" toggle in OthersAdultQuestCard/
+    // PoolQuestCard/DelegateSheet) and inviteGrandparents (the separate
+    // "Invite Grandparents?" toggle in Add/EditQuestModal, and what
+    // claimGPErrand/submitGPErrandReceipt and the Chores tab's senior
+    // visibility filter actually check) are two different DB columns with
+    // overlapping intent that nothing kept in sync — a parent toggling
+    // "Offer to GP" set openToGP, but every read path a grandparent's
+    // claim/visibility depends on checks inviteGrandparents instead, so the
+    // toggle silently did nothing. Setting one now sets both.
+    const updates = 'openToGP' in (rawUpdates as any) && !('inviteGrandparents' in rawUpdates)
+      ? { ...rawUpdates, inviteGrandparents: (rawUpdates as any).openToGP as boolean }
+      : rawUpdates;
     set(s => ({
       chores: s.chores.map(c => c.id === id ? { ...c, ...updates } : c),
     }));
@@ -1481,7 +1533,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // PARENT-ONLY QUESTS
   // ─────────────────────────────────────────────────────────────────────────
 
-  addParentQuest: (choreId, assignedBy, assignedTo, mode = 'PULL') => {
+  addParentQuest: (choreId, assignedBy, assignedTo, mode = 'PULL', note) => {
     console.log(`[choreStore] addParentQuest called — choreId=${choreId} assignedBy=${assignedBy} assignedTo=${assignedTo ?? '(self)'} mode=${mode}`);
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore) {
@@ -1499,6 +1551,28 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
     const now = new Date().toISOString();
     const finalAssignedTo = assignedTo ?? assignedBy;
+
+    // Only one assignment should ever be "live" per chore — a reassign or a
+    // repeat delegate tap used to just pile another PENDING row on top of
+    // whatever was already open, so both parents ended up seeing multiple
+    // Accept/Respond cards for the same task. Close out anything still open
+    // on this chore before starting the new one.
+    const staleOpen = get().parentAssignments.filter(a =>
+      a.choreId === choreId && !a.isLocked &&
+      ['PENDING', 'ACCEPTED', 'SNOOZED', 'PARKED'].includes(a.status)
+    );
+    if (staleOpen.length > 0) {
+      console.log(`[choreStore] addParentQuest → superseding ${staleOpen.length} open assignment(s) on chore ${choreId}`);
+      set(s => ({
+        parentAssignments: s.parentAssignments.map(a =>
+          staleOpen.some(x => x.id === a.id) ? { ...a, status: 'COMPLETED', updatedAt: now } : a
+        ),
+      }));
+      for (const a of staleOpen) {
+        dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now });
+      }
+    }
+
     // PULL mode: person self-claims from backlog (assignedTo = themselves)
     // DIRECT mode: explicitly assigned to partner, status starts PENDING
     const assignment: ParentQuestAssignment = {
@@ -1509,21 +1583,32 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       status:            mode === 'DIRECT' ? 'PENDING' : 'ACCEPTED', // pull = self-accept
       bounceCount:       0,
       isLocked:          false,
+      note,
       createdAt:         now,
       updatedAt:         now,
     };
 
     set(s => ({ parentAssignments: [assignment, ...s.parentAssignments] }));
-    dbInsert('parent_quest_assignments', {
-      id:          assignment.id,
-      chore_id:    choreId,
-      assigned_by: assignedBy,
-      assigned_to: finalAssignedTo,
-      status:      assignment.status,
-      bounce_count: 0,
-      is_locked:   false,
-      created_at:  now,
-      updated_at:  now,
+    // RLS on parent_quest_assignments checks that chore_id already exists in
+    // chore_tasks — if this chore was just created in the same action (e.g.
+    // AddQuestModal creating a chore and immediately delegating it), the
+    // chore's own insert may not have committed yet. Wait for it first so
+    // this insert doesn't race ahead and get silently rejected.
+    const pendingChoreInsert = _choreInsertPromises.get(choreId);
+    (pendingChoreInsert ?? Promise.resolve()).then(() => {
+      _choreInsertPromises.delete(choreId);
+      dbInsert('parent_quest_assignments', {
+        id:          assignment.id,
+        chore_id:    choreId,
+        assigned_by: assignedBy,
+        assigned_to: finalAssignedTo,
+        status:      assignment.status,
+        bounce_count: 0,
+        is_locked:   false,
+        note:        note ?? null,
+        created_at:  now,
+        updated_at:  now,
+      });
     });
 
     // The Household Backlog pool/mine/theirs split is computed from the chore's
@@ -1565,6 +1650,12 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       case 'ACCEPT':
         newStatus = 'ACCEPTED';
         break;
+      case 'DECLINE':
+        // A flat "no" — distinct from a pushback (SNOOZE/BLOCKER/TRADE/
+        // DISCUSS all keep the task open and expect the assigner to hear
+        // back); DECLINED is terminal, same as walking away from it.
+        newStatus = 'DECLINED';
+        break;
       case 'SNOOZE':
         newStatus = 'SNOOZED';
         snoozeUntil = new Date(Date.now() + 48 * 3600_000).toISOString();
@@ -1574,8 +1665,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       case 'DISCUSS':
         newStatus = 'PARKED';
         newBounceCount += 1;
-        // Spec: Two-Bounce Rule — lock after bounce_count >= 1
-        if (newBounceCount >= 1) {
+        // Two-Bounce Rule — the first Blocker/Trade/Discuss just records the
+        // pushback and stays open (PARKED, not locked) so the other parent
+        // can respond again; only a second bounce locks it into "discuss
+        // offline." This was previously off-by-one (locked after the FIRST
+        // bounce at >= 1) while the UI told users they had two chances —
+        // now the code matches what PushbackSheet actually promises.
+        if (newBounceCount >= 2) {
           newIsLocked = true;
         }
         break;
@@ -1591,7 +1687,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
               snoozeUntil,
               bounceCount:        newBounceCount,
               isLocked:           newIsLocked,
-              actionablePushback: response.action === 'ACCEPT' ? undefined : response.action as PushbackType,
+              actionablePushback: (response.action === 'ACCEPT' || response.action === 'DECLINE') ? undefined : response.action as PushbackType,
               pushbackDetails:    response.details,
               updatedAt:          now,
             }
@@ -1604,7 +1700,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // on the refuser's list forever and nobody else can pick it up.
     if (newStatus === 'ACCEPTED') {
       get().updateChore(assignment.choreId, { assignedToId: assignment.assignedTo, status: 'in_progress' });
-    } else if (newStatus === 'PARKED') {
+    } else if (newStatus === 'PARKED' || newStatus === 'DECLINED') {
       get().updateChore(assignment.choreId, { assignedToId: undefined, status: 'todo' });
     }
 
@@ -1641,6 +1737,33 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     });
     console.log(`[choreStore] completeParentQuest → syncing chore ${assignment.choreId} status=completed`);
     get().updateChore(assignment.choreId, { status: 'completed' });
+  },
+
+  cancelLockedAssignment: (assignmentId) => {
+    console.log(`[choreStore] cancelLockedAssignment called — assignmentId=${assignmentId}`);
+    const now = new Date().toISOString();
+    const assignment = get().parentAssignments.find(a => a.id === assignmentId);
+    if (!assignment) {
+      console.warn(`[choreStore] cancelLockedAssignment ABORTED — no assignment found with id=${assignmentId}`);
+      return;
+    }
+    set(s => ({
+      parentAssignments: s.parentAssignments.map(a =>
+        a.id === assignmentId
+          ? { ...a, status: 'DECLINED', isLocked: false, updatedAt: now }
+          : a
+      ),
+    }));
+    dbUpdate('parent_quest_assignments', assignmentId, {
+      status:     'DECLINED',
+      is_locked:  false,
+      updated_at: now,
+    });
+    // Chore was already unassigned/todo while locked (respondToParentQuest's
+    // PARKED branch clears assignedToId) — no chore-row change needed here,
+    // it naturally re-enters the open pool now that no live assignment
+    // references it (getActiveAssignmentChoreIds no longer includes it
+    // since DECLINED is a terminal status).
   },
 
   appreciationPing: (assignmentId, fromId, message) => {
@@ -1703,6 +1826,28 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.categoryType !== 'grandparent_quest') return;
     if (chore.status !== 'todo') return;
+
+    // The sponsor notification used to be entirely caller-provided — every
+    // current call site happened to send its own chat message right after
+    // calling this, but nothing enforced it, so a future caller that forgot
+    // would silently decline with zero notification to the sponsor and no
+    // signal anything was missed. Centralizing it here removes that risk.
+    // Requires cross-store access (chatStore/familyStore) — first instance
+    // of that in this file, done via .getState() (runtime-only, no import
+    // cycle) rather than a static import, matching the pattern already used
+    // elsewhere in the app for one-off cross-store calls.
+    try {
+      const { useFamilyStore } = require('./familyStore');
+      const { useChatStore } = require('./chatStore');
+      const decliner = useFamilyStore.getState().members.find((m: any) => m.id === parentId);
+      if (chore.sponsorUserId) {
+        useChatStore.getState().sendMessage(chore.sponsorUserId, parentId,
+          `🙏 ${decliner?.name?.split(' ')[0] ?? 'Your grandchild'} can't take "${chore.title}"${reason ? ` — "${reason}"` : ''}`);
+      }
+    } catch (e) {
+      console.warn('[choreStore] declineGrandparentQuest sponsor notification failed', e);
+    }
+
     if (!chore.isPool && !chore.targetChildIds?.length) {
       // Directly assigned → release to pool for the whole family.
       get().updateChore(choreId, {
@@ -1955,6 +2100,61 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     return get().chores
       .filter(c => c.categoryType === 'parent_only_quest' && !c.assignedToId && !done.has(c.status))
       .sort((a, b) => a.createdAt < b.createdAt ? 1 : -1);
+  },
+
+  // Any chore with a still-live (non-terminal) assignment row — PENDING,
+  // ACCEPTED, IN_PROGRESS, SNOOZED, or locked/PARKED. A chore in this set
+  // must never be silently picked up via a plain "Take It"/auto-assign/
+  // reassign write — those all bypass parentAssignments and would leave a
+  // stale row pointing at the original assignee, who could then Accept it
+  // later and clobber whoever grabbed it in the meantime.
+  getActiveAssignmentChoreIds: () => {
+    const terminal = new Set(['COMPLETED', 'DECLINED']);
+    return new Set(
+      get().parentAssignments.filter(a => !terminal.has(a.status)).map(a => a.choreId)
+    );
+  },
+
+  getMyDirectPending: (memberId) => {
+    const nowIso = new Date().toISOString();
+    const systemBIds = new Set(get().chores.filter(c => !!c.assignedToId).map(c => c.id));
+    return get().parentAssignments.filter(a =>
+      a.assignedTo === memberId && !a.isLocked && !systemBIds.has(a.choreId) &&
+      (a.status === 'PENDING' || a.status === 'PARKED' ||
+       (a.status === 'SNOOZED' && (!a.snoozeUntil || a.snoozeUntil <= nowIso)))
+    );
+  },
+
+  // Both the assignee (who bounced it) and the assigner (who has to
+  // actually resolve it) need visibility — previously only the assignee
+  // could see a locked item, so the assigner's own delegation silently
+  // vanished from their view the moment it got parked.
+  getMyLockedItems: (memberId) => {
+    const systemBIds = new Set(get().chores.filter(c => !!c.assignedToId).map(c => c.id));
+    return get().parentAssignments.filter(a =>
+      (a.assignedTo === memberId || a.assignedBy === memberId) && a.isLocked && !systemBIds.has(a.choreId)
+    );
+  },
+
+  getMyAccepted: (memberId) => {
+    const systemBIds = new Set(get().chores.filter(c => !!c.assignedToId).map(c => c.id));
+    return get().parentAssignments.filter(a =>
+      a.assignedTo === memberId && (a.status === 'ACCEPTED' || a.status === 'IN_PROGRESS') && !systemBIds.has(a.choreId)
+    );
+  },
+
+  // A delegation the current member sent out and is still waiting on —
+  // previously the assigner had NO visibility into their own PENDING/
+  // SNOOZED-and-still-waiting DIRECT assignment; it just silently existed
+  // with no card anywhere until the assignee responded, so "assigned a
+  // task" and "nothing happened yet" looked identical from the assigner's
+  // side.
+  getMyOutgoingPending: (memberId) => {
+    const systemBIds = new Set(get().chores.filter(c => !!c.assignedToId).map(c => c.id));
+    return get().parentAssignments.filter(a =>
+      a.assignedBy === memberId && a.assignedBy !== a.assignedTo && !a.isLocked && !systemBIds.has(a.choreId) &&
+      (a.status === 'PENDING' || a.status === 'SNOOZED' || a.status === 'PARKED')
+    );
   },
 
   getMemberBalance: (memberId) => {

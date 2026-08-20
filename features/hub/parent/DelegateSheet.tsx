@@ -1,8 +1,10 @@
-import { View, Text, Pressable } from 'react-native';
+import { useState } from 'react';
+import { View, Text, Pressable, TextInput } from 'react-native';
 import { Check, HeartHandshake } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import { useChoreStore } from '@/store/choreStore';
+import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
 
@@ -17,31 +19,62 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
   members: FamilyMember[]; active: FamilyMember; colors: any; isDark: boolean;
   onClose: () => void;
   updateQuest: (id: string, patch: Record<string, any>) => void;
-  addParentQuest: (choreId: string, assignedBy: string, assignedTo: string, mode: 'DIRECT') => void;
+  addParentQuest: (choreId: string, assignedBy: string, assignedTo: string, mode: 'DIRECT', note?: string) => void;
 }) {
   const currentChore = target ? questPool.find(c => c.id === target.choreId) : null;
   const isGPOpen = !!(currentChore as any)?.openToGP;
+  const [note, setNote] = useState('');
 
   return (
     <AppBottomSheet
       visible={!!target}
-      onClose={onClose}
+      onClose={() => { setNote(''); onClose(); }}
       title={`Delegate: ${target?.choreTitle ?? ''}`}
       subtitle="Assign to a parent"
       accentColor={colors.parent}
       minHeight="40%"
       maxHeight="70%">
       <View style={{ gap: 10 }}>
+        <TextInput
+          value={note}
+          onChangeText={setNote}
+          placeholder="Add a note (optional) — why you're passing this along"
+          placeholderTextColor={colors.textTertiary}
+          multiline
+          style={{
+            fontSize: TYPO.label, color: colors.textPrimary, minHeight: 44,
+            borderRadius: 12, borderWidth: 1.5, borderColor: colors.border,
+            backgroundColor: isDark ? colors.surface : '#F8FAFC',
+            paddingHorizontal: 12, paddingVertical: 10,
+          }}
+        />
         <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
           {members.filter(m => m.role === 'parent').map(m => (
             <Pressable key={m.id} onPress={() => {
               if (!target) return;
+              // A task mid-negotiation (locked/pending) that gets
+              // reassigned elsewhere just silently vanishes from the
+              // previous assignee's card otherwise — they were never told
+              // why, or that it happened at all. Only fires when there was
+              // a live assignment to actually take it from, not a plain
+              // first-time delegation of a pool task.
+              const priorAssignment = useChoreStore.getState().parentAssignments.find(a =>
+                a.choreId === target.choreId && ['PENDING', 'ACCEPTED', 'SNOOZED', 'PARKED'].includes(a.status)
+              );
+              const priorAssigneeId = priorAssignment
+                ? (priorAssignment.assignedTo === active.id ? priorAssignment.assignedBy : priorAssignment.assignedTo)
+                : undefined;
               const isQRow = questPool.find(c => c.id === target.choreId && (c as any)._isQuestRow);
               if (isQRow) {
                 updateQuest(target.choreId, { assignedToId: m.id, status: 'todo' });
               } else {
-                addParentQuest(target.choreId, active.id, m.id, 'DIRECT');
+                addParentQuest(target.choreId, active.id, m.id, 'DIRECT', note.trim() || undefined);
               }
+              if (priorAssigneeId && priorAssigneeId !== m.id && priorAssigneeId !== active.id) {
+                useChatStore.getState().sendMessage(priorAssigneeId, active.id,
+                  `↪️ ${active.name.split(' ')[0]} reassigned "${target.choreTitle}" to ${m.name.split(' ')[0]}.`);
+              }
+              setNote('');
               onClose();
             }} style={{
               alignItems: 'center', gap: 6,

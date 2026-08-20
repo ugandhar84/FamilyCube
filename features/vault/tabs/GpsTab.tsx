@@ -140,7 +140,12 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   // Realtime — other family members' background pings should move their
   // pin on your map without you needing to pull-to-refresh.
   useEffect(() => {
-    const ch = supabase.channel('member_locations_live')
+    // A fixed channel name collides if this effect ever runs twice before
+    // the first subscription's cleanup completes (React Strict Mode's
+    // dev-only double-invoke of effects hits this directly) — see the
+    // identical fix in FamilyRadarSection.tsx for the full explanation.
+    const channelName = `member_locations_live_${Math.random().toString(36).slice(2)}`;
+    const ch = supabase.channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'member_locations' }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };

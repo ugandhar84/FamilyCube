@@ -222,8 +222,16 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
         set({ pastStores: uniqueStores, pastItemNames: uniqueNames });
       });
 
+      // A per-family (not per-call) channel name collides if load() is ever
+      // invoked twice concurrently for the same family before either call's
+      // subscription lands in state — the guard above only skips a SECOND
+      // call once the FIRST has already finished and been tracked, not
+      // while it's still in flight. A random suffix removes the collision
+      // entirely regardless of call timing (see the same fix applied to
+      // FamilyRadarSection.tsx/GpsTab.tsx for the identical root cause).
+      const subSuffix = Math.random().toString(36).slice(2);
       const itemSub = supabase
-        .channel(`grocery_items:${familyId}`)
+        .channel(`grocery_items:${familyId}:${subSuffix}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'grocery_items', filter: `family_id=eq.${familyId}` },
           (payload) => {
             if (payload.eventType === 'INSERT') {
@@ -248,7 +256,7 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
 
       // Realtime: run changes
       const runSub = supabase
-        .channel(`grocery_runs:${familyId}`)
+        .channel(`grocery_runs:${familyId}:${subSuffix}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'grocery_runs', filter: `family_id=eq.${familyId}` },
           (payload) => {
             if (payload.eventType === 'INSERT') {

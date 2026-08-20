@@ -1,0 +1,414 @@
+<title>Quest Lifecycle Matrix</title>
+<style>
+  :root{
+    --bg:#F7F5F1; --surface:#FFFFFF; --surface-2:#EFECE5; --border:#DDD8CC;
+    --text:#26241E; --text-2:#5B5748; --text-3:#8B8676;
+    --accent:#7A5CFA; --accent-soft:#EFEBFF;
+    --ok:#16794F; --ok-bg:#E4F5EC;
+    --gap:#B4530A; --gap-bg:#FCEEDD;
+    --bug:#B0223A; --bug-bg:#FBE6E9;
+    --fixed:#0E6E8C; --fixed-bg:#E4F3F7;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+      --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+      --accent:#A594FF; --accent-soft:#2A2440;
+      --ok:#5FD39A; --ok-bg:#123B2A;
+      --gap:#F0A75E; --gap-bg:#3A2712;
+      --bug:#F1748A; --bug-bg:#3B1620;
+      --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#16151A; --surface:#1E1D24; --surface-2:#26242D; --border:#38363F;
+    --text:#EDEBE6; --text-2:#B3AFA4; --text-3:#807C71;
+    --accent:#A594FF; --accent-soft:#2A2440;
+    --ok:#5FD39A; --ok-bg:#123B2A;
+    --gap:#F0A75E; --gap-bg:#3A2712;
+    --bug:#F1748A; --bug-bg:#3B1620;
+    --fixed:#7FD2EC; --fixed-bg:#0F2E38;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--text); margin:0;
+    font-family: ui-sans-serif, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    line-height:1.5; font-size:15px;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:40px 24px 96px;}
+
+  h1{font-size:28px; font-weight:800; letter-spacing:-0.01em; margin:0 0 6px; text-wrap:balance;}
+  .subtitle{color:var(--text-2); font-size:15px; margin:0 0 28px; max-width:70ch;}
+
+  .legend{display:flex; flex-wrap:wrap; gap:8px 16px; margin:0 0 32px; padding:14px 16px; background:var(--surface); border:1px solid var(--border); border-radius:10px;}
+  .legend span{display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-2);}
+  .dot{width:10px; height:10px; border-radius:3px; display:inline-block;}
+  .dot.ok{background:var(--ok);} .dot.gap{background:var(--gap);} .dot.bug{background:var(--bug);} .dot.fixed{background:var(--fixed);}
+
+  section{margin-bottom:44px;}
+  h2{font-size:19px; font-weight:800; margin:0 0 4px; padding-top:8px; border-top:2px solid var(--border);}
+  .lede{color:var(--text-2); font-size:13.5px; margin:0 0 16px; max-width:80ch;}
+
+  table{border-collapse:collapse; width:100%; background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden;}
+  .tablewrap{overflow-x:auto; border-radius:10px; border:1px solid var(--border);}
+  .tablewrap table{border:none; border-radius:0;}
+  th, td{border:1px solid var(--border); padding:10px 12px; text-align:left; vertical-align:top; font-size:13px;}
+  th{background:var(--surface-2); font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-2); position:sticky; top:0;}
+  td.state{font-weight:700; background:var(--surface-2); white-space:nowrap;}
+  tr:nth-child(even) td:not(.state){background: color-mix(in srgb, var(--surface) 96%, var(--text) 2%);}
+  code{font-family:var(--mono); font-size:12px; background:var(--surface-2); padding:1px 5px; border-radius:4px;}
+
+  .tag{display:inline-block; font-size:10.5px; font-weight:800; letter-spacing:0.03em; text-transform:uppercase; padding:2px 7px; border-radius:5px; margin-bottom:4px;}
+  .tag.ok{background:var(--ok-bg); color:var(--ok);}
+  .tag.gap{background:var(--gap-bg); color:var(--gap);}
+  .tag.bug{background:var(--bug-bg); color:var(--bug);}
+  .tag.fixed{background:var(--fixed-bg); color:var(--fixed);}
+  .cell-note{display:block; color:var(--text-2); font-size:12px; margin-top:2px;}
+  .na{color:var(--text-3); font-style:italic;}
+
+  .finding{background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--bug); border-radius:8px; padding:14px 16px; margin-bottom:14px;}
+  .finding.fixed{border-left-color:var(--fixed);}
+  .finding.gap{border-left-color:var(--gap);}
+  .finding.notgap{border-left-color:var(--ok);}
+  .finding h3{margin:0 0 6px; font-size:14.5px;}
+  .finding p{margin:6px 0; color:var(--text-2); font-size:13.5px;}
+  .finding .path{font-family:var(--mono); font-size:12px; color:var(--text-3);}
+
+  .scenario{background:var(--accent-soft); border-radius:8px; padding:10px 13px; font-size:13px; margin:8px 0; color:var(--text);}
+  .scenario b{color:var(--accent);}
+
+  footer{margin-top:56px; padding-top:16px; border-top:1px solid var(--border); color:var(--text-3); font-size:12px;}
+</style>
+
+<div class="wrap">
+  <h1>Quest / Chore Lifecycle Matrix</h1>
+  <p class="subtitle">
+    Full real-world lifecycle audit of Family Cube's chore/quest engine — System A
+    (<code>parent_quest_assignments</code>, two-bounce negotiation) and System B (plain
+    <code>chore_tasks.assigned_to_id</code>) — across every viewer role, including kid, teen, and
+    grandparent/senior-facing flows. Built by reading <code>store/choreStore.ts</code>,
+    <code>store/choreAdapter.ts</code>, and every Hub/Quests-tab component that renders a quest card.
+  </p>
+
+  <div class="legend">
+    <span><span class="dot ok"></span>Correct — works as intended</span>
+    <span><span class="dot gap"></span>Gap — missing card/action</span>
+    <span><span class="dot bug"></span>Bug — wrong action / conflicting cards / dead end</span>
+    <span><span class="dot fixed"></span>Fixed in this pass</span>
+  </div>
+
+  <section>
+    <h2>1 · Household chore (System B) lifecycle</h2>
+    <p class="lede">Citizenship / routine / bounty / shopping chores. Rows = <code>ChoreStatus</code>. Columns = viewer relative to the chore.</p>
+    <div class="tablewrap">
+    <table>
+      <tr>
+        <th>Status</th>
+        <th>Assignee — kid</th>
+        <th>Assignee — teen</th>
+        <th>Assignee — parent (adult task)</th>
+        <th>Assigner / other parent</th>
+        <th>Sibling kid (unrelated)</th>
+        <th>Senior / GP (not sponsor)</th>
+      </tr>
+      <tr>
+        <td class="state">unclaimed pool<br><span class="cell-note">bounty, <code>isPool</code></span></td>
+        <td><span class="tag ok">OK</span> Claim Quest button (<code>QuestCard.tsx:656</code>, <code>KidQuestCard.tsx:116</code>)</td>
+        <td><span class="tag ok">OK</span> same as kid — <code>isKidOrTeen</code> shares claim rights</td>
+        <td class="na">n/a — bounty pool hidden from adult filter</td>
+        <td><span class="tag ok">OK</span> read-only claimant-count badge (<code>QuestCard.tsx:740</code>)</td>
+        <td><span class="tag ok">OK</span> visible, claimable first-come</td>
+        <td class="na">n/a unless <code>inviteGrandparents</code></td>
+      </tr>
+      <tr>
+        <td class="state">todo · assigned</td>
+        <td><span class="tag ok">OK</span> Submit for Review / Can't do this (decline)</td>
+        <td><span class="tag ok">OK</span> Submit for Review only — <b>no decline button</b>, by design (see §4)</td>
+        <td><span class="tag ok">OK</span> Take It / Delegate (unassigned) or ✅ Done (accepted via System A)</td>
+        <td><span class="tag ok">OK</span> Nudge / Reclaim (<code>OthersAdultQuestCard.tsx</code>)</td>
+        <td><span class="tag na">hidden</span> not visible unless assigned or pool</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="state">in_progress</td>
+        <td><span class="tag ok">OK</span> Submit for Review</td>
+        <td><span class="tag ok">OK</span> Submit for Review</td>
+        <td><span class="tag ok">OK</span> ✅ Done via linked assignment</td>
+        <td><span class="tag ok">OK</span> read-only</td>
+        <td class="na">hidden</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="state">pending_approval</td>
+        <td><span class="tag ok">OK</span> read-only "Waiting on a parent"</td>
+        <td><span class="tag ok">OK</span> same</td>
+        <td class="na">n/a (adult tasks aren't approval-gated)</td>
+        <td><span class="tag ok">OK</span> Approve / ↩ Redo in <code>ChoreReviewSection</code> + <code>QuestCard</code></td>
+        <td class="na">hidden</td>
+        <td><span class="tag ok">OK</span> same Approve/Redo rights as parent (<code>isParentOrSenior</code>)</td>
+      </tr>
+      <tr>
+        <td class="state">redo_requested<br><span class="cell-note">shown as "declined"</span></td>
+        <td><span class="tag ok">OK</span> ↩ Revise &amp; Resubmit</td>
+        <td><span class="tag ok">OK</span> same — teens CAN resubmit even though they can't decline upfront</td>
+        <td class="na">n/a</td>
+        <td><span class="tag ok">OK</span> sees decline reason, Reopen available if needed</td>
+        <td class="na">hidden</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="state">approved / auto_approved</td>
+        <td><span class="tag ok">OK</span> read-only, cheerable by siblings</td>
+        <td><span class="tag ok">OK</span> same</td>
+        <td><span class="tag ok">OK</span> parent self-note field</td>
+        <td><span class="tag ok">OK</span> read-only</td>
+        <td><span class="tag ok">OK</span> Cheer Squad card (24h window)</td>
+        <td><span class="tag ok">OK</span> Cheer Squad card</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>2 · Grandparent quest lifecycle</h2>
+    <p class="lede">Rows = <code>ChoreStatus</code> unique to <code>grandparent_quest</code>. Columns = viewer.</p>
+    <div class="tablewrap">
+    <table>
+      <tr>
+        <th>Status</th>
+        <th>Sponsor GP</th>
+        <th>Parent (safety reviewer)</th>
+        <th>Targeted kid/teen</th>
+        <th>Non-targeted sibling</th>
+        <th>Non-sponsor GP</th>
+      </tr>
+      <tr>
+        <td class="state">pending_parent_approval</td>
+        <td><span class="tag ok">OK</span> <code>AwaitingParentCard</code> — Cancel Chore only</td>
+        <td><span class="tag ok">OK</span> <code>GpSafetyReviewCard</code> — Approve &amp; Publish / Decline</td>
+        <td class="na">hidden (<code>awaitingParentApproval</code> filter)</td>
+        <td class="na">hidden</td>
+        <td class="na">hidden</td>
+      </tr>
+      <tr>
+        <td class="state">declined (by parent)</td>
+        <td><span class="tag ok">OK</span> <code>TurnedDownCard</code> — "Open it to any grandchild"</td>
+        <td><span class="tag ok">OK</span> <code>GpTurnedDownCard</code> — Reassign / Open to Any Kid</td>
+        <td class="na">hidden</td>
+        <td class="na">hidden</td>
+        <td class="na">hidden</td>
+      </tr>
+      <tr>
+        <td class="state">todo (approved, waiting claim)</td>
+        <td><span class="tag ok">OK</span> <code>ApprovedWaitingClaimCard</code> read-only</td>
+        <td><span class="tag ok">OK</span> read-only, in Chore Reviews history</td>
+        <td><span class="tag ok">OK</span> "I'll take it" / Decline (<code>KidQuestCard.tsx:104-113</code>)</td>
+        <td><span class="tag ok">OK</span> verified independent-per-clone (see Finding G1)</td>
+        <td class="na">n/a — not this GP's quest</td>
+      </tr>
+      <tr>
+        <td class="state">in_progress</td>
+        <td><span class="tag ok">OK</span> <code>InProgressCard</code> read-only</td>
+        <td><span class="tag ok">OK</span> read-only</td>
+        <td><span class="tag ok">OK</span> Done · Submit</td>
+        <td class="na">hidden</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="state">pending_grandparent_approval</td>
+        <td><span class="tag ok">OK</span> <code>PendingVerifyCheerCard</code> — sticker + Approve&amp;Cheer / Redo</td>
+        <td><span class="tag fixed">FIXED</span> see Finding G2</td>
+        <td><span class="tag ok">OK</span> read-only "waiting on a grandparent"</td>
+        <td class="na">hidden</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="state">declined by kid<br><span class="cell-note">via <code>declineGrandparentQuest</code></span></td>
+        <td><span class="tag ok">OK</span> see Finding G3 — sponsor DM fires regardless of team/single</td>
+        <td><span class="tag ok">OK</span> reopens to pool automatically (single-target) or stays visible via <code>ChoreReviewSection</code>'s <code>gpDeclined</code></td>
+        <td class="na">n/a — they declined it</td>
+        <td><span class="tag ok">OK</span> now in open pool (single-target case)</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="state">completed<br><span class="cell-note">via grandparentApproveAndCheer</span></td>
+        <td><span class="tag ok">OK</span> <code>CompletedCard</code>, 24h window</td>
+        <td><span class="tag ok">OK</span> read-only in Chore Reviews</td>
+        <td><span class="tag ok">OK</span> read-only, cheerable by siblings</td>
+        <td><span class="tag ok">OK</span> Cheer Squad</td>
+        <td><span class="tag ok">OK</span> Family Kudos strip (Chores tab)</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>3 · GP invitation / GP-welcome errand lifecycle</h2>
+    <p class="lede">Parent-flagged <code>inviteGrandparents</code> tasks and <code>openToGP</code> shopping runs — the "any GP can help" workflow, distinct from a sponsored <code>grandparent_quest</code>.</p>
+    <div class="tablewrap">
+    <table>
+      <tr>
+        <th>State</th>
+        <th>Any GP (invited pool)</th>
+        <th>Parent who flagged it</th>
+        <th>Claiming GP after claim</th>
+      </tr>
+      <tr>
+        <td class="state">todo, <code>inviteGrandparents</code></td>
+        <td><span class="tag ok">OK</span> <code>QuestInvitationsSection</code> — "I'd Love To Help" / Pass</td>
+        <td><span class="tag ok">OK</span> <code>GpCanHelpSection</code> toggle "Offer GP"</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="state">in_progress, claimed by GP</td>
+        <td class="na">n/a — already claimed</td>
+        <td><span class="tag ok">OK</span> visible in Household Backlog (othersAdultQuests-equivalent)</td>
+        <td><span class="tag ok">OK</span> <code>ActiveErrandsSection</code> → Submit Receipt</td>
+      </tr>
+      <tr>
+        <td class="state">receipt submitted</td>
+        <td class="na">n/a</td>
+        <td><span class="tag ok">OK</span> Chore Review deck (routes to <code>pending_approval</code>) + Reimbursed ack</td>
+        <td><span class="tag ok">OK</span> read-only, reimbursement badge</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>4 · System A — parent-to-parent negotiation lifecycle</h2>
+    <p class="lede">Confirmed unchanged in structure since last session's audit; re-verified against current code. No new gaps found here — included for completeness.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Status</th><th>Assignee parent</th><th>Assigner parent</th><th>Kid/teen/GP</th></tr>
+      <tr>
+        <td class="state">PENDING (DIRECT)</td>
+        <td><span class="tag ok">OK</span> <code>DirectPendingCard</code> — Accept / Respond</td>
+        <td><span class="tag ok">OK</span> <code>OutgoingPendingCard</code> read-only</td>
+        <td class="na">n/a — adult-only task, hidden from kid filters</td>
+      </tr>
+      <tr>
+        <td class="state">PARKED (bounce 1)</td>
+        <td><span class="tag ok">OK</span> same card, shows pushback text</td>
+        <td><span class="tag ok">OK</span> shows "pushed back — waiting on your response"</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="state">PARKED, locked (bounce 2)</td>
+        <td><span class="tag ok">OK</span> <code>LockedAssignmentCard</code> — Reassign / Reopen</td>
+        <td><span class="tag ok">OK</span> same card, both sides see it (<code>getMyLockedItems</code>)</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="state">SNOOZED</td>
+        <td><span class="tag ok">OK</span> reappears in Direct Pending once expired</td>
+        <td><span class="tag ok">OK</span> Outgoing Pending, "Snoozed — waiting"</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="state">ACCEPTED / IN_PROGRESS</td>
+        <td><span class="tag ok">OK</span> <code>AcceptedQuestCard</code> — Done / appreciation ping</td>
+        <td><span class="tag ok">OK</span> read-only</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="state">COMPLETED / DECLINED</td>
+        <td><span class="tag ok">OK</span> terminal, drops from all lists</td>
+        <td><span class="tag ok">OK</span> terminal</td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>5 · Decline / pushback authority by role</h2>
+    <p class="lede">Who can say no, and how — this is the section the user specifically asked to be judged for over-engineering vs. real gaps.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Role</th><th>Own household chore</th><th>GP-sponsored quest</th><th>Parent-to-parent (System A)</th></tr>
+      <tr>
+        <td class="state">Kid</td>
+        <td><span class="tag ok">OK</span> flat decline → back to pool, no negotiation</td>
+        <td><span class="tag ok">OK</span> <code>DeclineQuestSheet</code> with reason, → pool</td>
+        <td class="na">n/a — not a party to System A</td>
+      </tr>
+      <tr>
+        <td class="state">Teen</td>
+        <td><span class="tag fixed">FIXED</span> see Finding T1 — now has the same one-tap decline as kids</td>
+        <td><span class="tag ok">OK</span> same <code>DeclineQuestSheet</code> as kid</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="state">Parent (assignee)</td>
+        <td class="na">n/a — parents don't get assigned household chores this way</td>
+        <td class="na">n/a — parents review, don't get assigned GP quests</td>
+        <td><span class="tag ok">OK</span> full 4-way pushback (Snooze/Blocker/Trade/Discuss) + flat Decline via <code>PushbackSheet</code></td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <h2 style="border-top:none; padding-top:0;">Findings</h2>
+  <p class="lede">Concrete scenarios, file+line references, and disposition (fixed / judged not-a-gap).</p>
+
+  <div class="finding fixed">
+    <h3><span class="tag fixed">Fixed</span> T1 — Teens have no way to decline a directly-assigned household chore</h3>
+    <p class="path">features/quests/components/QuestCard.tsx:76 · features/hub/kid/KidQuestCard.tsx (isActionable branch)</p>
+    <p><span class="scenario"><b>Scenario:</b> Priya (parent) assigns "Clean the garage" directly to Marcus (16, teen). Marcus is swamped with finals and genuinely cannot do it this week. In <code>QuestCard.tsx</code>, <code>canKidDecline = isKid && ...</code> — teens are explicitly excluded ("teens CANNOT decline (no decline authority)" per the comment). But that comment describes GP-quest accept/decline symmetry, not household chores. Marcus has no button at all — his only path is to submit garbage work or silently ignore it, both bad outcomes for a genuinely legitimate case (he does not "have no decline authority" in the way a toddler getting a chore might — he is old enough to negotiate, closer to an adult).</span></p>
+    <p><b>Root cause:</b> The comment's intent (teens don't get parent-to-parent-style negotiation) got over-applied to block ALL decline, including the same one-tap "Can't do this → back to pool" flow kids already have. That's not a two-bounce negotiation — it's the same flat decline a kid gets. There is no reason a teen should have strictly fewer options than a kid here.</p>
+    <p><b>Fix:</b> Teens get the exact same one-tap decline-to-pool flow kids already have (not the full parent pushback system — that stays parent-only, consistent with judgment below on G-negotiation). Changed the gating from <code>isKid</code> to <code>isKidOrTeen</code> in <code>QuestCard.tsx</code>'s <code>canKidDecline</code>, and in <code>KidQuestCard.tsx</code>/<code>MyQuestsSection</code> wiring (teens already share the same component tree as kids for quest cards, so this was a one-line gate fix, not new UI).</p>
+  </div>
+
+  <div class="finding notgap">
+    <h3><span class="tag ok">Not a gap</span> G1 — A GP-approved bounty targeted at 2+ kids showing wrong claim state to siblings</h3>
+    <p class="path">store/choreStore.ts:1225-1256 (approveGrandparentQuestAsParent) · features/hub/kid/KidQuestCard.tsx</p>
+    <p><span class="scenario"><b>Scenario checked:</b> Grandpa sponsors "Rake the whole yard" for both Alex and Jamie (siblings). Once a parent approves, the store clones the chore — each kid gets their own <code>todo</code> row with the SAME <code>teamGroupId</code> and <code>targetChildIds</code>. Alex claims and starts his clone. Jamie opens the Chores tab: her own clone is untouched (still <code>todo</code>, unclaimed) so she correctly sees her own claim button.</span></p>
+    <p><b>Disposition:</b> Verified OK — the team-clone design (independent chore id per kid, linked only by <code>teamGroupId</code> for display) already prevents cross-contamination. No code change needed.</p>
+  </div>
+
+  <div class="finding fixed">
+    <h3><span class="tag fixed">Fixed</span> G2 — A parent has no way to review/redo a GP-sponsored quest sitting in <code>pending_grandparent_approval</code> if the sponsor GP is unavailable</h3>
+    <p class="path">store/choreStore.ts:1175-1187 (requestGrandparentRedo) · features/hub/parent/ChoreReviewSection.tsx</p>
+    <p><span class="scenario"><b>Scenario:</b> Grandma sponsors "Call and tell me about your school day" (virtual quest) for Priya's daughter Zoe. Zoe submits proof. Grandma is traveling and doesn't open the app for 3 days. Meanwhile Priya (the parent) opens Chore Reviews — <code>ChoreReviewSection</code> only surfaced <code>gpPending</code> (<code>pending_parent_approval</code>) and <code>gpDeclined</code> quests. A quest sitting in <code>pending_grandparent_approval</code> — submitted, waiting on the grandparent's OK — was completely invisible to the parent. Priya couldn't approve it herself, couldn't nudge, couldn't do anything; Zoe just waited indefinitely with no parent-side visibility into a stuck review.</span></p>
+    <p><b>Fix:</b> Added a "Grandparent Quests — Awaiting Grandparent Review" sub-section to <code>ChoreReviewSection.tsx</code> listing chores in <code>pending_grandparent_approval</code>, showing sponsor name and submitted-at, with a "Nudge grandparent" action (chat DM to sponsor) and a parent-side fallback Approve &amp; Pay using the same payout path as <code>grandparentApproveAndCheer</code>, so work doesn't sit blocked indefinitely if the GP is unreachable. Mirrors the existing <code>GpSafetyReviewCard</code>/<code>GpTurnedDownCard</code> pattern already in that file.</p>
+  </div>
+
+  <div class="finding notgap">
+    <h3><span class="tag ok">Not a gap</span> G3 — Team-clone GP quest decline notification</h3>
+    <p class="path">features/hub/kid/DeclineQuestSheet.tsx:83-94 · store/choreStore.ts:1810-1832 (declineGrandparentQuest)</p>
+    <p><span class="scenario"><b>Scenario checked:</b> A 2-kid team GP quest clone is declined by one sibling. Does the sponsor get notified, and does the other kid's clone stay intact?</span></p>
+    <p><b>Disposition:</b> Verified OK. The chat DM to the sponsor in <code>DeclineQuestSheet</code> fires unconditionally regardless of team vs. single mode. The other kid's clone is a fully independent chore row (different id), untouched by a sibling's decline — confirmed each clone pays out independently in <code>approveGrandparentQuestAsParent</code>. <code>ChoreReviewSection</code>'s <code>GpTurnedDownCard</code> query (<code>status === 'declined'</code>) already picks up a declined team clone too since it isn't filtered by team status. No fix needed.</p>
+  </div>
+
+  <div class="finding notgap">
+    <h3><span class="tag ok">Not a gap</span> Kids don't have a "decline a household routine chore" submission-review action</h3>
+    <p>Checked whether a kid's declined household chore ever needs to reach "Chore Reviews" the way a GP-quest decline does. On inspection, kids don't have a "decline a household routine chore" action at all today (only Can't-do-this on bounties/assigned chores pre-submission, which unassigns rather than declining a submission) — so this state doesn't actually exist as a reachable case. No fix needed.</p>
+  </div>
+
+  <div class="finding notgap">
+    <h3><span class="tag ok">Not a gap</span> Kids/teens don't get System A's two-bounce negotiation (Snooze/Blocker/Trade/Discuss)</h3>
+    <p>Judged intentional. System A's four-way pushback vocabulary (Snooze 48h, Blocker, Trade tasks, Discuss later) models a peer-to-peer household-logistics negotiation between two adults who both have full context on the family calendar and each other's workload — that doesn't map onto a parent-child chore relationship, where the parent is the authority, not a negotiating peer. The existing simpler flow (submit / can't-do-this-back-to-pool / resubmit-after-redo) is the age-appropriate analog and is now symmetric between kids and teens (see T1). Adding "Trade tasks" or "Snooze 48h" for a 10-year-old's chore would be over-engineering exactly as flagged in the task brief. No change made.</p>
+  </div>
+
+  <div class="finding notgap">
+    <h3><span class="tag ok">Not a gap</span> A non-sponsor GP cannot see or act on another GP's sponsored quest</h3>
+    <p>Verified via <code>SponsorQuestsSection</code>'s <code>mySponsored</code> filter (<code>sponsorUserId === active.id</code>) and <code>QuestsScreen.tsx</code>'s senior filter (<code>q.sponsorUserId === myId</code>). Two grandparents in the same family (e.g. paternal + maternal) each only ever see their own sponsored quests plus general <code>inviteGrandparents</code> invitations. This is correct — a quest one grandparent set up as a surprise/connection activity for their own grandkid should not be editable or visible-in-detail to the other GP by default. No change made.</p>
+  </div>
+
+  <div class="finding notgap">
+    <h3><span class="tag ok">Not a gap</span> Sibling kids cannot see or approve each other's <code>pending_approval</code> submissions</h3>
+    <p>Confirmed via <code>QuestsScreen.tsx</code>'s <code>isKidOrTeen</code> filter block (only own-assigned + pool quests visible) and <code>canApprove = isParentOrSenior && isReview</code> — a sibling has no path to a decline/approve button for another kid's submission anywhere in the codebase. This is correct RBAC, not a gap.</p>
+  </div>
+
+  <footer>
+    Built by reading the current state of: store/choreStore.ts, store/choreAdapter.ts, features/quests/QuestsScreen.tsx,
+    features/quests/components/QuestCard.tsx, features/hub/{KidView,TeenView,SeniorView,ParentView}.tsx, and all
+    features/hub/{kid,parent,senior,senior/sponsor}/*.tsx card components referenced above. Session scope: widening
+    the earlier parent-to-parent (System A) audit to cover child- and grandparent-facing flows end to end. Findings
+    marked "Fixed" were implemented in this same session immediately after the audit; findings marked "Not a gap"
+    were investigated and confirmed correct as-is, with reasoning recorded above.
+  </footer>
+</div>

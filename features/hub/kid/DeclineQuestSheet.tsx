@@ -11,8 +11,20 @@ import type { FamilyMember } from '@/store/familyStore';
 
 const PRESETS = ['Too busy today', 'Need help with it', 'Already done', 'Not sure how'];
 
-// Declining a grandparent quest, with a note back to GP + parent — posted to
-// family chat, which is where both will actually see it.
+// Declining a quest assigned directly to this kid/teen. Two different
+// underlying actions share this one sheet, branched by the target chore's
+// own categoryType (not by a caller-passed flag, so KidView/TeenView don't
+// need two separate sheets or two separate pieces of state):
+//   - grandparent_quest at 'todo'  -> declineGrandparentQuest (releases back
+//     to the pool, DMs the sponsor)
+//   - a plain household chore ('todo'/'in_progress', not GP, not pool) ->
+//     reassignQuest(id, '', by) (same "send back to pool" store call
+//     QuestCard.tsx's canKidDecline uses on the Chores tab) — this used to
+//     have NO button anywhere in the Hub at all: MyQuestsSection only ever
+//     passed a plain household chore's todo card through KidQuestCard's
+//     isGpTodo branch, which never rendered for a non-GP chore, so a kid or
+//     teen with a directly-assigned chore they genuinely can't do had no
+//     way to send it back except from the separate Chores tab.
 export function DeclineQuestSheet({ target, active, members, colors, isDark, onClose, declineGrandparentQuest }: {
   target: { id: string; title: string } | null;
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
@@ -79,16 +91,28 @@ export function DeclineQuestSheet({ target, active, members, colors, isDark, onC
                   onPress={() => {
                     if (!target) return;
                     const finalNote = note.trim();
-                    declineGrandparentQuest(target.id, active.id, finalNote);
-                    const sponsor = useChoreStore.getState().chores.find(c => c.id === target.id)?.sponsorUserId;
-                    const sponsorName = members.find(m => m.id === sponsor)?.name.split(' ')[0];
-                    // This decline note is addressed to whoever sponsored/assigned the
-                    // quest (often a grandparent) — send it to their 1:1 DM instead of
-                    // the family-wide channel, which kids can also read.
-                    if (sponsor) {
-                      useChatStore.getState().sendMessage(sponsor, active.id,
-                        `🙏 ${active.name.split(' ')[0]} can't take "${target.title}" — "${finalNote}"`);
+                    const chore = useChoreStore.getState().chores.find(c => c.id === target.id);
+                    if (chore?.categoryType === 'grandparent_quest') {
+                      // declineGrandparentQuest now sends the sponsor DM
+                      // itself (centralized in choreStore.ts so no caller
+                      // can forget it) — only need the family-wide fallback
+                      // here for the no-sponsor case, which the store
+                      // action doesn't cover.
+                      declineGrandparentQuest(target.id, active.id, finalNote);
+                      if (!chore.sponsorUserId) {
+                        useChatStore.getState().sendMessage('all', active.id,
+                          `🙏 ${active.name.split(' ')[0]} can't take "${target.title}" — "${finalNote}"`);
+                      }
                     } else {
+                      // Plain household chore — send back to the pool, same
+                      // store call the Chores tab's "Can't do this" uses.
+                      // No parentAssignments/System-A row exists for a
+                      // System-B chore, so this is a direct unassign, not a
+                      // negotiation — matches the "flat decline, no
+                      // back-and-forth" design already documented for kids.
+                      useChoreStore.getState().updateChore(target.id, {
+                        assignedToId: undefined, isPool: true, status: 'todo',
+                      });
                       useChatStore.getState().sendMessage('all', active.id,
                         `🙏 ${active.name.split(' ')[0]} can't take "${target.title}" — "${finalNote}"`);
                     }

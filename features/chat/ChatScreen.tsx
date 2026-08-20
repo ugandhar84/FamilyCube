@@ -135,6 +135,10 @@ export default function ChatScreen() {
   const isParent     = activeMember?.role === 'parent';
   const isSenior     = activeMember?.role === 'senior';
   const kids         = members.filter(m => m.role !== 'parent');
+  // Co-parents need a 1:1 DM tab too — e.g. quest nudges between parents
+  // route to each other's DM (not #all-family), which is invisible without
+  // a tab to open it from.
+  const coParents    = members.filter(m => m.role === 'parent' && m.id !== activeMemberId);
 
   // #all-family is no longer visible/postable to grandparents — they now
   // have their own maternal/paternal + combined Grand Squad channels
@@ -152,6 +156,7 @@ export default function ChatScreen() {
 
   const allChannels = [
     ...groupChannels,
+    ...coParents.map(p => ({ id: p.id, label: `💬 ${p.name.split(' ')[0]}`, isDM: true, lock: false })),
     ...kids.map(k => ({ id: k.id, label: `💬 ${k.name.split(' ')[0]}`, isDM: true, lock: false })),
   ];
   const FULL_LABELS: Record<string, string> = Object.fromEntries(groupChannels.map(ch => [ch.id, ch.label]));

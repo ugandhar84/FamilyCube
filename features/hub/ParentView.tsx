@@ -47,9 +47,10 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
 
   const {
     parentAssignments, createAndAddParentQuest, addParentQuest,
-    respondToParentQuest, completeParentQuest, appreciationPing, getParentQuestPool,
+    respondToParentQuest, completeParentQuest, cancelLockedAssignment, appreciationPing, getParentQuestPool,
     getPendingCashOuts, chores, addChore, getParentReviewDeck,
-    approveGrandparentQuestAsParent, declineGrandparentQuestAsParent,
+    approveGrandparentQuestAsParent, declineGrandparentQuestAsParent, grandparentApproveAndCheer,
+    getMyDirectPending, getMyLockedItems, getMyAccepted, getMyOutgoingPending, getActiveAssignmentChoreIds,
     loadFromStorage: loadChores, syncFromDB: syncChores,
   } = useChoreStore();
   const pendingReviews = getParentReviewDeck();
@@ -67,7 +68,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     title: string; category?: string; memberId?: string; startAt?: string;
     notes?: string; coins?: number; photoRequired?: boolean;
   } | undefined>(undefined);
-  const [pushbackSheet, setPushbackSheet] = useState<{ assignmentId: string; choreTitle: string } | null>(null);
+  const [pushbackSheet, setPushbackSheet] = useState<{ assignmentId: string; choreTitle: string; assignedBy: string; assignedTo: string } | null>(null);
   const [delegateSheet, setDelegateSheet] = useState<{ choreId: string; choreTitle: string } | null>(null);
 
   useEffect(() => { loadGrocery((active as any).familyId ?? 'family-1'); }, [(active as any).familyId]);
@@ -271,10 +272,18 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   const unassignedAdultQ    = adultQuests.filter(q => !q.assignedToId);
 
   const choreIds         = new Set(chorePool.map(c => c.id));
+  // A chore with ANY live System-A assignment row — PENDING, SNOOZED,
+  // ACCEPTED, or locked/PARKED — must never also show up in the open pool
+  // with "Take it/Delegate" actions. It used to only exclude locked chores,
+  // which let anyone "Take It" out from under a pending DIRECT assignment:
+  // the original assignee could then tap Accept later and silently
+  // reassign the chore back to themselves, clobbering whoever just grabbed
+  // it, since the two systems never checked each other.
+  const activeAssignmentChoreIds = getActiveAssignmentChoreIds();
   // Pool = unassigned adult quests + chore-based pool (no duplicates)
   const questPool        = [
-    ...chorePool,
-    ...unassignedAdultQ.filter(q => !choreIds.has(q.id)).map(q => ({
+    ...chorePool.filter(c => !activeAssignmentChoreIds.has(c.id)),
+    ...unassignedAdultQ.filter(q => !choreIds.has(q.id) && !activeAssignmentChoreIds.has(q.id)).map(q => ({
       id: q.id, title: q.title, description: q.description, dueDate: q.dueDate,
       categoryType: 'parent_only_quest' as const, category: q.category,
       basePoints: q.coins, coinsReward: q.coins, xpReward: 0, status: 'todo' as const,
@@ -288,20 +297,13 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // IDs already rendered in System B (direct assignedToId) — exclude from System A (parentAssignments)
   const systemBIds = new Set([...myAdultQuests, ...othersAdultQuests].map(q => q.id));
 
-  // A SNOOZED assignment is rendered nowhere, so once its 48h window lapses it
-  // has to fall back into the pending list or the task is lost for good.
-  const nowIso           = new Date().toISOString();
-  const myDirectPending  = parentAssignments.filter(a =>
-    a.assignedTo === active.id && !a.isLocked && !systemBIds.has(a.choreId) &&
-    (a.status === 'PENDING' ||
-     (a.status === 'SNOOZED' && (!a.snoozeUntil || a.snoozeUntil <= nowIso)))
-  );
-  const myLockedItems    = parentAssignments.filter(a =>
-    a.assignedTo === active.id && a.isLocked && !systemBIds.has(a.choreId)
-  );
-  const myAccepted       = parentAssignments.filter(a =>
-    a.assignedTo === active.id && (a.status === 'ACCEPTED' || a.status === 'IN_PROGRESS') && !systemBIds.has(a.choreId)
-  );
+  // Shared with QuestsScreen.tsx via choreStore selectors rather than each
+  // screen re-deriving this filtering independently — a change to the
+  // snooze-expiry or bounce rules now only has to happen in one place.
+  const myDirectPending   = getMyDirectPending(active.id);
+  const myLockedItems     = getMyLockedItems(active.id);
+  const myAccepted        = getMyAccepted(active.id);
+  const myOutgoingPending = getMyOutgoingPending(active.id);
   // Calendar events where this parent is the assigned helper/driver — show in HB.
   // Backlog is for things still needing action: once confirmed, it's a settled
   // commitment (visible in Schedule instead), not something to pull off a backlog.
@@ -404,13 +406,15 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         active={active} members={members} colors={colors} isDark={isDark}
         questPool={questPool} myAdultQuests={myAdultQuests} othersAdultQuests={othersAdultQuests}
         myDirectPending={myDirectPending} myLockedItems={myLockedItems} myAccepted={myAccepted}
+        myOutgoingPending={myOutgoingPending}
         myHelperEvents={myHelperEvents} systemBIds={systemBIds} parentAssignments={parentAssignments}
         updateQuest={updateQuest} updateEvent={updateEvent}
         completeParentQuest={completeParentQuest} respondToParentQuest={respondToParentQuest}
+        cancelLockedAssignment={cancelLockedAssignment}
         appreciationPing={appreciationPing} handlePullTask={handlePullTask}
         onAddTask={() => setShowAddTask(true)}
         onDelegate={(choreId, choreTitle) => setDelegateSheet({ choreId, choreTitle })}
-        onRespond={(assignmentId, choreTitle) => setPushbackSheet({ assignmentId, choreTitle })}
+        onRespond={(assignmentId, choreTitle, assignedBy, assignedTo) => setPushbackSheet({ assignmentId, choreTitle, assignedBy, assignedTo })}
       />
 
       <ChoreReviewSection
@@ -418,6 +422,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         chores={chores} pendingReviewsCount={pendingReviews.length}
         approveGrandparentQuestAsParent={approveGrandparentQuestAsParent}
         declineGrandparentQuestAsParent={declineGrandparentQuestAsParent}
+        grandparentApproveAndCheer={grandparentApproveAndCheer}
       />
 
       {/* Only the driver gets editable controls (ETA slider, Pickup Done) —

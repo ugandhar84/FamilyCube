@@ -63,11 +63,18 @@ async function sendApnsVoip(token: string, payload: RingPayload): Promise<{ ok: 
   const topic = Deno.env.get('APNS_TOPIC');
   if (!jwt || !topic) return { ok: false, error: 'APNs VoIP not configured' };
 
-  // Apple's production VoIP push gateway. PushKit payloads carry only the
-  // data CallKeep's native handler needs — the client shows the ringing UI
-  // itself via displayIncomingCall(), no alert/sound keys (those are for
-  // regular push, ignored by PushKit).
-  const url = `https://api.push.apple.com/3/device/${token}`;
+  // A device's VoIP token is only valid against the APNs environment its
+  // build was signed for — a debug/dev build (npx expo run:ios, TestFlight
+  // internal, Xcode-run) registers a SANDBOX token; only an App
+  // Store/production-signed build gets a token the PRODUCTION gateway
+  // recognizes. Sending a sandbox token to production (or vice versa)
+  // returns "BadDeviceToken" with no other indication anything is wrong —
+  // this silently broke every call reminder during dev-build testing until
+  // traced here. APNS_ENVIRONMENT defaults to sandbox since that's what
+  // `expo run:ios` device builds actually need; set it to "production" once
+  // shipping a real TestFlight/App Store build.
+  const isProduction = Deno.env.get('APNS_ENVIRONMENT') === 'production';
+  const url = `https://${isProduction ? 'api' : 'api.sandbox'}.push.apple.com/3/device/${token}`;
   const body = JSON.stringify({
     aps: { 'content-available': 1 },
     callerName: payload.callerName,

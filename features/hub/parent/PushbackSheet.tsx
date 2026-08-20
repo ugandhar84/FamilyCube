@@ -3,8 +3,10 @@ import {
   View, Text, Pressable, TextInput,
   Modal, KeyboardAvoidingView, ScrollView, Platform, Keyboard, StyleSheet, TouchableOpacity,
 } from 'react-native';
-import { Clock, Construction, Repeat, MessageCircle, X } from 'lucide-react-native';
+import { Clock, Construction, Repeat, MessageCircle, X, XCircle } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
+import { useChatStore } from '@/store/chatStore';
+import { useFamilyStore } from '@/store/familyStore';
 
 // Violet — "Snooze" action accent, deliberately distinct from BRAND.purple
 // (#9261C7) so each of these four response actions reads as its own color;
@@ -12,16 +14,25 @@ import { TYPO } from '@/constants/theme';
 const SNOOZE_VIOLET = '#8B5CF6';
 
 export function PushbackSheet({ target, colors, isDark, onClose, respondToParentQuest }: {
-  target: { assignmentId: string; choreTitle: string } | null;
+  target: { assignmentId: string; choreTitle: string; assignedBy?: string; assignedTo?: string } | null;
   colors: any; isDark: boolean;
   onClose: () => void;
-  respondToParentQuest: (assignmentId: string, response: { action: 'SNOOZE' | 'BLOCKER' | 'TRADE' | 'DISCUSS'; details?: string }) => void;
+  respondToParentQuest: (assignmentId: string, response: { action: 'SNOOZE' | 'BLOCKER' | 'TRADE' | 'DISCUSS' | 'DECLINE'; details?: string }) => void;
 }) {
   const [detail, setDetail] = useState('');
 
-  const handle = (action: 'SNOOZE' | 'BLOCKER' | 'TRADE' | 'DISCUSS') => {
+  const handle = (action: 'SNOOZE' | 'BLOCKER' | 'TRADE' | 'DISCUSS' | 'DECLINE') => {
     if (!target) return;
     respondToParentQuest(target.assignmentId, { action, details: detail.trim() || undefined });
+    // System A never notifies the assigner of a Decline on its own
+    // (respondToParentQuest has no sendMessage call) — without this the
+    // assigner only learns their delegation was refused by noticing the
+    // card gone next time they happen to open the app.
+    if (action === 'DECLINE' && target.assignedBy && target.assignedTo) {
+      const assignee = useFamilyStore.getState().members.find(m => m.id === target.assignedTo);
+      useChatStore.getState().sendMessage(target.assignedBy, target.assignedTo,
+        `🙅 ${assignee?.name?.split(' ')[0] ?? 'They'} can't take "${target.choreTitle}"${detail.trim() ? ` — "${detail.trim()}"` : ''}`);
+    }
     setDetail('');
     onClose();
   };
@@ -81,6 +92,7 @@ export function PushbackSheet({ target, colors, isDark, onClose, respondToParent
             { action: 'BLOCKER', label: 'Blocker',       Icon: Construction, color: colors.danger },
             { action: 'TRADE',   label: 'Trade tasks',   Icon: Repeat,       color: colors.warning },
             { action: 'DISCUSS', label: 'Discuss later', Icon: MessageCircle, color: colors.parent },
+            { action: 'DECLINE', label: "Can't do it",   Icon: XCircle,      color: colors.textTertiary },
           ] as const).map(({ action, label, Icon, color }) => (
             <Pressable key={action} onPress={() => handle(action)}
               style={{

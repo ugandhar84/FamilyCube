@@ -260,6 +260,24 @@ export function useQuestStore() {
       if (updates.photoRequired !== undefined) choreUpdates.requiresPhotoProof= updates.photoRequired;
       if (updates.assignedToId  !== undefined) choreUpdates.assignedToId      = updates.assignedToId;
       if ((updates as any).isPool !== undefined) choreUpdates.isPool          = (updates as any).isPool;
+      // isAdultTask is derived from categoryType on read (choreToQuest), so
+      // the edit form's toggle has to write back to categoryType/
+      // isPrivateParent here or it silently resets on the next save —
+      // otherwise re-opening the edit form after any save shows the toggle
+      // off even though it was on.
+      if ((updates as any).isAdultTask !== undefined) {
+        const adult = (updates as any).isAdultTask as boolean;
+        choreUpdates.isPrivateParent = adult;
+        if (adult) {
+          if (choreUpdates.categoryType !== 'shopping') choreUpdates.categoryType = 'parent_only_quest';
+        } else if (choreUpdates.categoryType === 'parent_only_quest') {
+          // Turning the toggle off has to move the chore out of the
+          // adult-only category too — isAdultTask reads (isPrivateParent ||
+          // categoryType === 'parent_only_quest' || ...), so leaving
+          // categoryType alone here would keep it reading as an adult task.
+          choreUpdates.categoryType = 'routine';
+        }
+      }
       if ((updates as any).status !== undefined) {
         const s = (updates as any).status as Quest['status'];
         choreUpdates.status =
@@ -277,7 +295,12 @@ export function useQuestStore() {
     },
 
     reassignQuest: (id: string, memberId: string, _by: string) => {
-      store.updateChore(id, { assignedToId: memberId });
+      // '' means "send back to pool / unassign" (e.g. QuestCard's "Can't do
+      // this" flows) -- updateChore's DB patch only nulls a field on `??`,
+      // and '' is not nullish, so passing it through as-is used to write
+      // assigned_to_id: '' to Postgres instead of NULL, leaving the chore
+      // looking assigned-to-nobody-in-particular rather than truly open.
+      store.updateChore(id, { assignedToId: memberId || undefined, isPool: memberId ? undefined : true });
     },
 
     cheerQuest: (id: string, fromMemberId: string, opts?: { coins?: number; note?: string }) => {
@@ -288,8 +311,37 @@ export function useQuestStore() {
     loaded:          store.loaded ?? true,
     loadFromStorage: store.loadFromStorage,
 
-    // Multi-participant stubs — chore system is single-assignee
-    createParticipants: async (_questId: string, _memberIds: string[]) => {},
+    // A multi-select in AddQuestModal (assignIds.length > 1) creates the
+    // quest itself with NO assignee at all (assignedToId: undefined,
+    // isMulti gates it that way deliberately) and relied entirely on this
+    // function to actually assign anyone — it was a no-op stub, so multi-
+    // assign silently created one unassigned chore and nothing else; every
+    // selected kid except whichever the UI happened to still call out saw
+    // nothing. Mirrors approveGrandparentQuestAsParent's proven team-clone
+    // pattern: the ORIGINAL chore (questId) is assigned to the first member
+    // directly; every other selected member gets a full-value clone linked
+    // by teamGroupId, so one kid declining/finishing never affects another's
+    // payout — same rule the GP bounty path already established.
+    createParticipants: async (questId: string, memberIds: string[]) => {
+      if (memberIds.length === 0) return;
+      const chore = store.chores.find(c => c.id === questId);
+      if (!chore) return;
+      const [first, ...rest] = memberIds;
+      store.updateChore(questId, { assignedToId: first, status: 'todo' });
+      if (rest.length === 0) return;
+      const teamGroup = `team_${questId}`;
+      store.updateChore(questId, { teamGroupId: teamGroup, targetChildIds: memberIds } as any);
+      for (const memberId of rest) {
+        store.addChore({
+          ...chore,
+          assignedToId: memberId,
+          status: 'todo',
+          isPool: false,
+          teamGroupId: teamGroup,
+          targetChildIds: memberIds,
+        } as any);
+      }
+    },
     approveParticipant: (_questId: string, _memberId: string, _by: string) => {},
     declineParticipant: (_questId: string, _memberId: string, _by: string, _reason?: string, _code?: string) => {},
     reopenParticipant:  (_questId: string, _memberId: string, _by: string) => {},
@@ -316,6 +368,19 @@ useQuestStore.getState = () => {
       }
       if (updates.assignedToId   !== undefined) choreUpdates.assignedToId  = updates.assignedToId;
       if ((updates as any).isPool !== undefined) choreUpdates.isPool       = (updates as any).isPool;
+      if ((updates as any).isAdultTask !== undefined) {
+        const adult = (updates as any).isAdultTask as boolean;
+        choreUpdates.isPrivateParent = adult;
+        if (adult) {
+          if (choreUpdates.categoryType !== 'shopping') choreUpdates.categoryType = 'parent_only_quest';
+        } else if (choreUpdates.categoryType === 'parent_only_quest') {
+          // Turning the toggle off has to move the chore out of the
+          // adult-only category too — isAdultTask reads (isPrivateParent ||
+          // categoryType === 'parent_only_quest' || ...), so leaving
+          // categoryType alone here would keep it reading as an adult task.
+          choreUpdates.categoryType = 'routine';
+        }
+      }
       if ((updates as any).status !== undefined) {
         const s = (updates as any).status as Quest['status'];
         choreUpdates.status =
@@ -329,7 +394,9 @@ useQuestStore.getState = () => {
     },
     addQuest:      (q: any) => store.addChore(questInputToChoreInput(q) as any),
     reassignQuest: (id: string, memberId: string, _by?: string) => {
-      store.updateChore(id, { assignedToId: memberId });
+      // See the instance-hook reassignQuest above for why '' must map to
+      // undefined/pool rather than being written through as an empty string.
+      store.updateChore(id, { assignedToId: memberId || undefined, isPool: memberId ? undefined : true });
     },
   };
   return shim;

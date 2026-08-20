@@ -40,6 +40,29 @@ interface RingTarget {
   memberIds: string[];
 }
 
+// due_time/start_time are stored as display strings from the app's time
+// pickers — "2:05 AM" (12-hour, what fmtTimeLabel in the quest/event forms
+// actually writes) or occasionally a plain 24-hour "HH:MM". Feeding either
+// straight into `new Date("${date}T${time}")` only works for 24-hour input;
+// "2026-08-20T2:05 AM" is not a parseable date string and silently produces
+// Invalid Date, which made every call reminder created through the normal
+// Add/Edit forms never ring (ringAt comparisons against an Invalid Date are
+// always false). Returns 24-hour "HH:MM", or null if unparseable.
+function to24Hour(raw: string): string | null {
+  const clean = raw.trim().toUpperCase();
+  const ampm = clean.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+  if (ampm) {
+    let h = parseInt(ampm[1], 10);
+    const min = ampm[2];
+    if (ampm[3] === 'PM' && h !== 12) h += 12;
+    if (ampm[3] === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${min}`;
+  }
+  const plain = clean.match(/^(\d{1,2}):(\d{2})$/);
+  if (plain) return `${plain[1].padStart(2, '0')}:${plain[2]}`;
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
@@ -50,9 +73,6 @@ serve(async (req) => {
     );
 
     const now = new Date();
-    // Only look a couple hours ahead — cheap bound, avoids scanning the
-    // whole table every minute on large families.
-    const horizon = new Date(now.getTime() + 2 * 60 * 60_000).toISOString();
     const todayStr = now.toISOString().slice(0, 10);
 
     // ── Chores due today with alert_call on ──────────────────────────────────
@@ -64,18 +84,26 @@ serve(async (req) => {
       .in('status', ['todo', 'in_progress']);
 
     // ── Events today with alert_call on ──────────────────────────────────────
+    // No lte('start_time', ...) prefilter here — start_time is stored as a
+    // display string ("2:05 AM" from fmtTimeLabel, not always 24-hour), so a
+    // lexicographic comparison against a 24-hour horizon slice is unreliable
+    // (silently drops or keeps the wrong rows depending on AM/PM). The exact
+    // to24Hour()-based check below is the only correctness-bearing filter;
+    // this table is small enough per family that scanning today's
+    // alert_call rows without the extra prefilter is cheap.
     const { data: events } = await supabase
       .from('calendar_events')
       .select('id, title, date, start_time, alert_call, alert_call_lead_minutes, member_id, member_ids')
       .eq('alert_call', true)
-      .eq('date', todayStr)
-      .lte('start_time', horizon.slice(11, 16)); // cheap prefilter; exact check below
+      .eq('date', todayStr);
 
     const targets: RingTarget[] = [];
 
     for (const c of (chores ?? [])) {
       if (!c.due_time) continue;
-      const dueAt = new Date(`${c.due_date}T${c.due_time}`);
+      const t24 = to24Hour(c.due_time);
+      if (!t24) continue;
+      const dueAt = new Date(`${c.due_date}T${t24}:00`);
       const ringAt = new Date(dueAt.getTime() - (c.alert_call_lead_minutes ?? 10) * 60_000);
       if (ringAt <= now && now.getTime() - ringAt.getTime() < 90_000) {
         targets.push({
@@ -87,7 +115,9 @@ serve(async (req) => {
 
     for (const e of (events ?? [])) {
       if (!e.start_time) continue;
-      const dueAt = new Date(`${e.date}T${e.start_time}`);
+      const t24 = to24Hour(e.start_time);
+      if (!t24) continue;
+      const dueAt = new Date(`${e.date}T${t24}:00`);
       const ringAt = new Date(dueAt.getTime() - (e.alert_call_lead_minutes ?? 10) * 60_000);
       if (ringAt <= now && now.getTime() - ringAt.getTime() < 90_000) {
         const ids = e.member_id ? [e.member_id] : (e.member_ids ?? []);

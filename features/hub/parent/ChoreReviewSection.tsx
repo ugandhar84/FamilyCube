@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
-import { ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins } from 'lucide-react-native';
+import { View, Text, Pressable, Alert } from 'react-native';
+import { ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins, Camera, MessageCircle } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
+import { useChatStore } from '@/store/chatStore';
 import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
 import { SectionCard } from '../hubComponents';
 import type { FamilyMember } from '@/store/familyStore';
@@ -88,6 +89,68 @@ function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQues
   );
 }
 
+// A GP-sponsored quest the child already submitted proof for — waiting on
+// the SPONSOR grandparent to verify (pending_grandparent_approval), not the
+// parent. Previously invisible to the parent entirely: if the sponsoring
+// grandparent went quiet (traveling, not opening the app), the submission
+// just sat there forever with no parent-side visibility or way to unstick
+// it. This card gives the parent a nudge action (chat DM to the sponsor)
+// and a fallback Approve & Pay so a stuck review never blocks the kid's
+// payout indefinitely.
+function GpAwaitingSponsorCard({ c, members, colors, isDark, active, grandparentApproveAndCheer }: {
+  c: ChoreTask; members: FamilyMember[]; colors: any; isDark: boolean; active: FamilyMember;
+  grandparentApproveAndCheer: (choreId: string, grandparentId: string, sticker?: string) => void;
+}) {
+  const sponsor = members.find(m => m.id === c.sponsorUserId);
+  const kid = members.find(m => m.id === c.assignedToId);
+
+  const nudgeSponsor = () => {
+    if (!sponsor) return;
+    const msg = `👋 ${kid?.name.split(' ')[0] ?? 'Your grandchild'} submitted "${c.title}" a bit ago — it's waiting on you to review and cheer!`;
+    useChatStore.getState().sendMessage(sponsor.id, active.id, msg);
+    Alert.alert('Nudge sent!', `A reminder was sent to ${sponsor.name.split(' ')[0]}.`);
+  };
+
+  const fallbackApprove = () => Alert.alert(
+    'Approve on behalf of ' + (sponsor?.name.split(' ')[0] ?? 'the grandparent') + '?',
+    `"${c.title}" will be marked verified and ${kid?.name.split(' ')[0] ?? 'the kid'} will be paid. Use this only if ${sponsor?.name.split(' ')[0] ?? 'they'} can't review it themselves.`,
+    [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Approve & Pay', onPress: () => grandparentApproveAndCheer(c.id, active.id) },
+    ],
+  );
+
+  return (
+    <View style={{ borderRadius: 14, padding: 12, gap: 8,
+      backgroundColor: isDark ? colors.teal + '10' : colors.tealLight,
+      borderWidth: 1.5, borderColor: colors.teal + '40' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Camera size={15} color={colors.teal} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+            {kid?.name.split(' ')[0] ?? 'Kid'} submitted proof · waiting on {sponsor?.name.split(' ')[0] ?? 'grandparent'} to verify
+          </Text>
+        </View>
+      </View>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <Pressable onPress={nudgeSponsor}
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+            paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: colors.teal + '60' }}>
+          <MessageCircle size={13} color={colors.teal} />
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.teal }}>Nudge {sponsor?.name.split(' ')[0] ?? 'GP'}</Text>
+        </Pressable>
+        <Pressable onPress={fallbackApprove}
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+            paddingVertical: 10, borderRadius: 10, backgroundColor: colors.teal }}>
+          <CheckCircle2 size={13} color="#fff" />
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Approve & Pay</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 function GpTurnedDownCard({ c, members, colors, isDark }: {
   c: ChoreTask; members: FamilyMember[]; colors: any; isDark: boolean;
 }) {
@@ -146,14 +209,21 @@ function GpTurnedDownCard({ c, members, colors, isDark }: {
 export function ChoreReviewSection({
   active, members, colors, isDark, chores, pendingReviewsCount,
   approveGrandparentQuestAsParent, declineGrandparentQuestAsParent,
+  grandparentApproveAndCheer,
 }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
   chores: ChoreTask[]; pendingReviewsCount: number;
   approveGrandparentQuestAsParent: (choreId: string, parentId: string) => void;
   declineGrandparentQuestAsParent: (choreId: string, parentId: string, reason: string) => void;
+  grandparentApproveAndCheer: (choreId: string, grandparentId: string, sticker?: string) => void;
 }) {
   const gpPending = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval');
   const gpDeclined = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'declined');
+  // Submitted by the kid, waiting on the SPONSOR grandparent to verify —
+  // distinct from gpPending (which waits on the parent's safety gate before
+  // publishing). Surfaced here so a parent has visibility + a fallback if
+  // the sponsoring grandparent is unreachable — see GpAwaitingSponsorCard.
+  const gpAwaitingSponsor = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'pending_grandparent_approval');
   const badgeCount = pendingReviewsCount + gpPending.length;
 
   return (
@@ -198,6 +268,25 @@ export function ChoreReviewSection({
                 </View>
                 {gpDeclined.map(c => (
                   <GpTurnedDownCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} />
+                ))}
+              </View>
+            )}
+
+            {/* Submitted by the kid, waiting on the sponsoring grandparent to
+                verify — not the parent's queue, but visible here so a
+                parent can nudge or step in if the GP goes quiet. */}
+            {gpAwaitingSponsor.length > 0 && (
+              <View style={{ gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Camera size={12} color={colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                    textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                    Grandparent Quests — Awaiting Grandparent Review
+                  </Text>
+                </View>
+                {gpAwaitingSponsor.map(c => (
+                  <GpAwaitingSponsorCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
+                    grandparentApproveAndCheer={grandparentApproveAndCheer} />
                 ))}
               </View>
             )}

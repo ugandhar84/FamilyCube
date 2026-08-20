@@ -14,8 +14,9 @@ import { PhoneOff, Bell, Check } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
+import { useFamilyStore } from '@/store/familyStore';
 import { resolveSpeechLocale } from '@/lib/units';
-import { endCallAlert } from '@/lib/callAlert';
+import { endCallAlert, waitForAudioSession, routeAudioToSpeaker } from '@/lib/callAlert';
 
 const SNOOZE_TIERS = [
   { label: 'On time', minutes: 0 },
@@ -31,15 +32,39 @@ export default function CallAlertScreen() {
   const callUUID = params.callUUID;
 
   const chores = useChoreStore(s => s.chores);
-  const events = useEventStore(s => [...s.dayEvents, ...s.rangeEvents]);
+  // Selecting each array separately keeps stable references — spreading
+  // them into a new array inside the selector ([...a, ...b]) returns a
+  // fresh array identity on every call, which breaks useSyncExternalStore's
+  // snapshot-caching contract and causes an infinite render loop the
+  // instant this screen actually mounts (never triggered until the
+  // cold-start CallKit answer flow started working).
+  const dayEvents = useEventStore(s => s.dayEvents);
+  const rangeEvents = useEventStore(s => s.rangeEvents);
+  const members = useFamilyStore(s => s.members);
+  const activeMemberId = useFamilyStore(s => s.activeMemberId);
 
   const item = itemType === 'chore'
     ? chores.find(c => c.id === itemId)
-    : events.find(e => e.id === itemId);
+    : (dayEvents.find(e => e.id === itemId) ?? rangeEvents.find(e => e.id === itemId));
   const title = item?.title ?? 'Your reminder';
 
+  const listener = members.find(m => m.id === activeMemberId);
+  const creatorId = itemType === 'chore' ? (item as any)?.createdById : (item as any)?.createdBy;
+  const creator = members.find(m => m.id === creatorId);
+  const firstName = (n?: string) => n?.split(' ')[0];
+
   const pulse = useRef(new Animated.Value(1)).current;
-  const [spoken, setSpoken] = useState(false);
+  // A ref, not useState — React Strict Mode's dev-only mount→cleanup→
+  // remount of every effect was breaking this when it was state: the first
+  // (throwaway) mount called setSpoken(true) and got cleaned up before
+  // waitForAudioSession() resolved; by the time the SECOND, real mount ran,
+  // `spoken` was already true from the first one, so the guard skipped
+  // speaking entirely on the mount that actually survives. A ref keyed by
+  // item id survives the double-invoke correctly: cleanup cancels the
+  // aborted first attempt via its own local `cancelled` closure (unrelated
+  // to this ref), and the ref only blocks a genuine repeat for the SAME
+  // item, not the StrictMode remount of the same logical attempt.
+  const spokenForItemId = useRef<string | null>(null);
 
   useEffect(() => {
     Animated.loop(
@@ -51,17 +76,105 @@ export default function CallAlertScreen() {
   }, []);
 
   useEffect(() => {
-    if (spoken || !item) return;
-    setSpoken(true);
+    const effectId = Math.random().toString(36).slice(2, 8);
+    console.log(`[call-alert][${effectId}] speak effect MOUNTED — spokenForItemId=`, spokenForItemId.current, 'item=', !!item, 'itemId=', itemId, 'itemType=', itemType);
+    if (!item || spokenForItemId.current === item.id) return;
     const dueLabel = itemType === 'chore' ? (item as any).dueTime : (item as any).time;
-    const text = `Reminder: ${title}${dueLabel ? `, due at ${dueLabel}` : ''}.`;
-    Speech.speak(text, { language: resolveSpeechLocale(), rate: 0.95 });
-    return () => { Speech.stop(); };
-  }, [item, spoken]);
+    const kind = itemType === 'chore' ? 'chore' : 'event';
+    const greeting = listener ? `Hi ${firstName(listener.name)}, ` : 'Hi, ';
+    const from = creator && creator.id !== listener?.id
+      ? ` It was set by ${firstName(creator.name)}.`
+      : '';
+    const text = `${greeting}this is your Family Cube reminder for the ${kind} "${title}"${dueLabel ? `, due at ${dueLabel}` : ''}.${from}`;
+    let cancelled = false;
+    console.log(`[call-alert][${effectId}] waiting for audio session before speaking:`, text);
+    // CallKit still owns the audio session for a moment after Answer —
+    // speaking before it hands control back (didActivateAudioSession) is
+    // silently dropped, no error, just no sound. See waitForAudioSession.
+    waitForAudioSession().then(async () => {
+      console.log(`[call-alert][${effectId}] audio session ready, cancelled=`, cancelled);
+      if (cancelled) return;
+      // CallKit's call-oriented audio session can route Speech's output to
+      // the earpiece or a connected accessory instead of the speaker —
+      // audio "plays" (onStart fires, no error) but is inaudible held
+      // normally. Force it to the speaker before speaking.
+      if (callUUID) await routeAudioToSpeaker(callUUID);
+      if (cancelled) return;
+      // Mark as spoken only once we're actually committing to speak — not
+      // at effect-start, which would poison a StrictMode-cancelled first
+      // attempt into blocking the real second mount from ever speaking.
+      spokenForItemId.current = item.id;
+      // Repeats up to 3 times total (1 initial + 2 repeats), 1.5s apart —
+      // without this, a person who answers but doesn't immediately tap
+      // Done/Dismiss is left on a silently-connected call after the first
+      // (and only) reading, indistinguishable from the call having dropped.
+      const MAX_SPEAKS = 3;
+      const REPEAT_GAP_MS = 1500;
+      let speakCount = 0;
+      const speakOnce = () => {
+        if (cancelled) return;
+        speakCount++;
+        console.log(`[call-alert][${effectId}] calling Speech.speak now (attempt ${speakCount}/${MAX_SPEAKS})`);
+        Speech.speak(text, {
+          language: resolveSpeechLocale(),
+          rate: 0.95,
+          onStart: () => console.log(`[call-alert][${effectId}] Speech onStart (attempt ${speakCount})`),
+          onDone: () => {
+            console.log(`[call-alert][${effectId}] Speech onDone (attempt ${speakCount})`);
+            if (cancelled || speakCount >= MAX_SPEAKS) return;
+            setTimeout(speakOnce, REPEAT_GAP_MS);
+          },
+          onError: (e) => console.warn(`[call-alert][${effectId}] Speech onError`, e),
+        });
+      };
+      speakOnce();
+    });
+    return () => {
+      console.log(`[call-alert][${effectId}] speak effect CLEANUP fired`);
+      cancelled = true;
+      Speech.stop();
+    };
+    // item is a fresh object reference every render (Array.find over a
+    // store-derived array) even when nothing relevant changed — depending
+    // on the whole object re-ran this effect (cancelling the in-flight
+    // waitForAudioSession() wait, so Speech.speak() never actually fired)
+    // every time an unrelated realtime update touched the chores/events
+    // array, which happens almost immediately after this screen mounts.
+    // item?.id is a stable primitive across those re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item?.id]);
 
-  const finish = async () => {
+  // Dismiss just closes the call — it never touched the chore/event.
+  const dismiss = async () => {
     Speech.stop();
     if (callUUID) await endCallAlert(callUUID);
+    router.back();
+  };
+
+  // Done previously did the exact same thing as Dismiss (close the call
+  // only) despite the checkmark icon and "Done" label implying the task
+  // itself was completed — a real gap, since a parent tapping Done here
+  // reasonably expects the chore to actually be marked done, not just the
+  // call to hang up.
+  //
+  // A chore requiring photo proof can't be completed from this screen (no
+  // camera UI here) — Done instead hands off to the real Submit flow on the
+  // Chores tab, same as if they'd tapped the chore there. A chore with no
+  // photo requirement submits directly via the same submitChore path the
+  // in-app Submit button uses. Events have no universal "done" concept
+  // outside the helper/driver-specific flow (which this alert isn't scoped
+  // to), so Done behaves the same as Dismiss for events.
+  const done = async () => {
+    Speech.stop();
+    if (callUUID) await endCallAlert(callUUID);
+    if (itemType === 'chore' && item) {
+      const chore = item as any;
+      if (chore.requiresPhotoProof) {
+        router.replace({ pathname: '/(tabs)/quests', params: { questId: itemId } } as any);
+        return;
+      }
+      useChoreStore.getState().submitChore(itemId!, {});
+    }
     router.back();
   };
 
@@ -108,11 +221,11 @@ export default function CallAlertScreen() {
       </View>
 
       <View style={styles.actionRow}>
-        <Pressable onPress={finish} style={[styles.actionBtn, { backgroundColor: colors.success }]}>
+        <Pressable onPress={done} style={[styles.actionBtn, { backgroundColor: colors.success }]}>
           <Check size={26} color="#fff" />
           <Text style={styles.actionLabel}>Done</Text>
         </Pressable>
-        <Pressable onPress={finish} style={[styles.actionBtn, { backgroundColor: colors.danger }]}>
+        <Pressable onPress={dismiss} style={[styles.actionBtn, { backgroundColor: colors.danger }]}>
           <PhoneOff size={26} color="#fff" />
           <Text style={styles.actionLabel}>Dismiss</Text>
         </Pressable>

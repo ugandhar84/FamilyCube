@@ -4,7 +4,7 @@ import { Swipeable } from 'react-native-gesture-handler';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
-import { fmtDateShort, fmtDateTime, parseLocalDate } from '@/lib/dates';
+import { fmtDateShort, fmtDateTime, parseLocalDate, parseTimeInput } from '@/lib/dates';
 import { useChoreStore } from '@/store/choreStore';
 import type { Quest } from '@/store/questStore';
 import { I } from './icons';
@@ -59,7 +59,12 @@ export function QuestCard({
 }: Props) {
   const assignee = members.find(m => m.id === q.assignedToId);
   const isPoolCard = q.isPool && q.status === 'todo';
-  const isTodoCard = (q.status === 'todo' || q.status === 'claimed') && !isPoolCard;
+  // 'in_progress' is what an ACCEPTED System-A assignment sets the chore to
+  // (see respondToParentQuest's ACCEPT branch in choreStore.ts) — without
+  // it here, an accepted parent-to-parent quest fell through every branch
+  // in this component (not todo, not review, not done) and simply
+  // vanished from the Chores tab the moment it was accepted.
+  const isTodoCard = (q.status === 'todo' || q.status === 'claimed' || q.status === 'in_progress') && !isPoolCard;
   const isReview   = q.status === 'pending_approval';
   const isDoneCard = q.status === 'approved' || q.status === 'done';
   const isDeclined = q.status === 'declined';
@@ -72,10 +77,19 @@ export function QuestCard({
   // A declined chore is represented as redo_requested by the
   // chore adapter. The assignee can correct it and submit again.
   const canResubmit = isKidOrTeen && isDeclined && !!myId && isAssignedTo(q, myId);
-  // Kid can refuse — teens CANNOT decline (no decline authority)
-  const canKidDecline = isKid && isTodoCard && !q.isPool && !!myId && isAssignedTo(q, myId);
-  // GP quest sitting at todo — the kid accepts it before it counts as started
-  const canAcceptGp = isKid && !!myId && isAssignedTo(q, myId) &&
+  // Kid/teen can refuse a directly-assigned household chore — same flat
+  // "can't do this → back to pool" flow for both, not a negotiation. Teens
+  // used to be excluded entirely (isKid-only), leaving a teen with no way
+  // out of an assigned chore they genuinely can't do except ignoring it or
+  // submitting bad work. The exclusion was meant to keep teens out of
+  // System A's parent-to-parent pushback negotiation (Snooze/Blocker/Trade/
+  // Discuss) — not to remove the same one-tap decline a kid already has.
+  const canKidDecline = isKidOrTeen && isTodoCard && !q.isPool && !!myId && isAssignedTo(q, myId);
+  // GP quest sitting at todo — the kid/teen accepts it before it counts as
+  // started. Was isKid-only for the same reason as canKidDecline above —
+  // widened to match, since accepting/declining a GP-sponsored quest isn't
+  // System A negotiation either.
+  const canAcceptGp = isKidOrTeen && !!myId && isAssignedTo(q, myId) &&
     choreData?.categoryType === 'grandparent_quest' && choreData?.status === 'todo';
   // Approve/Decline: parent or senior, quest in review
   const canApprove = isParentOrSenior && isReview;
@@ -157,8 +171,11 @@ export function QuestCard({
     if (!q.submittedAt || !q.dueDate) return '';
     const deadline = parseLocalDate(q.dueDate);
     if (q.dueTime) {
-      const [dh, dm] = q.dueTime.split(':').map(Number);
-      if (!Number.isNaN(dh)) deadline.setHours(dh, dm || 0, 0, 0);
+      const parsed = parseTimeInput(q.dueTime);
+      if (parsed) {
+        const [dh, dm] = parsed.split(':').map(Number);
+        deadline.setHours(dh, dm || 0, 0, 0);
+      }
     } else {
       deadline.setHours(23, 59, 59, 999);
     }
@@ -746,7 +763,12 @@ export function QuestCard({
           </View>
         )}
 
-        {/* Parent: Take It (self-assign) + Delegate on unassigned adult tasks */}
+        {/* Parent: Take It (self-assign) + Delegate on unassigned adult tasks.
+            Any adult task WITH an assignee (mine or a co-parent's) never
+            reaches this card at all — QuestsScreen.tsx excludes those IDs
+            from filteredQuests and renders MyAdultQuestCard/
+            OthersAdultQuestCard instead, the same components Household
+            Backlog uses, so both screens show identical actions for it. */}
         {isParent && q.isAdultTask && isTodoCard && !q.assignedToId && (
           <>
             <TouchableOpacity

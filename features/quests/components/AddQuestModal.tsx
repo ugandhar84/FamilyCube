@@ -11,6 +11,7 @@ import { useFamilyStore } from '@/store/familyStore';
 // questStore commented out — chores system is the single source of truth
 // import { useQuestStore } from '@/store/questStore';
 import { useQuestStore } from '@/store/choreAdapter';
+import { useChoreStore } from '@/store/choreStore';
 import type { QuestCategory, QuestDifficulty, QuestType } from '@/store/questStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
@@ -349,11 +350,18 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
       : isRoutine
         ? (routineType as QuestType)
         : (defaultQuestType ?? 'general');
+    // A parent directly assigning an adult task to a co-parent (not
+    // themselves) goes through the existing PENDING/Accept negotiation
+    // system (addParentQuest below) instead of landing pre-assigned — so
+    // the chore itself is created unassigned here; addParentQuest sets the
+    // assignee once the assignment row exists.
+    const isDirectCoParentAssign = isAdultTask && !isPool && !isMulti
+      && assignIds.length === 1 && assignIds[0] !== activeMemberId;
     const newQ = await addQuest({
       title: title.trim(), description: desc.trim(), category: routineType === 'shopping' ? 'Shopping' : category,
       priority: 'medium', difficulty: difficulty || undefined,
       coins: coinsDisabled ? 0 : (parseInt(coins) || 30), xpReward: 20,
-      assignedToId: isPool || isMulti ? undefined : (assignIds[0] || undefined),
+      assignedToId: isPool || isMulti || isDirectCoParentAssign ? undefined : (assignIds[0] || undefined),
       assignedToIds: isMulti ? assignIds : [],
       isPool: !isAdultTask && (isPool || assignIds.length === 0), isDaily: false,
       recurrence: routineType === 'shopping' ? 'once' : (routineFreq === 'daily' ? 'daily' : routineFreq === 'weekly' ? 'weekly' : routineFreq === 'monthly' ? 'monthly' : 'once'),
@@ -372,6 +380,9 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
       inviteGrandparents: inviteGrandparent || undefined,
     } as any);
     if (newQ?.id) {
+      if (isDirectCoParentAssign) {
+        useChoreStore.getState().addParentQuest(newQ.id, activeMemberId, assignIds[0], 'DIRECT');
+      }
       if (bonus > 0) useQuestStore.getState().updateQuest(newQ.id, { bonusCoins: bonus });
       // Create participant rows: multi-assign → one per kid; pool → none (kids create on claim)
       if (isMulti && assignIds.length > 0) {
@@ -396,7 +407,16 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
           : supabase.functions.invoke('process-kid-chore-assignment', { body: { choreId: newQ.id, familyId, dryRun: false } })
               .then(({ data, error }) => (error || data?.error) ? null : (data as AssignmentSuggestion));
         applyPromise.then(res => {
-          if (res?.decisionType === 'auto' && res.selectedMemberId) {
+          if (res?.decisionType !== 'auto' || !res.selectedMemberId) return;
+          // An auto-assigned adult task needs the same Accept/Snooze/
+          // Pushback opportunity a manually-picked assignee gets — writing
+          // assignedToId directly here (as kid-chore auto-assign correctly
+          // still does below) skipped the whole negotiation system for any
+          // adult task the engine picked, landing pre-accepted with only a
+          // Done/Reassign button.
+          if (isAdultTask && res.selectedMemberId !== activeMemberId) {
+            useChoreStore.getState().addParentQuest(newQ.id, activeMemberId, res.selectedMemberId, 'DIRECT');
+          } else {
             useQuestStore.getState().updateQuest(newQ.id, { assignedToId: res.selectedMemberId, isPool: false });
           }
         });

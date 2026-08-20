@@ -8,11 +8,12 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
+import { useChoreStore } from '@/store/choreStore';
 import type { Quest, QuestCategory, QuestDifficulty } from '@/store/questStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
-import { localDateStr, parseLocalDate } from '@/lib/dates';
+import { localDateStr, parseLocalDate, parseTimeInput } from '@/lib/dates';
 import { I } from './icons';
 import { QUEST_SUGGESTIONS, ALL_CATEGORIES, fmtDateLabel, fmtTimeLabel } from './questFormShared';
 import { aq } from './AddQuestModal';
@@ -37,8 +38,11 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
     if (quest.dueDate) {
       const d = parseLocalDate(quest.dueDate);
       if (quest.dueTime) {
-        const [h, m] = quest.dueTime.replace(/[^0-9:]/g, '').split(':').map(Number);
-        if (!isNaN(h)) { d.setHours(h, m || 0, 0, 0); }
+        const parsed = parseTimeInput(quest.dueTime);
+        if (parsed) {
+          const [h, m] = parsed.split(':').map(Number);
+          d.setHours(h, m || 0, 0, 0);
+        }
       }
       return d;
     }
@@ -115,13 +119,24 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
 
   const save = async () => {
     setSaving(true);
+
+    // Reassigning an adult task to a different co-parent has to go through
+    // the same PENDING/Accept negotiation a brand-new assignment gets
+    // (addParentQuest), not a direct assignedToId write — otherwise the new
+    // assignee lands pre-accepted with only Done/Reassign, and if this
+    // chore already had a live System-A row (pending/locked), that row is
+    // left dangling and unreferenced while the chore quietly points
+    // somewhere else.
+    const reassigningAdultTask = isAdultTask && !isPool && assignIds.length === 1
+      && assignIds[0] !== quest.assignedToId && assignIds[0] !== activeMemberId;
+
     let patch: Partial<Quest>;
     if (locked) {
       // Restricted: only due date + reassign allowed — never touch coins/title
       patch = {
         dueDate: localDateStr(dueDate),
         dueTime: fmtTimeLabel(dueDate),
-        assignedToId: !isPool && assignIds.length === 1 ? assignIds[0] : undefined,
+        assignedToId: reassigningAdultTask ? quest.assignedToId : (!isPool && assignIds.length === 1 ? assignIds[0] : undefined),
         assignedToIds: !isPool && assignIds.length > 1 ? assignIds : [],
         alertCall, alertCallLeadMinutes,
       };
@@ -134,7 +149,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
         bonusCoins: parseInt(bonusCoins) || 0,
         category,
         difficulty: difficulty || undefined,
-        assignedToId: !isPool && assignIds.length === 1 ? assignIds[0] : undefined,
+        assignedToId: reassigningAdultTask ? quest.assignedToId : (!isPool && assignIds.length === 1 ? assignIds[0] : undefined),
         assignedToIds: !isPool && assignIds.length > 1 ? assignIds : [],
         isPool: isPool || assignIds.length === 0,
         photoRequired: photoReq,
@@ -147,6 +162,9 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
       };
     }
     onSave(quest.id, patch);
+    if (reassigningAdultTask) {
+      useChoreStore.getState().addParentQuest(quest.id, activeMemberId, assignIds[0], 'DIRECT');
+    }
     setSaving(false);
   };
 

@@ -4,6 +4,7 @@ import { ChevronUp, ChevronDown, Check, MessageCircle } from 'lucide-react-nativ
 import { TYPO } from '@/constants/theme';
 import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
+import { useChatStore } from '@/store/chatStore';
 
 // Money-green — "Accept" action accent, distinct from brand amber used
 // elsewhere in this card. Not colors.success (which IS brand teal in this
@@ -15,10 +16,11 @@ const MONEY_GREEN = '#10B981';
 export function DirectPendingCard({ a, chore, members, colors, isDark, respondToParentQuest, onRespond }: {
   a: ParentQuestAssignment; chore: ChoreTask; members: FamilyMember[]; colors: any; isDark: boolean;
   respondToParentQuest: (id: string, response: { action: 'ACCEPT' }) => void;
-  onRespond: (assignmentId: string, choreTitle: string) => void;
+  onRespond: (assignmentId: string, choreTitle: string, assignedBy: string, assignedTo: string) => void;
 }) {
   const [isExp, setExp] = useState(false);
   const assigner = members.find(m => m.id === a.assignedBy);
+  const assignee = members.find(m => m.id === a.assignedTo);
 
   return (
     <View style={{
@@ -36,17 +38,35 @@ export function DirectPendingCard({ a, chore, members, colors, isDark, respondTo
           <Text style={{ fontSize: TYPO.label, color: colors.warning, marginTop: 2 }}>
             From {assigner?.name ?? 'Partner'}
           </Text>
+          {a.note ? (
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2, fontStyle: 'italic' }} numberOfLines={isExp ? undefined : 1}>
+              "{a.note}"
+            </Text>
+          ) : null}
+          {a.status === 'PARKED' && a.pushbackDetails ? (
+            <Text style={{ fontSize: TYPO.label, color: colors.danger, marginTop: 2, fontStyle: 'italic' }} numberOfLines={isExp ? undefined : 1}>
+              Bounced: "{a.pushbackDetails}"
+            </Text>
+          ) : null}
         </View>
         {isExp ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />}
       </Pressable>
       <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
-        <Pressable onPress={() => respondToParentQuest(a.id, { action: 'ACCEPT' })}
+        <Pressable onPress={() => {
+          respondToParentQuest(a.id, { action: 'ACCEPT' });
+          // System A never notifies the assigner of Accept/Decline/Complete
+          // on its own (respondToParentQuest has no sendMessage call) — the
+          // assigner otherwise only finds out by noticing the card changed
+          // next time they happen to open the app.
+          useChatStore.getState().sendMessage(a.assignedBy, a.assignedTo,
+            `✅ ${assignee?.name?.split(' ')[0] ?? 'They'} accepted "${chore.title}"`);
+        }}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
             backgroundColor: MONEY_GREEN, borderRadius: 10, paddingVertical: 8 }}>
           <Check size={14} color="#fff" />
           <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Accept</Text>
         </Pressable>
-        <Pressable onPress={() => onRespond(a.id, chore.title)}
+        <Pressable onPress={() => onRespond(a.id, chore.title, a.assignedBy, a.assignedTo)}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
             borderWidth: 1.5, borderColor: colors.warning + '60',
             borderRadius: 10, paddingVertical: 8 }}>

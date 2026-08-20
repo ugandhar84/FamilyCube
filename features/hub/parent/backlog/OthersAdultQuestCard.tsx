@@ -14,9 +14,12 @@ const GP_GREEN = '#22c55e';
 
 // Read-only view of a task assigned to a co-parent — nudge them in family
 // chat, or reclaim it for yourself if it's stalled.
-export function OthersAdultQuestCard({ q, active, members, colors, isDark, updateQuest }: {
+export function OthersAdultQuestCard({ q, active, members, colors, isDark, updateQuest, onLongPress }: {
   q: Quest; active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
   updateQuest: (id: string, patch: Partial<Quest>) => void;
+  // Optional — only the Chores tab wires this (edit-quest flow); Household
+  // Backlog has no separate edit modal for this card today.
+  onLongPress?: () => void;
 }) {
   const [isExp, setExp] = useState(false);
   const assignee   = members.find(m => m.id === q.assignedToId);
@@ -28,8 +31,8 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
 
   const sendNudge = () => {
     const msg = `👋 Hey ${assignee?.name?.split(' ')[0] ?? 'partner'}, just a nudge — "${q.title}" is still open. Need any help?`;
-    useChatStore.getState().sendMessage('all', active.id, msg);
-    Alert.alert('Nudge sent!', `A reminder was posted to family chat for ${assignee?.name ?? 'your partner'}.`);
+    useChatStore.getState().sendMessage(assignee?.id ?? 'all', active.id, msg);
+    Alert.alert('Nudge sent!', `A reminder was sent directly to ${assignee?.name ?? 'your partner'}.`);
   };
 
   const reclaim = () => Alert.alert(
@@ -49,7 +52,7 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
       shadowOpacity: isDark ? 0.4 : 1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
       elevation: isDark ? 3 : 2,
     }}>
-      <Pressable onPress={() => hasDetail && setExp(e => !e)}
+      <Pressable onPress={() => hasDetail && setExp(e => !e)} onLongPress={onLongPress}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingBottom: 8 }}>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

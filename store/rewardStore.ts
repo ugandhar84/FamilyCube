@@ -3,6 +3,62 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
 
+// ─── Realtime subscription ─────────────────────────────────────────────────
+// Mirrors familyStore.ts's ensureRealtime pattern. reward_redemptions has no
+// family_id column of its own (confirmed via information_schema, same
+// situation choreStore.ts's parent_quest_assignments handler already
+// documents) — RLS is relied on to only deliver rows the client is
+// authorized to see, same trust boundary syncFromDB's own unfiltered select
+// on this table already uses. Without this, a redemption request/approval/
+// decline made on one device was invisible on every other family member's
+// device until a full app restart re-ran syncFromDB — the same class of gap
+// V-A3/V-A4/V-A5 fixed for member balances, kid requests, and System-A
+// negotiation state earlier this session.
+let _rtChannel: ReturnType<typeof supabase.channel> | null = null;
+let _rtSubscribed = false;
+
+function ensureRealtime(setState: (s: Partial<RewardState>) => void, getState: () => RewardState) {
+  if (_rtSubscribed && _rtChannel) return;
+  if (_rtChannel) {
+    supabase.removeChannel(_rtChannel);
+    _rtChannel = null;
+  }
+  const staleTopic = 'realtime:reward_redemptions';
+  const stale = supabase.getChannels().filter(c => c.topic === staleTopic);
+  if (stale.length > 0) stale.forEach(c => supabase.removeChannel(c));
+  _rtSubscribed = true;
+
+  try {
+    _rtChannel = supabase
+      .channel('reward_redemptions')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reward_redemptions' },
+        ({ eventType, new: newRow, old: oldRow }) => {
+          const state = getState();
+          if (eventType === 'INSERT') {
+            const rd = redemptionFromRow(newRow);
+            if (state.redemptions.some(r => r.id === rd.id)) return;
+            const all = [rd, ...state.redemptions];
+            setState({ redemptions: all });
+            save(state.rewards, all);
+          } else if (eventType === 'UPDATE') {
+            const updated = redemptionFromRow(newRow);
+            const all = state.redemptions.map(r => r.id === updated.id ? updated : r);
+            setState({ redemptions: all });
+            save(state.rewards, all);
+          } else if (eventType === 'DELETE') {
+            const all = state.redemptions.filter(r => r.id !== String((oldRow as any).id));
+            setState({ redemptions: all });
+            save(state.rewards, all);
+          }
+        })
+      .subscribe((status) => {
+        console.log(`[rewardStore] realtime reward_redemptions subscribe status=${status}`);
+      });
+  } catch (e: any) {
+    console.warn('[rewardStore] ensureRealtime subscribe failed', e?.message ?? e);
+  }
+}
+
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
 export type RewardCategory = 'Screen Time' | 'Food' | 'Activity' | 'Shopping' | 'Special' | 'Experience';
@@ -136,7 +192,7 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     try {
       const [{ data: rData }, { data: rdData }] = await Promise.all([
         supabase.from('rewards').select('*').order('created_at'),
-        supabase.from('redemptions').select('*').order('redeemed_at', { ascending: false }),
+        supabase.from('reward_redemptions').select('*').order('requested_at', { ascending: false }),
       ]);
       if (rData && rData.length > 0) {
         const rewards     = rData.map(rewardFromRow);
@@ -144,6 +200,7 @@ export const useRewardStore = create<RewardState>((set, get) => ({
         set({ rewards, redemptions });
         save(rewards, redemptions);
       }
+      ensureRealtime(set, get);
     } catch {}
   },
 
@@ -208,6 +265,14 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     const nextRd = [...get().redemptions, redemption];
     set({ rewards: nextRewards, redemptions: nextRd });
     save(nextRewards, nextRd);
+    // Previously this function only ever touched local Zustand/AsyncStorage
+    // state — a redemption made on one device was invisible to every other
+    // family member's device, and the "sync across the family" behavior the
+    // rest of this app relies on for chores/events/points never applied
+    // here at all. Persist it for real now.
+    const memberName = useFamilyStore.getState().members.find(m => m.id === memberId)?.name ?? '';
+    supabase.from('reward_redemptions').insert([redemptionToRow(redemption, reward.title, memberName)])
+      .then(({ error }) => { if (error) console.warn('[rewardStore] redeemReward insert', error.message); });
     if (reward.requiresApproval) {
       notifyReward(memberId, 'reward_redeemed', {
         redemptionId: redemption.id, rewardId, rewardTitle: reward.title,
@@ -224,6 +289,13 @@ export const useRewardStore = create<RewardState>((set, get) => ({
       r.id === id ? { ...r, status: 'approved' as RedemptionStatus, approvedBy: approverId, note, respondedAt: now } : r
     );
     set({ redemptions: nextRd }); save(get().rewards, nextRd);
+    // reward_redemptions has no rejected_by/note/responded_at columns —
+    // approved_by isn't tracked server-side either, only the timestamp and
+    // status. approvedBy/note stay local-only (same limitation the DB
+    // schema already has), same as before this fix; not silently inventing
+    // new columns here.
+    supabase.from('reward_redemptions').update({ status: 'approved', approved_at: now }).eq('id', id)
+      .then(({ error }) => { if (error) console.warn('[rewardStore] approveRedemption update', error.message); });
     if (rd) {
       const reward = get().rewards.find(r => r.id === rd.rewardId);
       notifyReward(rd.memberId, 'reward_decision', {
@@ -254,6 +326,8 @@ export const useRewardStore = create<RewardState>((set, get) => ({
       ? get().rewards.map(r => r.id === rd.rewardId ? { ...r, stock: (r.stock ?? 0) + 1 } : r)
       : get().rewards;
     set({ rewards: nextR, redemptions: nextRd }); save(nextR, nextRd);
+    supabase.from('reward_redemptions').update({ status: 'declined', declined_at: now, declined_reason: note ?? null }).eq('id', id)
+      .then(({ error }) => { if (error) console.warn('[rewardStore] rejectRedemption update', error.message); });
     if (rd.deductedCoins > 0) {
       useFamilyStore.getState().awardCoins(rd.memberId, rd.deductedCoins, rd.wallet ?? 'mainCoins');
     }
@@ -266,11 +340,18 @@ export const useRewardStore = create<RewardState>((set, get) => ({
   cancelRedemption: (id) => {
     // Same refund logic as rejectRedemption — cancelling a still-pending
     // request must give back the reserved coins, not just flip the status.
+    // No dedicated "cancelled" value exists in reward_redemptions.status —
+    // stored as 'declined' server-side (same as reject) with the reason
+    // noting it was self-cancelled, since local Redemption.status keeps its
+    // own richer 'cancelled' distinction for the UI.
+    const now = new Date().toISOString();
     const rd = get().redemptions.find(r => r.id === id);
     const nextRd = get().redemptions.map(r =>
-      r.id === id ? { ...r, status: 'cancelled' as RedemptionStatus, respondedAt: new Date().toISOString() } : r
+      r.id === id ? { ...r, status: 'cancelled' as RedemptionStatus, respondedAt: now } : r
     );
     set({ redemptions: nextRd }); save(get().rewards, nextRd);
+    supabase.from('reward_redemptions').update({ status: 'declined', declined_at: now, declined_reason: 'Cancelled by requester' }).eq('id', id)
+      .then(({ error }) => { if (error) console.warn('[rewardStore] cancelRedemption update', error.message); });
     if (rd && rd.status === 'pending' && rd.deductedCoins > 0) {
       useFamilyStore.getState().awardCoins(rd.memberId, rd.deductedCoins, rd.wallet ?? 'mainCoins');
     }
@@ -279,6 +360,8 @@ export const useRewardStore = create<RewardState>((set, get) => ({
   deleteRedemption: (id) => {
     const nextRd = get().redemptions.filter(rd => rd.id !== id);
     set({ redemptions: nextRd }); save(get().rewards, nextRd);
+    supabase.from('reward_redemptions').delete().eq('id', id)
+      .then(({ error }) => { if (error) console.warn('[rewardStore] deleteRedemption', error.message); });
   },
 
   // ─── Selectors ───────────────────────────────────────────────────────────────
@@ -331,14 +414,36 @@ function rewardFromRow(row: any): Reward {
   };
 }
 
+// The live table is `reward_redemptions`, not `redemptions` — a prior pass
+// wrote this mapper (and the equivalent insert calls below) against a
+// hypothetical schema that was never actually deployed; syncFromDB's read
+// silently returned nothing as a result. Real columns (confirmed via
+// information_schema): id, reward_id, reward_title, coin_cost, member_id,
+// member_name, status, requested_at, created_at, screen_time_code,
+// declined_reason, declined_at, approved_at, wallet (added by this pass's
+// migration). There is no rejected_by/note/responded_at column — status
+// transitions are tracked only via approved_at/declined_at timestamps, and
+// "who approved/rejected" and any parent note are not currently persisted
+// server-side (local-only, same limitation as before this fix — flagged,
+// not silently invented as a new column here).
 function redemptionFromRow(row: any): Redemption {
   return {
-    id: String(row.id), rewardId: String(row.reward_id), memberId: String(row.member_id),
-    redeemedAt: row.redeemed_at, status: row.status ?? 'pending',
-    deductedCoins: row.deducted_coins ?? 0,
+    id: String(row.id), rewardId: String(row.reward_id), memberId: String(row.member_id ?? ''),
+    redeemedAt: row.requested_at ?? row.created_at ?? new Date().toISOString(),
+    status: row.status === 'declined' ? 'rejected' : (row.status ?? 'pending'),
+    deductedCoins: row.coin_cost ?? 0,
     wallet: row.wallet === 'gpCoins' ? 'gpCoins' : row.wallet === 'mainCoins' ? 'mainCoins' : undefined,
-    approvedBy: row.approved_by ? String(row.approved_by) : undefined,
-    rejectedBy: row.rejected_by ? String(row.rejected_by) : undefined,
-    note: row.note ?? undefined, respondedAt: row.responded_at ?? undefined,
+    respondedAt: row.approved_at ?? row.declined_at ?? undefined,
+    note: row.declined_reason ?? undefined,
+  };
+}
+
+function redemptionToRow(rd: Redemption, rewardTitle: string, memberName: string) {
+  return {
+    id: rd.id, reward_id: rd.rewardId, reward_title: rewardTitle,
+    coin_cost: rd.deductedCoins, member_id: rd.memberId, member_name: memberName,
+    status: rd.status === 'rejected' ? 'declined' : rd.status,
+    requested_at: rd.redeemedAt, created_at: rd.redeemedAt,
+    wallet: rd.wallet ?? null,
   };
 }

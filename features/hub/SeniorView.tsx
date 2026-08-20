@@ -536,7 +536,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
       <CheerSquadSection
         kidsCheerable={kidsCheerable} kids={kids} allNames={allNames} colors={colors} isDark={isDark}
-        cheerChore={cheerChore} awardCoins={awardCoins} active={active}
+        cheerChore={cheerChore} active={active}
       />
 
       <SendBonusCard

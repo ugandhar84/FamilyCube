@@ -4,20 +4,16 @@ import {
   Modal, KeyboardAvoidingView, Platform, Keyboard, StyleSheet, TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Leaf, Laptop, PiggyBank, HandCoins, Wallet, Check, Camera } from 'lucide-react-native';
+import { Leaf, Laptop, HandCoins, Check, Camera } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { GP } from './seniorTheme';
-import { splitCoins } from './splitMath';
 import { GP_QUEST_CATEGORIES, GP_QUEST_SUGGESTIONS, type GpQuestCategory } from './gpQuestSuggestions';
 import type { FamilyMember } from '@/store/familyStore';
 
-// Money-green — "Save" jar accent in the 50/40/10 split preview, distinct
-// from brand teal used elsewhere in this modal. Not colors.success (which
-// IS brand teal in this app) — kept as one local constant.
-const MONEY_GREEN = '#10B981';
-
 // Create Grandparent Quest modal — full spec lifecycle: mode, title,
-// description, points, 50/40/10 split preview, kid targeting, photo proof.
+// description, points, Grandparent Bonus jar preview, kid targeting, photo
+// proof. GP-funded coins are a single unsplit pool (product decision) —
+// no Spend/Save/Give breakdown applies here, unlike household chores.
 export function CreateQuestModal({
   visible, onClose, editing = false,
   kids, colors, isDark,
@@ -40,7 +36,6 @@ export function CreateQuestModal({
   onCreate: () => void;
 }) {
   const pts = parseInt(newQuestPoints) || 0;
-  const { spend, save, give } = splitCoins(pts);
   const [gpCategory, setGpCategory] = useState<GpQuestCategory | null>(null);
   const suggestions = gpCategory
     ? GP_QUEST_SUGGESTIONS.filter(s => s.category === gpCategory)
@@ -196,23 +191,17 @@ export function CreateQuestModal({
           </View>
         </View>
 
-        {/* 50/40/10 split preview */}
-        <View style={{ flexDirection: 'row', gap: 6 }}>
-          {[
-            { label: 'Spend', Icon: Wallet,    val: spend, color: BRAND.amber },
-            { label: 'Save',  Icon: PiggyBank, val: save,  color: MONEY_GREEN },
-            { label: 'Give',  Icon: HandCoins, val: give,  color: BRAND.purple },
-          ].map(j => (
-            <View key={j.label} style={{ flex: 1, alignItems: 'center', borderRadius: 10,
-              borderWidth: 1, borderColor: j.color + '30',
-              backgroundColor: j.color + '10', paddingVertical: 8, gap: 2 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <j.Icon size={12} color={j.color} />
-                <Text style={{ fontSize: GP.sub, color: j.color }}>{j.label}</Text>
-              </View>
-              <Text style={{ fontSize: GP.body, fontWeight: '900', color: j.color }}>{j.val}</Text>
-            </View>
-          ))}
+        {/* Grandparent Bonus jar preview — GP-funded coins are a single,
+            deliberately unsplit pool (product decision), not run through
+            the household's Spend/Save/Give financial-literacy split, so
+            this just confirms the full amount lands in one jar rather than
+            implying a 50/40/10 breakdown that doesn't apply to GP money. */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+          borderRadius: 10, borderWidth: 1, borderColor: BRAND.purple + '30',
+          backgroundColor: BRAND.purple + '10', paddingVertical: 10 }}>
+          <HandCoins size={14} color={BRAND.purple} />
+          <Text style={{ fontSize: GP.sub, color: BRAND.purple }}>Goes to Grandparent Bonus jar</Text>
+          <Text style={{ fontSize: GP.body, fontWeight: '900', color: BRAND.purple }}>{pts}</Text>
         </View>
 
         {/* Kid selector — pick none, one, or several; each means something different */}

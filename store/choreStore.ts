@@ -149,6 +149,15 @@ export interface PointTransaction {
   giveAllocation: number;
   notes?: string;
   createdAt: string;
+  // Which sub-wallet this transaction moves — defaults to 'mainCoins' for
+  // every existing/omitted row (regular earned/chore money, the
+  // Spend/Save/Give-split cash-out flow). 'gpCoins' is the separate,
+  // deliberately-unsplit Grandparent Bonus pool — a GP-coin CASH_OUT always
+  // has spend/save/give allocations of 0/0/amount-in-spend (the whole
+  // request goes through as a flat cash-out, no financial-literacy jar
+  // lesson attached, per product decision) and must never be summed into
+  // getMemberBalance's mainCoins-only totals.
+  wallet?: 'mainCoins' | 'gpCoins';
 }
 
 export interface UserBadge {
@@ -540,8 +549,8 @@ interface ChoreState {
   resetDueRecurringChores:         () => void;
 
   // ── Points economy ────────────────────────────────────────────────────────
-  awardPoints:         (userId: string, choreId: string, points: number, xp?: number) => void;
-  requestCashOut:      (userId: string, points: number, override?: { spendPct: number; savePct: number; givePct: number }) => void;
+  awardPoints:         (userId: string, choreId: string, points: number, xp?: number, wallet?: 'mainCoins' | 'gpCoins') => void;
+  requestCashOut:      (userId: string, points: number, override?: { spendPct: number; savePct: number; givePct: number }, wallet?: 'mainCoins' | 'gpCoins') => void;
   settleCashOut:       (transactionId: string, method: 'PHYSICAL_CASH' | 'DEBIT_CARD' | 'LEDGER') => void;
   approveCashOut:      (transactionId: string) => void;
   denyCashOut:         (transactionId: string) => void;
@@ -570,6 +579,7 @@ interface ChoreState {
 
   // ── Grandparent actions ───────────────────────────────────────────────────
   addGrandparentMatch: (match: Omit<GrandparentMatch, 'id' | 'createdAt' | 'monthlyContributedYtd'>) => void;
+  applyGrandparentMatches: (childId: string, jarAmounts: { spend: number; save: number; give: number }) => void;
   createGrandparentQuest: (task: { title: string; description?: string; basePoints: number; childIds: string[]; dueDate?: string; sponsorId: string; mode?: 'local' | 'virtual'; requiresPhoto?: boolean }) => ChoreTask;
   approveGrandparentQuest: (choreId: string, parentId: string) => void;
   declineGrandparentQuest: (choreId: string, parentId: string, reason: string) => void;
@@ -1167,7 +1177,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       const now = new Date().toISOString();
       get().updateChore(choreId, { status: 'auto_approved', approvedAt: now, reviewedAt: now });
       const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
-      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward);
+      const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward, wallet);
       return true;
     }
 
@@ -1215,7 +1226,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       const now = new Date().toISOString();
       get().updateChore(choreId, { status: 'auto_approved', approvedAt: now, reviewedAt: now });
       const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
-      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward);
+      const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward, wallet);
       return;
     }
 
@@ -1352,7 +1364,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // awardPoints itself calls award_coins (see awardPoints' own comment).
     const pointsToAward = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
     if (pointsToAward > 0 && chore.assignedToId) {
-      get().awardPoints(chore.assignedToId, choreId, pointsToAward, chore.xpReward);
+      // A grandparent-sponsored quest can also reach this generic approval
+      // path (e.g. a parent reviews it instead of the sponsoring GP using
+      // grandparentApproveAndCheer directly) — still pays out of gpCoins in
+      // that case, same as the GP's own approval path, so the payout wallet
+      // never depends on WHICH role happened to tap Approve.
+      const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+      get().awardPoints(chore.assignedToId, choreId, pointsToAward, chore.xpReward, wallet);
     }
 
     // responsibility_history — same append-only audit trail the
@@ -1462,6 +1480,15 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       ...(opts?.note?.trim() ? { note: opts.note.trim() } : {}),
     };
     get().updateChore(choreId, { cheers: [...(chore.cheers ?? []), entry] });
+    // opts.coins was previously only ever recorded on the cheer entry for
+    // display — never actually credited to the kid. cheerChore is exclusively
+    // a Senior/GP feature (CheerSquadSection, features/hub/senior/), so a
+    // cheer's coin amount is grandparent kudos money, same wallet as any
+    // other GP-sponsored payout — the unsplit gpCoins pool, not run through
+    // the Spend/Save/Give split.
+    if (opts?.coins && opts.coins > 0 && chore.assignedToId) {
+      get().awardPoints(chore.assignedToId, choreId, opts.coins, 0, 'gpCoins');
+    }
     supabase.functions.invoke('quest-event-notifier', {
       body: { event: 'chore_cheered', choreId, fromId: fromMemberId, coins: opts?.coins ?? 0, note: entry.note ?? null },
     }).catch(e => console.warn('[choreStore] cheerChore notify', e?.message));
@@ -1549,7 +1576,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         reviewedAt: new Date().toISOString(),
       });
       const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
-      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, chore.id, pts, chore.xpReward);
+      const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, chore.id, pts, chore.xpReward, wallet);
     }
   },
 
@@ -1610,9 +1638,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // POINTS ECONOMY
   // ─────────────────────────────────────────────────────────────────────────
 
-  awardPoints: (userId, choreId, points, xp = 0) => {
+  awardPoints: (userId, choreId, points, xp = 0, wallet = 'mainCoins') => {
     const settings = get().householdSettings;
-    const { spend, save, give } = calculateJarSplit(points, settings);
+    // Grandparent-sponsored money is a deliberately simple, unsplit pool
+    // (product decision) — the Spend/Save/Give financial-literacy split
+    // only applies to mainCoins, so a gpCoins payout carries the full
+    // amount as "spend" on the transaction record (for reporting/history
+    // only; getMemberBalance's own reducer is mainCoins-only and never
+    // sums gpCoins transactions into it regardless of these fields).
+    const { spend, save, give } = wallet === 'gpCoins'
+      ? { spend: points, save: 0, give: 0 }
+      : calculateJarSplit(points, settings);
 
     const tx: PointTransaction = {
       id:               genId(),
@@ -1623,8 +1659,9 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       spendAllocation:  spend,
       saveAllocation:   save,
       giveAllocation:   give,
-      notes:            `Chore approved`,
+      notes:            wallet === 'gpCoins' ? 'Grandparent quest approved' : 'Chore approved',
       createdAt:        new Date().toISOString(),
+      wallet,
     };
 
     set(s => ({ transactions: [tx, ...s.transactions] }));
@@ -1634,15 +1671,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // information_schema — it was called here for a long time, always
     // failing silently to a console warning) and members has no
     // spend/save/give sub-balance columns to write jar splits into anyway
-    // — award_coins (members.coins/main_coins/xp) is the one RPC that
-    // actually exists and is the real payout every caller of awardPoints
-    // needs. The jar split (spend/save/give) is still computed and
-    // recorded on the point_transactions row above for reporting; only the
-    // (not currently persisted) per-jar running balance was ever missing.
+    // — award_coins (members.coins/main_coins/xp, or members.gp_coins/xp
+    // when wallet='gp') is the one RPC that actually exists and is the
+    // real payout every caller of awardPoints needs. The jar split
+    // (spend/save/give) is still computed and recorded on the
+    // point_transactions row above for reporting; only the (not currently
+    // persisted) per-jar running balance was ever missing.
     supabase.rpc('award_coins', {
       member_id:   userId,
       coins_delta: points,
       xp_delta:    xp,
+      wallet:      wallet === 'gpCoins' ? 'gp' : 'main',
     }).then(({ error }) => {
       if (error) console.warn('[choreStore] award_coins', error.message);
     });
@@ -1658,9 +1697,11 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       const { useFamilyStore } = require('@/store/familyStore');
       useFamilyStore.setState((s: any) => ({
         members: s.members.map((m: any) => m.id === userId
-          ? { ...m, coins: Math.max(0, (m.coins ?? 0) + points),
-              mainCoins: Math.max(0, (m.mainCoins ?? 0) + points),
-              xp: Math.max(0, (m.xp ?? 0) + xp) }
+          ? wallet === 'gpCoins'
+            ? { ...m, gpCoins: Math.max(0, (m.gpCoins ?? 0) + points), xp: Math.max(0, (m.xp ?? 0) + xp) }
+            : { ...m, coins: Math.max(0, (m.coins ?? 0) + points),
+                mainCoins: Math.max(0, (m.mainCoins ?? 0) + points),
+                xp: Math.max(0, (m.xp ?? 0) + xp) }
           : m),
       }));
     } catch { /* familyStore not mounted yet — RPC write still lands */ }
@@ -1677,15 +1718,127 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       give_allocation:   give,
       notes:             tx.notes,
       created_at:        tx.createdAt,
+      wallet,
     });
+
+    // Grandparent Match execution — a match rule (addGrandparentMatch) was
+    // previously configuration-only: a GP could set up "match 50% of what
+    // Leo saves," but nothing anywhere ever read monthlyContributedYtd,
+    // watched for a jar contribution, or credited the matched amount.
+    // mainCoins EARNED is the only source of jar allocations a match can
+    // apply against — a gpCoins payout (this same function, wallet='gpCoins')
+    // has no jars, so it can never itself trigger a match.
+    if (wallet === 'mainCoins') {
+      get().applyGrandparentMatches(userId, { spend, save, give });
+    }
   },
 
-  requestCashOut: (userId, points, override) => {
+  // For each active match rule targeting this child, checks the jar the
+  // rule matches against (matchJar), computes the matched amount
+  // (FIXED_PERCENTAGE of that jar's contribution from THIS earn event, or
+  // FIXED_AMOUNT flat per earn event — GOAL_PLEDGE has no per-earn trigger,
+  // it's a lump pledge toward goalTarget, not matched incrementally),
+  // clamps it against maxMonthlyContribution, credits the grandparent's
+  // own gpCoins... no — credits the CHILD's gpCoins (the match is money
+  // the grandparent is contributing TO the child), and advances
+  // monthlyContributedYtd. Silently no-ops for any rule that's inactive,
+  // has no matching jar contribution this event, or has already hit its
+  // monthly cap.
+  applyGrandparentMatches: (childId, jarAmounts) => {
+    const rules = get().grandparentMatches.filter(m => m.isActive && m.childId === childId);
+    if (rules.length === 0) return;
+
+    for (const rule of rules) {
+      if (rule.matchType === 'GOAL_PLEDGE') continue; // lump pledge, not a per-earn match
+      const jarContribution =
+        rule.matchJar === 'SAVE' ? jarAmounts.save :
+        rule.matchJar === 'GIVE' ? jarAmounts.give :
+        rule.matchJar === 'SPEND' ? jarAmounts.spend : 0;
+      if (jarContribution <= 0) continue;
+
+      let matched = rule.matchType === 'FIXED_PERCENTAGE'
+        ? Math.round(jarContribution * ((rule.matchValue ?? 0) / 100))
+        : (rule.matchValue ?? 0); // FIXED_AMOUNT — flat per earn event this jar was touched
+      if (matched <= 0) continue;
+
+      if (rule.maxMonthlyContribution != null) {
+        const remaining = rule.maxMonthlyContribution - rule.monthlyContributedYtd;
+        if (remaining <= 0) continue; // cap already hit this month
+        matched = Math.min(matched, remaining);
+      }
+
+      get().awardPoints(childId, '', matched, 0, 'gpCoins');
+
+      const newYtd = rule.monthlyContributedYtd + matched;
+      set(s => ({
+        grandparentMatches: s.grandparentMatches.map(m =>
+          m.id === rule.id ? { ...m, monthlyContributedYtd: newYtd } : m
+        ),
+      }));
+      dbUpdate('grandparent_matches', rule.id, { monthly_contributed_ytd: newYtd });
+
+      // Let the grandparent know their match actually fired — a match with
+      // no visible confirmation is indistinguishable from one that's
+      // silently broken.
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const { useChatStore } = require('./chatStore');
+        const child = useFamilyStore.getState().members.find((m: any) => m.id === childId);
+        useChatStore.getState().sendMessage(rule.grandparentId, childId,
+          `🌱 Your match kicked in — ${matched} bonus coins added for ${child?.name?.split(' ')[0] ?? 'your grandchild'}'s saving!`);
+      } catch (e) {
+        console.warn('[choreStore] applyGrandparentMatches notify failed', e);
+      }
+    }
+  },
+
+  requestCashOut: (userId, points, override, wallet = 'mainCoins') => {
     const settings = get().householdSettings;
     if (points < settings.minCashoutPoints) {
       console.warn('[choreStore] Cash-out below minimum', points);
       return;
     }
+
+    if (wallet === 'gpCoins') {
+      // gpCoins is a flat, unsplit pool (product decision) — no Spend/Save/
+      // Give jars apply, so this validates against the member's actual
+      // gp_coins balance (familyStore, not getMemberBalance's mainCoins-
+      // only reducer) and records the transaction with the full amount as
+      // a single flat allocation, not a 3-way jar split.
+      const { useFamilyStore } = require('./familyStore');
+      const member = useFamilyStore.getState().members.find((m: any) => m.id === userId);
+      const gpBalance = member?.gpCoins ?? 0;
+      if (points > gpBalance) {
+        console.warn('[choreStore] GP cash-out exceeds balance', points, gpBalance);
+        return;
+      }
+      const gpTx: PointTransaction = {
+        id:              genId(),
+        userId,
+        amount:          points,
+        transactionType: 'CASH_OUT',
+        spendAllocation: points, saveAllocation: 0, giveAllocation: 0,
+        notes:           `Cash-out request: ${points} pts (Grandparent Bonus)`,
+        createdAt:       new Date().toISOString(),
+        wallet:          'gpCoins',
+      };
+      set(s => ({ transactions: [gpTx, ...s.transactions] }));
+      dbInsert('point_transactions', {
+        id: gpTx.id, user_id: userId, amount: points, transaction_type: 'CASH_OUT',
+        spend_allocation: points, save_allocation: 0, give_allocation: 0,
+        notes: gpTx.notes, created_at: gpTx.createdAt, wallet: 'gpCoins',
+      });
+      // gpCoins has no derived-balance reducer the way getMemberBalance
+      // computes mainCoins from transactions (which treats a pending
+      // CASH_OUT as an immediate deduction without touching the literal
+      // members.main_coins column). gpCoins IS the literal balance, so the
+      // same "money is earmarked the moment a request is filed" behavior
+      // requires an actual deduction here — refunded explicitly by
+      // denyCashOut if the parent declines it.
+      get().awardPoints(userId, '', -points, 0, 'gpCoins');
+      return;
+    }
+
     // A kid could otherwise request a cash-out for more points than they
     // actually have — nothing previously checked requested points against
     // getMemberBalance before writing the CASH_OUT transaction that
@@ -1712,6 +1865,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       giveAllocation:  give,
       notes:           `Cash-out request: ${points} pts`,
       createdAt:       new Date().toISOString(),
+      wallet:          'mainCoins',
     };
 
     set(s => ({ transactions: [tx, ...s.transactions] }));
@@ -1725,6 +1879,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       give_allocation:  give,
       notes:            tx.notes,
       created_at:       tx.createdAt,
+      wallet:           'mainCoins',
     });
   },
 
@@ -1751,20 +1906,32 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   denyCashOut: (transactionId) => {
-    // Tagging the row "[Denied]" is now also the actual reversal — see
-    // getMemberBalance above, which excludes any CASH_OUT transaction whose
-    // notes contain "[Denied]" from the running balance. Previously the tag
-    // was cosmetic only: the deduction requestCashOut applied the moment the
-    // request was filed stayed in effect forever, silently shrinking the
-    // kid's wallet even on a denied request.
+    // For a mainCoins cash-out, tagging the row "[Denied]" IS the actual
+    // reversal — see getMemberBalance above, which excludes any CASH_OUT
+    // transaction whose notes contain "[Denied]" from the running balance
+    // (that reducer derives the whole balance from transactions, so
+    // excluding one row is enough). gpCoins has no equivalent derived-
+    // balance reducer — familyStore.members.gpCoins is the literal balance,
+    // and requestCashOut's gpCoins branch explicitly deducts it up front
+    // (earmarking the request, same "money leaves the moment it's asked
+    // for" behavior mainCoins gets implicitly from the reducer) — so a
+    // denied GP cash-out must be credited back explicitly here, below.
+    const tx = get().transactions.find(t => t.id === transactionId);
     set(s => ({
-      transactions: s.transactions.map(tx =>
-        tx.id === transactionId
-          ? { ...tx, notes: `${tx.notes ?? ''} [Denied]` }
-          : tx
+      transactions: s.transactions.map(t =>
+        t.id === transactionId
+          ? { ...t, notes: `${t.notes ?? ''} [Denied]` }
+          : t
       ),
     }));
     dbUpdate('point_transactions', transactionId, { notes: '[Denied]' });
+    if (tx?.wallet === 'gpCoins' && tx.userId) {
+      // Explicit refund — gpCoins is a literal balance, not derived from
+      // transactions the way getMemberBalance computes mainCoins, so a
+      // denied request must be credited back directly rather than relying
+      // on an excluded-row reducer that doesn't exist for this wallet.
+      get().awardPoints(tx.userId, '', tx.amount, 0, 'gpCoins');
+    }
   },
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -2303,14 +2470,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // display only): each kid is verified and paid independently — falls
     // straight through to the normal single-kid payout below.
 
-    // Award points (grandparent funded) — the 50/40/10 split this comment
-    // used to reference was never actually applied (awardPoints always
-    // recomputes its own split from household settings, ignoring any split
-    // passed in here) — pre-existing, out of scope for this fix. bonusCoins
+    // Award points — grandparent-funded, so this pays out of the separate
+    // gpCoins pool (not run through the Spend/Save/Give split, which only
+    // applies to money earned through ordinary household chores). bonusCoins
     // now included, matching approveChore's identical payout.
     if (chore.basePoints > 0) {
       const pts = chore.basePoints + (chore.bonusCoins ?? 0);
-      get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward);
+      get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward, 'gpCoins');
     }
 
     // Increment Grand Champion badge progress

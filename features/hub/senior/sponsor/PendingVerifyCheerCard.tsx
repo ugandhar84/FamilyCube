@@ -1,12 +1,11 @@
 import { useState } from 'react';
 import { View, Text, Pressable, Image, Alert, Modal, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera, Hammer, CheckCircle2, UserX, Clock, Users, Wallet, PiggyBank, HandCoins, RotateCcw, X } from 'lucide-react-native';
+import { Camera, Hammer, CheckCircle2, UserX, Clock, Users, HandCoins, RotateCcw, X } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { fmtDateTime } from '@/lib/dates';
 import { GP } from '../seniorTheme';
-import { splitCoins } from '../splitMath';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
 
@@ -18,10 +17,6 @@ const CHEER_STICKERS = ['⭐', '🏆', '🎉', '💪', '🌟', '❤️'];
 // elsewhere in this card. Not colors.success (which IS brand teal in this
 // app) — kept as one local constant.
 const VERIFIED_GREEN = '#22c55e';
-// Money-green — "Save" jar accent in the 50/40/10 split preview, a
-// different hue from VERIFIED_GREEN above. Not colors.success — kept as
-// its own local constant.
-const MONEY_GREEN = '#10B981';
 
 function rowMeta(status: string, colors: any) {
   switch (status) {
@@ -100,7 +95,6 @@ export function PendingVerifyCheerCard({
           ? allChores.filter(c => c.teamGroupId === chore.teamGroupId)
           : [chore];
         const pts = chore.basePoints;
-        const { spend, save, give } = splitCoins(pts);
         const readyCount = team.filter(c => c.status === 'pending_grandparent_approval').length;
         const verifiedCount = team.filter(c => ['approved', 'auto_approved', 'completed'].includes(c.status)).length;
         return (
@@ -187,22 +181,15 @@ export function PendingVerifyCheerCard({
                   {pts} pts to EACH kid who finishes — independently
                 </Text>
               )}
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {[
-                  { label: 'Spend', Icon: Wallet,    val: spend, color: BRAND.amber },
-                  { label: 'Save',  Icon: PiggyBank, val: save,  color: MONEY_GREEN },
-                  { label: 'Give',  Icon: HandCoins, val: give,  color: BRAND.purple },
-                ].map(j => (
-                  <View key={j.label} style={{ flex: 1, alignItems: 'center', borderRadius: 10,
-                    borderWidth: 1, borderColor: j.color + '30',
-                    backgroundColor: j.color + '10', paddingVertical: 8, gap: 2 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <j.Icon size={12} color={j.color} />
-                      <Text style={{ fontSize: GP.sub, color: j.color }}>{j.label}</Text>
-                    </View>
-                    <Text style={{ fontSize: GP.body, fontWeight: '900', color: j.color }}>{j.val}</Text>
-                  </View>
-                ))}
+              {/* Grandparent Bonus jar preview — GP-funded coins are a
+                  single, deliberately unsplit pool (product decision), not
+                  run through the household's Spend/Save/Give split. */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                borderRadius: 10, borderWidth: 1, borderColor: BRAND.purple + '30',
+                backgroundColor: BRAND.purple + '10', paddingVertical: 8 }}>
+                <HandCoins size={12} color={BRAND.purple} />
+                <Text style={{ fontSize: GP.sub, color: BRAND.purple }}>Grandparent Bonus jar</Text>
+                <Text style={{ fontSize: GP.body, fontWeight: '900', color: BRAND.purple }}>{pts}</Text>
               </View>
 
               {chore.teamGroupId ? (

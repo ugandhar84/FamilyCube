@@ -13,12 +13,11 @@ import type { ChoreTask } from '@/store/choreStore';
 // the one thing GP actually does here.
 export function CheerSquadSection({
   kidsCheerable, kids, allNames, colors, isDark,
-  cheerChore, awardCoins, active,
+  cheerChore, active,
 }: {
   kidsCheerable: ChoreTask[];
   kids: FamilyMember[]; allNames: string[]; colors: any; isDark: boolean;
   cheerChore: (choreId: string, fromMemberId: string, opts?: { coins?: number; note?: string }) => void;
-  awardCoins: (memberId: string, amount: number, wallet: 'mainCoins' | 'gpCoins') => void;
   active: FamilyMember;
 }) {
   return (
@@ -46,7 +45,7 @@ export function CheerSquadSection({
             {kidsCheerable.map(c => (
               <CheerCard key={c.id} chore={c} kid={kids.find(k => k.id === c.assignedToId)}
                 allNames={allNames} colors={colors} isDark={isDark}
-                cheerChore={cheerChore} awardCoins={awardCoins} active={active} />
+                cheerChore={cheerChore} active={active} />
             ))}
           </View>
         )}
@@ -61,18 +60,19 @@ export function CheerSquadSection({
 // only highlights the chosen amount (or none, for a plain cheer); "Send a
 // Cheer" is the one actual submit action, same two-step pattern
 // KudosSheet.tsx already uses on the Quests tab.
-function CheerCard({ chore: c, kid, allNames, colors, isDark, cheerChore, awardCoins, active }: {
+function CheerCard({ chore: c, kid, allNames, colors, isDark, cheerChore, active }: {
   chore: ChoreTask; kid: FamilyMember | undefined; allNames: string[]; colors: any; isDark: boolean;
   cheerChore: (choreId: string, fromMemberId: string, opts?: { coins?: number; note?: string }) => void;
-  awardCoins: (memberId: string, amount: number, wallet: 'mainCoins' | 'gpCoins') => void;
   active: FamilyMember;
 }) {
   const [selectedAmt, setSelectedAmt] = useState<number | null>(null);
   const firstName = kid?.name?.split(' ')[0] ?? 'They';
 
   const send = () => {
+    // cheerChore itself now credits opts.coins to gpCoins — a separate
+    // direct awardCoins call here used to double-pay every coin-attached
+    // cheer.
     cheerChore(c.id, active.id, selectedAmt ? { coins: selectedAmt } : undefined);
-    if (selectedAmt && c.assignedToId) awardCoins(c.assignedToId, selectedAmt, 'gpCoins');
   };
 
   return (

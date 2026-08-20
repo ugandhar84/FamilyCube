@@ -75,7 +75,7 @@ export { AddQuestModal };
 export default function QuestsScreen() {
   const { colors, isDark } = useTheme();
   const { questId } = useLocalSearchParams<{ questId?: string }>();
-  const { members, activeMemberId, setActiveMember, awardCoins } = useFamilyStore();
+  const { members, activeMemberId, setActiveMember } = useFamilyStore();
   const { quests, claimQuest, submitQuest, approveQuest, declineQuest, reopenQuest, updateQuest, deleteQuest, approveParticipant, declineParticipant, reopenParticipant, reassignQuest, cheerQuest } = useQuestStore();
 
   const activeMember = members.find(m => m.id === activeMemberId)
@@ -595,8 +595,10 @@ export default function QuestsScreen() {
     if (!kudosTarget) return;
     const resolvedAmount = kudosCustomCoins ? (parseInt(kudosCustomText, 10) || 0) : kudosCoinAmount;
     const coins = isSenior && kudosIncludeCoins && resolvedAmount > 0 ? resolvedAmount : undefined;
+    // cheerChore (via cheerQuest) now credits opts.coins to gpCoins itself —
+    // this used to ALSO award the same amount directly here, double-paying
+    // every kudos-with-coins sent from this screen.
     cheerQuest(kudosTarget.id, myId ?? '', { note: kudosNote.trim() || undefined, coins });
-    if (coins && kudosTarget.assignedToId) awardCoins(kudosTarget.assignedToId, coins, 'gpCoins');
     closeKudosSheet();
   };
 

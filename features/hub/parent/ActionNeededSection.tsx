@@ -9,6 +9,7 @@ import { QuestApprovalCard } from './QuestApprovalCard';
 import { RideLateAlertCard } from './RideLateAlertCard';
 import { ServiceRequestCard } from './ServiceRequestCard';
 import { GroceryRequestCard } from './GroceryRequestCard';
+import { QuestProposalCard } from './QuestProposalCard';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { Quest } from '@/store/questStore';
@@ -85,6 +86,7 @@ export function ActionNeededSection({
   active, members, allNames, colors, isDark,
   updateEvent, addEvent, approveQuest, declineQuest,
   approveRequest, declineRequest, toggleGPWelcome, approveItemsAndSync, rejectItems,
+  approveQuestProposal, declineQuestProposal,
 }: {
   actionCount: number;
   pendingRequests: FamilyEvent[];
@@ -102,6 +104,13 @@ export function ActionNeededSection({
   toggleGPWelcome: (id: string, open: boolean) => void;
   approveItemsAndSync: (reqId: string, itemIds: string[], isSupplies: boolean) => void;
   rejectItems: (reqId: string, itemIds: string[], by: string) => void;
+  // Scenario 1.4 — approving a quest_proposal request must ALSO create the
+  // live quest (choreStore.addChore), not just flip the request's status
+  // the way every other request type's approve action does. Kept as its
+  // own callback rather than overloading approveRequest so the "create a
+  // real chore row" side-effect lives in one obvious place (ParentView).
+  approveQuestProposal?: (req: any, finalCoins: number) => void;
+  declineQuestProposal?: (req: any, reason?: string) => void;
 }) {
   if (actionCount === 0) return null;
 
@@ -222,6 +231,19 @@ export function ActionNeededSection({
           accent={accent} colors={colors} isDark={isDark}
           onApprove={(reply) => approveRequest(req.id, active.id, reply || undefined)}
           onDecline={(reply) => declineRequest(req.id, active.id, reply || undefined)} />,
+      });
+      continue;
+    }
+
+    if (req.type === 'quest_proposal') {
+      // A pending quest idea isn't blocking anyone — same "soon," not
+      // "urgent," tier as a routine ride/tutor/cheer service request.
+      ranked.push({
+        key: `req-${req.id}`, age,
+        severity: 'soon', score: SEVERITY.soon,
+        node: <QuestProposalCard key={req.id} req={req} kidName={kidName} active={active} colors={colors} isDark={isDark}
+          onApprove={(finalCoins) => approveQuestProposal?.(req, finalCoins)}
+          onDecline={(reason) => declineQuestProposal?.(req, reason)} />,
       });
       continue;
     }

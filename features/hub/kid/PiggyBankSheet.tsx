@@ -1,9 +1,10 @@
 import { View, Text } from 'react-native';
-import { PiggyBank, Star, Target, CheckCircle2, Flame, Zap, Lightbulb } from 'lucide-react-native';
+import { PiggyBank, Star, Target, CheckCircle2, Flame, Zap, Lightbulb, Receipt } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { KID } from './kidTheme';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import type { Reward } from '@/store/rewardStore';
+import { useChoreStore } from '@/store/choreStore';
 
 const COIN_VAL = 0.10;
 
@@ -15,12 +16,58 @@ const MONEY_GREEN = '#10B981';
 // left as a distinct literal per design (see final report).
 const STREAK_ORANGE = '#FF6600';
 
+// Scenario 8.1 — a real "Recent Activity" list reading straight from
+// choreStore.transactions (backed by the actual point_transactions table —
+// the same audit-trail row every quest approval, bonus, and GP match
+// already writes). The former standalone Vault → Ledger tab that used to
+// serve this purpose was removed in this redesign pass (see
+// features/store/StoreScreen.tsx's own comment on the replacement Piggy
+// Banks summary), leaving no live transaction-history surface anywhere in
+// the app — this restores a real one, scoped to the viewer's OWN
+// transactions only (5.3's sibling-balance-privacy rule), inside the one
+// screen a kid already checks their own balance from.
+function RecentActivityList({ colors, isDark, memberId }: { colors: any; isDark: boolean; memberId: string }) {
+  const transactions = useChoreStore(s => s.transactions);
+  const mine = transactions
+    .filter(t => t.userId === memberId && !(t.notes ?? '').includes('[Denied]'))
+    .slice(0, 8);
+
+  if (mine.length === 0) return null;
+
+  return (
+    <View style={{ borderRadius: 14, padding: 13, backgroundColor: colors.card, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', gap: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Receipt size={14} color={colors.textPrimary} />
+        <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: colors.textPrimary }}>Recent Activity</Text>
+      </View>
+      {mine.map(t => {
+        const isNegative = t.amount < 0 || t.transactionType === 'CASH_OUT' || t.transactionType === 'SPENT';
+        const sign = t.amount < 0 ? '' : (t.transactionType === 'CASH_OUT' || t.transactionType === 'SPENT') ? '-' : '+';
+        return (
+          <View key={t.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ fontSize: KID.tiny, color: colors.textSecondary, flex: 1, marginRight: 8 }} numberOfLines={1}>
+              {t.notes || (t.transactionType === 'EARNED' ? 'Quest reward' : t.transactionType)}
+            </Text>
+            <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: isNegative ? colors.danger : '#10B981' }}>
+              {sign}{Math.abs(t.amount)} 🪙
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 export function PiggyBankSheet({
-  visible, onClose, colors, isDark, mainCoins, gpCoins, almostAffordable, doneToday, streak, level,
+  visible, onClose, colors, isDark, mainCoins, gpCoins, almostAffordable, doneToday, streak, level, memberId,
 }: {
   visible: boolean; onClose: () => void; colors: any; isDark: boolean;
   mainCoins: number; gpCoins: number; almostAffordable: Reward[];
   doneToday: number; streak: number; level: number;
+  // Scenario 8.1 — whose transactions to show in Recent Activity. Optional
+  // so existing call sites that haven't been updated yet don't break; the
+  // section simply doesn't render without it.
+  memberId?: string;
 }) {
   return (
     <AppBottomSheet
@@ -97,6 +144,8 @@ export function PiggyBankSheet({
             </View>
           ))}
         </View>
+
+        {memberId && <RecentActivityList colors={colors} isDark={isDark} memberId={memberId} />}
 
         <View style={{ borderRadius: 14, padding: 13, backgroundColor: BRAND.teal + '12', borderWidth: 1, borderColor: BRAND.teal + '40' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>

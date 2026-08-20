@@ -1,14 +1,16 @@
 import { useState, useCallback, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert } from 'react-native';
+import { Alert, View, Text } from 'react-native';
 import * as Calendar from 'expo-calendar';
 import * as ImagePicker from 'expo-image-picker';
 import { BRAND } from '@/components/FamilyCubeLogo';
-import { useEventStore } from '@/store/eventStore';
+import { useEventStore, isEventSensitive, canViewSensitiveEventDetail } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useChoreStore } from '@/store/choreStore';
 import type { ChoreTask } from '@/store/choreStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
+import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
+import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
 import type { FamilyMember } from '@/store/familyStore';
 import { localToday, isWorkEvent, hoursUntilEvent } from './hubUtils';
 import { withinLast24h } from '@/lib/dates';
@@ -38,6 +40,15 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   activeTrip?: { kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; etaMinutes: number; startedAtMs?: number } | null;
 }) {
   const { events, updateEvent } = useEventStore();
+  // Scenarios 9.2/9.3 — caregiver mode: if a parent has granted this GP
+  // temporary approval access, isActiveApprover flips true and the review
+  // deck below appears. loadFromStorage may not have run yet if SeniorView
+  // mounts before ParentView ever has (GP opens the app directly) — hydrate
+  // it here too, same reasoning as kidRequestStore's own defensive load.
+  const { loaded: approverGrantsLoaded, loadFromStorage: loadApproverGrants, isActiveApprover, getActiveGrantFor } = useTemporaryApproverStore();
+  useEffect(() => { if (!approverGrantsLoaded) loadApproverGrants(); }, [approverGrantsLoaded]);
+  const hasCaregiverAccess = isActiveApprover(active.id);
+  const caregiverGrant = getActiveGrantFor(active.id);
   // Live, multi-day, cross-viewer-consistent feed for the "open to
   // helpers" dispatch lists below — see useUpcomingOpenEvents' header
   // comment for why the day-cached `events` above can't be reused for
@@ -408,8 +419,13 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // parent's approval gate on a minor's social/logistics request. The
   // volunteerPool below (line ~421) already correctly excludes
   // approvalPending items — this brings openRequests in line with it.
+  // Scenarios 2.6/5.5 — a sensitive/private/Medical event with no helper
+  // assigned yet is hidden from GP's open-requests browsing entirely
+  // (busy-block-only, not even offered as a claimable "needs a hand" item)
+  // unless a parent explicitly shared it for this GP's care occasion.
   const openRequests = events.filter(e =>
-    e.date === today && !e.approvalPending && !e.helper && !isWorkEvent(e) && !isPastEvent(e)
+    e.date === today && !e.approvalPending && !e.helper && !isWorkEvent(e) && !isPastEvent(e) &&
+    (!isEventSensitive(e) || canViewSensitiveEventDetail(e, 'senior', active.id))
   );
   // Urgent pending: I still haven't replied and < 1 hr to go
   const urgentPending = myPendingAssignments.filter(e =>
@@ -428,6 +444,8 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     if (!e.helper || e.helperStatus !== 'pending') return false;
     if (e.helper === active.name) return false;      // already assigned to me
     if (e.approvalPending) return false;             // kid-initiated, parent hasn't approved
+    // Scenarios 2.6/5.5 — same sensitive-event gate as openRequests above.
+    if (isEventSensitive(e) && !canViewSensitiveEventDetail(e, 'senior', active.id)) return false;
     const hrs = hoursUntilEvent(e.date, e.time);
     if (hrs < 0 || hrs > 4) return false;            // only 0–4 hr window
     // Don't offer if I'd create a driver conflict with my confirmed drives
@@ -486,6 +504,26 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       <GroupBand label="Today" color={BRAND.teal} colors={colors} />
 
       <EmergencySosCard sosActive={sosActive} setSosActive={setSosActive} colors={colors} isDark={isDark} />
+
+      {/* Scenarios 9.2/9.3 — visible ONLY while a parent-granted caregiver
+          window is active; disappears the instant it expires or is
+          revoked, same ParentReviewDeck a parent's own Hub uses (its
+          Approve/Decline actions now route through choreStore.canApprove,
+          which recognizes this grant). A small transparency indicator
+          matches the spec's "kids see who's in charge this week" rule. */}
+      {hasCaregiverAccess && (
+        <View style={{ paddingHorizontal: 16, marginBottom: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8,
+            backgroundColor: isDark ? BRAND.purple + '18' : BRAND.purple + '10',
+            borderRadius: 12, padding: 10, borderWidth: 1, borderColor: BRAND.purple + '30' }}>
+            <Text style={{ fontSize: 16 }}>🔑</Text>
+            <Text style={{ flex: 1, fontSize: 12.5, fontWeight: '700', color: BRAND.purple }}>
+              You're the temporary approver{caregiverGrant ? ` until ${new Date(caregiverGrant.expiresAt).toLocaleString()}` : ''} — you can approve/decline chore submissions below.
+            </Text>
+          </View>
+          <ParentReviewDeck parent={active} members={members} colors={colors} isDark={isDark} />
+        </View>
+      )}
 
       {activeTrip && <PickupRadarStatus colors={colors} isDark={isDark} activeTrip={activeTrip} />}
 

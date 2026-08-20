@@ -10,8 +10,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useRewardStore, Reward } from '@/store/rewardStore';
+import { useChoreStore } from '@/store/choreStore';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import AppHeader from '@/components/AppHeader';
+import { Flame } from 'lucide-react-native';
 
 // ─── Category config ──────────────────────────────────────────────────────────
 
@@ -108,9 +110,10 @@ function AiPerksPanel({ onAdd, onClose, colors, isDark }: {
 
 // ─── Perk Card ────────────────────────────────────────────────────────────────
 
-function PerkCard({ reward, myCoins, isKid, isParent, colors, isDark, onRedeem, onEdit, onDelete }: {
+function PerkCard({ reward, myCoins, isKid, isParent, colors, isDark, onRedeem, onEdit, onDelete, isGoal, onToggleGoal }: {
   reward: Reward; myCoins: number; isKid: boolean; isParent: boolean; colors: any; isDark: boolean;
   onRedeem: (r: Reward) => void; onEdit: (r: Reward) => void; onDelete: (r: Reward) => void;
+  isGoal?: boolean; onToggleGoal?: (r: Reward) => void;
 }) {
   const canRedeem = isKid && myCoins >= reward.cost;
   return (
@@ -158,12 +161,23 @@ function PerkCard({ reward, myCoins, isKid, isParent, colors, isDark, onRedeem, 
       ) : null}
 
       {isKid ? (
-        <Pressable onPress={() => onRedeem(reward)} disabled={!canRedeem}
-          style={[s.redeemBtn, { backgroundColor: canRedeem ? colors.teal : colors.border, marginTop: 8 }]}>
-          <Text style={{ fontSize: 11, fontWeight: '800', color: canRedeem ? colors.textInverse : colors.textTertiary }}>
-            {canRedeem ? 'Redeem Perk' : `Need ${reward.cost - myCoins} more 🪙`}
-          </Text>
-        </Pressable>
+        <>
+          <Pressable onPress={() => onRedeem(reward)} disabled={!canRedeem}
+            style={[s.redeemBtn, { backgroundColor: canRedeem ? colors.teal : colors.border, marginTop: 8 }]}>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: canRedeem ? colors.textInverse : colors.textTertiary }}>
+              {canRedeem ? 'Redeem Perk' : `Need ${reward.cost - myCoins} more 🪙`}
+            </Text>
+          </Pressable>
+          {onToggleGoal && (
+            <Pressable onPress={() => onToggleGoal(reward)}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 6 }}>
+              <Ionicons name={isGoal ? 'star' : 'star-outline'} size={13} color={isGoal ? colors.amber : colors.textTertiary} />
+              <Text style={{ fontSize: 10, fontWeight: '700', color: isGoal ? colors.amber : colors.textTertiary }}>
+                {isGoal ? 'My Goal' : 'Set as My Goal'}
+              </Text>
+            </Pressable>
+          )}
+        </>
       ) : !isParent ? (
         <Text style={{ fontSize: 10, color: colors.textTertiary, textAlign: 'center', marginTop: 8 }}>
           Kid Mode Required
@@ -300,8 +314,9 @@ function PerkModal({ visible, editing, colors, onClose, onSave }: {
 
 export default function StoreScreen({ hideHeader = false }: { hideHeader?: boolean }) {
   const { colors, isDark } = useTheme();
-  const { members, activeMemberId, loaded, loadFromStorage, deductCoins } = useFamilyStore();
+  const { members, activeMemberId, loaded, loadFromStorage, deductCoins, awardCoins } = useFamilyStore();
   const { rewards, loadFromStorage: loadRewards, addReward, updateReward, deleteReward, redeemReward } = useRewardStore();
+  const pointsToFiatRatio = useChoreStore(s => s.householdSettings.pointsToFiatRatio);
 
   const [showCreate,  setShowCreate]  = useState(false);
   const [editing,     setEditing]     = useState<Reward | null>(null);
@@ -309,6 +324,11 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
   // Jar picker — only shown when the kid actually has a choice (both
   // wallets non-zero and at least one alone can't cover it, or both can).
   const [jarPickerTarget, setJarPickerTarget] = useState<Reward | null>(null);
+  // Grant Coins — relocated here from the now-removed standalone Ledger
+  // tab; Send Coins (peer-to-peer transfer) was dropped, this is the one
+  // parent action kept alongside the balance/goal display.
+  const [grantTarget, setGrantTarget] = useState<{ id: string; name: string } | null>(null);
+  const [grantAmount, setGrantAmount] = useState('');
 
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
   useEffect(() => { loadRewards(); }, []);
@@ -319,7 +339,24 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
   const myMainCoins = (activeMember as any)?.mainCoins ?? 0;
   const myGpCoins   = (activeMember as any)?.gpCoins ?? 0;
   const myCoins  = myMainCoins + myGpCoins;
-  const kids     = members.filter(m => m.role === 'kid');
+  const kids     = members.filter(m => m.role === 'kid' || m.role === 'teen');
+
+  // A kid's own chosen goal (goalRewardId, set via "Set as My Goal" on their
+  // own Perk card) takes priority. Falls back to "whichever perk they're
+  // closest to affording" only if they haven't picked one — so the card
+  // never shows nothing just because a kid hasn't engaged with the goal
+  // feature yet.
+  const goalForKid = (kidId: string, kidCoins: number) => {
+    const kid = members.find(m => m.id === kidId);
+    if (kid?.goalRewardId) {
+      const chosen = rewards.find(r => r.id === kid.goalRewardId && r.available);
+      if (chosen) return chosen;
+    }
+    const affordable = rewards
+      .filter(r => r.available && r.cost > 0 && (!r.eligibleMemberIds || r.eligibleMemberIds.includes(kidId)))
+      .sort((a, b) => a.cost - b.cost);
+    return affordable.find(r => r.cost >= kidCoins) ?? affordable[affordable.length - 1];
+  };
 
   // Redeems from a specific wallet — real deduction (deductCoins) + a real
   // Redemption record (redeemReward), replacing the old stub that only
@@ -428,6 +465,73 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
           />
         )}
 
+        {/* ── Kids' Piggy Banks & Wishlists ── parent-only at-a-glance view
+            of every kid/teen's balance and their closest wishlist goal —
+            replaces the old standalone Ledger tab, which is now removed;
+            this is the one place a parent checks kids' coin balances. */}
+        {isParent && kids.length > 0 && (
+          <View style={{ paddingHorizontal: 12, marginBottom: 4 }}>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 10 }}>
+              Kids' Piggy Banks & Wishlists
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+              {kids.map(kid => {
+                const kidCoins = ((kid as any).mainCoins ?? 0) + ((kid as any).gpCoins ?? 0);
+                const dollars = (kidCoins * pointsToFiatRatio).toFixed(2);
+                const goal = goalForKid(kid.id, kidCoins);
+                const pct = goal ? Math.min(kidCoins / goal.cost, 1) : 0;
+                const streak = (kid as any).streak ?? 0;
+                return (
+                  <View key={kid.id} style={{
+                    flexGrow: 1, minWidth: '46%', borderRadius: 18, padding: 16, alignItems: 'center',
+                    backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+                  }}>
+                    <Text style={{ fontSize: 32, marginBottom: 6 }}>{kid.emoji ?? '🙂'}</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary, marginBottom: 6 }}>
+                      {kid.name.split(' ')[0]}
+                    </Text>
+                    <Text style={{ fontSize: 22, fontWeight: '900', color: BRAND.teal, marginBottom: 8 }}>
+                      ${dollars}
+                    </Text>
+                    {streak > 0 && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 12,
+                        paddingHorizontal: 10, paddingVertical: 4, marginBottom: 10,
+                        backgroundColor: colors.amberLight }}>
+                        <Flame size={12} color={colors.amber} />
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: colors.amber }}>
+                          {streak}-day streak
+                        </Text>
+                      </View>
+                    )}
+                    {goal && (
+                      <View style={{ width: '100%', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }} numberOfLines={1}>
+                            Goal: {goal.title}
+                          </Text>
+                          <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textPrimary }}>
+                            {Math.round(pct * 100)}%
+                          </Text>
+                        </View>
+                        <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.surface, overflow: 'hidden' }}>
+                          <View style={{ height: '100%', width: `${pct * 100}%`, borderRadius: 3, backgroundColor: BRAND.teal }} />
+                        </View>
+                      </View>
+                    )}
+                    <Pressable onPress={() => { setGrantAmount(''); setGrantTarget({ id: kid.id, name: kid.name }); }}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 12,
+                        borderRadius: 10, borderWidth: 1, borderColor: colors.amber + '60',
+                        backgroundColor: colors.amberLight, paddingHorizontal: 10, paddingVertical: 6 }}>
+                      <Ionicons name="gift-outline" size={13} color={colors.amber} />
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: colors.amber }}>Grant Coins</Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
         <View style={{ padding: 12 }}>
           <Text style={{ fontSize: 10, color: colors.textTertiary, marginBottom: 12, lineHeight: 16 }}>
             Perks are redeemed from your Main Wallet. Grandparent Bonus coins are cashed out via parents.
@@ -451,6 +555,12 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
                   onRedeem={handleRedeem}
                   onEdit={r => { setEditing(r); setShowCreate(true); }}
                   onDelete={handleDelete}
+                  isGoal={isKid && activeMember?.goalRewardId === r.id}
+                  onToggleGoal={isKid ? (target) => {
+                    if (!activeMember) return;
+                    const nextGoalId = activeMember.goalRewardId === target.id ? undefined : target.id;
+                    useFamilyStore.getState().updateMember(activeMember.id, { goalRewardId: nextGoalId });
+                  } : undefined}
                 />
               ))}
             </View>
@@ -482,6 +592,42 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
           setJarPickerTarget(null);
         }}
       />
+
+      {/* Grant Coins — relocated from the removed standalone Ledger tab. */}
+      <Modal visible={!!grantTarget} transparent animationType="fade" onRequestClose={() => setGrantTarget(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}>
+          <View style={{ borderRadius: 18, padding: 20, backgroundColor: colors.card }}>
+            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 4 }}>
+              Grant Coins
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 14 }}>
+              Give {grantTarget?.name?.split(' ')[0]} a bonus, no chore required.
+            </Text>
+            <TextInput
+              value={grantAmount} onChangeText={setGrantAmount} keyboardType="numeric"
+              placeholder="e.g. 25" placeholderTextColor={colors.textTertiary}
+              style={{ borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, color: colors.textPrimary,
+                backgroundColor: colors.surface, paddingHorizontal: 13, paddingVertical: 10, fontSize: 15, fontWeight: '700', marginBottom: 16 }}
+            />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Pressable onPress={() => setGrantTarget(null)}
+                style={{ flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, paddingVertical: 12, alignItems: 'center' }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  const n = parseInt(grantAmount, 10);
+                  if (!n || n <= 0 || !grantTarget) return;
+                  awardCoins(grantTarget.id, n, 'mainCoins');
+                  setGrantTarget(null);
+                }}
+                style={{ flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center', backgroundColor: colors.amber }}>
+                <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff' }}>Grant</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

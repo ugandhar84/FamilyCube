@@ -29,7 +29,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { useEventStore, FamilyEvent, EventType, StripMap } from '@/store/eventStore';
+import { useEventStore, FamilyEvent, EventType, StripMap, isEventSensitive, canViewSensitiveEventDetail } from '@/store/eventStore';
 import { supabase } from '@/lib/supabase';
 import AppHeader from '@/components/AppHeader';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -659,6 +659,12 @@ export default function CalendarScreen() {
     return events
       .filter(e => e.date === selectedDate &&
         e.category !== 'Holiday' &&
+        // Scenarios 2.6/2.10/5.4/5.5 — a sensitive/private/Medical event is
+        // hidden entirely from a sibling kid/teen and from GP (unless
+        // explicitly shared for care) BEFORE any of the ordinary
+        // assignee-based visibility rules below even apply. Both parents
+        // and the event's own subject always pass this check.
+        (!isEventSensitive(e) || canViewSensitiveEventDetail(e, isSenior ? 'senior' : isKid ? 'kid' : isTeen ? 'teen' : isParent ? 'parent' : undefined, activeMemberId ?? undefined)) &&
         // Kid: full family visibility, same as parent/teen — kids can see
         // siblings' events (e.g. "what's Leo up to today"), not just their
         // own. Kids just don't get the member-filter/view-mode toolbar UI.
@@ -685,7 +691,7 @@ export default function CalendarScreen() {
         matchesMemberFilter(e) &&
         matchesSearch(e))
       .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
-  }, [events, selectedDate, filterMember, filterMemberName, scheduleFilter, isSenior, isParent, activeMemberId, activeMemberName, searchQuery]);
+  }, [events, selectedDate, filterMember, filterMemberName, scheduleFilter, isSenior, isKid, isTeen, isParent, activeMemberId, activeMemberName, searchQuery]);
 
   // Same RBAC shape as dayEvents but across rangeEvents' multi-date window
   // — feeds Week/Agenda, both parent/senior-only views (same gate as
@@ -694,6 +700,8 @@ export default function CalendarScreen() {
   const scopedRangeEvents = useMemo(() => {
     return rangeEvents.filter(e =>
       e.category !== 'Holiday' &&
+      // Same sensitivity gate as dayEvents above.
+      (!isEventSensitive(e) || canViewSensitiveEventDetail(e, isSenior ? 'senior' : isKid ? 'kid' : isTeen ? 'teen' : isParent ? 'parent' : undefined, activeMemberId ?? undefined)) &&
       // Same memberIds fix as dayEvents above — a senior/GP who's one of a
       // multi-member event's assignees (not the sole e.memberId) previously
       // never matched here either, so a shared event silently vanished from
@@ -707,7 +715,7 @@ export default function CalendarScreen() {
       matchesMemberFilter(e) &&
       matchesSearch(e)
     );
-  }, [rangeEvents, isSenior, activeMemberName, activeMemberId, filterMember, filterMemberName, searchQuery]);
+  }, [rangeEvents, isSenior, isKid, isTeen, isParent, activeMemberName, activeMemberId, filterMember, filterMemberName, searchQuery]);
 
   // Events where senior can volunteer as helper (has a pending/no helper, dated today or future)
   // seniorOpenRides removed — ride volunteering now lives in Hub > Helper Dispatch

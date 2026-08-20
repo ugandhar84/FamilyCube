@@ -113,6 +113,12 @@ export interface FamilyMember {
   gpDriveWindowEnd?: string;          // 'HH:MM' 24h
   gpWeeklyRideCap?: number;           // Max rides they'll take per calendar week
   linkedParentId?: string;            // Which parent this GP belongs to (e.g. Priya's mother -> Priya's id) — informational, both parents can still review either side's GP quests
+  // A kid/teen's self-chosen savings goal (a specific Reward id from the
+  // Perks Store) — previously auto-derived as "whichever reward you're
+  // closest to affording," which the kid never actually picked; this lets
+  // them set their own, shown on both their own Piggy Bank sheet and the
+  // parent-facing Perks page.
+  goalRewardId?: string;
 }
 
 interface FamilyState {
@@ -184,6 +190,7 @@ function fromRow(row: any): FamilyMember {
     gpDriveWindowEnd:   row.gp_drive_window_end   ?? '17:30',
     gpWeeklyRideCap:    row.gp_weekly_ride_cap    ?? 2,
     linkedParentId:     row.linked_parent_id ?? undefined,
+    goalRewardId:       row.goal_reward_id ?? undefined,
   };
 }
 
@@ -218,6 +225,7 @@ function toRow(m: FamilyMember) {
     gp_drive_window_end:   m.gpDriveWindowEnd   ?? '17:30',
     gp_weekly_ride_cap:    m.gpWeeklyRideCap    ?? 2,
     linked_parent_id:      m.linkedParentId ?? null,
+    goal_reward_id:        m.goalRewardId ?? null,
   };
 }
 

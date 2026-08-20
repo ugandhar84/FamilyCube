@@ -163,6 +163,14 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
 
   const activeMember = members.find(m => m.id === activeMemberId);
   const familyId = activeMember?.familyId ?? '';
+  // Scenario 1.5 — a Teen creator gets the same broad self-creation rights
+  // as a parent, but "Parent Only" (delegating an adult-only task to
+  // another parent/senior) and "Invite Grandparent" (a GP-sponsored quest)
+  // are both parent-oriented concepts that don't make sense coming from a
+  // Teen — hide them and leave the Teen in the ordinary
+  // self-assign-or-leave-in-pool flow AddQuestAssignSection already
+  // supports for every non-adult-task quest.
+  const creatorIsTeen = activeMember?.role === 'teen';
 
   useEffect(() => {
     if (!familyId) return;
@@ -972,6 +980,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               colors={colors} isDark={isDark}
               isAdultTask={isAdultTask} toggleAdultTask={toggleAdultTask}
               inviteGrandparent={inviteGrandparent} toggleGPInvite={toggleGPInvite}
+              hideAdultToggles={creatorIsTeen}
               routineFreq={routineFreq} setRoutineFreq={setRoutineFreq}
               isRoutine={isRoutine} setIsRoutine={setIsRoutine}
               routineType={routineType} setRoutineType={setRoutineType}

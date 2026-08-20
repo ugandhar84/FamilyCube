@@ -607,7 +607,17 @@ export default function QuestsScreen() {
     if (isClaiming[id]) return;
     setIsClaiming(p => ({ ...p, [id]: true }));
     await new Promise(r => setTimeout(r, 700));
-    claimQuest(id, activeMember?.id ?? '');
+    // Spec 3.1/3.4 — distinguish a lost claim race (someone else claimed
+    // it) from a claim landing on an already-deleted quest, instead of a
+    // silent no-op either way.
+    claimQuest(id, activeMember?.id ?? '', (reason) => {
+      Alert.alert(
+        reason === 'deleted' ? 'No longer available' : 'Someone beat you to it!',
+        reason === 'deleted'
+          ? 'This quest was just removed by a parent.'
+          : 'Someone else already claimed this quest — check the pool for others.',
+      );
+    });
     setIsClaiming(p => ({ ...p, [id]: false }));
   };
 
@@ -724,7 +734,10 @@ export default function QuestsScreen() {
             range={dateRange} onRangeChange={setDateRange}
             colors={colors} isDark={isDark}
           />
-          {isParent && (
+          {/* Scenario 1.5 — a Teen has the same self-creation rights as a
+              parent (broad autonomy; only 1.13's reward co-sign threshold
+              gates a high-value payout, not creation itself). */}
+          {(isParent || isTeen) && (
             <TouchableOpacity onPress={() => setShowAddChooser(true)}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
                 paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
@@ -985,8 +998,8 @@ export default function QuestsScreen() {
         isDark={isDark}
       />
 
-      {/* Parent-only: Add Quest modal */}
-      {isParent && (
+      {/* Parent or Teen (Scenario 1.5): Add Quest modal */}
+      {(isParent || isTeen) && (
         <AddQuestModal visible={showAddModal}
           onClose={() => { setShowAddModal(false); setAddPrefill(undefined); }}
           activeMemberId={activeMember?.id ?? ''}
@@ -1002,7 +1015,7 @@ export default function QuestsScreen() {
 
       {/* "+" Quest button opens the Speak it/Type it chooser first, matching
           the Hub's own quick-action entry point. */}
-      {isParent && (
+      {(isParent || isTeen) && (
         <AddIntakeChooser
           visible={showAddChooser}
           kind="quest"

@@ -118,7 +118,7 @@ const getFamilyId = (): string | null => {
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
-export type RequestType   = 'ride' | 'tutor' | 'cheer' | 'emergency' | 'question' | 'permission' | 'appointment' | 'delegation' | 'checkin' | 'medication';
+export type RequestType   = 'ride' | 'tutor' | 'cheer' | 'emergency' | 'question' | 'permission' | 'appointment' | 'delegation' | 'checkin' | 'medication' | 'quest_proposal';
 export type RequestStatus = 'pending' | 'approved' | 'declined' | 'cancelled' | 'expired' | 'completed' | 'partial';
 export type RequestUrgency = 'normal' | 'soon' | 'urgent' | 'emergency';
 export type ItemStatus = 'pending' | 'approved' | 'rejected';
@@ -174,6 +174,12 @@ export const REQUEST_META: Record<RequestType, { emoji: string; label: string; c
   delegation:  { emoji: '📋', label: 'Task Delegate',      color: '#0EA5E9', bgColor: '#E0F2FE' },
   checkin:     { emoji: '📞', label: 'Check-In Request',   color: '#14B8A6', bgColor: '#CCFBF1' },
   medication:  { emoji: '💊', label: 'Medication',         color: '#F97316', bgColor: '#FFF7ED' },
+  // Scenario 1.4 — a Kid proposing a new quest ("Can I wash the car for
+  // 15 coins?"). detail holds the proposed title, rewardCoins the
+  // proposed reward — both already existed on KidRequest for other
+  // purposes (assignedHelper reward-tagging, appointment scheduling), so
+  // this reuses them rather than adding new columns/fields.
+  quest_proposal: { emoji: '🧩', label: 'Quest Idea',      color: '#9261C7', bgColor: '#F0E8FA' },
 };
 
 // ─── Store interface ──────────────────────────────────────────────────────────

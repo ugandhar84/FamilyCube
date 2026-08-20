@@ -94,6 +94,17 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
   const [titleFocused,   setTitleFocused]   = useState(false);
   const [notes,          setNotes]          = useState(prefill?.notes ?? '');
   const [saving,         setSaving]         = useState(false);
+  // Scenarios 2.6/5.4 — explicit privacy tag. A Medical-category event is
+  // ALSO always treated as sensitive regardless of this toggle (see
+  // isEventSensitive) — this only controls the OPTIONAL tag for any other
+  // category (e.g. a therapist appointment logged under a non-Medical
+  // category, or a teen's own private social plan).
+  const [isPrivateTag,   setIsPrivateTag]   = useState(false);
+  // Scenario 2.11 — an optional group event needs an explicit RSVP model
+  // (Going/Not-Going/Maybe + headcount), distinct from the mandatory-event
+  // Acknowledge pattern. Off by default — most events are ordinary
+  // logistics, not an "optional, need a headcount" invite.
+  const [isOptionalRsvp, setIsOptionalRsvp] = useState(false);
 
   // Date/time
   const nowRounded = () => { const d = new Date(); const m = d.getMinutes(); d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1); return d; };
@@ -420,6 +431,11 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
       driverName:      !isKid ? (driverName.trim() || undefined) : undefined,
       driverStatus:    !isKid && driverName.trim() ? (driverId === activeMemberId ? 'confirmed' : 'pending') : undefined,
       alertCall, alertCallLeadMinutes,
+      // Scenarios 2.6/5.4/5.5 — explicit tag OR Medical category (always
+      // treated as sensitive regardless of the toggle).
+      privacyLevel: (isPrivateTag || category === 'Medical') ? 'private' : 'normal',
+      // Scenario 2.11.
+      isOptionalRsvp: isParent && isOptionalRsvp,
     };
 
     // Recurring — weekly with no explicit day picked defaults to the
@@ -998,6 +1014,57 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               </TouchableOpacity>
             )}
 
+            {/* ── Privacy tag (scenarios 2.6/5.4) — not offered to a Kid
+                creator, whose request already goes through a full parent
+                approval gate regardless. Medical-category events are always
+                treated as sensitive independent of this toggle (5.5). */}
+            {!isKid && category !== 'Medical' && (
+              <TouchableOpacity
+                onPress={() => setIsPrivateTag(v => !v)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingHorizontal: 4, marginBottom: 16 }}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>
+                    🔒 Mark as private
+                  </Text>
+                  <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>
+                    {isTeen
+                      ? 'Household sees a busy block only — no title or details'
+                      : 'Hidden from siblings & grandparent — only guardians + the person it\'s about see full detail'}
+                  </Text>
+                </View>
+                <Switch
+                  value={isPrivateTag} onValueChange={setIsPrivateTag}
+                  trackColor={{ false: colors.border, true: catColor + '80' }}
+                  thumbColor={isPrivateTag ? catColor : colors.textTertiary}
+                />
+              </TouchableOpacity>
+            )}
+
+            {/* ── RSVP toggle (scenario 2.11) — a real Going/Not-Going/
+                Maybe headcount for an optional group event, distinct from
+                the ordinary mandatory-event Acknowledge pattern. */}
+            {isParent && (
+              <TouchableOpacity
+                onPress={() => setIsOptionalRsvp(v => !v)}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingHorizontal: 4, marginBottom: 16 }}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>
+                    📋 Optional — collect RSVPs
+                  </Text>
+                  <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>
+                    Everyone gets Going / Not Going / Maybe instead of a plain Acknowledge
+                  </Text>
+                </View>
+                <Switch
+                  value={isOptionalRsvp} onValueChange={setIsOptionalRsvp}
+                  trackColor={{ false: colors.border, true: catColor + '80' }}
+                  thumbColor={isOptionalRsvp ? catColor : colors.textTertiary}
+                />
+              </TouchableOpacity>
+            )}
+
             {/* ── Notes ── */}
             <Text style={[f.label, { color: colors.textSecondary, marginTop: 4 }]}>📝 Notes (optional)</Text>
             <TextInput
@@ -1123,6 +1190,11 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   );
   const [alertCall,            setAlertCall]            = useState(event.alertCall ?? false);
   const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(event.alertCallLeadMinutes ?? 10);
+  // Scenarios 2.6/5.4 — editable by a parent, or by the event's own
+  // creator/subject in the "own pending" case; a Medical event is always
+  // sensitive regardless (see isEventSensitive), so this toggle is only
+  // meaningful for a non-Medical event.
+  const [isPrivateTag,         setIsPrivateTag]         = useState(event.privacyLevel === 'private');
   const handleDriverSelect = (id: string) => {
     const m = members.find(x => x.id === id);
     setEditDriverId(id);
@@ -1163,6 +1235,12 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       if (notes !== event.notes) patch.notes = notes.trim() || undefined;
       if (alertCall !== (event.alertCall ?? false)) patch.alertCall = alertCall;
       if (alertCallLeadMinutes !== (event.alertCallLeadMinutes ?? 10)) patch.alertCallLeadMinutes = alertCallLeadMinutes;
+      // Scenarios 2.6/5.4 — a parent can toggle the privacy tag on edit.
+      // Medical category events stay sensitive regardless (isEventSensitive
+      // ORs in the category check), so this only meaningfully changes
+      // anything for a non-Medical event.
+      const newPrivacyLevel = isPrivateTag ? 'private' : 'normal';
+      if (newPrivacyLevel !== (event.privacyLevel ?? 'normal')) patch.privacyLevel = newPrivacyLevel;
       if (helperName !== event.helper) {
         let newHelperName = helperName.trim();
         // Same auto-assign-to-other-parent convenience as creating a new
@@ -1578,6 +1656,27 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     </View>
                   )}
                 </View>
+              )}
+
+              {/* Privacy tag (scenarios 2.6/5.4) — parent-editable, and only
+                  meaningful for a non-Medical event (Medical is always
+                  sensitive regardless — see isEventSensitive). */}
+              {!restricted && isParent && event.category !== 'Medical' && (
+                <TouchableOpacity
+                  onPress={() => setIsPrivateTag(v => !v)}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <View style={{ flex: 1, marginRight: 12 }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>🔒 Mark as private</Text>
+                    <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>
+                      Hidden from siblings & grandparent — guardians + the subject still see full detail
+                    </Text>
+                  </View>
+                  <Switch
+                    value={isPrivateTag} onValueChange={setIsPrivateTag}
+                    trackColor={{ false: colors.border, true: colors.primary + '80' }}
+                    thumbColor={isPrivateTag ? colors.primary : colors.textTertiary}
+                  />
+                </TouchableOpacity>
               )}
 
               {/* Notes — the one field still editable once an event is past

@@ -10,7 +10,7 @@ const INDIGO_ACCENT = '#6366F1';
 
 export function AskParentSheet({ visible, onClose, colors, isDark, onPick }: {
   visible: boolean; onClose: () => void; colors: any; isDark: boolean;
-  onPick: (choice: 'permission' | 'question' | 'medication' | 'grocery' | 'supplies') => void;
+  onPick: (choice: 'permission' | 'question' | 'medication' | 'grocery' | 'supplies' | 'quest') => void;
 }) {
   return (
     <AppBottomSheet
@@ -29,6 +29,9 @@ export function AskParentSheet({ visible, onClose, colors, isDark, onPick }: {
           { key: 'medication', label: 'Medication Alert', desc: "I didn't take my meds",          Icon: Pill,         color: colors.danger },
           { key: 'grocery',    label: 'Request Grocery',  desc: 'Add items to the shopping list', Icon: ShoppingCart, color: BRAND.teal },
           { key: 'supplies',   label: 'School Supplies',  desc: 'Things I need for school',       Icon: BookOpen,     color: INDIGO_ACCENT },
+          // Scenario 1.4 — a Kid proposing a brand-new quest for coins,
+          // distinct from claiming an existing pool quest.
+          { key: 'quest',      label: 'Propose a Quest',  desc: 'Suggest a chore to earn coins',  Icon: HelpCircle,   color: BRAND.purple },
         ] as const).map(({ key, label, desc, Icon, color }) => (
           <Pressable key={key} onPress={() => onPick(key)}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 16,

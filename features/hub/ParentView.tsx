@@ -5,6 +5,7 @@ import { useQuestStore } from '@/store/choreAdapter';
 import { useEventStore } from '@/store/eventStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
+import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { AddQuestModal } from '@/features/quests/QuestsScreen';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
 import AddIntakeChooser from '@/components/AddIntakeChooser';
@@ -17,6 +18,7 @@ import type { ChoreTask } from '@/store/choreStore';
 
 import { ParentQuickActions } from './parent/ParentQuickActions';
 import { HouseholdSnapshotCard } from './parent/HouseholdSnapshotCard';
+import { TemporaryApproverCard } from './parent/TemporaryApproverCard';
 import { FamilyRadarSection } from './parent/FamilyRadarSection';
 import { EnRouteBanner } from './parent/EnRouteBanner';
 import { ActionNeededSection } from './parent/ActionNeededSection';
@@ -44,6 +46,8 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   const { items: groceryItems, load: loadGrocery, addItem: addGroceryItem } = useGroceryStore();
   const { requests: kidRequests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests,
           approveRequest, declineRequest, approveItems, rejectItems, toggleGPWelcome } = useKidRequestStore();
+  const { grants: approverGrants, loaded: approverGrantsLoaded, loadFromStorage: loadApproverGrants,
+          grantTemporaryApprover, revokeTemporaryApprover, getActiveGrantsForFamily } = useTemporaryApproverStore();
 
   const {
     parentAssignments, createAndAddParentQuest, addParentQuest,
@@ -51,6 +55,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     getPendingCashOuts, chores, addChore, getParentReviewDeck,
     approveGrandparentQuestAsParent, declineGrandparentQuestAsParent, grandparentApproveAndCheer,
     approveTeenReward, adjustTeenReward, declineTeenReward,
+    flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal,
     getMyDirectPending, getMyLockedItems, getMyAccepted, getMyOutgoingPending, getActiveAssignmentChoreIds,
     loadFromStorage: loadChores, syncFromDB: syncChores,
   } = useChoreStore();
@@ -74,6 +79,8 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
 
   useEffect(() => { loadGrocery((active as any).familyId ?? 'family-1'); }, [(active as any).familyId]);
   useEffect(() => { if (!kidRequestsLoaded) loadKidRequests(); }, [kidRequestsLoaded]);
+  useEffect(() => { if (!approverGrantsLoaded) loadApproverGrants(); }, [approverGrantsLoaded]);
+  const activeApproverGrants = getActiveGrantsForFamily();
   // This must run even when the review section starts collapsed. Otherwise a
   // parent who opens the Hub after a grandparent creates a quest never joins
   // the chore realtime channel and cannot see the safety-review request.
@@ -230,6 +237,49 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   const actionCount = pendingRequests.length + pendingKidRequests.length;
 
   const familyId = (active as any).familyId ?? 'family-1';
+
+  // Scenario 1.4 — approving a kid's quest_proposal request must create a
+  // real, live pool quest (not just flip the request's own status the way
+  // every other kid_request approve action does). Mirrors addChore's
+  // ordinary pool-quest defaults (no assignee = open pool, claimable by any
+  // kid/teen), and notifies the requesting kid via chat the same way
+  // approveTeenReward/declineGrandparentQuest already centralize their
+  // outcome notifications.
+  const approveQuestProposalHandler = (req: any, finalCoins: number) => {
+    addChore({
+      title: req.detail,
+      categoryType: 'routine',
+      category: 'Other',
+      basePoints: 0,
+      coinsReward: finalCoins,
+      xpReward: 10,
+      status: 'todo',
+      isPool: true,
+      requiresPhotoProof: false,
+      recurrenceRule: { frequency: 'once' },
+      familyId: (active as any).familyId,
+      createdById: active.id,
+    });
+    approveRequest(req.id, active.id, `Approved as a ${finalCoins}-coin quest!`);
+    try {
+      const { useChatStore } = require('@/store/chatStore');
+      useChatStore.getState().sendMessage(req.fromMemberId, active.id,
+        `✅ Your quest idea "${req.detail}" was approved for ${finalCoins} coins — go ahead!`);
+    } catch (e) {
+      console.warn('[ParentView] approveQuestProposal notification failed', e);
+    }
+  };
+
+  const declineQuestProposalHandler = (req: any, reason?: string) => {
+    declineRequest(req.id, active.id, reason);
+    try {
+      const { useChatStore } = require('@/store/chatStore');
+      useChatStore.getState().sendMessage(req.fromMemberId, active.id,
+        `Your quest idea "${req.detail}" wasn't approved this time${reason ? ` — "${reason}"` : ''}.`);
+    } catch (e) {
+      console.warn('[ParentView] declineQuestProposal notification failed', e);
+    }
+  };
 
   const approveItemsAndSync = async (reqId: string, itemIds: string[], isSuppliesReq: boolean) => {
     const req = kidRequests.find(r => r.id === reqId);
@@ -399,6 +449,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         approveRequest={approveRequest} declineRequest={declineRequest}
         toggleGPWelcome={toggleGPWelcome}
         approveItemsAndSync={approveItemsAndSync} rejectItems={rejectItems}
+        approveQuestProposal={approveQuestProposalHandler} declineQuestProposal={declineQuestProposalHandler}
       />
 
       <GpCanHelpSection requests={approvedRideRequests} members={members} colors={colors} isDark={isDark} toggleGPWelcome={toggleGPWelcome} />
@@ -427,6 +478,10 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         approveTeenReward={approveTeenReward}
         adjustTeenReward={adjustTeenReward}
         declineTeenReward={declineTeenReward}
+        flagApprovalForDiscussion={flagApprovalForDiscussion}
+        standByApproval={standByApproval}
+        requestApprovalReversal={requestApprovalReversal}
+        coSignReversal={coSignReversal}
       />
 
       {/* Only the driver gets editable controls (ETA slider, Pickup Done) —
@@ -463,6 +518,16 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
           reviewedToday={reviewedToday} avgStreak={avgStreak}
           pendingCashOutsCount={pendingCashOuts.length}
           leaderboardKids={leaderboardKids} allNames={allNames}
+        />
+      </View>
+
+      {/* Scenarios 9.2/9.3 — temporary-approver / caregiver-mode grants. */}
+      <View style={pad}>
+        <TemporaryApproverCard
+          active={active} members={members} colors={colors} isDark={isDark}
+          activeGrants={activeApproverGrants}
+          grantTemporaryApprover={grantTemporaryApprover}
+          revokeTemporaryApprover={revokeTemporaryApprover}
         />
       </View>
 

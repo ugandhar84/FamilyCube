@@ -5,7 +5,7 @@ import {
 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
-import { useEventStore } from '@/store/eventStore';
+import { useEventStore, isEventSensitive, canViewSensitiveEventDetail } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore } from '@/store/choreStore';
@@ -15,7 +15,7 @@ import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
 import { localToday, hoursUntilEvent } from './hubUtils';
-import { KidRequestHistoryModal, GroceryModal, SuppliesModal, AskModal } from './KidModals';
+import { KidRequestHistoryModal, GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from './KidModals';
 import { AskParentSheet } from './kid/AskParentSheet';
 import { MyQuestsSection } from './kid/MyQuestsSection';
 import { DeclineQuestSheet } from './kid/DeclineQuestSheet';
@@ -42,6 +42,11 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
   activeTrip?: { kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; etaMinutes: number; startedAtMs?: number } | null;
 }) {
   const { events, updateEvent } = useEventStore();
+  // Scenarios 2.6/5.4/5.5 — a sensitive/private/Medical event about a
+  // sibling is hidden from this teen entirely (never even a busy block).
+  // Own events pass through unaffected.
+  const visibleEvents = events.filter(e =>
+    !isEventSensitive(e) || canViewSensitiveEventDetail(e, 'teen', active.id));
   const { quests, submitQuest, claimQuest } = useQuestStore();
   const { startGrandparentQuest, declineGrandparentQuest } = useChoreStore();
   const { items: groceryItems, load: loadGrocery } = useGroceryStore();
@@ -141,6 +146,12 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
   const [openSheet, setOpenSheet] = useState<SheetKey>(null);
   const [askParentSheet, setAskParentSheet] = useState(false);
   const [askModal, setAskModal] = useState<null | 'permission' | 'question' | 'medication'>(null);
+  // Scenario 1.5 already gives a Teen full self-creation rights via the
+  // Quests tab's own +Quest button — this "Propose a Quest" entry (shared
+  // AskParentSheet, mainly built for Kids) still works for a Teen too
+  // (asking a parent to set up something the Teen doesn't want full
+  // ownership of), so it's wired the same way rather than hidden.
+  const [questProposalModal, setQuestProposalModal] = useState(false);
   const [groceryModal, setGroceryModal] = useState(false);
   const [suppliesModal, setSuppliesModal] = useState(false);
 
@@ -175,14 +186,21 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
 
       {activeTrip && <PickupRadarStatus colors={colors} isDark={isDark} activeTrip={activeTrip} />}
 
-      <HubTimelineSection active={active} members={members} events={events} updateEvent={updateEvent} colors={colors} isDark={isDark} />
+      <HubTimelineSection active={active} members={members} events={visibleEvents} updateEvent={updateEvent} colors={colors} isDark={isDark} />
 
       <MyQuestsSection
         title="My Chores"
         todoQuests={todoQuests} inProgressQuests={inProgressQuests} reviewQuests={reviewQuests}
         poolQuests={poolQuests} cancelledToday={cancelledQuestsToday} declinedQuests={declinedQuests} allQuests={quests}
         active={active} members={members} colors={colors} isDark={isDark}
-        onClaim={(id) => claimQuest(id, active.id)}
+        onClaim={(id) => claimQuest(id, active.id, (reason) => {
+          Alert.alert(
+            reason === 'deleted' ? 'No longer available' : 'Someone beat you to it!',
+            reason === 'deleted'
+              ? 'This quest was just removed by a parent.'
+              : 'Someone else already claimed this quest — check the pool for others.',
+          );
+        })}
         onStart={(id) => submitQuest(id)}
         onSubmit={handleSubmitTap}
         onAcceptGpQuest={(id) => startGrandparentQuest(id, active.id)}
@@ -272,10 +290,12 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
           setTimeout(() => {
             if (choice === 'grocery') setGroceryModal(true);
             else if (choice === 'supplies') setSuppliesModal(true);
+            else if (choice === 'quest') setQuestProposalModal(true);
             else setAskModal(choice);
           }, 300);
         }}
       />
+      <QuestProposalModal visible={questProposalModal} onClose={() => setQuestProposalModal(false)} active={active} />
 
       <DeclineQuestSheet
         target={declineQuest} active={active} members={members} colors={colors} isDark={isDark}

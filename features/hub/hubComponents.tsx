@@ -758,7 +758,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                 })}
               </View>
               {!isPast && viewerMember && allAssignees.some(m => m.id === viewerMember.id) &&
-                !ev.acknowledgedBy?.includes(viewerMember.id) && (
+                !ev.acknowledgedBy?.includes(viewerMember.id) && !ev.isOptionalRsvp && (
                 <Pressable
                   onPress={() => updateEvent(ev.id, { acknowledgedBy: [...(ev.acknowledgedBy ?? []), viewerMember.id] })}
                   style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -768,6 +768,65 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: cc }}>Acknowledge</Text>
                 </Pressable>
               )}
+            </View>
+          )}
+
+          {/* RSVP (scenario 2.11) — a real Going/Not-Going/Maybe headcount
+              for an event the creator explicitly marked optional, distinct
+              from the plain Acknowledge above (which this event type
+              doesn't use — see the !ev.isOptionalRsvp guard above). */}
+          {ev.isOptionalRsvp && (
+            <View style={{ gap: 8 }}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>
+                RSVP{' '}
+                <Text style={{ fontWeight: '400', color: colors.textTertiary }}>
+                  {(() => {
+                    const responses = Object.values(ev.rsvps ?? {});
+                    const going = responses.filter(r => r === 'going').length;
+                    const maybe = responses.filter(r => r === 'maybe').length;
+                    return `${going} going${maybe > 0 ? `, ${maybe} maybe` : ''}`;
+                  })()}
+                </Text>
+              </Text>
+              {!isPast && viewerMember && (
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {([
+                    { key: 'going',     label: 'Going',     color: '#10B981' },
+                    { key: 'maybe',     label: 'Maybe',     color: colors.warningDark ?? '#D97706' },
+                    { key: 'not_going', label: 'Not Going', color: colors.danger },
+                  ] as const).map(opt => {
+                    const mine = ev.rsvps?.[viewerMember.id] === opt.key;
+                    return (
+                      <Pressable key={opt.key}
+                        onPress={() => updateEvent(ev.id, { rsvps: { ...(ev.rsvps ?? {}), [viewerMember.id]: opt.key } })}
+                        style={{ flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10,
+                          backgroundColor: mine ? opt.color + '20' : colors.surface,
+                          borderWidth: 1.5, borderColor: mine ? opt.color : colors.border }}>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: mine ? opt.color : colors.textPrimary }}>
+                          {opt.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+              {/* Per-person headcount, visible to everyone (spec: "sees live
+                  headcount as others respond"). */}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {allAssignees.map(m => {
+                  const r = ev.rsvps?.[m.id];
+                  const badgeColor = r === 'going' ? '#10B981' : r === 'not_going' ? colors.danger : r === 'maybe' ? (colors.warningDark ?? '#D97706') : colors.textTertiary;
+                  return (
+                    <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+                      borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, backgroundColor: badgeColor + '15' }}>
+                      <FamilyAvatar name={m.name} emoji={m.emoji} size={14} ringColor={badgeColor} ringWidth={1} />
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: badgeColor }}>
+                        {m.name.split(' ')[0]} · {r === 'going' ? 'Going' : r === 'not_going' ? 'Not going' : r === 'maybe' ? 'Maybe' : 'Awaiting'}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
             </View>
           )}
 

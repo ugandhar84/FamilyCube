@@ -24,7 +24,6 @@ import GpsTabComp      from './tabs/GpsTab';
 import HealthTabComp   from './tabs/HealthTab';
 import MealsTabComp    from './tabs/MealsTab';
 import MemoriesTabComp from './tabs/MemoriesTab';
-import LedgerTabComp   from './tabs/LedgerTab';
 import RosterTabComp   from './tabs/RosterTab';
 import RecordsTabComp  from './tabs/RecordsTab';
 import SchoolTabComp   from './tabs/SchoolTab';
@@ -33,7 +32,7 @@ import StoreScreen     from '@/features/store/StoreScreen';
 
 // ─── Feature definitions ──────────────────────────────────────────────────────
 
-type FeatureId = 'gps' | 'school' | 'health' | 'records' | 'meals' | 'memories' | 'ledger' | 'roster' | 'grocery' | 'store';
+type FeatureId = 'gps' | 'school' | 'health' | 'records' | 'meals' | 'memories' | 'roster' | 'grocery' | 'store';
 
 interface Feature {
   id: FeatureId;
@@ -53,7 +52,6 @@ const FEATURES: Feature[] = [
   { id: 'health',   label: 'Health',   subtitle: 'My Active Medications',    emoji: '💊', Icon: Heart,        accent: '#F43F5E', bg: '#FFF1F2', bgDark: '#2D1019', roles: ['parent', 'kid'] },
   { id: 'grocery',  label: 'Grocery',  subtitle: 'Runs · Lists · Receipts', emoji: '🛒', Icon: ShoppingCart, accent: '#10B981', bg: '#ECFDF5', bgDark: '#0D2A1E', roles: ['parent'] },
   { id: 'meals',    label: 'Meals',    subtitle: 'Recipes · Nutrition',     emoji: '🍽️', Icon: ChefHat,      accent: '#F59E0B', bg: '#FFFBEB', bgDark: '#2D2008', roles: ['parent'] },
-  { id: 'ledger',   label: 'Ledger',   subtitle: 'Coins · Allowance',       emoji: '🪙', Icon: Coins,        accent: '#10B981', bg: '#ECFDF5', bgDark: '#0D2A1E', roles: ['parent', 'kid'] },
   { id: 'memories', label: 'Memories', subtitle: 'Photos · Moments',        emoji: '📸', Icon: ImageIcon,    accent: '#EC4899', bg: '#FDF2F8', bgDark: '#2D0D1F', roles: ['parent', 'kid', 'senior'] },
   { id: 'records',  label: 'Records',  subtitle: 'Documents · Files',       emoji: '📁', Icon: FolderOpen,   accent: '#6366F1', bg: '#EEF2FF', bgDark: '#1A1A38', roles: ['parent'] },
   { id: 'roster',   label: 'Roster',   subtitle: 'Members · Roles',         emoji: '👥', Icon: Users,        accent: '#3B82F6', bg: '#EFF6FF', bgDark: '#0D1A2D', roles: ['parent'] },
@@ -125,7 +123,6 @@ function FeatureDetail({
           {feature.id === 'records'  && <RecordsTabComp  colors={colors} isDark={isDark} />}
           {feature.id === 'meals'    && <MealsTabComp    colors={colors} isDark={isDark} />}
           {feature.id === 'memories' && <MemoriesTabComp colors={colors} isDark={isDark} readOnly={role === 'senior'} />}
-          {feature.id === 'ledger'   && <LedgerTabComp   colors={colors} isDark={isDark} />}
           {feature.id === 'roster'   && <RosterTabComp   colors={colors} isDark={isDark} />}
         </ScrollView>
       )}

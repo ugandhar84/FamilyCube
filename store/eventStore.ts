@@ -112,6 +112,69 @@ export interface FamilyEvent {
   // they're attending. Purely informational, no accept/decline branching —
   // a plain attendee doesn't own the event the way a driver does.
   acknowledgedBy?: string[];
+
+  // ── Privacy/sensitivity tagging (scenarios 2.6, 2.10, 5.4, 5.5) ──────────
+  // 'normal' (default) — visible per the ordinary assignee/family-wide
+  // rules everywhere already in place.
+  // 'private' — an explicit privacy tag (2.6 medical appointment, 5.4 a
+  // teen's own social plan) OR implicitly true for any Medical-category
+  // event even without the toggle (5.5's "medical defaults to minimal
+  // necessary exposure" rule) — see isEventSensitive() below, which is the
+  // ONE place every visibility filter in the app should call rather than
+  // re-deriving this condition ad hoc. When sensitive: both parents and the
+  // subject (memberId/memberIds) always see full detail; siblings (any
+  // other kid/teen) are hidden entirely; GP sees a busy-block only (no
+  // title/notes/doctorName) UNLESS explicitly shared for a specific
+  // caregiving occasion via sharedWithGPForCare.
+  // Named privacyLevel, not "sensitivity" — calendar_events already has an
+  // unrelated `sensitivity` DB column (Responsibility Engine fairness/
+  // effort scoring, a 4-value enum) from a much earlier migration; this is
+  // a deliberately distinct field/column to avoid colliding with it.
+  privacyLevel?: 'normal' | 'private';
+  // 5.5's caregiver-mode override — a parent explicitly shares ONE private/
+  // medical event with GP for a specific occasion (e.g. GP is babysitting
+  // and needs the medication schedule) without lifting privacy generally.
+  sharedWithGPForCare?: boolean;
+
+  // ── RSVP / attendance confirmation (scenario 2.11) ───────────────────────
+  // Genuinely distinct from acknowledgedBy above — RSVP needs a real
+  // Going/Not-Going/Maybe headcount signal for an OPTIONAL group event
+  // (e.g. "cousin's graduation party"), which a binary "I've seen this"
+  // acknowledge can't express. Only meaningful when isOptionalRsvp is set
+  // by the creator; a mandatory logistics event (a ride, a doctor's
+  // appointment) keeps using acknowledgedBy/driver-accept as before — this
+  // is additive, not a replacement.
+  isOptionalRsvp?: boolean;
+  // memberId → response. Only present for members who have actually
+  // responded — someone invited but silent simply has no key here (renders
+  // as "awaiting" rather than defaulting to any particular answer).
+  rsvps?: Record<string, 'going' | 'not_going' | 'maybe'>;
+}
+
+// Scenario 5.5 generalizes 2.6's rule to "any medical/health-tagged item,"
+// so a Medical-category event is treated as sensitive even if the creator
+// never touched the explicit privacy toggle — the two conditions OR
+// together rather than requiring both.
+export function isEventSensitive(e: Pick<FamilyEvent, 'privacyLevel' | 'category'>): boolean {
+  return e.privacyLevel === 'private' || e.category === 'Medical';
+}
+
+// Scenario 2.6/5.4/5.5 — the single shared visibility predicate every
+// calendar/hub surface should call for a sensitive event, instead of each
+// screen re-deriving its own version of "am I allowed to see this." Returns
+// true if the viewer gets FULL detail; false means the caller should either
+// omit the event entirely (kid/teen sibling default) or render a
+// busy-block-only stub (GP default, unless explicitly shared for care).
+export function canViewSensitiveEventDetail(
+  e: Pick<FamilyEvent, 'memberId' | 'memberIds' | 'sharedWithGPForCare'>,
+  viewerRole: 'parent' | 'kid' | 'teen' | 'senior' | undefined,
+  viewerId: string | undefined,
+): boolean {
+  if (viewerRole === 'parent') return true; // both legal guardians always see full detail
+  const isSubject = !!viewerId && (e.memberId === viewerId || !!e.memberIds?.includes(viewerId));
+  if (isSubject) return true; // never hidden from the person it's about
+  if (viewerRole === 'senior') return !!e.sharedWithGPForCare; // GP: busy-block unless explicitly shared
+  return false; // sibling kid/teen: hidden entirely, no busy-block
 }
 
 export type StripMap = Record<string, string[]>;   // date → unique category[]
@@ -203,6 +266,13 @@ interface EventState {
     extra?: Partial<FamilyEvent>,
     onWon?: () => void,
   ) => void;
+
+  // Scenario 2.11 — a member's Going/Not-Going/Maybe response to an
+  // isOptionalRsvp event. Plain optimistic + DB write (no CAS needed — an
+  // RSVP is a per-member key in a shared map, so two different members
+  // responding concurrently can't collide, and one member re-responding is
+  // just overwriting their own prior answer, not racing anyone else).
+  respondToRsvp: (id: string, memberId: string, response: 'going' | 'not_going' | 'maybe') => void;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -294,6 +364,10 @@ export function fromRow(row: any): FamilyEvent {
     recurrenceRule:         (typeof row.recurrence_rule === 'object' && row.recurrence_rule) ? row.recurrence_rule : undefined,
     isSeriesAnchor:         row.is_series_anchor ?? false,
     acknowledgedBy:         Array.isArray(row.acknowledged_by) ? row.acknowledged_by : [],
+    privacyLevel:           row.privacy_level === 'private' ? 'private' : 'normal',
+    sharedWithGPForCare:    row.shared_with_gp_for_care ?? false,
+    isOptionalRsvp:         row.is_optional_rsvp ?? false,
+    rsvps:                  (typeof row.rsvps === 'object' && row.rsvps) ? row.rsvps : undefined,
   };
 }
 
@@ -352,6 +426,10 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     recurrence_rule:            ev.recurrenceRule ?? null,
     is_series_anchor:           ev.isSeriesAnchor ?? false,
     acknowledged_by:            ev.acknowledgedBy ?? [],
+    privacy_level:              ev.privacyLevel ?? 'normal',
+    shared_with_gp_for_care:    ev.sharedWithGPForCare ?? false,
+    is_optional_rsvp:           ev.isOptionalRsvp ?? false,
+    rsvps:                      ev.rsvps ?? {},
   };
 }
 
@@ -869,6 +947,16 @@ export const useEventStore = create<EventState>((set, get) => ({
     if (updated) {
       dbUpdate(id, toRow(updated));
     }
+  },
+
+  // Scenario 2.11 — RSVP is its own per-member map, not a status field on
+  // the whole event, so this goes through updateEvent's normal optimistic
+  // + DB-write path with just the one key changed rather than duplicating
+  // that plumbing here.
+  respondToRsvp: (id, memberId, response) => {
+    const existing = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
+    if (!existing) return;
+    get().updateEvent(id, { rsvps: { ...(existing.rsvps ?? {}), [memberId]: response } });
   },
 
   // ── claimHelperSlot — compare-and-swap claim of an open GP/Teen slot ───────

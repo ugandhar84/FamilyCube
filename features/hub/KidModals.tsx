@@ -918,3 +918,112 @@ export function AskModal({ visible, onClose, type, active }: {
     </Modal>
   );
 }
+
+// ─── QuestProposalModal ─────────────────────────────────────────────────────
+// Scenario 1.4 — a Kid proposing a brand-new quest ("Can I wash the car for
+// 15 coins?") for a parent to convert into a real, assigned quest. Distinct
+// from AskModal because it needs a title + a proposed coin reward, not just
+// free text — sent as a kid_requests row (type: 'quest_proposal') the same
+// way every other kid→parent ask already flows, so ParentRequestQueue-style
+// surfaces pick it up automatically with zero extra plumbing. Approval
+// (kidRequestStore.approveRequest is NOT enough on its own here — see
+// QuestProposalReviewCard, which additionally calls choreStore.addChore)
+// actually creates the live quest; decline just closes the request.
+export function QuestProposalModal({ visible, onClose, active }: {
+  visible: boolean; onClose: () => void; active: FamilyMember;
+}) {
+  const { colors, isDark } = useTheme();
+  const { sendRequest } = useKidRequestStore();
+  const [title, setTitle]   = useState('');
+  const [coins, setCoins]   = useState('15');
+  const accent = BRAND.purple;
+
+  const dismiss = () => { setTitle(''); setCoins('15'); onClose(); };
+  const submit  = () => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    const rewardCoins = Math.max(0, Math.round(parseInt(coins, 10) || 0));
+    sendRequest({
+      type: 'quest_proposal',
+      fromMemberId: active.id,
+      detail: trimmed,
+      rewardCoins,
+      urgency: 'normal',
+    });
+    dismiss();
+    Alert.alert('Sent! 🧩', 'Your parent will review your quest idea.');
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={f.backdrop}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
+          <View style={[f.sheet, { backgroundColor: colors.card }]}>
+            <View style={[f.handle, { backgroundColor: colors.border }]} />
+            <View style={f.header}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={[f.title, { color: colors.textPrimary }]}>🧩 Propose a Quest</Text>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: accent }}>
+                  Sent to a parent to review
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={dismiss}
+                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
+                <Text style={{ fontSize: 16, color: colors.textSecondary }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="always"
+              onScrollBeginDrag={Keyboard.dismiss}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 48 }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary, marginBottom: 6 }}>
+                What's the quest?
+              </Text>
+              <TextInput
+                value={title}
+                onChangeText={setTitle}
+                style={{
+                  borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14,
+                  fontSize: 15, color: colors.textPrimary,
+                  backgroundColor: isDark ? colors.surface : '#F9FAFB',
+                  borderColor: title.trim() ? accent + '80' : colors.border,
+                }}
+                placeholder="e.g. Wash the car"
+                placeholderTextColor={colors.textTertiary}
+              />
+
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary, marginTop: 16, marginBottom: 6 }}>
+                How many coins? (parent can change this)
+              </Text>
+              <TextInput
+                value={coins}
+                onChangeText={t => setCoins(t.replace(/[^0-9]/g, ''))}
+                keyboardType="number-pad"
+                style={{
+                  borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14,
+                  fontSize: 15, color: colors.textPrimary, fontWeight: '800',
+                  backgroundColor: isDark ? colors.surface : '#F9FAFB',
+                  borderColor: colors.border, width: 120,
+                }}
+                placeholder="15"
+                placeholderTextColor={colors.textTertiary}
+              />
+
+              <TouchableOpacity onPress={submit} disabled={!title.trim()}
+                style={[f.submitBtn, { marginTop: 20, backgroundColor: title.trim() ? accent : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
+                <Text style={{ fontSize: 15, fontWeight: '900', color: title.trim() ? '#fff' : colors.textTertiary }}>
+                  Send to Parent →
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}

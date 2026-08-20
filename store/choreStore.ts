@@ -126,6 +126,23 @@ export interface ChoreTask {
   reviewedById?: string;    // memberId of the parent/senior who approved or requested a redo
   declinedAt?: string;
   createdAt: string;
+
+  // ── Scenario 4.7 — disputed approval (two parents disagree) ──────────────
+  // A second parent who disagrees with an already-approved-and-paid chore
+  // can flag it for discussion (soft, no financial effect) or request a
+  // full reversal (a real clawback — needs the original approver's co-sign
+  // unless the household explicitly allows unilateral reversal). Nothing
+  // ever silently claws back a payout; see flagApprovalForDiscussion /
+  // requestApprovalReversal / coSignReversal / standByApproval.
+  disputeStatus?: 'flagged' | 'reversal_requested';
+  disputeReason?: string;
+  disputedById?: string;    // memberId of the parent who raised the dispute
+  disputedAt?: string;
+  // Audit trail once a reversal actually executes — the chore itself stays
+  // visible/inspectable afterward rather than vanishing, per spec's "a
+  // visible audit note" requirement.
+  reversedAt?: string;
+  reversedById?: string;
 }
 
 export interface ChoreCheer {
@@ -237,6 +254,13 @@ export interface HouseholdSettings {
   // but the reward itself is flagged rewardPendingReview until a parent
   // approves/adjusts/declines it (see ChoreTask.rewardPendingReview).
   teenRewardCoSignThreshold: number;
+  // Scenario 4.7 — when false (the default/safe option), a reversal
+  // request needs the ORIGINAL approving parent's co-sign before the
+  // clawback executes. When true, the requesting parent can execute the
+  // reversal immediately — the spec explicitly allows this as an opt-in
+  // household config, but every reversal (co-signed or unilateral) always
+  // leaves a visible audit note (disputeReason/disputedById/reversedById).
+  allowUnilateralReversal: boolean;
 }
 
 // ─── Badge Definitions ────────────────────────────────────────────────────────
@@ -419,6 +443,12 @@ function choreFromRow(row: any): ChoreTask {
     receiptSubmittedAt:      row.receipt_submitted_at ?? undefined,
     receiptReimbursedAt:     row.receipt_reimbursed_at ?? undefined,
     cheers:                  Array.isArray(row.cheered_by) ? row.cheered_by : [],
+    disputeStatus:           row.dispute_status ?? undefined,
+    disputeReason:           row.dispute_reason ?? undefined,
+    disputedById:            row.disputed_by_id ?? undefined,
+    disputedAt:              row.disputed_at ?? undefined,
+    reversedAt:              row.reversed_at ?? undefined,
+    reversedById:            row.reversed_by_id ?? undefined,
   };
 }
 
@@ -533,8 +563,15 @@ interface ChoreState {
   deleteChore:         (id: string) => void;
 
   // ── Child actions ──────────────────────────────────────────────────────────
-  claimBounty:              (choreId: string, childId: string) => void;
-  claimPoolQuest:           (choreId: string, memberId: string) => void;
+  // onLost — scenarios 3.1/3.4: the claim's optimistic local write can lose
+  // for two DIFFERENT reasons that both land on the same "0 rows" DB result:
+  // another member's claim landed first (still exists, just not mine — spec
+  // 3.1's "someone just claimed this"), or a parent deleted the chore out
+  // from under the claim entirely (spec 3.4's "this quest was just removed
+  // by a parent"). Distinguished with one extra existence check on the lost
+  // race, so the caller can show the right message instead of a generic one.
+  claimBounty:              (choreId: string, childId: string, onLost?: (reason: 'claimed' | 'deleted') => void) => void;
+  claimPoolQuest:           (choreId: string, memberId: string, onLost?: (reason: 'claimed' | 'deleted') => void) => void;
   // Returns false (and does nothing) if the chore isn't submittable yet —
   // currently: a recurring chore whose due_date is still in the future.
   // One-time chores and on/after-due-date recurring chores always succeed.
@@ -548,6 +585,15 @@ interface ChoreState {
   claimGPErrand:           (choreId: string, gpMemberId: string) => void;
   submitGPErrandReceipt:   (choreId: string, opts: { receiptPhotoUrl?: string; receiptAmount?: number; receiptNote?: string }) => void;
   acknowledgeGPReimbursement: (choreId: string) => void;
+
+  // ── Scenarios 9.2/9.3 — temporary-approver / caregiver-mode ──────────────
+  // Single source of truth for "is this member currently allowed to
+  // approve/decline a chore submission" — role === 'parent' OR an active
+  // temporary-approver grant (store/temporaryApproverStore.ts). Every
+  // approval-gating check should route through this rather than
+  // re-deriving role === 'parent' ad hoc, so a future change to what
+  // counts as an approver only needs to change in one place.
+  canApprove:                      (memberId: string) => boolean;
 
   // ── Parent review ──────────────────────────────────────────────────────────
   approveChore:                    (choreId: string, reviewerId: string) => void;
@@ -571,6 +617,27 @@ interface ChoreState {
   approveTeenReward:  (choreId: string, approverId: string) => void;
   adjustTeenReward:   (choreId: string, approverId: string, newAmount: number) => void;
   declineTeenReward:  (choreId: string, approverId: string, reason?: string) => void;
+
+  // ── Scenario 4.7 — disputed approval (two parents disagree) ─────────────
+  // flagApprovalForDiscussion: soft flag, no financial effect — notifies the
+  // approving parent that a co-parent wants to discuss it. Never visible to
+  // the kid (spec: "no visibility into the parents' disagreement").
+  flagApprovalForDiscussion: (choreId: string, byParentId: string, note?: string) => void;
+  // standByApproval: the approving parent dismisses a flag/reversal request
+  // without reversing — clears disputeStatus, no financial effect.
+  standByApproval:           (choreId: string, byParentId: string) => void;
+  // requestApprovalReversal: if householdSettings.allowUnilateralReversal is
+  // true, executes the clawback immediately (still leaves a full audit
+  // trail). Otherwise sets disputeStatus: 'reversal_requested' and waits for
+  // the ORIGINAL approving parent's coSignReversal — never a silent,
+  // unilateral clawback by default.
+  requestApprovalReversal:   (choreId: string, byParentId: string, reason: string) => void;
+  // coSignReversal: the original approving parent (chore.reviewedById)
+  // agrees with a pending reversal request — executes the clawback.
+  coSignReversal:            (choreId: string, coSigningParentId: string) => void;
+  // Internal — the actual clawback logic shared by the unilateral-allowed
+  // and co-signed paths. Not intended to be called directly from UI.
+  _executeReversal:          (choreId: string, byParentId: string, reason: string) => void;
 
   // ── Points economy ────────────────────────────────────────────────────────
   awardPoints:         (userId: string, choreId: string, points: number, xp?: number, wallet?: 'mainCoins' | 'gpCoins') => void;
@@ -657,6 +724,7 @@ const DEFAULT_SETTINGS: HouseholdSettings = {
   autoApproveTimeoutHours:      24,
   minCashoutPoints:             100,
   teenRewardCoSignThreshold:    100,
+  allowUnilateralReversal:      false,
 };
 
 // ─── DB write helper ──────────────────────────────────────────────────────────
@@ -880,7 +948,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         // with zero cross-device sync.
         supabase
           .from('families')
-          .select('points_to_fiat_ratio, spend_allocation_pct, save_allocation_pct, give_allocation_pct, allow_child_allocation_override, auto_approve_timeout_hours, min_cashout_points, teen_reward_cosign_threshold')
+          .select('points_to_fiat_ratio, spend_allocation_pct, save_allocation_pct, give_allocation_pct, allow_child_allocation_override, auto_approve_timeout_hours, min_cashout_points, teen_reward_cosign_threshold, allow_unilateral_reversal')
           .eq('id', familyId)
           .single(),
       ]);
@@ -898,6 +966,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         autoApproveTimeoutHours:      familyRow.auto_approve_timeout_hours      ?? DEFAULT_SETTINGS.autoApproveTimeoutHours,
         minCashoutPoints:             familyRow.min_cashout_points              ?? DEFAULT_SETTINGS.minCashoutPoints,
         teenRewardCoSignThreshold:    familyRow.teen_reward_cosign_threshold    ?? DEFAULT_SETTINGS.teenRewardCoSignThreshold,
+        allowUnilateralReversal:      familyRow.allow_unilateral_reversal       ?? DEFAULT_SETTINGS.allowUnilateralReversal,
       } : get().householdSettings;
 
       _fetchedAt = Date.now();
@@ -1089,6 +1158,12 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('declinedAt'         in updates) patch.declined_at              = updates.declinedAt ?? null;
     if ('redoCount'          in updates) patch.redo_count               = updates.redoCount;
     if ('cheers'             in updates) patch.cheered_by               = updates.cheers;
+    if ('disputeStatus'      in (updates as any)) patch.dispute_status  = (updates as any).disputeStatus ?? null;
+    if ('disputeReason'      in (updates as any)) patch.dispute_reason  = (updates as any).disputeReason ?? null;
+    if ('disputedById'       in (updates as any)) patch.disputed_by_id  = (updates as any).disputedById ?? null;
+    if ('disputedAt'         in (updates as any)) patch.disputed_at     = (updates as any).disputedAt ?? null;
+    if ('reversedAt'         in (updates as any)) patch.reversed_at     = (updates as any).reversedAt ?? null;
+    if ('reversedById'       in (updates as any)) patch.reversed_by_id  = (updates as any).reversedById ?? null;
     if (Object.keys(patch).length > 0) dbUpdate('chore_tasks', id, patch);
   },
 
@@ -1122,7 +1197,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // CHILD ACTIONS
   // ─────────────────────────────────────────────────────────────────────────
 
-  claimBounty: (choreId, childId) => {
+  claimBounty: (choreId, childId, onLost) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.categoryType !== 'bounty' || chore.status !== 'todo') return;
     if (chore.assignedToId) return; // Already claimed
@@ -1160,6 +1235,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
             ),
           }));
           AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+          // Spec 3.4 — distinguish "someone else claimed it" from "it was
+          // deleted": a follow-up existence check is the only way to tell
+          // the two apart, since both produce the same 0-row CAS result.
+          if (onLost) {
+            supabase.from('chore_tasks').select('id').eq('id', choreId).maybeSingle()
+              .then(
+                ({ data: stillExists }) => onLost(stillExists ? 'claimed' : 'deleted'),
+                () => onLost('claimed'),
+              );
+          }
         }
       });
   },
@@ -1176,7 +1261,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // claimBounty's exact CAS + rollback shape, generalized to any pool
   // chore, and sets status to 'in_progress' (what claimQuest's callers
   // expect) instead of 'todo'.
-  claimPoolQuest: (choreId, memberId) => {
+  claimPoolQuest: (choreId, memberId, onLost) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.assignedToId) return; // Already claimed or gone
 
@@ -1203,6 +1288,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
             ),
           }));
           AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+          // Spec 3.4 — same claimed-vs-deleted disambiguation as claimBounty.
+          if (onLost) {
+            supabase.from('chore_tasks').select('id').eq('id', choreId).maybeSingle()
+              .then(
+                ({ data: stillExists }) => onLost(stillExists ? 'claimed' : 'deleted'),
+                () => onLost('claimed'),
+              );
+          }
         }
       });
   },
@@ -1391,10 +1484,35 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // PARENT REVIEW
   // ─────────────────────────────────────────────────────────────────────────
 
+  canApprove: (memberId) => {
+    try {
+      const { useFamilyStore } = require('./familyStore');
+      const member = useFamilyStore.getState().members.find((m: any) => m.id === memberId);
+      if (member?.role === 'parent') return true;
+    } catch (e) {
+      console.warn('[choreStore] canApprove role lookup failed', e);
+    }
+    try {
+      const { useTemporaryApproverStore } = require('./temporaryApproverStore');
+      return useTemporaryApproverStore.getState().isActiveApprover(memberId);
+    } catch (e) {
+      console.warn('[choreStore] canApprove temp-grant lookup failed', e);
+      return false;
+    }
+  },
+
   approveChore: (choreId, reviewerId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'pending_approval') return;
     if (!chore.assignedToId) return;
+    // Scenarios 9.2/9.3 — reviewerId must be a parent OR hold an active
+    // temporary-approver grant. This is a genuine authorization gate, not
+    // just a UI convenience — approveChore pays out real coins, so it must
+    // hold even if a stale/tampered client somehow calls it directly.
+    if (!get().canApprove(reviewerId)) {
+      console.warn('[choreStore] approveChore blocked — reviewer', reviewerId, 'is not a parent and has no active temporary-approver grant');
+      return;
+    }
 
     const now = new Date().toISOString();
     get().updateChore(choreId, {
@@ -1506,6 +1624,11 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   requestRedo: (choreId, reviewerId, reason, _presetKey) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'pending_approval') return;
+    // Scenarios 9.2/9.3 — same authorization gate as approveChore.
+    if (!get().canApprove(reviewerId)) {
+      console.warn('[choreStore] requestRedo blocked — reviewer', reviewerId, 'is not a parent and has no active temporary-approver grant');
+      return;
+    }
 
     const newRedoCount = (chore.redoCount ?? 0) + 1;
     const now = new Date().toISOString();
@@ -1735,6 +1858,141 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     } catch (e) {
       console.warn('[choreStore] declineTeenReward notification failed', e);
     }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SCENARIO 4.7 — DISPUTED APPROVAL (TWO PARENTS DISAGREE)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  flagApprovalForDiscussion: (choreId, byParentId, note) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || !['approved', 'auto_approved'].includes(chore.status)) return;
+    if (byParentId === chore.reviewedById) return; // can't dispute your own approval
+
+    get().updateChore(choreId, {
+      disputeStatus: 'flagged',
+      disputeReason: note,
+      disputedById:  byParentId,
+      disputedAt:    new Date().toISOString(),
+    });
+
+    // Notify the original approving parent — never the kid (spec: a kid
+    // should have no visibility into the parents' disagreement).
+    try {
+      const { useChatStore } = require('./chatStore');
+      if (chore.reviewedById) {
+        useChatStore.getState().sendMessage(chore.reviewedById, byParentId,
+          `🚩 Your approval of "${chore.title}" was flagged for discussion${note ? ` — "${note}"` : ''}.`);
+      }
+    } catch (e) {
+      console.warn('[choreStore] flagApprovalForDiscussion notification failed', e);
+    }
+  },
+
+  standByApproval: (choreId, byParentId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || !chore.disputeStatus) return;
+
+    get().updateChore(choreId, {
+      disputeStatus: undefined,
+      disputeReason: undefined,
+      disputedById:  undefined,
+      disputedAt:    undefined,
+    });
+
+    try {
+      const { useChatStore } = require('./chatStore');
+      if (chore.disputedById) {
+        useChatStore.getState().sendMessage(chore.disputedById, byParentId,
+          `${chore.title}" was reviewed again and the approval stands — no changes made.`);
+      }
+    } catch (e) {
+      console.warn('[choreStore] standByApproval notification failed', e);
+    }
+  },
+
+  // The actual clawback — a real negative payout, same shape as
+  // denyCashOut's gpCoins refund (awardPoints with a negative amount),
+  // generalized to whichever wallet the original payout used. Only ever
+  // called from requestApprovalReversal (unilateral-allowed path) or
+  // coSignReversal (co-signed path) — never exposed directly to UI, so
+  // every reversal always has disputeReason/disputedById/reversedById set.
+  _executeReversal: (choreId, byParentId, reason) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || !chore.assignedToId) return;
+    if (!['approved', 'auto_approved'].includes(chore.status)) return;
+
+    const pointsPaid = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
+    const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+    const now = new Date().toISOString();
+
+    get().updateChore(choreId, {
+      status:         'declined',
+      declinedAt:     now,
+      disputeStatus:  undefined,
+      disputeReason:  reason,
+      disputedById:   chore.disputedById ?? byParentId,
+      disputedAt:     chore.disputedAt ?? now,
+      reversedAt:     now,
+      reversedById:   byParentId,
+    });
+
+    // Claw back the payout — a real negative transaction, not a silent
+    // balance edit; awardPoints already writes both the point_transactions
+    // audit row and the live members balance patch for a negative amount.
+    if (pointsPaid > 0) {
+      get().awardPoints(chore.assignedToId, choreId, -pointsPaid, 0, wallet);
+    }
+
+    try {
+      const { useChatStore } = require('./chatStore');
+      useChatStore.getState().sendMessage(chore.assignedToId, byParentId,
+        `⚠️ The approval for "${chore.title}" was reversed by a parent${reason ? ` — "${reason}"` : ''}. ${pointsPaid > 0 ? `${pointsPaid} coins were removed from your balance.` : ''}`);
+    } catch (e) {
+      console.warn('[choreStore] reversal notification (assignee) failed', e);
+    }
+  },
+
+  requestApprovalReversal: (choreId, byParentId, reason) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || !['approved', 'auto_approved'].includes(chore.status)) return;
+    if (byParentId === chore.reviewedById) return; // can't dispute your own approval
+
+    if (get().householdSettings.allowUnilateralReversal) {
+      get()._executeReversal(choreId, byParentId, reason);
+      return;
+    }
+
+    // Default, safe path — needs the original approver's co-sign. No
+    // financial effect happens here; the chore stays approved/paid until
+    // coSignReversal actually executes it.
+    get().updateChore(choreId, {
+      disputeStatus: 'reversal_requested',
+      disputeReason: reason,
+      disputedById:  byParentId,
+      disputedAt:    new Date().toISOString(),
+    });
+
+    try {
+      const { useChatStore } = require('./chatStore');
+      if (chore.reviewedById) {
+        useChatStore.getState().sendMessage(chore.reviewedById, byParentId,
+          `🚩 A reversal was requested for "${chore.title}"${reason ? ` — "${reason}"` : ''}. Nothing has changed yet — this needs your co-sign to actually reverse the payout.`);
+      }
+    } catch (e) {
+      console.warn('[choreStore] requestApprovalReversal notification failed', e);
+    }
+  },
+
+  coSignReversal: (choreId, coSigningParentId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.disputeStatus !== 'reversal_requested') return;
+    // Only the ORIGINAL approving parent can co-sign — the requester
+    // already agreed by definition, and this must be a second, independent
+    // parent's sign-off, not the same person confirming their own request.
+    if (coSigningParentId !== chore.reviewedById) return;
+
+    get()._executeReversal(choreId, coSigningParentId, chore.disputeReason ?? '');
   },
 
   // Scan local store for expired approval windows and auto-approve them
@@ -2743,6 +3001,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         auto_approve_timeout_hours:       settings.autoApproveTimeoutHours,
         min_cashout_points:               settings.minCashoutPoints,
         teen_reward_cosign_threshold:     settings.teenRewardCoSignThreshold,
+        allow_unilateral_reversal:        settings.allowUnilateralReversal,
       }).eq('id', familyId).then(({ error }) => {
         if (error) console.warn('[choreStore] updateHouseholdSettings', error.message);
       });

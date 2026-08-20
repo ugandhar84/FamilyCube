@@ -23,10 +23,17 @@ export function AddQuestRecurrenceSection({
   shoppingBudget, setShoppingBudget,
   shoppingItemsOpen, setShoppingItemsOpen,
   shoppingLines, updateShoppingLine, removeShoppingLine, addShoppingLine,
+  hideAdultToggles,
 }: {
   colors: any; isDark: boolean;
   isAdultTask: boolean; toggleAdultTask: (val: boolean) => void;
   inviteGrandparent: boolean; toggleGPInvite: (val: boolean) => void;
+  // Scenario 1.5 — a Teen creator doesn't get the "Parent Only" (delegate
+  // to another adult) or "Invite Grandparent" (GP-sponsored quest)
+  // toggles; both are parent-oriented concepts. isAdultTask/inviteGrandparent
+  // stay permanently false for a Teen creator since these are simply never
+  // shown for them to turn on.
+  hideAdultToggles?: boolean;
   routineFreq: RoutineFreq; setRoutineFreq: React.Dispatch<React.SetStateAction<RoutineFreq>>;
   isRoutine: boolean; setIsRoutine: React.Dispatch<React.SetStateAction<boolean>>;
   routineType: RoutineType; setRoutineType: (v: RoutineType) => void;
@@ -40,8 +47,11 @@ export function AddQuestRecurrenceSection({
     <>
       {/* Parent Only / GP Welcome — two compact, related switches sitting
           side-by-side instead of two heavy full-width toggle rows.
-          Renamed from "Adult Task" / "Invite Grandparent" for clarity. */}
-      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+          Renamed from "Adult Task" / "Invite Grandparent" for clarity.
+          Hidden entirely for a Teen creator (Scenario 1.5) — both toggles
+          describe delegating to another adult, which isn't a Teen's
+          decision to make. */}
+      {!hideAdultToggles && <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
         <TouchableOpacity
           style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12,
             backgroundColor: isAdultTask ? colors.primaryLight : colors.surface,
@@ -71,7 +81,7 @@ export function AddQuestRecurrenceSection({
             {inviteGrandparent ? 'Can claim it' : 'Let GP claim it'}
           </Text>
         </TouchableOpacity>
-      </View>
+      </View>}
 
       {/* Repeats — a parent-only task can recur too (routineFreq already
           feeds the same recurrence field the kid-chore path uses,

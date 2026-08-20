@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore } from '@/store/choreStore';
 import type { Quest } from '@/store/questStore';
-import { useEventStore } from '@/store/eventStore';
+import { useEventStore, isEventSensitive, canViewSensitiveEventDetail } from '@/store/eventStore';
 import { useRewardStore } from '@/store/rewardStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
@@ -16,7 +16,7 @@ import { localToday, fmtTime, hoursUntilEvent } from './hubUtils';
 // Encoding helpers and modals live in KidModals.tsx
 export { GROCERY_PREFIX, SUPPLIES_PREFIX, encodeGroceryRequest, decodeGroceryRequest } from './KidModals';
 import { SUPPLIES_PREFIX, encodeRideLate } from './KidModals';
-import { GroceryModal, SuppliesModal, AskModal, KidRequestHistoryModal } from './KidModals';
+import { GroceryModal, SuppliesModal, AskModal, KidRequestHistoryModal, QuestProposalModal } from './KidModals';
 import { HubTimelineSection } from './HubTimelineSection';
 import { PickupRadarStatus } from './hubComponents';
 
@@ -77,6 +77,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest, active
   const [piggyBankModal,  setPiggyBankModal]  = useState(false);
   const [askParentSheet,  setAskParentSheet]  = useState(false);
   const [addEventModal,   setAddEventModal]   = useState(false);
+  const [questProposalModal, setQuestProposalModal] = useState(false);
   const [lateNudgeSent,   setLateNudgeSent]   = useState<Record<string, boolean>>({});
   const [dismissedReplies, setDismissedReplies] = useState<Set<string>>(new Set());
   const [dismissedActions,  setDismissedActions]  = useState<Set<string>>(new Set());
@@ -119,7 +120,13 @@ export function KidView({ active, members, colors, isDark, onHelpRequest, active
   }, [dismissedRideIds, active.id]);
 
   const today       = localToday();
-  const myEvents    = events.filter(e => (e.memberId === active.id || !e.memberId) && e.category !== 'Work');
+  // Scenarios 2.6/5.4/5.5 — a sensitive/private/Medical event about a
+  // sibling is hidden from this kid entirely (never even a busy block —
+  // 5.4's "no scheduling dependency by default" for siblings). Own events
+  // (this kid IS the subject) always pass through unaffected.
+  const visibleEvents = events.filter(e =>
+    !isEventSensitive(e) || canViewSensitiveEventDetail(e, 'kid', active.id));
+  const myEvents    = visibleEvents.filter(e => (e.memberId === active.id || !e.memberId) && e.category !== 'Work');
   const todayEvents = myEvents.filter(e => e.date === today).sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
 
   // Confirmed ride today
@@ -289,13 +296,22 @@ export function KidView({ active, members, colors, isDark, onHelpRequest, active
         onAskParent={() => setAskParentSheet(true)}
         onNeedRide={() => setAddEventModal(true)} />
 
-      <HubTimelineSection active={active} members={members} events={events} updateEvent={updateEvent} colors={colors} isDark={isDark} />
+      <HubTimelineSection active={active} members={members} events={visibleEvents} updateEvent={updateEvent} colors={colors} isDark={isDark} />
 
       <MyQuestsSection
         todoQuests={todoQuests} inProgressQuests={inProgressQuests} reviewQuests={reviewQuests}
         poolQuests={poolQuests} cancelledToday={cancelledQuestsToday} declinedQuests={declinedQuests} allQuests={quests}
         active={active} members={members} colors={colors} isDark={isDark}
-        onClaim={(id) => claimQuest(id, active.id)}
+        onClaim={(id) => claimQuest(id, active.id, (reason) => {
+          // Spec 3.1/3.4 — a lost claim race gets a clear, specific
+          // explanation instead of the item just silently vanishing.
+          Alert.alert(
+            reason === 'deleted' ? 'No longer available' : 'Someone beat you to it!',
+            reason === 'deleted'
+              ? 'This quest was just removed by a parent.'
+              : 'Someone else already claimed this quest — check the pool for others.',
+          );
+        })}
         onStart={(id) => submitQuest(id)}
         onSubmit={handleSubmitTap}
         onAcceptGpQuest={(id) => startGrandparentQuest(id, active.id)}
@@ -315,10 +331,12 @@ export function KidView({ active, members, colors, isDark, onHelpRequest, active
           setTimeout(() => {
             if (choice === 'grocery') setGroceryModal(true);
             else if (choice === 'supplies') setSuppliesModal(true);
+            else if (choice === 'quest') setQuestProposalModal(true);
             else setAskModal(choice);
           }, 300);
         }}
       />
+      <QuestProposalModal visible={questProposalModal} onClose={() => setQuestProposalModal(false)} active={active} />
       <DeclineQuestSheet
         target={declineQuest} active={active} members={members} colors={colors} isDark={isDark}
         onClose={() => setDeclineQuest(null)}
@@ -336,7 +354,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest, active
       <PiggyBankSheet
         visible={piggyBankModal} onClose={() => setPiggyBankModal(false)} colors={colors} isDark={isDark}
         mainCoins={mainCoins} gpCoins={gpCoins} almostAffordable={almostAffordable}
-        doneToday={doneToday} streak={streak} level={level}
+        doneToday={doneToday} streak={streak} level={level} memberId={active.id}
       />
       <AddEventModal visible={addEventModal} onClose={() => setAddEventModal(false)} activeMemberId={active.id} />
     </>

@@ -239,7 +239,7 @@ export function useQuestStore() {
       store.updateChore(id, { status: 'todo', redoCount: 0, submittedAt: undefined, rejectionReason: undefined });
     },
 
-    claimQuest: (id: string, memberId: string) => {
+    claimQuest: (id: string, memberId: string, onLost?: (reason: 'claimed' | 'deleted') => void) => {
       // Routed through claimPoolQuest (not a plain updateChore) so this,
       // the only reachable "Claim" action in the live app (KidView,
       // TeenView, QuestsScreen), actually gets the compare-and-swap
@@ -249,7 +249,10 @@ export function useQuestStore() {
       // both "win" locally with Postgres silently picking a last-writer —
       // claimBounty already had this protection but is hard-gated to
       // categoryType === 'bounty' and unreachable from any live screen.
-      store.claimPoolQuest(id, memberId);
+      // onLost — scenarios 3.1/3.4: lets the caller show "someone just
+      // claimed this" vs. "this was just removed by a parent" instead of a
+      // silent disappearance or a generic error.
+      store.claimPoolQuest(id, memberId, onLost);
     },
 
     updateQuest: (id: string, updates: Partial<Quest>, _by?: string) => {

@@ -296,11 +296,149 @@ function TeenRewardReviewCard({ c, members, colors, isDark, active, approveTeenR
   );
 }
 
+// Scenario 4.7 — an already-approved-and-paid chore a co-parent disagrees
+// with. Only shown to parents (never the kid — spec: no visibility into
+// the parents' disagreement). Three sub-states render different actions:
+//  - not disputed yet, viewer isn't the original approver → Flag / Request Reversal
+//  - disputeStatus 'flagged', viewer IS the original approver → Discuss (chat) / Stand By Approval
+//  - disputeStatus 'reversal_requested', viewer IS the original approver → Co-Sign Reversal / Stand By Approval
+function DisputeApprovalCard({ c, members, colors, isDark, active, flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal }: {
+  c: ChoreTask; members: FamilyMember[]; colors: any; isDark: boolean; active: FamilyMember;
+  flagApprovalForDiscussion: (choreId: string, byParentId: string, note?: string) => void;
+  standByApproval: (choreId: string, byParentId: string) => void;
+  requestApprovalReversal: (choreId: string, byParentId: string, reason: string) => void;
+  coSignReversal: (choreId: string, coSigningParentId: string) => void;
+}) {
+  const kid = members.find(m => m.id === c.assignedToId);
+  const approver = members.find(m => m.id === c.reviewedById);
+  const isOriginalApprover = active.id === c.reviewedById;
+  const totalCoins = (c.basePoints > 0 ? c.basePoints : c.coinsReward) + (c.bonusCoins ?? 0);
+
+  if (c.disputeStatus === 'reversal_requested' && isOriginalApprover) {
+    return (
+      <View style={{ borderRadius: 14, padding: 12, gap: 8,
+        backgroundColor: isDark ? colors.danger + '12' : colors.danger + '08',
+        borderWidth: 1.5, borderColor: colors.danger + '50' }}>
+        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.danger }}>
+          Reversal requested — "{c.title}"
+        </Text>
+        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+          A co-parent wants to reverse this {totalCoins}-coin payout to {kid?.name.split(' ')[0] ?? 'them'}
+          {c.disputeReason ? ` — "${c.disputeReason}"` : ''}. Nothing changes unless you co-sign.
+        </Text>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Pressable onPress={() => standByApproval(c.id, active.id)}
+            style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10,
+              backgroundColor: `${colors.parent}15`, borderWidth: 1, borderColor: `${colors.parent}40` }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.parent }}>Stand By Approval</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => Alert.alert(
+              'Co-Sign Reversal',
+              `This will remove ${totalCoins} coins from ${kid?.name.split(' ')[0] ?? 'their'} balance and mark "${c.title}" as declined. This cannot be undone.`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Co-Sign & Reverse', style: 'destructive', onPress: () => coSignReversal(c.id, active.id) },
+              ],
+            )}
+            style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10, backgroundColor: colors.danger }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Co-Sign & Reverse</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  if (c.disputeStatus === 'flagged' && isOriginalApprover) {
+    return (
+      <View style={{ borderRadius: 14, padding: 12, gap: 8,
+        backgroundColor: isDark ? colors.warning + '12' : colors.warningLight,
+        borderWidth: 1.5, borderColor: colors.warning + '50' }}>
+        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.warningDark }}>
+          Flagged for discussion — "{c.title}"
+        </Text>
+        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+          A co-parent flagged your approval{c.disputeReason ? ` — "${c.disputeReason}"` : ''}. No coins have moved.
+        </Text>
+        <Pressable onPress={() => standByApproval(c.id, active.id)}
+          style={{ alignItems: 'center', paddingVertical: 9, borderRadius: 10,
+            backgroundColor: `${colors.parent}15`, borderWidth: 1, borderColor: `${colors.parent}40` }}>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.parent }}>Stand By Approval</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (c.disputeStatus) {
+    // Viewer isn't the original approver — a request/flag they raised is
+    // already pending the other parent's response. No further action here.
+    return (
+      <View style={{ borderRadius: 14, padding: 12, gap: 4,
+        backgroundColor: isDark ? colors.surface : '#F8FAFC', borderWidth: 1, borderColor: colors.border }}>
+        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{c.title}</Text>
+        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
+          {c.disputeStatus === 'reversal_requested' ? 'Waiting on' : 'Flagged for'} {approver?.name.split(' ')[0] ?? 'the other parent'} to respond.
+        </Text>
+      </View>
+    );
+  }
+
+  // Not disputed yet — offer to flag or request reversal (never available
+  // on your own approval).
+  if (isOriginalApprover) return null;
+
+  return (
+    <View style={{ borderRadius: 14, padding: 12, gap: 8,
+      backgroundColor: isDark ? colors.surface : '#F8FAFC', borderWidth: 1, borderColor: colors.border }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Coins size={14} color={colors.textTertiary} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+            Approved by {approver?.name.split(' ')[0] ?? 'a parent'} · {kid?.name.split(' ')[0] ?? 'kid'} earned {totalCoins} coins
+          </Text>
+        </View>
+      </View>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <Pressable
+          onPress={() => Alert.prompt(
+            'Flag for Discussion',
+            `Let ${approver?.name.split(' ')[0] ?? 'the other parent'} know why you want to discuss "${c.title}" (optional).`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Flag', onPress: (note?: string) => flagApprovalForDiscussion(c.id, active.id, note?.trim() || undefined) },
+            ],
+            'plain-text',
+          )}
+          style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10,
+            backgroundColor: `${colors.warning}15`, borderWidth: 1, borderColor: `${colors.warning}40` }}>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warningDark }}>Flag for Discussion</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => Alert.prompt(
+            'Request Reversal',
+            `This asks ${approver?.name.split(' ')[0] ?? 'the other parent'} to co-sign reversing the ${totalCoins}-coin payout for "${c.title}". Nothing changes until they agree. Why?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Request', style: 'destructive', onPress: (reason?: string) => requestApprovalReversal(c.id, active.id, reason?.trim() || 'No reason given') },
+            ],
+            'plain-text',
+          )}
+          style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10,
+            backgroundColor: `${colors.danger}15`, borderWidth: 1, borderColor: `${colors.danger}40` }}>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.danger }}>Request Reversal</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export function ChoreReviewSection({
   active, members, colors, isDark, chores, pendingReviewsCount,
   approveGrandparentQuestAsParent, declineGrandparentQuestAsParent,
   grandparentApproveAndCheer,
   approveTeenReward, adjustTeenReward, declineTeenReward,
+  flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal,
 }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
   chores: ChoreTask[]; pendingReviewsCount: number;
@@ -310,6 +448,10 @@ export function ChoreReviewSection({
   approveTeenReward: (choreId: string, approverId: string) => void;
   adjustTeenReward: (choreId: string, approverId: string, newAmount: number) => void;
   declineTeenReward: (choreId: string, approverId: string, reason?: string) => void;
+  flagApprovalForDiscussion?: (choreId: string, byParentId: string, note?: string) => void;
+  standByApproval?: (choreId: string, byParentId: string) => void;
+  requestApprovalReversal?: (choreId: string, byParentId: string, reason: string) => void;
+  coSignReversal?: (choreId: string, coSigningParentId: string) => void;
 }) {
   const gpPending = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval');
   const gpDeclined = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'declined');
@@ -324,7 +466,20 @@ export function ChoreReviewSection({
   // payout, not the work — a teen can be mid-task or already done while
   // this still needs a parent's decision.
   const teenRewardPending = chores.filter(c => c.rewardPendingReview);
-  const badgeCount = pendingReviewsCount + gpPending.length + teenRewardPending.length;
+  // Scenario 4.7 — approved-in-the-last-7-days chores, so a co-parent
+  // catching up after being away still has a reasonable window to dispute
+  // something they missed, without surfacing every approval ever made.
+  const recentlyApproved = chores.filter(c => {
+    if (!['approved', 'auto_approved'].includes(c.status) && !c.disputeStatus) return false;
+    if (!c.reviewedById) return false;
+    const t = c.approvedAt ? new Date(c.approvedAt).getTime() : 0;
+    const isRecent = t > 0 && (Date.now() - t) < 7 * 24 * 3600_000;
+    return isRecent || !!c.disputeStatus; // a live dispute stays visible past the 7-day window too
+  });
+  const disputeBadgeCount = recentlyApproved.filter(c =>
+    c.disputeStatus === 'reversal_requested' && c.reviewedById === active.id,
+  ).length;
+  const badgeCount = pendingReviewsCount + gpPending.length + teenRewardPending.length + disputeBadgeCount;
 
   return (
     <View style={{ paddingHorizontal: 16 }}>
@@ -403,6 +558,28 @@ export function ChoreReviewSection({
                 {gpAwaitingSponsor.map(c => (
                   <GpAwaitingSponsorCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
                     grandparentApproveAndCheer={grandparentApproveAndCheer} />
+                ))}
+              </View>
+            )}
+
+            {/* Scenario 4.7 — recently-approved chores a co-parent can flag
+                or request a reversal on. Only rendered when the caller
+                (ParentView) wired the dispute actions through — a household
+                that hasn't loaded them yet simply doesn't show this row
+                rather than rendering dead buttons. */}
+            {flagApprovalForDiscussion && standByApproval && requestApprovalReversal && coSignReversal && recentlyApproved.length > 0 && (
+              <View style={{ gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Coins size={12} color={colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                    textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                    Recently Approved
+                  </Text>
+                </View>
+                {recentlyApproved.map(c => (
+                  <DisputeApprovalCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
+                    flagApprovalForDiscussion={flagApprovalForDiscussion} standByApproval={standByApproval}
+                    requestApprovalReversal={requestApprovalReversal} coSignReversal={coSignReversal} />
                 ))}
               </View>
             )}

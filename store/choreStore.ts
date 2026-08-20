@@ -98,6 +98,14 @@ export interface ChoreTask {
   shoppingStore?: string;            // e.g. 'Walmart', 'Target'
   shoppingBudget?: number;           // optional spend cap in dollars
   openToGP?: boolean;        // parent flagged this for grandparent to handle (e.g. grocery run + scan receipt)
+  // Household Backlog's pool "disable without deleting" toggle
+  // (PoolQuestCard.tsx). A real, dedicated, persisted flag — previously
+  // that toggle wrote isPrivateParent instead (a field that means
+  // something completely different: hides the chore from every non-parent
+  // role and pulls it out of the parent's own review deck) and never
+  // survived a reload anyway, since isPrivateParent isn't a real DB
+  // column and gets recomputed from categoryType on every sync.
+  isDisabled?: boolean;
   // GP receipt reimbursement
   receiptPhotoUrl?: string;
   receiptAmount?: number;       // in dollars/currency units (not points)
@@ -382,6 +390,7 @@ function choreFromRow(row: any): ChoreTask {
     shoppingStore:           row.shopping_store ?? undefined,
     shoppingBudget:          row.shopping_budget != null ? Number(row.shopping_budget) : undefined,
     openToGP:                row.open_to_gp ?? false,
+    isDisabled:              row.is_disabled ?? false,
     receiptPhotoUrl:         row.receipt_photo_url ?? undefined,
     receiptAmount:           row.receipt_amount != null ? Number(row.receipt_amount) : undefined,
     receiptNote:             row.receipt_note ?? undefined,
@@ -853,6 +862,17 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       instance_date:            chore.instanceDate,
       due_date:                 chore.dueDate,
       due_time:                 chore.dueTime,
+      // due_date/due_time are local wall-clock values with no offset of
+      // their own — chore_tasks.timezone existed as a column but was never
+      // actually populated by the app, silently defaulting to 'UTC' in
+      // Postgres. call-reminder-sweeper (a Deno edge function, which runs
+      // in UTC) parsed "due_dateTdue_time" as if it WERE UTC, so any family
+      // not literally in UTC got their call reminder computed against the
+      // wrong absolute time — 5 hours early for US Central, for example.
+      // The device's real IANA zone (Intl resolvedOptions, same source
+      // lib/dates.ts already uses for locale-aware formatting) lets the
+      // sweeper convert correctly instead of guessing.
+      timezone:                 Intl.DateTimeFormat().resolvedOptions().timeZone,
       alert_call:               chore.alertCall ?? false,
       alert_call_lead_minutes:  chore.alertCallLeadMinutes ?? 10,
       approval_window_expires_at: autoExpire,
@@ -908,7 +928,10 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('bonusCoins'         in updates) patch.bonus_coins              = updates.bonusCoins;
     if ('difficulty'         in updates) patch.difficulty               = updates.difficulty;
     if ('dueDate'            in updates) patch.due_date                 = updates.dueDate;
-    if ('dueTime'            in updates) patch.due_time                 = updates.dueTime;
+    // Stamp the device's real timezone whenever due_time changes — see the
+    // matching comment in addChore for why this matters (chore_tasks.
+    // timezone silently defaulted to 'UTC' and the sweeper trusted it).
+    if ('dueTime'            in updates) { patch.due_time = updates.dueTime; patch.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone; }
     if ('alertCall'          in updates) patch.alert_call               = updates.alertCall ?? false;
     if ('alertCallLeadMinutes' in updates) patch.alert_call_lead_minutes = updates.alertCallLeadMinutes ?? 10;
     if ('requiresPhotoProof' in updates) patch.requires_photo           = updates.requiresPhotoProof;
@@ -918,6 +941,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('shoppingStore'        in updates) patch.shopping_store             = updates.shoppingStore;
     if ('shoppingBudget'       in updates) patch.shopping_budget            = updates.shoppingBudget;
     if ('openToGP'    in (updates as any)) patch.open_to_gp                = (updates as any).openToGP;
+    if ('isDisabled'  in (updates as any)) patch.is_disabled               = (updates as any).isDisabled;
     if ('receiptPhotoUrl'      in updates) patch.receipt_photo_url          = updates.receiptPhotoUrl ?? null;
     if ('receiptAmount'        in updates) patch.receipt_amount             = updates.receiptAmount ?? null;
     if ('receiptNote'          in updates) patch.receipt_note               = updates.receiptNote ?? null;
@@ -939,6 +963,24 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   deleteChore: (id) => {
+    // Any parent_quest_assignments row referencing this chore would
+    // otherwise be orphaned permanently — every render path that looks one
+    // up already null-guards the missing chore (no crash/ghost card), but
+    // the row itself never got cleaned up. Force-close it the same way
+    // addParentQuest/resetDueRecurringChores supersede a stale open
+    // assignment, rather than leaving dead rows behind.
+    const now = new Date().toISOString();
+    const orphaned = get().parentAssignments.filter(a => a.choreId === id);
+    if (orphaned.length > 0) {
+      set(s => ({
+        parentAssignments: s.parentAssignments.map(a =>
+          orphaned.some(x => x.id === a.id) ? { ...a, status: 'COMPLETED', updatedAt: now } : a
+        ),
+      }));
+      for (const a of orphaned) {
+        dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now });
+      }
+    }
     set(s => ({ chores: s.chores.filter(c => c.id !== id) }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     supabase.from('chore_tasks').delete().eq('id', id).then(({ error }) => {
@@ -955,10 +997,41 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (!chore || chore.categoryType !== 'bounty' || chore.status !== 'todo') return;
     if (chore.assignedToId) return; // Already claimed
 
-    get().updateChore(choreId, {
-      assignedToId: childId,
-      status: 'todo',  // Now assigned; stays todo until submission
-    });
+    // Two kids tapping "Claim" on the same pool bounty within the same
+    // round-trip window would both pass the local guard above and both
+    // locally set() themselves as the assignee — going through the generic
+    // updateChore path fires a plain UPDATE with no WHERE guard, so
+    // Postgres would just last-writer-win with no error surfaced to the
+    // loser. Apply the optimistic local update the same way updateChore
+    // would, but send the actual DB write ourselves with a conditional
+    // WHERE assigned_to_id IS NULL: only the first request to actually
+    // land can succeed, and the loser's optimistic local claim is rolled
+    // back once the 0-row result comes back.
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? { ...c, assignedToId: childId, status: 'todo' } : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    supabase.from('chore_tasks')
+      .update({ assigned_to_id: childId, status: 'todo' })
+      .eq('id', choreId)
+      .is('assigned_to_id', null)
+      .select('id')
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn('[choreStore] claimBounty DB update failed', error.message);
+          return;
+        }
+        if (!data || data.length === 0) {
+          console.warn('[choreStore] claimBounty lost the race on', choreId, '— rolling back local claim');
+          set(s => ({
+            chores: s.chores.map(c =>
+              c.id === choreId && c.assignedToId === childId ? { ...c, assignedToId: undefined } : c
+            ),
+          }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+        }
+      });
   },
 
   submitChore: (choreId, opts) => {
@@ -1315,7 +1388,29 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         return next !== null && today >= next;
       })(),
     );
+    const now = new Date().toISOString();
     for (const chore of toReset) {
+      // An adult/parent_only_quest chore can be recurring AND simultaneously
+      // delegated via System A (parent_quest_assignments) — the reset below
+      // wipes assignedToId back to unassigned regardless, so any assignment
+      // still open on this chore is about to reference a now-stale state.
+      // Force-close it the same way addParentQuest supersedes a stale open
+      // assignment when a fresh one starts, rather than leaving it dangling
+      // as a live PENDING/ACCEPTED/PARKED/SNOOZED card nobody can act on.
+      const staleOpen = get().parentAssignments.filter(a =>
+        a.choreId === chore.id && !a.isLocked &&
+        ['PENDING', 'ACCEPTED', 'SNOOZED', 'PARKED'].includes(a.status)
+      );
+      if (staleOpen.length > 0) {
+        set(s => ({
+          parentAssignments: s.parentAssignments.map(a =>
+            staleOpen.some(x => x.id === a.id) ? { ...a, status: 'COMPLETED', updatedAt: now } : a
+          ),
+        }));
+        for (const a of staleOpen) {
+          dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now });
+        }
+      }
       get().updateChore(chore.id, {
         status:             'todo',
         assignedToId:       undefined,
@@ -1704,15 +1799,46 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       get().updateChore(assignment.choreId, { assignedToId: undefined, status: 'todo' });
     }
 
-    dbUpdate('parent_quest_assignments', assignmentId, {
-      status:               newStatus,
-      snooze_until:         snoozeUntil,
-      bounce_count:         newBounceCount,
-      is_locked:            newIsLocked,
-      actionable_pushback:  response.action === 'ACCEPT' ? null : response.action,
-      pushback_details:     response.details,
-      updated_at:           now,
-    });
+    // Two parents acting on the same assignment within the same round-trip
+    // window (e.g. one taps Accept while the other bounces it) would both
+    // pass the isLocked/not-found guards above against the same starting
+    // state and both locally set() a different outcome — a plain UPDATE
+    // with no status guard would then just last-writer-win in Postgres
+    // with no signal to the loser. Guard the write with the assignment's
+    // status as it was at the start of this call; if that's no longer
+    // true (someone else's response landed first), the 0-row result rolls
+    // the loser's optimistic local update back to whatever the DB now
+    // actually holds via the next realtime/poll sync instead of leaving a
+    // client showing a response that never actually took.
+    const previousStatus = assignment.status;
+    _fetchedAt = 0;
+    supabase.from('parent_quest_assignments')
+      .update({
+        status:               newStatus,
+        snooze_until:         snoozeUntil,
+        bounce_count:         newBounceCount,
+        is_locked:            newIsLocked,
+        actionable_pushback:  response.action === 'ACCEPT' ? null : response.action,
+        pushback_details:     response.details,
+        updated_at:           now,
+      })
+      .eq('id', assignmentId)
+      .eq('status', previousStatus)
+      .select('id')
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn(`[choreStore] respondToParentQuest DB update FAILED for ${assignmentId}`, error.message);
+          return;
+        }
+        if (!data || data.length === 0) {
+          console.warn(`[choreStore] respondToParentQuest lost the race on ${assignmentId} — another response landed first, reverting local state`);
+          set(s => ({
+            parentAssignments: s.parentAssignments.map(a =>
+              a.id === assignmentId && a.status === newStatus ? { ...a, status: previousStatus } : a
+            ),
+          }));
+        }
+      });
   },
 
   completeParentQuest: (assignmentId, completedBy) => {

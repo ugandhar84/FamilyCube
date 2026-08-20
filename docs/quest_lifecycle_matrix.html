@@ -403,6 +403,232 @@
     <p>Confirmed via <code>QuestsScreen.tsx</code>'s <code>isKidOrTeen</code> filter block (only own-assigned + pool quests visible) and <code>canApprove = isParentOrSenior && isReview</code> — a sibling has no path to a decline/approve button for another kid's submission anywhere in the codebase. This is correct RBAC, not a gap.</p>
   </div>
 
+  <section>
+    <h2>6 · Hub ↔ Chores tab parity — action-button flows (this pass)</h2>
+    <p class="lede">For each representative action, does the resulting state render identically on both the Hub backlog
+      (<code>features/hub/parent/backlog/*</code>) and the Chores tab (<code>QuestsScreen.tsx</code>/<code>QuestCard.tsx</code>)
+      for the same chore/assignment, with no stale cards and no independently-derived filtering that could drift? All
+      claims below are from reading the actual selector/component code; nothing here was runtime-tested (no simulator
+      access this session) unless stated otherwise.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Action</th><th>Hub card / selector</th><th>Chores tab card / selector</th><th>Verdict</th></tr>
+      <tr>
+        <td class="state">Accept (System A DIRECT)</td>
+        <td><code>DirectPendingCard</code> via <code>getMyDirectPending</code> (<code>ParentView.tsx:303</code>)</td>
+        <td>Same component, same selector call (<code>QuestsScreen.tsx:99,887-895</code>)</td>
+        <td><span class="tag ok">OK</span> — identical selector, cannot drift</td>
+      </tr>
+      <tr>
+        <td class="state">Decline / pushback / snooze / lock (System A)</td>
+        <td><code>OutgoingPendingCard</code>/<code>LockedAssignmentCard</code> via <code>getMyOutgoingPending</code>/<code>getMyLockedItems</code> (<code>ParentView.tsx:304-306</code>)</td>
+        <td>Same components, same selectors (<code>QuestsScreen.tsx:100-101,897-914</code>)</td>
+        <td><span class="tag ok">OK</span></td>
+      </tr>
+      <tr>
+        <td class="state">Reassign / reopen a locked assignment</td>
+        <td><code>DelegateSheet</code> called from <code>ParentView.tsx:519-524</code></td>
+        <td>Same <code>DelegateSheet</code> component reused directly, <code>QuestsScreen.tsx:1086-1095</code></td>
+        <td><span class="tag ok">OK</span> — one component, not two independent implementations</td>
+      </tr>
+      <tr>
+        <td class="state">Submit for review (kid/teen)</td>
+        <td><code>KidQuestCard</code> reads <code>quests</code> from <code>useQuestStore()</code> (choreAdapter), same underlying <code>chores</code> array</td>
+        <td><code>QuestCard</code> reads the same <code>quests</code> array</td>
+        <td><span class="tag ok">OK</span> — both derive from the one <code>choreStore.chores</code> source of truth, no separate cache</td>
+      </tr>
+      <tr>
+        <td class="state">Approve / Redo (parent review)</td>
+        <td><code>ChoreReviewSection</code> reads <code>chores</code> directly + <code>getParentReviewDeck()</code></td>
+        <td><code>QuestCard</code>'s <code>canApprove</code> branch, same underlying <code>chores</code>/<code>quests</code></td>
+        <td><span class="tag ok">OK</span> — both re-render from the same Zustand store slice; no polling/refresh gap since <code>choreStore</code> is a single subscribed store, not two independently-fetched copies</td>
+      </tr>
+      <tr>
+        <td class="state">GP claim (bounty/errand)</td>
+        <td><code>KidQuestCard</code>/Hub GP sections</td>
+        <td><code>QuestCard</code>'s <code>isSenior</code> claim branch (<code>QuestCard.tsx:797-811</code>)</td>
+        <td><span class="tag ok">OK</span> — same <code>updateChore</code> call path, same store</td>
+      </tr>
+      <tr>
+        <td class="state">Team-clone completion (GP bounty, 2+ kids)</td>
+        <td>Each sibling's own Hub card is its own chore row</td>
+        <td>Each sibling's own Chores-tab card is the same row</td>
+        <td><span class="tag ok">OK</span> — clones are real independent <code>chore_tasks</code> rows (verified in Scenario 10 of the Action Bible), both screens read the same rows</td>
+      </tr>
+      <tr>
+        <td class="state">Pool "disable" toggle (Household Backlog only)</td>
+        <td><code>PoolQuestCard.tsx:83</code> — writes <code>isPrivateParent</code></td>
+        <td class="na">No equivalent control on the Chores tab</td>
+        <td><span class="tag bug">Bug</span> — see Finding N1 below. Not a Hub-vs-Chores-tab divergence (Chores tab has no such button at all), but the button itself is broken; fixed this pass.</td>
+      </tr>
+    </table>
+    </div>
+    <p><b>Overall verdict on Hub/Chores sync:</b> the codebase's own architecture (both screens reading the identical
+      Zustand <code>choreStore</code> slice and identical shared selectors/components — not two independently-fetched
+      or independently-filtered copies) structurally prevents most of the classic "stale card on one screen" bugs this
+      section went looking for. No case was found where the two screens use different selectors for the same
+      state, and no missing realtime-subscription gap was found — <code>ensureRealtime</code>
+      (<code>choreStore.ts:642-705</code>) subscribes once per family and both screens subscribe via the same
+      <code>useChoreStore</code> hook, so a realtime UPDATE lands in one shared state tree both screens re-render from.</p>
+  </section>
+
+  <section>
+    <h2>7 · Action-button permission matrix (this pass) — dead clicks &amp; missing guards</h2>
+    <p class="lede">For each role × card, does the rendered button's action match what the store function actually allows?
+      Columns: does the UI gate match the store's own guard; is there a role that's missing a button the store supports;
+      is any gating UI-only with no matching store-side guard (meaning a repurposed/reused button could dispatch an
+      action never intended for that role).</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Card / action</th><th>UI gate</th><th>Store guard</th><th>Verdict</th></tr>
+      <tr>
+        <td class="state">Kid/teen "Can't do this" (plain chore, Chores tab)</td>
+        <td><code>canKidDecline</code>, <code>QuestCard.tsx:87</code></td>
+        <td><code>reassignQuest('', by)</code> → <code>updateChore</code>, no role check at the store level at all</td>
+        <td><span class="tag gap">UI-only gate</span> — <code>updateChore</code>/<code>reassignQuest</code> have no role guard whatsoever; any caller (kid, teen, parent, GP) could call this on any chore. Not currently exploitable through the rendered UI (buttons are correctly gated), but if this action were ever reused by a new component without replicating <code>canKidDecline</code>'s condition, nothing at the store layer would stop it. Documented as a defense-in-depth gap, not a live bug.</td>
+      </tr>
+      <tr>
+        <td class="state">Parent/senior Approve / Redo</td>
+        <td><code>canApprove = isParentOrSenior && isReview</code>, <code>QuestCard.tsx:95</code></td>
+        <td><code>approveChore</code>/<code>requestRedo</code> guard on <code>status === 'pending_approval'</code> only — <b>no role/member check</b> (<code>choreStore.ts:1107-1110,1180-1181</code>)</td>
+        <td><span class="tag gap">UI-only gate</span> — same pattern: the store accepts any caller's <code>reviewerId</code> with no verification that member actually has parent/senior role. A kid could theoretically call <code>approveChore(choreId, myOwnId)</code> directly (not through any rendered button, but nothing at the data layer stops it). Consistent with this app's general trust model (single-device-per-family-member, no server-side RLS role check surfaced to the client beyond table RLS) — flagged, not fixed, since fixing this is a backend/RLS policy decision, not a client bug.</td>
+      </tr>
+      <tr>
+        <td class="state">Participant-row Approve/Decline/Reopen</td>
+        <td><code>isParentOrSenior</code>, <code>QuestCard.tsx:594,610</code></td>
+        <td><code>approveParticipant</code>/<code>declineParticipant</code>/<code>reopenParticipant</code> — no-op stubs (<code>choreAdapter.ts:345-347</code>)</td>
+        <td><span class="tag bug">Dead click, confirmed unreachable</span> — see Finding N2. Not merely rare: verified <code>q.participants.length</code> can never exceed 1 for any Quest object the live data path produces (see Finding N2 for the full chain), so this entire card section never renders in the app today.</td>
+      </tr>
+      <tr>
+        <td class="state">Multi-select assignee → <code>createParticipants</code></td>
+        <td>Parent-only creation flow, <code>AddQuestModal.tsx:387-390</code></td>
+        <td><code>createParticipants</code> (<code>choreAdapter.ts:325-344</code>) now clones one row per kid, team-style — <span class="tag fixed">no longer a no-op</span> (superseding the Action Bible's "Known Gap" on this point, which was accurate when written but the underlying stub has since been implemented)</td>
+        <td><span class="tag ok">OK, re-verified this pass</span> — each selected kid gets an independent full-value clone, exactly like the GP team-bounty pattern. The Action Bible's gap writeup ("Jamie gets nothing") is <b>stale</b> — confirmed by direct code read this pass, not by trusting the old doc.</td>
+      </tr>
+      <tr>
+        <td class="state">Kid/teen decline of a household chore (Hub, <code>DeclineQuestSheet</code>)</td>
+        <td>Rendered for any non-GP, non-pool <code>todo</code>/<code>in_progress</code>/<code>claimed</code> chore assigned to the active kid/teen (<code>KidQuestCard.tsx:54-55</code>)</td>
+        <td><code>DeclineQuestSheet.tsx:113-115</code> calls <code>updateChore</code> directly with no <code>teamGroupId</code> awareness</td>
+        <td><span class="tag bug">Bug</span> — see Finding N3. Does not crash or corrupt sibling clones (each clone is an independent row), but silently strips team-bounty framing on release; flagged as a gap, not fixed (design decision — see rationale in Finding N3).</td>
+      </tr>
+      <tr>
+        <td class="state">GP-only actions (claim GP errand, sponsor quest)</td>
+        <td><code>isSenior</code> checks throughout <code>QuestCard.tsx</code>/<code>SponsorQuestsSection.tsx</code></td>
+        <td><code>claimGPErrand</code> guards on <code>chore.inviteGrandparents</code> + <code>status==='todo'</code> (<code>choreStore.ts:1079-1083</code>) — no role check</td>
+        <td><span class="tag gap">UI-only gate</span>, same pattern as above — flagged generally rather than repeated per-row; this app's store layer consistently trusts the caller's role and relies on the UI + (unverified from the client) Postgres RLS for enforcement.</td>
+      </tr>
+    </table>
+    </div>
+    <p><b>Pattern observed:</b> every store action in this codebase performs data-shape/status guards (is this chore in
+      the right state, does it have an assignee) but essentially none perform role guards — role enforcement lives
+      entirely in which button gets rendered to which role. This is a consistent, deliberate-looking architectural
+      choice (not a one-off oversight) — flagged once here rather than as N separate "bugs," since fixing it would mean
+      either passing/verifying role in every store action (a broad refactor) or relying on Supabase RLS policies
+      (not verified from the client in this session — the actual <code>.sql</code> policies were not opened). Recorded
+      as a Known Gap, not fixed.</p>
+  </section>
+
+  <section>
+    <h2>8 · New scenario types (this pass)</h2>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Scenario</th><th>Finding</th><th>Verdict</th></tr>
+      <tr>
+        <td class="state">Recurring chore resets mid-negotiation (System A)</td>
+        <td><code>resetDueRecurringChores</code> (<code>choreStore.ts:1321-1345</code>) filters only on the chore row's own <code>status</code>/<code>approvedAt</code>/<code>recurrenceRule</code> — it never calls <code>getActiveAssignmentChoreIds()</code> or reads <code>parentAssignments</code> at all. A recurring adult/<code>parent_only_quest</code> chore <i>can</i> carry a recurrence rule (<code>AddQuestRecurrenceSection.tsx:84-109</code>, gated on <code>isAdultTask</code>, confirmed NOT restricted to kid-only chores) and can simultaneously be under active System-A DIRECT negotiation. If a prior cycle was approved and the next cycle comes due while a fresh assignment is PENDING/ACCEPTED on the same chore, the reset unconditionally wipes <code>assignedToId</code>/<code>status</code> back to unassigned <code>todo</code>, leaving the <code>parent_quest_assignments</code> row stale (e.g. still <code>ACCEPTED</code>) pointing at a chore that no longer reflects that acceptance.</td>
+        <td><span class="tag bug">Confirmed real gap</span> — reachable, not hypothetical. See Finding N4. Flagged, not fixed (requires a product decision on which system should win — see rationale).</td>
+      </tr>
+      <tr>
+        <td class="state">Cash-out approval racing a pending assignment on the same chore</td>
+        <td>Cash-out (<code>requestCashOut</code>/<code>approveCashOut</code>/<code>denyCashOut</code>, <code>choreStore.ts:1421-1487</code>) operates purely on <code>point_transactions</code> rows keyed by <code>userId</code> — it has no <code>choreId</code>/<code>assignmentId</code> relationship to any specific chore or System-A assignment at all (a cash-out is a balance withdrawal, not tied to one piece of work). There is no code path where a cash-out approval and a chore assignment can race against each other, because they don't share any row, lock, or key.</td>
+        <td><span class="tag ok">Not a gap</span> — the two systems are structurally independent (a wallet-balance ledger vs. a per-chore assignment state machine); "racing" isn't a coherent scenario here. Confirmed by reading every cash-out function in full — none references <code>choreId</code> or <code>parentAssignments</code>.</td>
+      </tr>
+      <tr>
+        <td class="state">Multi-child pool claims — two kids tapping "claim" near-simultaneously</td>
+        <td><code>claimBounty</code> (<code>choreStore.ts:967-976</code>) and the adapter's <code>claimQuest</code> (<code>choreAdapter.ts:240-242</code>) both do a local <code>get().chores.find(...)</code> read-then-<code>updateChore</code>-write with <b>no compare-and-swap / optimistic-locking check against the DB</b> — the local check (<code>if (chore.assignedToId) return;</code>) only protects against a second tap from the <i>same</i> device's already-updated local state, not a genuinely concurrent claim from a second kid's separate device before either write round-trips to Postgres. <code>updateChore</code>'s DB write is a plain <code>UPDATE ... WHERE id = ?</code> with no <code>WHERE assigned_to_id IS NULL</code> condition (<code>choreStore.ts:880-953</code>, confirmed no conditional clause) — a genuine last-writer-wins race, not a database-enforced first-come lock.</td>
+        <td><span class="tag gap">Real gap, plausible but NOT runtime-tested</span> — flagged as likely-but-unconfirmed per the instruction to be explicit about what wasn't verified live. In practice the window is small (a claim is a single quick tap-to-write), but nothing in the code prevents both kids' devices from both writing <code>assignedToId</code> in quick succession, with the second write silently overwriting the first — both kids' UIs would locally believe they claimed it until the next <code>syncFromDB</code>/realtime update reconciles to whichever write actually landed last in Postgres, with no error or notice to the "loser." See Finding N5.</td>
+      </tr>
+      <tr>
+        <td class="state">Offline/optimistic-update rollback</td>
+        <td>Every store mutation in <code>choreStore.ts</code> follows the same pattern: synchronous local <code>set()</code> (and <code>AsyncStorage</code> write) happens immediately, then <code>dbUpdate</code>/<code>dbInsert</code> fire the actual Supabase write <b>fire-and-forget</b> — confirmed by reading <code>dbUpdate</code> (<code>choreStore.ts:613-620</code>) and <code>dbInsert</code> (<code>choreStore.ts:627-638</code>): both only <code>console.warn</code> on error, neither is awaited by any mutator, and <b>no mutator function anywhere in the file reverts its own local <code>set()</code> call if the corresponding DB write's promise later resolves with an error.</b></td>
+        <td><span class="tag bug">Confirmed real gap</span> — there is genuinely zero rollback anywhere in this store. A write that fails server-side (RLS rejection, network loss, constraint violation) leaves the local UI permanently showing the optimistic state as if it succeeded, with only a console warning nobody sees in production. The next full <code>syncFromDB(force)</code> (pull-to-refresh, or the next natural 60s-TTL refresh) would silently overwrite the wrong local state back to the true DB state — until then, the user sees success that didn't happen. See Finding N6. Not fixed this pass (a real fix requires a retry/rollback framework touching every mutator, out of scope for a targeted bug-fix pass) — flagged as a Known Gap.</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>9 · Edge cases within existing scenarios (this pass)</h2>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Scenario</th><th>Finding</th><th>Verdict</th></tr>
+      <tr>
+        <td class="state">Two parents act on the same System-A assignment within the same tick</td>
+        <td><code>respondToParentQuest</code> (<code>choreStore.ts:1645-1730</code>) reads the assignment from local state, computes the new status, then writes both local <code>set()</code> and a fire-and-forget <code>dbUpdate</code> — no version/etag check, no DB-side compare-and-swap (<code>UPDATE ... WHERE id = ?</code> only, same pattern as the claim race above). If the assignee accepts on one device at the same moment the assigner reassigns/cancels from another (e.g. <code>cancelLockedAssignment</code> or a fresh <code>addParentQuest</code> superseding it), whichever write reaches Postgres last silently wins — there is no conflict error surfaced to either party, and the "loser" continues showing a UI state that no longer matches the DB until the next sync.</td>
+        <td><span class="tag gap">Real gap, NOT runtime-tested</span> — same class of issue as the pool-claim race (Finding N5), same root cause (no optimistic-locking anywhere in this store). Flagged, not fixed — a real fix is a schema-level concern (version column + conditional update), out of scope for a client-only bug-fix pass.</td>
+      </tr>
+      <tr>
+        <td class="state">Chore deleted while a negotiation/pushback is in flight</td>
+        <td><code>deleteChore</code> (<code>choreStore.ts:955-961</code>) removes the chore row only — confirmed it does <b>not</b> touch <code>parentAssignments</code> at all, no cascade, no cleanup. This orphans any live <code>parent_quest_assignments</code> row still referencing that <code>choreId</code>. Checked whether this crashes or ghost-renders anywhere it could be surfaced: <code>QuestsScreen.tsx:887-914</code> (<code>myDirectPending</code>/<code>myOutgoingPending</code>/<code>myLockedItems</code> render blocks) and <code>HouseholdBacklogSection.tsx:109-149</code> (same three cases plus <code>myAccepted</code>) all do <code>const chore = ...find(...); if (!chore) return null;</code> before rendering — confirmed null-guarded in every render path checked.</td>
+        <td><span class="tag ok">Not a UI bug</span> — no crash, no ghost card; the orphaned assignment silently renders nothing on both Hub and Chores tab. <span class="tag gap">But a real data gap</span> — the orphaned <code>parent_quest_assignments</code> row itself is never cleaned up (client-side or DB-side), so it becomes permanent dead data invisible to the UI but still occupying a row and still returned by every future <code>syncFromDB</code> fetch. See Finding N7. Flagged, not fixed (a real fix is a DB-level <code>ON DELETE CASCADE</code> foreign key or an explicit cleanup call in <code>deleteChore</code> — reasonable scope for a future pass, but this session prioritized the confirmed UI-facing bugs below instead).</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <h2 style="border-top:none; padding-top:0;">New findings this pass (N1–N7)</h2>
+  <p class="lede">Same numbering convention as the Action Bible's "New bugs found &amp; fixed" section, continued here
+    since this document is the lifecycle matrix, not a duplicate of that one. N1–N3 were fixed in the code in this
+    same pass (see each entry); N4–N7 are flagged as gaps and left alone, with rationale.</p>
+
+  <div class="finding fixed">
+    <h3><span class="tag fixed">Fixed</span> N1 — Household Backlog's pool "disable" toggle silently did nothing, and was writing the wrong field anyway</h3>
+    <p class="path">features/hub/parent/backlog/PoolQuestCard.tsx:27,83-86</p>
+    <p><span class="scenario"><b>Scenario:</b> A parent taps the lock/checkmark icon on a pool item in Household Backlog to "disable" it without deleting it. The button (line 83) calls <code>updateChore(chore.id, { isPrivateParent: !isDisabled })</code> — but <code>isDisabled</code> itself (line 27) is read from <code>(chore as any).isDisabled ?? false</code>, a field nothing in the entire codebase ever sets (confirmed by a full-repo grep — the only occurrences of the string <code>isDisabled</code> are inside this one file, consuming a value nothing produces). So the icon always renders as "not disabled" no matter how many times it's tapped — every tap computes <code>!false</code> and writes <code>isPrivateParent: true</code> again, never toggling back.</span></p>
+    <p><b>Compounding issue:</b> <code>isPrivateParent: true</code> is not an inert "hidden" flag — it actively hides the chore from every non-parent role (<code>choreStore.ts:685</code>, inside the realtime INSERT handler's visibility gate), excludes it from the parent's own review deck (<code>getParentReviewDeck</code>, <code>choreStore.ts:2108</code>), and removes it from the kid chore board (<code>ChildChoreBoard.tsx:1064</code>). A parent tapping what looks like a simple pause/disable toggle was actually reclassifying an ordinary household chore as parent-only-visible — a much bigger effect than "disable" implies, and one that also silently doesn't persist: <code>isPrivateParent</code> is not a real DB column (confirmed no <code>is_private_parent</code> column exists in any migration; <code>choreFromRow</code>, <code>choreStore.ts:358</code>, recomputes it purely from <code>categoryType === 'parent_only_quest'</code> on every load), so the "disable" silently reverts on next sync/reload too.</p>
+    <p><b>Fix:</b> Added a real <code>isDisabled?: boolean</code> field to <code>ChoreTask</code> (<code>store/choreStore.ts</code>, alongside the other optional display flags), mapped it through <code>choreFromRow</code>/<code>updateChore</code>'s DB patch (<code>is_disabled</code> column) so it persists and round-trips correctly, and changed <code>PoolQuestCard.tsx</code>'s toggle to write <code>{ isDisabled: !isDisabled }</code> instead of piggybacking on the unrelated, semantically-wrong, non-persistent <code>isPrivateParent</code> flag.</p>
+  </div>
+
+  <div class="finding gap">
+    <h3><span class="tag gap">Gap, confirmed unreachable, not fixed</span> N2 — Participant-row Approve/Decline/Reopen is dead code that can never render with live data</h3>
+    <p class="path">features/quests/components/QuestCard.tsx:563,594-617 · store/choreAdapter.ts:73-75,325-347</p>
+    <p>The Action Bible (Scenario 10 / Known Gaps) already flagged <code>approveParticipant</code>/<code>declineParticipant</code>/<code>reopenParticipant</code> as no-op stubs, and separately flagged the standard multi-assign form as "silently degrading to single-assign" because <code>createParticipants</code> was a no-op at the time that doc was written. <b>Both of those framings are now stale</b> — re-verified by direct code read this pass: <code>createParticipants</code> (<code>choreAdapter.ts:325-344</code>) is no longer a no-op; it clones a full independent chore row per selected kid (identical pattern to the GP team-bounty path), and <code>AddQuestModal.tsx:387-390</code> does call it when 2+ kids are multi-selected. Multi-assign itself is fixed and working (re-confirmed, not re-guessed).</p>
+    <p>However, this makes the participant-row UI (<code>QuestCard.tsx:594-617</code>) <b>structurally unreachable, not merely rare</b>: <code>choreToQuest</code> (<code>choreAdapter.ts:73-75</code>) builds each Quest's <code>participants</code> array from that single <code>ChoreTask</code> row's own <code>assignedToId</code> only — <code>c.assignedToId ? [oneEntry] : []</code> — so any one chore row can only ever produce 0 or 1 participant entries, never more, regardless of <code>teamGroupId</code>. Since <code>createParticipants</code> now fans a multi-assign out across N separate chore rows (each its own Quest object with its own single-entry <code>participants</code> array) instead of one row carrying N participants, <code>q.participants.length > 1</code> can never become true anywhere in the current live data path. No other code path populates a multi-entry <code>participants</code> array (the legacy <code>questStore.ts</code> type is unwired to any UI per <code>choreAdapter.ts:6</code>'s own comment).</p>
+    <p><b>Disposition:</b> Not fixed — genuinely unreachable dead code is lower priority than a live bug, and "fixing" the stubs would require either (a) building a real single-row multi-participant data model (a schema change) or (b) deleting the dead UI branch entirely (a product decision on whether multi-kid quests should ever show a shared card vs. today's independent-clone-cards approach). Recorded here so it isn't silently rediscovered as "new."</p>
+  </div>
+
+  <div class="finding gap">
+    <h3><span class="tag fixed">Fixed</span> N3 — Hub's kid/teen decline sheet didn't distinguish a team-clone chore from a plain assignment when releasing to pool</h3>
+    <p class="path">features/hub/kid/DeclineQuestSheet.tsx:106-131 · store/choreAdapter.ts (both reassignQuest implementations) · store/choreStore.ts:1836-1880 (declineGrandparentQuest, the pattern this mirrors)</p>
+    <p><span class="scenario"><b>Scenario:</b> A team-cloned plain chore (via <code>createParticipants</code>) is targeted at both Alex and Jamie, producing two independent rows sharing one <code>teamGroupId</code>. Alex declines his clone.</span></p>
+    <p><b>Product decision (user):</b> declining a team-clone slice should re-open it only to the original target list, not the whole family pool. <b>Fix:</b> both <code>DeclineQuestSheet.tsx</code>'s non-GP branch and both <code>reassignQuest</code> implementations in <code>choreAdapter.ts</code> now check <code>chore.teamGroupId &amp;&amp; chore.targetChildIds?.length</code> before releasing to pool — when true, the clone is set to <code>status: 'declined'</code> (terminal, matches <code>declineGrandparentQuest</code>'s own targeted branch) instead of <code>isPool: true</code>. Jamie's independent clone is untouched either way. A plain (non-team) chore still releases to the full family pool exactly as before.</p>
+  </div>
+
+  <div class="finding gap">
+    <h3><span class="tag fixed">Fixed</span> N4 — <code>resetDueRecurringChores</code> ignored live System-A negotiations</h3>
+    <p class="path">store/choreStore.ts:1331-1379 (resetDueRecurringChores)</p>
+    <p>Confirmed reachable: a recurring adult/<code>parent_only_quest</code> chore can be delegated via System A DIRECT mode while also being due for its next recurrence reset. <b>Fix:</b> before wiping <code>assignedToId</code>/<code>status</code> back to unassigned <code>todo</code>, the reset now force-closes (<code>status: 'COMPLETED'</code>) any still-open <code>parent_quest_assignments</code> row on that chore, using the exact same supersede pattern <code>addParentQuest</code> already uses for stale opens — both locally and via <code>dbUpdate</code>. No more dangling PENDING/ACCEPTED/PARKED/SNOOZED card referencing a chore that's already moved on to its next cycle.</p>
+  </div>
+
+  <div class="finding gap">
+    <h3><span class="tag fixed">Fixed</span> N5 — Pool claims and System-A responses had no optimistic-locking / compare-and-swap protection</h3>
+    <p class="path">store/choreStore.ts (claimBounty, respondToParentQuest)</p>
+    <p><b>Fix:</b> both hot paths now send their own guarded DB write instead of going through the generic <code>updateChore</code>/<code>dbUpdate</code> unconditional-UPDATE path. <code>claimBounty</code> writes with <code>.is('assigned_to_id', null)</code> in the WHERE clause — only the first claim to actually land in Postgres succeeds; a 0-row result means someone else won the race, and the loser's optimistic local assignment is rolled back. <code>respondToParentQuest</code> writes with <code>.eq('status', previousStatus)</code> — if the assignment's status has already moved on by the time the write lands (another response got there first), the loser's optimistic local status update is reverted rather than silently overwriting the winner's outcome. <code>updateChore</code> itself was deliberately left as a generic, unconditional patch applier — it's used for hundreds of non-racy update shapes (editing a title, toggling a flag), and retrofitting a universal CAS into it would be the wrong-shaped fix for those callers.</p>
+  </div>
+
+  <div class="finding gap">
+    <h3><span class="tag fixed">Fixed — scoped</span> N6 — No optimistic-update rollback on a failed DB write</h3>
+    <p class="path">store/choreStore.ts (claimBounty, respondToParentQuest) — dbUpdate/dbInsert helpers themselves left as-is</p>
+    <p>The original finding was that rollback is absent store-wide, across every one of ~40 mutators built on the shared <code>dbUpdate</code>/<code>dbInsert</code> fire-and-forget helpers. A universal fix (retry queue, or awaiting every write and reverting every mutator's local <code>set()</code> on failure) is a genuine cross-cutting architectural rewrite, not a targeted fix, and was correctly out of scope as originally flagged.</p>
+    <p><b>What was actually fixed:</b> the two highest-value, contention-prone paths from N5 — <code>claimBounty</code> and <code>respondToParentQuest</code> — now roll their own optimistic local update back to its prior value whenever their guarded write comes back with an error or a 0-row (lost-race) result, since those two already needed bespoke guarded writes for N5 and the rollback logic is a natural extension of that same code. The other ~38 mutators in the file still follow the store's original fire-and-forget pattern with no rollback — that remains a known, accepted architectural characteristic of this store, not silently fixed everywhere.</p>
+  </div>
+
+  <div class="finding gap">
+    <h3><span class="tag fixed">Fixed</span> N7 — Deleting a chore orphaned its parent_quest_assignments row</h3>
+    <p class="path">store/choreStore.ts (deleteChore)</p>
+    <p><code>deleteChore</code> now force-closes (<code>status: 'COMPLETED'</code>) any <code>parent_quest_assignments</code> row still referencing the chore being deleted, both locally and via <code>dbUpdate</code>, before deleting the chore row itself — same supersede pattern as N4/<code>addParentQuest</code>. No more permanently orphaned assignment rows left behind after a delete.</p>
+  </div>
+
   <footer>
     Built by reading the current state of: store/choreStore.ts, store/choreAdapter.ts, features/quests/QuestsScreen.tsx,
     features/quests/components/QuestCard.tsx, features/hub/{KidView,TeenView,SeniorView,ParentView}.tsx, and all
@@ -410,5 +636,32 @@
     the earlier parent-to-parent (System A) audit to cover child- and grandparent-facing flows end to end. Findings
     marked "Fixed" were implemented in this same session immediately after the audit; findings marked "Not a gap"
     were investigated and confirmed correct as-is, with reasoning recorded above.
+    <br><br>
+    <b>Second pass (sections 6–9, findings N1–N7)</b> added: Hub↔Chores-tab parity trace for representative action
+    flows; a role×card permission-matrix pass distinguishing UI-only gating from store-level guards; four new
+    scenario types (recurring-reset-mid-negotiation, cash-out/assignment interaction, concurrent pool claims,
+    optimistic-update rollback); and two edge cases (concurrent System-A actions, chore deletion mid-negotiation).
+    Read in full for this pass, beyond what the first pass already covered: features/hub/parent/backlog/PoolQuestCard.tsx,
+    features/hub/parent/DelegateSheet.tsx, features/hub/kid/DeclineQuestSheet.tsx, features/hub/kid/KidQuestCard.tsx,
+    features/hub/parent/HouseholdBacklogSection.tsx, features/quests/components/AddQuestModal.tsx (assignee/
+    createParticipants wiring), features/quests/components/AddQuestRecurrenceSection.tsx, and the full remainder of
+    store/choreStore.ts (lines 1183–2203) and store/choreAdapter.ts not already covered by the first pass. N1
+    (PoolQuestCard's disable toggle) was fixed in code; N2 corrects a stale claim in the original Action Bible
+    (multi-assign/<code>createParticipants</code> is no longer a no-op — re-verified by direct code read, not assumed
+    from the old doc). N3–N7 were originally flagged as gaps needing a product/architecture decision.
+    <code>npx tsc --noEmit</code> confirmed 0 errors after this pass's fixes.
+    <br><br>
+    <b>Third pass</b> resolved N3–N7 after explicit user direction on the open product decisions (N3: team-clone
+    decline releases only to the original target list, not the whole family pool). N3, N4, and N7 were fixed by
+    mirroring the existing supersede/decline patterns already established elsewhere in the store (<code>addParentQuest</code>'s
+    stale-assignment sweep, <code>declineGrandparentQuest</code>'s targeted-vs-pool branch). N5 was fixed with a scoped
+    compare-and-swap on the two actually-contention-prone paths (<code>claimBounty</code>, <code>respondToParentQuest</code>)
+    rather than retrofitting the generic <code>updateChore</code> patch applier, which is used by hundreds of non-racy
+    call sites. N6 was fixed as a natural extension of the same two paths' new guarded writes — rollback on a lost
+    race or failed write — rather than as the store-wide architectural rewrite the original finding correctly scoped
+    as out of bounds; the other ~38 mutators in the file still have no rollback, which remains an accepted
+    characteristic of this store, not silently fixed. <code>npx tsc --noEmit</code> confirmed 0 errors after this
+    pass's fixes too.
+    <div class="backtotop"><a href="#top">↑ back to top</a></div>
   </footer>
 </div>

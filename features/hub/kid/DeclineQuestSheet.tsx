@@ -103,12 +103,26 @@ export function DeclineQuestSheet({ target, active, members, colors, isDark, onC
                         useChatStore.getState().sendMessage('all', active.id,
                           `🙏 ${active.name.split(' ')[0]} can't take "${target.title}" — "${finalNote}"`);
                       }
+                    } else if (chore?.teamGroupId && chore?.targetChildIds?.length) {
+                      // Team-clone chore (createParticipants fanned this out
+                      // to a shortlist of kids, each their own row sharing
+                      // teamGroupId) — releasing to the FAMILY-WIDE pool
+                      // would expose it to kids who were never targeted,
+                      // losing the shortlist framing. Decline this one clone
+                      // only (mirrors declineGrandparentQuest's own
+                      // targetChildIds branch); the other targets' clones
+                      // are separate rows, untouched either way.
+                      useChoreStore.getState().updateChore(target.id, {
+                        status: 'declined', assignedToId: undefined,
+                      });
+                      useChatStore.getState().sendMessage('all', active.id,
+                        `🙏 ${active.name.split(' ')[0]} can't take "${target.title}" — "${finalNote}"`);
                     } else {
-                      // Plain household chore — send back to the pool, same
-                      // store call the Chores tab's "Can't do this" uses.
-                      // No parentAssignments/System-A row exists for a
-                      // System-B chore, so this is a direct unassign, not a
-                      // negotiation — matches the "flat decline, no
+                      // Plain (non-team) household chore — send back to the
+                      // pool, same store call the Chores tab's "Can't do
+                      // this" uses. No parentAssignments/System-A row exists
+                      // for a System-B chore, so this is a direct unassign,
+                      // not a negotiation — matches the "flat decline, no
                       // back-and-forth" design already documented for kids.
                       useChoreStore.getState().updateChore(target.id, {
                         assignedToId: undefined, isPool: true, status: 'todo',

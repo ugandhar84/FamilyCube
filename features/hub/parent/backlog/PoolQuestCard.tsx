@@ -24,7 +24,7 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
   onDelegate: (choreId: string, title: string) => void;
 }) {
   const [isExp, setExp] = useState(false);
-  const isDisabled = (chore as any).isDisabled ?? false;
+  const isDisabled = chore.isDisabled ?? false;
   const hasDetail = chore.description || chore.dueDate || (chore as any).shoppingItems?.length > 0;
 
   const creatorId = (chore as any).createdById;
@@ -80,7 +80,7 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
             </View>
           ) : null}
         </View>
-        <Pressable onPress={() => { const { updateChore } = useChoreStore.getState(); updateChore(chore.id, { isPrivateParent: !isDisabled } as any); }}
+        <Pressable onPress={() => { const { updateChore } = useChoreStore.getState(); updateChore(chore.id, { isDisabled: !isDisabled }); }}
           style={{ padding: 6 }}>
           {isDisabled ? <Lock size={15} color={colors.textTertiary} /> : <CheckCircle2 size={15} color={MONEY_GREEN} />}
         </Pressable>

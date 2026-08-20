@@ -300,6 +300,18 @@ export function useQuestStore() {
       // and '' is not nullish, so passing it through as-is used to write
       // assigned_to_id: '' to Postgres instead of NULL, leaving the chore
       // looking assigned-to-nobody-in-particular rather than truly open.
+      if (!memberId) {
+        const chore = store.chores.find(c => c.id === id);
+        if (chore?.teamGroupId && chore?.targetChildIds?.length) {
+          // Team-clone chore — releasing to the family-wide pool would
+          // expose this slice to kids never targeted, losing the
+          // shortlist framing (mirrors declineGrandparentQuest's own
+          // targetChildIds branch). Decline this clone only; sibling
+          // clones are separate rows, untouched either way.
+          store.updateChore(id, { status: 'declined', assignedToId: undefined });
+          return;
+        }
+      }
       store.updateChore(id, { assignedToId: memberId || undefined, isPool: memberId ? undefined : true });
     },
 
@@ -395,7 +407,16 @@ useQuestStore.getState = () => {
     addQuest:      (q: any) => store.addChore(questInputToChoreInput(q) as any),
     reassignQuest: (id: string, memberId: string, _by?: string) => {
       // See the instance-hook reassignQuest above for why '' must map to
-      // undefined/pool rather than being written through as an empty string.
+      // undefined/pool rather than being written through as an empty string,
+      // and why a team-clone chore declines-in-place instead of releasing
+      // to the family-wide pool.
+      if (!memberId) {
+        const chore = store.chores.find(c => c.id === id);
+        if (chore?.teamGroupId && chore?.targetChildIds?.length) {
+          store.updateChore(id, { status: 'declined', assignedToId: undefined });
+          return;
+        }
+      }
       store.updateChore(id, { assignedToId: memberId || undefined, isPool: memberId ? undefined : true });
     },
   };

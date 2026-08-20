@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  TextInput, Modal, ActivityIndicator, Platform, KeyboardAvoidingView, Switch,
+  TextInput, Modal, ActivityIndicator, Platform, KeyboardAvoidingView, Switch, Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Pressable } from 'react-native';
@@ -35,6 +35,36 @@ import { AddQuestAssignSection } from './AddQuestAssignSection';
 function wordMatches(haystack: string, needle: string): boolean {
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`\\b${escaped}`, 'i').test(haystack);
+}
+
+// Scenario 9.4 — soft duplicate-detection for a new POOL quest. Deliberately
+// cheap (no real fuzzy-matching library): a case-insensitive trimmed exact
+// match, OR a simple whitespace-normalized comparison catching things like
+// "Take out trash" vs "take out the trash " that differ only by filler
+// words/spacing. Good enough to catch the common "two parents typed the same
+// chore minutes apart" case without false-positiving on genuinely distinct
+// titles that merely share a word.
+function normalizeTitle(t: string): string {
+  return t.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+const FILLER_WORDS = new Set(['the', 'a', 'an', 'to', 'of', 'for', 'and']);
+function coreWords(t: string): string[] {
+  return normalizeTitle(t).split(' ').filter(w => w && !FILLER_WORDS.has(w));
+}
+function isLikelyDuplicateTitle(a: string, b: string): boolean {
+  const na = normalizeTitle(a), nb = normalizeTitle(b);
+  if (na === nb) return true;
+  const wa = coreWords(a), wb = coreWords(b);
+  if (wa.length === 0 || wb.length === 0) return false;
+  const setB = new Set(wb);
+  const shared = wa.filter(w => setB.has(w)).length;
+  const overlap = shared / Math.max(wa.length, wb.length);
+  // Same core words (ignoring filler) in the same rough proportion — e.g.
+  // "Take out trash" vs "Take out the trash" (shared 3/3) or "Trash" vs
+  // "Take out trash" would NOT match (shared 1/3, below threshold) since a
+  // single shared word between very different-length titles is too weak a
+  // signal to be worth interrupting the parent over.
+  return overlap >= 0.75;
 }
 
 // ─── Add Quest Modal ──────────────────────────────────────────────────────────
@@ -326,8 +356,49 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
     if (val) { setCoins('0'); setBonusCoins(''); }
   };
 
+  // Scenario 9.4 — before creating a new POOL quest, check for an
+  // already-open (not claimed, not completed) pool chore with a very
+  // similar title and offer a soft, dismissible Merge/Keep Both prompt.
+  // Directly-assigned quests skip this entirely: the "two people who didn't
+  // know about each other" ambiguity is specific to the shared, anyone-can-
+  // claim pool — a quest handed to one specific kid has no such risk.
+  const willBePool = !isAdultTask && (isPool || assignIds.length === 0);
+  const findSimilarOpenPoolChore = () => {
+    if (!willBePool || !title.trim()) return null;
+    const openPoolChores = useChoreStore.getState().chores.filter(c =>
+      c.isPool && c.status === 'todo' && !c.isDisabled);
+    return openPoolChores.find(c => isLikelyDuplicateTitle(c.title, title)) ?? null;
+  };
+
   const submit = async () => {
     if (!title.trim() || !desc.trim()) return;
+    const dupe = findSimilarOpenPoolChore();
+    if (dupe) {
+      Alert.alert(
+        'Similar quest already exists',
+        `"${dupe.title}" is already open in the pool — merge or keep both?`,
+        [
+          {
+            text: 'Merge',
+            style: 'cancel',
+            // Merge = the existing quest already covers it. Cancel this new
+            // one and do nothing else — no DB write, just close the modal.
+            onPress: () => { reset(); onClose(); },
+          },
+          {
+            text: 'Keep Both',
+            // Keep Both = proceed with creating the new one exactly as if
+            // no duplicate had been detected. Never a hard block.
+            onPress: () => { void doCreate(); },
+          },
+        ],
+      );
+      return;
+    }
+    await doCreate();
+  };
+
+  const doCreate = async () => {
     setSaving(true);
     const bonus       = parseInt(bonusCoins) || 0;
     const isMulti     = !isPool && assignIds.length > 1;

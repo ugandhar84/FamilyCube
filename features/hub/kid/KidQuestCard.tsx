@@ -72,6 +72,12 @@ export function KidQuestCard({
               <meta.Icon size={11} color={meta.color} />
               <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: meta.color }}>{meta.label}</Text>
             </View>
+            {q.rewardPendingReview && (
+              <View style={{ backgroundColor: BRAND.amber + '20', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Clock size={11} color={BRAND.amber} />
+                <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: BRAND.amber }}>Reward pending review</Text>
+              </View>
+            )}
             {(q.status === 'approved' || q.status === 'done') && q.approvedAt && (
               <Text style={{ fontSize: KID.tiny, color: colors.textTertiary }}>{fmtDateTime(q.approvedAt)}</Text>
             )}
@@ -90,6 +96,11 @@ export function KidQuestCard({
           {q.questType === 'grandparent_quest'
             ? 'Waiting on a grandparent to review this chore.'
             : 'Waiting on a parent to review this chore.'}
+        </Text>
+      )}
+      {q.rewardPendingReview && (
+        <Text style={{ fontSize: KID.body, color: BRAND.amber }}>
+          Your requested reward ({q.coins} 🪙) needs a parent's OK since it's above the household limit — go ahead and start the quest, the reward will be confirmed separately.
         </Text>
       )}
       {isDeclined && q.declineReason && (

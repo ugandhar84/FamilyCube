@@ -106,6 +106,13 @@ export interface ChoreTask {
   // survived a reload anyway, since isPrivateParent isn't a real DB
   // column and gets recomputed from categoryType on every sync.
   isDisabled?: boolean;
+  // Scenario 1.13 — set at creation when a Teen self-creates a quest with a
+  // coinsReward (+ bonusCoins) above householdSettings.teenRewardCoSignThreshold.
+  // The chore itself stays status 'todo' and is fully claimable/workable —
+  // only the payout is gated: submitChore/approveChore/resubmitChore must
+  // not award points while this is still true. Cleared by a parent via
+  // approveTeenReward / adjustTeenReward / declineTeenReward.
+  rewardPendingReview?: boolean;
   // GP receipt reimbursement
   receiptPhotoUrl?: string;
   receiptAmount?: number;       // in dollars/currency units (not points)
@@ -225,6 +232,11 @@ export interface HouseholdSettings {
   allowChildAllocationOverride: boolean;
   autoApproveTimeoutHours: number;
   minCashoutPoints: number;
+  // Scenario 1.13 — a Teen self-creating a quest with a coin reward above
+  // this threshold gets the TASK created and immediately workable as normal,
+  // but the reward itself is flagged rewardPendingReview until a parent
+  // approves/adjusts/declines it (see ChoreTask.rewardPendingReview).
+  teenRewardCoSignThreshold: number;
 }
 
 // ─── Badge Definitions ────────────────────────────────────────────────────────
@@ -400,6 +412,7 @@ function choreFromRow(row: any): ChoreTask {
     shoppingBudget:          row.shopping_budget != null ? Number(row.shopping_budget) : undefined,
     openToGP:                row.open_to_gp ?? false,
     isDisabled:              row.is_disabled ?? false,
+    rewardPendingReview:     row.reward_pending_review ?? false,
     receiptPhotoUrl:         row.receipt_photo_url ?? undefined,
     receiptAmount:           row.receipt_amount != null ? Number(row.receipt_amount) : undefined,
     receiptNote:             row.receipt_note ?? undefined,
@@ -548,6 +561,17 @@ interface ChoreState {
   scanAndAutoApprove:              () => void;
   resetDueRecurringChores:         () => void;
 
+  // ── Scenario 1.13 — Teen reward co-sign threshold ─────────────────────────
+  // A parent clears a Teen-created quest's rewardPendingReview flag. If the
+  // chore's work is already fully approved/auto_approved (the teen finished
+  // and it was reviewed before the parent got to the reward queue), payout
+  // fires immediately on approval; otherwise the flag simply clears and the
+  // normal submit/approve payout path (now unblocked) pays out whenever the
+  // work itself is later approved.
+  approveTeenReward:  (choreId: string, approverId: string) => void;
+  adjustTeenReward:   (choreId: string, approverId: string, newAmount: number) => void;
+  declineTeenReward:  (choreId: string, approverId: string, reason?: string) => void;
+
   // ── Points economy ────────────────────────────────────────────────────────
   awardPoints:         (userId: string, choreId: string, points: number, xp?: number, wallet?: 'mainCoins' | 'gpCoins') => void;
   requestCashOut:      (userId: string, points: number, override?: { spendPct: number; savePct: number; givePct: number }, wallet?: 'mainCoins' | 'gpCoins') => void;
@@ -632,6 +656,7 @@ const DEFAULT_SETTINGS: HouseholdSettings = {
   allowChildAllocationOverride: false,
   autoApproveTimeoutHours:      24,
   minCashoutPoints:             100,
+  teenRewardCoSignThreshold:    100,
 };
 
 // ─── DB write helper ──────────────────────────────────────────────────────────
@@ -832,7 +857,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         choreQuery = choreQuery.neq('category_type', 'parent_only_quest');
       }
 
-      const [{ data: choresData }, { data: txData }, { data: badgesData }, { data: assignmentsData }] = await Promise.all([
+      const [{ data: choresData }, { data: txData }, { data: badgesData }, { data: assignmentsData }, { data: familyRow }] = await Promise.all([
         choreQuery,
         supabase
           .from('point_transactions')
@@ -848,21 +873,42 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           .from('parent_quest_assignments')
           .select('*')
           .order('created_at', { ascending: false }),
+        // Household Settings previously never had a working read path at
+        // all — updateHouseholdSettings wrote these columns, but nothing
+        // ever fetched them back, so every device silently kept whatever
+        // it last had in AsyncStorage (or the hardcoded defaults) forever,
+        // with zero cross-device sync.
+        supabase
+          .from('families')
+          .select('points_to_fiat_ratio, spend_allocation_pct, save_allocation_pct, give_allocation_pct, allow_child_allocation_override, auto_approve_timeout_hours, min_cashout_points, teen_reward_cosign_threshold')
+          .eq('id', familyId)
+          .single(),
       ]);
 
       const chores       = (choresData ?? []).map(choreFromRow);
       const transactions = (txData     ?? []).map(txFromRow);
       const badges       = (badgesData ?? []).map(badgeFromRow);
       const parentAssignments = (assignmentsData ?? []).map(parentAssignmentFromRow);
+      const householdSettings: HouseholdSettings = familyRow ? {
+        pointsToFiatRatio:            familyRow.points_to_fiat_ratio            ?? DEFAULT_SETTINGS.pointsToFiatRatio,
+        spendAllocationPct:           familyRow.spend_allocation_pct            ?? DEFAULT_SETTINGS.spendAllocationPct,
+        saveAllocationPct:            familyRow.save_allocation_pct             ?? DEFAULT_SETTINGS.saveAllocationPct,
+        giveAllocationPct:            familyRow.give_allocation_pct             ?? DEFAULT_SETTINGS.giveAllocationPct,
+        allowChildAllocationOverride: familyRow.allow_child_allocation_override ?? DEFAULT_SETTINGS.allowChildAllocationOverride,
+        autoApproveTimeoutHours:      familyRow.auto_approve_timeout_hours      ?? DEFAULT_SETTINGS.autoApproveTimeoutHours,
+        minCashoutPoints:             familyRow.min_cashout_points              ?? DEFAULT_SETTINGS.minCashoutPoints,
+        teenRewardCoSignThreshold:    familyRow.teen_reward_cosign_threshold    ?? DEFAULT_SETTINGS.teenRewardCoSignThreshold,
+      } : get().householdSettings;
 
       _fetchedAt = Date.now();
-      set({ chores, transactions, badges, parentAssignments, loaded: true });
+      set({ chores, transactions, badges, parentAssignments, householdSettings, loaded: true });
 
       await Promise.all([
         AsyncStorage.setItem(CACHE_KEY_CHORES,       JSON.stringify(chores)),
         AsyncStorage.setItem(CACHE_KEY_TRANSACTIONS,  JSON.stringify(transactions)),
         AsyncStorage.setItem(CACHE_KEY_BADGES,        JSON.stringify(badges)),
         AsyncStorage.setItem(CACHE_KEY_ASSIGNMENTS,   JSON.stringify(parentAssignments)),
+        AsyncStorage.setItem(CACHE_KEY_SETTINGS,      JSON.stringify(householdSettings)),
       ]);
 
       ensureRealtime(familyId, set, get);
@@ -884,12 +930,36 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         ? new Date(Date.now() + (get().householdSettings.autoApproveTimeoutHours * 3600_000)).toISOString()
         : undefined;
 
+    // Scenario 1.13 — a Teen self-creating a quest (createdById is a 'teen'
+    // member) with a coin reward above the household threshold gets the
+    // reward flagged for parent review. The task itself is unaffected: it's
+    // created as normal (status stays whatever the caller passed, typically
+    // 'todo') and is immediately claimable/workable — only payout is gated
+    // (see submitChore/resubmitChore/approveChore). A caller that already
+    // set rewardPendingReview explicitly (e.g. a future edit flow) is
+    // trusted as-is and not overridden here.
+    let rewardPendingReview = (partial as any).rewardPendingReview ?? false;
+    if (!rewardPendingReview && partial.createdById) {
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const creator = useFamilyStore.getState().members.find((m: any) => m.id === partial.createdById);
+        const totalReward = (partial.coinsReward ?? 0) + ((partial as any).bonusCoins ?? 0);
+        const threshold = get().householdSettings.teenRewardCoSignThreshold;
+        if (creator?.role === 'teen' && totalReward > threshold) {
+          rewardPendingReview = true;
+        }
+      } catch (e) {
+        console.warn('[choreStore] addChore teen-reward-threshold check failed', e);
+      }
+    }
+
     const chore: ChoreTask = {
       ...partial,
       id:                   genId(),
       isPrivateParent:      (partial as any).isPrivateParent ?? partial.categoryType === 'parent_only_quest',
       redoCount:            0,
       approvalWindowExpiresAt: autoExpire,
+      rewardPendingReview,
       createdAt:            now,
     };
 
@@ -910,6 +980,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       status:                   chore.status,
       assigned_to_id:           chore.assignedToId,
       is_pool:                  chore.isPool ?? false,
+      reward_pending_review:    chore.rewardPendingReview ?? false,
       family_id:                familyId,
       created_by_id:            chore.createdById,
       sponsor_user_id:          chore.sponsorUserId,
@@ -1000,6 +1071,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('shoppingBudget'       in updates) patch.shopping_budget            = updates.shoppingBudget;
     if ('openToGP'    in (updates as any)) patch.open_to_gp                = (updates as any).openToGP;
     if ('isDisabled'  in (updates as any)) patch.is_disabled               = (updates as any).isDisabled;
+    if ('rewardPendingReview' in (updates as any)) patch.reward_pending_review = (updates as any).rewardPendingReview;
     if ('receiptPhotoUrl'      in updates) patch.receipt_photo_url          = updates.receiptPhotoUrl ?? null;
     if ('receiptAmount'        in updates) patch.receipt_amount             = updates.receiptAmount ?? null;
     if ('receiptNote'          in updates) patch.receipt_note               = updates.receiptNote ?? null;
@@ -1184,7 +1256,9 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       get().updateChore(choreId, { status: 'auto_approved', approvedAt: now, reviewedAt: now });
       const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
       const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
-      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward, wallet);
+      // Scenario 1.13 — same reward gate as approveChore: work still
+      // auto-approves, coin payout waits if flagged.
+      if (pts > 0 && chore.assignedToId && !chore.rewardPendingReview) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward, wallet);
       return true;
     }
 
@@ -1233,7 +1307,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       get().updateChore(choreId, { status: 'auto_approved', approvedAt: now, reviewedAt: now });
       const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
       const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
-      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward, wallet);
+      // Scenario 1.13 — same reward gate as approveChore/submitChore.
+      if (pts > 0 && chore.assignedToId && !chore.rewardPendingReview) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward, wallet);
       return;
     }
 
@@ -1369,7 +1444,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // here, which would have double-paid the base coinsReward now that
     // awardPoints itself calls award_coins (see awardPoints' own comment).
     const pointsToAward = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
-    if (pointsToAward > 0 && chore.assignedToId) {
+    // Scenario 1.13 — a Teen-created quest whose reward is still flagged
+    // rewardPendingReview must not pay out here even though the work itself
+    // is fully approved. The chore's work-review state (status/approvedAt
+    // above) proceeds normally; only the coin payout waits on a parent
+    // clearing the flag via approveTeenReward/adjustTeenReward, which pays
+    // out at that point instead.
+    if (pointsToAward > 0 && chore.assignedToId && !chore.rewardPendingReview) {
       // A grandparent-sponsored quest can also reach this generic approval
       // path (e.g. a parent reviews it instead of the sponsoring GP using
       // grandparentApproveAndCheer directly) — still pays out of gpCoins in
@@ -1564,6 +1645,96 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     dbUpdate('chore_tasks', choreId, {
       status: 'declined', rejection_reason: reason, reviewed_at: new Date().toISOString(),
     });
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SCENARIO 1.13 — TEEN REWARD CO-SIGN THRESHOLD
+  // ─────────────────────────────────────────────────────────────────────────
+
+  approveTeenReward: (choreId, approverId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || !chore.rewardPendingReview) return;
+
+    get().updateChore(choreId, { rewardPendingReview: false });
+
+    // The teen may have already finished the work and had it approved
+    // before a parent got to the reward queue — approveChore/submitChore/
+    // resubmitChore skipped payout while the flag was set, so pay out now
+    // that it's cleared. If the work is still in progress/pending, clearing
+    // the flag alone is enough: the normal payout path (now unblocked)
+    // fires whenever the work itself is next approved.
+    if (['approved', 'auto_approved'].includes(chore.status)) {
+      const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
+      if (pts > 0 && chore.assignedToId) {
+        const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+        get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward, wallet);
+      }
+    }
+
+    try {
+      const { useChatStore } = require('./chatStore');
+      if (chore.assignedToId) {
+        useChatStore.getState().sendMessage(chore.assignedToId, approverId,
+          `✅ Your reward for "${chore.title}" (${chore.coinsReward}🪙) was approved!`);
+      }
+    } catch (e) {
+      console.warn('[choreStore] approveTeenReward notification failed', e);
+    }
+  },
+
+  adjustTeenReward: (choreId, approverId, newAmount) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || !chore.rewardPendingReview) return;
+    const safeAmount = Math.max(0, Math.round(newAmount));
+
+    get().updateChore(choreId, {
+      coinsReward:         safeAmount,
+      basePoints:          chore.basePoints > 0 ? safeAmount : chore.basePoints,
+      rewardPendingReview: false,
+    });
+
+    if (['approved', 'auto_approved'].includes(chore.status)) {
+      const pts = safeAmount + (chore.bonusCoins ?? 0);
+      if (pts > 0 && chore.assignedToId) {
+        const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+        get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward, wallet);
+      }
+    }
+
+    try {
+      const { useChatStore } = require('./chatStore');
+      if (chore.assignedToId) {
+        useChatStore.getState().sendMessage(chore.assignedToId, approverId,
+          `✏️ Your reward for "${chore.title}" was adjusted to ${safeAmount}🪙 and approved.`);
+      }
+    } catch (e) {
+      console.warn('[choreStore] adjustTeenReward notification failed', e);
+    }
+  },
+
+  declineTeenReward: (choreId, approverId, reason) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || !chore.rewardPendingReview) return;
+
+    // Zero the reward and clear the flag — the task itself (already worked
+    // on or in progress) is left exactly as-is; only the payout amount is
+    // reset to 0 so nothing pays out for it going forward.
+    get().updateChore(choreId, {
+      coinsReward:         0,
+      basePoints:          0,
+      bonusCoins:          0,
+      rewardPendingReview: false,
+    });
+
+    try {
+      const { useChatStore } = require('./chatStore');
+      if (chore.assignedToId) {
+        useChatStore.getState().sendMessage(chore.assignedToId, approverId,
+          `🚫 Your requested reward for "${chore.title}" was declined${reason ? ` — "${reason}"` : ''}. The task is unaffected.`);
+      }
+    } catch (e) {
+      console.warn('[choreStore] declineTeenReward notification failed', e);
+    }
   },
 
   // Scan local store for expired approval windows and auto-approve them
@@ -2571,6 +2742,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         allow_child_allocation_override:  settings.allowChildAllocationOverride,
         auto_approve_timeout_hours:       settings.autoApproveTimeoutHours,
         min_cashout_points:               settings.minCashoutPoints,
+        teen_reward_cosign_threshold:     settings.teenRewardCoSignThreshold,
       }).eq('id', familyId).then(({ error }) => {
         if (error) console.warn('[choreStore] updateHouseholdSettings', error.message);
       });

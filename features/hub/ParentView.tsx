@@ -50,6 +50,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     respondToParentQuest, completeParentQuest, cancelLockedAssignment, recallParentQuest, appreciationPing, getParentQuestPool,
     getPendingCashOuts, chores, addChore, getParentReviewDeck,
     approveGrandparentQuestAsParent, declineGrandparentQuestAsParent, grandparentApproveAndCheer,
+    approveTeenReward, adjustTeenReward, declineTeenReward,
     getMyDirectPending, getMyLockedItems, getMyAccepted, getMyOutgoingPending, getActiveAssignmentChoreIds,
     loadFromStorage: loadChores, syncFromDB: syncChores,
   } = useChoreStore();
@@ -423,6 +424,9 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         approveGrandparentQuestAsParent={approveGrandparentQuestAsParent}
         declineGrandparentQuestAsParent={declineGrandparentQuestAsParent}
         grandparentApproveAndCheer={grandparentApproveAndCheer}
+        approveTeenReward={approveTeenReward}
+        adjustTeenReward={adjustTeenReward}
+        declineTeenReward={declineTeenReward}
       />
 
       {/* Only the driver gets editable controls (ETA slider, Pickup Done) —

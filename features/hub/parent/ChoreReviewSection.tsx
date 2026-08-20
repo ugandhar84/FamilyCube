@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { View, Text, Pressable, Alert } from 'react-native';
-import { ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins, Camera, MessageCircle } from 'lucide-react-native';
+import { View, Text, Pressable, Alert, TextInput } from 'react-native';
+import { ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins, Camera, MessageCircle, Coins, X } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
 import { useChatStore } from '@/store/chatStore';
@@ -206,16 +206,110 @@ function GpTurnedDownCard({ c, members, colors, isDark }: {
   );
 }
 
+// Scenario 1.13 — a Teen self-created a quest with a coin reward above the
+// household's teenRewardCoSignThreshold. The task itself is already
+// live/workable (status stays 'todo' throughout) — this card only gates the
+// REWARD: Approve Reward pays what was requested, Adjust Reward lets a
+// parent set a different amount and approve that instead, Decline zeroes
+// the reward but leaves the task itself untouched.
+function TeenRewardReviewCard({ c, members, colors, isDark, active, approveTeenReward, adjustTeenReward, declineTeenReward }: {
+  c: ChoreTask; members: FamilyMember[]; colors: any; isDark: boolean; active: FamilyMember;
+  approveTeenReward: (choreId: string, approverId: string) => void;
+  adjustTeenReward: (choreId: string, approverId: string, newAmount: number) => void;
+  declineTeenReward: (choreId: string, approverId: string, reason?: string) => void;
+}) {
+  const teen = members.find(m => m.id === c.createdById);
+  const [adjusting, setAdjusting] = useState(false);
+  const [amount, setAmount] = useState(String(c.coinsReward));
+  const requested = c.coinsReward + (c.bonusCoins ?? 0);
+
+  const confirmAdjust = () => {
+    const parsed = parseInt(amount, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) return;
+    adjustTeenReward(c.id, active.id, parsed);
+    setAdjusting(false);
+  };
+
+  return (
+    <View style={{ borderRadius: 14, padding: 12, gap: 8,
+      backgroundColor: isDark ? colors.amber + '10' : colors.amberLight,
+      borderWidth: 1.5, borderColor: colors.amber + '40' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Coins size={15} color={colors.amber} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+            {teen?.name.split(' ')[0] ?? 'Teen'} requested {requested} coins — task already in progress, only the reward needs review
+          </Text>
+        </View>
+      </View>
+
+      {adjusting ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TextInput
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="number-pad"
+            autoFocus
+            style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: colors.amber + '60',
+              backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 8,
+              fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}
+          />
+          <Pressable onPress={() => setAdjusting(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <X size={16} color={colors.textTertiary} />
+          </Pressable>
+          <Pressable onPress={confirmAdjust}
+            style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, backgroundColor: colors.amber }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Save</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Pressable
+            onPress={() => Alert.prompt
+              ? Alert.prompt('Decline Reward',
+                  `${teen?.name.split(' ')[0] ?? 'The teen'}'s requested reward for "${c.title}" will be declined — the task itself is unaffected.`,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Decline', style: 'destructive', onPress: (reason?: string) => declineTeenReward(c.id, active.id, reason?.trim() || undefined) },
+                  ],
+                  'plain-text')
+              : declineTeenReward(c.id, active.id)}
+            style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10,
+              borderWidth: 1.5, borderColor: colors.danger + '50' }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.danger }}>Decline</Text>
+          </Pressable>
+          <Pressable onPress={() => setAdjusting(true)}
+            style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10,
+              borderWidth: 1.5, borderColor: colors.amber + '60' }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.amber }}>Adjust</Text>
+          </Pressable>
+          <Pressable onPress={() => approveTeenReward(c.id, active.id)}
+            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+              paddingVertical: 10, borderRadius: 10, backgroundColor: colors.amber }}>
+            <CheckCircle2 size={13} color="#fff" />
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Approve {requested} 🪙</Text>
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+}
+
 export function ChoreReviewSection({
   active, members, colors, isDark, chores, pendingReviewsCount,
   approveGrandparentQuestAsParent, declineGrandparentQuestAsParent,
   grandparentApproveAndCheer,
+  approveTeenReward, adjustTeenReward, declineTeenReward,
 }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
   chores: ChoreTask[]; pendingReviewsCount: number;
   approveGrandparentQuestAsParent: (choreId: string, parentId: string) => void;
   declineGrandparentQuestAsParent: (choreId: string, parentId: string, reason: string) => void;
   grandparentApproveAndCheer: (choreId: string, grandparentId: string, sticker?: string) => void;
+  approveTeenReward: (choreId: string, approverId: string) => void;
+  adjustTeenReward: (choreId: string, approverId: string, newAmount: number) => void;
+  declineTeenReward: (choreId: string, approverId: string, reason?: string) => void;
 }) {
   const gpPending = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval');
   const gpDeclined = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'declined');
@@ -224,7 +318,13 @@ export function ChoreReviewSection({
   // publishing). Surfaced here so a parent has visibility + a fallback if
   // the sponsoring grandparent is unreachable — see GpAwaitingSponsorCard.
   const gpAwaitingSponsor = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'pending_grandparent_approval');
-  const badgeCount = pendingReviewsCount + gpPending.length;
+  // Scenario 1.13 — Teen-created quest whose reward exceeded the household
+  // threshold. Shown regardless of the task's own status (todo/in_progress/
+  // pending_approval/approved) since the flag is specifically about the
+  // payout, not the work — a teen can be mid-task or already done while
+  // this still needs a parent's decision.
+  const teenRewardPending = chores.filter(c => c.rewardPendingReview);
+  const badgeCount = pendingReviewsCount + gpPending.length + teenRewardPending.length;
 
   return (
     <View style={{ paddingHorizontal: 16 }}>
@@ -237,6 +337,22 @@ export function ChoreReviewSection({
         collapsible defaultExpanded={badgeCount > 1}
         colors={colors} isDark={isDark}>
           <View style={{ gap: 8 }}>
+            {teenRewardPending.length > 0 && (
+              <View style={{ gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Coins size={12} color={colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                    textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                    Teen Quests — High-Value Reward Review
+                  </Text>
+                </View>
+                {teenRewardPending.map(c => (
+                  <TeenRewardReviewCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
+                    approveTeenReward={approveTeenReward} adjustTeenReward={adjustTeenReward} declineTeenReward={declineTeenReward} />
+                ))}
+              </View>
+            )}
+
             {gpPending.length > 0 && (
               <View style={{ gap: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>

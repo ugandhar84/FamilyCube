@@ -138,6 +138,7 @@ export function choreToQuest(c: ChoreTask): Quest {
     sponsorUserId:    c.sponsorUserId,
     alertCall:            c.alertCall ?? false,
     alertCallLeadMinutes: c.alertCallLeadMinutes ?? 10,
+    rewardPendingReview:  c.rewardPendingReview ?? false,
   };
 }
 
@@ -193,6 +194,7 @@ function questInputToChoreInput(q: Partial<Quest> & Record<string, any>) {
     shoppingBudget:     q.shoppingBudget,
     alertCall:            (q as any).alertCall,
     alertCallLeadMinutes: (q as any).alertCallLeadMinutes,
+    rewardPendingReview:  (q as any).rewardPendingReview,
   };
 }
 

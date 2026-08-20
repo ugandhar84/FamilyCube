@@ -163,6 +163,11 @@ export interface Quest {
   teamGroupId?:     string;
   /** GP quest: who sponsored/created it (undefined for regular chores). */
   sponsorUserId?:   string;
+  // Scenario 1.13 — true when this was self-created by a Teen with a coin
+  // reward above the household's teenRewardCoSignThreshold. The quest is
+  // fully claimable/workable as normal; only the coin payout is gated
+  // pending a parent's Approve/Adjust/Decline in ChoreReviewSection.
+  rewardPendingReview?: boolean;
 }
 
 export interface QuestCheer {

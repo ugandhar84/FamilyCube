@@ -63,6 +63,50 @@ function to24Hour(raw: string): string | null {
   return null;
 }
 
+// due_date/due_time (and date/start_time for events) are local wall-clock
+// values with no offset of their own — chore_tasks.timezone /
+// calendar_events.timezone exist as columns but were never actually
+// populated by the app until this fix, silently defaulting to 'UTC' in
+// Postgres. This function is a Deno edge function, which runs in UTC —
+// `new Date("2026-08-20T09:01:00")` with no zone suffix is parsed as if it
+// WERE UTC, so any family not literally in UTC got the wrong absolute ring
+// time (5 hours early for US Central, for example — confirmed live: a
+// chore set for "9:08 AM" local rang, if at all, against 09:08 UTC instead
+// of the correct 14:08 UTC).
+//
+// Converts a local "YYYY-MM-DDTHH:MM:00" wall-clock string, as lived in the
+// given IANA zone, into the correct UTC Date. Standard technique: format
+// the SAME instant in both UTC and the target zone via Intl.DateTimeFormat,
+// diff the two to get the zone's current offset (this naturally accounts
+// for DST on whatever date is being checked, not just "now"), then apply
+// that offset to the wall-clock value.
+function localWallClockToUTC(wallClock: string, timeZone: string): Date {
+  const naiveUTC = new Date(`${wallClock}Z`); // parsed as if UTC, i.e. same digits
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(naiveUTC);
+    const get = (type: string) => parts.find(p => p.type === type)?.value ?? '00';
+    // What clock time does naiveUTC's instant correspond to, IN timeZone?
+    const asIfLocal = Date.UTC(
+      Number(get('year')), Number(get('month')) - 1, Number(get('day')),
+      Number(get('hour')), Number(get('minute')), Number(get('second')),
+    );
+    // The gap between that and naiveUTC's own digits is the zone's offset
+    // at this instant — subtracting it from naiveUTC gives the real UTC
+    // instant for the original wall-clock value.
+    const offsetMs = asIfLocal - naiveUTC.getTime();
+    return new Date(naiveUTC.getTime() - offsetMs);
+  } catch {
+    // Unknown/invalid IANA zone name — fall back to treating it as UTC
+    // rather than throwing and skipping the reminder entirely.
+    return naiveUTC;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
@@ -74,16 +118,27 @@ serve(async (req) => {
 
     const now = new Date();
     const todayStr = now.toISOString().slice(0, 10);
+    // A local due_date can map to either the day before or after in UTC
+    // depending on the family's offset direction (e.g. 11pm local on the
+    // 19th in a zone ahead of UTC is already the 20th in UTC, or 1am local
+    // on the 20th in a zone behind UTC is still the 19th in UTC) — querying
+    // only exactly today's UTC date could miss rows whose LOCAL due_date is
+    // adjacent. Widen the DB filter to yesterday/today/tomorrow (still
+    // cheap — indexed equality-in, not a range scan) and let the exact
+    // per-row UTC conversion below be the real correctness check.
+    const yesterdayStr = new Date(now.getTime() - 24 * 3600_000).toISOString().slice(0, 10);
+    const tomorrowStr = new Date(now.getTime() + 24 * 3600_000).toISOString().slice(0, 10);
+    const dateWindow = [yesterdayStr, todayStr, tomorrowStr];
 
-    // ── Chores due today with alert_call on ──────────────────────────────────
+    // ── Chores due today (±1 day, see dateWindow) with alert_call on ─────────
     const { data: chores } = await supabase
       .from('chore_tasks')
-      .select('id, title, due_date, due_time, alert_call, alert_call_lead_minutes, assigned_to_id, status')
+      .select('id, title, due_date, due_time, timezone, alert_call, alert_call_lead_minutes, assigned_to_id, status')
       .eq('alert_call', true)
-      .eq('due_date', todayStr)
+      .in('due_date', dateWindow)
       .in('status', ['todo', 'in_progress']);
 
-    // ── Events today with alert_call on ──────────────────────────────────────
+    // ── Events today (±1 day) with alert_call on ──────────────────────────────
     // No lte('start_time', ...) prefilter here — start_time is stored as a
     // display string ("2:05 AM" from fmtTimeLabel, not always 24-hour), so a
     // lexicographic comparison against a 24-hour horizon slice is unreliable
@@ -93,9 +148,9 @@ serve(async (req) => {
     // alert_call rows without the extra prefilter is cheap.
     const { data: events } = await supabase
       .from('calendar_events')
-      .select('id, title, date, start_time, alert_call, alert_call_lead_minutes, member_id, member_ids')
+      .select('id, title, date, start_time, timezone, alert_call, alert_call_lead_minutes, member_id, member_ids')
       .eq('alert_call', true)
-      .eq('date', todayStr);
+      .in('date', dateWindow);
 
     const targets: RingTarget[] = [];
 
@@ -103,7 +158,7 @@ serve(async (req) => {
       if (!c.due_time) continue;
       const t24 = to24Hour(c.due_time);
       if (!t24) continue;
-      const dueAt = new Date(`${c.due_date}T${t24}:00`);
+      const dueAt = localWallClockToUTC(`${c.due_date}T${t24}:00`, (c as any).timezone || 'UTC');
       const ringAt = new Date(dueAt.getTime() - (c.alert_call_lead_minutes ?? 10) * 60_000);
       if (ringAt <= now && now.getTime() - ringAt.getTime() < 90_000) {
         targets.push({
@@ -117,7 +172,7 @@ serve(async (req) => {
       if (!e.start_time) continue;
       const t24 = to24Hour(e.start_time);
       if (!t24) continue;
-      const dueAt = new Date(`${e.date}T${t24}:00`);
+      const dueAt = localWallClockToUTC(`${e.date}T${t24}:00`, (e as any).timezone || 'UTC');
       const ringAt = new Date(dueAt.getTime() - (e.alert_call_lead_minutes ?? 10) * 60_000);
       if (ringAt <= now && now.getTime() - ringAt.getTime() < 90_000) {
         const ids = e.member_id ? [e.member_id] : (e.member_ids ?? []);

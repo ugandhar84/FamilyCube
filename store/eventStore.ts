@@ -276,6 +276,13 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     deleted_by:                 ev.deletedBy ?? null,
     alert_call:                 ev.alertCall ?? false,
     alert_call_lead_minutes:    ev.alertCallLeadMinutes ?? 10,
+    // start_time is a local wall-clock value with no offset of its own —
+    // calendar_events.timezone existed as a column but was never populated
+    // by the app, silently defaulting to 'UTC'. call-reminder-sweeper (a
+    // Deno edge function running in UTC) parsed it as if it WERE UTC, so
+    // any family not literally in UTC got the wrong absolute ring time —
+    // see the matching, more detailed comment in choreStore.ts's addChore.
+    timezone:                   Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
 }
 

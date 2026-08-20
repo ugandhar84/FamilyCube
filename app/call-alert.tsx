@@ -6,7 +6,7 @@
  * or Done.
  */
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, Animated } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Animated, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import * as Speech from 'expo-speech';
@@ -155,7 +155,10 @@ export default function CallAlertScreen() {
   // only) despite the checkmark icon and "Done" label implying the task
   // itself was completed — a real gap, since a parent tapping Done here
   // reasonably expects the chore to actually be marked done, not just the
-  // call to hang up.
+  // call to hang up. Also previously submitted silently and hung up in one
+  // motion with zero feedback — now confirms first ("are you sure?"), marks
+  // the chore done, and only ends the call after that's actually happened,
+  // instead of ending the call before doing (or asking about) anything.
   //
   // A chore requiring photo proof can't be completed from this screen (no
   // camera UI here) — Done instead hands off to the real Submit flow on the
@@ -164,18 +167,36 @@ export default function CallAlertScreen() {
   // in-app Submit button uses. Events have no universal "done" concept
   // outside the helper/driver-specific flow (which this alert isn't scoped
   // to), so Done behaves the same as Dismiss for events.
-  const done = async () => {
+  const finishAndClose = async () => {
     Speech.stop();
     if (callUUID) await endCallAlert(callUUID);
+    router.back();
+  };
+
+  const done = () => {
     if (itemType === 'chore' && item) {
       const chore = item as any;
       if (chore.requiresPhotoProof) {
+        Speech.stop();
         router.replace({ pathname: '/(tabs)/quests', params: { questId: itemId } } as any);
         return;
       }
-      useChoreStore.getState().submitChore(itemId!, {});
+      Alert.alert(
+        'Mark as done?',
+        `"${title}" will be submitted for review.`,
+        [
+          { text: 'Not yet', style: 'cancel' },
+          {
+            text: 'Yes, done', onPress: async () => {
+              useChoreStore.getState().submitChore(itemId!, {});
+              await finishAndClose();
+            },
+          },
+        ],
+      );
+      return;
     }
-    router.back();
+    finishAndClose();
   };
 
   const snooze = async (minutes: number) => {

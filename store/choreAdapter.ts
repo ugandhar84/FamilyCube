@@ -238,7 +238,16 @@ export function useQuestStore() {
     },
 
     claimQuest: (id: string, memberId: string) => {
-      store.updateChore(id, { status: 'in_progress', assignedToId: memberId, isPool: false });
+      // Routed through claimPoolQuest (not a plain updateChore) so this,
+      // the only reachable "Claim" action in the live app (KidView,
+      // TeenView, QuestsScreen), actually gets the compare-and-swap
+      // first-write-wins protection spec scenarios 1.1/3.1 require. The
+      // previous plain updateChore() had no WHERE guard, so two kids
+      // claiming the same pool quest within the same round-trip would
+      // both "win" locally with Postgres silently picking a last-writer —
+      // claimBounty already had this protection but is hard-gated to
+      // categoryType === 'bounty' and unreachable from any live screen.
+      store.claimPoolQuest(id, memberId);
     },
 
     updateQuest: (id: string, updates: Partial<Quest>, _by?: string) => {

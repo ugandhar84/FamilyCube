@@ -512,6 +512,7 @@ interface ChoreState {
 
   // ── Child actions ──────────────────────────────────────────────────────────
   claimBounty:              (choreId: string, childId: string) => void;
+  claimPoolQuest:           (choreId: string, memberId: string) => void;
   // Returns false (and does nothing) if the chore isn't submittable yet —
   // currently: a recurring chore whose due_date is still in the future.
   // One-time chores and on/after-due-date recurring chores always succeed.
@@ -1075,6 +1076,49 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       });
   },
 
+  // General-purpose pool-quest claim with the same first-write-wins
+  // compare-and-swap protection as claimBounty, but usable for ANY
+  // isPool chore regardless of categoryType. claimBounty itself is
+  // hard-gated to categoryType === 'bounty', and it turns out every
+  // reachable "Claim" button in the live UI (KidView, TeenView,
+  // QuestsScreen — all via choreAdapter's claimQuest) goes through a
+  // plain unconditional updateChore() with no WHERE guard at all, meaning
+  // spec scenario 1.1/3.1's two-kids-claim-the-same-quest race had no
+  // actual protection on any path a user can reach. This mirrors
+  // claimBounty's exact CAS + rollback shape, generalized to any pool
+  // chore, and sets status to 'in_progress' (what claimQuest's callers
+  // expect) instead of 'todo'.
+  claimPoolQuest: (choreId, memberId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.assignedToId) return; // Already claimed or gone
+
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? { ...c, assignedToId: memberId, status: 'in_progress', isPool: false } : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    supabase.from('chore_tasks')
+      .update({ assigned_to_id: memberId, status: 'in_progress', is_pool: false })
+      .eq('id', choreId)
+      .is('assigned_to_id', null)
+      .select('id')
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn('[choreStore] claimPoolQuest DB update failed', error.message);
+          return;
+        }
+        if (!data || data.length === 0) {
+          console.warn('[choreStore] claimPoolQuest lost the race on', choreId, '— rolling back local claim (see spec 3.1)');
+          set(s => ({
+            chores: s.chores.map(c =>
+              c.id === choreId && c.assignedToId === memberId ? { ...c, assignedToId: undefined, status: 'todo', isPool: true } : c
+            ),
+          }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+        }
+      });
+  },
+
   submitChore: (choreId, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !['todo', 'in_progress'].includes(chore.status)) return false;
@@ -1267,6 +1311,33 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       reviewedById: reviewerId,
     });
 
+    // Two parents acting on the same submission within the same round-trip
+    // window (spec 3.3 — Parent-1 approves while Parent-2 declines) would
+    // both pass the local `status !== 'pending_approval'` guard above
+    // against the same stale starting state, and updateChore's generic
+    // dbUpdate() has no WHERE-status guard — both writes would land with
+    // Postgres last-writer-wins, and worse, BOTH sides' payout/redo side
+    // effects (awardPoints below, or requestRedo's redo_requested flip)
+    // would already have fired locally before either write even reaches
+    // the DB. Guard specifically the approved/paid outcome with a
+    // conditional UPDATE on the status this call started from, mirroring
+    // respondToParentQuest's identical race guard — if a concurrent
+    // decline already landed first, this 0-row result means the payout
+    // below should not have happened; log it loudly so it surfaces
+    // instead of silently double-crediting a since-declined submission.
+    const previousStatus = chore.status;
+    supabase.from('chore_tasks')
+      .update({ status: 'approved', approved_at: now, reviewed_at: now, reviewed_by_id: reviewerId })
+      .eq('id', choreId)
+      .eq('status', previousStatus)
+      .select('id')
+      .then(({ data, error }) => {
+        if (error) { console.warn('[choreStore] approveChore CAS check failed', error.message); return; }
+        if (!data || data.length === 0) {
+          console.warn(`[choreStore] approveChore lost the race on ${choreId} — another parent's decision landed first; payout already applied locally may need manual reconciliation (see 4.7 dispute handling)`);
+        }
+      });
+
     // Bounty targeted at a shortlist (teamGroupId links the sibling clones for
     // display only): each kid earns the full amount independently, the moment
     // they're approved. Nobody's payout waits on or shrinks because of anyone
@@ -1332,13 +1403,32 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (!chore || chore.status !== 'pending_approval') return;
 
     const newRedoCount = (chore.redoCount ?? 0) + 1;
+    const now = new Date().toISOString();
     get().updateChore(choreId, {
       status:          'redo_requested',
       rejectionReason: reason,
-      reviewedAt:      new Date().toISOString(),
+      reviewedAt:      now,
       reviewedById:    reviewerId,
       redoCount:       newRedoCount,
     });
+
+    // Same 3.3 race guard as approveChore's identical comment — if the
+    // other parent's approval already landed first, this conditional
+    // UPDATE finds 0 rows and the redo_requested flip (and the assignee
+    // being told "needs another pass") should not have applied against an
+    // already-paid submission.
+    const previousStatus = chore.status;
+    supabase.from('chore_tasks')
+      .update({ status: 'redo_requested', rejection_reason: reason, reviewed_at: now, reviewed_by_id: reviewerId, redo_count: newRedoCount })
+      .eq('id', choreId)
+      .eq('status', previousStatus)
+      .select('id')
+      .then(({ data, error }) => {
+        if (error) { console.warn('[choreStore] requestRedo CAS check failed', error.message); return; }
+        if (!data || data.length === 0) {
+          console.warn(`[choreStore] requestRedo lost the race on ${choreId} — the other parent already approved this; redo_requested should not have applied locally`);
+        }
+      });
   },
 
   // Same shape as requestRedo, but for a grandparent's own completion review

@@ -192,15 +192,26 @@ export default function LedgerTab({ colors, isDark }: { colors: any; isDark: boo
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const isParent = activeMember?.role === 'parent';
 
+  // Spec 4.5/5.3: a kid/teen should see full access to their OWN transaction
+  // history/balance only — never a sibling's. Both parents get full
+  // household financial oversight. This tab previously mapped over the raw
+  // `members` array unconditionally, so any kid opening Ledger saw every
+  // sibling's name, exact coin total, and a comparative progress bar —
+  // sibling financial privacy the spec explicitly calls for.
+  const visibleMembers = useMemo(
+    () => (isParent ? members : members.filter(m => m.id === activeMember?.id)),
+    [isParent, members, activeMember?.id]
+  );
+
   const [showGrant, setShowGrant] = useState(false);
   const [showPay, setShowPay]     = useState(false);
   const [txLog, setTxLog]         = useState<{ from: string; to: string; amount: number; note: string; ts: string }[]>([]);
 
   const totalCoins = useMemo(() =>
-    members.reduce((s, m) => s + (m.coins ?? 0), 0), [members]);
+    visibleMembers.reduce((s, m) => s + (m.coins ?? 0), 0), [visibleMembers]);
 
   const maxCoins = useMemo(() =>
-    Math.max(...members.map(m => m.coins ?? 0), 1), [members]);
+    Math.max(...visibleMembers.map(m => m.coins ?? 0), 1), [visibleMembers]);
 
   const roleColor = (role: string) =>
     role === 'parent' ? BRAND.purple : role === 'senior' ? BRAND.blue : BRAND.emerald;
@@ -232,7 +243,7 @@ export default function LedgerTab({ colors, isDark }: { colors: any; isDark: boo
         <CardHeader Icon={ScrollText} iconColor={BRAND.amber} title="Family Coin Ledger"
           badge={`${totalCoins} total`} badgeColor={BRAND.amber} colors={colors} />
 
-        {members.map(m => {
+        {visibleMembers.map(m => {
           const rc = roleColor(m.role);
           const pct = Math.min((m.coins ?? 0) / maxCoins, 1);
           return (

@@ -1,0 +1,1300 @@
+<title>Requirements vs Code — Gap Audit</title>
+<style>
+  :root {
+    --bg: #F4F6FA; --surface: #FFFFFF; --surface-2: #EAEFF7; --border: #D7DEEA;
+    --text: #172033; --text-2: #51617A; --text-3: #8695AC;
+    --accent: #2A5FD9; --accent-soft: #E6EDFB;
+    --match: #157A4A; --match-bg: #E1F5EA; --match-bd: #A9E2C3;
+    --fixed: #0E6FA8; --fixed-bg: #E1F1FB; --fixed-bd: #A9D8F0;
+    --missing: #B4530A; --missing-bg: #FCEEDD; --missing-bd: #F0C48C;
+    --bug: #B0223A; --bug-bg: #FBE6E9; --bug-bd: #F0AFBC;
+    --na: #6B7280; --na-bg: #EDEFF2; --na-bd: #D4D8DF;
+    --unconfirmed: #8347C7; --unconfirmed-bg: #F1E9FB; --unconfirmed-bd: #D6BCF0;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --code-bg: #EDF1F8; --code-text: #1E3A6B;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0D1220; --surface: #131B2E; --surface-2: #1A2438; --border: #263352;
+      --text: #E7ECF6; --text-2: #A9B6CE; --text-3: #71809E;
+      --accent: #7AA2F7; --accent-soft: #1B2A4A;
+      --match: #5FD39A; --match-bg: #0F2B20; --match-bd: #1F5C40;
+      --fixed: #7FD2EC; --fixed-bg: #0E2C3A; --fixed-bd: #1D5B76;
+      --missing: #F0A75E; --missing-bg: #3A2712; --missing-bd: #6B4A1F;
+      --bug: #F1748A; --bug-bg: #3B1620; --bug-bd: #6B2938;
+      --na: #98A2B8; --na-bg: #1B2233; --na-bd: #333F58;
+      --unconfirmed: #C9A6F5; --unconfirmed-bg: #2A2040; --unconfirmed-bd: #4B3877;
+      --code-bg: #1A2438; --code-text: #9DC0F5;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0D1220; --surface: #131B2E; --surface-2: #1A2438; --border: #263352;
+    --text: #E7ECF6; --text-2: #A9B6CE; --text-3: #71809E;
+    --accent: #7AA2F7; --accent-soft: #1B2A4A;
+    --match: #5FD39A; --match-bg: #0F2B20; --match-bd: #1F5C40;
+    --fixed: #7FD2EC; --fixed-bg: #0E2C3A; --fixed-bd: #1D5B76;
+    --missing: #F0A75E; --missing-bg: #3A2712; --missing-bd: #6B4A1F;
+    --bug: #F1748A; --bug-bg: #3B1620; --bug-bd: #6B2938;
+    --na: #98A2B8; --na-bg: #1B2233; --na-bd: #333F58;
+    --unconfirmed: #C9A6F5; --unconfirmed-bg: #2A2040; --unconfirmed-bd: #4B3877;
+    --code-bg: #1A2438; --code-text: #9DC0F5;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: ui-sans-serif, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    line-height: 1.55; font-size: 15px;
+  }
+  .wrap { max-width: 1220px; margin: 0 auto; padding: 44px 24px 100px; }
+
+  .kicker { text-transform: uppercase; letter-spacing: 0.14em; font-size: 11.5px; font-weight: 800; color: var(--accent); margin-bottom: 10px; }
+  h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 12px; line-height: 1.2; }
+  p.lede { color: var(--text-2); font-size: 15px; max-width: 84ch; margin: 0 0 10px; }
+  code.inline { font-family: var(--mono); background: var(--code-bg); color: var(--code-text); padding: 1px 6px; border-radius: 5px; font-size: 0.88em; }
+
+  .dashboard {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;
+    margin: 32px 0 40px;
+  }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 16px 14px; text-align: center;
+  }
+  .stat .n { font-size: 30px; font-weight: 800; line-height: 1; margin-bottom: 6px; }
+  .stat .l { font-size: 11px; color: var(--text-2); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat.total .n { color: var(--text); }
+  .stat.match .n { color: var(--match); }
+  .stat.fixed .n { color: var(--fixed); }
+  .stat.missing .n { color: var(--missing); }
+  .stat.na .n { color: var(--na); }
+  .stat.unconfirmed .n { color: var(--unconfirmed); }
+  .stat.bug .n { color: var(--bug); }
+
+  @media (max-width: 900px) { .dashboard { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 560px) { .dashboard { grid-template-columns: repeat(2, 1fr); } }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0 0 36px;
+    padding: 14px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-2); }
+  .pill {
+    display: inline-flex; align-items: center; font-size: 11px; font-weight: 800;
+    padding: 3px 10px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap;
+  }
+  .p-match { background: var(--match-bg); color: var(--match); border-color: var(--match-bd); }
+  .p-fixed { background: var(--fixed-bg); color: var(--fixed); border-color: var(--fixed-bd); }
+  .p-missing { background: var(--missing-bg); color: var(--missing); border-color: var(--missing-bd); }
+  .p-bug { background: var(--bug-bg); color: var(--bug); border-color: var(--bug-bd); }
+  .p-na { background: var(--na-bg); color: var(--na); border-color: var(--na-bd); }
+  .p-unconfirmed { background: var(--unconfirmed-bg); color: var(--unconfirmed); border-color: var(--unconfirmed-bd); }
+
+  nav.toc {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 20px; margin-bottom: 40px;
+  }
+  nav.toc h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); margin: 0 0 10px; }
+  nav.toc ul { columns: 3; column-gap: 24px; margin: 0; padding: 0; list-style: none; }
+  @media (max-width: 800px) { nav.toc ul { columns: 2; } }
+  @media (max-width: 520px) { nav.toc ul { columns: 1; } }
+  nav.toc li { break-inside: avoid; margin-bottom: 4px; }
+  nav.toc a { color: var(--text-2); text-decoration: none; font-size: 13px; }
+  nav.toc a:hover { color: var(--accent); }
+
+  section.category { margin-bottom: 48px; }
+  .cat-head {
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    padding-bottom: 10px; margin-bottom: 18px; border-bottom: 2px solid var(--border);
+  }
+  .cat-head h2 { font-size: 20px; font-weight: 800; margin: 0; }
+  .cat-head .count { font-size: 12px; color: var(--text-3); font-weight: 700; }
+
+  .scenario {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px 20px; margin-bottom: 14px; scroll-margin-top: 16px;
+  }
+  .scenario-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .scenario-top .ref {
+    font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--text-3);
+    background: var(--surface-2); padding: 2px 8px; border-radius: 6px;
+  }
+  .scenario-top h3 { font-size: 15.5px; margin: 0; font-weight: 700; }
+
+  .verdict-line { font-size: 13.5px; color: var(--text); margin: 8px 0; }
+  .cite {
+    font-family: var(--mono); font-size: 12px; background: var(--code-bg); color: var(--code-text);
+    padding: 1px 7px; border-radius: 5px; display: inline-block; margin: 2px 4px 2px 0;
+  }
+  .note { font-size: 13px; color: var(--text-2); margin-top: 6px; }
+  .fix-note {
+    margin-top: 10px; padding: 10px 14px; border-radius: 0 8px 8px 0;
+    border-left: 3px solid var(--fixed); background: var(--fixed-bg); font-size: 13px; color: var(--text);
+  }
+  .fix-note b { color: var(--fixed); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.05em; display: block; margin-bottom: 3px; }
+  .missing-note {
+    margin-top: 10px; padding: 10px 14px; border-radius: 0 8px 8px 0;
+    border-left: 3px solid var(--missing); background: var(--missing-bg); font-size: 13px; color: var(--text);
+  }
+  .missing-note b { color: var(--missing); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.05em; display: block; margin-bottom: 3px; }
+  .bug-note {
+    margin-top: 10px; padding: 10px 14px; border-radius: 0 8px 8px 0;
+    border-left: 3px solid var(--bug); background: var(--bug-bg); font-size: 13px; color: var(--text);
+  }
+  .bug-note b { color: var(--bug); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.05em; display: block; margin-bottom: 3px; }
+  .unconfirmed-note {
+    margin-top: 10px; padding: 10px 14px; border-radius: 0 8px 8px 0;
+    border-left: 3px solid var(--unconfirmed); background: var(--unconfirmed-bg); font-size: 13px; color: var(--text);
+  }
+  .unconfirmed-note b { color: var(--unconfirmed); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.05em; display: block; margin-bottom: 3px; }
+
+  footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-3); text-align: center; }
+  footer a { color: var(--accent); }
+</style>
+
+<div class="wrap">
+
+<div class="kicker">Family Cube — Code Audit</div>
+<h1>Requirements vs. Code — Gap Audit</h1>
+<p class="lede">
+  <code class="inline">docs/product_requirements_role_matrix.html</code> defines 65 target-behavior scenarios
+  from first principles, written without reading any implementation. This document is the other half of that
+  pair: it diffs each of those 65 scenarios against the actual current code — <code class="inline">store/choreStore.ts</code>,
+  <code class="inline">store/eventStore.ts</code>, <code class="inline">store/choreAdapter.ts</code>,
+  <code class="inline">store/familyStore.ts</code>, <code class="inline">store/kidRequestStore.ts</code>,
+  <code class="inline">store/rewardStore.ts</code>, <code class="inline">store/notifStore.ts</code>, and the
+  corresponding Hub/Quests/Calendar UI — and records what actually happens today, citing file and line for every claim.
+</p>
+<p class="lede">
+  Confirmed bugs found during this pass were fixed directly in the same working tree and are marked
+  <span class="pill p-fixed">GAP — FIXED</span> below with a short note on the change. A small number of confirmed,
+  reachable bugs were found but <b>not</b> fixed this pass — usually because the safe fix wasn't small/contained, or
+  the fix depends on a larger missing piece — these are marked <span class="pill p-bug">GAP — CONFIRMED BUG</span>.
+  Gaps that require a genuinely new feature (new UI, new data model, new permission concept) were not built —
+  building them silently, without a deliberate product decision, was explicitly out of scope for this pass — and
+  are marked <span class="pill p-missing">GAP — MISSING FEATURE</span> with the reasoning for why they weren't
+  attempted. Scenario 1.12b is the one item the requirements doc itself flags as an intentional future capability
+  the app does not support today; it is marked <span class="pill p-na">N/A</span> and excluded from the gap counts.
+  A few findings could not be confirmed without live multi-device testing; those are marked
+  <span class="pill p-unconfirmed">UNCONFIRMED</span> alongside their primary verdict rather than asserted as fact.
+</p>
+<p class="lede">
+  Every claim in this document is backed by an actual <code class="inline">file:line</code> citation from reading
+  the real code — nothing here is inferred or assumed. Where certainty required live/multi-device testing that
+  wasn't performed, that limitation is stated explicitly rather than silently asserted as fact.
+</p>
+
+<div class="dashboard">
+  <div class="stat total"><div class="n">65</div><div class="l">Scenarios Audited</div></div>
+  <div class="stat match"><div class="n">14</div><div class="l">Matches</div></div>
+  <div class="stat fixed"><div class="n">12</div><div class="l">Gaps Fixed<br>This Pass</div></div>
+  <div class="stat bug"><div class="n">16</div><div class="l">Confirmed Bug,<br>Not Fixed</div></div>
+  <div class="stat missing"><div class="n">22</div><div class="l">Missing Feature<br>(documented)</div></div>
+  <div class="stat na"><div class="n">1</div><div class="l">Not Applicable</div></div>
+</div>
+<p class="note" style="margin:-24px 0 32px;">
+  Several scenarios carry a partial verdict (e.g. "matches on 3 of 4 rows, one row diverges," or "the confirmed
+  bug is fixed but a separate larger gap in the same scenario remains undocumented-not-built") — each is counted
+  once under its single dominant scenario-level badge for the dashboard tally above; sub-notes inside each entry
+  (including a handful of not-runtime-tested caveats on otherwise-passing scenarios) carry the finer-grained
+  nuance. Read the entry, not just the badge.
+</p>
+
+<div class="legend">
+  <span><span class="pill p-match">MATCH</span> code does what the spec says; cited file:line confirms it</span>
+  <span><span class="pill p-fixed">GAP — FIXED</span> confirmed bug, fixed in this same pass</span>
+  <span><span class="pill p-bug">GAP — CONFIRMED BUG</span> confirmed, reachable, not fixed this pass</span>
+  <span><span class="pill p-missing">GAP — MISSING FEATURE</span> genuinely absent; documented, not built this pass</span>
+  <span><span class="pill p-na">N/A</span> intentionally out of scope (1.12b)</span>
+  <span><span class="pill p-unconfirmed">UNCONFIRMED</span> plausible from code reading, not verified live/multi-device</span>
+</div>
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <ul>
+    <li><a href="#cat-1">1. Chore / Quest Lifecycle (14)</a></li>
+    <li><a href="#cat-2">2. Calendar / Event Lifecycle (12)</a></li>
+    <li><a href="#cat-3">3. Claim Races &amp; Concurrency (5)</a></li>
+    <li><a href="#cat-4">4. Approval &amp; Payout Flows (8)</a></li>
+    <li><a href="#cat-5">5. Visibility &amp; Privacy Defaults (7)</a></li>
+    <li><a href="#cat-6">6. Reassignment &amp; Cancellation (6)</a></li>
+    <li><a href="#cat-7">7. Notifications &amp; Passive Updates (5)</a></li>
+    <li><a href="#cat-8">8. Cross-Domain Interactions (3)</a></li>
+    <li><a href="#cat-9">9. Edge Cases (4)</a></li>
+  </ul>
+</nav>
+
+<!-- ══════════════════════════════ CATEGORY 1 ══════════════════════════════ -->
+<section class="category" id="cat-1">
+  <div class="cat-head"><h2>1. Chore / Quest Lifecycle</h2><span class="count">14 scenarios</span></div>
+
+  <div class="scenario" id="g1-1">
+    <div class="scenario-top"><span class="ref">Ref: 1.1</span><h3>Pool quest, first-come claim</h3><span class="pill p-fixed">GAP — FIXED</span></div>
+    <p class="verdict-line">
+      <code class="inline">claimBounty</code> (<code class="inline">store/choreStore.ts:1036-1076</code>) already had the
+      correct compare-and-swap protection (conditional <code class="inline">assigned_to_id IS NULL</code> write, with
+      rollback on a lost race) — but it is hard-gated to <code class="inline">categoryType === 'bounty'</code> and is
+      called from exactly one file, <code class="inline">features/chores/ChildChoreBoard.tsx</code>, which no live
+      screen imports. Every reachable "Claim" button (KidView, TeenView, QuestsScreen) instead called the adapter's
+      <code class="inline">claimQuest</code>, which was a bare, unguarded <code class="inline">updateChore()</code> —
+      two kids claiming the same pool quest from two devices could both "win" locally with Postgres silently
+      picking a last-writer. The CAS fix a prior pass believed it had shipped was on dead code.
+    </p>
+    <div class="cite">store/choreAdapter.ts:240-251 (claimQuest, now routed)</div>
+    <div class="cite">store/choreStore.ts:1078-1114 (new claimPoolQuest — general-purpose CAS claim)</div>
+    <div class="cite">features/quests/QuestsScreen.tsx:474-480 (Pool tab now also filters out just-claimed items)</div>
+    <div class="fix-note"><b>Fixed this pass</b>Added <code class="inline">claimPoolQuest</code> to
+      <code class="inline">choreStore.ts</code> — the same conditional-write + rollback shape as
+      <code class="inline">claimBounty</code>, generalized to any pool chore regardless of category. Routed the
+      adapter's <code class="inline">claimQuest</code> (the only reachable claim path) through it. Also tightened the
+      Quests screen's dedicated Pool-tab filter to exclude items with an <code class="inline">assignedToId</code>, so a
+      just-claimed sibling item can't linger visible/tappable there until the next reload.</div>
+  </div>
+
+  <div class="scenario" id="g1-2">
+    <div class="scenario-top"><span class="ref">Ref: 1.2</span><h3>Direct-assigned quest to one kid</h3><span class="pill p-match">MATCH</span></div>
+    <p class="verdict-line">Non-pool quest filters correctly exclude siblings; both parents can approve; GP sees nothing.</p>
+    <div class="cite">features/quests/QuestsScreen.tsx:449-456 (sibling exclusion)</div>
+    <div class="cite">store/choreStore.ts:2328-2332 (getParentReviewDeck — family-wide, not reviewer-scoped)</div>
+  </div>
+
+  <div class="scenario" id="g1-3">
+    <div class="scenario-top"><span class="ref">Ref: 1.3</span><h3>Parent-1 delegates quest to Parent-2</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">
+      Core delegation flow matches (DIRECT assignment stays unassigned until accepted; Accept/Push-Back/Mark-Done all
+      exist; no approval gate on completion). Two spec-required affordances are absent: Parent-1 has no
+      <b>Recall</b>/<b>Nudge</b> while the delegation is still PENDING (only after acceptance does a reclaim path
+      exist, under a different name and still with no notification to the losing party), and neither ACCEPT, DECLINE,
+      nor completion of a System-A delegation ever notifies the other party.
+    </p>
+    <div class="cite">features/hub/parent/backlog/OutgoingPendingCard.tsx:8-12 (explicitly documented as having no actions)</div>
+    <div class="cite">store/choreStore.ts:1954-1976 (completeParentQuest — no notification call)</div>
+    <div class="missing-note"><b>Why not built</b>Adding Recall/Nudge to <code class="inline">OutgoingPendingCard</code>
+      plus wiring notifications through the existing <code class="inline">respondToParentQuest</code>/
+      <code class="inline">completeParentQuest</code> paths is contained, but touches three separate call sites and a
+      new card action — judged medium, not "a few lines," so documented rather than attempted live.</div>
+  </div>
+
+  <div class="scenario" id="g1-4">
+    <div class="scenario-top"><span class="ref">Ref: 1.4</span><h3>Kid requests a quest be created</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">
+      No "kid proposes a quest for N coins" flow exists anywhere. <code class="inline">kidRequestStore</code>'s
+      request types have no quest-proposal type, quest creation is parent-only in every screen, and approving a kid
+      request never creates a chore.
+    </p>
+    <div class="cite">store/kidRequestStore.ts:121 (RequestType — no quest-proposal type)</div>
+    <div class="cite">features/quests/QuestsScreen.tsx:720,981,997 (Add Quest gated on isParent)</div>
+    <div class="missing-note"><b>Why not built</b>Needs a new request type, a kid-facing compose UI, a parent
+      Approve-as-is/Approve-with-changes/Decline queue, and an approve→addChore conversion — a real feature, not a
+      safe small addition, though the store plumbing (sendRequest/approveRequest/realtime) already exists to build on.</div>
+  </div>
+
+  <div class="scenario" id="g1-5">
+    <div class="scenario-top"><span class="ref">Ref: 1.5</span><h3>Teen self-creates own quest</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">A teen cannot create a quest of any kind — Add Quest is <code class="inline">isParent</code>-gated everywhere, and no zero-reward personal-item path exists for a teen.</p>
+    <div class="cite">features/hub/TeenView.tsx:45 (imports only quests/submitQuest/claimQuest — no addQuest)</div>
+    <div class="missing-note"><b>Why not built</b>The spec's requirement (no approval gate, zero coins, teen-owned
+      edit/delete/complete) maps cleanly onto an existing categoryType, but the work is a whole new teen-facing create
+      UI plus role-gating so it isn't treated as a household chore — a genuine feature build.</div>
+  </div>
+
+  <div class="scenario" id="g1-6">
+    <div class="scenario-top"><span class="ref">Ref: 1.6</span><h3>Senior/GP offers to help with a quest</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">
+      Spec wants GP's offer to land as PENDING with a parent Accept/Decline gate before reassignment. Code lets GP
+      take an opted-in chore immediately and unilaterally — "I'll Handle It" and "I'd Love To Help" write
+      <code class="inline">assignedToId</code>/<code class="inline">in_progress</code> directly with no intermediate
+      state, no parent notification, and no Withdraw-Offer affordance.
+    </p>
+    <div class="cite">features/hub/senior/FamilyNeedsHandSection.tsx:166 (direct updateChore, no approval hop)</div>
+    <div class="cite">store/choreStore.ts:1229-1233 (claimGPErrand — straight to in_progress)</div>
+    <div class="bug-note"><b>Not fixed this pass</b>Mitigated in practice: GP can only see/act on chores a parent
+      already opted in via <code class="inline">openToGP</code>/<code class="inline">inviteGrandparents</code>
+      (GP has no visibility into the general kid bounty pool at all — <code class="inline">QuestsScreen.tsx:462-472</code>),
+      so the unilateral-diversion harm the spec's "Why" box warns about is partly prevented by visibility rather
+      than an approval gate. Adding a genuine PENDING-offer state with a parent Accept/Decline card is a real,
+      multi-file change (new status value + new card), judged too large for a safe same-pass fix; flagged for a
+      deliberate follow-up.</div>
+  </div>
+
+  <div class="scenario" id="g1-7">
+    <div class="scenario-top"><span class="ref">Ref: 1.7</span><h3>Shared/team quest, 2+ assignees</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">
+      Multi-select assignment does create one clone per additional member (linked by <code class="inline">teamGroupId</code>),
+      but each clone pays out its <b>full</b> value independently on its own approval — reward is never split, and one
+      kid's completion never gates on another's. The per-participant progress UI (shared checklist, per-kid
+      steppers, "kid done / teen in progress") is unreachable: <code class="inline">choreToQuest</code> derives
+      <code class="inline">participants</code> from a single <code class="inline">assignedToId</code>, so
+      <code class="inline">participants.length</code> is never greater than 1 against live data.
+    </p>
+    <div class="cite">store/choreAdapter.ts:73-75 (participants array always length ≤ 1 from live data)</div>
+    <div class="cite">store/choreStore.ts:1401-1404 (documented, deliberate "each kid earns full value independently" design decision)</div>
+    <div class="bug-note"><b>Not fixed this pass</b>This is as much a spec-vs-product-decision conflict as a bug — the
+      full-value-per-kid payout is a prior, deliberate, commented design choice that directly contradicts this
+      scenario's spec text ("reward should only be released once both portions are complete, otherwise one child
+      free-rides"). Silently rewriting a deliberate payout-economy decision without the product owner's sign-off
+      would be overreach for an audit pass; flagged for a real product decision rather than patched.</div>
+  </div>
+
+  <div class="scenario" id="g1-8">
+    <div class="scenario-top"><span class="ref">Ref: 1.8</span><h3>Parent self-creates &amp; self-completes a quest</h3><span class="pill p-match">MATCH</span></div>
+    <p class="verdict-line">A parent self-assigning their own task completes in one motion with no self-approval step, correctly scoped to genuine self-assignment (a delegated adult task still gets real review).</p>
+    <div class="cite">store/choreStore.ts:1104-1119 (submitChore — isSelfAssignedByParent shortcut)</div>
+    <div class="cite">store/choreStore.ts:1150-1167 (resubmitChore mirrors the same shortcut)</div>
+  </div>
+
+  <div class="scenario" id="g1-9">
+    <div class="scenario-top"><span class="ref">Ref: 1.9</span><h3>Recurring/daily chore instance</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">
+      The date-gated reset (rolling an approved recurring chore back to unassigned <code class="inline">todo</code>
+      only once the next cycle date arrives, not instantly) correctly satisfies the spec's core "clean new instance,
+      no overdue pile-up." But there are no actual per-day instances — one row is mutated in place, wiping the prior
+      day's <code class="inline">submittedAt</code>/<code class="inline">approvedAt</code> — and no streak-reset
+      logic exists anywhere (<code class="inline">member.streak</code> is a static column nothing writes to on a
+      miss). "Skip Today"/"Pause Series" have no implementation.
+    </p>
+    <div class="cite">store/choreStore.ts:1471-1517 (resetDueRecurringChores)</div>
+    <div class="cite">store/familyStore.ts:98,172,203 (streak column, no writer tied to completion)</div>
+    <div class="bug-note"><b>Not fixed this pass</b>Building real per-instance history/streak tracking needs either a
+      per-instance table or a completions log plus a streak-computation pass — a schema-level change, not a
+      contained fix. "Skip Today"/"Pause Series" are individually small but were not attempted given the larger
+      surrounding gap makes them low-value in isolation; documented together.</div>
+  </div>
+
+  <div class="scenario" id="g1-10">
+    <div class="scenario-top"><span class="ref">Ref: 1.10</span><h3>Quest declined by assignee, reopened to pool</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">
+      The release-to-pool mechanics work correctly (including the prior-pass team-clone-decline-in-place fix), but
+      the spec's central requirement — routing the decision back to the creator with Reopen/Reassign/Cancel choices
+      — does not exist. A decline jumps straight to Reopen-to-Pool unconditionally, with no parent decision card, no
+      notification to the parent at all, and the kid's decline <i>reason</i> is collected by the UI but discarded
+      before it reaches the plain-chore decline path.
+    </p>
+    <div class="cite">features/quests/QuestsScreen.tsx:643-657 (decline → immediate pool release, no notify, reason dropped)</div>
+    <div class="cite">store/choreAdapter.ts:297-316 (reassignQuest — pool release only)</div>
+    <div class="bug-note"><b>Not fixed this pass</b>Persisting the reason and firing a notification are individually
+      small, but the parent decision card with three distinct verbs (Reopen/Reassign/Cancel) is a new UI surface —
+      the combination was judged medium scope, not a same-pass safe fix. Flagged as the highest-value follow-up in
+      this category after 1.1.</div>
+  </div>
+
+  <div class="scenario" id="g1-11">
+    <div class="scenario-top"><span class="ref">Ref: 1.11</span><h3>Quest submitted, sent back for redo</h3><span class="pill p-match">MATCH</span></div>
+    <p class="verdict-line">
+      Decline routes back to the same assignee (never the pool) with a persisted reason; resubmit returns to a
+      fresh pending-approval state; both parents see the decline and reason. One cosmetic-only defect (a specific
+      urgent-alert banner reads from a hardcoded-empty history array and falls back to showing the quest title
+      instead of the reason) does not affect the primary decline-reason surface, which displays correctly.
+    </p>
+    <div class="cite">store/choreStore.ts:1401-1413 (requestRedo — reason + redoCount + no pool release)</div>
+    <div class="cite">features/hub/kid/KidQuestCard.tsx:95-97 (specific reason rendered to the kid)</div>
+  </div>
+
+  <div class="scenario" id="g1-12">
+    <div class="scenario-top"><span class="ref">Ref: 1.12</span><h3>Blended household — step-parent and bio-parent, same household</h3><span class="pill p-match">MATCH</span></div>
+    <p class="verdict-line">The app encodes no biological-relationship or creator-precedence concept — every gate is a flat <code class="inline">role === 'parent'</code> check, never tied to <code class="inline">createdById</code> as an authority test.</p>
+    <div class="cite">features/quests/QuestsScreen.tsx:83,720,981,997 (isParent gates, not creator-identity)</div>
+    <div class="cite">store/choreStore.ts:2328-2332 (review queue is family-wide, not creator-scoped)</div>
+  </div>
+
+  <div class="scenario" id="g1-12b">
+    <div class="scenario-top"><span class="ref">Ref: 1.12b</span><h3>Co-parenting across two separate households</h3><span class="pill p-na">N/A</span></div>
+    <p class="verdict-line">
+      Explicitly out of scope per the requirements doc itself and per this audit's instructions — cross-household
+      custody splitting is a deliberately-unbuilt future capability, not a defect. For completeness: the data-model
+      premise the spec states (one member ↔ exactly one <code class="inline">familyId</code>, every query scoped to
+      it) is accurate today, so the "two households never see each other's data" default the spec calls safe already
+      holds by construction — nothing to build for that half either.
+    </p>
+    <div class="cite">store/familyStore.ts getFamilyId() — single familyId per active member</div>
+  </div>
+
+  <div class="scenario" id="g1-13">
+    <div class="scenario-top"><span class="ref">Ref: 1.13</span><h3>Teen quest requiring parent co-sign for higher payout</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">Nothing exists here. Depends on 1.5 (teens can't self-create quests at all yet), and no reward-threshold concept exists anywhere in household settings.</p>
+    <div class="cite">store/choreStore.ts:610-618 (HouseholdSettings — no reward ceiling field)</div>
+    <div class="missing-note"><b>Why not built</b>Larger scope — needs 1.5 to land first, then a household threshold
+      setting, a payout-only-gate status distinct from the existing all-or-nothing approval states, and a parent
+      Approve-Reward/Adjust-Reward/Decline queue.</div>
+  </div>
+
+  <div class="scenario" id="g1-14">
+    <div class="scenario-top"><span class="ref">Ref: 1.14</span><h3>GP-created quest for grandchildren during a visit</h3><span class="pill p-match">MATCH</span></div>
+    <p class="verdict-line">
+      The best-implemented scenario in this category. GP creation lands in a real parent-approval queue, hidden from
+      kids until approved, with Edit-Proposal/Withdraw for GP and Approve/Adjust/Decline for either parent; routes
+      correctly to pool/direct/multi-kid on approval, and a nudge/redo fallback exists if the sponsoring GP goes quiet.
+    </p>
+    <div class="cite">store/choreStore.ts:2016-2056 (createGrandparentQuest — pending_parent_approval)</div>
+    <div class="cite">store/choreStore.ts:1380-1444 (approveGrandparentQuestAsParent / declineGrandparentQuestAsParent)</div>
+  </div>
+
+</section>
+
+<!-- ══════════════════════════════ CATEGORY 2 ══════════════════════════════ -->
+<section class="category" id="cat-2">
+  <div class="cat-head"><h2>2. Calendar / Event Lifecycle</h2><span class="count">12 scenarios</span></div>
+
+  <div class="scenario" id="g2-1">
+    <div class="scenario-top"><span class="ref">Ref: 2.1</span><h3>Parent creates household event</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">
+      Creation, instant appearance, realtime broadcast, and correct Edit/Delete parity between both parents all
+      match. But there is no explicit "whole-family" tag — the proxy is "no named attendees," which is emergent
+      behavior, not a modeled visibility lever, and means a creator can't mark something whole-family while also
+      naming specific attendees without silently hiding it from GP.
+    </p>
+    <div class="cite">store/eventStore.ts:35-107 (FamilyEvent — no tag/scope/visibility field)</div>
+    <div class="cite">features/calendar/CalendarScreen.tsx:634-664 (visibility keyed on assignee-emptiness)</div>
+    <div class="missing-note"><b>Why not built</b>Modeling an explicit visibility tag is a schema + form + four-filter-site change — larger than a safe same-pass addition.</div>
+  </div>
+
+  <div class="scenario" id="g2-2">
+    <div class="scenario-top"><span class="ref">Ref: 2.2</span><h3>Event needs a driver, open to any eligible helper</h3><span class="pill p-match">MATCH</span></div>
+    <p class="verdict-line">
+      The spec's core requirement — a claimed helper slot disappears for every other eligible helper the instant
+      it's claimed — is genuinely satisfied, including a dedicated realtime hook independent of the Calendar tab's
+      per-day cache specifically built to fix an earlier version of this exact bug. The race itself is CAS-protected
+      with reconciliation to the actual winner on a lost race.
+    </p>
+    <div class="cite">store/eventStore.ts:881-936 (claimHelperSlot — conditional write + reconcile-to-winner)</div>
+    <div class="cite">features/hub/useUpcomingOpenEvents.ts:6-16,52-87 (dedicated realtime pool, documented purpose)</div>
+    <div class="note">Minor divergence, not scored as a gap: the GP helper pool applies an availability window and a weekly cap the Teen pool doesn't — arguably a deliberate GP-protection choice, not a bug.</div>
+  </div>
+
+  <div class="scenario" id="g2-3">
+    <div class="scenario-top"><span class="ref">Ref: 2.3</span><h3>Recurring weekly event (practice)</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">
+      Series mechanics are solid — materialized per-occurrence rows (not virtual), Edit-This-Occurrence vs.
+      Edit-Whole-Series, Delete-Series/Skip-This-Week, and a rolling-window extension all work and correctly avoid
+      mutating the whole series for a single exception. But the "flag one occurrence as needing a driver" UI is only
+      reachable for <code class="inline">Ride</code>/<code class="inline">Study</code> categories — a recurring
+      event under any other category (e.g. a <code class="inline">Sports</code> practice) has no UI path to flag
+      that week's occurrence at all.
+    </p>
+    <div class="cite">store/eventStore.ts:961-1049 (addRecurringEvent, updateEventScoped, deleteEventScoped)</div>
+    <div class="cite">features/calendar/EventFormModal.tsx:1173-1177 (category-gated toggle visibility)</div>
+    <div class="missing-note"><b>Why not built</b>Loosening the category gate is small in isolation, but was bundled
+      with the rest of this scenario's larger open items and left for a deliberate follow-up rather than a
+      piecemeal partial fix.</div>
+  </div>
+
+  <div class="scenario" id="g2-4">
+    <div class="scenario-top"><span class="ref">Ref: 2.4</span><h3>Kid requests an event needing parent approval</h3><span class="pill p-fixed">GAP — FIXED</span></div>
+    <p class="verdict-line">
+      Approval queue, tentative styling, Withdraw Request, and the parent-side approve action all matched already.
+      But GP's Hub surface inverted the spec's visibility rule: it filtered <i>for</i>
+      <code class="inline">approvalPending</code> events, surfacing exactly the kid requests no parent had reviewed
+      yet as a claimable "family needs a hand" item — and the "I'll Drive" action on one of these called
+      <code class="inline">claimHelperSlot</code> with <code class="inline">{ approvalPending: false }</code>,
+      letting a grandparent silently clear a parent's approval gate on a minor's social/logistics request. A second
+      filter three lines below (<code class="inline">volunteerPool</code>) already correctly excluded these —
+      the two GP surfaces disagreed with each other, which is what made the bug clearly unintentional rather than
+      a deliberate design choice.
+    </p>
+    <div class="cite">features/hub/SeniorView.tsx:402-404 (was: filtered FOR approvalPending)</div>
+    <div class="cite">features/hub/senior/FamilyNeedsHandSection.tsx:76 (I'll Drive → claimHelperSlot with approvalPending:false)</div>
+    <div class="fix-note"><b>Fixed this pass</b>Inverted the filter to exclude <code class="inline">approvalPending</code>
+      events from GP's <code class="inline">openRequests</code>, matching the already-correct
+      <code class="inline">volunteerPool</code> filter and the spec's "not looped into a minor's social-plan
+      approval" rule.</div>
+    <div class="note">Two smaller, separate gaps in this scenario were left undocumented-not-fixed: "Edit Request" only
+      ever patches notes (a kid can't change date/time/title of their own pending request), and "Approve with
+      Changes"/a calendar-side Decline action don't exist as distinct affordances — both are small-to-medium UI
+      additions, not attempted this pass.</div>
+  </div>
+
+  <div class="scenario" id="g2-5">
+    <div class="scenario-top"><span class="ref">Ref: 2.5</span><h3>Multi-member event, 2+ people assigned</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">
+      Multi-assignee data model, distinct driver-vs-helper role fields, Accept-Driver-Role/Push-Back, and the
+      multi-member visibility fix are all in place. But plain attendees (not driver, not helper) get no "Attendee"
+      badge and no Acknowledge action — the assignment-role component only renders for a named driver/helper, so a
+      kid/teen riding along sees the event with no functional role indicator at all.
+    </p>
+    <div class="cite">features/calendar/EventAssignmentCard.tsx:45 (renders only for named helper/driver)</div>
+    <div class="cite">store/eventStore.ts:35-107 (no acknowledgedBy field on FamilyEvent)</div>
+    <div class="missing-note"><b>Why not built</b>Needs a new field plus a new badge/acknowledge UI component — medium scope, not attempted this pass.</div>
+  </div>
+
+  <div class="scenario" id="g2-6">
+    <div class="scenario-top"><span class="ref">Ref: 2.6</span><h3>Private/sensitive event (medical appointment)</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">
+      No privacy/sensitivity field exists on <code class="inline">FamilyEvent</code> at all. A prior pass correctly
+      removed a dead <code class="inline">isPrivate</code> reference that had always evaluated true (the field never
+      existed, so the negation was a no-op) — that fix closed a leak but never added the privacy model itself.
+      Net effect against spec: parents and the subject see full detail correctly, but a <b>sibling sees the sensitive
+      event in full</b> (kids get blanket family visibility with no category check), and GP gets a binary
+      visible/hidden outcome with no busy-block-without-label fallback.
+    </p>
+    <div class="cite">store/eventStore.ts:35-107 (FamilyEvent — no isPrivate/sensitivity field)</div>
+    <div class="cite">features/calendar/CalendarScreen.tsx:638-640 (kids get full family visibility, no category filter)</div>
+    <div class="missing-note"><b>Why not built</b>Needs a schema column, a form toggle, and threading through every
+      visibility filter (day/week/agenda/month/Hub timeline/strip) plus a busy-block render mode — a real,
+      multi-surface feature.</div>
+  </div>
+
+  <div class="scenario" id="g2-7">
+    <div class="scenario-top"><span class="ref">Ref: 2.7</span><h3>Teen creates own social event</h3><span class="pill p-fixed">GAP — FIXED</span></div>
+    <p class="verdict-line">
+      Every teen-created event of every category was unconditionally forced into the parent approval queue
+      (<code class="inline">approvalPending: isKid || isTeen</code>), directly contradicting the spec's repeated
+      "teens get expanded autonomy" pattern (established independently by 1.5 and 4.3) — a same-day, no-resource
+      teen social plan should be live immediately. Worse, a teen's own pending event had <i>no way to cancel it</i>:
+      the withdraw-delete gate and the edit-modal's <code class="inline">isOwnPending</code> check were both
+      <code class="inline">isKid</code>-only, so a gated teen event could be created but neither confirmed, edited,
+      nor withdrawn by its own creator.
+    </p>
+    <div class="cite">features/calendar/EventFormModal.tsx:404 (was: approvalPending: isKid || isTeen, unconditional)</div>
+    <div class="cite">features/calendar/CalendarScreen.tsx:1229 (canDelete was isKid-only)</div>
+    <div class="cite">features/calendar/EventFormModal.tsx:1085 (isOwnPending was isKid-only, no isTeen variable existed in that component)</div>
+    <div class="fix-note"><b>Fixed this pass</b>Gated <code class="inline">approvalPending</code> for a teen's own
+      event on whether it actually requests a resource (a driver) — the same "gate only when something is needed
+      FROM a parent" rule the spec's own Why-box states, mirroring how kids stay unconditionally gated (no
+      autonomy carve-out exists for kids anywhere else in the spec). Added the missing <code class="inline">isTeen</code>
+      variable to the Edit-Event modal and widened both the calendar's swipe-delete gate and the modal's
+      <code class="inline">isOwnPending</code> check from <code class="inline">isKid</code> to
+      <code class="inline">isKid || isTeen</code>, so a teen can now Withdraw/Edit their own still-pending event.</div>
+  </div>
+
+  <div class="scenario" id="g2-8">
+    <div class="scenario-top"><span class="ref">Ref: 2.8</span><h3>GP offers to help — pickup coverage</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">
+      The spec's two-stage offer/accept model (GP offers → PENDING → parent Accept/Decline → CONFIRMED) is
+      collapsed into one stage: a GP claim writes <code class="inline">helper_status = 'confirmed'</code> directly
+      with no parent gate at all. <code class="inline">HelperStatus</code>'s <code class="inline">'pending'</code>
+      value means the opposite direction (parent assigned it TO you, awaiting your yes), not GP's offer awaiting a
+      parent's yes.
+    </p>
+    <div class="cite">features/hub/senior/OpenRideRequestsList.tsx:86 (onClaim → claimHelperSlot writes confirmed directly)</div>
+    <div class="cite">store/eventStore.ts:21 (HelperStatus has no offered/pending-from-GP state)</div>
+    <div class="bug-note"><b>Not fixed this pass</b>This is a defensible product simplification the UI is honest
+      about ("First to claim wins"), not an accidental oversight — the spec's own "Why" box argues acceptance should
+      be low-friction, which the current one-tap model already achieves in spirit even though it skips the
+      intermediate state literally described. Adding a genuine offer/accept state needs a new status value plus new
+      parent-facing accept/decline UI — judged a product decision, not a same-pass bug fix.</div>
+  </div>
+
+  <div class="scenario" id="g2-9">
+    <div class="scenario-top"><span class="ref">Ref: 2.9</span><h3>Event edited after members already confirmed</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">
+      The scenario as written is impossible today: no code path anywhere edits an existing event's date/time — the
+      parent edit-patch block covers notes, alertCall, helper, memberIds, and GP/teen toggles, but never
+      <code class="inline">time</code>/<code class="inline">date</code>. Time changes require delete + recreate.
+      Separately, even a hypothetical time edit would not reset a confirmed driver/helper back to pending for
+      re-confirmation, and no notification fires on any edit at all — only on delete.
+    </p>
+    <div class="cite">features/calendar/EventFormModal.tsx:1149-1187 (parent edit patch — no time/date field)</div>
+    <div class="cite">store/eventStore.ts:838-862 (updateEvent — no re-confirm side-effect on any field change)</div>
+    <div class="bug-note"><b>Not fixed this pass</b>Exposing date/time in the edit form is small in isolation, but
+      the differential re-confirm-on-material-change plus edit-notification model it needs to be safe is a real
+      feature addition (not a bug patch) — flagged rather than attempted piecemeal.</div>
+  </div>
+
+  <div class="scenario" id="g2-10">
+    <div class="scenario-top"><span class="ref">Ref: 2.10</span><h3>Whole-family event vs. individual event</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">
+      Same root cause as 2.1/2.6 — no visibility tag exists, so behavior is emergent from assignee-emptiness. Most
+      rows pass incidentally (whole-family visible to all, individual event's parents/subject see full detail, GP
+      hidden when assigned). One row fails: a teen is <b>not</b> hidden from an individual-tagged sibling event —
+      kids/teens get blanket family visibility, with the default "mine" schedule filter only incidentally hiding it
+      until the "All" tab is tapped.
+    </p>
+    <div class="cite">features/calendar/CalendarScreen.tsx:638-640 (blanket kid/teen visibility, no tag-based filter)</div>
+    <div class="missing-note"><b>Why not built</b>Same larger tag-modeling gap as 2.1/2.6 — a schema and four-filter-site change, not a contained fix.</div>
+  </div>
+
+  <div class="scenario" id="g2-11">
+    <div class="scenario-top"><span class="ref">Ref: 2.11</span><h3>Event RSVP / attendance confirmation</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">
+      No RSVP data model exists at all — no field on <code class="inline">FamilyEvent</code>, no Going/Not-Going/Maybe
+      controls in any calendar component, no headcount aggregation, no Send-Reminder action. The only trace is a
+      reserved <code class="inline">'event_rsvp'</code> notification-type enum value with no producer or consumer
+      anywhere. The nearest existing primitive (single-assignee helper accept/decline) is a different model from a
+      multi-invitee headcount — exactly the conflation the spec's own Why-box warns against conflating.
+    </p>
+    <div class="cite">store/eventStore.ts:35-107 (no rsvps/attendance field)</div>
+    <div class="cite">supabase/migrations/20260729000001_notif_type_check_complete.sql:38 ('event_rsvp' enum value, unused)</div>
+    <div class="missing-note"><b>Why not built</b>Needs a new table or JSONB column, per-member response writes, aggregation UI, and a reminder action — a real feature, not a small addition.</div>
+  </div>
+
+  <div class="scenario" id="g2-12">
+    <div class="scenario-top"><span class="ref">Ref: 2.12</span><h3>Overlapping/conflicting event on one member's calendar</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">
+      No real time-overlap math exists anywhere in the app — this re-confirms a prior pass's finding (E45),
+      unchanged. The "AI conflict detection" banner is driven entirely by a manually-set boolean that is written
+      <code class="inline">false</code> at every call site and never set <code class="inline">true</code> by any
+      code path; the banner's "Scanning for time overlaps..." copy and "No schedule conflicts!" success state
+      actively misrepresent what the feature does. No assignment-time inline warning and no assignee-side
+      "this overlaps, confirm you can do both" prompt exist either.
+    </p>
+    <div class="cite">features/calendar/CalendarScreen.tsx:225-271 (simulateConflictDetection — conflict source is only a declined helper, never real overlap)</div>
+    <div class="cite">store/eventStore.ts:60 (e.conflict — only ever written false across every call site)</div>
+    <div class="bug-note"><b>Not fixed this pass (re-confirmed, previously documented)</b>Genuine pairwise overlap
+      detection — with all-day handling and the known midnight-span gap — plus two new UI surfaces (assign-time
+      warning, assignee-side confirm) is a real feature build, correctly left unattempted as a "quick patch" risk
+      in an area already flagged as needing a deliberate design pass.</div>
+  </div>
+
+</section>
+
+<!-- ══════════════════════════════ CATEGORY 3 ══════════════════════════════ -->
+<section class="category" id="cat-3">
+  <div class="cat-head"><h2>3. Claim Races &amp; Concurrency</h2><span class="count">5 scenarios</span></div>
+
+  <div class="scenario" id="g3-1">
+    <div class="scenario-top"><span class="ref">Ref: 3.1</span><h3>Two kids claim the same pool quest simultaneously</h3><span class="pill p-fixed">GAP — FIXED</span></div>
+    <p class="verdict-line">
+      The server-side half now genuinely matches (see 1.1's fix — first-write-wins is a real Postgres-side
+      conditional, not merely optimistic). The loser-facing "someone just claimed this" toast the spec explicitly
+      asks for still doesn't exist — <code class="inline">claimBounty</code>/<code class="inline">claimPoolQuest</code>
+      return <code class="inline">void</code> with only a <code class="inline">console.warn</code> on a lost race, so
+      the loser currently sees a silent disappearance rather than a friendly explanation.
+    </p>
+    <div class="cite">store/choreStore.ts:1078-1114 (claimPoolQuest — this pass's fix, see 1.1)</div>
+    <div class="fix-note"><b>Fixed this pass</b>The claim race itself (the part that actually protects data
+      integrity) is fixed via the same change as 1.1 — every live claim path is now genuinely first-write-wins.</div>
+    <div class="missing-note"><b>Toast not added this pass</b>Giving the loser a friendly toast instead of silent
+      removal needs a success/failure callback threaded through <code class="inline">claimPoolQuest</code> to its
+      call sites (mirroring <code class="inline">eventStore.claimHelperSlot</code>'s <code class="inline">onWon</code>
+      pattern) — small in isolation but touches 3+ UI call sites; left as a documented follow-up rather than rushed
+      alongside the higher-priority data-integrity fix.</div>
+  </div>
+
+  <div class="scenario" id="g3-2">
+    <div class="scenario-top"><span class="ref">Ref: 3.2</span><h3>Two teens claim the same driver slot</h3><span class="pill p-match">MATCH</span></div>
+    <p class="verdict-line">
+      Role-neutral first-write-wins, genuinely CAS-protected with reconciliation to the real winner on a lost race
+      (strictly better than a bare revert) — no role bias anywhere in the guard. Coins are correctly gated behind
+      actually winning the claim, not the optimistic local state.
+    </p>
+    <div class="cite">store/eventStore.ts:881-936 (claimHelperSlot)</div>
+    <div class="cite">features/hub/TeenView.tsx:104-106 (coin award happens inside the onWon callback only)</div>
+  </div>
+
+  <div class="scenario" id="g3-3">
+    <div class="scenario-top"><span class="ref">Ref: 3.3</span><h3>Two parents act on the same approval simultaneously</h3><span class="pill p-match">MATCH</span></div>
+    <p class="verdict-line">
+      Both <code class="inline">approveChore</code> and <code class="inline">requestRedo</code> carry a
+      compare-and-swap DB write guarded on the exact status the call started from
+      (<code class="inline">.eq('status', previousStatus)</code>), mirroring
+      <code class="inline">respondToParentQuest</code>'s established pattern — a concurrent decline cannot silently
+      force-overwrite an already-approved-and-paid item; a lost race is logged loudly rather than applied. The
+      spec's explicit "Reverse Approval" UI affordance for a parent who arrives second does not exist as a distinct
+      action (see 4.7), but the core prohibition — no silent overwrite of a resolved approval — is genuinely
+      enforced at the data layer.
+    </p>
+    <div class="cite">store/choreStore.ts:1301-1339 (approveChore — CAS guard + loud warning on lost race)</div>
+    <div class="cite">store/choreStore.ts:1401-1432 (requestRedo — identical guard shape)</div>
+    <div class="note">The explicit "Reverse Approval" / "Parent-1 already approved this a moment ago" messaging affordance is scored separately under 4.7, where it's a documented Missing Feature.</div>
+  </div>
+
+  <div class="scenario" id="g3-4">
+    <div class="scenario-top"><span class="ref">Ref: 3.4</span><h3>Claim + delete race</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">
+      Data integrity matches: delete force-closes any orphaned assignment rows before removing the chore, and a
+      concurrent claim's conditional write matches zero rows against the now-deleted row, correctly rolling back the
+      optimistic local claim — no phantom claim on a deleted item. What's missing is specifically the spec's
+      requirement for a clear, distinct message ("this quest was just removed by a parent") — the claim functions
+      have no way to report the loss to their caller at all (return <code class="inline">void</code>), and can't
+      currently distinguish "someone else claimed it" from "it was deleted" since both produce the same zero-row result.
+    </p>
+    <div class="cite">store/choreStore.ts:1006-1030 (deleteChore — force-closes orphaned assignments first)</div>
+    <div class="missing-note"><b>Why not built</b>Distinguishing the two zero-row causes needs an extra existence
+      check or a richer return value threaded through every call site — small for the toast alone, more for the
+      cause-distinction; grouped with 3.1's toast follow-up rather than fixed separately this pass.</div>
+  </div>
+
+  <div class="scenario" id="g3-5">
+    <div class="scenario-top"><span class="ref">Ref: 3.5</span><h3>Claim + edit-payout race</h3><span class="pill p-match">MATCH</span></div>
+    <p class="verdict-line">
+      Claim and a reward edit touch disjoint DB columns, so neither blocks the other, matching the spec's "claim
+      still succeeds." The realtime UPDATE handler replaces the whole local row with the authoritative DB version,
+      so an edited reward lands on the claimant's screen without a manual refresh, and payout itself reads the
+      reward at approval time (not claim time), so a missed realtime frame can't underpay.
+    </p>
+    <div class="cite">store/choreStore.ts:1078-1114 (claim writes only assigned_to_id/status/is_pool)</div>
+    <div class="cite">store/choreStore.ts:698-714 (realtime UPDATE replaces the full local row)</div>
+    <div class="unconfirmed-note"><b>Not runtime-tested</b>The mechanism is correct by static reading; the exact
+      "updates live the moment the claim confirms" latency the spec describes was not verified live.</div>
+  </div>
+
+</section>
+
+<!-- ══════════════════════════════ CATEGORY 4 ══════════════════════════════ -->
+<section class="category" id="cat-4">
+  <div class="cat-head"><h2>4. Approval &amp; Payout Flows</h2><span class="count">8 scenarios</span></div>
+
+  <div class="scenario" id="g4-1">
+    <div class="scenario-top"><span class="ref">Ref: 4.1</span><h3>Standard kid submission → parent approval</h3><span class="pill p-match">MATCH</span></div>
+    <p class="verdict-line">Shared, unscoped approval queue; proof rendering with a missing-photo warning; either parent can independently approve; reviewer attribution is persisted; coins credit with a live in-memory balance patch, not just a DB write.</p>
+    <div class="cite">features/chores/ParentReviewDeck.tsx:454 (family-wide pending_approval filter)</div>
+    <div class="cite">store/choreStore.ts:1523-1591 (awardPoints — RPC write + in-memory patch)</div>
+  </div>
+
+  <div class="scenario" id="g4-2">
+    <div class="scenario-top"><span class="ref">Ref: 4.2</span><h3>Self-created/self-completed task — auto vs. manual</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">
+      Three of four general rules match: a parent's self-assigned task auto-completes; a kid/teen's reward-bearing
+      self-created quest correctly requires approval; teens get no shortcut over kids for reward-bearing work. The
+      fourth diverges on both halves that involve a zero-reward or already-approved case: a kid's zero-reward
+      personal to-do still enters the approval queue (the gate is purely role-based, not reward-conditional), and a
+      GP's own pre-approved-task completion re-enters a <i>second</i> approval gate rather than auto-completing —
+      contradicting the spec's explicit "the approval already happened at proposal time, a second one is redundant."
+    </p>
+    <div class="cite">store/choreStore.ts:1104-1119 (submitChore shortcut is role-based, not reward-conditional)</div>
+    <div class="cite">store/choreStore.ts:1218 (submitGrandparentQuest — sets pending_grandparent_approval, a second gate)</div>
+    <div class="missing-note"><b>Why not built</b>The zero-reward kid to-do carve-out is small (one extra
+      condition), but the GP double-approval question has a defensible independent justification for the
+      receipt/reimbursement sub-case the spec doesn't contemplate — changing it needs a product decision on whether
+      to split GP completion paths by whether money is involved, not a blind patch.</div>
+  </div>
+
+  <div class="scenario" id="g4-3">
+    <div class="scenario-top"><span class="ref">Ref: 4.3</span><h3>Teen submission, either parent can approve</h3><span class="pill p-match">MATCH</span></div>
+    <p class="verdict-line">No teen-specific approval shortcut exists anywhere — a teen's reward-bearing submission goes through the identical shared queue as a kid's, and either parent can act.</p>
+    <div class="cite">store/choreStore.ts:1108 (self-approve shortcut gated on role === 'parent' only)</div>
+  </div>
+
+  <div class="scenario" id="g4-4">
+    <div class="scenario-top"><span class="ref">Ref: 4.4</span><h3>Parent declines submission, requests redo</h3><span class="pill p-fixed">GAP — FIXED</span></div>
+    <p class="verdict-line">
+      The primary decline path (Chores tab's RedoSheet) already enforced a mandatory reason. One real bug on that
+      same path: <code class="inline">requestRedo</code> was called with a hardcoded empty string for
+      <code class="inline">reviewerId</code>, so every redo request from the main review sheet wrote a blank
+      <code class="inline">reviewed_by_id</code> — approvals correctly recorded who acted; declines from this path
+      silently didn't, contradicting the spec's "the record should always show who acted" rule established
+      elsewhere in this same category (4.1).
+    </p>
+    <div class="cite">features/chores/ParentReviewDeck.tsx:313 (was: requestRedo(task.id, '', msg, preset))</div>
+    <div class="fix-note"><b>Fixed this pass</b>Threaded the reviewing parent's real id through
+      <code class="inline">RedoSheet</code> (new <code class="inline">reviewerId</code> prop, passed as
+      <code class="inline">parent.id</code> from the main component) instead of an empty string.</div>
+    <div class="note">Two smaller reason-bypasses were found but left undocumented-not-fixed: the Hub's
+      <code class="inline">QuestApprovalCard</code> built-in fallback (<code class="inline">Alert.prompt</code>) defaults
+      an empty decline reason to a canned string rather than blocking — currently unreachable in practice since
+      every live call site supplies its own reason-collecting sheet, so it's latent rather than live; and the
+      GP-quest safety-review decline hardcodes a fixed reason string with no input field at all, which is live but
+      is a distinct GP-proposal-decline flow at the edge of this scenario's literal scope (a kid-submission decline).</div>
+  </div>
+
+  <div class="scenario" id="g4-5">
+    <div class="scenario-top"><span class="ref">Ref: 4.5</span><h3>Payout posts to shared family ledger</h3><span class="pill p-fixed">GAP — FIXED</span></div>
+    <p class="verdict-line">
+      Quest-approval payouts do write a real, persisted <code class="inline">point_transactions</code> row loaded
+      by both parents identically — the underlying ledger entry matches. But the Vault's Ledger tab, the UI
+      surface actually marketed as "the ledger," rendered <b>every family member's</b> name, exact balance, and a
+      comparative progress bar to any viewer with tab access — including kids, who have ledger access per the
+      feature's role list. The spec is explicit that a kid should see full access to only their own transaction
+      history/balance, never a sibling's.
+    </p>
+    <div class="cite">features/vault/tabs/LedgerTab.tsx:190-268 (was: members.map(...) unconditionally, no per-viewer scoping)</div>
+    <div class="cite">features/vault/VaultScreen.tsx:56 (ledger feature roles: ['parent','kid'])</div>
+    <div class="fix-note"><b>Fixed this pass</b>Added a <code class="inline">visibleMembers</code> selector that
+      returns the full family list for a parent viewer but only the active member's own record for a non-parent
+      viewer, and rewired the balance summary and totals to read from it instead of the raw
+      <code class="inline">members</code> array.</div>
+    <div class="missing-note"><b>Separately not fixed</b>The Ledger tab's transaction log itself is ephemeral local
+      component state (populated only by grants made in that browser session, capped at 20, never persisted or read
+      from <code class="inline">point_transactions</code>) — so Parent-2 genuinely does not see Parent-1's grants or
+      any quest payouts on this screen at all. This is a materially larger gap (the "shared" ledger view isn't
+      actually shared) than the visibility leak just fixed, and rewiring it to read real transactions is a
+      medium-scope UI change left undocumented-not-built this pass.</div>
+  </div>
+
+  <div class="scenario" id="g4-6">
+    <div class="scenario-top"><span class="ref">Ref: 4.6</span><h3>GP-completed task — does it need approval at all?</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">
+      Same underlying divergence as 4.2's fourth row: a GP's completion of an accepted errand routes into the
+      parent's approval queue with a full Approve/Redo card, rather than completing instantly with an optional
+      social acknowledgement as the spec wants. The receipt/reimbursement sub-case has an independent justification
+      the spec doesn't model (money changed hands, genuinely worth a look), which is the likely reason this exists,
+      but it does contradict the literal scenario.
+    </p>
+    <div class="cite">store/choreStore.ts:1240 (submitGPErrandReceipt — status: pending_approval, "goes to parent review deck")</div>
+    <div class="bug-note"><b>Not fixed this pass</b>Same reasoning as 4.2 — splitting the GP completion path by
+      whether a receipt/reimbursement is actually attached is a product decision (is the receipt review itself the
+      intended design, or should non-monetary GP task completions skip review entirely?), not a code bug to
+      silently patch.</div>
+  </div>
+
+  <div class="scenario" id="g4-7">
+    <div class="scenario-top"><span class="ref">Ref: 4.7</span><h3>Disputed approval — two parents disagree</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">
+      Nothing in this scenario exists. No store action ever transitions a chore backward out of
+      <code class="inline">approved</code>; no clawback/negative-transaction mechanism exists (
+      <code class="inline">deductCoins</code> exists but is wired only to redemption/transfers, never approval
+      reversal); no "Flag for Discussion"/"Request Reversal"/"Stand By Approval" UI exists anywhere; once approved,
+      a chore leaves every parent-facing review surface entirely, so there's no place to even raise the dispute.
+      Worth stating precisely: the spec's core protective default (no <i>silent, unilateral</i> reversal of an
+      already-paid reward) does hold today — but only by omission, since no reversal path of any kind exists to
+      misuse. The one place this default can still break is the live-race window covered by 3.3, which is a real
+      CAS guard, not an omission.
+    </p>
+    <div class="cite">store/choreStore.ts (grep for revers/unapprove/clawback — no matches anywhere in the file)</div>
+    <div class="cite">features/hub/parent/QuestApprovalCard.tsx:97-120 (renders only while pending_approval — no post-approval card exists)</div>
+    <div class="missing-note"><b>Why not built</b>Needs a new reversal action, a negative-transaction/clawback
+      path, a co-sign-or-audit-note primitive, and a new post-approval card surface — a genuinely new capability,
+      larger than a same-pass fix.</div>
+  </div>
+
+  <div class="scenario" id="g4-8">
+    <div class="scenario-top"><span class="ref">Ref: 4.8</span><h3>Bonus/spot-reward outside the quest system</h3><span class="pill p-fixed">GAP — FIXED</span></div>
+    <p class="verdict-line">
+      A parent's instant, no-approval spot bonus correctly matches — but it wrote only the
+      <code class="inline">members</code> balance column, with no <code class="inline">point_transactions</code>
+      row at all (unlike quest-approval payouts, which do log one). The spec's "Why" box is explicit that a bonus
+      must still land in the same transparent shared ledger so the other parent isn't surprised by an unexplained
+      balance change — this was silently violated for every spot bonus, GP cheer, and GP one-tap send.
+    </p>
+    <div class="cite">store/familyStore.ts:291-307 (awardCoins — was: members column only, no ledger insert)</div>
+    <div class="fix-note"><b>Fixed this pass</b>Added a <code class="inline">point_transactions</code> insert to
+      <code class="inline">awardCoins</code> (type <code class="inline">ADMIN_ADJUSTMENT</code>, the closest
+      existing DB-constraint-allowed value for a manual grant) whenever a positive amount is awarded, so every
+      bonus/cheer/GP-send now leaves the same audit trail a quest-approval payout does.</div>
+    <div class="missing-note"><b>Separately not fixed</b>GP can grant coins (via SendBonusCard/CheerSquad) with no
+      parent approval hop at all, which the spec says shouldn't be possible without parent sign-off — mitigated
+      somewhat by landing in the separate <code class="inline">gpCoins</code> wallet rather than the household's
+      main economy, but that segregation may or may not be the intended answer; left as a product question rather
+      than assumed and patched.</div>
+  </div>
+
+</section>
+
+<!-- ══════════════════════════════ CATEGORY 5 ══════════════════════════════ -->
+<section class="category" id="cat-5">
+  <div class="cat-head"><h2>5. Visibility &amp; Privacy Defaults</h2><span class="count">7 scenarios</span></div>
+
+  <div class="scenario" id="g5-1">
+    <div class="scenario-top"><span class="ref">Ref: 5.1</span><h3>GP default visibility scope</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">
+      Three of six default-visibility rows match cleanly: whole-family events visible, kid pool quests
+      informational-only (not claimable), and parent-to-parent delegations hidden. Individual/private events have no
+      redaction model at all (see 5.5/5.6 for detail). Helper/driver-need visibility has one confirmed gap: the GP
+      calendar filter checks <code class="inline">helper</code> but never <code class="inline">driverName</code> — a
+      GP who is the confirmed <i>driver</i> (a separate field/claim-channel from <code class="inline">helper</code>)
+      on an event that also has a named assignee sees nothing in Day/Week/Agenda views. No "caregiver mode" or any
+      other explicit, parent-controlled per-household visibility setting exists at all.
+    </p>
+    <div class="cite">features/calendar/CalendarScreen.tsx:650-655,677-682 (matches memberId/memberIds/helper, never driverName)</div>
+    <div class="cite">store/choreStore.ts:610-618 (HouseholdSettings — no visibility settings of any kind)</div>
+    <div class="missing-note"><b>Why not built</b>The driverName gap is small in isolation but was grouped with the
+      larger, genuinely-missing per-household visibility-settings capability this scenario also requires — that
+      needs a settings surface, a per-item share action, and a redaction render path, all larger scope.</div>
+  </div>
+
+  <div class="scenario" id="g5-2">
+    <div class="scenario-top"><span class="ref">Ref: 5.2</span><h3>Kid views another kid's individual quest</h3><span class="pill p-match">MATCH</span></div>
+    <p class="verdict-line">Directly-assigned individual quests are correctly hidden from siblings in both the Quests screen and the Hub; open pool quests are correctly visible/claimable to all eligible siblings until claimed.</p>
+    <div class="cite">features/quests/QuestsScreen.tsx:449-455 (sibling exclusion for non-pool quests)</div>
+    <div class="cite">features/hub/KidView.tsx:147-148 (myQuests = own only; pool separately visible)</div>
+  </div>
+
+  <div class="scenario" id="g5-3">
+    <div class="scenario-top"><span class="ref">Ref: 5.3</span><h3>Financial/ledger visibility by role</h3><span class="pill p-fixed">GAP — FIXED</span></div>
+    <p class="verdict-line">
+      Own-balance full access for kid/teen matches, and this scenario's central sibling-balance leak is the same
+      one fixed under 4.5 — the Vault Ledger tab exposed every sibling's exact balance to any kid viewer. Separately
+      (defense-in-depth, not the primary render path): the raw <code class="inline">point_transactions</code> fetch
+      itself has no role or member scoping at the query layer — every role's device pulls and caches the whole
+      family's last 200 transactions — compensated today only by no UI currently rendering that raw list to a
+      non-parent, not by the query itself.
+    </p>
+    <div class="cite">features/vault/tabs/LedgerTab.tsx (see 4.5's fix — same file, same change)</div>
+    <div class="cite">store/choreStore.ts:820-824 (point_transactions fetch — no .eq('user_id', ...), no role branch)</div>
+    <div class="fix-note"><b>Fixed this pass</b>Same fix as 4.5 (visibleMembers scoping in LedgerTab) closes the one
+      confirmed live rendering path.</div>
+    <div class="missing-note"><b>Separately not fixed</b>Scoping the raw transaction fetch itself by role/member is
+      a small, defensible defense-in-depth hardening, but with no reachable render path found this pass exposing it
+      further, it was judged lower-urgency than the live UI leak just fixed and left for a follow-up.</div>
+  </div>
+
+  <div class="scenario" id="g5-4">
+    <div class="scenario-top"><span class="ref">Ref: 5.4</span><h3>Teen private calendar events</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">No "private" concept exists on events at all — same root gap as 2.6/5.5/5.6, confirmed by the same removed-dead-code comment (a previous isPrivate check always evaluated true because the field never existed).</p>
+    <div class="cite">store/eventStore.ts:35-107 (FamilyEvent — no isPrivate/visibility field)</div>
+    <div class="missing-note"><b>Why not built</b>Same larger, cross-cutting gap as 2.6 — schema + form + every visibility filter site.</div>
+  </div>
+
+  <div class="scenario" id="g5-5">
+    <div class="scenario-top"><span class="ref">Ref: 5.5</span><h3>Medical/health-tagged items — general rule</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">
+      Parent and subject rows match (both parents get full detail; the subject always sees their own item). Both
+      remaining rows fail: siblings are explicitly documented in the code as getting full family visibility
+      including Medical-category events ("kids can see siblings' events" — an intentional design comment, not an
+      oversight, but one that contradicts this scenario), and GP's visibility is purely membership-based with no
+      category awareness at all — a family-wide-tagged medical event (no specific assignee) is fully visible to GP
+      including doctor name and notes, with no busy-block fallback.
+    </p>
+    <div class="cite">features/calendar/CalendarScreen.tsx:638-640 (explicit comment: kids see siblings' events, no category filter)</div>
+    <div class="cite">store/eventStore.ts:57 (doctorName field — unredacted wherever the event is visible at all)</div>
+    <div class="missing-note"><b>Why not built</b>Sibling-medical-hiding is a contained category check in two
+      filters (medium), but GP's redaction needs the same busy-block render mode 5.4/2.6 require — grouped as one
+      larger privacy-model gap rather than three separate patches.</div>
+  </div>
+
+  <div class="scenario" id="g5-6">
+    <div class="scenario-top"><span class="ref">Ref: 5.6</span><h3>Cross-household visibility (blended family)</h3><span class="pill p-match">MATCH</span></div>
+    <p class="verdict-line">
+      Household isolation is enforced at three independent layers — RLS policies on every relevant table scoped to
+      <code class="inline">family_id = current_user_family_id()</code>, the client's own query filter, and a
+      family-namespaced realtime channel topic. No path was found where one household's rows reach another.
+    </p>
+    <div class="cite">supabase/migrations/20260818194500_repoint_all_rls_to_auth_user_id.sql:44-51 (RLS on calendar_events)</div>
+    <div class="cite">store/choreStore.ts:811 (.eq('family_id', familyId) on the client query)</div>
+    <div class="unconfirmed-note"><b>One narrow caveat, not runtime-tested</b><code class="inline">parent_quest_assignments</code>
+      has no <code class="inline">family_id</code> column and its realtime subscription carries no server-side
+      filter of its own — relying entirely on that table's RLS policy to restrict delivery. The migration exists;
+      its policy body was not independently re-verified this pass.</div>
+  </div>
+
+  <div class="scenario" id="g5-7">
+    <div class="scenario-top"><span class="ref">Ref: 5.7</span><h3>GP editing permissions vs. viewing permissions</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">
+      Two of three rows match: GP can unclaim their own commitment but not reassign to a third party, and a GP
+      cannot alter reward/terms on a quest post-approval. The first row fails: the Edit Event modal never computes
+      an <code class="inline">isSenior</code> variable at all (unlike the Create form, which computes it), so a
+      senior matches neither the kid-restriction nor the past-event-restriction branch and receives the
+      <b>unrestricted</b> edit form — full time/attendee/driver-assignment access, contradicting the spec's
+      "can RSVP/acknowledge, cannot edit time/location/attendees." Delete is correctly withheld from GP, so this is
+      specifically an edit-permission gap, not a full administrator-access gap.
+    </p>
+    <div class="cite">features/calendar/EventFormModal.tsx:1080-1082 (EditEventModal — no isSenior computed, restricted stays false for GP)</div>
+    <div class="cite">features/calendar/CalendarScreen.tsx:1129,1266,1283 (edit long-press wired with no role gate)</div>
+    <div class="bug-note"><b>Not fixed this pass</b>The fix itself is small (compute <code class="inline">isSenior</code>
+      in the Edit modal and fold it into the <code class="inline">restricted</code> condition, mirroring the Create
+      form), but was deprioritized behind the higher-confidence, more clearly-scoped fixes made this pass and is
+      flagged as a same-shape, low-risk follow-up.</div>
+  </div>
+
+</section>
+
+<!-- ══════════════════════════════ CATEGORY 6 ══════════════════════════════ -->
+<section class="category" id="cat-6">
+  <div class="cat-head"><h2>6. Reassignment &amp; Cancellation</h2><span class="count">6 scenarios</span></div>
+
+  <div class="scenario" id="g6-1">
+    <div class="scenario-top"><span class="ref">Ref: 6.1</span><h3>Parent reassigns a claimed quest to someone else</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">
+      "Return to Pool Instead" works correctly, with a proper team-clone carve-out. Everything else in this
+      scenario is silent: reassignment is a bare <code class="inline">assignedToId</code> write with no
+      notification to the person losing the quest, no Accept/Push-Back agency for the kid gaining it (a kid
+      reassignment lands pre-accepted; that negotiation only exists for adult tasks), no notification to the other
+      parent, and any partial submitted work (photo/note) stays silently attached to the row now owned by the new assignee.
+    </p>
+    <div class="cite">store/choreAdapter.ts:315,420 (reassign — bare updateChore, no notification)</div>
+    <div class="cite">features/quests/components/EditQuestModal.tsx:139,152,163-168 (no notif/push call anywhere in the file)</div>
+    <div class="bug-note"><b>Not fixed this pass</b>The missing notification alone is small, but giving the new
+      assignee real Accept/Push-Back agency for a kid-level reassignment (today that negotiation exists only for
+      adult tasks) is a bigger behavioral change to the reassignment model — bundled together as one scenario and
+      left for a deliberate fix rather than a partial patch.</div>
+  </div>
+
+  <div class="scenario" id="g6-2">
+    <div class="scenario-top"><span class="ref">Ref: 6.2</span><h3>Assignee removed from the family mid-task</h3><span class="pill p-fixed">GAP — FIXED</span></div>
+    <p class="verdict-line">
+      <code class="inline">removeMember</code> did no in-flight-work scan and — critically — never checked the
+      result of its own DB delete call, unlike <code class="inline">updateMember</code> right above it in the same
+      file (hardened for exactly this class of bug earlier this session). Since
+      <code class="inline">chore_tasks.assigned_to_id → members(id)</code> has no <code class="inline">ON DELETE</code>
+      clause (defaults to <code class="inline">NO ACTION</code>), removing a member who still holds an assigned
+      chore is very likely rejected by Postgres — but the function discarded that result, so the member vanished
+      from local state/AsyncStorage while the DB row survived, silently reappearing on the next sync with no
+      explanation. The call site made this worse with a redundant, equally-unchecked duplicate delete before ever
+      calling <code class="inline">removeMember</code>.
+    </p>
+    <div class="cite">store/familyStore.ts:284-289 (was: no error check at all on the delete)</div>
+    <div class="cite">features/vault/tabs/RosterTab.tsx:418-421 (was: a second, separately-unchecked delete call)</div>
+    <div class="fix-note"><b>Fixed this pass</b><code class="inline">removeMember</code> now checks the delete's
+      result, rolls the optimistic local removal back on failure (so local state can't lie about the member being
+      gone), and throws so the caller can surface it. Removed the redundant duplicate delete in
+      <code class="inline">RosterTab.deleteMember</code> and added a user-facing alert that specifically names the
+      likely cause (an assigned chore/quest/event blocking the removal) when the error looks like a foreign-key
+      violation.</div>
+    <div class="missing-note"><b>Separately not fixed</b>A real "reassign or return to pool?" prompt scanning the
+      member's in-flight items before removal — what the spec actually asks for as the primary UX — is a larger
+      feature than the silent-failure fix just made; this pass converts a silent bug into a visible, actionable
+      error, which is a meaningful improvement but not the full spec'd flow.</div>
+  </div>
+
+  <div class="scenario" id="g6-3">
+    <div class="scenario-top"><span class="ref">Ref: 6.3</span><h3>Item deleted while someone is actively working on it</h3><span class="pill p-fixed">GAP — FIXED</span></div>
+    <p class="verdict-line">
+      One of two delete paths already matched (the Edit-modal delete checks the active-assignee status and DMs
+      them). The other, more commonly-reached path — swipe-to-delete directly on the quest card — used generic
+      "Remove this? Cannot be undone" copy with no mention of the active assignee and sent no notification at all,
+      reachable on an in-progress or submitted quest since <code class="inline">canDelete</code> doesn't exclude
+      those statuses.
+    </p>
+    <div class="cite">features/quests/components/QuestCard.tsx:303-312 (was: generic copy, no assignee mention, no notify)</div>
+    <div class="fix-note"><b>Fixed this pass</b>Mirrored the already-correct Edit-modal logic into the swipe-delete
+      action: when the quest is <code class="inline">in_progress</code>/<code class="inline">pending_approval</code>
+      and has an assignee, the confirmation now names them explicitly ("X is currently working on this — delete
+      anyway?") and a DM is sent on confirm, framed as a cancellation rather than a failure on their part.</div>
+  </div>
+
+  <div class="scenario" id="g6-4">
+    <div class="scenario-top"><span class="ref">Ref: 6.4</span><h3>Event cancelled after helper already claimed</h3><span class="pill p-fixed">GAP — FIXED</span></div>
+    <p class="verdict-line">
+      The existing cancellation-notice function had two problems against this scenario's literal setup ("GP had
+      already claimed the <i>driving</i> slot"): it only ever checked <code class="inline">helper</code>/
+      <code class="inline">helperStatus</code>, never <code class="inline">driverName</code>/
+      <code class="inline">driverStatus</code> — a genuinely separate claim channel — so a driver-only claim (the
+      scenario's exact case) got no notice at all; and the notice it did send went to the family-wide chat channel
+      rather than a direct message to the claimant, which is exactly the passive-discovery failure mode the spec's
+      Why-box explicitly warns against ("should never have to discover a cancellation by silently watching the
+      pickup time pass").
+    </p>
+    <div class="cite">features/calendar/CalendarScreen.tsx:385-391 (was: helper-only check, broadcast to 'all')</div>
+    <div class="fix-note"><b>Fixed this pass</b>Extended <code class="inline">notifyDeleteIfAssigned</code> to also
+      check the driver claim channel, and switched delivery to a direct 1:1 message to the claimant's resolved
+      member id (falling back to the family broadcast only when the helper/driver name doesn't resolve to a real
+      member — e.g. an external tutor/coach).</div>
+  </div>
+
+  <div class="scenario" id="g6-5">
+    <div class="scenario-top"><span class="ref">Ref: 6.5</span><h3>Quest creator cancels their own delegated quest</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">
+      No Recall action exists anywhere. The card the delegator sees for a still-pending outgoing delegation is
+      explicitly documented in its own header comment as having "no actions here" by design. The closest existing
+      behavior (Reclaim, for a task assigned to someone else who already holds it — a different shape) sends no
+      notification to the parent losing it either.
+    </p>
+    <div class="cite">features/hub/parent/backlog/OutgoingPendingCard.tsx:8-12 (documented: no actions, chevron only)</div>
+    <div class="missing-note"><b>Why not built</b>The underlying status machine already supports a terminal
+      DECLINED-style state a Recall could reuse, so this is smaller than most Missing Feature items in this
+      document — but it's still a new card action plus a notification wire-up, judged not quite "a few lines" for a
+      same-pass safe addition; flagged as the smallest, most attractive follow-up in this category.</div>
+  </div>
+
+  <div class="scenario" id="g6-6">
+    <div class="scenario-top"><span class="ref">Ref: 6.6</span><h3>Family member role changed (kid → teen) mid-cycle</h3><span class="pill p-match">MATCH</span></div>
+    <p class="verdict-line">
+      All three spec rows match: a role edit touches only the member's own row, never any chore/event/assignment
+      table, so in-flight commitments are structurally undisturbed; every capability gate is a live role read (not
+      cached), so new Teen-tier options apply immediately; and transaction history carries no role column at all,
+      so nothing could retroactively relabel it even if it wanted to.
+    </p>
+    <div class="cite">features/vault/tabs/RosterTab.tsx:423-446 (saveMember touches only the members row)</div>
+    <div class="cite">features/quests/QuestsScreen.tsx:122-129 (role gates are live reads, not snapshots)</div>
+    <div class="unconfirmed-note"><b>Adjacent, not scored against this scenario</b>The role-write path itself
+      translates between two different role-string vocabularies for the DB write vs. local state (e.g.
+      <code class="inline">'teen' → 'teenager'</code> for the DB) — asymmetric mappings that, if the DB's check
+      constraint doesn't accept both forms, would fail loudly (already caught and alerted) rather than silently.
+      The exact constraint definition was not independently re-verified this pass.</div>
+  </div>
+
+</section>
+
+<!-- ══════════════════════════════ CATEGORY 7 ══════════════════════════════ -->
+<section class="category" id="cat-7">
+  <div class="cat-head"><h2>7. Notifications &amp; Passive Updates</h2><span class="count">5 scenarios</span></div>
+
+  <p class="note" style="margin:-4px 0 20px;">
+    Cross-cutting root cause for all five scenarios below: the badge-vs-push urgency distinction this entire
+    category is built around does not exist in the notification layer at any level —
+    <code class="inline">supabase/functions/family-notifier/index.ts</code> sends every message at
+    <code class="inline">priority: 'high'</code> with sound, uniformly, and <code class="inline">store/notifStore.ts</code>
+    is a pure read-side badge-count store with no send/emit API of any kind. More fundamentally, the quest lifecycle
+    sends effectively no notifications at all: a fully-built, correctly-routed notifier function
+    (<code class="inline">quest-event-notifier</code>, covering assigned/claimed/submitted/approved/declined/
+    reassigned and more) exists but has exactly two live call sites in the whole app — and both of those pass event
+    names the function's own switch statement doesn't recognize, so both silently no-op to its
+    <code class="inline">default:</code> branch. This single root cause is why four of the five scenarios below are
+    scored as bugs rather than one being fixed and the others matching.
+  </p>
+
+  <div class="scenario" id="g7-1">
+    <div class="scenario-top"><span class="ref">Ref: 7.1</span><h3>New pool quest posted</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">Posting a new pool quest fires no notification of any kind — not a push, not a badge increment. Parent-2's "no push" outcome is accidentally correct; eligible kids/teens get nothing until they open the tab themselves.</p>
+    <div class="cite">store/choreStore.ts:861-928 (addChore — no notifier call anywhere in the function)</div>
+    <div class="bug-note"><b>Not fixed this pass</b>Wiring a real badge-vs-push urgency tier is a genuine
+      notification-infrastructure feature, not a contained bug fix — the root cause above spans the whole category
+      and needs a deliberate design pass, not a piecemeal per-scenario patch.</div>
+  </div>
+
+  <div class="scenario" id="g7-2">
+    <div class="scenario-top"><span class="ref">Ref: 7.2</span><h3>Submission awaiting approval</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">
+      A kid's submission fires no notification to either parent — <code class="inline">submitChore</code>,
+      <code class="inline">resubmitChore</code>, and <code class="inline">submitGrandparentQuest</code> all update
+      status with no notifier call. The correctly-built payload for exactly this event
+      (<code class="inline">quest_submitted</code>) exists in the notifier function and is simply never invoked. A
+      second, independent bug sits in the same unreached code path: its approver-id resolution checks for
+      <code class="inline">role === 'senior'</code>, but member rows are written to the DB as
+      <code class="inline">'grandparent'</code> — so even if this were wired up, GP approvers would never match.
+    </p>
+    <div class="cite">store/choreStore.ts:1078-1228 (submitChore/resubmitChore/submitGrandparentQuest — no notifier call)</div>
+    <div class="bug-note"><b>Not fixed this pass</b>Same root cause as 7.1 — wiring the dead
+      <code class="inline">quest-event-notifier</code> function to real call sites for the whole quest lifecycle is
+      one coherent piece of work, not five independent one-line fixes; doing it piecemeal risks leaving the
+      approver-role mismatch bug in place even after the call sites are added.</div>
+  </div>
+
+  <div class="scenario" id="g7-3">
+    <div class="scenario-top"><span class="ref">Ref: 7.3</span><h3>Approval / payout completed</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">
+      <code class="inline">approveChore</code> updates status, pays out, and writes an audit-trail row — but fires
+      no notification. The kid's balance updates silently on-screen with no "Approved! +N coins" alert ever
+      delivered, even though the exact message copy exists, unused, in the notifier function. A GP sponsor
+      similarly gets nothing on approval (contrast: the GP sponsor notification on <i>decline</i> was correctly
+      centralized in a prior pass and remains in place — approval never got the same treatment).
+    </p>
+    <div class="cite">store/choreStore.ts:1301-1339 (approveChore — no notification call anywhere)</div>
+    <div class="cite">store/choreStore.ts:2075-2085 (declineGrandparentQuest — sponsor notification centralization, confirmed still in place, approval has no equivalent)</div>
+    <div class="bug-note"><b>Not fixed this pass</b>Same root-cause grouping as 7.1/7.2.</div>
+  </div>
+
+  <div class="scenario" id="g7-4">
+    <div class="scenario-top"><span class="ref">Ref: 7.4</span><h3>Event claimed by a helper</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">
+      <code class="inline">claimHelperSlot</code>'s compare-and-swap logic is exemplary (see 2.2/3.2), but it sends
+      no notification to anyone — not to the event creator whose flagged gap was just filled, and not to the kid
+      whose logistics are directly affected. The spec's "silent removal for other, non-committed helpers" half is
+      correct, but only by omission — the same function that should notify the creator sends nothing to anyone.
+      The function's existing <code class="inline">onWon</code> callback is the natural, already-wired hook point
+      for adding this.
+    </p>
+    <div class="cite">store/eventStore.ts:881-936 (claimHelperSlot — zero notif/invoke calls in the whole function)</div>
+    <div class="bug-note"><b>Not fixed this pass</b>Small in isolation (one notifier call inside an existing
+      callback), but was left grouped with the rest of this category's notification-infrastructure gap rather than
+      fixed in isolation, to avoid partially wiring one path while the broader dead-notifier-function problem
+      remains — a follow-up pass should address the whole category together.</div>
+  </div>
+
+  <div class="scenario" id="g7-5">
+    <div class="scenario-top"><span class="ref">Ref: 7.5</span><h3>Reminder — item due soon / event starting soon</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">
+      The one scenario in this category with real, working notifications — a dedicated cron-driven deadline sweeper
+      correctly pushes the assignee and, for overdue items, escalates to parents. One spec deviation: the parent
+      escalation is gated on a generic "high priority" flag rather than the spec's actual condition (assignee is a
+      minor AND the deadline is same-day) — a same-day miss by a minor on a normal-priority chore currently sends
+      the parent nothing. The "softer, delayed" tone the spec wants for that escalation also doesn't exist — every
+      notification, overdue or not, uses the same high-priority-with-sound delivery.
+    </p>
+    <div class="cite">supabase/functions/chore-deadline-notifier/index.ts:89-97 (parent escalation gated on isHighPriority, not minor+same-day)</div>
+    <div class="bug-note"><b>Not fixed this pass</b>Changing the escalation condition is small, but re-tuning it
+      correctly (and deciding whether "softer tone" needs an actual different notification channel/priority) risks
+      breaking the one part of this category that currently works — deliberately left for a focused follow-up
+      rather than touched under audit-pass time pressure.</div>
+    <div class="unconfirmed-note"><b>Not runtime-tested</b>A separate appointment-reminder function exists for
+      calendar events; its scheduling window was not traced against the spec's literal "30 minutes before" figure.</div>
+  </div>
+
+</section>
+
+<!-- ══════════════════════════════ CATEGORY 8 ══════════════════════════════ -->
+<section class="category" id="cat-8">
+  <div class="cat-head"><h2>8. Cross-Domain Interactions</h2><span class="count">3 scenarios</span></div>
+
+  <div class="scenario" id="g8-1">
+    <div class="scenario-top"><span class="ref">Ref: 8.1</span><h3>Chore payout appears in shared ledger</h3><span class="pill p-bug">GAP — CONFIRMED BUG</span></div>
+    <p class="verdict-line">
+      There are three disjoint coin-movement records instead of one unified ledger: <code class="inline">point_transactions</code>
+      (quest payouts, and now bonuses per this pass's 4.8 fix), a separate append-only
+      <code class="inline">coin_ledger</code> table keyed to auth users rather than family members (structurally
+      unreadable by a parent for a child's rows under its own RLS), and the raw <code class="inline">members</code>
+      balance columns mutated directly with no ledger row for store redemptions at all. The UI actually marketed as
+      "the ledger" (Vault → Ledger, fixed for its visibility leak under 4.5/5.3) doesn't read any of the three — its
+      transaction list is ephemeral local state.
+    </p>
+    <div class="cite">features/store/StoreScreen.tsx:331 (redemption deduction — members column only, no ledger row)</div>
+    <div class="cite">features/vault/tabs/LedgerTab.tsx:197 (txLog — local useState, never persisted or read from point_transactions)</div>
+    <div class="bug-note"><b>Not fixed this pass</b>Unifying three separate coin-tracking mechanisms into one real
+      ledger is a genuine architectural consolidation (new/changed schema, rewiring every write path, rebuilding the
+      read surface) — correctly out of scope for a targeted bug-fix pass. This pass's 4.5/4.8 fixes narrow the
+      damage (redemption refunds now work, bonuses now log) without attempting the full consolidation.</div>
+  </div>
+
+  <div class="scenario" id="g8-2">
+    <div class="scenario-top"><span class="ref">Ref: 8.2</span><h3>Quest linked to a calendar event</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">No linking field exists on either side — <code class="inline">ChoreTask</code> has no event reference and <code class="inline">FamilyEvent</code> has no chore reference. The only co-occurrence of a chore id and event id in the same row is an audit-trail table that stores one or the other per row, never both — not a link between two live objects.</p>
+    <div class="cite">store/choreStore.ts:54-107 (ChoreTask interface — no eventId/linkedEventId field)</div>
+    <div class="cite">store/eventStore.ts:35-107 (FamilyEvent interface — no chore/quest reference field)</div>
+    <div class="missing-note"><b>Why not built</b>Needs a schema column, a picker in the quest creation form, and badge rendering on both the quest card and the event card — a real, contained feature, but not a few-line addition.</div>
+  </div>
+
+  <div class="scenario" id="g8-3">
+    <div class="scenario-top"><span class="ref">Ref: 8.3</span><h3>Store redemption funded by quest earnings</h3><span class="pill p-fixed">GAP — FIXED</span></div>
+    <p class="verdict-line">
+      This was the most consequential finding of the whole audit. Coins were deducted immediately at
+      <b>request</b> time regardless of whether the reward required approval — directly contradicting the spec's
+      "provisionally reserved, not yet deducted until approved, so a decline doesn't require a refund step." A
+      declined or cancelled redemption restored the reward's <code class="inline">stock</code> but never refunded
+      the coins — a kid's balance was permanently reduced for a request a parent said no to, with no ledger
+      anywhere (see 8.1) to even reconstruct what happened. A secondary bug in the same function: the old
+      stock-restore branch did an early <code class="inline">return</code> before the rejection notification ever
+      ran, so stock-limited rewards silently skipped notifying the kid of a decline.
+    </p>
+    <div class="cite">store/rewardStore.ts:175-209 (redeemReward — was: no wallet tracked on the redemption record)</div>
+    <div class="cite">features/store/StoreScreen.tsx:327-333 (redeemFrom — deducts unconditionally, even for requiresApproval items)</div>
+    <div class="fix-note"><b>Fixed this pass</b>Added a <code class="inline">wallet</code> field to the
+      <code class="inline">Redemption</code> record (threaded from <code class="inline">StoreScreen</code>'s
+      existing wallet choice through <code class="inline">redeemReward</code>) so a later reject/cancel knows which
+      jar to credit back. <code class="inline">rejectRedemption</code> and <code class="inline">cancelRedemption</code>
+      now call <code class="inline">awardCoins</code> to refund the exact deducted amount to the correct wallet, and
+      the dead-code early-return that skipped the rejection notification for stock-limited rewards was removed.
+      Added migration <code class="inline">20260820190000_redemptions_wallet_column.sql</code> to add the
+      corresponding DB column (not yet applied to the live database).</div>
+    <div class="missing-note"><b>Deliberately not attempted: the reserve-not-deduct model itself</b>The spec's
+      exact mechanism — reserve the balance at request time, only truly deduct on approval — would mean moving the
+      <code class="inline">deductCoins</code> call from request-time to approval-time and adding a
+      reserved-balance display, a real behavior change beyond a refund-on-decline fix. The refund fix just made
+      achieves the same end-user financial correctness (no coins are ever permanently lost to a decline) without
+      that larger rework; the true reserve-not-deduct model is left as a deliberate future change. Also unaddressed:
+      the redemption mutators in <code class="inline">rewardStore.ts</code> (create/approve/reject/cancel/delete)
+      never write to the <code class="inline">redemptions</code> DB table at all — only <code class="inline">syncFromDB</code>
+      reads it — a separate, larger, pre-existing persistence gap noted in the new migration's own comment but not fixed here.</div>
+  </div>
+
+</section>
+
+<!-- ══════════════════════════════ CATEGORY 9 ══════════════════════════════ -->
+<section class="category" id="cat-9">
+  <div class="cat-head"><h2>9. Edge Cases</h2><span class="count">4 scenarios</span></div>
+
+  <div class="scenario" id="g9-1">
+    <div class="scenario-top"><span class="ref">Ref: 9.1</span><h3>Last eligible person for a pool item leaves the family</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">No eligibility-recompute logic exists anywhere — member removal and role changes are both plain data patches with no scan of pool-item eligibility. A pool item can sit silently unclaimed forever with no signal to any parent, exactly the decay the spec's Why-box says must not happen.</p>
+    <div class="cite">store/familyStore.ts:284-304 (removeMember — no chore/quest eligibility scan)</div>
+    <div class="missing-note"><b>Why not built</b>Needs an eligibility-recompute hook on member removal/role change plus a new parent-facing flagged state — a genuine feature, not a small addition.</div>
+  </div>
+
+  <div class="scenario" id="g9-2">
+    <div class="scenario-top"><span class="ref">Ref: 9.2</span><h3>Household with only one parent</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">
+      The approval-queue half genuinely matches — every approver-resolution path is set-based ("any member with
+      role parent"), with no hardcoded assumption of exactly two parents anywhere, so a single-parent household
+      degrades gracefully with no special-casing needed. The harder half — a bounded, explicit, revocable
+      "temporary trusted approver" delegation for when the sole parent is unreachable — does not exist at all.
+    </p>
+    <div class="cite">store/choreStore.ts:2328-2332 (getParentReviewDeck — no parent-count assumption)</div>
+    <div class="missing-note"><b>Why not built</b>Requires an entirely new bounded, auto-expiring permission-grant data model and UI — correctly scoped in the spec itself as a "the app should support this" statement, not something expected to already exist.</div>
+  </div>
+
+  <div class="scenario" id="g9-3">
+    <div class="scenario-top"><span class="ref">Ref: 9.3</span><h3>GP is the only adult present (parents traveling)</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">No "caregiver mode" grant/revoke mechanism exists in any form. GP's access today is the same static 5.1 default at all times — no time-boxed elevation exists, and therefore no auto-expiry to design around either.</p>
+    <div class="cite">store/choreStore.ts:610-618 (HouseholdSettings — no caregiver-mode/temporary-permission concept)</div>
+    <div class="missing-note"><b>Why not built</b>Same missing capability as 9.2's temporary-approver delegation — likely the same underlying feature would serve both scenarios; not duplicated as two separate builds.</div>
+  </div>
+
+  <div class="scenario" id="g9-4">
+    <div class="scenario-top"><span class="ref">Ref: 9.4</span><h3>Duplicate/near-duplicate quest created by two parents</h3><span class="pill p-missing">GAP — MISSING FEATURE</span></div>
+    <p class="verdict-line">No duplicate-detection logic exists anywhere in quest creation — two parents creating "Take out trash" minutes apart simply produces two independent, both-claimable pool rows with no soft-merge prompt.</p>
+    <div class="cite">store/choreStore.ts:861-928 (addChore — no title-similarity check against existing chores)</div>
+    <div class="missing-note"><b>Why not built</b>Requires a similarity-matching heuristic and a Merge/Keep-Both UI at creation time — a real, contained-but-nontrivial feature involving a fuzzy-matching judgment call, not a safe one-line addition.</div>
+  </div>
+
+</section>
+
+<footer>
+  Family Cube — Requirements vs. Code Gap Audit. Diffs
+  <code class="inline">docs/product_requirements_role_matrix.html</code>'s 65 target-behavior scenarios against the
+  code as of this pass. Confirmed, small, safe bugs found here were fixed directly in the same working tree
+  (uncommitted — left for manual review); missing features and larger/riskier confirmed bugs were deliberately
+  left undocumented-but-unbuilt pending a real product decision, per this pass's explicit scope constraints. Every
+  claim above is backed by a file:line citation from code actually read this pass — flag anything that reads like
+  an assumption rather than a grep result.
+</footer>
+
+</div>

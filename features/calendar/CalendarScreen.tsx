@@ -382,11 +382,35 @@ export default function CalendarScreen() {
   // Whoever had committed to drive/help only finds out an event vanished by
   // noticing it's gone from their own Hub unless we say so — same reasoning
   // as the takeover broadcast added for reassignment this session.
+  //
+  // Spec 6.4's literal scenario is a DRIVER claim ("GP had already claimed
+  // the driving slot") — driverName/driverStatus is a separate claim
+  // channel from helper/helperStatus (see eventStore's claimHelperSlot,
+  // which branches on role === 'driver' vs everything else). This
+  // previously only ever checked `helper`, so a driver-only claim (the
+  // exact case the spec describes) got no notice at all. Also switches
+  // from a family-wide broadcast to a direct DM to the claimant when their
+  // name resolves to a real member id — spec explicitly wants this to be
+  // an active, targeted notice ("should never have to discover a
+  // cancellation by silently watching the pickup time pass"), not
+  // something that arrives passively in a group channel.
   const notifyDeleteIfAssigned = (ev: FamilyEvent) => {
-    if (ev.helper && ev.helper !== activeMemberName &&
-        (ev.helperStatus === 'pending' || ev.helperStatus === 'confirmed')) {
-      useChatStore.getState().sendMessage('all', activeMemberId ?? '',
-        `🗑️ ${relationalNameByName(activeMemberName, members)} removed "${ev.title}" — ${relationalNameByName(ev.helper, members)} is no longer needed for it.`);
+    const claimantName =
+      (ev.driverName && ev.driverName !== activeMemberName && (ev.driverStatus === 'pending' || ev.driverStatus === 'confirmed'))
+        ? ev.driverName
+        : (ev.helper && ev.helper !== activeMemberName && (ev.helperStatus === 'pending' || ev.helperStatus === 'confirmed'))
+          ? ev.helper
+          : undefined;
+    if (!claimantName) return;
+    const msg = `🗑️ ${relationalNameByName(activeMemberName, members)} removed "${ev.title}" — ${relationalNameByName(claimantName, members)} is no longer needed for it.`;
+    const claimantMember = members.find(m => m.name === claimantName);
+    if (claimantMember) {
+      useChatStore.getState().sendMessage(claimantMember.id, activeMemberId ?? '', msg);
+    } else {
+      // Free-text helper/driver name that isn't a real family member (e.g.
+      // an external tutor/coach) — no member id to DM, fall back to the
+      // family channel so the cancellation is still visible somewhere.
+      useChatStore.getState().sendMessage('all', activeMemberId ?? '', msg);
     }
   };
 
@@ -1226,7 +1250,11 @@ export default function CalendarScreen() {
                 : members.filter(m => m.role === 'kid');
 
               // Swipe-delete eligibility: future event + parent (any) or kid own pending
-              const canDelete    = !isPast && (isParent || (isKid && !!ev.approvalPending && ev.memberId === activeMemberId));
+              // Spec 2.7: a teen who created a still-pending event needs the
+              // same Withdraw ability a kid gets for their own pending
+              // request — this was isKid-only, leaving a teen's own pending
+              // event with no way to cancel it themselves.
+              const canDelete    = !isPast && (isParent || ((isKid || isTeen) && !!ev.approvalPending && ev.memberId === activeMemberId));
 
               const handleEvDelete = () => Alert.alert(
                 ev.approvalPending ? 'Withdraw Request' : 'Remove Event',

@@ -294,9 +294,9 @@ function CashOutCard({ req, member, colors, isDark }: {
 
 // ─── Redo sheet with preset reasons ──────────────────────────────────────────
 
-function RedoSheet({ task, visible, onClose, isDark, colors }: {
+function RedoSheet({ task, visible, onClose, isDark, colors, reviewerId }: {
   task: ChoreTask | null; visible: boolean; onClose: () => void;
-  isDark: boolean; colors: any;
+  isDark: boolean; colors: any; reviewerId: string;
 }) {
   const { requestRedo } = useChoreStore();
   const [preset, setPreset]   = useState<RejectionPresetKey | null>(null);
@@ -310,7 +310,11 @@ function RedoSheet({ task, visible, onClose, isDark, colors }: {
       : REJECTION_PRESETS.find(p => p.key === preset)?.label ?? '';
     if (!msg) { Alert.alert('Pick a reason', 'Choose a preset or type a custom message.'); return; }
     setLoading(true);
-    requestRedo(task.id, '', msg, preset ?? undefined);
+    // Spec 4.1/4.4: "the record should always show who acted." This
+    // previously passed '' for reviewerId, so every redo request from this
+    // sheet wrote a blank reviewed_by_id — approvals correctly recorded the
+    // reviewer, declines from here silently didn't.
+    requestRedo(task.id, reviewerId, msg, preset ?? undefined);
     setLoading(false);
     setPreset(null); setCustomMsg('');
     onClose();
@@ -542,7 +546,7 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
       <RedoSheet
         task={redoTask} visible={redoOpen}
         onClose={() => { setRedoOpen(false); setRedoTask(null); }}
-        isDark={isDark} colors={colors}
+        isDark={isDark} colors={colors} reviewerId={parent.id}
       />
     </>
   );

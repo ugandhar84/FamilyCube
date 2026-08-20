@@ -474,7 +474,13 @@ export default function QuestsScreen() {
     if (kidFilter === 'adults') {
       list = list.filter(q => q.isAdultTask);
     } else if (kidFilter === 'pool') {
-      list = list.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask);
+      // A pool quest another kid just claimed must vanish from this tab
+      // immediately (spec 1.1 "Claimed" stage / 3.1 race resolution) — the
+      // "All Family" branch below already excludes claimed items via
+      // !q.assignedToId, but this dedicated Pool tab was missing the same
+      // check, so a sibling's just-claimed bounty stayed visible/tappable
+      // here until the next full reload.
+      list = list.filter(q => q.isPool && q.status === 'todo' && !q.isAdultTask && !q.assignedToId);
     } else if (isKidOrTeen && kidFilter === 'all') {
       // Kid/Teen "All Family" — their own directly assigned quests, plus any
       // unclaimed bounty task (open to anyone to claim, so it's relevant to

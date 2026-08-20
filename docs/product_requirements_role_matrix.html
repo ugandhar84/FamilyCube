@@ -1,0 +1,2187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Family Cube — Product Requirements: Role Behavior Matrix</title>
+<style>
+  :root {
+    --primary: #9261C7;
+    --teal: #00BBA4;
+    --amber: #F5A623;
+    --pink: #F04E98;
+    --navy: #1E2D6B;
+    --text-primary: #1E2D6B;
+    --text-secondary: #64748B;
+    --text-tertiary: #94A3B8;
+    --card: #FFFFFF;
+    --surface: #F1F5F9;
+    --background: #F8FAFC;
+    --border: rgba(146,97,199,0.15);
+    --danger: #EF4444;
+    --success: #00BBA4;
+    --primary-light: #F0E8FA;
+    --teal-light: #D6F5F1;
+    --amber-light: #FEF0D3;
+
+    /* badge system */
+    --b-green-bg: #DCFCE7; --b-green-fg: #15803D; --b-green-bd: #86EFAC;
+    --b-amber-bg: #FEF3C7; --b-amber-fg: #92400E; --b-amber-bd: #FCD34D;
+    --b-red-bg: #FEE2E2;   --b-red-fg: #B91C1C;   --b-red-bd: #FCA5A5;
+    --b-blue-bg: #DBEAFE;  --b-blue-fg: #1D4ED8;  --b-blue-bd: #93C5FD;
+    --b-purple-bg: #F0E8FA;--b-purple-fg: #7C3AED;--b-purple-bd: #C4B5FD;
+    --b-gray-bg: #F1F5F9;  --b-gray-fg: #475569;  --b-gray-bd: #CBD5E1;
+    --b-teal-bg: #D6F5F1;  --b-teal-fg: #0F766E;  --b-teal-bd: #5EEAD4;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--background);
+    color: var(--text-primary);
+    line-height: 1.5;
+    font-size: 15px;
+  }
+
+  /* ---------- Layout shell ---------- */
+  .page-wrap {
+    display: flex;
+    align-items: flex-start;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+
+  .toc-rail {
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    height: 100vh;
+    overflow-y: auto;
+    width: 300px;
+    flex: 0 0 300px;
+    padding: 20px 14px 40px 20px;
+    border-right: 1px solid var(--border);
+    background: var(--card);
+  }
+
+  .main-col {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 32px 80px 32px;
+  }
+
+  /* ---------- Hero / header ---------- */
+  .hero {
+    padding: 40px 0 24px 0;
+    border-bottom: 3px solid var(--primary);
+    margin-bottom: 32px;
+  }
+  .hero .kicker {
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--pink);
+    margin-bottom: 10px;
+  }
+  .hero h1 {
+    font-size: 34px;
+    margin: 0 0 10px 0;
+    color: var(--navy);
+    line-height: 1.15;
+  }
+  .hero p.lede {
+    font-size: 16px;
+    color: var(--text-secondary);
+    max-width: 900px;
+    margin: 0 0 4px 0;
+  }
+  .hero .tagline {
+    margin-top: 14px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--primary);
+  }
+
+  /* ---------- TOC ---------- */
+  .toc-rail h2 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-tertiary);
+    margin: 0 0 12px 6px;
+  }
+  .toc-rail .toc-cat {
+    margin-bottom: 4px;
+  }
+  .toc-rail .toc-cat > a {
+    display: block;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 13.5px;
+    color: var(--navy);
+    text-decoration: none;
+  }
+  .toc-rail .toc-cat > a:hover { background: var(--primary-light); }
+  .toc-rail .toc-cat .count {
+    color: var(--text-tertiary);
+    font-weight: 500;
+    font-size: 11.5px;
+  }
+  .toc-rail ul.toc-sub {
+    list-style: none;
+    margin: 0 0 10px 0;
+    padding: 0 0 0 14px;
+    border-left: 2px solid var(--border);
+  }
+  .toc-rail ul.toc-sub li a {
+    display: block;
+    padding: 5px 10px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    border-radius: 6px;
+  }
+  .toc-rail ul.toc-sub li a:hover {
+    background: var(--surface);
+    color: var(--primary);
+  }
+
+  /* ---------- Legend ---------- */
+  .legend-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 28px;
+    margin-bottom: 40px;
+    box-shadow: 0 1px 3px rgba(30,45,107,0.06);
+  }
+  .legend-box h2 {
+    margin-top: 0;
+    font-size: 19px;
+    color: var(--navy);
+  }
+  .legend-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .legend-item .badge { flex-shrink: 0; margin-top: 1px; }
+  .legend-item .desc { font-size: 12.5px; color: var(--text-secondary); }
+  .legend-item .desc b { color: var(--text-primary); }
+
+  .role-legend {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 22px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .role-legend b { color: var(--text-primary); }
+
+  /* ---------- Badges ---------- */
+  .badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid transparent;
+    white-space: nowrap;
+    line-height: 1.6;
+  }
+  .b-green  { background: var(--b-green-bg);  color: var(--b-green-fg);  border-color: var(--b-green-bd); }
+  .b-amber  { background: var(--b-amber-bg);  color: var(--b-amber-fg);  border-color: var(--b-amber-bd); }
+  .b-red    { background: var(--b-red-bg);    color: var(--b-red-fg);    border-color: var(--b-red-bd); }
+  .b-blue   { background: var(--b-blue-bg);   color: var(--b-blue-fg);   border-color: var(--b-blue-bd); }
+  .b-purple { background: var(--b-purple-bg); color: var(--b-purple-fg); border-color: var(--b-purple-bd); }
+  .b-gray   { background: var(--b-gray-bg);   color: var(--b-gray-fg);   border-color: var(--b-gray-bd); }
+  .b-teal   { background: var(--b-teal-bg);   color: var(--b-teal-fg);   border-color: var(--b-teal-bd); }
+
+  /* ---------- Category & scenario sections ---------- */
+  .category-section {
+    margin-bottom: 8px;
+    padding-top: 20px;
+  }
+  .category-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 14px 18px;
+    border-radius: 12px;
+    color: #fff;
+    margin-bottom: 22px;
+  }
+  .category-header h2 {
+    margin: 0;
+    font-size: 21px;
+  }
+  .category-header .cat-count {
+    font-size: 12.5px;
+    opacity: 0.85;
+    font-weight: 600;
+  }
+  .category-header .cat-desc {
+    display: block;
+    font-size: 13px;
+    font-weight: 400;
+    opacity: 0.92;
+    margin-top: 4px;
+  }
+
+  .cat-1 .category-header { background: linear-gradient(120deg, #9261C7, #B98EDB); }
+  .cat-2 .category-header { background: linear-gradient(120deg, #00BBA4, #2DD4BF); }
+  .cat-3 .category-header { background: linear-gradient(120deg, #F04E98, #F5A623); }
+  .cat-4 .category-header { background: linear-gradient(120deg, #1E2D6B, #4C5FA8); }
+  .cat-5 .category-header { background: linear-gradient(120deg, #F5A623, #F0C060); }
+  .cat-6 .category-header { background: linear-gradient(120deg, #EF4444, #F87171); }
+  .cat-7 .category-header { background: linear-gradient(120deg, #00BBA4, #9261C7); }
+  .cat-8 .category-header { background: linear-gradient(120deg, #7C3AED, #F04E98); }
+  .cat-9 .category-header { background: linear-gradient(120deg, #64748B, #94A3B8); }
+
+  .scenario {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 22px 22px 22px;
+    margin-bottom: 26px;
+    box-shadow: 0 1px 2px rgba(30,45,107,0.05);
+    scroll-margin-top: 14px;
+  }
+  .scenario-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .scenario-title h3 {
+    margin: 0;
+    font-size: 16.5px;
+    color: var(--navy);
+  }
+  .scenario-id {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-tertiary);
+    background: var(--surface);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-family: "SF Mono", Menlo, monospace;
+  }
+  .scenario-tags {
+    margin-bottom: 10px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .tag {
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--primary-light);
+    color: var(--primary);
+  }
+
+  .scenario-setup {
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px dashed var(--border);
+  }
+  .scenario-setup b { color: var(--text-primary); }
+
+  table.role-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 12px;
+    table-layout: fixed;
+  }
+  table.role-table th, table.role-table td {
+    border: 1px solid var(--border);
+    padding: 9px 11px;
+    text-align: left;
+    vertical-align: top;
+    font-size: 13px;
+  }
+  table.role-table th {
+    background: var(--surface);
+    color: var(--navy);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  table.role-table th.stage-col { width: 13%; }
+  table.role-table td.stage-cell {
+    background: var(--surface);
+    font-weight: 700;
+    color: var(--text-primary);
+    font-size: 12.5px;
+  }
+  table.role-table td p { margin: 0 0 6px 0; }
+  table.role-table td p:last-child { margin-bottom: 0; }
+  table.role-table td.na {
+    color: var(--text-tertiary);
+    font-style: italic;
+    background: repeating-linear-gradient(135deg, var(--surface), var(--surface) 6px, #eef1f6 6px, #eef1f6 12px);
+  }
+
+  .why-box {
+    background: var(--primary-light);
+    border-left: 4px solid var(--primary);
+    border-radius: 0 10px 10px 0;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--text-primary);
+  }
+  .why-box b {
+    color: var(--primary);
+    text-transform: uppercase;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    display: block;
+    margin-bottom: 3px;
+  }
+
+  footer.doc-footer {
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-tertiary);
+    text-align: center;
+  }
+
+  @media (max-width: 980px) {
+    .toc-rail { display: none; }
+    .main-col { padding: 0 16px 60px 16px; }
+    table.role-table { table-layout: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="page-wrap">
+<nav class="toc-rail" id="toc">
+  <h2>Contents</h2>
+  <div class="toc-cat"><a href="#legend">Legend &amp; Conventions</a></div>
+
+  <div class="toc-cat"><a href="#cat-1">1. Chore / Quest Lifecycle <span class="count">(14)</span></a></div>
+  <ul class="toc-sub">
+    <li><a href="#s1-1">1.1 Pool quest, first-come claim</a></li>
+    <li><a href="#s1-2">1.2 Direct-assigned quest to one kid</a></li>
+    <li><a href="#s1-3">1.3 Parent-1 delegates quest to Parent-2</a></li>
+    <li><a href="#s1-4">1.4 Kid requests a quest be created</a></li>
+    <li><a href="#s1-5">1.5 Teen self-creates own quest</a></li>
+    <li><a href="#s1-6">1.6 Senior/GP offers to help with a quest</a></li>
+    <li><a href="#s1-7">1.7 Shared/team quest, 2+ assignees</a></li>
+    <li><a href="#s1-8">1.8 Parent self-creates &amp; self-completes a quest</a></li>
+    <li><a href="#s1-9">1.9 Recurring/daily chore instance</a></li>
+    <li><a href="#s1-10">1.10 Quest declined by assignee, reopened to pool</a></li>
+    <li><a href="#s1-11">1.11 Quest submitted, sent back for redo</a></li>
+    <li><a href="#s1-12">1.12 Blended household — step-parent and bio-parent, same household</a></li>
+    <li><a href="#s1-12b">1.12b Co-parenting across two separate households (not currently supported)</a></li>
+    <li><a href="#s1-13">1.13 Teen quest requiring parent co-sign for higher payout</a></li>
+    <li><a href="#s1-14">1.14 GP-created quest for grandchildren during a visit</a></li>
+  </ul>
+
+  <div class="toc-cat"><a href="#cat-2">2. Calendar / Event Lifecycle <span class="count">(12)</span></a></div>
+  <ul class="toc-sub">
+    <li><a href="#s2-1">2.1 Parent creates household event</a></li>
+    <li><a href="#s2-2">2.2 Event needs a driver, open to any eligible helper</a></li>
+    <li><a href="#s2-3">2.3 Recurring weekly event (practice)</a></li>
+    <li><a href="#s2-4">2.4 Kid requests an event needing parent approval</a></li>
+    <li><a href="#s2-5">2.5 Multi-member event, 2+ people assigned</a></li>
+    <li><a href="#s2-6">2.6 Private/sensitive event (medical appointment)</a></li>
+    <li><a href="#s2-7">2.7 Teen creates own social event</a></li>
+    <li><a href="#s2-8">2.8 GP offers to help — pickup coverage</a></li>
+    <li><a href="#s2-9">2.9 Event edited after members already confirmed</a></li>
+    <li><a href="#s2-10">2.10 Whole-family event vs individual event</a></li>
+    <li><a href="#s2-11">2.11 Event RSVP / attendance confirmation</a></li>
+    <li><a href="#s2-12">2.12 Overlapping/conflicting event on one member's calendar</a></li>
+  </ul>
+
+  <div class="toc-cat"><a href="#cat-3">3. Claim Races &amp; Concurrency <span class="count">(5)</span></a></div>
+  <ul class="toc-sub">
+    <li><a href="#s3-1">3.1 Two kids claim the same pool quest simultaneously</a></li>
+    <li><a href="#s3-2">3.2 Two teens claim the same driver slot</a></li>
+    <li><a href="#s3-3">3.3 Two parents act on the same approval simultaneously</a></li>
+    <li><a href="#s3-4">3.4 Claim + delete race</a></li>
+    <li><a href="#s3-5">3.5 Claim + edit-payout race</a></li>
+  </ul>
+
+  <div class="toc-cat"><a href="#cat-4">4. Approval &amp; Payout Flows <span class="count">(8)</span></a></div>
+  <ul class="toc-sub">
+    <li><a href="#s4-1">4.1 Standard kid submission → parent approval</a></li>
+    <li><a href="#s4-2">4.2 Self-created / self-completed task (auto vs manual)</a></li>
+    <li><a href="#s4-3">4.3 Teen submission, either parent can approve</a></li>
+    <li><a href="#s4-4">4.4 Parent declines submission, requests redo</a></li>
+    <li><a href="#s4-5">4.5 Payout posts to shared family ledger</a></li>
+    <li><a href="#s4-6">4.6 GP-completed task — does it need approval at all?</a></li>
+    <li><a href="#s4-7">4.7 Disputed approval — two parents disagree</a></li>
+    <li><a href="#s4-8">4.8 Bonus/spot-reward outside quest system</a></li>
+  </ul>
+
+  <div class="toc-cat"><a href="#cat-5">5. Visibility &amp; Privacy Defaults <span class="count">(7)</span></a></div>
+  <ul class="toc-sub">
+    <li><a href="#s5-1">5.1 GP default visibility scope</a></li>
+    <li><a href="#s5-2">5.2 Kid views another kid's individual quest</a></li>
+    <li><a href="#s5-3">5.3 Financial/ledger visibility by role</a></li>
+    <li><a href="#s5-4">5.4 Teen private calendar events</a></li>
+    <li><a href="#s5-5">5.5 Medical/health-tagged items</a></li>
+    <li><a href="#s5-6">5.6 Cross-household visibility (blended family)</a></li>
+    <li><a href="#s5-7">5.7 GP editing permissions vs viewing permissions</a></li>
+  </ul>
+
+  <div class="toc-cat"><a href="#cat-6">6. Reassignment &amp; Cancellation <span class="count">(6)</span></a></div>
+  <ul class="toc-sub">
+    <li><a href="#s6-1">6.1 Parent reassigns claimed quest to someone else</a></li>
+    <li><a href="#s6-2">6.2 Assignee removed from family mid-task</a></li>
+    <li><a href="#s6-3">6.3 Item deleted while someone is actively working on it</a></li>
+    <li><a href="#s6-4">6.4 Event cancelled after helper already claimed</a></li>
+    <li><a href="#s6-5">6.5 Quest creator cancels their own delegated quest</a></li>
+    <li><a href="#s6-6">6.6 Family member role changed (kid → teen) mid-cycle</a></li>
+  </ul>
+
+  <div class="toc-cat"><a href="#cat-7">7. Notifications &amp; Passive Updates <span class="count">(5)</span></a></div>
+  <ul class="toc-sub">
+    <li><a href="#s7-1">7.1 New pool quest posted</a></li>
+    <li><a href="#s7-2">7.2 Submission awaiting approval</a></li>
+    <li><a href="#s7-3">7.3 Approval / payout completed</a></li>
+    <li><a href="#s7-4">7.4 Event claimed by a helper</a></li>
+    <li><a href="#s7-5">7.5 Reminder — item due soon / event starting soon</a></li>
+  </ul>
+
+  <div class="toc-cat"><a href="#cat-8">8. Cross-Domain Interactions <span class="count">(3)</span></a></div>
+  <ul class="toc-sub">
+    <li><a href="#s8-1">8.1 Chore payout appears in shared ledger</a></li>
+    <li><a href="#s8-2">8.2 Quest linked to a calendar event (errand tied to a trip)</a></li>
+    <li><a href="#s8-3">8.3 Store redemption funded by quest earnings</a></li>
+  </ul>
+
+  <div class="toc-cat"><a href="#cat-9">9. Edge Cases <span class="count">(4)</span></a></div>
+  <ul class="toc-sub">
+    <li><a href="#s9-1">9.1 Last eligible person for a pool item leaves the family</a></li>
+    <li><a href="#s9-2">9.2 Household with only one parent</a></li>
+    <li><a href="#s9-3">9.3 GP is the only adult present (parents traveling)</a></li>
+    <li><a href="#s9-4">9.4 Duplicate/near-duplicate quest created by two parents</a></li>
+  </ul>
+</nav>
+
+<main class="main-col">
+
+<header class="hero">
+  <div class="kicker">Family Cube — Product Requirements</div>
+  <h1>Role-Based Behavior Matrix<br>for Chores, Quests &amp; Calendar Events</h1>
+  <p class="lede">
+    This document defines, from first principles, the <b>ideal target behavior</b> of Family Cube for every
+    household role — independent of any existing implementation. For each realistic family-coordination
+    scenario, it specifies exactly what each role should see on their own screen, exactly what actions should
+    be available to them at that moment, and the product reasoning for why that is the correct behavior for a
+    real family. This is a requirements specification, written as if defining the product before any code exists.
+  </p>
+  <p class="lede">
+    Roles covered: <b>Parent-1</b>, <b>Parent-2</b> (a household may have one or more parents), <b>Kid</b>,
+    <b>Teen</b>, and <b>Senior/GP</b> (grandparent or other senior caregiver). Role labels are used generically
+    throughout — no scenario hardcodes a specific person's name to a specific role, because in a real family any
+    member could occupy any of these roles.
+  </p>
+  <div class="tagline">CONNECT · ORGANIZE · CARE · GROW</div>
+</header>
+<section class="legend-box" id="legend">
+  <h2>Badge Legend &amp; Reading Conventions</h2>
+  <p style="color:var(--text-secondary); font-size:13.5px; margin-top:-6px;">
+    Every table cell uses these color-coded badges consistently. Scan for color first — a mismatched color
+    across a row (e.g. one role shown <span class="badge b-green">green/live</span> while a peer role who
+    should see the same state is shown <span class="badge b-gray">gray/hidden</span>) is the fastest way to
+    spot a requirements gap.
+  </p>
+  <div class="legend-grid">
+    <div class="legend-item">
+      <span class="badge b-green">CONFIRMED</span>
+      <span class="desc">A <b>live, active, confirmed</b> state — claimed, approved, paid out, scheduled and locked in. The thing is real and happening.</span>
+    </div>
+    <div class="legend-item">
+      <span class="badge b-amber">PENDING</span>
+      <span class="desc">Something is <b>waiting on a decision</b> — awaiting approval, awaiting claim, awaiting RSVP. Time-sensitive, needs attention.</span>
+    </div>
+    <div class="legend-item">
+      <span class="badge b-red">BLOCKED / DECLINED</span>
+      <span class="desc">A <b>negative or terminal</b> state — declined, rejected, cancelled, removed, or an action that is explicitly disallowed for this role.</span>
+    </div>
+    <div class="legend-item">
+      <span class="badge b-blue">INFORMATIONAL</span>
+      <span class="desc">A <b>read-only, passive</b> view — the role can see this but has no action to take on it right now.</span>
+    </div>
+    <div class="legend-item">
+      <span class="badge b-purple">ACTION AVAILABLE</span>
+      <span class="desc">An <b>actionable control</b> is present — used inline before bolded action-button labels to flag "this role can act here."</span>
+    </div>
+    <div class="legend-item">
+      <span class="badge b-teal">NOTIFIED</span>
+      <span class="desc">This role receives a <b>push/badge notification</b> for this event, distinct from someone who must passively discover it.</span>
+    </div>
+    <div class="legend-item">
+      <span class="badge b-gray">HIDDEN / NOT VISIBLE</span>
+      <span class="desc">This item does <b>not appear at all</b> on this role's screen — an intentional visibility/privacy boundary, not a bug.</span>
+    </div>
+  </div>
+
+  <div class="role-legend">
+    <span><b>Parent-1 / Parent-2</b> — any two parents/guardians in the household; order implies no hierarchy, only "first mover" in a given scenario.</span>
+    <span><b>Kid</b> — a younger child member, typically requiring approval gates.</span>
+    <span><b>Teen</b> — an older minor with expanded autonomy (self-creation, driving-eligible tasks).</span>
+    <span><b>Senior/GP</b> — a grandparent or senior caregiver with helper-level participation and deliberately scoped visibility.</span>
+  </div>
+
+  <div class="role-legend" style="margin-top:10px; padding-top:0; border-top:none;">
+    <span>Table rows = <b>lifecycle stage</b>. Table columns = <b>role</b>. Each cell states what that role sees, then bolded <b>action labels</b> for what they can do right there. A shaded/hatched cell marked <i>n/a</i> means that stage does not apply to that role.</span>
+  </div>
+</section>
+<section class="category-section cat-1" id="cat-1">
+  <div class="category-header">
+    <h2>1. Chore / Quest Lifecycle</h2>
+    <span class="cat-count">14 scenarios</span>
+    <span class="cat-desc">How household chores ("quests") are created, claimed, worked, and completed — varying who creates them, who they're assigned to, and the shape of the household.</span>
+  </div>
+
+  <!-- 1.1 -->
+  <article class="scenario" id="s1-1">
+    <div class="scenario-title"><span class="scenario-id">1.1</span><h3>Pool Quest — First-Come Claim</h3></div>
+    <div class="scenario-tags"><span class="tag">Quest</span><span class="tag">Pool</span><span class="tag">Happy path</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-1 creates "Take out recycling" with no specific assignee, open to any Kid or Teen in the household, worth 10 coins.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Created</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Sees the quest in the household pool immediately, marked as their own creation.</p><p><b>Edit</b>, <b>Delete</b>, <b>Assign Directly</b></p></td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Sees it appear in the shared pool list.</p><p><b>Edit</b>, <b>Delete</b>, <b>Assign Directly</b> (co-equal creator rights on household items)</p></td>
+        <td><p><span class="badge b-amber">PENDING</span> Appears in "Available Quests" with reward shown.</p><p><b>Claim</b></p></td>
+        <td><p><span class="badge b-amber">PENDING</span> Same pool visibility as Kid.</p><p><b>Claim</b></p></td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Visible in household activity feed if GP has household-quest visibility enabled, but not claimable — pool chores default to the two minor roles unless the quest is explicitly opened to GP.</p><p>No action (view only)</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Claimed</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Sees it move to "In Progress," now attributed to the claiming Kid/Teen.</p><p><b>Reassign</b>, <b>Cancel</b></p></td>
+        <td><p>Same as Parent-1.</p><p><b>Reassign</b>, <b>Cancel</b></p></td>
+        <td><p>If this Kid claimed it: <span class="badge b-green">CONFIRMED</span> "You claimed this" with due date. <b>Unclaim</b>, <b>Mark Complete</b>.<br>If a different Kid claimed it: <span class="badge b-gray">HIDDEN</span> — removed from pool list entirely, no longer visible as claimable.</p></td>
+        <td><p>Same pattern as Kid, mirrored for Teen.</p></td>
+        <td><p>No change — still informational only.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Submitted</td>
+        <td><p><span class="badge b-amber">PENDING</span> Appears in Parent-1's approval queue with photo/note if attached.</p><p><b>Approve</b>, <b>Decline &amp; Request Redo</b></p></td>
+        <td><p>Same queue, visible to both parents simultaneously.</p><p><b>Approve</b>, <b>Decline &amp; Request Redo</b></p></td>
+        <td><p><span class="badge b-amber">PENDING</span> "Waiting for approval."</p><p>No action (withdraw not permitted once submitted)</p></td>
+        <td><p>Same as Kid.</p></td>
+        <td><p>No change.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Approved / Paid</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Moves to completed history; ledger updated.</p><p>No further action</p></td>
+        <td><p>Same, visible to both.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span><span class="badge b-teal">NOTIFIED</span> "Approved! +10 coins" with balance update.</p><p>No action</p></td>
+        <td><p>Same, if Teen claimed it.</p></td>
+        <td><p>No change.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Pool quests are a competitive, opt-in resource for minors building responsibility — the instant one child claims it, it must vanish from every other child's list to prevent duplicate effort and arguments over "I called it first." GP sees but doesn't compete for kid-earning opportunities by default, preserving the pool as a kids'-allowance mechanism unless a parent deliberately widens eligibility.</div>
+  </article>
+
+  <!-- 1.2 -->
+  <article class="scenario" id="s1-2">
+    <div class="scenario-title"><span class="scenario-id">1.2</span><h3>Direct-Assigned Quest to One Kid</h3></div>
+    <div class="scenario-tags"><span class="tag">Quest</span><span class="tag">Direct assign</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-2 creates "Clean your room" and assigns it directly to one named Kid — not open to claim by anyone else.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid (assignee)</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Created / Assigned</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Sees it in household quest list, tagged with assignee's name.</p><p><b>Edit</b>, <b>Reassign</b>, <b>Delete</b></p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Own creation, assigned.</p><p><b>Edit</b>, <b>Reassign</b>, <b>Delete</b></p></td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> Appears directly in "My Quests," not in a pool — cannot be claimed by anyone else because it was never shared.</p><p><b>Accept</b> (optional acknowledgement), <b>Mark Complete</b></p></td>
+        <td class="na">n/a — not assigned, not shown as claimable since it was never a pool item</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Visible in family activity if enabled.</p><p>No action</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Submitted → Approved</td>
+        <td colspan="2"><p>Both parents see submission in approval queue simultaneously; either may <b>Approve</b> or <b>Decline &amp; Request Redo</b>.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Reward posted on approval.</p></td>
+        <td class="na">n/a</td>
+        <td><p>No change.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>A directly-assigned quest is a private contract between the creator and one child — it should never appear as claimable to siblings, avoiding confusion ("why do I see my brother's chore?") and keeping direct assignments distinct from the competitive pool mechanic.</div>
+  </article>
+
+  <!-- 1.3 -->
+  <article class="scenario" id="s1-3">
+    <div class="scenario-title"><span class="scenario-id">1.3</span><h3>Parent-1 Delegates Quest to Parent-2</h3></div>
+    <div class="scenario-tags"><span class="tag">Quest</span><span class="tag">Parent-to-parent</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-1 creates "Pick up prescription from pharmacy" and directly hands it to Parent-2 — an adult household task with no coin reward, just a household to-do delegation.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1 (delegator)</th><th>Parent-2 (delegate)</th><th>Kid</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Delegated</td>
+        <td><p><span class="badge b-amber">PENDING</span> "Waiting on Parent-2."</p><p><b>Recall</b> (take back / reassign to self), <b>Nudge/Remind</b></p></td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> Appears in "Handed to you" section, distinct from kid-facing pool quests.</p><p><b>Accept</b>, <b>Push Back</b> (decline with reason, sends back to Parent-1), <b>Mark Done</b></p></td>
+        <td class="na">n/a — adult household task, not visible in kid quest views</td>
+        <td class="na">n/a — unless explicitly a household task Teen is old enough to see; default hidden</td>
+        <td><p><span class="badge b-gray">HIDDEN</span> by default — adult household logistics are not shown to GP unless GP is explicitly looped in as a helper.</p><p>No action</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Done</td>
+        <td><p><span class="badge b-green">CONFIRMED</span><span class="badge b-teal">NOTIFIED</span> "Parent-2 completed this."</p><p>No action (adult-to-adult tasks don't require approval — see 4.2 reasoning)</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Marked done, moves to shared household history.</p><p>No action</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Parent-to-parent handoffs are peer delegation between equally-authorized adults, not a parent-child approval relationship — so no approval gate is needed, but a lightweight "push back" escape hatch respects that Parent-2 may have a legitimate reason they can't take it (unlike a kid, whose refusal to do a chore is not typically a valid unilateral override).</div>
+  </article>
+
+  <!-- 1.4 -->
+  <article class="scenario" id="s1-4">
+    <div class="scenario-title"><span class="scenario-id">1.4</span><h3>Kid Requests a Quest Be Created</h3></div>
+    <div class="scenario-tags"><span class="tag">Quest</span><span class="tag">Kid-initiated</span><span class="tag">Approval gate</span></div>
+    <p class="scenario-setup"><b>Setup:</b> A Kid wants extra coins and submits a request: "Can I wash the car for 15 coins?" — this needs a parent to convert it into a real quest.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid (requester)</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Requested</td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> Appears in "Requests" queue.</p><p><b>Approve as-is</b>, <b>Approve with Changes</b> (edit reward/deadline), <b>Decline</b></p></td>
+        <td><p>Same queue, visible to both parents.</p><p><b>Approve as-is</b>, <b>Approve with Changes</b>, <b>Decline</b></p></td>
+        <td><p><span class="badge b-amber">PENDING</span> "Waiting for a parent to review."</p><p><b>Withdraw Request</b></p></td>
+        <td class="na">n/a — not this Kid's request</td>
+        <td class="na">n/a — GP typically cannot approve coin-earning requests since payouts are a parental financial decision</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Approved → becomes live quest</td>
+        <td colspan="2"><p><span class="badge b-green">CONFIRMED</span> Converts into a standard assigned quest (see 1.2 lifecycle from here).</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span><span class="badge b-teal">NOTIFIED</span> "Approved — go ahead!" Now appears in My Quests.</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Declined</td>
+        <td colspan="2"><p><span class="badge b-red">BLOCKED</span> Whichever parent declined sees it move to closed requests; the other parent sees the outcome too.</p></td>
+        <td><p><span class="badge b-red">BLOCKED</span> "Not approved" with optional reason note.</p><p>No further action on this request; may submit a new one</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Letting kids propose their own earning opportunities builds initiative, but the reward amount is real money-equivalent, so a parent must gate the creation step — this differs from a kid simply claiming a pool quest, which already carries pre-approved terms.</div>
+  </article>
+
+  <!-- 1.5 -->
+  <article class="scenario" id="s1-5">
+    <div class="scenario-title"><span class="scenario-id">1.5</span><h3>Teen Self-Creates Own Quest</h3></div>
+    <div class="scenario-tags"><span class="tag">Quest</span><span class="tag">Teen autonomy</span></div>
+    <p class="scenario-setup"><b>Setup:</b> A Teen wants to track a personal task with no reward attached — "Finish college application draft" — purely for self-organization, not earning.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid</th><th>Teen (creator)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Created</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Visible in household activity feed as a personal item, no approval needed since no reward is attached.</p><p>No action required; <b>View</b> only</p></td>
+        <td><p>Same as Parent-1.</p></td>
+        <td class="na">n/a — Teen's personal, unrewarded item is not shown in a sibling Kid's list</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Created and immediately live — no approval gate since it carries no coin payout and no household obligation.</p><p><b>Edit</b>, <b>Delete</b>, <b>Mark Complete</b></p></td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Completed</td>
+        <td colspan="2"><p><span class="badge b-blue">INFORMATIONAL</span> Sees it marked done in the feed. No approval step exists.</p></td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Self-marks complete instantly, no waiting state.</p></td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Self-tracked personal goals with no financial reward and no household dependency don't need parental gatekeeping — treating every teen to-do as an approval-required chore would undermine the autonomy-building purpose of the Teen role and produce approval-queue fatigue for parents.</div>
+  </article>
+
+  <!-- 1.6 -->
+  <article class="scenario" id="s1-6">
+    <div class="scenario-title"><span class="scenario-id">1.6</span><h3>Senior/GP Offers to Help With a Quest</h3></div>
+    <div class="scenario-tags"><span class="tag">Quest</span><span class="tag">GP-initiated</span></div>
+    <p class="scenario-setup"><b>Setup:</b> A household chore "Mow the lawn" sits unclaimed in the pool. Senior/GP, visiting for the week, wants to offer to do it instead of a kid.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Offer made</td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> "Senior/GP offered to help with this."</p><p><b>Accept Offer</b>, <b>Decline (keep in kid pool)</b></p></td>
+        <td><p>Same as Parent-1.</p></td>
+        <td><p>No change to pool visibility until a parent decides.</p></td>
+        <td><p>Same as Kid.</p></td>
+        <td><p><span class="badge b-amber">PENDING</span> "Offer sent — waiting on a parent."</p><p><b>Withdraw Offer</b></p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Accepted</td>
+        <td colspan="2"><p><span class="badge b-green">CONFIRMED</span> Reassigned to GP; removed from kid-claimable pool.</p></td>
+        <td><p><span class="badge b-gray">HIDDEN</span> No longer in pool.</p></td>
+        <td><p>Same as Kid.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span><span class="badge b-teal">NOTIFIED</span> "You're doing this — thank you!"</p><p><b>Mark Complete</b></p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>GP offering to help is generous but should not silently reroute a coin-earning opportunity away from a child without a parent's awareness — coin-earning chores are part of a kid's allowance system, so a parent should confirm the swap rather than have it happen automatically.</div>
+  </article>
+
+  <!-- 1.7 -->
+  <article class="scenario" id="s1-7">
+    <div class="scenario-title"><span class="scenario-id">1.7</span><h3>Shared/Team Quest — 2+ Assignees</h3></div>
+    <div class="scenario-tags"><span class="tag">Quest</span><span class="tag">Team</span></div>
+    <p class="scenario-setup"><b>Setup:</b> "Deep clean the garage" is assigned jointly to Kid and Teen — both must contribute, reward is split or shared.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Assigned</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Sees both assignees listed with individual progress toggles.</p><p><b>Edit Split</b>, <b>Remove a Participant</b></p></td>
+        <td><p>Same as Parent-1.</p></td>
+        <td><p><span class="badge b-amber">PENDING</span> "Shared with Teen" — sees a shared checklist, own portion highlighted.</p><p><b>Mark My Part Done</b></p></td>
+        <td><p>Mirrors Kid's view with Teen's portion highlighted.</p><p><b>Mark My Part Done</b></p></td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Partially done</td>
+        <td colspan="2"><p><span class="badge b-amber">PENDING</span> "Kid done, Teen in progress" — granular status per participant.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> own part; sees Teen's part still pending.</p></td>
+        <td><p><span class="badge b-amber">PENDING</span> own part; sees Kid's part done.</p><p><b>Mark My Part Done</b></p></td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Both done → submitted</td>
+        <td colspan="2"><p><span class="badge b-amber">PENDING</span> Full submission in approval queue.</p><p><b>Approve (splits reward)</b>, <b>Decline</b></p></td>
+        <td colspan="2"><p><span class="badge b-amber">PENDING</span> "Waiting for approval," both see identical state.</p></td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Team quests need per-person progress tracking so neither participant can claim credit for the other's work, and reward should only be released once both portions are genuinely complete — otherwise one child free-rides on the other's effort.</div>
+  </article>
+
+  <!-- 1.8 -->
+  <article class="scenario" id="s1-8">
+    <div class="scenario-title"><span class="scenario-id">1.8</span><h3>Parent Self-Creates &amp; Self-Completes a Quest</h3></div>
+    <div class="scenario-tags"><span class="tag">Quest</span><span class="tag">Self-approval question</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-1 creates "Pay the electric bill" and assigns it to themself — no reward, pure household task tracking.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1 (self-assignee)</th><th>Parent-2</th><th>Kid</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Created &amp; done</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Creates and marks done in one motion — <b>no self-approval step</b>, since there is no one above a parent in the approval hierarchy for an adult's own task.</p><p><b>Mark Complete</b></p></td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Sees it appear as completed directly in shared household history.</p><p>No action (optional <b>Comment</b>)</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>A parent-to-parent task requires no approval gate because approval exists to verify a subordinate's work against a standard set by an authority — parents are peers, so self-completion is auto-confirmed and simply logged transparently for the other parent to see, not gated.</div>
+  </article>
+
+  <!-- 1.9 -->
+  <article class="scenario" id="s1-9">
+    <div class="scenario-title"><span class="scenario-id">1.9</span><h3>Recurring/Daily Chore Instance</h3></div>
+    <div class="scenario-tags"><span class="tag">Quest</span><span class="tag">Recurring</span></div>
+    <p class="scenario-setup"><b>Setup:</b> "Feed the dog" is set up by Parent-2 as a daily recurring quest, directly assigned to Kid every day.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2 (creator)</th><th>Kid (assignee)</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">New instance generated (daily)</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Sees today's instance in household view, streak counter visible.</p><p><b>Edit Series</b>, <b>Skip Today</b></p></td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Same, plus original-creator controls.</p><p><b>Edit Series</b>, <b>Pause Series</b>, <b>Delete Series</b></p></td>
+        <td><p><span class="badge b-amber">PENDING</span> Fresh instance each day in My Quests, previous day's instance auto-archives (does not carry over as overdue clutter unless explicitly marked overdue).</p><p><b>Mark Complete</b></p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Missed a day</td>
+        <td colspan="2"><p><span class="badge b-red">BLOCKED</span> Shown as missed in the streak history, does not block future instances.</p></td>
+        <td><p><span class="badge b-red">BLOCKED</span> "Missed yesterday — streak reset" — informational, not punitive beyond streak tracking.</p><p>No retroactive action; today's instance is independent</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Recurring chores should generate a clean new instance each cycle rather than piling up an ever-growing overdue backlog — a missed day is useful signal (streak/history) but shouldn't block or clutter today's fresh chance to do the task.</div>
+  </article>
+
+  <!-- 1.10 -->
+  <article class="scenario" id="s1-10">
+    <div class="scenario-title"><span class="scenario-id">1.10</span><h3>Quest Declined by Assignee, Reopened to Pool</h3></div>
+    <div class="scenario-tags"><span class="tag">Quest</span><span class="tag">Reopen</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Teen was directly assigned "Rake leaves" but declines it (schedule conflict); it should reopen for anyone eligible.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid</th><th>Teen (original assignee)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Declined</td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> "Teen declined — reassign or reopen?"</p><p><b>Reopen to Pool</b>, <b>Reassign Directly</b>, <b>Cancel Quest</b></p></td>
+        <td><p>Same as Parent-1.</p></td>
+        <td class="na">n/a until reopened</td>
+        <td><p><span class="badge b-red">BLOCKED</span> Removed from own list, no penalty shown unless parent configures one.</p><p>No further action</p></td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Reopened to pool</td>
+        <td colspan="2"><p><span class="badge b-green">CONFIRMED</span> Now visible in shared pool.</p></td>
+        <td><p><span class="badge b-amber">PENDING</span> Appears newly claimable.</p><p><b>Claim</b></p></td>
+        <td><p>Also claimable again by this or another Teen.</p><p><b>Claim</b></p></td>
+        <td class="na">n/a unless eligible</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>A decline shouldn't silently leave a chore undone — routing the decision back to whoever created it (with the option to reopen broadly rather than force a single reassignment) keeps the household resilient to one person's "no."</div>
+  </article>
+
+  <!-- 1.11 -->
+  <article class="scenario" id="s1-11">
+    <div class="scenario-title"><span class="scenario-id">1.11</span><h3>Quest Submitted, Sent Back for Redo</h3></div>
+    <div class="scenario-tags"><span class="tag">Quest</span><span class="tag">Decline &amp; redo</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Kid submits "Vacuum living room" with a photo; Parent-1 isn't satisfied with the result.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid (assignee)</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Sent back</td>
+        <td><p><span class="badge b-red">BLOCKED</span> Marked "sent back," visible in history with the reason note attached.</p><p>No further action until resubmitted</p></td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Sees the decline and reason too, so both parents stay aligned (see 4.7 for disagreement handling).</p></td>
+        <td><p><span class="badge b-red">BLOCKED</span><span class="badge b-teal">NOTIFIED</span> "Needs another pass" with the specific reason shown (e.g. "missed under the couch").</p><p><b>Resubmit</b></p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Resubmitted</td>
+        <td><p>Returns to <span class="badge b-amber">PENDING</span> approval queue as a fresh submission.</p><p><b>Approve</b>, <b>Decline &amp; Request Redo</b> (again if needed)</p></td>
+        <td><p>Same.</p></td>
+        <td><p><span class="badge b-amber">PENDING</span> "Waiting for re-review."</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>A decline must always carry a reason and route back to the same assignee (not reopen to pool) — the child already claimed and attempted it, and a redo loop is a coaching moment, not a reassignment event.</div>
+  </article>
+
+  <!-- 1.12 -->
+  <article class="scenario" id="s1-12">
+    <div class="scenario-title"><span class="scenario-id">1.12</span><h3>Blended Household — Step-Parent and Biological Parent, Same Household</h3></div>
+    <div class="scenario-tags"><span class="tag">Quest</span><span class="tag">Multi-parent</span></div>
+    <p class="scenario-setup"><b>Setup:</b> A blended family where a step-parent and biological parent both hold "Parent" role in the SAME household instance (one Family Cube family, one member list) — no ex-spouse or second household is involved here. See 1.12b for the separate question of a kid who splits time between two distinct households.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1 (creator)</th><th>Parent-2 (co-parent, same household)</th><th>Kid</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Created</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Full creator rights.</p><p><b>Edit</b>, <b>Delete</b>, <b>Assign</b></p></td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Both parents in the same household instance see all household quests equally — role parity, not a hierarchy based on biological relationship.</p><p><b>Edit</b>, <b>Delete</b>, <b>Assign</b> (equal rights within this household)</p></td>
+        <td><p>Standard pool/assignee view per earlier scenarios.</p></td>
+        <td><p>Standard view.</p></td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Within a single household instance, all members holding the Parent role should have equal rights regardless of biological relationship — the app should not attempt to encode custody or biological-parent precedence, since that is a real-world legal/relationship matter outside the product's scope; every parent role in the household is co-equal.</div>
+  </article>
+
+  <!-- 1.12b -->
+  <article class="scenario" id="s1-12b">
+    <div class="scenario-title"><span class="scenario-id">1.12b</span><h3>Co-Parenting Across Two Separate Households (Not Currently Supported)</h3></div>
+    <div class="scenario-tags"><span class="tag">Quest</span><span class="tag">Multi-household</span><span class="tag">Future capability</span></div>
+    <p class="scenario-setup"><b>Setup:</b> A kid's parents are separated/divorced and are NOT members of the same Family Cube household — each parent runs their own separate family instance (own member list, own quests/events), and the kid custody-splits time between the two. Today's data model ties every member to exactly one <code>familyId</code>, so a kid cannot belong to two family instances simultaneously — this scenario defines target behavior for a possible future capability, not something the app does today.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1 (this household)</th><th>Other-household Parent (not a member here)</th><th>Kid (custody-split)</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Quest created in Household A</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Full creator rights, scoped to Household A only.</p><p><b>Edit</b>, <b>Delete</b>, <b>Assign</b></p></td>
+        <td><p><span class="badge b-gray">HIDDEN</span> Not a member of Household A at all — sees nothing from it, by design; the two households' data should never merge or leak into each other.</p></td>
+        <td><p>Sees it only while their profile is active within Household A (e.g. during their custody time there) — same as any kid, scoped to whichever single household their active profile currently belongs to.</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Kid transitions to Household B (custody switch)</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Household A's quests/events involving the kid remain visible in Household A's own history — nothing is deleted or transferred.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Household B now sees the kid's profile as active within their own separate household instance, fully independent of Household A's data.</p></td>
+        <td><p>The kid's profile/identity does NOT literally move between two <code>familyId</code>s in today's model — this would require either two separate kid profiles (one per household, manually kept in sync by the parents) or a genuine multi-household membership capability neither of which exists today.</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Two separated parents' households should be fully independent and never see each other's data by default — that's the safe, privacy-respecting default given the real-world relationship is explicitly non-co-parenting/separate. If real demand exists for a kid's schedule/chores to be visible across both households (e.g. so Household B knows about a Household A commitment during a custody handoff), that should be an explicit, mutually-consented cross-household share of specific items — never an automatic merge of family data. This is flagged as a genuine open product question, not a defined "should be," since it depends on a data-model capability (multi-household membership) the app does not currently have.</div>
+  </article>
+
+  <!-- 1.13 -->
+  <article class="scenario" id="s1-13">
+    <div class="scenario-title"><span class="scenario-id">1.13</span><h3>Teen Quest Requiring Parent Co-Sign for Higher Payout</h3></div>
+    <div class="scenario-tags"><span class="tag">Quest</span><span class="tag">Teen</span><span class="tag">Threshold approval</span></div>
+    <p class="scenario-setup"><b>Setup:</b> A Teen self-creates a quest with an unusually high self-assigned reward ("Organize the whole garage — 100 coins") that exceeds the household's auto-approve threshold for teen-created rewards.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid</th><th>Teen (creator)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Created, over threshold</td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> "Teen requested a high-value quest — review reward."</p><p><b>Approve Reward</b>, <b>Adjust Reward</b>, <b>Decline</b></p></td>
+        <td><p>Same queue.</p><p><b>Approve Reward</b>, <b>Adjust Reward</b>, <b>Decline</b></p></td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-amber">PENDING</span> "Reward pending parent review" — task itself may still proceed, only the payout is gated.</p><p><b>Start Anyway</b> (do the work while awaiting reward confirmation), <b>Edit Request</b></p></td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Teens get broad autonomy to create their own tasks, but a reward amount above a defined threshold is effectively a financial decision, so it should be the only gated part of the flow — not blocking the teen from starting the actual work while the reward is under review preserves their independence.</div>
+  </article>
+
+  <!-- 1.14 -->
+  <article class="scenario" id="s1-14">
+    <div class="scenario-title"><span class="scenario-id">1.14</span><h3>GP-Created Quest for Grandchildren During a Visit</h3></div>
+    <div class="scenario-tags"><span class="tag">Quest</span><span class="tag">GP-initiated</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Senior/GP is staying with the family for a week and wants to set up "Help Grandma water the garden" as a small reward task for the Kid.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid</th><th>Teen</th><th>Senior/GP (creator)</th></tr>
+      <tr>
+        <td class="stage-cell">Proposed by GP</td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> "Senior/GP proposed a quest — review reward and terms."</p><p><b>Approve</b>, <b>Adjust</b>, <b>Decline</b></p></td>
+        <td><p>Same queue.</p></td>
+        <td><p><span class="badge b-gray">HIDDEN</span> until a parent approves — GP cannot directly create a live, coin-paying quest without parent sign-off, since GP does not control the household coin economy.</p></td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-amber">PENDING</span> "Sent to parents for approval."</p><p><b>Edit Proposal</b>, <b>Withdraw</b></p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Approved</td>
+        <td colspan="2"><p><span class="badge b-green">CONFIRMED</span> Now a live quest, GP shown as co-creator/sponsor.</p></td>
+        <td><p><span class="badge b-amber">PENDING</span> Appears in My Quests as normal.</p><p><b>Accept</b>, <b>Mark Complete</b></p></td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-green">CONFIRMED</span><span class="badge b-teal">NOTIFIED</span> "Approved — live now."</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>GP involvement in earning-based chores should always route through a parent approval gate, mirroring the kid-request flow (1.4) — GP is a trusted helper, not a financial decision-maker for the household's coin economy, so treating GP proposals identically to kid requests keeps the money trail consistent and parent-controlled.</div>
+  </article>
+
+</section>
+<section class="category-section cat-2" id="cat-2">
+  <div class="category-header">
+    <h2>2. Calendar / Event Lifecycle</h2>
+    <span class="cat-count">12 scenarios</span>
+    <span class="cat-desc">How household events, appointments, and helper/driver requests are created, staffed, and made visible — with special attention to privacy defaults.</span>
+  </div>
+
+  <!-- 2.1 -->
+  <article class="scenario" id="s2-1">
+    <div class="scenario-title"><span class="scenario-id">2.1</span><h3>Parent Creates Household Event</h3></div>
+    <div class="scenario-tags"><span class="tag">Calendar</span><span class="tag">Happy path</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-1 creates "Family dinner at Grandma's" on Saturday, tagged as whole-family.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Created</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Appears on own calendar and household view instantly.</p><p><b>Edit</b>, <b>Delete</b>, <b>Add Attendees</b></p></td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Appears on shared calendar automatically since tagged whole-family.</p><p><b>Edit</b>, <b>Delete</b>, <b>RSVP</b></p></td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Appears on personal calendar view, read-only for edits.</p><p><b>RSVP / Acknowledge</b></p></td>
+        <td><p>Same as Kid.</p><p><b>RSVP / Acknowledge</b></p></td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Appears if GP is included in the family circle for whole-family events (default on for whole-family tag).</p><p><b>RSVP / Acknowledge</b></p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>A whole-family-tagged event should broadcast to every role by default, including GP — this is the intentional exception to GP's normally-narrower visibility default (see 5.1), since "whole family" is an explicit, unambiguous signal.</div>
+  </article>
+
+  <!-- 2.2 -->
+  <article class="scenario" id="s2-2">
+    <div class="scenario-title"><span class="scenario-id">2.2</span><h3>Event Needs a Driver, Open to Any Eligible Helper</h3></div>
+    <div class="scenario-tags"><span class="tag">Calendar</span><span class="tag">Helper pool</span><span class="tag">Race condition</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-1 creates "Soccer practice pickup, 5pm" and marks it "needs a driver," eligible to any Teen with driving privileges or any Parent/GP.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid</th><th>Teen (driving-eligible)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Posted, unclaimed</td>
+        <td><p><span class="badge b-amber">PENDING</span> "Needs a driver" banner shown.</p><p><b>Claim Myself</b>, <b>Assign Directly</b>, <b>Edit</b></p></td>
+        <td><p>Same as Parent-1.</p><p><b>Claim Myself</b>, <b>Assign Directly</b>, <b>Edit</b></p></td>
+        <td class="na">n/a — Kid is not a driving-eligible role for this slot; sees the event as informational only if attending, not as a claimable helper slot</td>
+        <td><p><span class="badge b-amber">PENDING</span> Shown in "Can You Help?" list.</p><p><b>Claim / I'll Drive</b></p></td>
+        <td><p><span class="badge b-amber">PENDING</span> Same helper-list visibility as Teen.</p><p><b>Claim / I'll Drive</b></p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Claimed (e.g. by GP)</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> "GP is driving" — instantly updated.</p><p><b>Reassign</b>, <b>Cancel Need</b></p></td>
+        <td><p>Same, updates simultaneously.</p></td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-gray">HIDDEN</span> Removed from Teen's "Can You Help?" list the instant GP claims it — the need is filled, so it disappears for every other eligible helper at once, not just the one who acted.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span><span class="badge b-teal">NOTIFIED</span> "You're driving — confirmed."</p><p><b>Unclaim</b></p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>A single open need filled by any eligible helper must disappear from literally everyone else's list the instant it's claimed — showing it as still-open to a second helper after the fact risks a duplicate offer to help and an awkward "oh, someone already did it" moment; see Category 3 for the simultaneous-claim race itself.</div>
+  </article>
+
+  <!-- 2.3 -->
+  <article class="scenario" id="s2-3">
+    <div class="scenario-title"><span class="scenario-id">2.3</span><h3>Recurring Weekly Event (Practice)</h3></div>
+    <div class="scenario-tags"><span class="tag">Calendar</span><span class="tag">Recurring</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-2 sets up "Piano lesson, every Tuesday 4pm" as a recurring event for Kid, with rotating driver responsibility.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2 (creator)</th><th>Kid (attendee)</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Series created</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Recurring block visible on shared calendar every Tuesday.</p><p><b>Edit This Occurrence</b>, <b>Edit Whole Series</b></p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Own series.</p><p><b>Edit Series</b>, <b>Delete Series</b>, <b>Skip This Week</b></p></td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Sees each week's instance.</p><p>No action (attendee, not organizer)</p></td>
+        <td class="na">n/a unless also attending/driving</td>
+        <td class="na">n/a unless included as a helper this week</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">One occurrence needs a driver this week</td>
+        <td colspan="2"><p><span class="badge b-amber">PENDING</span> This week's single instance flagged "needs driver" without touching the series.</p><p><b>Claim</b>, <b>Assign</b></p></td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-amber">PENDING</span> Appears in helper list for this occurrence only.</p><p><b>Claim / I'll Drive</b></p></td>
+        <td><p>Same as Teen if eligible.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>A recurring event needs per-occurrence overrides (one week's driver need, one week's cancellation) without mutating the whole series — treating every recurring event as monolithic would force awkward workarounds like deleting and recreating the series for a single exception.</div>
+  </article>
+
+  <!-- 2.4 -->
+  <article class="scenario" id="s2-4">
+    <div class="scenario-title"><span class="scenario-id">2.4</span><h3>Kid Requests an Event Needing Parent Approval</h3></div>
+    <div class="scenario-tags"><span class="tag">Calendar</span><span class="tag">Kid-initiated</span><span class="tag">Approval gate</span></div>
+    <p class="scenario-setup"><b>Setup:</b> A Kid wants to add "Sleepover at friend's house, Friday" to the calendar.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid (requester)</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Requested</td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> In approval queue with details.</p><p><b>Approve</b>, <b>Approve with Changes</b>, <b>Decline</b></p></td>
+        <td><p>Same queue.</p><p><b>Approve</b>, <b>Approve with Changes</b>, <b>Decline</b></p></td>
+        <td><p><span class="badge b-amber">PENDING</span> "Waiting for approval" shown on personal calendar as a tentative/pending-styled block.</p><p><b>Withdraw Request</b>, <b>Edit Request</b></p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a — not looped into a minor's social-plan approval</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Approved</td>
+        <td colspan="2"><p><span class="badge b-green">CONFIRMED</span> Converts to a firm calendar entry.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span><span class="badge b-teal">NOTIFIED</span> Now solid/confirmed on calendar.</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Any event representing a minor leaving normal routine (sleepovers, outings) should render as visually tentative until approved so the child can plan around it optimistically without the household treating it as confirmed — and it should never be visible to GP by default since it's a parenting decision, not household coordination.</div>
+  </article>
+
+  <!-- 2.5 -->
+  <article class="scenario" id="s2-5">
+    <div class="scenario-title"><span class="scenario-id">2.5</span><h3>Multi-Member Event, 2+ People Assigned</h3></div>
+    <div class="scenario-tags"><span class="tag">Calendar</span><span class="tag">Multi-attendee</span></div>
+    <p class="scenario-setup"><b>Setup:</b> "Dentist appointments — Kid and Teen back-to-back" created by Parent-1, both kids need to attend, Parent-2 is driving.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1 (creator)</th><th>Parent-2 (driver)</th><th>Kid (attendee)</th><th>Teen (attendee)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Created, assigned</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Sees all three roles attached with distinct badges (driver / attendee / attendee).</p><p><b>Edit</b>, <b>Reassign Driver</b></p></td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Tagged specifically as "Driver."</p><p><b>Accept Driver Role</b>, <b>Push Back</b></p></td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Tagged "Attendee," sees Teen also attending and Parent-2 driving.</p><p><b>Acknowledge</b></p></td>
+        <td><p>Same as Kid, mirrored.</p><p><b>Acknowledge</b></p></td>
+        <td><p><span class="badge b-gray">HIDDEN</span> Routine medical appointments are not shown to GP by default (see 5.5).</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>When one event has multiple people in different functional roles (driver vs. attendee), each role should see their own responsibility clearly badged rather than a flat undifferentiated attendee list — this avoids the driver missing that they're the one who has to actually show up with a car.</div>
+  </article>
+
+  <!-- 2.6 -->
+  <article class="scenario" id="s2-6">
+    <div class="scenario-title"><span class="scenario-id">2.6</span><h3>Private/Sensitive Event (Medical Appointment)</h3></div>
+    <div class="scenario-tags"><span class="tag">Calendar</span><span class="tag">Privacy</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-2 books "Teen — therapist appointment" and marks it private/sensitive.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2 (creator)</th><th>Kid</th><th>Teen (subject)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Created, marked private</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Both legal guardians can see full details by default — privacy tagging shields the household broadly, not co-parents from each other.</p><p><b>Edit</b>, <b>Remove Privacy Tag</b></p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Full detail.</p><p><b>Edit</b>, <b>Delete</b></p></td>
+        <td><p><span class="badge b-gray">HIDDEN</span> Not visible at all — a sibling has no need to know.</p></td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Sees own appointment with full detail — the event is about them, so it is never hidden from the subject themself.</p><p><b>Acknowledge</b></p></td>
+        <td><p><span class="badge b-gray">HIDDEN</span> Not visible; GP sees only that "Teen is unavailable" at that time slot if GP checks household availability, with no label or reason.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>A privacy-tagged event should always remain visible to both parents (who share legal/medical responsibility) and to the person it's about, but hidden entirely from siblings and GP — the correct default is "need to know," and busy-block-only visibility (no title) lets the household still avoid double-booking that time slot without exposing the sensitive detail.</div>
+  </article>
+
+  <!-- 2.7 -->
+  <article class="scenario" id="s2-7">
+    <div class="scenario-title"><span class="scenario-id">2.7</span><h3>Teen Creates Own Social Event</h3></div>
+    <div class="scenario-tags"><span class="tag">Calendar</span><span class="tag">Teen autonomy</span></div>
+    <p class="scenario-setup"><b>Setup:</b> A Teen adds "Movie night with friends, Saturday 7pm" directly to their own calendar — no driving/resource need, just personal scheduling.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid</th><th>Teen (creator)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Created</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Appears on household calendar as a busy block for Teen, visible so parents can spot conflicts.</p><p>No approval action required; <b>Flag for Discussion</b> (soft nudge, not a block)</p></td>
+        <td><p>Same as Parent-1.</p></td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Live immediately, no approval gate — Teen autonomy extends to self-scheduling social plans that don't require a resource (car, money) from a parent.</p><p><b>Edit</b>, <b>Delete</b></p></td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Requiring parent approval for every teen social plan would be infantilizing and unworkable at scale — the meaningful gate is only when the teen needs something from a parent (a ride, money, an overnight away); a same-day, no-resource plan is visible for household awareness but not gated.</div>
+  </article>
+
+  <!-- 2.8 -->
+  <article class="scenario" id="s2-8">
+    <div class="scenario-title"><span class="scenario-id">2.8</span><h3>GP Offers to Help — Pickup Coverage</h3></div>
+    <div class="scenario-tags"><span class="tag">Calendar</span><span class="tag">GP-initiated</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Both parents are double-booked Thursday afternoon. Senior/GP sees a "needs pickup" flag on the shared calendar and offers to cover it.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid (being picked up)</th><th>Teen</th><th>Senior/GP (offering)</th></tr>
+      <tr>
+        <td class="stage-cell">Offer made</td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> "GP offered to cover pickup."</p><p><b>Accept</b>, <b>Decline (find another option)</b></p></td>
+        <td><p>Same as Parent-1.</p></td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> No action needed from Kid; sees who's picking them up once confirmed.</p></td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-amber">PENDING</span> "Offer sent."</p><p><b>Withdraw Offer</b></p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Accepted</td>
+        <td colspan="2"><p><span class="badge b-green">CONFIRMED</span> "GP confirmed for pickup" — need-for-help flag cleared.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> "GP is picking you up today."</p></td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-green">CONFIRMED</span><span class="badge b-teal">NOTIFIED</span></p><p><b>Unclaim (if plans change)</b></p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Unlike a coin-earning chore, logistics help (driving/pickup) carries no financial dimension, so GP's offer being confirmed by either parent (not requiring both) is sufficient — the bar for accepting help should be low since the alternative is a genuinely uncovered gap in childcare.</div>
+  </article>
+
+  <!-- 2.9 -->
+  <article class="scenario" id="s2-9">
+    <div class="scenario-title"><span class="scenario-id">2.9</span><h3>Event Edited After Members Already Confirmed</h3></div>
+    <div class="scenario-tags"><span class="tag">Calendar</span><span class="tag">Edit propagation</span></div>
+    <p class="scenario-setup"><b>Setup:</b> "Birthday party, Saturday 2pm" already has Kid, Teen, and GP confirmed as attending/helping. Parent-1 changes the time to 4pm.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1 (editor)</th><th>Parent-2</th><th>Kid</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Edited</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Change saved immediately.</p><p>No further action</p></td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> "Time changed to 4pm."</p><p><b>Acknowledge</b></p></td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Update pushed, calendar entry auto-updates, does not require re-confirmation for a minor time shift.</p></td>
+        <td><p>Same as Kid.</p></td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> Because GP previously committed to a specific driving/helper slot, a materially relevant change (time, not just decor) prompts a re-confirm rather than silent update.</p><p><b>Reconfirm</b>, <b>Can No Longer Help</b></p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>A passive attendee can simply have their calendar auto-update, but anyone who made a specific commitment tied to the old time (a driver, a helper) needs an explicit re-confirmation step, because the change may break their availability — auto-updating their commitment silently risks a no-show.</div>
+  </article>
+
+  <!-- 2.10 -->
+  <article class="scenario" id="s2-10">
+    <div class="scenario-title"><span class="scenario-id">2.10</span><h3>Whole-Family Event vs. Individual Event</h3></div>
+    <div class="scenario-tags"><span class="tag">Calendar</span><span class="tag">Visibility</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Compare "Family game night" (whole-family tag) against "Kid's orthodontist consult" (individual tag), both created same day by Parent-2.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Event Type</th><th>Parent-1</th><th>Parent-2</th><th>Kid (subject, orthodontist)</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Whole-family tag</td>
+        <td colspan="4"><p><span class="badge b-teal">NOTIFIED</span> Visible to every role by default, including GP.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Individual tag (orthodontist)</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Full detail (guardian).</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Full detail (creator/guardian).</p></td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Sees own appointment.</p></td>
+        <td><p><span class="badge b-gray">HIDDEN</span> Not shown — individual-tagged events default to guardians + subject only.</p></td>
+        <td><p><span class="badge b-gray">HIDDEN</span> Same default as Teen.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Tag-driven visibility (whole-family vs. individual) should be the primary privacy lever, with a sensible default per tag, so creators aren't forced to manually configure visibility on every single event — most events are either obviously shared or obviously personal.</div>
+  </article>
+
+  <!-- 2.11 -->
+  <article class="scenario" id="s2-11">
+    <div class="scenario-title"><span class="scenario-id">2.11</span><h3>Event RSVP / Attendance Confirmation</h3></div>
+    <div class="scenario-tags"><span class="tag">Calendar</span><span class="tag">RSVP</span></div>
+    <p class="scenario-setup"><b>Setup:</b> "Cousin's graduation party, Sunday" — optional attendance, Parent-1 wants a headcount from everyone invited.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1 (creator)</th><th>Parent-2</th><th>Kid</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Invited, awaiting RSVP</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Sees live headcount as others respond.</p><p><b>Send Reminder</b></p></td>
+        <td><p><span class="badge b-amber">PENDING</span></p><p><b>Going</b>, <b>Not Going</b>, <b>Maybe</b></p></td>
+        <td><p>Same as Parent-2.</p><p><b>Going</b>, <b>Not Going</b>, <b>Maybe</b></p></td>
+        <td><p>Same.</p><p><b>Going</b>, <b>Not Going</b>, <b>Maybe</b></p></td>
+        <td><p>Same, if included in invite list.</p><p><b>Going</b>, <b>Not Going</b>, <b>Maybe</b></p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Everyone responded</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Final headcount locked, visible to all.</p></td>
+        <td colspan="4"><p><span class="badge b-blue">INFORMATIONAL</span> See the final tally.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Optional group events genuinely need an explicit RSVP model distinct from the "acknowledge" pattern used for mandatory events — treating "will you be there" the same as "you've been informed" loses the headcount signal the organizer actually needs.</div>
+  </article>
+
+  <!-- 2.12 -->
+  <article class="scenario" id="s2-12">
+    <div class="scenario-title"><span class="scenario-id">2.12</span><h3>Overlapping/Conflicting Event on One Member's Calendar</h3></div>
+    <div class="scenario-tags"><span class="tag">Calendar</span><span class="tag">Conflict detection</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-2 tries to assign Teen as driver for "Soccer pickup 5pm," but Teen already has "SAT prep class 4:30–6pm" on their calendar.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2 (assigning)</th><th>Kid</th><th>Teen (conflicted)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Conflict detected at assignment time</td>
+        <td class="na">n/a — not part of this action</td>
+        <td><p><span class="badge b-red">BLOCKED</span> Inline warning shown before confirming: "Teen has a conflicting event at this time."</p><p><b>Assign Anyway (override)</b>, <b>Choose Someone Else</b>, <b>Cancel</b></p></td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> If Parent-2 overrides anyway: "You've been assigned to drive, but this overlaps your SAT prep — please confirm you can make both work."</p><p><b>Confirm I Can Do Both</b>, <b>Flag Conflict to Parent</b></p></td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Conflict detection should warn, not silently block, because only a human (the parent assigning, or the teen being assigned) has the context to know if two things are actually compatible (e.g. the pickup is 10 minutes from the prep class) — the system's job is to surface the conflict clearly, not make the call.</div>
+  </article>
+
+</section>
+<section class="category-section cat-3" id="cat-3">
+  <div class="category-header">
+    <h2>3. Claim Races &amp; Concurrency</h2>
+    <span class="cat-count">5 scenarios</span>
+    <span class="cat-desc">Two or more people act on the same shared resource at nearly the same instant. Defines who wins, what the loser sees, and how to avoid the appearance of a bug.</span>
+  </div>
+
+  <!-- 3.1 -->
+  <article class="scenario" id="s3-1">
+    <div class="scenario-title"><span class="scenario-id">3.1</span><h3>Two Kids Claim the Same Pool Quest Simultaneously</h3></div>
+    <div class="scenario-tags"><span class="tag">Race</span><span class="tag">Quest</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Kid-A and Kid-B both tap "Claim" on "Wash the dishes" within the same second.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Outcome</th><th>Parent-1</th><th>Parent-2</th><th>Kid-A (first tap, server-confirmed winner)</th><th>Kid-B (second tap, loses race)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Resolution</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Sees Kid-A as claimant; no visible sign a race occurred.</p></td>
+        <td><p>Same as Parent-1.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> "You claimed this" — normal success state, first valid claim accepted by server wins, full stop.</p><p><b>Mark Complete</b>, <b>Unclaim</b></p></td>
+        <td><p><span class="badge b-amber">PENDING</span>→<span class="badge b-gray">HIDDEN</span> Sees a brief "Someone just claimed this" toast instead of a raw error, then the item disappears from their pool list — never a jarring silent failure or a confusing double-claimed state.</p><p>No action; may browse remaining pool items</p></td>
+        <td><p>No change.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>First valid write wins, full stop — the losing side must get clear, friendly feedback ("someone beat you to it") rather than a generic error or, worse, appearing to succeed and then silently reverting, which would feel broken and erode trust in the claim button.</div>
+  </article>
+
+  <!-- 3.2 -->
+  <article class="scenario" id="s3-2">
+    <div class="scenario-title"><span class="scenario-id">3.2</span><h3>Two Teens Claim the Same Driver Slot</h3></div>
+    <div class="scenario-tags"><span class="tag">Race</span><span class="tag">Calendar</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Both Teen and Senior/GP are eligible drivers for "Airport pickup, 6am" and both hit claim near-simultaneously.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Outcome</th><th>Parent-1</th><th>Parent-2</th><th>Kid</th><th>Teen (loses race)</th><th>Senior/GP (wins race)</th></tr>
+      <tr>
+        <td class="stage-cell">Resolution</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> "GP confirmed as driver."</p></td>
+        <td><p>Same.</p></td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-amber">PENDING</span>→<span class="badge b-gray">HIDDEN</span> "GP already claimed this" toast, then the helper prompt disappears.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span><span class="badge b-teal">NOTIFIED</span> "You're driving — confirmed."</p><p><b>Unclaim</b></p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>The same first-write-wins rule applies uniformly regardless of which two roles are racing — there's no reason to bias resolution toward one role over another (e.g. always preferring an adult over a teen) since both were equally eligible and equally fast; fairness here is procedural, not role-based.</div>
+  </article>
+
+  <!-- 3.3 -->
+  <article class="scenario" id="s3-3">
+    <div class="scenario-title"><span class="scenario-id">3.3</span><h3>Two Parents Act on the Same Approval Simultaneously</h3></div>
+    <div class="scenario-tags"><span class="tag">Race</span><span class="tag">Approval</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Kid's submitted quest sits in the shared approval queue; Parent-1 taps Approve at the same moment Parent-2 taps Decline.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Outcome</th><th>Parent-1 (approve, arrives first)</th><th>Parent-2 (decline, arrives second)</th><th>Kid</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Resolution</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> "Approved" — action succeeded normally.</p></td>
+        <td><p><span class="badge b-red">BLOCKED</span> Instead of silently applying the decline or erroring, sees: "Parent-1 already approved this a moment ago." The decline does not get force-applied over an already-resolved item.</p><p><b>Reverse Approval</b> (raises a distinct, explicit "undo" action if Parent-2 strongly disagrees, rather than the race silently deciding it)</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Sees a normal approval — no sign of the near-miss.</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Approval is a terminal action (it pays out a reward), so once resolved it should not be silently overwritten by a second parent's conflicting tap — instead the second parent is told what happened and given an explicit, visible "reverse" path, which surfaces the parents' disagreement as a real conversation rather than letting a race condition quietly decide a financial outcome. See also 4.7 for the general disagreement pattern.</div>
+  </article>
+
+  <!-- 3.4 -->
+  <article class="scenario" id="s3-4">
+    <div class="scenario-title"><span class="scenario-id">3.4</span><h3>Claim + Delete Race</h3></div>
+    <div class="scenario-tags"><span class="tag">Race</span><span class="tag">Deletion</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-1 deletes a pool quest at the same moment Kid taps Claim on it.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Outcome</th><th>Parent-1 (deletes)</th><th>Parent-2</th><th>Kid (claims, loses to deletion)</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Resolution</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Deletion succeeds normally.</p></td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Sees it removed from household list.</p></td>
+        <td><p><span class="badge b-red">BLOCKED</span> "This quest was just removed by a parent" — clear, specific message, not a generic error, and definitely not a claim that silently succeeds on a now-nonexistent item.</p><p>No action; item gone from pool</p></td>
+        <td><p>No change.</p></td>
+        <td><p>No change.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Deletion should always win over a concurrent claim (you can't claim something that no longer exists), but the person left holding a stale claim attempt deserves a specific, honest explanation rather than a confusing generic failure — this keeps trust in the claim mechanic intact even when it fails.</div>
+  </article>
+
+  <!-- 3.5 -->
+  <article class="scenario" id="s3-5">
+    <div class="scenario-title"><span class="scenario-id">3.5</span><h3>Claim + Edit-Payout Race</h3></div>
+    <div class="scenario-tags"><span class="tag">Race</span><span class="tag">Edit</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-2 edits a pool quest's reward from 10 to 20 coins at the same moment Teen claims it at the old 10-coin value shown on their screen.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Outcome</th><th>Parent-1</th><th>Parent-2 (edits)</th><th>Kid</th><th>Teen (claims mid-edit)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Resolution</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Sees final state: 20 coins, claimed by Teen.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Edit applied.</p></td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Claim still succeeds (claiming and reward-editing aren't mutually exclusive actions), but the reward shown updates live to 20 coins the moment the claim confirms — the assignee should always see the current true value, never a stale cached number that under- or over-promises.</p></td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Unlike claim-vs-claim or claim-vs-delete, an edit to a non-identity field (the reward amount) doesn't need to block the claim — but the assignee's screen must reflect the live authoritative value immediately, since committing to a task on the promise of a stale reward number is a trust problem waiting to happen.</div>
+  </article>
+
+</section>
+<section class="category-section cat-4" id="cat-4">
+  <div class="category-header">
+    <h2>4. Approval &amp; Payout Flows</h2>
+    <span class="cat-count">8 scenarios</span>
+    <span class="cat-desc">Who must sign off on completed work, when self-completion is allowed to auto-close, and how rewards land in the shared household ledger.</span>
+  </div>
+
+  <!-- 4.1 -->
+  <article class="scenario" id="s4-1">
+    <div class="scenario-title"><span class="scenario-id">4.1</span><h3>Standard Kid Submission → Parent Approval</h3></div>
+    <div class="scenario-tags"><span class="tag">Approval</span><span class="tag">Happy path</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Kid completes an assigned quest and submits proof (photo/note).</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Submitted</td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> In shared approval queue with proof attached.</p><p><b>Approve</b>, <b>Decline &amp; Request Redo</b></p></td>
+        <td><p>Identical queue, both parents see the same pending item at the same time.</p><p><b>Approve</b>, <b>Decline &amp; Request Redo</b></p></td>
+        <td><p><span class="badge b-amber">PENDING</span> "Waiting for approval."</p><p>No action</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a — GP does not approve coin payouts by default (see 5.1, 5.3)</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Approved</td>
+        <td colspan="2"><p><span class="badge b-green">CONFIRMED</span> Whichever parent acted first is shown as "Approved by Parent-X" to the other, keeping the record transparent.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span><span class="badge b-teal">NOTIFIED</span> Coins credited, balance updates live.</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Either parent should be able to independently approve — requiring both would create bottlenecks in ordinary family life where parents aren't always simultaneously available — but the record should always show who acted, so approvals stay transparent between co-parents.</div>
+  </article>
+
+  <!-- 4.2 -->
+  <article class="scenario" id="s4-2">
+    <div class="scenario-title"><span class="scenario-id">4.2</span><h3>Self-Created / Self-Completed Task — Auto vs. Manual Approval</h3></div>
+    <div class="scenario-tags"><span class="tag">Approval</span><span class="tag">Self-completion rule</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Defining the general rule referenced throughout this doc: when should a task auto-complete vs. require separate approval?</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Creator = Completer</th><th>Requires Approval?</th><th>Reasoning</th></tr>
+      <tr>
+        <td class="stage-cell">Parent creates &amp; completes own task (no reward)</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Auto-completes, no approval step.</p></td>
+        <td><p>No authority above a parent exists in-household for adult tasks; approval exists to verify work against another person's standard, which doesn't apply peer-to-peer among parents.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Kid/Teen creates a reward-bearing quest for themself (via request flow)</td>
+        <td><p><span class="badge b-amber">PENDING</span> Requires parent approval — but only because a <b>reward</b> is attached, tying it to real money-equivalent, not because self-completion is inherently suspect.</p></td>
+        <td><p>The gate is the financial payout, not the act of self-assignment — see 1.4, 1.13.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Kid/Teen creates a personal, unrewarded to-do and completes it</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Auto-completes — no reward, no household obligation, nothing to verify.</p></td>
+        <td><p>See 1.5. Gatekeeping every personal checklist item would be excessive friction with no protective value.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">GP creates &amp; completes a task they proposed and a parent already approved</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Auto-completes at the "mark done" step — the approval gate already happened at proposal time (1.14), so a second approval on completion would be redundant.</p></td>
+        <td><p>Approval belongs at the point of financial commitment, not duplicated at every subsequent stage.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>The general rule: <b>approval should gate the introduction of a financial/reward obligation, not the act of self-completion itself.</b> Requiring separate self-approval for every task regardless of context creates approval fatigue and treats trustworthy peer/self actions the same as an unverified child's chore claim — the two are not equivalent risks.</div>
+  </article>
+
+  <!-- 4.3 -->
+  <article class="scenario" id="s4-3">
+    <div class="scenario-title"><span class="scenario-id">4.3</span><h3>Teen Submission — Either Parent Can Approve</h3></div>
+    <div class="scenario-tags"><span class="tag">Approval</span><span class="tag">Teen</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Teen submits a claimed pool quest; both parents are online at the same time.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid</th><th>Teen (assignee)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Submitted</td>
+        <td><p><span class="badge b-amber">PENDING</span></p><p><b>Approve</b>, <b>Decline</b></p></td>
+        <td><p>Same.</p><p><b>Approve</b>, <b>Decline</b></p></td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-amber">PENDING</span> "Waiting for approval" — same experience regardless of teen vs. kid role; teens don't get a lighter-touch or self-approval shortcut for reward-bearing quests, since the reward gate applies uniformly to any minor.</p></td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Teen autonomy expands self-creation and self-scheduling rights (see 1.5, 2.7) but does not extend to self-approving financial payouts — the money gate is about the nature of the action (a reward), not the age/trust tier of the person completing it.</div>
+  </article>
+
+  <!-- 4.4 -->
+  <article class="scenario" id="s4-4">
+    <div class="scenario-title"><span class="scenario-id">4.4</span><h3>Parent Declines Submission, Requests Redo</h3></div>
+    <div class="scenario-tags"><span class="tag">Approval</span><span class="tag">Decline</span></div>
+    <p class="scenario-setup"><b>Setup:</b> See also 1.11 for the quest-side view; this scenario focuses on the approval-queue side and required reason capture.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1 (declines)</th><th>Parent-2</th><th>Kid</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Decline action</td>
+        <td><p><span class="badge b-red">BLOCKED</span> Decline requires a mandatory short reason before it can be submitted — an unexplained decline is not allowed, since the assignee needs actionable feedback.</p><p><b>Decline &amp; Request Redo</b> (reason required)</p></td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Sees the decline and reason to stay aligned with Parent-1.</p></td>
+        <td><p><span class="badge b-red">BLOCKED</span><span class="badge b-teal">NOTIFIED</span> Sees the specific reason, not just "declined."</p><p><b>Resubmit</b></p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>A decline without a reason is developmentally useless and breeds resentment ("why wasn't it good enough?") — requiring a short reason at the point of decline is a small friction cost that meaningfully improves the coaching value of the whole approval system.</div>
+  </article>
+
+  <!-- 4.5 -->
+  <article class="scenario" id="s4-5">
+    <div class="scenario-title"><span class="scenario-id">4.5</span><h3>Payout Posts to Shared Family Ledger</h3></div>
+    <div class="scenario-tags"><span class="tag">Approval</span><span class="tag">Ledger</span><span class="tag">Cross-domain</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Kid's quest is approved for 15 coins — tracing the payout into the household's shared financial record.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid (earner)</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Payout posted</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Ledger entry visible: "Kid +15 coins — Wash dishes — approved by Parent-1."</p><p><b>View Full Ledger</b></p></td>
+        <td><p>Identical ledger entry, visible simultaneously — both parents share full financial transparency over the household coin economy.</p><p><b>View Full Ledger</b></p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span><span class="badge b-teal">NOTIFIED</span> Sees own balance update and own transaction history — not other kids' individual earnings, only the household totals if that view is offered.</p></td>
+        <td><p>Sees own balance/history only, same scoping as Kid.</p></td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> If GP sponsored or proposed the quest (1.14), sees that specific transaction; otherwise the coin ledger is not part of GP's default view (see 5.3).</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Both parents need full financial transparency into the household's coin economy since it's effectively household budget/allowance, but a kid should not see a sibling's individual earnings history by default — that's peer-to-peer financial privacy, not a parental-oversight matter.</div>
+  </article>
+
+  <!-- 4.6 -->
+  <article class="scenario" id="s4-6">
+    <div class="scenario-title"><span class="scenario-id">4.6</span><h3>GP-Completed Task — Does It Need Approval At All?</h3></div>
+    <div class="scenario-tags"><span class="tag">Approval</span><span class="tag">GP</span></div>
+    <p class="scenario-setup"><b>Setup:</b> GP accepted an offered pool chore (1.6) and marks it complete — does this need a parent approval step the way a kid's does?</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid</th><th>Teen</th><th>Senior/GP (completer)</th></tr>
+      <tr>
+        <td class="stage-cell">Marked done</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Sees it logged as complete — no approval queue entry, since GP is a trusted adult helper, not a minor whose work needs verification.</p><p><b>Acknowledge / Thank</b> (social, not gating)</p></td>
+        <td><p>Same as Parent-1.</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Instantly marked complete, no waiting state.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Approval verifies a minor's unsupervised work against a standard; an adult GP completing a task they volunteered for doesn't carry that same verification need — treating it identically to a kid's submission would be a mismatched trust model and an unnecessary approval-queue burden on parents.</div>
+  </article>
+
+  <!-- 4.7 -->
+  <article class="scenario" id="s4-7">
+    <div class="scenario-title"><span class="scenario-id">4.7</span><h3>Disputed Approval — Two Parents Disagree</h3></div>
+    <div class="scenario-tags"><span class="tag">Approval</span><span class="tag">Conflict</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-1 already approved a submission yesterday; today Parent-2 reviews the photo and thinks it should not have passed.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1 (approved)</th><th>Parent-2 (disagrees, later)</th><th>Kid</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Post-hoc disagreement</td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> "Parent-2 flagged your approval for discussion."</p><p><b>Discuss</b>, <b>Stand By Approval</b></p></td>
+        <td><p><span class="badge b-amber">PENDING</span> Cannot unilaterally reverse a payout that already happened — coins already credited are not silently clawed back by one parent's after-the-fact objection.</p><p><b>Flag for Discussion</b>, <b>Request Reversal</b> (requires Parent-1 co-sign, or an explicit override with a visible audit note if the household config allows unilateral reversal)</p></td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> No visibility into the parents' disagreement unless/until a reversal actually happens — a kid should not see co-parents arguing over their chore in real time.</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>An already-paid reward is a completed transaction, not an open item — reversing it should require deliberate, visible action (ideally co-signed) rather than a quiet overwrite, both to protect the child from whiplash and to keep the parents' disagreement a private, adult-level conversation rather than something that leaks into the kid's view mid-dispute.</div>
+  </article>
+
+  <!-- 4.8 -->
+  <article class="scenario" id="s4-8">
+    <div class="scenario-title"><span class="scenario-id">4.8</span><h3>Bonus/Spot-Reward Outside the Quest System</h3></div>
+    <div class="scenario-tags"><span class="tag">Approval</span><span class="tag">Ledger</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-1 wants to give Kid 5 bonus coins on the spot for good behavior, with no formal quest ever created.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1 (grants)</th><th>Parent-2</th><th>Kid (recipient)</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Bonus granted</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Instant, no approval loop needed (a parent doesn't need to approve their own spot-bonus, same logic as 4.2).</p><p><b>Give Bonus Coins</b></p></td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Sees the bonus logged in the ledger transparently, same as any other transaction.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span><span class="badge b-teal">NOTIFIED</span> "+5 bonus coins from Parent-1!"</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a — GP cannot directly grant coins without parent approval, consistent with 1.14</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>A parent has unilateral authority to grant a bonus since it's their own financial decision as a household authority — but it must still land in the same transparent shared ledger as every other transaction so the other parent isn't surprised by an unexplained balance change.</div>
+  </article>
+
+</section>
+<section class="category-section cat-5" id="cat-5">
+  <div class="category-header">
+    <h2>5. Visibility &amp; Privacy Defaults</h2>
+    <span class="cat-count">7 scenarios</span>
+    <span class="cat-desc">What each role should see by default, absent any explicit sharing action — the app's baseline privacy posture.</span>
+  </div>
+
+  <!-- 5.1 -->
+  <article class="scenario" id="s5-1">
+    <div class="scenario-title"><span class="scenario-id">5.1</span><h3>Senior/GP Default Visibility Scope</h3></div>
+    <div class="scenario-tags"><span class="tag">Privacy</span><span class="tag">Default</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Defining the general rule for what GP should see across the app by default, without any per-item configuration.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Data Category</th><th>GP Default Visibility</th><th>Reasoning</th></tr>
+      <tr>
+        <td class="stage-cell">Whole-family tagged events</td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Full visibility.</p></td>
+        <td><p>Explicitly tagged as everyone's business.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Individual/private events (medical, counseling, etc.)</td>
+        <td><p><span class="badge b-gray">HIDDEN</span> Busy-block only, no title/detail.</p></td>
+        <td><p>Not GP's need-to-know by default; see 5.5.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Kid/Teen coin-earning pool quests</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Can view household activity feed, but is not a claimant by default.</p></td>
+        <td><p>Preserves the pool as a kids' earning mechanic; GP participates only when explicitly opted in per-item (1.6).</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Household coin ledger / finances</td>
+        <td><p><span class="badge b-gray">HIDDEN</span> Not shown by default.</p></td>
+        <td><p>Financial oversight is a parental role; see 5.3.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Helper/driver needs (open pool)</td>
+        <td><p><span class="badge b-amber">PENDING</span> Full visibility, claimable.</p></td>
+        <td><p>Logistics help has no financial or privacy dimension — GP should see every opportunity to help.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Parent-to-parent household delegations</td>
+        <td><p><span class="badge b-gray">HIDDEN</span></p></td>
+        <td><p>Adult household administration is between the parents; not GP's default concern.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>GP's correct default is a deliberately <b>narrower slice than a parent</b>, not full parity — GP should default to "what's needed to help and stay connected" rather than "everything a parent sees." This protects family financial privacy and minors' sensitive appointments while still making GP a fully effective helper for logistics and whole-family plans. Any narrower/broader adjustment should be an explicit, visible per-household setting a parent controls — never a silent default.</div>
+  </article>
+
+  <!-- 5.2 -->
+  <article class="scenario" id="s5-2">
+    <div class="scenario-title"><span class="scenario-id">5.2</span><h3>Kid Views Another Kid's Individual Quest</h3></div>
+    <div class="scenario-tags"><span class="tag">Privacy</span><span class="tag">Sibling</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Kid-A has a directly-assigned quest "Practice reading 20 minutes." Does Kid-B (sibling) see it?</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Item Type</th><th>Parent-1 / Parent-2</th><th>Kid-A (assignee)</th><th>Kid-B (sibling)</th><th>Teen (sibling)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Directly-assigned individual quest</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Full visibility, both parents.</p></td>
+        <td><p><span class="badge b-amber">PENDING</span> Full visibility, own item.</p></td>
+        <td><p><span class="badge b-gray">HIDDEN</span> Not shown in Kid-B's quest list at all.</p></td>
+        <td><p><span class="badge b-gray">HIDDEN</span> Same.</p></td>
+        <td class="na">n/a per 5.1</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Open pool quest (unclaimed)</td>
+        <td colspan="1"><p><span class="badge b-blue">INFORMATIONAL</span></p></td>
+        <td colspan="3"><p><span class="badge b-amber">PENDING</span> Visible and claimable to every eligible sibling equally, until claimed.</p></td>
+        <td class="na"></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>A directly-assigned individual task is private between the assignee and the assigning parent — siblings have no functional need to see each other's individual chore lists, and exposing them invites unhelpful comparison ("why does she only have one chore and I have three?") that the app shouldn't manufacture.</div>
+  </article>
+
+  <!-- 5.3 -->
+  <article class="scenario" id="s5-3">
+    <div class="scenario-title"><span class="scenario-id">5.3</span><h3>Financial/Ledger Visibility by Role</h3></div>
+    <div class="scenario-tags"><span class="tag">Privacy</span><span class="tag">Ledger</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Defining who sees what slice of the household coin ledger.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Ledger View</th><th>Parent-1 / Parent-2</th><th>Kid</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Full household ledger (all members' transactions)</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Full access, both parents equally.</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+        <td class="na">n/a — see 5.1</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Own transaction history &amp; balance</td>
+        <td colspan="1"><p><span class="badge b-blue">INFORMATIONAL</span> (as part of full view)</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Full access to own history.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Full access to own history.</p></td>
+        <td class="na"></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Sibling's transaction history</td>
+        <td class="na"></td>
+        <td><p><span class="badge b-gray">HIDDEN</span></p></td>
+        <td><p><span class="badge b-gray">HIDDEN</span></p></td>
+        <td class="na"></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Parents need full financial oversight since it's their household budget; each minor needs full visibility into only their own earnings for a sense of ownership and to track savings goals; peer financial privacy between siblings should be the default, matching real-world norms around not knowing your sibling's allowance balance.</div>
+  </article>
+
+  <!-- 5.4 -->
+  <article class="scenario" id="s5-4">
+    <div class="scenario-title"><span class="scenario-id">5.4</span><h3>Teen Private Calendar Events</h3></div>
+    <div class="scenario-tags"><span class="tag">Privacy</span><span class="tag">Teen</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Teen wants to add "Hang out with [friend]" without full detail being broadcast, but still wants the household to know they're unavailable.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Detail Level</th><th>Parent-1 / Parent-2</th><th>Kid</th><th>Teen (creator)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Teen marks event "private"</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Sees a busy block with time range but generic label ("Teen — busy") — not full title/detail. Full detail remains visible only via explicit request if parental oversight settings for that teen require it (a per-household, age-appropriate configuration, not a universal override).</p></td>
+        <td><p><span class="badge b-gray">HIDDEN</span> No visibility at all, not even a busy block, since siblings have no scheduling dependency by default.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Full detail, own event.</p><p><b>Edit</b>, <b>Delete</b>, <b>Make Visible</b></p></td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Teens reasonably want increasing privacy as they mature, and a busy-block-only default lets parents still coordinate logistics (avoiding double-booking a ride) without forcing teens to broadcast every social detail — this mirrors the same busy-block pattern used for sensitive medical events (2.6), applied here to teen-initiated privacy rather than parent-initiated.</div>
+  </article>
+
+  <!-- 5.5 -->
+  <article class="scenario" id="s5-5">
+    <div class="scenario-title"><span class="scenario-id">5.5</span><h3>Medical/Health-Tagged Items — General Rule</h3></div>
+    <div class="scenario-tags"><span class="tag">Privacy</span><span class="tag">Medical</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Generalizing the rule from 2.6 across all medical/health-tagged calendar items and any related quests (e.g. "give Kid their medication at 3pm").</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Role</th><th>Default Visibility</th><th>Reasoning</th></tr>
+      <tr>
+        <td class="stage-cell">Both Parents</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Full detail, always — medical responsibility is inherently shared parental duty.</p></td>
+        <td><p>Both guardians need full information to act in an emergency or scheduling conflict.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">The subject (if Kid/Teen old enough to use the app meaningfully)</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Full detail about their own appointment/medication.</p></td>
+        <td><p>A person is never hidden from information about themself.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Siblings</td>
+        <td><p><span class="badge b-gray">HIDDEN</span></p></td>
+        <td><p>No functional need; medical privacy among siblings should mirror real-world norms.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Senior/GP</td>
+        <td><p><span class="badge b-gray">HIDDEN</span> by default, busy-block only — <b>unless</b> GP is specifically the one administering care that day (e.g. GP is babysitting and needs to know about a medication schedule), in which case that specific item should be explicitly shared with GP for that occasion.</p></td>
+        <td><p>GP's default should protect medical privacy, but the app must have an easy override path for the real-world case where GP is actively providing care and needs the information to do so safely.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Medical information should default to minimal necessary exposure (parents + subject) with an easy, explicit "share this with today's caregiver" action rather than an all-or-nothing GP visibility toggle — safety (GP needs medication timing when babysitting) and privacy (GP doesn't need routine appointment history) are both real needs that a static default can't satisfy alone.</div>
+  </article>
+
+  <!-- 5.6 -->
+  <article class="scenario" id="s5-6">
+    <div class="scenario-title"><span class="scenario-id">5.6</span><h3>Cross-Household Visibility (Blended Family)</h3></div>
+    <div class="scenario-tags"><span class="tag">Privacy</span><span class="tag">Multi-household</span></div>
+    <p class="scenario-setup"><b>Setup:</b> A Kid splits time between two separate Family Cube households (Parent-1's home and a non-member co-parent's home elsewhere). Does anything from the "other" household leak in?</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Boundary</th><th>Behavior</th><th>Reasoning</th></tr>
+      <tr>
+        <td class="stage-cell">Household A quests/events</td>
+        <td><p><span class="badge b-gray">HIDDEN</span> from Household B entirely — these are two fully separate app instances/households unless explicitly federated by the family.</p></td>
+        <td><p>Family Cube households should be data-isolated by default; a household is its own coordination unit, not an assumption of one unified family graph across separate homes.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Shared child's basic schedule (opt-in cross-household sharing, if the product offers it)</td>
+        <td><p><span class="badge b-purple">ACTION AVAILABLE</span> Only if both households' primary parents explicitly enable a limited shared-custody calendar view — busy blocks only, not full detail, similar to 2.6/5.4 patterns.</p></td>
+        <td><p>Real families increasingly need light cross-household coordination (custody schedules) without merging entire household data — this should be an explicit, mutual opt-in feature, never a default.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Household boundaries should be a hard default wall — no accidental visibility of one household's chores, ledger, or events to a different household — with any cross-household coordination feature (custody calendars) being a deliberate, mutually-consented, narrowly-scoped exception rather than an assumed default.</div>
+  </article>
+
+  <!-- 5.7 -->
+  <article class="scenario" id="s5-7">
+    <div class="scenario-title"><span class="scenario-id">5.7</span><h3>GP Editing Permissions vs. Viewing Permissions</h3></div>
+    <div class="scenario-tags"><span class="tag">Privacy</span><span class="tag">Permissions</span></div>
+    <p class="scenario-setup"><b>Setup:</b> For items GP CAN see (whole-family events, open helper needs), what can GP actually edit or delete?</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Item</th><th>Parent-1 / Parent-2</th><th>Senior/GP</th><th>Reasoning</th></tr>
+      <tr>
+        <td class="stage-cell">Whole-family event GP is attending</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Full edit/delete rights.</p></td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Can RSVP/acknowledge, cannot edit time/location/attendees or delete.</p></td>
+        <td><p>GP is a participant, not a household administrator — editing shared logistics should stay with parents even when GP can see the event.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Helper/driver need GP claimed</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Full rights, can reassign/cancel the need.</p></td>
+        <td><p><span class="badge b-amber">PENDING</span> Can <b>Unclaim</b> their own commitment, cannot edit the underlying event or reassign to someone else.</p></td>
+        <td><p>GP should always be able to back out of their own commitment (life happens), but reassigning to a third party is a household-coordination decision that belongs to a parent.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">GP-created/proposed quest (1.14) after parent approval</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Can edit/cancel even after GP created it — parents retain override authority over anything touching the coin economy.</p></td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Can view status and mark related sub-steps, cannot alter reward or terms post-approval.</p></td>
+        <td><p>Visibility and creation rights don't imply ongoing edit authority — the coin economy stays parent-governed regardless of who proposed the item.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Being able to see and participate in something is a different permission tier from being able to administer it — GP's role is consistently "trusted participant/helper," never "household administrator," and that distinction should hold even for items GP personally originated or claimed.</div>
+  </article>
+
+</section>
+<section class="category-section cat-6" id="cat-6">
+  <div class="category-header">
+    <h2>6. Reassignment &amp; Cancellation</h2>
+    <span class="cat-count">6 scenarios</span>
+    <span class="cat-desc">What happens when a claimed item changes hands, a person leaves the household mid-task, or an item is deleted while active.</span>
+  </div>
+
+  <!-- 6.1 -->
+  <article class="scenario" id="s6-1">
+    <div class="scenario-title"><span class="scenario-id">6.1</span><h3>Parent Reassigns a Claimed Quest to Someone Else</h3></div>
+    <div class="scenario-tags"><span class="tag">Reassignment</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Kid-A claimed "Walk the dog" but Parent-1 needs to reassign it to Kid-B due to a scheduling conflict.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1 (reassigns)</th><th>Parent-2</th><th>Kid-A (loses it)</th><th>Kid-B (gains it)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Reassigned</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Confirmed reassignment.</p><p><b>Reassign Again</b>, <b>Return to Pool Instead</b></p></td>
+        <td><p><span class="badge b-teal">NOTIFIED</span></p></td>
+        <td><p><span class="badge b-red">BLOCKED</span><span class="badge b-teal">NOTIFIED</span> "This was reassigned to Kid-B" — brief, non-judgmental notice, removed from My Quests. Any partial progress (e.g. photo already taken) is not silently discarded — Kid-A is told, and any reward already earned for partial work is a parent judgment call, not automatic.</p><p>No action</p></td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> "You've been assigned this."</p><p><b>Accept</b>, <b>Push Back</b>, <b>Mark Complete</b></p></td>
+        <td><p>No change.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Reassignment is a parent-level override that should always be transparent to the person losing the task (never a silent disappearance) and should give the new assignee the same accept/decline agency as any other assignment, rather than force-locking them into a task they didn't choose.</div>
+  </article>
+
+  <!-- 6.2 -->
+  <article class="scenario" id="s6-2">
+    <div class="scenario-title"><span class="scenario-id">6.2</span><h3>Assignee Removed From the Family Mid-Task</h3></div>
+    <div class="scenario-tags"><span class="tag">Edge case</span><span class="tag">Reassignment</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Teen who claimed "Mow the lawn" is removed from the household app (e.g. moved out, account deactivated) while the quest is still in progress.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid</th><th>Teen (removed)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Removal detected</td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> "This quest's assignee was removed — reassign or return to pool?" — the quest does not just vanish or stay silently orphaned.</p><p><b>Reopen to Pool</b>, <b>Reassign Directly</b>, <b>Cancel Quest</b></p></td>
+        <td><p>Same prompt.</p></td>
+        <td class="na">n/a until reopened</td>
+        <td class="na">n/a — account removed, no further app access</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Unresolved reward (if any partial work existed)</td>
+        <td colspan="2"><p><span class="badge b-amber">PENDING</span> Any partial credit or already-approved-but-unpaid balance is preserved and flagged for manual resolution (e.g. paid out externally) rather than silently zeroed out.</p><p><b>Resolve Manually</b></p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>A removed member's in-flight work should never leave an orphaned, invisible task sitting in limbo — the system should proactively surface it to parents for resolution, and any earned-but-unpaid balance must not simply evaporate, since real money/allowance may be tied to it.</div>
+  </article>
+
+  <!-- 6.3 -->
+  <article class="scenario" id="s6-3">
+    <div class="scenario-title"><span class="scenario-id">6.3</span><h3>Item Deleted While Someone Is Actively Working On It</h3></div>
+    <div class="scenario-tags"><span class="tag">Edge case</span><span class="tag">Deletion</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Kid has claimed and is mid-way through "Organize the pantry"; Parent-2 deletes the quest entirely (e.g. it's no longer needed).</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2 (deletes)</th><th>Kid (was working on it)</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Deleted mid-progress</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Sees it removed from active list.</p></td>
+        <td><p><span class="badge b-red">BLOCKED</span> Confirmation prompt required before deleting an item with an active assignee: "Kid is currently working on this — delete anyway?" — deletion of an in-progress item is not a silent one-tap action.</p><p><b>Delete Anyway</b>, <b>Cancel</b></p></td>
+        <td><p><span class="badge b-red">BLOCKED</span><span class="badge b-teal">NOTIFIED</span> "This quest was cancelled by a parent — no action needed on your end," with a brief reason if the parent provided one. Not an error state; framed as a cancellation, not a failure on the kid's part.</p><p>No action</p></td>
+        <td><p>No change.</p></td>
+        <td><p>No change.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Deleting an item someone is actively working on should require an explicit extra confirmation (protecting against accidental deletion of in-flight work) and the person who was working on it deserves a clear, kind notification distinguishing "this was cancelled" from "you did something wrong."</div>
+  </article>
+
+  <!-- 6.4 -->
+  <article class="scenario" id="s6-4">
+    <div class="scenario-title"><span class="scenario-id">6.4</span><h3>Event Cancelled After Helper Already Claimed</h3></div>
+    <div class="scenario-tags"><span class="tag">Cancellation</span><span class="tag">Calendar</span></div>
+    <p class="scenario-setup"><b>Setup:</b> "Soccer practice" is cancelled (rained out); GP had already claimed the driving slot.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1 (cancels)</th><th>Parent-2</th><th>Kid</th><th>Teen</th><th>Senior/GP (had claimed)</th></tr>
+      <tr>
+        <td class="stage-cell">Cancelled</td>
+        <td><p><span class="badge b-red">BLOCKED</span> Event marked cancelled, removed from active calendar.</p></td>
+        <td><p><span class="badge b-teal">NOTIFIED</span></p></td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> "Practice cancelled today."</p></td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-red">BLOCKED</span><span class="badge b-teal">NOTIFIED</span> Explicitly notified their claimed commitment is no longer needed — "Your driving help for practice is no longer needed (cancelled)." GP should never have to discover a cancellation by silently watching the pickup time pass unattended.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Anyone who made an active commitment to a now-cancelled item needs an explicit, direct notification — not just a passive calendar update — because the cost of a missed cancellation notice is someone showing up (or waiting) for nothing.</div>
+  </article>
+
+  <!-- 6.5 -->
+  <article class="scenario" id="s6-5">
+    <div class="scenario-title"><span class="scenario-id">6.5</span><h3>Quest Creator Cancels Their Own Delegated Quest</h3></div>
+    <div class="scenario-tags"><span class="tag">Cancellation</span><span class="tag">Delegation</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-1 delegated "Pick up prescription" to Parent-2 (1.3), then realizes they can do it themself and wants to cancel the delegation.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1 (recalls)</th><th>Parent-2 (was delegate)</th><th>Kid</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Recalled</td>
+        <td><p><span class="badge b-green">CONFIRMED</span> <b>Recall</b> action succeeds instantly.</p></td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> "Parent-1 took this back — no action needed," removed from "Handed to you" list.</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>A delegator should always retain the right to recall their own delegation without needing the delegate's permission — it's still fundamentally the delegator's task, and the delegate should be told plainly rather than have it vanish unexplained.</div>
+  </article>
+
+  <!-- 6.6 -->
+  <article class="scenario" id="s6-6">
+    <div class="scenario-title"><span class="scenario-id">6.6</span><h3>Family Member Role Changed (Kid → Teen) Mid-Cycle</h3></div>
+    <div class="scenario-tags"><span class="tag">Edge case</span><span class="tag">Role change</span></div>
+    <p class="scenario-setup"><b>Setup:</b> A Kid turns 13 and a parent upgrades their role to Teen, mid-way through several active quests and calendar commitments.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Item</th><th>Parent-1 / Parent-2</th><th>The upgraded member (Kid → Teen)</th><th>Reasoning</th></tr>
+      <tr>
+        <td class="stage-cell">Currently-claimed quests/events</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> No disruption — existing commitments carry over unchanged.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> All active items remain exactly as they were; role change does not retroactively alter in-flight work.</p></td>
+        <td><p>Mid-flight commitments shouldn't be disrupted by an administrative role change.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Newly-available capabilities (self-creation, driver eligibility if age-appropriate)</td>
+        <td><p><span class="badge b-purple">ACTION AVAILABLE</span> Can now delegate/assign to this member using Teen-tier options.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span> Immediately gains Teen self-creation/autonomy rights going forward.</p></td>
+        <td><p>New capabilities apply prospectively — there's no reason to gate the newly-earned autonomy behind anything but the role change itself.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Historical ledger/completed history</td>
+        <td colspan="2"><p><span class="badge b-blue">INFORMATIONAL</span> Preserved as-is, attributed to whatever role was active at the time, not retroactively relabeled.</p></td>
+        <td><p>History is a record of what happened, not a reflection of current status — relabeling the past would be revisionist and could confuse reward/streak history.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Role changes should be forward-only and non-disruptive: existing commitments and history are untouched, while new capabilities and visibility rules apply immediately going forward — this avoids the confusing scenario of an in-progress chore suddenly changing rules mid-stream.</div>
+  </article>
+
+</section>
+<section class="category-section cat-7" id="cat-7">
+  <div class="category-header">
+    <h2>7. Notifications &amp; Passive Updates</h2>
+    <span class="cat-count">5 scenarios</span>
+    <span class="cat-desc">Distinguishing who should receive an active push/badge notification versus who should simply see an updated list next time they check.</span>
+  </div>
+
+  <!-- 7.1 -->
+  <article class="scenario" id="s7-1">
+    <div class="scenario-title"><span class="scenario-id">7.1</span><h3>New Pool Quest Posted</h3></div>
+    <div class="scenario-tags"><span class="tag">Notification</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-1 posts a new unclaimed pool quest open to all Kids/Teens.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Role</th><th>Notification Behavior</th><th>Reasoning</th></tr>
+      <tr>
+        <td class="stage-cell">Parent-2</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> No push notification — sees it next time they open the household view. Passive.</p></td>
+        <td><p>Co-parent creating a routine chore is not urgent information for the other parent.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Eligible Kids/Teens</td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Light badge count increment on the Quests tab; no intrusive push by default (configurable to push if the household wants urgency, e.g. time-sensitive same-day chores).</p></td>
+        <td><p>A badge is enough to invite them to check without training kids to expect constant interrupt-driven pings for routine chore postings.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Senior/GP</td>
+        <td><p><span class="badge b-gray">HIDDEN/no notification</span> unless GP is an eligible claimant for this specific item.</p></td>
+        <td><p>Consistent with 5.1 default scoping.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Routine pool postings should be low-urgency badge signals, not push interrupts — reserving push notifications for genuinely time-sensitive or directly-relevant events prevents notification fatigue that causes people to tune out all alerts, including the important ones.</div>
+  </article>
+
+  <!-- 7.2 -->
+  <article class="scenario" id="s7-2">
+    <div class="scenario-title"><span class="scenario-id">7.2</span><h3>Submission Awaiting Approval</h3></div>
+    <div class="scenario-tags"><span class="tag">Notification</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Kid submits a completed quest with proof attached.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Role</th><th>Notification Behavior</th><th>Reasoning</th></tr>
+      <tr>
+        <td class="stage-cell">Parent-1 &amp; Parent-2</td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Push notification to both simultaneously — an approval queue item is a direct action request, warranting an active alert, not just a badge.</p></td>
+        <td><p>The kid is actively waiting on a specific person's action; leaving it to passive discovery risks the child feeling ignored.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Kid (submitter)</td>
+        <td><p><span class="badge b-amber">PENDING</span> Sees own item marked "waiting for approval" on their screen — this is their own state, not a notification to themself.</p></td>
+        <td><p>N/A — self-state, not a notification event.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Other Kids/Teens</td>
+        <td><p><span class="badge b-gray">HIDDEN/no notification</span></p></td>
+        <td><p>Not relevant to siblings; avoids exposing each other's approval status.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>An approval-queue item is a direct, time-relevant action request to a specific pair of people (both parents), which justifies active push notification — the escalation from "badge" to "push" should track how directly and immediately a specific role needs to act.</div>
+  </article>
+
+  <!-- 7.3 -->
+  <article class="scenario" id="s7-3">
+    <div class="scenario-title"><span class="scenario-id">7.3</span><h3>Approval / Payout Completed</h3></div>
+    <div class="scenario-tags"><span class="tag">Notification</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-2 approves Kid's submission and coins are credited.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Role</th><th>Notification Behavior</th><th>Reasoning</th></tr>
+      <tr>
+        <td class="stage-cell">Kid (recipient)</td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Push notification — positive, reward-bearing outcome deserves an immediate, celebratory alert ("Approved! +15 coins").</p></td>
+        <td><p>Timely positive reinforcement matters for a rewards-based system to feel motivating.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Parent-1 (did not act)</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> No push; sees it reflected in the shared ledger/history passively.</p></td>
+        <td><p>The other parent doesn't need an active interrupt for a routine approval their co-parent already handled.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Senior/GP (if GP sponsored the quest per 1.14)</td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Push, since GP has a direct stake in this specific outcome.</p></td>
+        <td><p>Notification relevance should follow direct involvement, not role by default.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>The person whose effort/reward is directly affected should get an active, immediate, positively-framed notification, while parties without a direct stake in this specific instance get passive visibility — this keeps notifications meaningful rather than broadcasting every transaction to everyone.</div>
+  </article>
+
+  <!-- 7.4 -->
+  <article class="scenario" id="s7-4">
+    <div class="scenario-title"><span class="scenario-id">7.4</span><h3>Event Claimed by a Helper</h3></div>
+    <div class="scenario-tags"><span class="tag">Notification</span><span class="tag">Calendar</span></div>
+    <p class="scenario-setup"><b>Setup:</b> An open "needs a driver" event gets claimed by GP (see 2.2).</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Role</th><th>Notification Behavior</th><th>Reasoning</th></tr>
+      <tr>
+        <td class="stage-cell">Event creator (Parent-1)</td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Push — the gap they flagged is now resolved, worth an active confirmation.</p></td>
+        <td><p>Resolves a need the creator was actively worried about.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Other eligible helpers (Teen)</td>
+        <td><p><span class="badge b-gray">no notification, silent list removal</span> — the item simply disappears from their "Can You Help?" list rather than sending an active "someone else already did it" push, which would feel like unnecessary noise for something they hadn't committed to yet.</p></td>
+        <td><p>Passive removal is sufficient since they had not yet taken any action; a push here would be over-notifying.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">The attendee being helped (Kid)</td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Light push/badge — "GP is picking you up today" — directly relevant to the kid's day.</p></td>
+        <td><p>Directly affects their logistics; worth a light alert even though they took no action.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>The line between "notify" and "silently update" should track whether the person had a stake or a pending decision at that moment — someone who hadn't yet acted on an open opportunity doesn't need to be told someone else took it; someone whose day is directly affected does.</div>
+  </article>
+
+  <!-- 7.5 -->
+  <article class="scenario" id="s7-5">
+    <div class="scenario-title"><span class="scenario-id">7.5</span><h3>Reminder — Item Due Soon / Event Starting Soon</h3></div>
+    <div class="scenario-tags"><span class="tag">Notification</span><span class="tag">Reminder</span></div>
+    <p class="scenario-setup"><b>Setup:</b> A claimed quest is due by end of day and hasn't been submitted yet; an event is starting in 30 minutes.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Role</th><th>Notification Behavior</th><th>Reasoning</th></tr>
+      <tr>
+        <td class="stage-cell">The assignee (Kid/Teen/GP/Parent, whoever holds it)</td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Push reminder — directly actionable, time-sensitive, targeted only at the person who needs to act.</p></td>
+        <td><p>Reminders exist specifically to prompt the responsible party; this is the clearest possible case for a push notification.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Parents (if assignee is a minor and deadline is same-day)</td>
+        <td><p><span class="badge b-amber">PENDING</span> A softer, delayed "heads up, not yet done" notification only if the deadline passes without completion — not a duplicate simultaneous reminder, to avoid parents feeling like they need to micromanage every reminder cycle.</p></td>
+        <td><p>Parents should be looped in on genuine misses, not every in-progress reminder cycle — that preserves the chore as the child's responsibility first.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Uninvolved roles</td>
+        <td><p><span class="badge b-gray">no notification</span></p></td>
+        <td><p>Not relevant to them.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Reminders should target the responsible party first and escalate to a parent only on an actual miss, not preemptively — treating every reminder as a parent-cc'd event undermines the responsibility-building purpose of assigning the task to the child in the first place.</div>
+  </article>
+
+</section>
+
+<section class="category-section cat-8" id="cat-8">
+  <div class="category-header">
+    <h2>8. Cross-Domain Interactions</h2>
+    <span class="cat-count">3 scenarios</span>
+    <span class="cat-desc">Where chores/quests, calendar events, and the reward economy intersect.</span>
+  </div>
+
+  <!-- 8.1 -->
+  <article class="scenario" id="s8-1">
+    <div class="scenario-title"><span class="scenario-id">8.1</span><h3>Chore Payout Appears in Shared Ledger</h3></div>
+    <div class="scenario-tags"><span class="tag">Cross-domain</span><span class="tag">Ledger</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Cross-reference of 4.5 — confirming the ledger is the single source of truth regardless of which domain (quest approval, bonus, store redemption) generated the transaction.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Transaction Source</th><th>Parent-1 / Parent-2</th><th>Kid/Teen (party to transaction)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Quest approval payout</td>
+        <td rowspan="3"><p><span class="badge b-green">CONFIRMED</span> All sources unified into one ledger view, filterable by source type, both parents equally.</p></td>
+        <td rowspan="3"><p><span class="badge b-blue">INFORMATIONAL</span> Own transactions only, regardless of source.</p></td>
+        <td rowspan="3"><p><span class="badge b-gray">HIDDEN</span> by default (5.3), except a specific transaction GP directly sponsored.</p></td>
+      </tr>
+      <tr><td class="stage-cell">Spot bonus (4.8)</td></tr>
+      <tr><td class="stage-cell">Store redemption (coin spend)</td></tr>
+    </table>
+    <div class="why-box"><b>Why</b>A fragmented ledger (one view for chore earnings, a separate one for bonuses, another for spending) would make it impossible for parents to reason about a child's true balance and history at a glance — every coin movement, regardless of origin, belongs in one unified, chronological record.</div>
+  </article>
+
+  <!-- 8.2 -->
+  <article class="scenario" id="s8-2">
+    <div class="scenario-title"><span class="scenario-id">8.2</span><h3>Quest Linked to a Calendar Event (Errand Tied to a Trip)</h3></div>
+    <div class="scenario-tags"><span class="tag">Cross-domain</span><span class="tag">Quest</span><span class="tag">Calendar</span></div>
+    <p class="scenario-setup"><b>Setup:</b> "Pick up dry cleaning" is a quest, but it only makes sense to do it during "Errand run, Saturday 10am" — Parent-1 links the two.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1 (creator)</th><th>Parent-2</th><th>Kid</th><th>Teen (linked assignee)</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Linked</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Sees the quest and event cross-referenced with a visible link indicator on both.</p></td>
+        <td><p>Same.</p></td>
+        <td class="na">n/a</td>
+        <td><p><span class="badge b-amber">PENDING</span> Sees the quest in My Quests with a note "part of Saturday's errand run" — clarifies context, doesn't duplicate as two unrelated obligations.</p><p><b>Mark Complete</b> (quest completion is independent — completing the event attendance doesn't auto-complete the quest, since the quest is a distinct deliverable)</p></td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Linking gives helpful context (why does this errand exist, when should it happen) without conflating two genuinely different objects — attending an event and completing a linked quest are separate commitments that should be tracked and completed independently, even though they're related.</div>
+  </article>
+
+  <!-- 8.3 -->
+  <article class="scenario" id="s8-3">
+    <div class="scenario-title"><span class="scenario-id">8.3</span><h3>Store Redemption Funded by Quest Earnings</h3></div>
+    <div class="scenario-tags"><span class="tag">Cross-domain</span><span class="tag">Ledger</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Kid has accumulated 50 coins from various approved quests and wants to redeem a reward from the family store.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid (redeemer)</th><th>Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Redemption requested</td>
+        <td><p><span class="badge b-amber">PENDING</span><span class="badge b-teal">NOTIFIED</span> If the store item requires approval (e.g. screen time, an outing), appears in queue.</p><p><b>Approve</b>, <b>Decline</b></p></td>
+        <td><p>Same queue.</p></td>
+        <td><p><span class="badge b-amber">PENDING</span> "Redemption requested, waiting for approval," balance shown as provisionally reserved (not yet deducted until approved, so a decline doesn't require a refund step).</p><p><b>Cancel Request</b></p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Approved</td>
+        <td colspan="2"><p><span class="badge b-green">CONFIRMED</span> Ledger shows the deduction, cross-linked to the redeemed item.</p></td>
+        <td><p><span class="badge b-green">CONFIRMED</span><span class="badge b-teal">NOTIFIED</span> Balance deducted, redemption confirmed.</p></td>
+        <td class="na">n/a</td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Reserving (not yet deducting) the balance while a redemption is pending approval avoids the awkward case of a declined request requiring a manual refund — the coins should only actually leave the child's balance once the exchange is truly finalized.</div>
+  </article>
+
+</section>
+<section class="category-section cat-9" id="cat-9">
+  <div class="category-header">
+    <h2>9. Edge Cases</h2>
+    <span class="cat-count">4 scenarios</span>
+    <span class="cat-desc">Unusual but realistic household shapes and situations that stress-test the role model.</span>
+  </div>
+
+  <!-- 9.1 -->
+  <article class="scenario" id="s9-1">
+    <div class="scenario-title"><span class="scenario-id">9.1</span><h3>Last Eligible Person for a Pool Item Leaves the Family</h3></div>
+    <div class="scenario-tags"><span class="tag">Edge case</span></div>
+    <p class="scenario-setup"><b>Setup:</b> A pool quest is only eligible for Teens (e.g. "requires driving"). The household's only Teen is removed/graduates out of the Teen role, leaving the item permanently unclaimable.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1 / Parent-2</th><th>Kid</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">No eligible claimant remains</td>
+        <td><p><span class="badge b-amber">PENDING</span> Item flagged: "No eligible members can claim this anymore" rather than sitting silently unclaimed forever with no explanation.</p><p><b>Widen Eligibility</b>, <b>Reassign Directly (any role)</b>, <b>Cancel Quest</b></p></td>
+        <td><p><span class="badge b-gray">HIDDEN</span> still not shown, since Kid role isn't eligible unless a parent widens it.</p></td>
+        <td><p><span class="badge b-amber">PENDING</span> Appears in GP's helper list only if a parent explicitly widens eligibility to include GP.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>The system should proactively flag an item that has become permanently unclaimable due to a household composition change, rather than let it decay silently — a parent should never have to notice on their own that a chore has been invisible to everyone for weeks.</div>
+  </article>
+
+  <!-- 9.2 -->
+  <article class="scenario" id="s9-2">
+    <div class="scenario-title"><span class="scenario-id">9.2</span><h3>Household With Only One Parent</h3></div>
+    <div class="scenario-tags"><span class="tag">Edge case</span><span class="tag">Single parent</span></div>
+    <p class="scenario-setup"><b>Setup:</b> A single-parent household — no Parent-2 exists. Every scenario above that assumed "either parent can approve" or "both parents notified" needs a defined single-parent behavior.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Behavior</th><th>Parent-1 (sole parent)</th><th>Kid / Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Approval queue</td>
+        <td><p><span class="badge b-amber">PENDING</span> All approvals route to Parent-1 alone — no functional change needed, the "either parent" pattern degrades gracefully to "the one parent."</p></td>
+        <td><p>Same submission experience as a two-parent household.</p></td>
+        <td class="na">n/a, same as any household</td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Parent unavailable/traveling (see also 9.3)</td>
+        <td><p><span class="badge b-purple">ACTION AVAILABLE</span> Can optionally grant a temporary elevated "trusted approver" permission to GP or another trusted adult for a bounded time window — an explicit, revocable delegation, not a permanent role change.</p></td>
+        <td><p>Sees approvals resolved by whoever is the temporary trusted approver, with normal transparency about who acted.</p></td>
+        <td><p><span class="badge b-purple">ACTION AVAILABLE</span> If granted temporary approver status: can <b>Approve</b>/<b>Decline</b> during the window only.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Every "either parent" rule in this document should be read as "any current holder of the Parent role," which naturally supports a household of exactly one parent without special-casing — but real single-parent households also need a bounded, explicit way to delegate approval authority temporarily (a trip, an illness) rather than leaving the household stuck if the sole parent is unreachable.</div>
+  </article>
+
+  <!-- 9.3 -->
+  <article class="scenario" id="s9-3">
+    <div class="scenario-title"><span class="scenario-id">9.3</span><h3>GP Is the Only Adult Present (Parents Traveling)</h3></div>
+    <div class="scenario-tags"><span class="tag">Edge case</span><span class="tag">GP elevated role</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Both parents are traveling for a week; Senior/GP is the sole adult supervising the household. GP needs broader temporary access than the 5.1 default.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Access</th><th>Parent-1 / Parent-2 (remote)</th><th>Kid / Teen</th><th>Senior/GP (temporary caregiver)</th></tr>
+      <tr>
+        <td class="stage-cell">Before "caregiver mode" is granted</td>
+        <td><p><span class="badge b-blue">INFORMATIONAL</span> Remain fully able to approve/manage remotely — travel doesn't remove parent access.</p></td>
+        <td><p>No change to their experience.</p></td>
+        <td><p><span class="badge b-gray">HIDDEN</span> Still the narrow 5.1 default until explicitly elevated.</p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">"Caregiver mode" explicitly granted by a parent for the travel window</td>
+        <td><p><span class="badge b-purple">ACTION AVAILABLE</span> <b>Grant Caregiver Access</b> (bounded date range), <b>Revoke Early</b></p></td>
+        <td><p>See a small indicator that GP is the active caregiver this week — transparency for the kids about who's in charge.</p></td>
+        <td><p><span class="badge b-teal">NOTIFIED</span> Temporarily sees medical/appointment details, can approve routine (non-financial-threshold) chore submissions, sees driver/helper needs as normal. Financial/reward-threshold decisions and household ledger still stay reserved for parents remotely, or explicitly delegated as a separate, narrower grant.</p><p><b>Approve (routine items)</b>, <b>Mark Attendance</b>, <b>View Medical Details (time-boxed)</b></p></td>
+      </tr>
+      <tr>
+        <td class="stage-cell">Window ends</td>
+        <td colspan="1"><p><span class="badge b-blue">INFORMATIONAL</span></p></td>
+        <td><p>No change.</p></td>
+        <td><p><span class="badge b-gray">HIDDEN</span> Automatically reverts to the narrow 5.1 default the instant the granted window expires — not a manual step someone has to remember to undo.</p></td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>Real households have periods where GP genuinely needs parent-adjacent access — the right model is a deliberate, time-boxed, auto-expiring elevation a parent grants, not a permanent role blur between "Parent" and "Senior/GP," so the household's normal privacy defaults reassert themselves automatically once the parents are back.</div>
+  </article>
+
+  <!-- 9.4 -->
+  <article class="scenario" id="s9-4">
+    <div class="scenario-title"><span class="scenario-id">9.4</span><h3>Duplicate/Near-Duplicate Quest Created by Two Parents</h3></div>
+    <div class="scenario-tags"><span class="tag">Edge case</span><span class="tag">Duplicate</span></div>
+    <p class="scenario-setup"><b>Setup:</b> Parent-1 and Parent-2, unaware of each other's action, both create "Take out trash" as a pool quest within minutes of each other.</p>
+    <table class="role-table">
+      <tr><th class="stage-col">Stage</th><th>Parent-1</th><th>Parent-2</th><th>Kid / Teen</th><th>Senior/GP</th></tr>
+      <tr>
+        <td class="stage-cell">Both created</td>
+        <td><p><span class="badge b-amber">PENDING</span> Soft duplicate-detection prompt when creating the second one: "A similar quest already exists — merge or keep both?" — a suggestion, not a hard block, since sometimes two similarly-named chores are genuinely distinct.</p><p><b>Merge</b>, <b>Keep Both</b></p></td>
+        <td><p>Same prompt if Parent-2 is the second creator.</p><p><b>Merge</b>, <b>Keep Both</b></p></td>
+        <td><p>If kept as two: sees two separate claimable pool items, which is a minor but real risk of confusion the merge prompt exists to prevent.</p></td>
+        <td class="na">n/a</td>
+      </tr>
+    </table>
+    <div class="why-box"><b>Why</b>A soft duplicate warning respects that parents are autonomous co-equal creators (no need to force one to check with the other before creating anything) while still catching the common, harmless mistake of accidental duplication before it creates confusing double-claimable items in the pool.</div>
+  </article>
+
+</section>
+
+<footer class="doc-footer">
+  Family Cube — Product Requirements Reference · Role-Based Behavior Matrix<br>
+  This document defines target ("should be") behavior from first principles and is intended as the base
+  reference for product and design decisions. It is independent of, and not a description of, any current
+  implementation.
+</footer>
+
+</main>
+</div>
+</body>
+</html>

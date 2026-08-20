@@ -302,13 +302,38 @@ export function QuestCard({
 
   const swipeDeleteAction = (_prog: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
     const scale = dragX.interpolate({ inputRange: [-80, 0], outputRange: [1, 0], extrapolate: 'clamp' });
+    // Spec 6.3: deleting an item someone is actively working on needs an
+    // explicit extra confirmation naming them, and they deserve a clear,
+    // kind "this was cancelled" notice — not silence. QuestsScreen's
+    // edit-modal delete path already does this (see its onDelete handler);
+    // this swipe-to-delete path previously had generic copy with no
+    // assignee mention and sent no notification at all, even though it's
+    // reachable on an in-progress/submitted quest (canDelete doesn't
+    // exclude those statuses).
+    const isActive = q.status === 'in_progress' || q.status === 'pending_approval';
+    const assigneeId = q.assignedToId;
+    const assignee = assigneeId ? members.find(m => m.id === assigneeId) : undefined;
+    const title = isActive && assignee ? 'Delete In-Progress Chore' : 'Delete Chore';
+    const message = isActive && assignee
+      ? `${assignee.name.split(' ')[0]} is currently working on "${q.title}" — delete anyway?`
+      : `Remove "${q.title}"? This cannot be undone.`;
     return (
       <TouchableOpacity
         style={{ width: 72, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.danger, borderRadius: 18, marginLeft: 8, marginBottom: 10 }}
         onPress={() => Alert.alert(
-          'Delete Chore',
-          `Remove "${q.title}"? This cannot be undone.`,
-          [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => deleteQuest(q.id) }]
+          title,
+          message,
+          [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete Anyway', style: 'destructive', onPress: () => {
+            if (isActive && assigneeId) {
+              const parentName = activeMember?.name?.split(' ')[0] ?? 'A parent';
+              const msg = `🗑️ ${parentName} removed the quest "${q.title}" that was assigned to you — no action needed on your end.`;
+              try {
+                const { useChatStore } = require('@/store/chatStore');
+                useChatStore.getState().sendMessage(assigneeId, activeMember?.id ?? '', msg);
+              } catch { /* chat store not available */ }
+            }
+            deleteQuest(q.id);
+          } }]
         )}
       >
         <Animated.View style={{ alignItems: 'center', transform: [{ scale }] }}>

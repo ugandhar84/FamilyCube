@@ -400,8 +400,15 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
       // Ride/Sports
       pickupLocation:  pickupLocation.trim() || undefined,
       dropLocation:    dropLocation.trim()   || undefined,
-      // Approval flow
-      approvalPending:      isKid || isTeen,
+      // Approval flow — spec 2.7: teen autonomy extends to self-scheduling
+      // plans that don't need anything FROM a parent (a ride, money, an
+      // overnight). Only gate a teen's own event when it actually asks for
+      // a resource — here, a driver. Kids stay gated unconditionally (no
+      // expanded-autonomy carve-out for kids anywhere else in the spec).
+      // Previously every teen-created event of every category was forced
+      // into the parent approval queue with no exemption at all, contrary
+      // to 1.5/2.7/4.3's repeated "teens get expanded autonomy" pattern.
+      approvalPending:      isKid || (isTeen && !!driverName.trim()),
       conflict:             false,
       color:                CATEGORIES.find(c => c.key === category)?.color,
       isOpenToGrandparents: !isKid && !isTeen && openToGrandparents,
@@ -1059,6 +1066,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const activeMember = members.find(m => m.id === activeMemberId);
   const isParent = activeMember?.role === 'parent';
   const isKid    = activeMember?.role === 'kid';
+  const isTeen   = activeMember?.role === 'teen';
   const isPast   = (() => {
     if (!event.date) return false;
     // Local calendar date, not UTC — toISOString() can already read as
@@ -1074,8 +1082,13 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
     return h < now.getHours() || (h === now.getHours() && m <= now.getMinutes());
   })();
 
-  // Kids can only edit their own pending requests
-  const isOwnPending   = isKid && event.approvalPending && event.memberId === activeMemberId;
+  // Kids AND teens can edit/withdraw their own pending requests — this was
+  // kid-only, so a teen who created an event that landed in approvalPending
+  // (e.g. one that needs a driver, per the create-form's gate) had no
+  // Withdraw and no Edit path at all: isParent is false, isOwnPending was
+  // false (isKid-only), so the save handler below built an empty patch and
+  // the delete/withdraw button never rendered for them (spec 2.7).
+  const isOwnPending   = (isKid || isTeen) && event.approvalPending && event.memberId === activeMemberId;
   const isParentApproved = !event.approvalPending;
   const restricted     = isPast || (isKid && isParentApproved); // past or kid approved → read-only
 

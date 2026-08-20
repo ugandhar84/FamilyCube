@@ -282,10 +282,29 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   },
 
   removeMember: async (id) => {
-    const next = get().members.filter(m => m.id !== id);
-    set({ members: next, activeMemberId: get().activeMemberId === id ? (next[0]?.id ?? null) : get().activeMemberId });
+    const prev = get().members;
+    const prevActiveId = get().activeMemberId;
+    const next = prev.filter(m => m.id !== id);
+    set({ members: next, activeMemberId: prevActiveId === id ? (next[0]?.id ?? null) : prevActiveId });
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    await supabase.from('members').delete().eq('id', id);
+    // chore_tasks.assigned_to_id -> members(id) has no ON DELETE clause
+    // (defaults to NO ACTION), so removing a member who still holds an
+    // in-flight assigned chore/quest is very likely to be rejected by
+    // Postgres. This previously discarded the result entirely (no `error`
+    // check, unlike updateMember right above which was hardened this
+    // session for the same class of silent-failure bug) — the member would
+    // vanish from local state and AsyncStorage while the DB row survived,
+    // then reappear on the next syncFromDB with no explanation. Surface the
+    // failure AND roll the optimistic removal back so the local UI doesn't
+    // lie about the member being gone (spec 6.2 — a removed member's
+    // active work should never just silently reappear or vanish).
+    const { error } = await supabase.from('members').delete().eq('id', id);
+    if (error) {
+      console.warn('[familyStore] removeMember failed (likely still has assigned chores/quests):', error.message);
+      set({ members: prev, activeMemberId: prevActiveId });
+      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(prev));
+      throw error;
+    }
   },
 
   awardCoins: (memberId, amount, wallet) => {
@@ -303,6 +322,25 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
         .update({ [wallet === 'mainCoins' ? 'main_coins' : 'gp_coins']: updated[wallet] })
         .eq('id', memberId)
         .then(({ error }) => { if (error) console.warn('[familyStore] awardCoins', error.message); });
+    }
+    // Spec 4.8/8.1: every coin movement — including a manual parent
+    // spot-bonus or a GP cheer — belongs in the one shared, unified ledger
+    // so the other parent isn't surprised by an unexplained balance change.
+    // Previously awardCoins only ever touched the members.main_coins/
+    // gp_coins column with no point_transactions row at all — quest-approval
+    // payouts (choreStore.awardPoints) write one, but every call through
+    // this function (spot bonuses, GP SendBonusCard/CheerSquad) did not,
+    // so those transactions were invisible outside the granting device's
+    // own ephemeral session state. Log it the same shape choreStore uses.
+    if (amount > 0) {
+      supabase.from('point_transactions').insert({
+        id: 'tx' + Date.now() + Math.random().toString(36).slice(2, 8),
+        user_id: memberId,
+        amount,
+        transaction_type: 'ADMIN_ADJUSTMENT',
+        notes: wallet === 'gpCoins' ? 'Grandparent bonus' : 'Bonus coins',
+        created_at: new Date().toISOString(),
+      }).then(({ error }) => { if (error) console.warn('[familyStore] awardCoins ledger insert', error.message); });
     }
   },
 

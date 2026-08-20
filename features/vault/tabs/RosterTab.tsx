@@ -416,8 +416,24 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
   };
 
   const deleteMember = async (memberId: string) => {
-    await supabase.from('members').delete().eq('id', memberId);
-    removeMember(memberId);
+    // removeMember() now does the DB delete itself and throws on failure
+    // (e.g. the member still has an assigned chore/quest — chore_tasks.
+    // assigned_to_id -> members has no ON DELETE clause, so Postgres
+    // rejects it). This used to double-delete (once here, once inside
+    // removeMember) with neither call checking its result, so a blocked
+    // deletion silently removed the member from local state/AsyncStorage
+    // while the DB row — and their in-flight quests — stayed behind
+    // forever, reappearing on the next sync with no explanation (spec 6.2).
+    try {
+      await removeMember(memberId);
+    } catch (e: any) {
+      Alert.alert(
+        'Could Not Remove Member',
+        e?.message?.includes('foreign key') || e?.code === '23503'
+          ? `${'This person still has an assigned chore, quest, or event. Reassign or cancel it first, then try removing them again.'}`
+          : (e?.message || 'Something went wrong removing this family member.')
+      );
+    }
   };
 
   const saveMember = async (memberId: string, name: string, role: string, hasCar: boolean, rideEarningsPerRun: number, groceryEarningsPerRun: number, subRole?: string, relationship?: string) => {

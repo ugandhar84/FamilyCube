@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
+import { useFamilyStore } from '@/store/familyStore';
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -32,6 +33,7 @@ export interface Redemption {
   redeemedAt:    string;
   status:        RedemptionStatus;
   deductedCoins: number;     // snapshot of cost at time of redemption
+  wallet?:       'mainCoins' | 'gpCoins'; // which jar was actually debited — needed to refund on reject/cancel
   approvedBy?:   string;     // parent memberId
   rejectedBy?:   string;
   note?:         string;     // parent comment
@@ -53,7 +55,7 @@ interface RewardState {
   deleteReward:            (id: string) => void;
   toggleAvailability:      (id: string) => void;
 
-  redeemReward:            (rewardId: string, memberId: string) => boolean; // returns false if ineligible
+  redeemReward:            (rewardId: string, memberId: string, wallet?: 'mainCoins' | 'gpCoins') => boolean; // returns false if ineligible
   approveRedemption:       (id: string, approverId: string, note?: string) => void;
   rejectRedemption:        (id: string, rejectorId: string, note?: string) => void;
   cancelRedemption:        (id: string) => void;
@@ -172,7 +174,7 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     set({ rewards: next }); save(next, get().redemptions);
   },
 
-  redeemReward: (rewardId, memberId) => {
+  redeemReward: (rewardId, memberId, wallet) => {
     const reward = get().rewards.find(r => r.id === rewardId);
     if (!reward || !reward.available) return false;
     if (reward.expiresAt && reward.expiresAt < new Date().toISOString()) return false;
@@ -188,6 +190,13 @@ export const useRewardStore = create<RewardState>((set, get) => ({
       redeemedAt: new Date().toISOString(),
       status: reward.requiresApproval ? 'pending' : 'approved',
       deductedCoins: reward.cost,
+      // Recorded so a later reject/cancel can refund the correct jar — see
+      // rejectRedemption/cancelRedemption. Caller (StoreScreen) already
+      // knows which wallet it called deductCoins with; without this, a
+      // declined "pending approval" redemption permanently lost the coins
+      // (deductCoins fires at request time, not at approval time) with no
+      // way to know which jar to credit back.
+      wallet,
       ...(reward.requiresApproval ? {} : { respondedAt: new Date().toISOString() }),
     };
 
@@ -225,35 +234,46 @@ export const useRewardStore = create<RewardState>((set, get) => ({
   },
 
   rejectRedemption: (id, rejectorId, note) => {
+    // Spec (8.3): a declined redemption must not permanently cost the kid
+    // their coins. deductCoins fires at *request* time (StoreScreen.redeemFrom),
+    // not at approval time, so a decline here must explicitly refund the same
+    // wallet the redemption was originally debited from — previously this
+    // function only restored `stock`, never the coins, so a rejected
+    // redemption silently vaporized the kid's balance with no way to get it
+    // back. Also fixes a dead-code bug: the old stock-restore branch did an
+    // early `return` before the notifyReward call below ever ran, so any
+    // stock-limited reward's rejection notification was silently skipped.
     const now = new Date().toISOString();
     const rd = get().redemptions.find(r => r.id === id);
+    if (!rd) return;
     const nextRd = get().redemptions.map(r =>
       r.id === id ? { ...r, status: 'rejected' as RedemptionStatus, rejectedBy: rejectorId, note, respondedAt: now } : r
     );
-    // Restore stock if applicable
-    const rejected = get().redemptions.find(rd => rd.id === id);
-    if (rejected) {
-      const reward = get().rewards.find(r => r.id === rejected.rewardId);
-      if (reward?.stock !== undefined) {
-        const nextR = get().rewards.map(r => r.id === rejected.rewardId ? { ...r, stock: (r.stock ?? 0) + 1 } : r);
-        set({ rewards: nextR, redemptions: nextRd }); save(nextR, nextRd); return;
-      }
+    const reward = get().rewards.find(r => r.id === rd.rewardId);
+    const nextR = reward?.stock !== undefined
+      ? get().rewards.map(r => r.id === rd.rewardId ? { ...r, stock: (r.stock ?? 0) + 1 } : r)
+      : get().rewards;
+    set({ rewards: nextR, redemptions: nextRd }); save(nextR, nextRd);
+    if (rd.deductedCoins > 0) {
+      useFamilyStore.getState().awardCoins(rd.memberId, rd.deductedCoins, rd.wallet ?? 'mainCoins');
     }
-    set({ redemptions: nextRd }); save(get().rewards, nextRd);
-    if (rd) {
-      const reward = get().rewards.find(r => r.id === rd.rewardId);
-      notifyReward(rd.memberId, 'reward_decision', {
-        redemptionId: id, rewardTitle: reward?.title ?? '', rewardEmoji: reward?.emoji ?? '🎁',
-        decision: 'rejected', note, memberId: rd.memberId,
-      });
-    }
+    notifyReward(rd.memberId, 'reward_decision', {
+      redemptionId: id, rewardTitle: reward?.title ?? '', rewardEmoji: reward?.emoji ?? '🎁',
+      decision: 'rejected', note, memberId: rd.memberId,
+    });
   },
 
   cancelRedemption: (id) => {
-    const nextRd = get().redemptions.map(rd =>
-      rd.id === id ? { ...rd, status: 'cancelled' as RedemptionStatus, respondedAt: new Date().toISOString() } : rd
+    // Same refund logic as rejectRedemption — cancelling a still-pending
+    // request must give back the reserved coins, not just flip the status.
+    const rd = get().redemptions.find(r => r.id === id);
+    const nextRd = get().redemptions.map(r =>
+      r.id === id ? { ...r, status: 'cancelled' as RedemptionStatus, respondedAt: new Date().toISOString() } : r
     );
     set({ redemptions: nextRd }); save(get().rewards, nextRd);
+    if (rd && rd.status === 'pending' && rd.deductedCoins > 0) {
+      useFamilyStore.getState().awardCoins(rd.memberId, rd.deductedCoins, rd.wallet ?? 'mainCoins');
+    }
   },
 
   deleteRedemption: (id) => {
@@ -316,6 +336,7 @@ function redemptionFromRow(row: any): Redemption {
     id: String(row.id), rewardId: String(row.reward_id), memberId: String(row.member_id),
     redeemedAt: row.redeemed_at, status: row.status ?? 'pending',
     deductedCoins: row.deducted_coins ?? 0,
+    wallet: row.wallet === 'gpCoins' ? 'gpCoins' : row.wallet === 'mainCoins' ? 'mainCoins' : undefined,
     approvedBy: row.approved_by ? String(row.approved_by) : undefined,
     rejectedBy: row.rejected_by ? String(row.rejected_by) : undefined,
     note: row.note ?? undefined, respondedAt: row.responded_at ?? undefined,

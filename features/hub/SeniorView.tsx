@@ -398,9 +398,18 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     e.date === today && e.helper === active.name &&
     e.helperStatus === 'pending' && !e.approvalPending && !isWorkEvent(e) && !isPastEvent(e)
   );
-  // Kid-initiated requests that need a volunteer (no helper yet, family approval pending) — not Work
+  // Spec 2.4: a kid/teen's still-pending request (approvalPending === true)
+  // has not been reviewed by a parent yet — GP should not see it as an
+  // actionable "family needs a hand" item at all, let alone be able to
+  // claim/pass on it. This previously filtered FOR approvalPending, which
+  // is backwards: it surfaced exactly the unapproved requests GP shouldn't
+  // see, and "I'll Drive" on one of these called claimHelperSlot with
+  // { approvalPending: false }, letting a grandparent silently clear a
+  // parent's approval gate on a minor's social/logistics request. The
+  // volunteerPool below (line ~421) already correctly excludes
+  // approvalPending items — this brings openRequests in line with it.
   const openRequests = events.filter(e =>
-    e.date === today && e.approvalPending && !e.helper && !isWorkEvent(e) && !isPastEvent(e)
+    e.date === today && !e.approvalPending && !e.helper && !isWorkEvent(e) && !isPastEvent(e)
   );
   // Urgent pending: I still haven't replied and < 1 hr to go
   const urgentPending = myPendingAssignments.filter(e =>

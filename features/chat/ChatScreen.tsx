@@ -59,7 +59,7 @@ export default function ChatScreen() {
   const {
     channels, loadChannel, sendMessage, addReaction, deleteMessage,
     lastActivity, loadLastActivity, unreadCounts, loadUnreadCounts, markChannelRead,
-    readReceipts, loadReadReceipts, markMessagesRead,
+    readReceipts, loadReadReceipts, markMessagesRead, setOpenChannelId,
   } = useChatStore();
   const { addItem: addGrocery } = useGroceryStore();
 
@@ -197,9 +197,14 @@ export default function ChatScreen() {
   }, [members.length, isSenior, activeMemberId]);
 
   // Opening a channel clears its own badge immediately (optimistic) and
-  // bumps the read cursor server-side.
+  // bumps the read cursor server-side. Also tells the global unread
+  // subscription which channel is currently visible, so a message
+  // arriving on it while open doesn't flash the badge on right before
+  // markChannelRead's own zero-out lands.
   useEffect(() => {
     if (activeMemberId) markChannelRead(channelId, activeMemberId);
+    setOpenChannelId(channelId);
+    return () => setOpenChannelId(null);
   }, [channelId, activeMemberId]);
 
   const isPinned = pinnedChannels.includes(channelId);

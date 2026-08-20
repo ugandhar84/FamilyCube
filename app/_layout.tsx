@@ -36,6 +36,7 @@ import PaywallSheet from '@/components/PaywallSheet';
 import PickerLoadingOverlay from '@/components/PickerLoadingOverlay';
 import { usePaywallSheetStore } from '@/store/paywallSheetStore';
 import { useNotifStore } from '@/store/notifStore';
+import { useChatStore } from '@/store/chatStore';
 import NotificationPanel, { routeForNotification } from '@/components/NotificationPanel';
 import { useFamilyStore } from '@/store/familyStore';
 import {
@@ -737,6 +738,19 @@ function RootNavigator() {
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [rtUserId]);
+
+  // Chat unread badge — global, app-wide, not tied to the Chat tab being
+  // open. Previously the bottom-nav Chat dot only ever reflected whatever
+  // chatStore.unreadCounts happened to be from the last time the Chat tab
+  // itself ran its own one-shot loadUnreadCounts query — it never updated
+  // for a message that arrived while the user was elsewhere in the app,
+  // and never cleared if the user left the tab without that query re-
+  // running, so it could get stuck showing unread state indefinitely.
+  const activeMemberIdForChat = useFamilyStore(s => s.activeMemberId);
+  useEffect(() => {
+    if (!activeMemberIdForChat) return;
+    useChatStore.getState().ensureGlobalUnreadSubscription(activeMemberIdForChat);
+  }, [activeMemberIdForChat]);
 
   // Foreground push listener — fires when a push arrives while the app is open.
   useEffect(() => {

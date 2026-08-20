@@ -237,10 +237,15 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
 
   return (
     <>
-      {/* Backdrop — tap outside to dismiss */}
+      {/* Backdrop — tap outside to dismiss. Previously had no background
+          color at all (a purely invisible tap-catcher), so whatever sat
+          below the header (e.g. Chat's own channel strip/sub-header) stayed
+          fully visible and looked like it was sliding into/behind the
+          dropdown rather than being cleanly covered by it. */}
       <Pressable
         onPress={handleClose}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: -2000, zIndex: 40 }}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: -2000, zIndex: 40,
+          backgroundColor: 'rgba(0,0,0,0.35)' }}
       />
 
       {/* Panel — drops down directly under the header */}

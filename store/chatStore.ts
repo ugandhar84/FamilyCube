@@ -73,6 +73,11 @@ const PAGE_SIZE    = 100;
 const OLDER_SIZE   = 50;
 const OFFLINE_KEY  = '@familycube_chat_offline_v1';
 
+// Global unread-badge subscription state — see ensureGlobalUnreadSubscription.
+let _globalUnreadSub: ReturnType<typeof supabase.channel> | null = null;
+let _globalUnreadMemberId: string | null = null;
+let _openChannelId: string | null = null;
+
 // ─── DM channel-id fix (critical privacy bug) ──────────────────────────────
 // A DM "channel" was previously keyed by ONLY the other party's member id
 // (e.g. sendMessage(priyaId, alexId, ...) wrote channel_id = priyaId) — that
@@ -107,6 +112,42 @@ function normalizeDmChannelId(channelId: string, senderId: string): string {
   if (GROUP_CHANNEL_IDS.has(channelId) || channelId.startsWith('dm_')) return channelId;
   if (!senderId || channelId === senderId) return channelId; // no pair to form
   return dmChannelId(channelId, senderId);
+}
+
+// chat_messages' own RLS (select/insert/update/delete) all require
+// channel_id to already exist as a row in chat_channels, scoped to the
+// caller's family_id — a message write/read with no matching chat_channels
+// row is silently rejected. Existing DM rows in that table were created
+// under the SAME broken per-counterpart id this whole fix corrects (e.g.
+// id: 'm_...' = one specific member's id, confirmed via direct query — a
+// pre-existing DM's chat_channels row belongs to whichever single sender's
+// client happened to create it first), so a message under the new dm_
+// composite id has no matching row and would otherwise fail RLS entirely.
+// Ensures one exists — upsert so concurrent first-messages from both sides
+// of a brand new DM don't race into a duplicate-key error.
+const _ensuredDmChannels = new Set<string>();
+async function ensureDmChannelRow(channelId: string, memberAId: string, memberBId: string): Promise<void> {
+  if (!channelId.startsWith('dm_') || _ensuredDmChannels.has(channelId)) return;
+  try {
+    const { useFamilyStore } = require('./familyStore');
+    const members: any[] = useFamilyStore.getState().members;
+    const memberA = members.find(m => m.id === memberAId);
+    const memberB = members.find(m => m.id === memberBId);
+    const familyId = memberA?.familyId ?? memberB?.familyId;
+    if (!familyId) return;
+    const { error } = await supabase.from('chat_channels').upsert({
+      id: channelId,
+      family_id: familyId,
+      type: 'direct',
+      name: memberB?.name ?? memberA?.name ?? 'Direct Message',
+      member_ids: [memberAId, memberBId],
+      icon: '💬',
+    }, { onConflict: 'id', ignoreDuplicates: true });
+    if (error) { console.warn('[chatStore] ensureDmChannelRow failed', error.message); return; }
+    _ensuredDmChannels.add(channelId);
+  } catch (e: any) {
+    console.warn('[chatStore] ensureDmChannelRow failed', e?.message ?? e);
+  }
 }
 
 async function rowToMessage(row: DBRow): Promise<ChatMessage> {
@@ -167,6 +208,8 @@ interface ChatState {
   loadLastActivity: (channelIds: string[]) => Promise<void>;
   loadUnreadCounts: (channelIds: string[], memberId: string) => Promise<void>;
   markChannelRead:  (channelId: string, memberId: string) => Promise<void>;
+  ensureGlobalUnreadSubscription: (memberId: string) => void;
+  setOpenChannelId: (channelId: string | null) => void;
   loadReadReceipts: (channelId: string, messageIds: string[]) => Promise<void>;
   markMessagesRead: (channelId: string, messageIds: string[], memberId: string) => Promise<void>;
 
@@ -267,6 +310,57 @@ export const useChatStore = create<ChatState>((set, get) => ({
       .upsert({ channel_id: channelId, member_id: memberId, last_read_at: new Date().toISOString() },
         { onConflict: 'channel_id,member_id' });
   },
+
+  // Keeps unreadCounts LIVE, not just a one-shot snapshot from whenever
+  // loadUnreadCounts last happened to run (only triggered by opening the
+  // Chat tab). Previously the bottom-nav Chat dot could get stuck showing
+  // stale unread state indefinitely — it never cleared if the user left
+  // the tab without loadUnreadCounts re-running, and never picked up a
+  // genuinely new message that arrived while the user was elsewhere in
+  // the app, since nothing incremented it outside that one-shot query.
+  // Subscribes globally (not per-channel, unlike loadChannel's own
+  // subscription, which only ever exists for a channel actually opened)
+  // to every chat_messages INSERT from someone else, and bumps the
+  // relevant channel's count client-side — filtered to channels that are
+  // actually "mine" (a group channel, or a DM whose composite id contains
+  // my own member id) so a DM between two OTHER people never counts.
+  ensureGlobalUnreadSubscription: (memberId) => {
+    if (_globalUnreadSub && _globalUnreadMemberId === memberId) return;
+    if (_globalUnreadSub) { supabase.removeChannel(_globalUnreadSub); _globalUnreadSub = null; }
+    _globalUnreadMemberId = memberId;
+
+    const staleTopic = `realtime:chat-unread:${memberId}`;
+    const stale = supabase.getChannels().filter(c => c.topic === staleTopic);
+    if (stale.length > 0) stale.forEach(c => supabase.removeChannel(c));
+
+    try {
+      _globalUnreadSub = supabase
+        .channel(`chat-unread:${memberId}`)
+        .on('postgres_changes', {
+          event: 'INSERT', schema: 'public', table: 'chat_messages',
+        }, (payload) => {
+          const row = payload.new as any;
+          if (!row || row.sender_id === memberId) return;
+          const channelId = row.channel_id as string;
+          const isMine = GROUP_CHANNEL_IDS.has(channelId) || channelId.split('_').slice(1).includes(memberId);
+          if (!isMine) return;
+          // Don't bump the badge for a channel the user currently has open
+          // and visible — markChannelRead's own effect will clear it
+          // right after this arrives via the per-channel subscription
+          // anyway, so incrementing here would just cause a flash.
+          if (channelId === _openChannelId) return;
+          set(s => ({ unreadCounts: { ...s.unreadCounts, [channelId]: (s.unreadCounts[channelId] ?? 0) + 1 } }));
+        })
+        .subscribe();
+    } catch (e: any) {
+      console.warn('[chatStore] ensureGlobalUnreadSubscription failed', e?.message ?? e);
+    }
+  },
+
+  // Lets ChatScreen tell the global unread listener which channel is
+  // currently open/visible, so a message arriving on it doesn't flash the
+  // badge on before markChannelRead's own zero-out lands a moment later.
+  setOpenChannelId: (channelId) => { _openChannelId = channelId; },
 
   // Per-message read-receipt rows for the messages currently on screen —
   // drives the avatar stack under a group message. Also inserts a receipt
@@ -445,7 +539,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // colliding with every other sender's DM to that same person. Normalize
     // here, once, so every existing caller is fixed without needing to
     // touch each one individually (and risk missing some).
+    const originalChannelArg = channelId;
     channelId = normalizeDmChannelId(channelId, senderId);
+    // chat_messages RLS requires channel_id to already exist in
+    // chat_channels — a brand new DM pair has no such row yet under the
+    // new composite id, so ensure one before writing the message itself.
+    if (channelId !== originalChannelArg) {
+      await ensureDmChannelRow(channelId, senderId, originalChannelArg);
+    }
     const ciphertext   = await encryptMessage(text);
     const blind_index  = await buildBlindIndex(text);
 

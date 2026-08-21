@@ -430,6 +430,7 @@ async function executeTool(
   supabase: any, name: string, args: any,
   familyId: string, viewerId: string, viewerRole: string, viewerName: string,
   aliasMap: AliasMap, members: { id: string; name: string }[], placeAliasMap: PlaceAliasMap,
+  today: string,
 ) {
   if (name === 'get_schedule') {
     const { data, error } = await supabase.from('calendar_events')
@@ -602,7 +603,7 @@ async function executeTool(
       .eq('family_id', familyId).is('deleted_at', null)
       .ilike('title', `%${search}%`);
     if (args.nearDate) query = query.gte('date', args.nearDate);
-    else query = query.gte('date', new Date().toISOString().slice(0, 10)); // don't match past events by default
+    else query = query.gte('date', today); // don't match past events by default, family-local "today"
     if (memberId) query = query.or(`member_id.eq.${memberId},member_ids.cs.{${memberId}}`);
     const { data, error } = await query.order('date').limit(5);
     if (error) return { error: error.message };
@@ -748,7 +749,7 @@ serve(async (req) => {
     };
     if (!body.memberId || !body.message?.trim()) return json({ error: 'memberId and message required' }, 400);
 
-    const { data: member } = await supabase.from('members').select('id, name, role, family_id').eq('id', body.memberId).single();
+    const { data: member } = await supabase.from('members').select('id, name, role, family_id, timezone').eq('id', body.memberId).single();
     if (!member) return json({ error: 'Member not found' }, 404);
 
     const { data: allMembers } = await supabase.from('members').select('id, name').eq('family_id', member.family_id);
@@ -810,8 +811,40 @@ serve(async (req) => {
       return i >= lastToolCallIdx; // only the most recent tool round (its assistant call + all its result rows) survives
     });
 
-    const today = new Date().toISOString().slice(0, 10);
+    // Edge functions run in UTC, but "today"/"this weekend" must mean the
+    // FAMILY's local calendar day, not the server's — new Date().toISOString()
+    // is silently wrong for hours around midnight for any family not
+    // literally in UTC (e.g. at 8pm Pacific it's already tomorrow in UTC).
+    // Same class of bug the call-reminder-sweeper edge function's own
+    // localWallClockToUTC comment already documents for chore/event ring
+    // times; this is the read-side equivalent for "what day is it right
+    // now, for this family." members.timezone is the same IANA-zone column
+    // eventStore.ts's addEvent already populates on every write.
+    const familyTimeZone = member.timezone || 'UTC';
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: familyTimeZone }).format(new Date()); // en-CA gives YYYY-MM-DD
+    // "This weekend" always means the Saturday of the CURRENT weekend, even
+    // when today already IS Saturday or Sunday — never a week further out.
+    // getDay(): 0=Sun..6=Sat. Sat->+0 (today), Sun->-1 (yesterday), any
+    // weekday->days until the upcoming Saturday. Computed here as a literal
+    // date, not left for the model to reason about, same as `today` itself
+    // — "resolve it yourself" with no anchor was a real, reported gap
+    // (could land on the wrong day, or drift a week when asked ON a
+    // weekend).
+    const todayDate = new Date(`${today}T00:00:00`);
+    const dow = todayDate.getDay();
+    const daysToSaturday = dow === 6 ? 0 : dow === 0 ? -1 : 6 - dow;
+    const thisWeekendSaturday = new Date(todayDate);
+    thisWeekendSaturday.setDate(thisWeekendSaturday.getDate() + daysToSaturday);
+    const weekendSaturdayStr = thisWeekendSaturday.toISOString().slice(0, 10);
+
     const systemPrompt = `You are Cube, the family's assistant inside FamilyCube. Today is ${today}.
+"This weekend" always means Saturday ${weekendSaturdayStr} — use this exact date for any propose_event/propose_quest/
+propose_update whose due date or start date is described as "this weekend," regardless of what day today happens to
+be (even if today is itself a Saturday or Sunday, "this weekend" still refers to this same weekend's Saturday, never
+a week further out). If the user says "this weekend" but the request is clearly a 2-day range (e.g. "we're free this
+weekend" as a general statement, not a single task/event), you may reason about Sat–Sun as a range for your reply
+text, but any single date you actually WRITE to a due date/start date field must still be ${weekendSaturdayStr}
+unless the user explicitly names Sunday instead.
 You're talking to ${viewerAlias} (role: ${member.role}).
 Family members are referred to only by alias in this conversation (${viewerAlias}, etc) — never ask for or expect
 real names, and always use the alias exactly as given in tool results and messages.
@@ -834,7 +867,8 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
   times, AND 3-6 short numbered prepSteps — always include cooking steps, not just a title and ingredient list)
   for the user to pick from — never ask "what dish?" first. Prefer well-known, classic dish names for these so a
   real Wikimedia Commons photo is likely to exist, and include imageUrl whenever you're confident one does.
-- "tonight"/"today"/"tomorrow"/"this weekend" -> resolve to the real day name yourself using today's date, don't ask.
+- "tonight"/"today"/"tomorrow" -> resolve to the real date yourself using today's date, don't ask. "this weekend" ->
+  see the exact date already given to you above, don't recompute it yourself.
 - No coin amount mentioned for a quest -> use a reasonable default (10-30 based on effort), don't ask.
 - No specific person named -> propose it unassigned/for the open pool rather than asking who.
 - If the user explicitly asks for a reminder/alert/"call me" while also describing something brand new that isn't on
@@ -901,7 +935,7 @@ Keep answers concise and conversational, not a bulleted data dump unless the use
 
         for (const call of reply.tool_calls) {
           const args = JSON.parse(call.function.arguments || '{}');
-          const result = await executeTool(supabase, call.function.name, args, member.family_id, member.id, member.role, member.name, aliasMap, allMembers ?? [], placeAliasMap);
+          const result = await executeTool(supabase, call.function.name, args, member.family_id, member.id, member.role, member.name, aliasMap, allMembers ?? [], placeAliasMap, today);
 
           if (result.__proposal) {
             proposals.push({ kind: result.__proposal, data: result });

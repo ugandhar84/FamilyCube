@@ -338,6 +338,11 @@ interface EventState {
     claimantName: string,
     extra?: Partial<FamilyEvent>,
     onWon?: () => void,
+    // Fires when the DB write itself is rejected (not the same as losing
+    // the claim race) — e.g. the server-side weekly ride cap trigger. The
+    // caller can surface this as a real message instead of the claim
+    // silently rolling back with no explanation.
+    onError?: (message: string) => void,
   ) => void;
 
   // Scenario 2.11 — a member's Going/Not-Going/Maybe response to an
@@ -1181,7 +1186,7 @@ export const useEventStore = create<EventState>((set, get) => ({
   // that only the current still-open state (both statuses currently unset)
   // can satisfy, and roll back the optimistic claim if the 0-row result
   // shows someone else already landed first.
-  claimHelperSlot: (id, role, claimantName, extra, onWon) => {
+  claimHelperSlot: (id, role, claimantName, extra, onWon, onError) => {
     const statusField = role === 'driver' ? 'driverStatus' : 'helperStatus';
     const nameField    = role === 'driver' ? 'driverName'   : 'helper';
     const dbStatusCol  = role === 'driver' ? 'driver_status' : 'helper_status';
@@ -1214,6 +1219,22 @@ export const useEventStore = create<EventState>((set, get) => ({
       .then(({ data, error }) => {
         if (error) {
           console.warn('[eventStore] claimHelperSlot DB update failed', id, error.message);
+          // Was a silent no-op — the optimistic local claim (already
+          // applied above) stayed in place even when the DB rejected the
+          // write, so the claimant's own UI kept showing them as
+          // confirmed for a claim that never actually landed (e.g. the
+          // new server-side weekly ride cap trigger rejecting it — QA
+          // sweep, grandparent-role live-DB verification, previously
+          // enforced client-side only). Roll back the same way a lost
+          // race already does, so the UI matches what's actually in the DB.
+          const rollbackDay = get().dayEvents.map(e => e.id === id ? { ...e, [nameField]: undefined, [statusField]: undefined } : e);
+          set({ dayEvents: sortByTime(rollbackDay), events: sortByTime(rollbackDay) });
+          set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? { ...e, [nameField]: undefined, [statusField]: undefined } : e)) });
+          onError?.(
+            error.message.includes('gp_weekly_ride_cap_exceeded')
+              ? "You've reached your weekly ride limit."
+              : "Couldn't confirm this — please try again."
+          );
           return;
         }
         if (!data || data.length === 0) {

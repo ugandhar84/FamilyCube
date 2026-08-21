@@ -392,6 +392,16 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     useEventStore.getState().claimHelperSlot(evId, role, active.name, undefined, () => {
       const ev = events.find(e => e.id === evId);
       if (ev) addToDeviceCalendar(ev);
+    }, (message) => {
+      // The client-side atWeeklyCap check above is a fast local estimate
+      // (only counts events already loaded into upcomingEvents) — the
+      // server-side trigger is the real enforcement boundary and can still
+      // reject a claim this check didn't catch (e.g. a ride confirmed on
+      // another device in between). Surface it instead of the claim
+      // silently rolling back with no explanation (QA sweep,
+      // grandparent-role live-DB verification — the cap was previously
+      // enforced client-side only).
+      Alert.alert('Weekly cap reached', message);
     });
   };
 

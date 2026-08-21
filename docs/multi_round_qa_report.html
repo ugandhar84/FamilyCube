@@ -142,12 +142,12 @@
 <header>
   <div class="header-inner">
     <div class="eyebrow">Family Cube — Multi-Round QA</div>
-    <h1>Live Database QA: 20 Rounds, Four Incidents</h1>
+    <h1>Live Database QA: 21 Rounds, Four Incidents</h1>
     <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, every family role, and realistic multi-step transitions — plus four production incidents caused or prompted mid-session and resolved same-session, a kid ride-request UX rebuild, a full-app per-role UI audit, a live-database verification pass, and the coordinated cross-role QA methodology (Rounds 15–16) that tracks one unified test family through a long connected scenario with every role checking every surface after every step, closing the structural blind spot that single-role agents could never see.</p>
     <div class="meta-row">
       <span class="meta-chip">Test family <b>dad072b3-...-001</b> — isolated, cleaned up after each round</span>
-      <span class="meta-chip"><b>20</b> QA rounds</span>
-      <span class="meta-chip"><b>87</b> bugs found, 85 fixed, 2 open</span>
+      <span class="meta-chip"><b>21</b> QA rounds</span>
+      <span class="meta-chip"><b>90</b> bugs found, 86 fixed, 4 open</span>
       <span class="meta-chip">2 new features shipped</span>
       <span class="meta-chip">5 Critical, live-deployed/production bugs closed</span>
     </div>
@@ -181,6 +181,7 @@
     <a href="#round18">Round 18</a>
     <a href="#round19">Round 19</a>
     <a href="#round20">Round 20</a>
+    <a href="#round21">Round 21</a>
     <a href="#verdict">Verdict</a>
   </div>
 </nav>
@@ -196,7 +197,7 @@
       <div class="stat bug"><div class="n">21</div><div class="l">Security/visibility bugs fixed</div></div>
       <div class="stat warn"><div class="n">53</div><div class="l">Correctness bugs fixed</div></div>
       <div class="stat info"><div class="n">2</div><div class="l">Features shipped</div></div>
-      <div class="stat ok"><div class="n">2</div><div class="l">Open items: photo-proof enforcement, due-soon Hub sort</div></div>
+      <div class="stat ok"><div class="n">4</div><div class="l">Open items: photo-proof enforcement, due-soon Hub sort, teen welcome-to-help gap, dead FamilyNeedsHandSection branch</div></div>
     </div>
   </section>
 
@@ -324,6 +325,11 @@
         <div class="tl-dot round"></div>
         <div class="tl-head"><h3>Round 20 — Kid Requests &amp; Coin Ledger Consistency</h3><span class="tl-badge round">Coordinated · All roles, one family · 8 steps</span></div>
         <p>Continuing the coordinated cross-role methodology, this round covered two priority areas: (A) grocery/supplies/ask-parent kid requests across every role, applying the full coordinated method to cover a first-time gap (prior rounds tested single-role request flows but never the unified cross-role surface consistency), and (B) coin/point ledger consistency — verifying that every role with visibility into a kid's balance always reads the exact same number after every earning/spending event, with zero drift, including a concurrent-write race check. Surfaces one High-severity bug: when a multi-item grocery/supplies request transitioned to <code class="inline">partial</code> status (some items decided, at least one still pending), it disappeared completely from both parents' Action Needed feed, with no parent-side history view to recover it — the same request correctly remained visible to the requesting kid. Fixed same-session; coin ledger checks all pass with no race conditions detected.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 21 — Parent Co-Management &amp; Family-Needs-a-Hand Flows</h3><span class="tl-badge round">Coordinated · All roles, one family · 8 steps</span></div>
+        <p>Testing realistic two-parent co-management and the "family could use a hand" volunteer flows where grandparents or teens offer to help. Surfaces one HIGH-severity concurrency bug (now fixed): two parents editing the same calendar event could silently clobber each other's changes — <code class="inline">updateEvent</code> serialized the caller's entire local snapshot with no diff or version check, unlike the guarded claim/accept paths. Real risk for any multi-parent household editing within the realtime round-trip window. Also reports (not fixed): a missing teen equivalent of the grandparent welcome-invitation surface for helper requests (product gap, future feature pass), and an unreachable grandparent-welcome-chore card in the UI (dead code cleanup for a future pass).</p>
       </div>
     </div>
   </section>
@@ -1786,6 +1792,134 @@
     </div>
 
     <p class="sec-desc" style="margin-top: 20px;"><b>Test family details:</b> Single isolated synthetic family (<code class="inline">48ccc2ae-000e-4d7f-9838-5f48b72c0c53</code>, "QA24 Test Family") with 6 real member rows: 2 parents, 2 kids, 1 teen, 1 grandparent. All rows across <code class="inline">families</code>, <code class="inline">members</code>, <code class="inline">kid_requests</code>, <code class="inline">chore_tasks</code>, <code class="inline">point_transactions</code>, <code class="inline">rewards</code>, and <code class="inline">reward_redemptions</code> were deleted at the end, with a final verification query confirming zero count across every touched table. No production data outside the test family was ever touched.</p>
+  </section>
+
+  <section id="round21">
+    <div class="sec-label">Round 21</div>
+    <h2>Parent Co-Management &amp; Family-Needs-a-Hand Flows</h2>
+    <p class="sec-desc">Testing realistic two-parent household usage where both parents actively co-manage (not one "primary" parent) and the "family could use a hand" volunteer flows — where grandparents or teens offer to help. Modeled as a connected week-in-the-life scenario: Parent-A creates a chore and a ride; Parent-B independently adds more and opens a ride to the grandparent pool; both grandparents check the pool and race to claim; both parents approve/track in real time. A real concurrent-edit bug surfaces during Step 2 testing. All seven roles across the test family exercise the shared work surfaces.</p>
+
+    <div class="step-card">
+      <div class="step-num">Step 1</div>
+      <div class="step-title">Parent-A creates a chore and a ride in one sitting (evening planning)</div>
+      <div class="step-desc">Parent-A opens the app, creates a chore assigned to Kid-1 and a ride event for Kid-2.</div>
+      <div class="step-write">DB: new <code class="inline">chore_tasks</code> row (assigned to Kid-1); new <code class="inline">calendar_events</code> row (type=ride, assigned to Kid-2)</div>
+      <ul class="check-list">
+        <li>Parent-A's Hub action-needed sections <span class="badge match">✓ Match</span> — both creations immediately visible in their respective sections</li>
+        <li>Parent-B, who opens Hub later, sees both the chore and ride immediately <span class="badge match">✓ Match</span> — confirmed <code class="inline">chore_tasks</code> and <code class="inline">calendar_events</code> are plain family-scoped tables with no creator-based partition; no "you weren't there at creation" gap in ActionNeededSection.tsx or choreStore's sync</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 2 — Finding (HIGH, now FIXED)</div>
+      <div class="step-title">Parent-B independently creates a second chore and opens the earlier ride to the grandparent pool</div>
+      <div class="step-desc">Parent-B creates a new chore for Kid-2, then opens the earlier ride (from Step 1) to the grandparent pool by setting <code class="inline">isOpenToGrandparents=true</code>. This is the exact scenario designed to probe: concurrent edits to the same calendar event by two different parents within the realtime round-trip window.</div>
+      <div class="step-write">DB: new chore_tasks row; calendar_events update: <code class="inline">is_open_to_grandparents=true</code></div>
+      <ul class="check-list">
+        <li>Parent-A sees Parent-B's new chore — <span class="badge match">✓ Match</span></li>
+        <li>Parent-A sees the ride is now GP-poolable — <span class="badge match">✓ Match (in isolation)</span></li>
+        <li>Concurrent-edit race: After Parent-B sets <code class="inline">is_open_to_grandparents=true</code>, Parent-A makes a separate, unrelated edit to the ride (e.g., changing location) using a pre-Parent-B's-edit snapshot (exactly what happens if Parent-A's client cached the event before Parent-B's toggle arrived) — <span class="badge mismatch">✗ Mismatch (BUG)</span> — Parent-A's write silently resets <code class="inline">is_open_to_grandparents</code> back to <code class="inline">false</code> with no error, no conflict warning, no realtime reconciliation</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #1 (HIGH severity):</strong> Two parents concurrently editing the same calendar event could silently clobber each other's changes. <code class="inline">updateEvent</code>'s DB write path (<code class="inline">store/eventStore.ts</code>) serialized the caller's ENTIRE local copy of the event unconditionally via <code class="inline">toRow(updated)</code>, with no diff and no version/conflict check, unlike the specially CAS-guarded paths used by <code class="inline">claimHelperSlot</code>, <code class="inline">claimGPErrand</code>, and <code class="inline">acceptGPOffer</code>. Reproduced live: after Parent-B set <code class="inline">is_open_to_grandparents=true</code>, a second write from Parent-A using a pre-Parent-B's-edit snapshot (the exact risk for any two-parent household editing within the realtime round-trip window) silently reset the flag back to <code class="inline">false</code> — no error, no conflict warning, no realtime reconciliation preventing it. This is a real, ordinary risk for any two-parent household, not an edge case. Fixed same-session: both <code class="inline">updateEvent</code> and <code class="inline">claimHelperSlot</code>'s <code class="inline">extra</code>-merge path (which had the identical <code class="inline">Object.assign(dbPatch, toRow(merged))</code> full-row-overwrite pattern) now use a new <code class="inline">toRowPartial()</code> helper built from a <code class="inline">FamilyEvent</code>-key-to-column map, so a write can only ever touch columns the caller explicitly named — matching the safety already given to the guarded claim/accept paths. Files: <code class="inline">store/eventStore.ts</code> (updateEvent, claimHelperSlot).</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 3</div>
+      <div class="step-title">GP-Mat claims the now-open ride; GP-Pat races the identical claim simultaneously</div>
+      <div class="step-desc">Both grandparents see the ride now open to the pool and attempt to claim it at the same instant.</div>
+      <div class="step-write">DB: two concurrent <code class="inline">claimHelperSlot</code> calls (both CAS-guarded); one succeeds, one fails</div>
+      <ul class="check-list">
+        <li>GP-Mat's claim — <span class="badge match">✓ Match</span> — lands via the real compare-and-swap write (<code class="inline">.is('helper_status', null)</code>)</li>
+        <li>GP-Pat's claim race — <span class="badge match">✓ Match</span> — the race correctly returns 0 rows affected for the loser; the lost-race handler re-fetches the true row so GP-Pat's UI reflects reality (GP-Mat as confirmed) rather than reverting to "unassigned"</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 4</div>
+      <div class="step-title">Both parents check Hub for "GP-Mat confirmed for Kid-2's ride"</div>
+      <div class="step-desc">After GP-Mat's successful claim, both parents open their own Hub screens.</div>
+      <div class="step-write">DB: calendar_events row: <code class="inline">helper_status='confirmed'</code>, <code class="inline">helper_id=GP-Mat's uuid</code></div>
+      <ul class="check-list">
+        <li>Parent-A's Hub — <span class="badge match">✓ Match</span> — sees GP-Mat confirmed</li>
+        <li>Parent-B's Hub — <span class="badge match">✓ Match</span> — sees the identical shared row; neither view is partitioned by who opened the pool in Step 2</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 5 — Finding (MEDIUM, reported, not fixed)</div>
+      <div class="step-title">Testing whether teens have a volunteer surface for helper requests</div>
+      <div class="step-desc">Testing whether teens have an equivalent "family could use a hand" welcome-invitation surface to grandparents'. The ride-pool mechanic is genuinely shared and correct — a teen claim uses the identical CAS-guarded <code class="inline">claimHelperSlot</code> function, confirmed live.</div>
+      <div class="step-write">DB: <code class="inline">calendar_events is_open_to_grandparents=true</code> or <code class="inline">is_open_to_teens=true</code> (if it existed)</div>
+      <ul class="check-list">
+        <li>Teen's open-pickups list via TeenView.tsx — <span class="badge match">✓ Match</span> — uses the identical, correctly-guarded <code class="inline">claimHelperSlot</code> function as GP flow</li>
+        <li>Parent-flagged "someone could help with this" welcome-invitation surface for teens — <span class="badge mismatch">✗ Mismatch</span> — NO teen equivalent exists; confirmed via full grep: zero <code class="inline">toggleTeenWelcome</code>/<code class="inline">openToTeen</code> anywhere in the codebase</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #2 (MEDIUM severity):</strong> No teen equivalent of the grandparent "family could use a hand" welcome-invitation surface exists. A parent can flag a kid's tutor/party/grocery request as "someone could help with this" and route it to grandparents, but never to a capable, willing teen. The ride-pool mechanic itself is genuinely shared and correct — TeenView.tsx's open-pickups list uses the identical CAS-guarded <code class="inline">claimHelperSlot</code> function as the grandparent flow. But the PARENT-FLAGGED welcome-invitation surface (the counterpart to <code class="inline">FamilyNeedsHandSection</code>'s grandparent-facing card, fed by <code class="inline">kidRequestStore.ts</code>'s <code class="inline">openToGP</code>/<code class="inline">toggleGPWelcome</code>) has no teen equivalent at all. This is a real, felt product gap given how explicitly the app frames grandparents and teens as parallel "family could use a hand" helpers elsewhere — not fixed this round, left as an open item for a future feature pass, not a launch blocker. Location: <code class="inline">store/kidRequestStore.ts</code> (missing feature), compare <code class="inline">features/hub/senior/FamilyNeedsHandSection.tsx</code>.</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 6</div>
+      <div class="step-title">Parent-A approves Kid-1's chore while Parent-B's Hub is open on another device</div>
+      <div class="step-desc">Parent-A approves Kid-1's chore from Step 1 while Parent-B's Hub is already open on another device, simulating a near-concurrent read and write.</div>
+      <div class="step-write">DB: chore_tasks status → <code class="inline">approved</code></div>
+      <ul class="check-list">
+        <li>Parent-B's Hub action-needed queue — <span class="badge match">✓ Match</span> — confirmed genuine push-based realtime sync: choreStore.ts's realtime subscription listens for real Postgres UPDATE events on chore_tasks filtered only by family_id, writing the fresh row directly into the same shared Zustand slice both parents' Action Needed / Chore Reviews sections read — Parent-B's already-open queue clears the instant Parent-A approves, no manual refresh needed</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 7</div>
+      <div class="step-title">GP-Pat offers to handle an open household errand</div>
+      <div class="step-desc">GP-Pat offers to handle an errand (not a ride) via the "I'll Handle It" mechanism (<code class="inline">claimGPErrand</code>).</div>
+      <div class="step-write">DB: chore_tasks: <code class="inline">gp_offer_status='gp_offer_pending'</code></div>
+      <ul class="check-list">
+        <li>GP-Pat's own Hub — <span class="badge match">✓ Match</span> — correctly recorded as a genuine pending offer (status='gp_offer_pending'), not auto-accepted</li>
+        <li>Parent-A's queue — <span class="badge match">✓ Match</span> — correctly shows pending-offer state</li>
+        <li>Parent-B's queue — <span class="badge match">✓ Match</span> — identical pending-offer state; neither parent's UI treats it as already resolved</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 8 — Finding (LOW, reported, not fixed)</div>
+      <div class="step-title">Parent-A accepts GP-Pat's errand offer; verify UI consistency across all roles</div>
+      <div class="step-desc">Parent-A accepts GP-Pat's offer from Step 7. Verify the state transition and visibility across all affected roles.</div>
+      <div class="step-write">DB: chore_tasks: <code class="inline">gp_offer_status='gp_offer_accepted'</code>, status set to active</div>
+      <ul class="check-list">
+        <li>GP-Pat's own Hub — <span class="badge match">✓ Match</span> — correctly flips from "waiting" to active/in-progress</li>
+        <li>Parent-B's queue — <span class="badge match">✓ Match</span> — clears identically</li>
+        <li>GP-Mat's own pool — <span class="badge match">✓ Match</span> — correctly excludes the now-claimed errand</li>
+        <li>Parallel "a grandparent can claim this errand" lists — <span class="badge mismatch">✗ Mismatch (Code smell)</span> — SeniorView.tsx renders TWO parallel lists under "Help Out" side by side: one fed by <code class="inline">gpInvitations</code> (filtered on <code class="inline">chore.inviteGrandparents</code>, the field chore creation actually sets, the real working path confirmed by every step above), and a second fed by <code class="inline">FamilyNeedsHandSection</code>'s <code class="inline">gpWelcomeChores</code> block (filtered on a DIFFERENT field, <code class="inline">chore.openToGP</code>, only ever set by a separate "Offer to GP" toggle, never by chore creation)</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #3 (LOW severity):</strong> <code class="inline">FamilyNeedsHandSection</code>'s grandparent-welcome-chore card is unreachable via any real chore-creation flow. <code class="inline">SeniorView.tsx</code>'s Hub renders TWO parallel "a grandparent can claim this errand" lists side by side under "Help Out" — one fed by <code class="inline">gpInvitations</code> (filtered on <code class="inline">chore.inviteGrandparents</code>, the field chore creation actually sets, and the one <code class="inline">claimGPErrand</code> itself gates on — this is the real, working path, confirmed by every step above), and a second fed by <code class="inline">FamilyNeedsHandSection</code>'s <code class="inline">gpWelcomeChores</code> block (filtered on a DIFFERENT field, <code class="inline">chore.openToGP</code>, only ever set by a separate "Offer to GP" toggle elsewhere in the app, never by chore creation). Result: the second card is functionally dead code for the scenario its own code comments describe — no real chore-creation flow ever populates the field it filters on, so it can never render in practice. Not a data-safety issue (the working path fully covers real errands), but a UI branch that will never trigger. Reported, not fixed this round — flagged as a low-priority cleanup item for a future pass, not launch-blocking. Location: <code class="inline">features/hub/SeniorView.tsx</code>, <code class="inline">features/hub/senior/FamilyNeedsHandSection.tsx</code>.</p>
+    </div>
+
+    <div class="table-scroll" style="margin-top: 24px;">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>Two parents concurrently editing the same calendar event could silently clobber each other's changes; <code class="inline">updateEvent</code> wrote the caller's entire local snapshot with no diff/version check.</td>
+            <td><code class="inline">store/eventStore.ts</code> (updateEvent, claimHelperSlot's extra-merge path)</td>
+            <td><span class="status-fixed">✓ Fixed — new toRowPartial() scopes every write to only the fields the caller explicitly named</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>No teen equivalent of the grandparent "family could use a hand" welcome-invitation surface; a parent can route a helper request to grandparents but never to a willing teen.</td>
+            <td><code class="inline">store/kidRequestStore.ts</code> (missing feature), compare <code class="inline">features/hub/senior/FamilyNeedsHandSection.tsx</code></td>
+            <td>Reported — open item, feature gap for a future pass, not launch-blocking</td>
+          </tr>
+          <tr>
+            <td><span class="sev low">Low</span></td>
+            <td><code class="inline">FamilyNeedsHandSection</code>'s grandparent-welcome-chore card is unreachable via any real chore-creation flow (filters on a field nothing ever sets).</td>
+            <td><code class="inline">features/hub/SeniorView.tsx</code>, <code class="inline">features/hub/senior/FamilyNeedsHandSection.tsx</code></td>
+            <td>Reported — open item, dead-code cleanup for a future pass, not launch-blocking</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="sec-desc" style="margin-top: 20px;"><b>Test family details:</b> Single isolated synthetic family (<code class="inline">b8c77145-391e-431a-81b4-11e05cf4fb1c</code>, "QA25 Test Family") with 7 real member rows across all roles: 2 parents, 2 kids, 1 teen, 2 grandparents (maternal and paternal for side-isolation testing). All rows across <code class="inline">families</code>, <code class="inline">members</code>, <code class="inline">chore_tasks</code>, <code class="inline">calendar_events</code>, <code class="inline">point_transactions</code>, and related tables were deleted at the end, with a final verification query confirming zero count across every touched table. No production data outside the test family was ever touched.</p>
   </section>
 
   <section id="verdict">

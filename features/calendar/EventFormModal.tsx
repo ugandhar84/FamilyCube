@@ -748,6 +748,51 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               </View>
             )}
 
+            {/* ── Ride needed? (kid only) — moved above Date & Time so the
+                relationship reads correctly: this event happens at ONE
+                time (below); "Ride needed" just means "I also need
+                dropping off/picking up around that time," not a second
+                unrelated date to fill in. Toggling it on auto-fills
+                drop-off = this event's own date/time with no extra pick
+                required — a kid only ever has to touch a SEPARATE picker
+                for pickup (when the event ends), the one genuinely
+                different value. Previously this toggle sat below the date
+                section and, once on, asked the kid to re-enter a drop-off
+                date that already defaulted to the same value — reading as
+                3 separate date decisions for what's really 1-2 (user
+                feedback: "why do we need these many, kids also confuse"). */}
+            {isKid && (
+              <TouchableOpacity
+                onPress={() => {
+                  setKidRideNeeded(r => {
+                    const next = !r;
+                    if (next) { setKidDropoffOn(true); setKidDropoffDate(new Date(eventDate)); }
+                    else { setKidDropoffOn(false); setKidDropoffDate(null); setKidPickupOn(false); setKidPickupDate(null); }
+                    return next;
+                  });
+                }}
+                activeOpacity={0.8}
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5, marginBottom: 14,
+                  borderColor: kidRideNeeded ? catColor : (isDark ? colors.border : '#E2E8F0'),
+                  backgroundColor: kidRideNeeded ? catColor + '18' : (isDark ? colors.surface : '#F9FAFB') }}>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: kidRideNeeded ? catColor : colors.textPrimary }}>
+                    🚗 Ride needed?
+                  </Text>
+                  <Text style={{ fontSize: TYPO.label, color: kidRideNeeded ? catColor : colors.textSecondary }}>
+                    {kidRideNeeded ? 'Yes — drop-off set to this event\'s time below' : 'Off · I have my own way there'}
+                  </Text>
+                </View>
+                <View style={{ width: 44, height: 26, borderRadius: 13,
+                  backgroundColor: kidRideNeeded ? catColor : (isDark ? '#334155' : '#CBD5E1'),
+                  justifyContent: 'center', paddingHorizontal: 3 }}>
+                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
+                    alignSelf: kidRideNeeded ? 'flex-end' : 'flex-start' }} />
+                </View>
+              </TouchableOpacity>
+            )}
+
             {/* ── Date / Time ── */}
             <Text style={[f.label, { color: colors.textSecondary }]}>Date & Time</Text>
             <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>

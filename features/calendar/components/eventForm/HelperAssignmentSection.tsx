@@ -38,32 +38,17 @@ export default function HelperAssignmentSection({
     <>
       {isKid ? (
         <View style={{ gap: 10 }}>
-          {/* ── Ride needed toggle ── */}
-          <TouchableOpacity
-            onPress={() => { setKidRideNeeded(r => !r); if (kidRideNeeded) { setKidDropoffOn(false); setKidPickupOn(false); } }}
-            activeOpacity={0.8}
-            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-              paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
-              borderColor: kidRideNeeded ? catColor : (isDark ? colors.border : '#E2E8F0'),
-              backgroundColor: kidRideNeeded ? catColor + '18' : (isDark ? colors.surface : '#F9FAFB') }}>
-            <View style={{ flex: 1, gap: 2 }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: kidRideNeeded ? catColor : colors.textPrimary }}>
-                🚗 Ride needed?
-              </Text>
-              <Text style={{ fontSize: TYPO.label, color: kidRideNeeded ? catColor : colors.textSecondary }}>
-                {kidRideNeeded ? 'Yes — set drop-off / pickup below' : 'Off · I have my own way there'}
-              </Text>
-            </View>
-            <View style={{ width: 44, height: 26, borderRadius: 13,
-              backgroundColor: kidRideNeeded ? catColor : (isDark ? '#334155' : '#CBD5E1'),
-              justifyContent: 'center', paddingHorizontal: 3 }}>
-              <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
-                alignSelf: kidRideNeeded ? 'flex-end' : 'flex-start' }} />
-            </View>
-          </TouchableOpacity>
-
+          {/* The "Ride needed?" toggle itself now lives in EventFormModal,
+              directly above the Date & Time section — this reads better
+              than asking for it down here, after a date has already been
+              picked, since toggling it on there immediately fills drop-off
+              = that same date/time with no extra step. What's left here is
+              just fine-tuning: turn drop-off off if it's not actually
+              needed (e.g. pickup-only), or adjust its time if it differs
+              from the event's own start, plus the separate pickup leg
+              (genuinely a different time — when the event ENDS). */}
           {kidRideNeeded && (
-            <View style={{ gap: 10, paddingLeft: 8 }}>
+            <View style={{ gap: 10 }}>
 
               {/* ── Drop-off toggle + date/time ── */}
               <TouchableOpacity

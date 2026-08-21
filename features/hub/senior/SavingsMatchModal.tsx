@@ -10,6 +10,7 @@ export function SavingsMatchModal({
   matchKidId, setMatchKidId,
   matchType, setMatchType,
   matchValue, setMatchValue,
+  maxMonthly, setMaxMonthly,
   onSave,
 }: {
   visible: boolean; onClose: () => void;
@@ -17,6 +18,10 @@ export function SavingsMatchModal({
   matchKidId: string; setMatchKidId: (id: string) => void;
   matchType: 'FIXED_PERCENTAGE' | 'FIXED_AMOUNT'; setMatchType: (t: 'FIXED_PERCENTAGE' | 'FIXED_AMOUNT') => void;
   matchValue: string; setMatchValue: (v: string) => void;
+  // Was hardcoded to 500 with no UI control at all — a grandparent had no
+  // way to set their own monthly contribution cap (QA sweep,
+  // grandparent-role audit, Low L1).
+  maxMonthly: string; setMaxMonthly: (v: string) => void;
   onSave: () => void;
 }) {
   return (
@@ -68,6 +73,22 @@ export function SavingsMatchModal({
           <Text style={{ fontSize: GP.body, color: colors.textSecondary }}>
             {matchType === 'FIXED_PERCENTAGE' ? '% of each earn' : 'pts per earn'}
           </Text>
+        </View>
+        <View>
+          <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>Monthly cap</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <TextInput
+              style={{ flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border,
+                backgroundColor: isDark ? colors.surface : '#F8FAFC',
+                padding: 12, fontSize: GP.body, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' }}
+              keyboardType="numeric"
+              value={maxMonthly}
+              onChangeText={setMaxMonthly}
+              placeholder="500"
+              placeholderTextColor={colors.textTertiary}
+            />
+            <Text style={{ fontSize: GP.body, color: colors.textSecondary }}>pts / month max</Text>
+          </View>
         </View>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <Pressable onPress={onClose}

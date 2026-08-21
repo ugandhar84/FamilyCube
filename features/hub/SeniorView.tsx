@@ -137,12 +137,35 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     });
   }, [MEDS_TAKEN_KEY]);
 
+  const addMed = useCallback((name: string, time: string) => {
+    setMeds(prev => {
+      const updated = [...prev, { id: 'med' + Date.now(), name, time }];
+      AsyncStorage.setItem(MEDS_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  }, [MEDS_KEY]);
+
+  const removeMed = useCallback((id: string) => {
+    setMeds(prev => {
+      const updated = prev.filter(m => m.id !== id);
+      AsyncStorage.setItem(MEDS_KEY, JSON.stringify(updated));
+      return updated;
+    });
+    setMedsTaken(prev => {
+      if (!(id in prev)) return prev;
+      const { [id]: _removed, ...rest } = prev;
+      AsyncStorage.setItem(MEDS_TAKEN_KEY, JSON.stringify(rest));
+      return rest;
+    });
+  }, [MEDS_KEY, MEDS_TAKEN_KEY]);
+
   const pendingGpApproval = chores.filter(c => c.status === 'pending_grandparent_approval' && c.sponsorUserId === active.id);
   const [cheerSticker, setCheerSticker] = useState('⭐');
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [matchKidId, setMatchKidId] = useState('');
   const [matchType, setMatchType] = useState<'FIXED_PERCENTAGE' | 'FIXED_AMOUNT'>('FIXED_PERCENTAGE');
   const [matchValue, setMatchValue] = useState('10');
+  const [maxMonthly, setMaxMonthly] = useState('500');
   const [showCreateQuestModal, setShowCreateQuestModal] = useState(false);
   const [newQuestTitle,  setNewQuestTitle]  = useState('');
   const [newQuestDesc,   setNewQuestDesc]   = useState('');
@@ -395,7 +418,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       matchType,
       matchValue:      parseFloat(matchValue) || 10,
       matchJar:        'SAVE',
-      maxMonthlyContribution: 500,
+      maxMonthlyContribution: parseFloat(maxMonthly) || 500,
       isActive:        true,
     });
     setShowMatchModal(false);
@@ -598,7 +621,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         updateEvent={updateEvent} onEnRoute={onEnRoute}
       />
 
-      <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} colors={colors} isDark={isDark} />
+      <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={removeMed} colors={colors} isDark={isDark} />
 
       {/* ══ HELP OUT ══ */}
       <GroupBand label="Help Out" color={BRAND.amber} colors={colors} />
@@ -689,6 +712,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         matchKidId={matchKidId} setMatchKidId={setMatchKidId}
         matchType={matchType} setMatchType={setMatchType}
         matchValue={matchValue} setMatchValue={setMatchValue}
+        maxMonthly={maxMonthly} setMaxMonthly={setMaxMonthly}
         onSave={handleSaveMatch}
       />
 

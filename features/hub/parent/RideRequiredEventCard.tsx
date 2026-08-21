@@ -1,5 +1,5 @@
 import { View, Text, Pressable } from 'react-native';
-import { Medal, HeartPulse, BookOpen, Calendar, Car, CheckCircle2 } from 'lucide-react-native';
+import { Medal, HeartPulse, BookOpen, Calendar, Car, CheckCircle2, HandHelping } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { CollapsibleCard } from '../hubComponents';
 import { fmtTime } from '../hubUtils';
@@ -32,6 +32,18 @@ export function RideRequiredEventCard({ ev, active, colors, isDark, updateEvent,
     else updateEvent(ev.id, patch);
   };
 
+  // A parent who can't drive this themselves previously had no path at
+  // all — this card offered only "I'll Drive," a dead end. RideRequestCard
+  // (the category:'Ride' equivalent) already pairs its own "I'll Drive"
+  // with "Open to Helpers"; this mirrors that for the driverName/
+  // driverStatus field pair (QA Round 11, High Finding H1). Deliberately
+  // NOT scoped to the series — opening just this occurrence to helpers
+  // isn't a fixed assignment worth forcing onto every future date, same
+  // reasoning RideRequestCard's own openToHelpers already documents.
+  const openToHelpers = () => {
+    updateEvent(ev.id, { isOpenToGrandparents: true, isOpenToTeens: true, driverName: undefined, driverStatus: undefined });
+  };
+
   return (
     <CollapsibleCard flat accent={colors.warning} colors={colors} isDark={isDark} defaultExpanded
       summary={
@@ -51,11 +63,18 @@ export function RideRequiredEventCard({ ev, active, colors, isDark, updateEvent,
           </View>
         </View>
       }>
-      <Pressable onPress={iDrive}
-        style={{ backgroundColor: colors.warning, paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-        <CheckCircle2 size={14} color="#fff" />
-        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
-      </Pressable>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <Pressable onPress={iDrive}
+          style={{ flex: 1, backgroundColor: colors.warning, paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+          <CheckCircle2 size={14} color="#fff" />
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
+        </Pressable>
+        <Pressable onPress={openToHelpers}
+          style={{ flex: 1, backgroundColor: colors.warning + '20', borderWidth: 1.5, borderColor: colors.warning + '50', paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
+          <HandHelping size={14} color={colors.warning} />
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.warning }}>Open to Helpers</Text>
+        </Pressable>
+      </View>
     </CollapsibleCard>
   );
 }

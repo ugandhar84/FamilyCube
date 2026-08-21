@@ -78,13 +78,25 @@ export function KidQuestCard({
                 <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: BRAND.amber }}>Reward pending review</Text>
               </View>
             )}
-            {(q.status === 'approved' || q.status === 'done') && q.approvedAt && (
-              <Text style={{ fontSize: KID.tiny, color: colors.textTertiary }}>{fmtDateTime(q.approvedAt)}</Text>
-            )}
             {q.status === 'cancelled' && q.cancelledAt && (
               <Text style={{ fontSize: KID.tiny, color: colors.textTertiary }}>{fmtDateTime(q.cancelledAt)}</Text>
             )}
           </View>
+          {/* Full claimed → submitted → approved timeline — previously only
+              the approved timestamp showed, and only for a fully-done
+              quest. A parent/kid scanning claimed/in-progress/submitted
+              quests had no visibility into when each step actually
+              happened. Shown whenever any timestamp exists, not just once
+              the quest is fully done. */}
+          {(q.claimedAt || q.submittedAt || q.approvedAt) && (
+            <Text style={{ fontSize: KID.tiny, color: colors.textTertiary }} numberOfLines={1}>
+              {q.claimedAt && `Claimed ${fmtDateTime(q.claimedAt)}`}
+              {q.claimedAt && (q.submittedAt || q.approvedAt) ? ' → ' : ''}
+              {q.submittedAt && `Submitted ${fmtDateTime(q.submittedAt)}`}
+              {q.submittedAt && q.approvedAt ? ' → ' : ''}
+              {q.approvedAt && `Approved ${fmtDateTime(q.approvedAt)}`}
+            </Text>
+          )}
           <QuestLiveness history={q.history} members={members} colors={colors} />
         </View>
       }>

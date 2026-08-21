@@ -677,6 +677,13 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
   // clear your own claim, which then unlocks the normal reassign flow
   // (including Open to GP/Teen) for whoever picks it up next.
   const showCantMakeIt = !isPast && !isWork && isSelfAssigned && (helperConfirmed || helperPending);
+  // Decline (Can't Make It) already existed for a self-assigned pending
+  // helper, but there was no counterpart accept — the ONLY action a
+  // pending assignee could take from this shared detail sheet was to say
+  // no. A GP or teen tapping their own event in the Calendar tab, or via
+  // their Hub timeline, saw "⏳ Awaiting" with a decline button and
+  // nothing else (QA Round 11, High Finding H3).
+  const showConfirm = !isPast && !isWork && isSelfAssigned && helperPending;
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -1016,18 +1023,31 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                   back out of the row without picking → THEN write the
                   decline, which routes through eventStore's auto-open-to-
                   GP/Teen-pool-on-decline as the fallback. */}
-              {showCantMakeIt && !changeOpen && (
-                <Pressable
-                  onPress={() => {
-                    setCancelledSelfName(activeName);
-                    setChangeOpen(true);
-                  }}
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    backgroundColor: colors.danger + '12', borderRadius: 14, paddingVertical: 12,
-                    borderWidth: 1, borderColor: colors.danger + '35' }}>
-                  <X size={15} color={colors.danger} />
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.danger }}>Can't Make It</Text>
-                </Pressable>
+              {(showConfirm || (showCantMakeIt && !changeOpen)) && (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {showConfirm && (
+                    <Pressable
+                      onPress={() => updateEvent(ev.id, { helperStatus: 'confirmed' })}
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        backgroundColor: colors.success + '15', borderRadius: 14, paddingVertical: 12,
+                        borderWidth: 1, borderColor: colors.success + '40' }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.success }}>Confirm</Text>
+                    </Pressable>
+                  )}
+                  {showCantMakeIt && !changeOpen && (
+                    <Pressable
+                      onPress={() => {
+                        setCancelledSelfName(activeName);
+                        setChangeOpen(true);
+                      }}
+                      style={{ flex: showConfirm ? 1 : undefined, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        backgroundColor: colors.danger + '12', borderRadius: 14, paddingVertical: 12,
+                        borderWidth: 1, borderColor: colors.danger + '35' }}>
+                      <X size={15} color={colors.danger} />
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.danger }}>Can't Make It</Text>
+                    </Pressable>
+                  )}
+                </View>
               )}
               {/* Empty/missing slot with no prior helper — show the chip row
                   directly, no extra tap to reveal it first. Rejected/taken-

@@ -159,6 +159,29 @@ export function isEventSensitive(e: Pick<FamilyEvent, 'privacyLevel' | 'category
   return e.privacyLevel === 'private' || e.category === 'Medical';
 }
 
+// A category:'Ride' event's assignee lives in helper/helperStatus. A
+// rideRequired event on any OTHER category (Sports/Study/Medical/etc,
+// created with a driver need — see EventFormModal's kidRideNeeded/
+// driverName paths) lives in the separate driverName/driverStatus pair
+// instead. Every role-specific Hub surface (SeniorView, TeenView,
+// KidView, ParentView's backlog, the shared EventDetailSheet) was built
+// reading ONLY helper/helperStatus, so a rideRequired event's assignee was
+// completely invisible everywhere except the parent-only
+// RideRequiredEventCard that creates it — the assigned driver had no
+// confirm/decline surface anywhere, and the event stayed advertised as
+// open to every other candidate indefinitely since their pool filters
+// never saw a driver had already been named (QA Round 11, Critical
+// Finding C2). This normalizes both field pairs into one shape so a
+// filter/component only has to check one thing.
+export function eventAssignee(e: Pick<FamilyEvent, 'helper' | 'helperStatus' | 'driverName' | 'driverStatus'>): {
+  name: string | undefined;
+  status: HelperStatus | undefined;
+} {
+  if (e.helper) return { name: e.helper, status: e.helperStatus };
+  if (e.driverName) return { name: e.driverName, status: e.driverStatus };
+  return { name: undefined, status: undefined };
+}
+
 // Scenario 2.6/5.4/5.5 — the single shared visibility predicate every
 // calendar/hub surface should call for a sensitive event, instead of each
 // screen re-deriving its own version of "am I allowed to see this."
@@ -952,8 +975,15 @@ export const useEventStore = create<EventState>((set, get) => ({
     // auto-open it to the GP/Teen pool so it's immediately claimable by
     // someone else, instead of requiring the creating parent to notice the
     // decline and manually flip the toggles themselves.
-    const justDeclined = updates.helperStatus === 'rejected' && prevEvent?.helperStatus !== 'rejected';
-    const autoOpenOnDecline = justDeclined && prevEvent?.category === 'Ride'
+    //
+    // Was: only fired for category==='Ride' and only ever watched
+    // helperStatus — a rideRequired event on any OTHER category (Sports,
+    // Study, Medical, etc, using driverName/driverStatus instead) never
+    // reopened on decline, staying permanently stuck with no driver and no
+    // path back to the claimable pool (QA Round 11, High Finding H5).
+    const justDeclinedHelper = updates.helperStatus === 'rejected' && prevEvent?.helperStatus !== 'rejected';
+    const justDeclinedDriver = updates.driverStatus === 'rejected' && prevEvent?.driverStatus !== 'rejected';
+    const autoOpenOnDecline = (justDeclinedHelper || justDeclinedDriver) && (prevEvent?.category === 'Ride' || prevEvent?.rideRequired)
       ? { isOpenToGrandparents: true, isOpenToTeens: true }
       : {};
     const stamped = {

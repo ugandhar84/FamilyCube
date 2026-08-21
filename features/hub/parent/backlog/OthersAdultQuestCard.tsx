@@ -26,7 +26,7 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
   const choreData  = useChoreStore(s => s.chores.find(c => c.id === q.id));
   const si         = choreData?.shoppingItems ?? (q as any).shoppingItems;
   const ss         = choreData?.shoppingStore ?? (q as any).shoppingStore;
-  const hasDetail  = q.description || si?.length > 0 || ss || q.dueDate;
+  const hasDetail  = q.description || si?.length > 0 || ss || q.dueDate || (q as any).createdAt || q.claimedAt;
   const isGPOpen   = !!(choreData?.openToGP ?? (q as any).openToGP);
 
   const sendNudge = () => {
@@ -81,6 +81,17 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
           {q.description ? (
             <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{q.description}</Text>
           ) : null}
+          {/* Lifecycle timestamps — previously nothing here showed when
+              this was assigned or whether the co-parent had even started
+              it, so "still open" was the only signal a nudge/reclaim
+              decision had to go on. */}
+          {((q as any).createdAt || q.claimedAt) && (
+            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={1}>
+              {(q as any).createdAt && `Assigned ${new Date((q as any).createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+              {(q as any).createdAt && q.claimedAt ? ' → ' : ''}
+              {q.claimedAt && `Started ${new Date(q.claimedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${new Date(q.claimedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+            </Text>
+          )}
           {si?.length > 0 && (
             <View style={{ borderRadius: 10, borderWidth: 1,
               borderColor: colors.parent + '40',

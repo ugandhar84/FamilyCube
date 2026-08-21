@@ -4,7 +4,7 @@ import { Alert, View, Text } from 'react-native';
 import * as Calendar from 'expo-calendar';
 import * as ImagePicker from 'expo-image-picker';
 import { BRAND } from '@/components/FamilyCubeLogo';
-import { useEventStore, isEventSensitive, canViewSensitiveEventDetail } from '@/store/eventStore';
+import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssignee } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useChoreStore } from '@/store/choreStore';
 import type { ChoreTask } from '@/store/choreStore';
@@ -266,10 +266,17 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   }, [today]);
 
   // Events open to grandparents that this senior hasn't passed, hasn't claimed,
-  // and fall within their configured availability window
+  // and fall within their configured availability window.
+  //
+  // Previously only excluded helperStatus==='confirmed' — a ride another
+  // GP had already claimed but not yet confirmed (helper set, status
+  // 'pending') still showed here as a live "I'll Drive" claimable, and a
+  // 'rejected' ride (already excluded on the teen side, per M1) stayed
+  // stuck advertised here too. Excluding !!e.helper entirely closes both
+  // (QA Round 11, Critical Finding C1 / Medium M1).
   const openRides = upcomingEvents.filter(e =>
     e.isOpenToGrandparents &&
-    e.helperStatus !== 'confirmed' &&
+    !e.helper &&
     !(e.grandparentPassedIds ?? []).includes(active.id) &&
     !cheerleaderMode &&
     !isPastEvent(e) &&
@@ -338,9 +345,17 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       Alert.alert('Weekly cap reached', `You've set a limit of ${weeklyRideCap} rides/week. Update your availability settings to take more.`);
       return;
     }
-    updateEvent(evId, { helper: active.name, helperStatus: 'confirmed' });
-    const ev = events.find(e => e.id === evId);
-    if (ev) addToDeviceCalendar(ev);
+    // Was a plain updateEvent() — two grandparents tapping "I'll Drive" on
+    // the same ride within the same round-trip window meant whoever's
+    // write landed last simply overwrote the other's, both devices showing
+    // themselves as confirmed with no signal to the loser. claimHelperSlot
+    // does the same conditional (only-if-still-unclaimed) DB write the
+    // teen claim path already used — the teen side had this from the
+    // start, the GP side never did (QA Round 11, Critical Finding C1).
+    useEventStore.getState().claimHelperSlot(evId, 'helper', active.name, undefined, () => {
+      const ev = events.find(e => e.id === evId);
+      if (ev) addToDeviceCalendar(ev);
+    });
   };
 
   const handlePassRide = (evId: string) => {
@@ -419,15 +434,20 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // upcomingEvents for the exact same reason (QA Round 9, Medium Finding
   // 7 — verified live with a future-dated pending assignment invisible
   // under the old `date === today` + `events` combination).
-  const myDrivingToday = upcomingEvents.filter(e =>
-    e.helper === active.name &&
-    e.helperStatus === 'confirmed' && !isWorkEvent(e) && !isPastEvent(e)
-  );
+  // Checks BOTH helper/helperStatus (category:'Ride') and
+  // driverName/driverStatus (a rideRequired event on any other category)
+  // via eventAssignee — previously only the former, so a GP asked to
+  // drive a Sports/Study/Medical event's own ride need had no confirm
+  // surface here at all (QA Round 11, Critical Finding C2).
+  const myDrivingToday = upcomingEvents.filter(e => {
+    const a = eventAssignee(e);
+    return a.name === active.name && a.status === 'confirmed' && !isWorkEvent(e) && !isPastEvent(e);
+  });
   // Assigned to me but I haven't replied yet — not Work events
-  const myPendingAssignments = upcomingEvents.filter(e =>
-    e.helper === active.name &&
-    e.helperStatus === 'pending' && !e.approvalPending && !isWorkEvent(e) && !isPastEvent(e)
-  );
+  const myPendingAssignments = upcomingEvents.filter(e => {
+    const a = eventAssignee(e);
+    return a.name === active.name && a.status === 'pending' && !e.approvalPending && !isWorkEvent(e) && !isPastEvent(e);
+  });
   // Spec 2.4: a kid/teen's still-pending request (approvalPending === true)
   // has not been reviewed by a parent yet — GP should not see it as an
   // actionable "family needs a hand" item at all, let alone be able to

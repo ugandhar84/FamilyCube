@@ -273,7 +273,12 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
         />
         <TeenTile
           label="Rides" sublabel={hasCar ? 'Sibling pickups' : 'Opt in with a car'}
-          Icon={Car} accent={BRAND.amber} badge={hasCar ? openPickupCount : undefined}
+          Icon={Car} accent={BRAND.amber}
+          // A direct "you were asked to drive" assignment counts toward
+          // the badge even with the car toggle off — that assignment was
+          // already made regardless, same reasoning as
+          // TeenCarDispatchSection no longer hiding it behind hasCar.
+          badge={(hasCar ? openPickupCount : myPendingAssignments.length) || undefined}
           onPress={() => setOpenSheet('rides')} colors={colors} isDark={isDark}
         />
         <TeenTile

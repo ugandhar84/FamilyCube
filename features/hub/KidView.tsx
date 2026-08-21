@@ -18,6 +18,7 @@ export { GROCERY_PREFIX, SUPPLIES_PREFIX, encodeGroceryRequest, decodeGroceryReq
 import { SUPPLIES_PREFIX, encodeRideLate } from './KidModals';
 import { GroceryModal, SuppliesModal, AskModal, KidRequestHistoryModal, QuestProposalModal } from './KidModals';
 import { HubTimelineSection } from './HubTimelineSection';
+import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
 import { PickupRadarStatus } from './hubComponents';
 
 import { KidHeroCard } from './kid/KidHeroCard';
@@ -133,20 +134,30 @@ export function KidView({ active, members, colors, isDark, activeTrip }: {
   const confirmedRide = todayEvents.find(e => e.helper && e.helperStatus === 'confirmed');
   const rideCountdown = useCountdown(confirmedRide?.date, confirmedRide?.time);
 
+  // Multi-day feed — previously awaitingDriverRide/myDeclinedRides only
+  // ever looked at todayEvents, so a driver named (or declining) for a
+  // ride tomorrow gave the kid zero signal until the morning of, same
+  // today-only gap Round 9 already fixed on the GP side and Round 8 fixed
+  // on the teen side (QA Round 11, Medium Finding M2).
+  const { events: kidUpcomingEvents } = useUpcomingOpenEvents((active as any).familyId);
+  const myUpcomingEvents = kidUpcomingEvents.filter(e =>
+    (e.memberId === active.id || !e.memberId) && e.category !== 'Work' &&
+    (!isEventSensitive(e) || canViewSensitiveEventDetail(e, 'kid', active.id, active.name)));
+
   // A driver has been named but hasn't confirmed yet — the gap between
   // "nobody's looked at my request" (myPendingRides below, already
   // surfaced) and "confirmed, ride is happening" (confirmedRide above).
   // Previously invisible: a kid whose parent assigned a specific driver
   // had zero indication anyone had even acted on their request until that
   // driver tapped confirm, sometimes hours or days later.
-  const awaitingDriverRide = todayEvents.find(e => e.helper && e.helperStatus === 'pending');
+  const awaitingDriverRide = myUpcomingEvents.find(e => e.date >= today && e.helper && e.helperStatus === 'pending');
 
   // Next upcoming event (any, for countdown on hero if no ride)
   const nextEvent = todayEvents.find(e => hoursUntilEvent(e.date, e.time) > 0 && e.helperStatus !== 'rejected');
   const nextCountdown = useCountdown(nextEvent?.date, nextEvent?.time);
 
-  const myDeclinedRides = todayEvents.filter(e =>
-    e.helperStatus === 'rejected' && !e.approvalPending && hoursUntilEvent(e.date, e.time) >= -1
+  const myDeclinedRides = myUpcomingEvents.filter(e =>
+    e.date >= today && e.helperStatus === 'rejected' && !e.approvalPending && hoursUntilEvent(e.date, e.time) >= -1
   );
   // A kid can name a preferred helper right when creating the ride request
   // (EventFormModal sets both approvalPending=true AND helper/helperStatus

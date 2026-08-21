@@ -93,6 +93,16 @@ export function MyAdultQuestCard({ q, parentAssignments, active, members, colors
         <View style={{ borderTopWidth: 1, borderTopColor: colors.primary + '30', padding: 12, gap: 6 }}>
           {q.description ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{q.description}</Text> : null}
           {q.dueDate ? <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>Due {q.dueDate}</Text> : null}
+          {/* Lifecycle timestamps — previously this card showed no dates
+              at all beyond a due date, so there was no way to tell when
+              this adult task was actually created or claimed/started. */}
+          {((q as any).createdAt || q.claimedAt) && (
+            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={1}>
+              {(q as any).createdAt && `Assigned ${new Date((q as any).createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+              {(q as any).createdAt && q.claimedAt ? ' → ' : ''}
+              {q.claimedAt && `Started ${new Date(q.claimedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${new Date(q.claimedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+            </Text>
+          )}
         </View>
       )}
     </View>

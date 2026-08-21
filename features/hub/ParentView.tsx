@@ -98,8 +98,18 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   const workEvents    = allTodayEvents.filter(e => isWorkEvent(e));
   const todayEvents   = allTodayEvents.filter(e => !isWorkEvent(e));
 
+  // Excludes rideRequired — that field pair (driverName/driverStatus) is
+  // handled entirely by pendingRideRequiredEvents below via
+  // RideRequiredEventCard. Without this exclusion, a KID-created
+  // rideRequired event (which also sets approvalPending=true at creation,
+  // same as a plain Ride request) matched here first and rendered via
+  // RideRequestCard instead — a card that reads/writes helper/helperStatus,
+  // which this event never uses, so "I'll Drive" silently wrote to a field
+  // nothing else in the app was watching while the event stayed stuck
+  // "needs a driver" forever on its actual field pair (QA Round 11, High
+  // Finding H2).
   const pendingRequests  = events.filter(e =>
-    e.approvalPending && !isWorkEvent(e) && hoursUntilEvent(e.date, e.time) >= 0
+    e.approvalPending && !e.rideRequired && !isWorkEvent(e) && hoursUntilEvent(e.date, e.time) >= 0
   );
   // A non-Ride event (Sports/Study/Medical/etc) with its own "needs a ride"
   // toggle (rideRequired) previously had NO presence in Action Needed at
@@ -112,7 +122,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // driverName/driverStatus for rideRequired) — both feed the same Action
   // Needed surface and the same series-dedup/carry-forward behavior.
   const pendingRideRequiredEvents = events.filter(e =>
-    e.rideRequired && !e.approvalPending && !isWorkEvent(e) && hoursUntilEvent(e.date, e.time) >= 0
+    e.rideRequired && !isWorkEvent(e) && hoursUntilEvent(e.date, e.time) >= 0
     && (!e.driverName || e.driverStatus === 'pending')
   );
   // pending_approval and pending_grandparent_approval both collapse to the

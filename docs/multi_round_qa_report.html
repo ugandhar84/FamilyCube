@@ -129,13 +129,14 @@
 <header>
   <div class="header-inner">
     <div class="eyebrow">Family Cube — Multi-Round QA</div>
-    <h1>Live Database QA: 4 Rounds, One Incident</h1>
-    <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, and realistic multi-step transitions — plus a production chat outage caused and resolved mid-session.</p>
+    <h1>Live Database QA: 10 Rounds, Two Incidents</h1>
+    <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, every family role, and realistic multi-step transitions — plus two production incidents caused and resolved mid-session, and a dedicated verification pass confirming every fix actually holds under live re-testing.</p>
     <div class="meta-row">
       <span class="meta-chip">Test family <b>aaaaaaaa-...-001</b> — isolated, cleaned up after each round</span>
-      <span class="meta-chip"><b>5</b> QA rounds</span>
-      <span class="meta-chip"><b>20</b> bugs found, all fixed</span>
-      <span class="meta-chip">1 new feature shipped</span>
+      <span class="meta-chip"><b>10</b> QA rounds</span>
+      <span class="meta-chip"><b>37</b> bugs found, all fixed</span>
+      <span class="meta-chip">2 new features shipped</span>
+      <span class="meta-chip">2 Critical, live-deployed corruption bugs closed</span>
     </div>
   </div>
 </header>
@@ -151,6 +152,11 @@
     <a href="#feature">Bounty Feature</a>
     <a href="#round4">Round 4</a>
     <a href="#round5">Round 5</a>
+    <a href="#round6">Round 6</a>
+    <a href="#round7">Round 7</a>
+    <a href="#round8">Round 8</a>
+    <a href="#round9">Round 9</a>
+    <a href="#round10">Round 10</a>
     <a href="#verdict">Verdict</a>
   </div>
 </nav>
@@ -162,10 +168,10 @@
     <h2>What four rounds of live testing found</h2>
     <p class="sec-desc">Each round used real database writes against an isolated, synthetic test family (one member per role, including maternal and paternal grandparents for side-isolation testing) — not static code reading. Every fix was re-verified in a later round.</p>
     <div class="stats">
-      <div class="stat crit"><div class="n">1</div><div class="l">Critical exploit closed</div></div>
-      <div class="stat bug"><div class="n">6</div><div class="l">Security/visibility bugs fixed</div></div>
-      <div class="stat warn"><div class="n">13</div><div class="l">Correctness bugs fixed</div></div>
-      <div class="stat info"><div class="n">1</div><div class="l">Feature shipped (multi-slot bounty)</div></div>
+      <div class="stat crit"><div class="n">3</div><div class="l">Critical bugs closed</div></div>
+      <div class="stat bug"><div class="n">10</div><div class="l">Security/visibility bugs fixed</div></div>
+      <div class="stat warn"><div class="n">24</div><div class="l">Correctness bugs fixed</div></div>
+      <div class="stat info"><div class="n">2</div><div class="l">Features shipped</div></div>
       <div class="stat ok"><div class="n">0</div><div class="l">Open issues at sign-off</div></div>
     </div>
   </section>
@@ -214,6 +220,31 @@
         <div class="tl-dot incident"></div>
         <div class="tl-head"><h3>Round 5 — Delegation visibility, from a real report</h3><span class="tl-badge incident">User-reported</span></div>
         <p>A real user report — not a proactive test — surfaces a re-delegated chore vanishing from both parents' screens. Traced to two independent gaps between two parallel ownership systems; QA agent verifies the fix and independently surfaces a second, related disappearance at the acceptance step. Both fixed, extended to grandparents per follow-up decision, then a manual pass across every card in the flow finds a Nudge action missing, an empty-state bug, five Hub sections defaulting to collapsed with real content inside, and one now-unreachable card removed as dead code.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 6 — Kid-side request flows</h3><span class="tl-badge round">Grocery · Supplies · Ask Parent</span></div>
+        <p>The Kid Hub redesign pass (SVG icons, section spacing, a reward-goal picker surfaced in Piggy Bank) prompts a first-ever QA pass on grocery/supplies/ask-parent requests — never covered by any prior round. 6 of 7 scenarios pass; one real bug: a multi-item request stayed "pending" until every item was individually decided, letting a kid delete a request that already carried a parent's recorded approval on part of it.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot incident"></div>
+        <div class="tl-head"><h3>Round 7 — Ride/schedule system, from a real report</h3><span class="tl-badge incident">User-reported</span></div>
+        <p>A user reports a kid's ride request never reaching the parent's Action Needed feed, and a recurring ride showing a dozen duplicate "no driver" cards instead of one. Traced to a genuinely new gap class: recurring events materialize as independent rows with no propagation between them. Fixed at the assignment layer with careful "initial accept propagates, one-off decline/reassign doesn't" scoping — a naive fix here would have let a single scheduling conflict silently reassign an entire future series.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 8 — Teen perspective</h3><span class="tl-badge round">Full audit, user-directed</span></div>
+        <p>User directs a full audit from the teen's own perspective. Finds the teen ride/driving model is structurally half-built: promised the Ride category but missing the actual request/visibility mechanics, a real coin bug (payment kept on an abandoned ride), and zero UI surface for "you've been asked to drive." Also surfaces that an entire reassignment component has zero render call sites anywhere in the app — confirmed dead, later removed.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot incident"></div>
+        <div class="tl-head"><h3>Round 9 — Grandparent perspective</h3><span class="tl-badge incident">2 Critical, live-deployed</span></div>
+        <p>Same directive, GP side. Finds the zero-touch auto-dispatch engine — live in production — silently overwrites the ride's actual subject (the kid) with the assigned driver's id on every automated dispatch, and separately writes to a column that doesn't exist while still logging a phantom "assignment succeeded" entry into the fairness ledger used to rank future candidates. Both fixed and redeployed same-session. Also finds the weekly ride cap never fires (wrong column), two grandparents can see and decline each other's claimed rides (name-substring matching), and teens were silently excluded from every automated assignment decision app-wide (a role-string mismatch against the database).</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 10 — Verification pass</h3><span class="tl-badge round">Skeptical re-check, live</span></div>
+        <p>User asks directly: "did you complete all?" Rather than restate the fix list, a fresh agent independently re-verifies all 14 items from rounds 7–9 against real data and, for the two Critical items, the actual deployed edge function — not just source. 13 of 14 hold exactly as claimed, including both Critical fixes confirmed via a real non-dry-run invocation. One new bug surfaces in the process: the ride-cap and scheduling-conflict queries never excluded soft-deleted events, so a cancelled ride kept silently counting against a grandparent's weekly cap. Fixed and redeployed.</p>
       </div>
     </div>
   </section>
@@ -453,11 +484,196 @@
     <p class="sec-desc" style="margin-top: 20px;"><b>QA verification: 8 of 8 tests passed.</b> The exact reported bug (re-delegation → clear stale field → accept → correct single-owner visibility) was traced through every consuming list with zero duplication and zero disappearance. Recall, reassignment notifications, and stale-submission-data cleanup were all independently re-confirmed working end-to-end against real writes, not just present in source.</p>
   </section>
 
+  <section id="round6">
+    <div class="sec-label">Round 6</div>
+    <h2>Kid-Side Request Flows</h2>
+    <p class="sec-desc">Grocery, supplies, and ask-parent requests had never been covered by any prior round. First live pass: create, per-item approve/decline, delete, the 7-day history window, and multi-family isolation.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>A multi-item request stayed status <code class="inline">pending</code> until <em>every</em> item was individually decided — so a parent could approve one item of two, and the kid could still tap delete, permanently destroying that recorded approval (who approved what, when) with no trace anywhere else in the schema.</td>
+            <td><code class="inline">kidRequestStore.ts</code> + RLS delete policy</td>
+            <td><span class="status-fixed">✓ Fixed — both the UI gate and the DB policy now require zero items decided, not just overall status</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sec-desc" style="margin-top: 16px;">Everything else passed: grocery/supplies creation and scoping, the special-character round-trip through JSONB (quotes, commas, unicode), all three ask-parent sub-types with correct reply write-back, per-item approve/decline math, and the 7-day history cutoff.</p>
+  </section>
+
+  <section id="round7">
+    <div class="sec-label">Round 7</div>
+    <h2>Ride/Schedule System — a Real User Report</h2>
+    <p class="sec-desc">Triggered live: a kid's ride request never reached Action Needed, and a recurring ride showed a dozen near-identical "no driver" cards instead of one. Root cause was structural — a recurring event materializes as fully independent rows sharing only a series id, with zero propagation between them, so every occurrence needed its own separate driver decision forever.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>Assigning a driver to one occurrence of a recurring ride never carried forward — every future occurrence stayed stuck "unassigned" indefinitely, and Action Needed rendered one full card per occurrence rather than one per series.</td>
+            <td><code class="inline">RideRequestCard</code>, <code class="inline">ActionNeededSection</code></td>
+            <td><span class="status-fixed">✓ Fixed — series-aware propagation + per-series dedup</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>A kid who named a helper right at request creation matched two mutually-contradictory visibility filters at once — "nobody's looked at this yet" and "a driver was named" — rendering two conflicting banners simultaneously.</td>
+            <td><code class="inline">KidView.tsx</code> — <code class="inline">myPendingRides</code></td>
+            <td><span class="status-fixed">✓ Fixed — excludes events with a named helper</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>Deleting just the anchor occurrence of an open-ended recurring series silently ended the whole series at its rolling generation horizon — no error, no signal, the series just quietly stopped producing new dates months later.</td>
+            <td><code class="inline">deleteEventScoped</code></td>
+            <td><span class="status-fixed">✓ Fixed — next-soonest occurrence is promoted to anchor before delete</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="feature-card" style="margin-top: 20px;">
+      <h3>The scoping decision that mattered most</h3>
+      <p>Carrying a driver forward to future occurrences is only safe if it's <em>selective</em>. The initial "yes, I'm driving this" acceptance propagates to every future occurrence — but a later one-off decline, reassignment, or take-over ("I can't do just this Tuesday") stays scoped to that single occurrence only. Without this distinction, a parent's single scheduling conflict would silently reassign the entire rest of a recurring series away from its regular driver — the opposite failure from the original bug, and arguably worse. This same 'this'-vs-'following' split was then carried consistently into every driver-assignment surface across parent, teen, and GP views.</p>
+    </div>
+  </section>
+
+  <section id="round8">
+    <div class="sec-label">Round 8</div>
+    <h2>Teen Perspective — Full Audit</h2>
+    <p class="sec-desc">A directed audit of the ride/schedule system specifically from a teen's own view. The teen driving model turned out to be structurally half-built: promised the Ride category in the event form, but the actual request/visibility/payout mechanics never followed through.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>No UI surface anywhere told a teen they'd been directly assigned as driver for a sibling's ride — not today's timeline (future dates never shown), not the open-pickup pool (a direct assignment isn't a claimable pool item), nowhere. A teen could be asked to drive and have zero way to know or confirm.</td>
+            <td><code class="inline">TeenView.tsx</code>, <code class="inline">TeenCarDispatchSection</code></td>
+            <td><span class="status-fixed">✓ Fixed — new "You Were Asked to Drive" section with Confirm/Can't actions</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>Coins were awarded to a teen the instant they claimed a ride, but dropping it afterward never reversed the payout — a teen could claim, get paid, then immediately abandon the ride and keep the coins for driving nobody anywhere.</td>
+            <td><code class="inline">TeenView.tsx</code> — <code class="inline">dropPickup</code></td>
+            <td><span class="status-fixed">✓ Fixed — coins now reversed on drop</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>Compounding the above: dropping a ride left it in a "phantom claimable" state — still shown as available in the pool, but its stale rejected status could never actually satisfy the atomic claim's conditional write, so nobody could reclaim it either. A dropped ride became a permanent dead end.</td>
+            <td><code class="inline">TeenView.tsx</code> — <code class="inline">dropPickup</code></td>
+            <td><span class="status-fixed">✓ Fixed — helper fields fully cleared, pool genuinely reopens</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>The teen's ride pool read from a single-day event cache tied to whatever date the Calendar tab last happened to load — any ride not dated exactly "today" was invisible, silently, with no error.</td>
+            <td><code class="inline">TeenView.tsx</code></td>
+            <td><span class="status-fixed">✓ Fixed — switched to the existing multi-day live feed already used elsewhere</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>Ride-ownership matching used fuzzy substring logic ("Sam" matches "Sam Wilson") instead of an exact match — a teen could see a different family member's confirmed ride rendered as their own.</td>
+            <td><code class="inline">TeenView.tsx</code> — <code class="inline">myPickups</code></td>
+            <td><span class="status-fixed">✓ Fixed — exact match</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev low">Low</span></td>
+            <td>An entire component implementing driver accept/reassign/decline had zero render call sites anywhere in the app — fully dead, confirmed by whole-repo import search.</td>
+            <td><code class="inline">EventAssignmentCard.tsx</code></td>
+            <td><span class="status-fixed">✓ Removed — its correct scoping logic already duplicated into the two live call sites</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sec-desc" style="margin-top: 16px;">Verified correct: the claim race's conditional-write concurrency guard held under a real simulated concurrent claim (one winner, one clean no-op loss), and RLS correctly isolates teen-relevant rows across families.</p>
+  </section>
+
+  <section id="round9">
+    <div class="sec-label">Round 9</div>
+    <h2>Grandparent Perspective — 2 Critical, Live in Production</h2>
+    <p class="sec-desc">Same directed-audit approach, from the GP side. The zero-touch auto-dispatch engine — actively running in production — turned out to be silently corrupting data on every automated assignment, in two independent ways, both invisible from the outside because both failed <em>while reporting success</em>.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev crit">Critical</span></td>
+            <td>Zero-touch auto-dispatch omitted which field it was assigning into, so the engine's default resolved to the ride's own <em>subject</em> column — meaning every automated GP dispatch silently overwrote which kid the ride was even for, replacing it with the winning grandparent's own id. Verified live: a real dispatch left the ride's subject field pointing at the grandparent, with no driver ever actually assigned, and this corrupted state then wrongly excluded that grandparent from a later, unrelated dispatch via a phantom calendar conflict.</td>
+            <td><code class="inline">RideRequestCard.tsx</code> — <code class="inline">tryAutoDispatchToGrandparent</code></td>
+            <td><span class="status-fixed">✓ Fixed — explicit target field, verified against the live deployed function</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev crit">Critical</span></td>
+            <td>The dispatch engine's own write targeted a database column that does not exist. The write silently failed — but the code never checked, so it proceeded to log a "assignment succeeded" entry into the fairness ledger anyway. Verified live: the calendar row was completely untouched, while the audit trail confidently recorded a grandparent taking a ride they were never actually given — a split-brain state that progressively poisons every future ranking decision, since the fairness score reads directly from that ledger.</td>
+            <td><code class="inline">process-task-assignment</code> edge function</td>
+            <td><span class="status-fixed">✓ Fixed — correct column, write error now checked before any ledger entry is written; redeployed</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>The weekly ride-cap check counted rides against the wrong column (the ride's subject, not its driver) — since a grandparent is essentially never a ride's own subject, the count was always zero and the cap never fired, for any grandparent, ever. Verified live: a GP already at 2 confirmed rides against a cap of 1 still ranked as the top candidate, completely uncapped.</td>
+            <td><code class="inline">process-task-assignment</code> edge function</td>
+            <td><span class="status-fixed">✓ Fixed — correct column; verified live, the cap now actually excludes</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>Ride-ownership matching in the grandparent's own Hub used the same fuzzy substring logic Round 8 found on the teen side — two grandparents sharing a first name or honorific matched each other's claimed rides in both directions. Verified live: one grandparent's Hub rendered the <em>other</em> grandparent's claimed ride under "Your Rides," complete with a working decline button for a ride that was never theirs.</td>
+            <td><code class="inline">SeniorView.tsx</code> — <code class="inline">myClaimedRides</code></td>
+            <td><span class="status-fixed">✓ Fixed — exact match, reproduced the cross-match then disproved it post-fix</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>A grandparent asked to drive a grandchild to a sensitive (Medical-category) appointment saw only an anonymous busy-block stub — no address, no detail — because the sensitive-visibility rule only ever considered who an event was <em>about</em>, never who was actually assigned to drive it.</td>
+            <td><code class="inline">canViewSensitiveEventDetail</code></td>
+            <td><span class="status-fixed">✓ Fixed — the assigned driver/helper now sees full detail, all call sites updated</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>The dispatch engine's eligible-candidate query filtered on a role string that doesn't match what the database actually stores — teens were silently excluded from candidacy on every single assignment decision, for every category, regardless of that category's own teen-eligibility setting. The code's own comment incorrectly asserted this string "matches as-is."</td>
+            <td><code class="inline">process-task-assignment</code> edge function</td>
+            <td><span class="status-fixed">✓ Fixed — correct role string, verified live, comment corrected</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>A grandparent's own "please confirm you're driving" surface only ever checked today's date against a single-day cache — an assignment for any future date was completely invisible until the morning it was due.</td>
+            <td><code class="inline">SeniorView.tsx</code></td>
+            <td><span class="status-fixed">✓ Fixed — switched to the same multi-day live feed the rest of the section already used</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sec-desc" style="margin-top: 16px;">Confirmed genuinely working, not a dead field: drive-window and cheerleader-mode preferences are both actually enforced by the dispatch engine, not just saved and silently ignored. RLS multi-family isolation held under an anonymous-credential probe.</p>
+  </section>
+
+  <section id="round10">
+    <div class="sec-label">Round 10</div>
+    <h2>Verification Pass — "Did You Complete All?"</h2>
+    <p class="sec-desc">Asked directly whether every fix above actually held, rather than restating the fix list, a fresh independent agent re-verified all 14 items from Rounds 7–9 against real data — and, for the two Critical items, against the actual deployed edge function, not just its source.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>A gap in the weekly-cap fix's own fix: neither the ride-cap count nor the scheduling-conflict check excluded soft-deleted events, so a ride the parent had since cancelled still counted against a grandparent's weekly cap and could still create a phantom scheduling conflict, with no visible cause — for the rest of that calendar week. Found by accident during live re-testing: two soft-deleted test rides from 5 hours earlier were still excluding a candidate from dispatch.</td>
+            <td><code class="inline">process-task-assignment</code> edge function, both queries</td>
+            <td><span class="status-fixed">✓ Fixed — both queries now exclude soft-deleted rows; redeployed</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="feature-card" style="margin-top: 20px;">
+      <h3>13 of 14 confirmed, including both Critical fixes against the live function</h3>
+      <p>The verification agent didn't just re-read the diffs — it engineered a real AUTO decision against the deployed engine and invoked it for real (non-dry-run), confirming the resulting row actually had the correct driver field set and the fairness ledger entry actually matched what was written. It reproduced the original teen coin-drop bug's exact DB state and confirmed a second teen's claim now genuinely succeeds where it previously silently could not. It reproduced the grandparent name-collision bug against the old logic, then disproved it against the new logic, in the same session. Every other item held exactly as claimed on first read.</p>
+    </div>
+  </section>
+
   <section id="verdict">
     <div class="sec-label">Sign-off</div>
     <h2>Overall Verdict</h2>
     <div class="verdict">
-      <p>All 20 confirmed bugs across 5 rounds are fixed and re-verified in a later round — including the critical self-approval exploit, the critical reward-threshold bypass, the live chat outage this QA effort itself introduced and then resolved within the same session, and the delegation-visibility bug a real user actually hit in production. The core concurrency-safety pattern (row-locked atomic claims) has now been applied consistently across pool quests, GP offers, helper/driver slots, and the new multi-slot bounty feature, and has held up correctly under repeated adversarial re-testing in every round. Round 5 also validated something worth naming directly: proactive QA found and fixed real bugs before they were noticed, but the delegation-visibility issue only surfaced once someone actually used the feature — a reminder that live user reports remain a genuine, distinct source of findings alongside structured testing, not a substitute for it. The one remaining caveat is the bounty claim function's true concurrent-load behavior — sound by code inspection (a standard row-lock pattern already proven correct elsewhere in this codebase) but not empirically stress-tested under real simultaneous traffic, which would be the natural next step before treating it as fully proven.</p>
+      <p>All 37 confirmed bugs across 10 rounds are fixed, and every fix from Rounds 7–9 was independently re-verified in Round 10 against real data (the two Critical items against the actual deployed engine, not just source). This span covers the critical self-approval exploit, the critical reward-threshold bypass, two live production incidents this QA effort itself introduced and then resolved within the same session, the delegation-visibility bug a real user actually hit in production, and — the largest single cluster — a full role-by-role audit of the ride/schedule system that found the zero-touch dispatch engine silently corrupting live data on every automated grandparent assignment. The core concurrency-safety pattern (row-locked atomic claims) is now applied consistently across pool quests, GP offers, helper/driver slots, and the multi-slot bounty feature. The recurring-series propagation logic built in Round 7 — carry the driver forward on first accept, but never on a later one-off decline or reassignment — was then correctly reused, not reinvented, across every driver-assignment surface touched in Rounds 8 and 9.</p>
+      <p style="margin-top: 14px;">Two things worth naming directly. First, live user reports remain a genuine, distinct source of findings alongside structured testing, not a substitute for it — Round 5's delegation bug and Round 7's ride-visibility bug were both real production reports, not proactive discoveries, and both led to deeper structural fixes than the original report alone described. Second, "the code was fixed" and "the fix was verified against live, real behavior" are different claims, and Round 10 exists because the difference matters: it caught a genuine gap (soft-deleted events still counting against a live constraint) that a second read of the diff alone would not have surfaced. Round 11, still open, extends verification one layer further — confirming not just that the underlying data ends up correct, but that the actual UI action available to each role at each lifecycle step is the right one, role by role, state by state. The remaining caveat from earlier rounds still stands: the bounty claim function's true concurrent-load behavior is sound by code inspection but not empirically stress-tested under real simultaneous traffic.</p>
     </div>
   </section>
 

@@ -51,51 +51,60 @@ export function TeenCarDispatchSection({
         </View>
       </Pressable>
 
+      {/* A direct assignment ("You Were Asked to Drive") must show
+          regardless of the "I Have a Car" toggle — a parent naming this
+          teen specifically means the teen needs to respond either way.
+          Gating it behind hasCar meant a teen with the toggle off had NO
+          confirm/decline surface anywhere in the app for an assignment
+          already made to them (QA Round 11, High Finding H4). Only the
+          open-pool browsing below stays behind the toggle — that's genuine
+          opt-in browsing, not something already directed at them. */}
+      {!!myPendingAssignments?.length && (
+        <View style={{ gap: 8 }}>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+            textTransform: 'uppercase', letterSpacing: 0.8 }}>You Were Asked to Drive</Text>
+          {myPendingAssignments.map(ev => {
+            const kid = members.find(m => m.id === ev.memberId);
+            const evDay = ev.date ? new Date(ev.date + 'T12:00').toLocaleDateString('en-US',
+              { weekday: 'short', month: 'short', day: 'numeric' }) : ev.date;
+            return (
+              <View key={ev.id} style={{ borderRadius: 14, borderWidth: 1.5, overflow: 'hidden',
+                borderColor: BRAND.purple + '50', backgroundColor: isDark ? BRAND.purple + '18' : BRAND.purple + '0C' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 }}>
+                  <UserCheck size={16} color={BRAND.purple} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: BRAND.purple }}>
+                      {kid?.name.split(' ')[0] ?? 'Sibling'} · {ev.title}
+                    </Text>
+                    <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 1 }}>
+                      {evDay}{ev.time ? ` · ${ev.time}` : ''} · waiting on you to confirm
+                    </Text>
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: BRAND.purple + '30' }}>
+                  <Pressable onPress={() => onConfirmAssignment?.(ev.id)}
+                    style={({ pressed }) => ({ flex: 2, paddingVertical: 12, alignItems: 'center',
+                      backgroundColor: BRAND.purple, opacity: pressed ? 0.8 : 1 })}>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Confirm</Text>
+                  </Pressable>
+                  <View style={{ width: 1, backgroundColor: BRAND.purple + '30' }} />
+                  <Pressable onPress={() => onDrop(ev.id)}
+                    style={({ pressed }) => ({ flex: 1, paddingVertical: 12, alignItems: 'center', opacity: pressed ? 0.7 : 1 })}>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.danger }}>Can't</Text>
+                  </Pressable>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
       {!hasCar ? (
         <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, textAlign: 'center', paddingVertical: 12 }}>
           Turn on "I Have a Car" to see sibling pickups you can cover.
         </Text>
       ) : (
         <View style={{ gap: 10 }}>
-          {!!myPendingAssignments?.length && (
-            <View style={{ gap: 8 }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
-                textTransform: 'uppercase', letterSpacing: 0.8 }}>You Were Asked to Drive</Text>
-              {myPendingAssignments.map(ev => {
-                const kid = members.find(m => m.id === ev.memberId);
-                const evDay = ev.date ? new Date(ev.date + 'T12:00').toLocaleDateString('en-US',
-                  { weekday: 'short', month: 'short', day: 'numeric' }) : ev.date;
-                return (
-                  <View key={ev.id} style={{ borderRadius: 14, borderWidth: 1.5, overflow: 'hidden',
-                    borderColor: BRAND.purple + '50', backgroundColor: isDark ? BRAND.purple + '18' : BRAND.purple + '0C' }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 }}>
-                      <UserCheck size={16} color={BRAND.purple} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: BRAND.purple }}>
-                          {kid?.name.split(' ')[0] ?? 'Sibling'} · {ev.title}
-                        </Text>
-                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 1 }}>
-                          {evDay}{ev.time ? ` · ${ev.time}` : ''} · waiting on you to confirm
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: BRAND.purple + '30' }}>
-                      <Pressable onPress={() => onConfirmAssignment?.(ev.id)}
-                        style={({ pressed }) => ({ flex: 2, paddingVertical: 12, alignItems: 'center',
-                          backgroundColor: BRAND.purple, opacity: pressed ? 0.8 : 1 })}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Confirm</Text>
-                      </Pressable>
-                      <View style={{ width: 1, backgroundColor: BRAND.purple + '30' }} />
-                      <Pressable onPress={() => onDrop(ev.id)}
-                        style={({ pressed }) => ({ flex: 1, paddingVertical: 12, alignItems: 'center', opacity: pressed ? 0.7 : 1 })}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.danger }}>Can't</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          )}
           {openVisible.map(ev => {
             const kid = members.find(m => m.id === ev.memberId);
             const evDay = ev.date ? new Date(ev.date + 'T12:00').toLocaleDateString('en-US',

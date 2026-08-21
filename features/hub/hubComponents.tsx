@@ -339,6 +339,14 @@ export function AlertBanner({
     <View style={{ marginHorizontal: 16, marginBottom: 12, gap: 8 }}>
       {rejectedEvents.filter(ev => { const h = hoursUntilEvent(ev.date, ev.time); return h >= 0 && h < 4; }).map(ev => {
         const kid = members.find(m => m.id === ev.memberId);
+        // These 3 cards previously read/wrote ev.helper unconditionally —
+        // now that pendingNoResponse/unassignedUrgent/rejectedHelperEvents
+        // (ParentView.tsx) are field-pair-aware via eventAssignee(), these
+        // lists actually include driverName-based events (every kid ride
+        // request), so the cards themselves need to match (QA sweep,
+        // kid-role audit finding, extended to all 3 AlertBanner cards).
+        const assignee = eventAssignee(ev);
+        const assigneeRole: 'helper' | 'driver' = ev.driverName || (ev.rideRequired && !ev.helper) ? 'driver' : 'helper';
         return (
           <View key={ev.id} style={{
             backgroundColor: isDark ? colors.danger + '14' : colors.dangerLight,
@@ -353,7 +361,7 @@ export function AlertBanner({
             </View>
             <View style={{ padding: 14, gap: 8 }}>
               <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                <Text style={{ fontWeight: '700', color: colors.danger }}>{relationalNameByName(ev.helper, members)}</Text> declined
+                <Text style={{ fontWeight: '700', color: colors.danger }}>{relationalNameByName(assignee.name, members)}</Text> declined
                 {ev.declineReason ? `: "${ev.declineReason}"` : ''}
               </Text>
               {kid && ev.location && (
@@ -363,7 +371,7 @@ export function AlertBanner({
                 </View>
               )}
               <DriverChipRow ev={ev} members={members} colors={colors} isDark={isDark}
-                activeName={activeName} excludeName={ev.helper} allowGpTeen
+                activeName={activeName} excludeName={assignee.name} allowGpTeen
                 onOpenPool={(kind) => {
                   updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
                 }}
@@ -373,7 +381,9 @@ export function AlertBanner({
                   // "accept" step needed, unlike handing it to someone else
                   // who still needs to acknowledge before it's settled.
                   updateEvent(ev.id, {
-                    helper: name, helperStatus: name === activeName ? 'confirmed' : 'pending',
+                    ...(assigneeRole === 'driver'
+                      ? { driverName: name, driverStatus: name === activeName ? 'confirmed' as const : 'pending' as const }
+                      : { helper: name, helperStatus: name === activeName ? 'confirmed' as const : 'pending' as const }),
                     notes: reason || undefined,
                   });
                 }} />
@@ -385,6 +395,8 @@ export function AlertBanner({
       {/* Pending no-response urgent (< 1 hr, helper not replied) */}
       {pendingNoResponseEvents.map(ev => {
         const kid = members.find(m => m.id === ev.memberId);
+        const assignee = eventAssignee(ev);
+        const assigneeRole: 'helper' | 'driver' = ev.driverName || (ev.rideRequired && !ev.helper) ? 'driver' : 'helper';
         return (
           <View key={`pnr-${ev.id}`} style={{
             backgroundColor: isDark ? colors.warning + '14' : colors.warningLight,
@@ -399,11 +411,11 @@ export function AlertBanner({
             </View>
             <View style={{ padding: 14, gap: 8 }}>
               <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                <Text style={{ fontWeight: '700', color: colors.warning }}>{relationalNameByName(ev.helper, members)}</Text> hasn't replied.
+                <Text style={{ fontWeight: '700', color: colors.warning }}>{relationalNameByName(assignee.name, members)}</Text> hasn't replied.
                 {kid ? ` Pickup for ${kid.name.split(' ')[0]} is in under an hour.` : ' Event is in under an hour.'}
               </Text>
               <DriverChipRow ev={ev} members={members} colors={colors} isDark={isDark}
-                activeName={activeName} excludeName={ev.helper} allowGpTeen
+                activeName={activeName} excludeName={assignee.name} allowGpTeen
                 onOpenPool={(kind) => {
                   updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
                 }}
@@ -413,7 +425,9 @@ export function AlertBanner({
                   // "accept" step needed, unlike handing it to someone else
                   // who still needs to acknowledge before it's settled.
                   updateEvent(ev.id, {
-                    helper: name, helperStatus: name === activeName ? 'confirmed' : 'pending',
+                    ...(assigneeRole === 'driver'
+                      ? { driverName: name, driverStatus: name === activeName ? 'confirmed' as const : 'pending' as const }
+                      : { helper: name, helperStatus: name === activeName ? 'confirmed' as const : 'pending' as const }),
                     notes: reason || undefined,
                   });
                 }} />
@@ -425,6 +439,7 @@ export function AlertBanner({
       {/* Unassigned urgent (transport event < 2 hr, no driver) */}
       {unassignedUrgentEvents.map(ev => {
         const kid = members.find(m => m.id === ev.memberId);
+        const assigneeRole: 'helper' | 'driver' = ev.driverName || (ev.rideRequired && !ev.helper) ? 'driver' : 'helper';
         return (
           <View key={`ua-${ev.id}`} style={{
             backgroundColor: isDark ? colors.warningDark + '14' : colors.warningLight,
@@ -442,7 +457,7 @@ export function AlertBanner({
                 {kid ? `${kid.name.split(' ')[0]}'s pickup` : 'This event'} needs a driver and no one is assigned.
               </Text>
               <DriverChipRow ev={ev} members={members} colors={colors} isDark={isDark}
-                activeName={activeName} excludeName={ev.helper} allowGpTeen
+                activeName={activeName} excludeName={eventAssignee(ev).name} allowGpTeen
                 onOpenPool={(kind) => {
                   updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
                 }}
@@ -452,7 +467,9 @@ export function AlertBanner({
                   // "accept" step needed, unlike handing it to someone else
                   // who still needs to acknowledge before it's settled.
                   updateEvent(ev.id, {
-                    helper: name, helperStatus: name === activeName ? 'confirmed' : 'pending',
+                    ...(assigneeRole === 'driver'
+                      ? { driverName: name, driverStatus: name === activeName ? 'confirmed' as const : 'pending' as const }
+                      : { helper: name, helperStatus: name === activeName ? 'confirmed' as const : 'pending' as const }),
                     notes: reason || undefined,
                   });
                 }} />

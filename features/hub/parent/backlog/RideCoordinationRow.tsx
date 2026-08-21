@@ -15,9 +15,18 @@ export function RideCoordinationRow({ ev, members, colors, isDark }: {
 }) {
   const creator = members.find(m => m.id === ev.createdBy);
   const assignee = eventAssignee(ev);
+  // Was binary (no assignee vs "claimed, awaiting confirmation") — the
+  // whole point of this row is "so you know," but it couldn't actually
+  // tell a co-parent whether the ride was fully resolved (confirmed
+  // driver) or still needs someone to confirm (QA sweep, parent-role
+  // audit, Medium M3).
   const status = !assignee.name
     ? 'Open to helpers — nobody has claimed it yet'
-    : `${assignee.name.split(' ')[0]} claimed it, awaiting confirmation`;
+    : assignee.status === 'confirmed'
+      ? `${assignee.name.split(' ')[0]} confirmed — all set`
+      : assignee.status === 'rejected'
+        ? `${assignee.name.split(' ')[0]} declined — back to open`
+        : `${assignee.name.split(' ')[0]} claimed it, awaiting confirmation`;
 
   return (
     <View style={{ borderRadius: 12, borderWidth: 1, borderColor: isDark ? colors.border : '#E2E8F0',

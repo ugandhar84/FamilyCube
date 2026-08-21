@@ -29,6 +29,11 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
     if (e.memberId === active.id) return true;
     if (e.memberIds?.includes(active.id)) return true;
     if (e.helper === active.name) return true;
+    // Was helper-only — a kid/teen named as driverName (not helper) for a
+    // sibling's ride never showed up on their own timeline at all, so a
+    // driver had no on-Hub reminder they're supposed to be driving (QA
+    // sweep, kid-role audit, Medium).
+    if (e.driverName === active.name) return true;
     return false;
   };
 

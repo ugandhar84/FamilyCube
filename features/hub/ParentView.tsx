@@ -134,7 +134,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // card design for the exact same item. actionCount below intentionally
   // excludes these; ChoreReviewSection's own badge covers them.
 
-  const rejectedHelperEvents = todayEvents.filter(e => e.helperStatus === 'rejected');
+  const rejectedHelperEvents = todayEvents.filter(e => eventAssignee(e).status === 'rejected');
 
   // ── Conflict detection ────────────────────────────────────────────────────
   const conflictReasons = new Map<string, string>(); // eventId → reason label
@@ -217,16 +217,22 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   const conflictEventIds = new Set(conflictReasons.keys());
   const conflictEvents   = todayEvents.filter(e => e.conflict || conflictEventIds.has(e.id));
 
-  // Escalation: helper pending + no response + < 1 hr away
-  const pendingNoResponse = todayEvents.filter(e =>
-    !!e.helper && e.helperStatus === 'pending' &&
-    hoursUntilEvent(e.date, e.time) < 1 && hoursUntilEvent(e.date, e.time) >= 0
-  );
+  // Escalation: helper/driver pending + no response + < 1 hr away — was
+  // helper-only, so a driverName-based kid ride request (every kid ride
+  // request now uses this pair) never escalated into this urgency banner
+  // at all, no matter how close the deadline (QA sweep, kid-role audit,
+  // Medium — feeds directly off the same field-pair gap fixed elsewhere).
+  const pendingNoResponse = todayEvents.filter(e => {
+    const a = eventAssignee(e);
+    return !!a.name && a.status === 'pending' &&
+      hoursUntilEvent(e.date, e.time) < 1 && hoursUntilEvent(e.date, e.time) >= 0;
+  });
 
-  // Escalation: transport event unassigned + < 2 hr away
+  // Escalation: transport event unassigned + < 2 hr away — same fix.
   const unassignedUrgent = todayEvents.filter(e => {
-    if (!e.location || e.approvalPending || e.helper || e.declinedBy) return false;
-    if (e.helperStatus === 'rejected') return false;
+    const a = eventAssignee(e);
+    if (!e.location || e.approvalPending || a.name || e.declinedBy) return false;
+    if (a.status === 'rejected') return false;
     const h = hoursUntilEvent(e.date, e.time);
     return h >= 0 && h < 2;
   });

@@ -151,7 +151,14 @@ export function QuestCard({
   const isDueToday  = !!dueMsRaw && dueMsRaw <= todayEnd.getTime() && !isOverdue;
   const isDueTomorrow = !!dueMsRaw && dueMsRaw <= tomorrowEnd.getTime() && !isDueToday && !isOverdue;
   const dueColor = isOverdue ? colors.danger : isDueToday ? colors.warning : colors.textSecondary;
-  const dueLabel = isOverdue    ? `⚠ ${q.dueDate ? fmtDateShort(q.dueDate) : 'Overdue'}`
+  // Multi-slot bounties (maxClaimants > 1) have no per-claimant due date —
+  // this one shared card's overdue state reflects the CHORE, not any one
+  // claimant's own timeliness (QA Round 19, High: distinct claimants were
+  // seeing an identical "Overdue" badge with no way to tell whose slot was
+  // actually late). Softer wording here so it reads as chore-level status,
+  // not a personal judgment on whoever's looking at it.
+  const isMultiSlot = (q.maxClaimants ?? 1) > 1;
+  const dueLabel = isOverdue    ? (isMultiSlot ? '⚠ Chore overdue' : `⚠ ${q.dueDate ? fmtDateShort(q.dueDate) : 'Overdue'}`)
                  : isDueToday  ? '⚡ Today'
                  : isDueTomorrow ? 'Tomorrow'
                  : q.dueDate ? fmtDateShort(q.dueDate) : 'Tonight';

@@ -492,7 +492,17 @@ export function ChoreReviewSection({
   const disputeBadgeCount = recentlyApproved.filter(c =>
     c.disputeStatus === 'reversal_requested' && c.reviewedById === active.id,
   ).length;
-  const badgeCount = pendingReviewsCount + gpPending.length + teenRewardPending.length + gpOffersPending.length + disputeBadgeCount;
+  // Coordinated live-DB QA (Round 19, Critical) — a multi-slot bounty's
+  // per-claim submissions never touch the parent chore's own status, so
+  // pendingReviewsCount (sourced from getParentReviewDeck's status-based
+  // filter) can't see them. This badge is the parent's primary "does
+  // anything need me" signal — it must count what ParentReviewDeck (below)
+  // actually renders, or a parent can have real pending work with a badge
+  // reading 0.
+  const pendingBountyClaimsCount = chores.reduce(
+    (n, c) => n + (c.claims ?? []).filter(cl => cl.status === 'pending_approval').length, 0,
+  );
+  const badgeCount = pendingReviewsCount + gpPending.length + teenRewardPending.length + gpOffersPending.length + disputeBadgeCount + pendingBountyClaimsCount;
   // badgeCount deliberately only counts items needing a decision — but
   // gpDeclined/gpAwaitingSponsor/recentlyApproved all render real visible
   // content below (informational, not "pending"), so a card with only

@@ -67,6 +67,9 @@ export function KidQuestCard({
   const dueMs = q.dueDate ? parseLocalDate(q.dueDate).getTime() : null;
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
   const isOverdue = !!dueMs && dueMs < todayStart.getTime() && !isDoneCard && !isDeclined;
+  // Multi-slot bounties share one due date across every claimant — see
+  // QuestCard.tsx's identical isMultiSlot note (QA Round 19, High).
+  const isMultiSlot = (q.maxClaimants ?? 1) > 1;
 
   return (
     <CollapsibleCard accent={meta.color} colors={colors} isDark={isDark} defaultExpanded={false}
@@ -85,7 +88,9 @@ export function KidQuestCard({
             </View>
             {isOverdue && (
               <View style={{ backgroundColor: colors.danger + '20', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: colors.danger }}>⚠ {fmtDateShort(q.dueDate!)}</Text>
+                <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: colors.danger }}>
+                  {isMultiSlot ? '⚠ Chore overdue' : `⚠ ${fmtDateShort(q.dueDate!)}`}
+                </Text>
               </View>
             )}
             {q.rewardPendingReview && (

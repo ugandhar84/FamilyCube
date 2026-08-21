@@ -18,7 +18,7 @@ import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import {
   useChoreStore, REJECTION_PRESETS,
-  type ChoreTask, type RejectionPresetKey,
+  type ChoreTask, type RejectionPresetKey, type BountyClaim,
 } from '@/store/choreStore';
 import { choreToQuest } from '@/store/choreAdapter';
 import { QuestApprovalCard } from '../hub/parent/QuestApprovalCard';
@@ -213,6 +213,93 @@ function ReviewCard({ task, members, colors, isDark, onApprove, onRedo }: Review
         </Pressable>
         <Pressable
           onPress={() => onApprove(task)}
+          style={({ pressed }) => ({
+            flex: 2, backgroundColor: '#059669', borderRadius: 12, padding: 10,
+            alignItems: 'center', opacity: pressed ? 0.8 : 1,
+          })}
+        >
+          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#fff' }}>✓ Approve</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+// ─── Multi-slot bounty claim review card ──────────────────────────────────────
+// Coordinated live-DB QA (Round 19) found submitBountyClaim only ever updates
+// the bounty_claims row, never chore_tasks.status — so a multi-slot bounty's
+// individual claim submissions never reached pendingSubmissions above (which
+// filters on the parent chore's own status), leaving them completely absent
+// from the parent's primary review surface. A parent had no way to find a
+// pending bounty claim short of already knowing to open the Quests tab.
+
+interface BountyClaimCardProps {
+  chore: ChoreTask; claim: BountyClaim; members: FamilyMember[];
+  colors: any; isDark: boolean;
+  onApprove: (choreId: string, memberId: string) => void;
+  onDecline: (choreId: string, memberId: string) => void;
+}
+function BountyClaimReviewCard({ chore, claim, members, colors, isDark, onApprove, onDecline }: BountyClaimCardProps) {
+  const child = members.find(m => m.id === claim.memberId);
+  const coins = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
+
+  return (
+    <View style={{
+      backgroundColor: isDark ? colors.card : '#fff',
+      borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+      marginBottom: 12, padding: 16,
+    }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+        {child && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: 4 }}>
+            <FamilyAvatar name={child.name} emoji={(child as any).emoji} avatarUrl={(child as any).avatarUrl} size={26} />
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{child.name.split(' ')[0]}</Text>
+          </View>
+        )}
+        <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#D97706' }}>Bounty · +{coins} pts</Text>
+        </View>
+      </View>
+
+      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary, marginBottom: 2 }}>{chore.title}</Text>
+
+      {claim.submissionPhotoUrl && (
+        <View style={{ marginTop: 8, marginBottom: 8, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#BBF7D0' }}>
+          <Image source={{ uri: claim.submissionPhotoUrl }} style={{ width: '100%', height: 180 }} resizeMode="cover" />
+          <View style={{ backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 5 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: '#059669' }}>📸 Proof photo attached</Text>
+          </View>
+        </View>
+      )}
+      {chore.requiresPhotoProof && !claim.submissionPhotoUrl && (
+        <View style={{ backgroundColor: '#FEF3C7', borderRadius: 8, padding: 8, marginTop: 6, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={{ fontSize: 13 }}>⚠️</Text>
+          <Text style={{ fontSize: TYPO.caption, color: '#92400E', fontWeight: '600' }}>No photo submitted — photo was required</Text>
+        </View>
+      )}
+      {claim.submissionNote && (
+        <View style={{ backgroundColor: isDark ? colors.surface : '#F9FAFB', borderRadius: 10, padding: 10, marginBottom: 8 }}>
+          <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textTertiary, marginBottom: 2 }}>CHILD'S NOTE</Text>
+          <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, lineHeight: 18 }}>{claim.submissionNote}</Text>
+        </View>
+      )}
+
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
+        <Pressable
+          onPress={() => Alert.alert('Decline this claim?', `${child?.name?.split(' ')[0] ?? 'This claimant'}'s slot goes back for a redo.`, [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Decline', style: 'destructive', onPress: () => onDecline(chore.id, claim.memberId) },
+          ])}
+          style={({ pressed }) => ({
+            flex: 1, backgroundColor: isDark ? colors.surface : '#FEF2F2',
+            borderRadius: 12, padding: 10, alignItems: 'center', borderWidth: 1, borderColor: '#FCA5A5',
+            opacity: pressed ? 0.8 : 1,
+          })}
+        >
+          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#EF4444' }}>↩ Decline</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => onApprove(chore.id, claim.memberId)}
           style={({ pressed }) => ({
             flex: 2, backgroundColor: '#059669', borderRadius: 12, padding: 10,
             alignItems: 'center', opacity: pressed ? 0.8 : 1,
@@ -442,6 +529,7 @@ interface ParentReviewDeckProps {
 export function ParentReviewDeck({ parent, members, colors, isDark }: ParentReviewDeckProps) {
   const {
     approveChore, requestRedo, acceptGPOffer, declineGPOffer,
+    approveBountyClaim, declineBountyClaim,
     scanAndAutoApprove, resetDueRecurringChores, syncFromDB, loadFromStorage,
   } = useChoreStore();
   const allNames = members.map(m => m.name);
@@ -450,7 +538,7 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
   const transactions = useChoreStore(s => s.transactions);
   const getPendingCashOuts = useChoreStore(s => s.getPendingCashOuts);
 
-  const { pendingSubmissions, pendingCashOuts, gpOffersPending } = useMemo(() => ({
+  const { pendingSubmissions, pendingCashOuts, gpOffersPending, pendingBountyClaims } = useMemo(() => ({
     // pending_grandparent_approval is that GP's own completion review, not
     // the parent's — this deck's Approve button calls approveChore, which
     // requires status === 'pending_approval' and silently no-ops on
@@ -464,6 +552,15 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
     // SeniorView.tsx's hasCaregiverAccess-gated render) had no card at all
     // for it, leaving them authorized with nothing to act on.
     gpOffersPending:    chores.filter(c => c.status === 'gp_offer_pending'),
+    // A multi-slot bounty's per-claim submissions live entirely in
+    // chore_tasks.claims (bounty_claims), never touching the parent chore's
+    // own status — pendingSubmissions above can't see them at all. Flatten
+    // every chore's pending_approval claims into their own review cards.
+    pendingBountyClaims: chores.flatMap(c =>
+      (c.claims ?? [])
+        .filter(cl => cl.status === 'pending_approval')
+        .map(cl => ({ chore: c, claim: cl })),
+    ),
   }), [chores, transactions]);
 
   const [redoTask, setRedoTask] = useState<ChoreTask | null>(null);
@@ -473,7 +570,7 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
     loadFromStorage().then(() => { syncFromDB(); scanAndAutoApprove(); resetDueRecurringChores(); });
   }, []);
 
-  const totalCount = pendingSubmissions.length + pendingCashOuts.length + gpOffersPending.length;
+  const totalCount = pendingSubmissions.length + pendingCashOuts.length + gpOffersPending.length + pendingBountyClaims.length;
 
   if (totalCount === 0) {
     // Matches HouseholdBacklogSection's empty state — compact single-line
@@ -532,6 +629,21 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
                   onDeclinePress={() => { setRedoTask(task); setRedoOpen(true); }}
                 />
               )
+            ))}
+          </>
+        )}
+
+        {/* 1b. Multi-slot bounty claims — see pendingBountyClaims comment above */}
+        {pendingBountyClaims.length > 0 && (
+          <>
+            <SectionHeader emoji="🏆" title="Bounty Claims" count={pendingBountyClaims.length} colors={colors} />
+            {pendingBountyClaims.map(({ chore, claim }) => (
+              <BountyClaimReviewCard
+                key={claim.id} chore={chore} claim={claim} members={members}
+                colors={colors} isDark={isDark}
+                onApprove={(choreId, memberId) => approveBountyClaim(choreId, memberId, parent.id)}
+                onDecline={(choreId, memberId) => declineBountyClaim(choreId, memberId, parent.id)}
+              />
             ))}
           </>
         )}

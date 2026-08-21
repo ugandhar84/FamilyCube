@@ -22,6 +22,8 @@ import { EventCardRow } from '@/features/calendar/components/EventCard';
 import { fmtDateShort } from '@/lib/dates';
 import { relationalNameByName } from '@/lib/format';
 import { useChatStore } from '@/store/chatStore';
+import { supabase } from '@/lib/supabase';
+import { decryptMessage } from '@/lib/chatCrypto';
 
 // ─── LiveDot ──────────────────────────────────────────────────────────────────
 // Pulsing dot for "LIVE NOW" indicators — a soft outward ring pulse behind a
@@ -1277,13 +1279,48 @@ export function TimelineCard({ ev, members, allNames, colors, isDark, updateEven
 
 export function PickupRadarStatus({ colors, isDark, activeTrip }: {
   colors: any; isDark: boolean;
-  activeTrip: { kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; etaMinutes: number; startedAtMs?: number };
+  activeTrip: { kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number };
 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(id);
   }, []);
+
+  // Driver's live position, if they're sharing — same member_locations read
+  // EnRouteBanner's active-driver view already has, just never ported to
+  // this read-only counterpart. Without this, the driver was the only
+  // person who ever saw "near {address}" on their own Pick-up Radar card —
+  // the other parent, the kid being picked up, and any GP watching the same
+  // trip only ever got a synthetic ETA countdown with zero live location,
+  // even though the underlying GPS data was being written the whole time
+  // (QA launch-readiness sweep — reported by the user as "the other parent
+  // and kids aren't seeing the driver's live location").
+  const [driverAddress, setDriverAddress] = useState<string | null>(null);
+  const driverMemberId = activeTrip.driverMemberId;
+  useEffect(() => {
+    if (!driverMemberId) { setDriverAddress(null); return; }
+    let cancelled = false;
+    const loadDriverLocation = async () => {
+      const { data } = await supabase.from('member_locations')
+        .select('address, lat, lng').eq('member_id', driverMemberId).maybeSingle();
+      if (cancelled) return;
+      if (!data || data.lat == null || data.lng == null) { setDriverAddress(null); return; }
+      setDriverAddress(data.address ? await decryptMessage(data.address) : null);
+    };
+    loadDriverLocation();
+    // Randomized suffix, not just driverMemberId — this component mounts
+    // once per VIEWER (every parent/kid/teen/GP watching the same trip on
+    // their own Hub), so a fixed channel name would collide the instant two
+    // viewers on the same device/session (or React Strict Mode's dev-only
+    // double-invoke) both target the same driverMemberId, same class of bug
+    // FamilyRadarSection/GpsTab already fix this way elsewhere.
+    const channelName = `pickup_radar_driver_${driverMemberId}_${Math.random().toString(36).slice(2)}`;
+    const ch = supabase.channel(channelName)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'member_locations', filter: `member_id=eq.${driverMemberId}` }, loadDriverLocation)
+      .subscribe();
+    return () => { cancelled = true; supabase.removeChannel(ch); };
+  }, [driverMemberId]);
 
   const elapsedMin = activeTrip.startedAtMs ? (now - activeTrip.startedAtMs) / 60_000 : 0;
   const remainingMin = Math.max(0, Math.ceil(activeTrip.etaMinutes - elapsedMin));
@@ -1314,6 +1351,14 @@ export function PickupRadarStatus({ colors, isDark, activeTrip }: {
               {activeTrip.driverName} picking up {activeTrip.kidName}
             </Text>
           </View>
+          {driverAddress && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: -6 }}>
+              <MapPin size={11} color={activeColor} style={{ marginLeft: 1 }} />
+              <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary, flex: 1 }} numberOfLines={1}>
+                {activeTrip.driverName} is near {driverAddress}
+              </Text>
+            </View>
+          )}
           <View style={{ height: 6, borderRadius: 3, backgroundColor: activeColor + '25', overflow: 'hidden' }}>
             <View style={{ height: '100%', width: `${progress * 100}%`, backgroundColor: activeColor, borderRadius: 3 }} />
           </View>

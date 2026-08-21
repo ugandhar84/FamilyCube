@@ -73,7 +73,13 @@ export function EnRouteBanner({ colors, isDark, members, activeMemberId, onDispa
       setDriverAddress(data.address ? await decryptMessage(data.address) : null);
     };
     loadDriverLocation();
-    const ch = supabase.channel(`enroute_driver_${driverMemberId}`)
+    // Randomized suffix — same Strict-Mode double-subscribe fix already
+    // applied to FamilyRadarSection/GpsTab (and now PickupRadarStatus,
+    // this component's read-only counterpart for every other viewer): a
+    // fixed name keyed only on driverMemberId collides the instant this
+    // effect re-runs before the previous subscription's cleanup completes.
+    const channelName = `enroute_driver_${driverMemberId}_${Math.random().toString(36).slice(2)}`;
+    const ch = supabase.channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'member_locations', filter: `member_id=eq.${driverMemberId}` }, loadDriverLocation)
       .subscribe();
     return () => { cancelled = true; supabase.removeChannel(ch); };

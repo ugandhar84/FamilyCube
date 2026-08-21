@@ -1194,7 +1194,17 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   // notes/alertCall/date-time, same safe subset isOwnPending gets, NOT the
   // full isParent reassignment surface (picking a different kid/helper/
   // driver for someone else's event stays parent-only).
-  const isOwnEventBySenior = isSenior && (event.memberId === activeMemberId || (!event.memberId && !event.memberIds?.length));
+  // Same isOpenToGrandparents gate as CalendarScreen's dayEvents/
+  // scopedRangeEvents — a no-assignee Ride/rideRequired event isn't
+  // "family-wide," it's an ungated ride that must still respect the
+  // isOpenToGrandparents flag, or any GP could open (and lightly edit)
+  // a ride explicitly marked not open to grandparents just because its
+  // memberId happened to be unset.
+  const isOwnEventBySenior = isSenior && (
+    event.memberId === activeMemberId ||
+    (!event.memberId && !event.memberIds?.length &&
+      (event.category !== 'Ride' && !event.rideRequired ? true : !!event.isOpenToGrandparents))
+  );
   const isParentApproved = !event.approvalPending;
   // A teen long-pressing a SIBLING's event (not isOwnPending, not
   // isParent, not isSenior) previously matched no branch here at all —

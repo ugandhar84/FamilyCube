@@ -829,8 +829,22 @@ export default function CalendarScreen() {
         (!isSenior || (
           e.memberId === activeMemberId ||
           e.memberIds?.includes(activeMemberId ?? '') ||
-          (e.helper && (e.helper.includes(activeMemberName) || activeMemberName.includes(e.helper.split(' ')[0]))) ||
-          (!e.memberId && !e.memberIds?.length)
+          (e.helper && e.helper === activeMemberName) ||
+          (e.driverName && e.driverName === activeMemberName) ||
+          // "No assignee → family-wide, visible to every GP" only holds for
+          // an ordinary shared event. A Ride-category/rideRequired event
+          // with nobody explicitly tagged (e.g. the "For" picker left
+          // empty) is NOT a family-wide event — it's an ungated ride that
+          // must still respect isOpenToGrandparents like every other ride
+          // visibility check in the app (SeniorView's openRides/
+          // myClaimedRides). Without this, a ride explicitly marked
+          // isOpenToGrandparents:false was still fully visible — including
+          // to a GP with zero connection to it — the instant its memberId
+          // happened to be unset (QA launch-readiness sweep, live-DB
+          // reproduction: ride with is_open_to_grandparents=false and no
+          // memberId was fully visible on Schedule to an uninvolved GP).
+          (!e.memberId && !e.memberIds?.length &&
+            (e.category !== 'Ride' && !e.rideRequired ? true : !!e.isOpenToGrandparents))
         )) &&
         // My Schedule / All tabs (kid/teen/senior only — parents always see all)
         (isParent || scheduleFilter === 'all' ||
@@ -876,8 +890,12 @@ export default function CalendarScreen() {
       (!isSenior || (
         e.memberId === activeMemberId ||
         e.memberIds?.includes(activeMemberId ?? '') ||
-        (e.helper && (e.helper.includes(activeMemberName) || activeMemberName.includes(e.helper.split(' ')[0]))) ||
-        (!e.memberId && !e.memberIds?.length)
+        (e.helper && e.helper === activeMemberName) ||
+        (e.driverName && e.driverName === activeMemberName) ||
+        // Same isOpenToGrandparents gate as dayEvents above — see its
+        // comment for the reproduced leak this closes.
+        (!e.memberId && !e.memberIds?.length &&
+          (e.category !== 'Ride' && !e.rideRequired ? true : !!e.isOpenToGrandparents))
       )) &&
       // My Schedule / All — was missing entirely here, so switching the
       // toggle in Week/Agenda showed "My Schedule" selected while every

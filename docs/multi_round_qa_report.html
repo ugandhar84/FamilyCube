@@ -142,14 +142,14 @@
 <header>
   <div class="header-inner">
     <div class="eyebrow">Family Cube — Multi-Round QA</div>
-    <h1>Live Database QA: 23 Rounds, Four Incidents</h1>
+    <h1>Live Database QA: 24 Rounds, Four Incidents</h1>
     <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, every family role, and realistic multi-step transitions — plus four production incidents caused or prompted mid-session and resolved same-session, a kid ride-request UX rebuild, a full-app per-role UI audit, a live-database verification pass, and the coordinated cross-role QA methodology (Rounds 15–16) that tracks one unified test family through a long connected scenario with every role checking every surface after every step, closing the structural blind spot that single-role agents could never see.</p>
     <div class="meta-row">
       <span class="meta-chip">Test family <b>dad072b3-...-001</b> — isolated, cleaned up after each round</span>
-      <span class="meta-chip"><b>23</b> QA rounds</span>
-      <span class="meta-chip"><b>94</b> bugs found, 88 fixed, 6 open</span>
+      <span class="meta-chip"><b>24</b> QA rounds</span>
+      <span class="meta-chip"><b>101</b> bugs found, 94 fixed, 7 open</span>
       <span class="meta-chip">2 new features shipped</span>
-      <span class="meta-chip">5 Critical, live-deployed/production bugs closed</span>
+      <span class="meta-chip">6 Critical, live-deployed/production bugs closed</span>
     </div>
   </div>
 </header>
@@ -184,6 +184,7 @@
     <a href="#round21">Round 21</a>
     <a href="#round22">Round 22</a>
     <a href="#round23">Round 23</a>
+    <a href="#round24">Round 24</a>
     <a href="#verdict">Verdict</a>
   </div>
 </nav>
@@ -195,11 +196,11 @@
     <h2>What nineteen rounds of live testing found</h2>
     <p class="sec-desc">Each round used real database writes against an isolated, synthetic test family (one member per role, including maternal and paternal grandparents for side-isolation testing) — not static code reading alone. Rounds 11–14 pair this with an equally thorough source-level audit for UI-level and per-role coverage, Round 14 closes the loop with a dedicated live-DB verification pass, and Rounds 15–19 introduce the coordinated cross-role methodology. Every fix is re-verified in a later round wherever the codebase's own regression pattern allows it.</p>
     <div class="stats">
-      <div class="stat crit"><div class="n">12</div><div class="l">Critical bugs closed</div></div>
-      <div class="stat bug"><div class="n">23</div><div class="l">Security/visibility bugs fixed</div></div>
-      <div class="stat warn"><div class="n">53</div><div class="l">Correctness bugs fixed</div></div>
+      <div class="stat crit"><div class="n">13</div><div class="l">Critical bugs closed</div></div>
+      <div class="stat bug"><div class="n">28</div><div class="l">Security/visibility bugs fixed</div></div>
+      <div class="stat warn"><div class="n">54</div><div class="l">Correctness bugs fixed</div></div>
       <div class="stat info"><div class="n">2</div><div class="l">Features shipped</div></div>
-      <div class="stat ok"><div class="n">6</div><div class="l">Open items: photo-proof enforcement, due-soon Hub sort, teen welcome-to-help gap, dead FamilyNeedsHandSection branch, parent-to-kid delegation server-side gap, nudge offline-first confirmation</div></div>
+      <div class="stat ok"><div class="n">7</div><div class="l">Open items: photo-proof enforcement, due-soon Hub sort, teen welcome-to-help gap, dead FamilyNeedsHandSection branch, parent-to-kid delegation server-side gap, nudge offline-first confirmation, month-view calendar-grid dots GP-visibility gating</div></div>
     </div>
   </section>
 
@@ -342,6 +343,11 @@
         <div class="tl-dot round"></div>
         <div class="tl-head"><h3>Round 23 — Recurring Event Delete-Scope &amp; Multi-View Verification</h3><span class="tl-badge round">Coordinated · All roles, one family · 6 steps · Zero bugs</span></div>
         <p>Verification round specifically answering two user-asked questions about recurring events: (1) does deleting a recurring event correctly offer a "just this one / this and future / all" choice, so cancelling future occurrences isn't a tedious one-by-one chore, and (2) do Week and Month views (not just Agenda/Day) actually show upcoming occurrences of a recurring event, so a user isn't fatigued by only seeing "today." Both were confirmed already implemented in code before this round — this round verified them against REAL live data end-to-end across every calendar view mode and every role. All checks pass: the delete-scope UX correctly isolates single, partial, or full-series deletions; Week view correctly shows the one occurrence in its visible window; Month view correctly dots every occurrence across the multi-month strip while maintaining its dots-only architecture (a design note, not a bug — full details appear only when a day is tapped); Agenda view correctly shows all 9 live occurrences within 60 days in order. Series isolation confirmed: a completely independent second recurring series remained fully unaffected through all deletion steps. This round found zero new bugs — every check confirmed the existing implementation is correct — so the value here is verification, not bug-hunting.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 24 — En-Route Location Visibility &amp; Uninvolved-GP Ride Leak</h3><span class="tl-badge round">User-reported · All roles, two families · 6 findings, 1 critical server-side bypass</span></div>
+        <p>User's own hands-on testing of the app surfaced two specific bugs from real usage: (1) the other parent and kids weren't seeing the driver's live location during a pickup run, and (2) a grandparent with zero connection to a specific ride was seeing it anyway on their Hub/Schedule. Parallel investigations converged on distinct root causes and fixes, plus discovery of a critical server-side authorization bypass, and separately a related architectural gap where only one "en route" trip could be active per family at a time. Found the most severe finding of the entire QA effort to date (server-side claim-authorization bypass). Also fixed a low-severity calendar-grid visibility gap identified but deferred as non-launch-blocking.</p>
       </div>
     </div>
   </section>
@@ -2138,6 +2144,137 @@
     </div>
 
     <p class="sec-desc" style="margin-top: 20px;"><b>Test family details:</b> Single isolated synthetic family (<code class="inline">d04c435b-c72a-4d62-b229-9bbadf6185ea</code>, "QA27 Test Family") with 4 real member rows: QA27-Parent-A, QA27-Parent-B, QA27-Kid-1, QA27-Teen-1. All rows across <code class="inline">families</code>, <code class="inline">members</code>, and <code class="inline">calendar_events</code> were deleted at the end, with a final verification query confirming zero count across every touched table. No production data outside the test family was ever touched.</p>
+  </section>
+
+  <section id="round24">
+    <div class="sec-label">Round 24</div>
+    <h2>En-Route Location Visibility &amp; Uninvolved-GP Ride Leak</h2>
+    <p class="sec-desc">Two specific bugs reported directly by the user from hands-on testing of the app. Parallel investigations converged on distinct root causes and fixes, plus discovery of a critical server-side authorization bypass, an architectural gap where only one en-route trip could be active per family at a time, and resolution of related visibility filtering gaps. This round was triggered by direct user reports rather than scripted scenarios, and uncovered the most severe finding of the entire QA effort to date.</p>
+
+    <div class="step-card">
+      <div class="step-num">Step 1</div>
+      <div class="step-title">User report: "the other parent and kids aren't seeing the driver's live location"</div>
+      <div class="step-desc">During a real pickup trip, the driver (Parent-A) could see their own live location on the Hub's EnRouteBanner via a direct <code class="inline">member_locations</code> subscription, but every other viewer (Parent-B, Kid-1, Kid-2) saw only a synthetic ETA countdown with zero actual location data even though the GPS row was being written continuously to the database.</div>
+      <div class="step-write">DB: <code class="inline">member_locations</code> rows written in real time with lat/long for the active trip</div>
+      <ul class="check-list">
+        <li>Driver's own Hub view — <span class="badge match">✓ Match</span> — EnRouteBanner.tsx read <code class="inline">member_locations</code> directly and showed "X is near {address}"</li>
+        <li>Every non-driver viewer (Parent-B, Kid-1, Kid-2) — <span class="badge mismatch">✗ Mismatch</span> — PickupRadarStatus card rendered only a synthetic ETA countdown with zero location subscription, even though the same GPS data was live in the database</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #1 (HIGH severity, now FIXED):</strong> Live driver location during a pickup was visible only to the driver themselves; every other viewer (other parent, kid, teen, GP) saw only a synthetic ETA countdown with no actual location. <code class="inline">PickupRadarStatus</code> (the read-only card shown to every non-driving viewer in <code class="inline">features/hub/hubComponents.tsx</code>) never had a <code class="inline">member_locations</code> subscription at all — it only rendered a countdown with zero location data, even though the driver was actively writing their location to the database the whole time. The driver's own view already had the exact subscription needed; PickupRadarStatus had never been wired to use it. Fixed same-session: ported the identical <code class="inline">member_locations</code> read + realtime subscription from EnRouteBanner into PickupRadarStatus, so every viewer watching a trip now sees the driver's live location, not just the driver themselves. File: <code class="inline">features/hub/hubComponents.tsx</code> (PickupRadarStatus).</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 2</div>
+      <div class="step-title">User report: "a grandparent shouldn't see a ride not open to them"</div>
+      <div class="step-desc">During testing with two grandparents (maternal and paternal, representing separate family branches in some households), the user noted visibility boundaries were unclear. Testing baseline visibility rather than claim-race isolation surfaced a more serious leak: a ride explicitly marked <code class="inline">is_open_to_grandparents=false</code> with no assignee was fully visible to grandparents in CalendarScreen.tsx and even lightly editable via EventFormModal.</div>
+      <div class="step-write">DB: <code class="inline">calendar_events</code> row with type='ride', no memberId/memberIds set, <code class="inline">is_open_to_grandparents=false</code></div>
+      <ul class="check-list">
+        <li>Schedule tab's Agenda/Day/Week views (CalendarScreen.tsx) — <span class="badge mismatch">✗ Mismatch</span> — grandparent with zero connection to the ride could see it anyway; the "no assignee = family-wide visible" fallback had zero check of isOpenToGrandparents</li>
+        <li>EventFormModal's edit permissions — <span class="badge mismatch">✗ Mismatch</span> — grandparent could lightly edit the same ride despite isOpenToGrandparents=false</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #2 (HIGH severity, now FIXED):</strong> An uninvolved grandparent could see (and lightly edit) a ride explicitly marked not open to grandparents. <code class="inline">CalendarScreen.tsx</code>'s visibility filtering treated ANY event with no memberId/memberIds set as automatically "family-wide, visible to every grandparent" — with zero check of the <code class="inline">isOpenToGrandparents</code> flag. Reproduced live: a ride marked <code class="inline">is_open_to_grandparents=false</code> with no assignee was fully visible and even editable to a grandparent with genuinely zero connection to it. Fixed same-session: the "no assignee = family-wide" fallback now only applies to non-ride events; a Ride-category or rideRequired event with no assignee only counts as visible to a GP if <code class="inline">isOpenToGrandparents</code> is actually true, in both <code class="inline">dayEvents</code> and <code class="inline">scopedRangeEvents</code> filtering, and in <code class="inline">EventFormModal</code>'s edit-permission check. Files: <code class="inline">features/calendar/CalendarScreen.tsx</code>, <code class="inline">features/calendar/EventFormModal.tsx</code>.</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 3</div>
+      <div class="step-title">Adjacent visibility bugs found while fixing Step 2</div>
+      <div class="step-desc">While fixing the isOpenToGrandparents fallback, found two additional filter bugs in the same call sites, both pre-existing from earlier rounds and missed at the time.</div>
+      <div class="step-write">DB: <code class="inline">calendar_events</code> rows with various helper/driverName assignments and isOpenToGrandparents/isOpenToTeens flags</div>
+      <ul class="check-list">
+        <li>Helper name matching via fragile substring .includes() — <span class="badge mismatch">✗ Mismatch</span> — a grandparent named "Pat" could match a helper field containing "Patricia" or vice versa; the exact bug class Round 9 already fixed elsewhere in the app, this specific call site had been missed</li>
+        <li>Grandparent visibility via driverName field — <span class="badge mismatch">✗ Mismatch</span> — the same visibility filter never checked <code class="inline">driverName</code> at all; a grandparent legitimately confirmed as driver via the driverName/driverStatus field pair couldn't see their own assigned ride on the Schedule tab at all, the "field pair blindness" class Round 12 already found and fixed for other surfaces</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Findings #3 &amp; #4 (HIGH severity, now FIXED):</strong> The same visibility filter checked the <code class="inline">helper</code> field via fragile substring matching (same bug class Round 9 fixed elsewhere, this call site missed), allowing a grandparent named "Pat" to match a helper field containing "Patricia" or vice versa. Separately, the filter never checked <code class="inline">driverName</code> at all — a grandparent legitimately confirmed as driver via the driverName/driverStatus field pair couldn't see their own assigned ride on the Schedule tab, the same field-pair blindness Round 12 already found and fixed for other surfaces. Fixed same-session: helper name-match changed to exact match; driverName added as its own visibility check, matching how memberId/memberIds already work. File: <code class="inline">features/calendar/CalendarScreen.tsx</code>.</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 4 — Finding (CRITICAL, now FIXED and deployed)</div>
+      <div class="step-title">Server-side enforcement gap: isOpenToGrandparents/isOpenToTeens had no database-level guard</div>
+      <div class="step-desc">While fixing the client-side visibility leak, traced whether the underlying claim mechanism (<code class="inline">claimHelperSlot</code>) itself was protected — it was not. Every UI path that lists a grandparent/teen as pickable already checks the open-to flag first, but <code class="inline">claimHelperSlot</code>'s own DB write is a bare compare-and-swap on the status column with no check of the flag, and <code class="inline">calendar_events</code>' RLS is scoped only by family_id — any authenticated family member could confirm themselves as driver on a ride explicitly marked not open to their role via a direct API call bypassing the app UI entirely.</div>
+      <div class="step-write">DB: raw <code class="inline">claimHelperSlot</code> call with matching family_id but mismatched role-openness flags</div>
+      <ul class="check-list">
+        <li>Direct claimHelperSlot call on a ride marked is_open_to_grandparents=false, from a grandparent's credentials — <span class="badge mismatch">✗ Mismatch (CRITICAL)</span> — the claim succeeds with zero rejection; only the app UI ever checked the flag, not the database</li>
+        <li>Comparison to existing patterns — the same issue class as the very first self-approval exploit found in Round 1, and modeled on the existing gp_weekly_ride_cap trigger pattern</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #5 (CRITICAL severity, now FIXED and deployed):</strong> The open-to-grandparents/open-to-teens rule had no server-side enforcement at all. Every UI path listing a grandparent/teen as pickable already checks the open-to flag first, but <code class="inline">claimHelperSlot</code>'s own DB write is a bare compare-and-swap on the status column with zero check of the flag, and <code class="inline">calendar_events</code>' RLS is scoped only by family_id. Any authenticated family member could confirm themselves as driver on a ride explicitly marked not open to their role via a direct API call bypassing the app UI entirely — the same self-approval exploit class from Round 1. Fixed same-session: new <code class="inline">enforce_open_to_flag_trigger</code> (before-update on calendar_events) rejects the transition into 'confirmed' when the claimant's role doesn't match the ride's open-to flags. Deployed live and verified: a follow-up fix also updated <code class="inline">claimHelperSlot</code>'s error handling to surface a clear "This ride isn't open to you anymore" message instead of a generic failure when this trigger fires, so the rare legitimate race (ride's flags changed between load and claim) reads clearly to the user. Files: <code class="inline">store/eventStore.ts</code> (claimHelperSlot), <code class="inline">supabase/migrations/20260901090000_enforce_gp_teen_open_to_flag.sql</code> (new trigger).</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 5</div>
+      <div class="step-title">Architectural gap: only one "en route" trip could be active per family at a time</div>
+      <div class="step-desc">The user directly asked: if one parent starts an En Route trip, can another parent independently start their OWN trip for a different kid at the same time? Investigation confirmed <code class="inline">tripStore.ts</code>'s own code comment admitted the limitation explicitly: <code class="inline">activeTrip: Trip | null</code> was a single nullable slot, not a list. A second parent dispatching their own trip would silently overwrite the first parent's trip in every viewer's synced state, making it vanish for everyone including the original driver, even though both were still running in the database.</div>
+      <div class="step-write">DB: two concurrent <code class="inline">calendar_events</code> rows with distinct driver_ids, both with null completed_at</div>
+      <ul class="check-list">
+        <li>First parent's trip visible in tripStore.activeTrip — <span class="badge match">✓ Match</span> — data is there in the database</li>
+        <li>Second parent dispatches their own trip — <span class="badge mismatch">✗ Mismatch</span> — the Hub silently replaces the first parent's trip with the second parent's trip; the first parent's trip vanishes from every viewer despite still running in the database, confirmed via direct query</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #6 (HIGH severity, now FIXED):</strong> Only one "en route" trip could be active per family at a time. <code class="inline">tripStore.ts</code>'s own code comment admitted the limitation: <code class="inline">activeTrip: Trip | null</code> was a single nullable slot, not a list. A second parent dispatching their own independent trip would silently overwrite the first parent's trip in every viewer's synced state, making it vanish for everyone including the original driver, even though both were still running in the database. The database itself had no constraint — this was purely a client-side limitation. Fixed, full rewrite as chosen by the user: <code class="inline">tripStore.ts</code> now tracks <code class="inline">activeTrips: Trip[]</code>, fetching every live (uncompleted) trip for the family instead of just one; <code class="inline">dispatch()</code> now only blocks the SAME driver from double-dispatching, never a different driver's concurrent trip; the realtime handler now patches just the one changed trip within the list instead of replacing everything; every consuming Hub view (Parent/Kid/Teen/Senior) updated to render one card per active trip. Verified live: two trips with different drivers, both completed_at IS NULL, both correctly populate. File: <code class="inline">store/tripStore.ts</code> and every consuming Hub view.</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 6</div>
+      <div class="step-title">Low-severity item: month-view calendar-grid dots have no GP-visibility gating</div>
+      <div class="step-desc">Month view's calendar-grid dots (the colored markers showing "something's happening this day") have no grandparent-visibility gating at all — a Ride or Medical category dot can still appear on a day for an event a GP shouldn't fully see. No title or content is ever exposed by a dot, only a color, so this is a low-severity, content-free leak.</div>
+      <div class="step-write">DB: <code class="inline">calendar_events</code> rows with type=ride, is_open_to_grandparents=false, rendered in month-grid dots</div>
+      <ul class="check-list">
+        <li>Month view's category dots (StripRow/filteredStripMap) — <span class="badge mismatch">✗ Mismatch (LOW severity)</span> — a ride dot appears on a day for an event a GP shouldn't fully see; no content is exposed, only a color indicator that "something ride-related is happening this day"</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #7 (LOW severity, reported, not fixed this round):</strong> Month view's calendar-grid dots have no grandparent-visibility gating. A Ride or Medical category dot can still appear on a day for an event a GP shouldn't fully see. No title or content is ever exposed by a dot, only a color, so this is a low-severity, content-free leak — a GP could infer "something ride-related is happening this day," nothing more. Flagged as an open item for a future pass since fixing it properly requires touching 3 separate construction sites in eventStore.ts, not a quick filter change. Locations: <code class="inline">features/calendar/CalendarScreen.tsx</code> (StripRow/filteredStripMap), <code class="inline">store/eventStore.ts</code>.</p>
+    </div>
+
+    <div class="table-scroll" style="margin-top: 24px;">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev crit">CRITICAL</span></td>
+            <td>No server-side enforcement of isOpenToGrandparents/isOpenToTeens on ride-claim confirmation; a direct API call could bypass it entirely.</td>
+            <td><code class="inline">store/eventStore.ts</code> (claimHelperSlot), <code class="inline">supabase/migrations/20260901090000_enforce_gp_teen_open_to_flag.sql</code></td>
+            <td><span class="status-fixed">✓ Fixed &amp; deployed — new before-update trigger, plus a clear error message surfaced to the user when it fires</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>Uninvolved grandparent could see (and lightly edit) a ride explicitly marked not open to grandparents, via the no-assignee "family-wide" fallback.</td>
+            <td><code class="inline">features/calendar/CalendarScreen.tsx</code>, <code class="inline">features/calendar/EventFormModal.tsx</code></td>
+            <td><span class="status-fixed">✓ Fixed — fallback now respects isOpenToGrandparents for ride events</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>A grandparent confirmed as driver via the driverName field pair couldn't see their own assigned ride on the Schedule tab at all.</td>
+            <td><code class="inline">features/calendar/CalendarScreen.tsx</code></td>
+            <td><span class="status-fixed">✓ Fixed — driverName now checked alongside helper/memberId/memberIds</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>Live driver location during a pickup was visible only to the driver themselves; every other viewer saw only a synthetic ETA countdown with no actual location.</td>
+            <td><code class="inline">features/hub/hubComponents.tsx</code> (PickupRadarStatus)</td>
+            <td><span class="status-fixed">✓ Fixed — ported the same member_locations live read the driver's own view already had</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>Only one "en route" trip could be active per family at a time; a second parent dispatching their own trip silently overwrote the first parent's trip for every viewer.</td>
+            <td><code class="inline">store/tripStore.ts</code> and every Hub view consuming it</td>
+            <td><span class="status-fixed">✓ Fixed — activeTrips is now a list; same-driver double-dispatch is blocked, different drivers' concurrent trips are not</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>Schedule tab's helper-name match used fragile substring matching (same bug class Round 9 fixed elsewhere, this call site had been missed).</td>
+            <td><code class="inline">features/calendar/CalendarScreen.tsx</code></td>
+            <td><span class="status-fixed">✓ Fixed — changed to exact match</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev low">Low</span></td>
+            <td>Month view's calendar-grid dots have no grandparent-visibility gating (color-only, no content exposed).</td>
+            <td><code class="inline">features/calendar/CalendarScreen.tsx</code> (StripRow/filteredStripMap), <code class="inline">store/eventStore.ts</code></td>
+            <td>Reported — open item, needs changes at 3 construction sites, deferred to a future pass, not launch-blocking</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="sec-desc" style="margin-top: 20px;">This round was triggered directly by the user's own hands-on testing of the app rather than a scripted scenario, and found the most severe finding of the entire QA effort to date: the server-side claim-authorization bypass. The pattern established since Round 15 is reinforced: live-database verification catches an entirely different class of bug than either static code review or isolated single-role testing.</p>
+
+    <p class="sec-desc" style="margin-top: 20px;"><b>Test family details:</b> Two isolated synthetic families (<code class="inline">aca60949-...</code> and <code class="inline">d04c435b-...</code> style, QA29/QA30 test families) with 6 real member rows each across all roles: 2 parents, 2 kids, 1 teen, 1 grandparent. All rows across <code class="inline">families</code>, <code class="inline">members</code>, <code class="inline">calendar_events</code>, <code class="inline">member_locations</code>, <code class="inline">trips</code>, and <code class="inline">trip_legs</code> were deleted at the end, with a final verification query confirming zero count across every touched table. No production data outside the test families was ever touched.</p>
   </section>
 
   <section id="verdict">

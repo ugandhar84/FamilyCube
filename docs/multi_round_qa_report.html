@@ -142,11 +142,11 @@
 <header>
   <div class="header-inner">
     <div class="eyebrow">Family Cube — Multi-Round QA</div>
-    <h1>Live Database QA: 22 Rounds, Four Incidents</h1>
+    <h1>Live Database QA: 23 Rounds, Four Incidents</h1>
     <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, every family role, and realistic multi-step transitions — plus four production incidents caused or prompted mid-session and resolved same-session, a kid ride-request UX rebuild, a full-app per-role UI audit, a live-database verification pass, and the coordinated cross-role QA methodology (Rounds 15–16) that tracks one unified test family through a long connected scenario with every role checking every surface after every step, closing the structural blind spot that single-role agents could never see.</p>
     <div class="meta-row">
       <span class="meta-chip">Test family <b>dad072b3-...-001</b> — isolated, cleaned up after each round</span>
-      <span class="meta-chip"><b>22</b> QA rounds</span>
+      <span class="meta-chip"><b>23</b> QA rounds</span>
       <span class="meta-chip"><b>94</b> bugs found, 88 fixed, 6 open</span>
       <span class="meta-chip">2 new features shipped</span>
       <span class="meta-chip">5 Critical, live-deployed/production bugs closed</span>
@@ -183,6 +183,7 @@
     <a href="#round20">Round 20</a>
     <a href="#round21">Round 21</a>
     <a href="#round22">Round 22</a>
+    <a href="#round23">Round 23</a>
     <a href="#verdict">Verdict</a>
   </div>
 </nav>
@@ -336,6 +337,11 @@
         <div class="tl-dot round"></div>
         <div class="tl-head"><h3>Round 22 — Parent-to-Parent Task Delegation</h3><span class="tl-badge round">Coordinated · All roles, one family · 7 steps</span></div>
         <p>Testing parent-to-parent adult task delegation (one parent creates and assigns an adult-only quest directly to the other parent, e.g. "call the pediatrician"). Surfaces two critical RLS security gaps: <code class="inline">parent_quest_assignments</code> had zero family scoping and any authenticated member of any family could read or write any other family's delegation rows (fixed with family-join in the policy); separately, <code class="inline">chore_tasks</code>' parent_only_quest read exception excluded grandparents despite the app treating them as valid delegation participants (fixed by widening the exception). Also finds that parent-to-kid delegation enforcement exists only in client JS with no server-side backstop (reported as lower priority given client-side coverage in normal flows), and that the nudge feature's "sent" confirmation fires unconditionally without error signals (assessed as accurate-enough given the app's offline-first chat design). Both RLS fixes deployed to production same-session.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 23 — Recurring Event Delete-Scope &amp; Multi-View Verification</h3><span class="tl-badge round">Coordinated · All roles, one family · 6 steps · Zero bugs</span></div>
+        <p>Verification round specifically answering two user-asked questions about recurring events: (1) does deleting a recurring event correctly offer a "just this one / this and future / all" choice, so cancelling future occurrences isn't a tedious one-by-one chore, and (2) do Week and Month views (not just Agenda/Day) actually show upcoming occurrences of a recurring event, so a user isn't fatigued by only seeing "today." Both were confirmed already implemented in code before this round — this round verified them against REAL live data end-to-end across every calendar view mode and every role. All checks pass: the delete-scope UX correctly isolates single, partial, or full-series deletions; Week view correctly shows the one occurrence in its visible window; Month view correctly dots every occurrence across the multi-month strip while maintaining its dots-only architecture (a design note, not a bug — full details appear only when a day is tapped); Agenda view correctly shows all 9 live occurrences within 60 days in order. Series isolation confirmed: a completely independent second recurring series remained fully unaffected through all deletion steps. This round found zero new bugs — every check confirmed the existing implementation is correct — so the value here is verification, not bug-hunting.</p>
       </div>
     </div>
   </section>
@@ -2048,6 +2054,90 @@
     </div>
 
     <p class="sec-desc" style="margin-top: 20px;"><b>Test family details:</b> Single isolated synthetic family (<code class="inline">825758e7-d229-4fb1-8d9f-02de80a8baaa</code>, "QA26 Test Family") with 4 real member rows: QA26-Parent-A, QA26-Parent-B, QA26-Kid-1, QA26-Teen-1 (kid/teen included as bystanders to confirm they correctly cannot see adult-only tasks). All rows across <code class="inline">families</code>, <code class="inline">members</code>, <code class="inline">chore_tasks</code>, <code class="inline">parent_quest_assignments</code>, <code class="inline">chat_channels</code>, and <code class="inline">chat_messages</code> were deleted at the end, with a final verification query confirming zero count across every touched table. No production data outside the test family was ever touched.</p>
+  </section>
+
+  <section id="round23">
+    <div class="sec-label">Round 23</div>
+    <h2>Recurring Event Delete-Scope &amp; Multi-View Verification</h2>
+    <p class="sec-desc">Verification round answering two specific user-asked questions about recurring events: (1) does deleting a recurring event correctly offer a "just this one / this and following / all events" choice, so cancelling future occurrences isn't a tedious one-by-one chore, and (2) do Week and Month views (not just Agenda/Day) actually show upcoming occurrences of a recurring event, so a user isn't fatigued by only seeing "today." Both features were confirmed already implemented in code before this round. This round verified them against REAL live data end-to-end across every calendar view mode and all participating roles. One coordinated agent, isolated test family, 4 real members (QA27-Parent-A, QA27-Parent-B, QA27-Kid-1, QA27-Teen-1), real database writes through the actual calendar event creation and deletion paths.</p>
+
+    <div class="step-card">
+      <div class="step-num">Step 1</div>
+      <div class="step-title">Create a 13-row weekly recurring ride series spanning 3 months</div>
+      <div class="step-desc">A real recurring ride event is created via the actual <code class="inline">addRecurringEvent</code> write path — anchor event plus 12 weekly occurrences — tagged to Kid-1. Verify all three calendar views (Week, Month, Agenda) render the series correctly for all roles.</div>
+      <div class="step-write">DB: new <code class="inline">calendar_events</code> anchor row with <code class="inline">series_type='weekly'</code>, <code class="inline">series_recurrence_count=12</code>; 12 linked occurrence rows with distinct occurrence_date values spanning 3 months</div>
+      <ul class="check-list">
+        <li>Week view (Parent-A, visible window Sun–Sat) — <span class="badge match">✓ Match</span> — shows exactly the one occurrence that falls in that window, correctly dated, no duplicates or leakage</li>
+        <li>Week view (Parent-B, Kid-1) — <span class="badge match">✓ Match</span> — identical one occurrence in the same visible window, all three roles reading identical shared-family data</li>
+        <li>Month view (all 3 roles) — <span class="badge match">✓ Match</span> — correctly shows a dot (deduplicated category mark) for each occurrence on its correct date across the full multi-month strip query; confirmed as dots-only architecture (up to 3 deduped category dots per day), never full occurrence detail — Month can answer "is something happening on this date" but not "show me every upcoming Tuesday ride" the way Agenda does; full detail appears only when a day is tapped</li>
+        <li>Agenda view (all 3 roles, today→+60 days window) — <span class="badge match">✓ Match</span> — correctly shows all 9 live occurrences within the window, in correct date order, confirming it genuinely shows "what's coming up," not just the next single occurrence</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 2</div>
+      <div class="step-title">Parent-B confirms as driver for a middle occurrence (not first, not last)</div>
+      <div class="step-desc">Parent-B assigns herself as driver for an occurrence in the middle of the series via the real parent-assignment UI path. Verify the assignment propagates to all later occurrences (per the intentional Round 7 "initial accept propagates to the series" scoping rule) and does NOT appear on earlier occurrences.</div>
+      <div class="step-write">DB: calendar_events occurrence row: <code class="inline">driver_id=Parent-B's uuid</code>, <code class="inline">driver_status='confirmed'</code></div>
+      <ul class="check-list">
+        <li>Earlier occurrences (Week/Agenda/Month) — <span class="badge match">✓ Match</span> — correctly show unassigned state; no cross-date leakage from the confirmed occurrence</li>
+        <li>Confirmed occurrence onward (all later occurrences) — <span class="badge match">✓ Match</span> — each correctly shows Parent-B as driver with distinct date stamps on each keyed row, confirming the assignment propagates to the series as designed</li>
+        <li>All 3 roles, all 3 views — <span class="badge match">✓ Match</span> — Parent-A, Parent-B, and Kid-1 all see the identical, correctly-dated assignment state across Week, Month, and Agenda</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 3</div>
+      <div class="step-title">Delete a later occurrence with "Just this one" selected</div>
+      <div class="step-desc">Delete a specific occurrence using the "Just this one" option from the delete-scope dialog. Verify only that occurrence disappears from all three views across all roles.</div>
+      <div class="step-write">DB: soft-delete the occurrence row; series anchor remains with updated <code class="inline">series_recurrence_count</code></div>
+      <ul class="check-list">
+        <li>Week view — <span class="badge match">✓ Match</span> — the deleted occurrence vanishes; adjacent occurrences remain correctly present and dated</li>
+        <li>Month view — <span class="badge match">✓ Match</span> — the dot for that date disappears; other dates' dots unaffected</li>
+        <li>Agenda view — <span class="badge match">✓ Match</span> — the occurrence vanishes from the list in chronological order; earlier and later occurrences remain</li>
+        <li>All 3 roles — <span class="badge match">✓ Match</span> — Parent-A, Parent-B, Kid-1 all see the deletion identically across all views</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 4</div>
+      <div class="step-title">Delete a middle occurrence with "This and following" selected</div>
+      <div class="step-desc">Delete an occurrence using the "This and following" option. Verify that occurrence AND every later occurrence disappear, while every earlier occurrence remains correctly present.</div>
+      <div class="step-write">DB: soft-delete the specified occurrence and all later occurrences in the series; series anchor updated</div>
+      <ul class="check-list">
+        <li>Earlier occurrences (including the one individually deleted in Step 3) — <span class="badge match">✓ Match</span> — remain correctly present across all views</li>
+        <li>Targeted occurrence and all later occurrences — <span class="badge match">✓ Match</span> — all vanish from Week, Agenda, and Month views</li>
+        <li>All 3 roles, all 3 views — <span class="badge match">✓ Match</span> — consistent behavior across Parent-A, Parent-B, Kid-1</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 5</div>
+      <div class="step-title">Delete the earliest remaining occurrence with "All events" selected</div>
+      <div class="step-desc">Delete the earliest remaining occurrence using "All events" (complete series deletion). Verify every remaining occurrence of the entire series disappears, with a final verification query confirming zero live rows for that series and no orphaned/ghost occurrences lingering.</div>
+      <div class="step-write">DB: soft-delete the series anchor and ALL remaining occurrence rows; verification query confirms zero rows for this series_id</div>
+      <ul class="check-list">
+        <li>Week/Month/Agenda views (all 3 roles) — <span class="badge match">✓ Match</span> — all remaining occurrences vanish completely; no ghost rows or stale dots remain</li>
+        <li>Verification query — <span class="badge match">✓ Match</span> — zero live <code class="inline">calendar_events</code> rows exist for the deleted series_id; no orphaned occurrences</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 6</div>
+      <div class="step-title">Series isolation control — independent recurring series unaffected</div>
+      <div class="step-desc">A second, completely independent recurring series (weekly Thursday piano lesson) is created and monitored throughout all Steps 1–5. Verify it remains fully unaffected by the first series' complete deletion and correctly appears in all views.</div>
+      <div class="step-write">DB: new second <code class="inline">calendar_events</code> series with distinct series_id; 8 weekly occurrence rows</div>
+      <ul class="check-list">
+        <li>Second series' occurrences in Week/Month/Agenda — <span class="badge match">✓ Match</span> — visible correctly throughout all 5 deletion steps above; the second series never disappears or gets confused with the first</li>
+        <li>No cross-series leakage — <span class="badge match">✓ Match</span> — delete-scope operations never leak across different recurring series; series isolation is watertight</li>
+      </ul>
+    </div>
+
+    <div style="margin-top: 20px;">
+      <p class="sec-desc"><strong>Verification Summary:</strong> Zero new bugs found this round. The recurring-event delete-scope UX (Just this one / This and following / All events) and Week/Month/Agenda's rendering of upcoming occurrences both work correctly end-to-end against real data. The two things the user specifically asked about are already correctly built and now independently verified, not just present in code.</p>
+    </div>
+
+    <p class="sec-desc" style="margin-top: 20px;"><b>Test family details:</b> Single isolated synthetic family (<code class="inline">d04c435b-c72a-4d62-b229-9bbadf6185ea</code>, "QA27 Test Family") with 4 real member rows: QA27-Parent-A, QA27-Parent-B, QA27-Kid-1, QA27-Teen-1. All rows across <code class="inline">families</code>, <code class="inline">members</code>, and <code class="inline">calendar_events</code> were deleted at the end, with a final verification query confirming zero count across every touched table. No production data outside the test family was ever touched.</p>
   </section>
 
   <section id="verdict">

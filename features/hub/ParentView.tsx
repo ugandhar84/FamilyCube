@@ -247,8 +247,39 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     const h = hoursUntilEvent(ev.date, ev.time);
     return h >= 0 && h < 4;
   });
+
+  // Escalation: driver CONFIRMED, scheduled time already passed by 5+ min,
+  // but no trip was ever dispatched for this pickup — the one gap none of
+  // the other 3 escalations above cover. pendingNoResponse only matches
+  // status 'pending' (and stops matching once the event's time is already
+  // in the past, since it requires hoursUntilEvent >= 0). unassignedUrgent
+  // explicitly excludes any event with an assignee name. So a ride that
+  // went all the way to "confirmed" and then nobody actually tapped
+  // Dispatch/En Route for was invisible to every parent-facing escalation —
+  // and to the OTHER parent specifically, since only the driving parent's
+  // own device runs HubScreen's TripEffects overdue timer, and that timer
+  // only exists once a trip row exists at all. The kid still gets a manual
+  // "driver hasn't arrived" alert (KidUrgentAlerts) they can tap to send,
+  // but nothing pushes to the parents automatically. Matches tripStore's
+  // own 5-minute overdue grace window for consistency.
+  // (Direct question: "does the app escalate if either side fails to
+  // confirm" — this was the one path with no escalation on either side.)
+  const activeTripDriverNames = new Set(
+    [activeTrip, ...(otherActiveTrips ?? [])]
+      .filter((t): t is NonNullable<typeof t> => !!t)
+      .map(t => t.driverName)
+  );
+  const neverDispatchedOverdue = todayEvents.filter(e => {
+    const a = eventAssignee(e);
+    if (!a.name || a.status !== 'confirmed' || e.approvalPending) return false;
+    if (activeTripDriverNames.has(a.name)) return false; // a trip IS running, just use the normal overdue path
+    const h = hoursUntilEvent(e.date, e.time);
+    return h < 0 && h > -2; // same 2hr outer bound as unassignedUrgent, so a days-old stale row doesn't linger forever
+  });
+
   const showBanner     = conflictEvents.length > 0 || urgentRejected.length > 0 ||
-                         pendingNoResponse.length > 0 || unassignedUrgent.length > 0;
+                         pendingNoResponse.length > 0 || unassignedUrgent.length > 0 ||
+                         neverDispatchedOverdue.length > 0;
   const pendingKidRequests = kidRequests.filter(r => {
     // Coordinated live-DB QA (Round 20, High) — a multi-item grocery/
     // supplies request transitions to 'partial' the moment any item is
@@ -506,9 +537,11 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         <AlertBanner
           conflictEvents={conflictEvents} rejectedEvents={urgentRejected}
           pendingNoResponseEvents={pendingNoResponse} unassignedUrgentEvents={unassignedUrgent}
+          neverDispatchedEvents={neverDispatchedOverdue}
           conflictReasons={conflictReasons}
           members={members} colors={colors} isDark={isDark} updateEvent={updateEvent}
           activeName={active.name}
+          onDispatch={onDispatchDirect}
         />
       )}
 

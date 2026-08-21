@@ -323,10 +323,12 @@ function notifyTakeover(ev: FamilyEvent, newName: string, members: FamilyMember[
 
 export function AlertBanner({
   conflictEvents, rejectedEvents, pendingNoResponseEvents = [], unassignedUrgentEvents = [],
-  conflictReasons, members, colors, isDark, updateEvent, activeName,
+  neverDispatchedEvents = [],
+  conflictReasons, members, colors, isDark, updateEvent, activeName, onDispatch,
 }: {
   conflictEvents: FamilyEvent[]; rejectedEvents: FamilyEvent[];
   pendingNoResponseEvents?: FamilyEvent[]; unassignedUrgentEvents?: FamilyEvent[];
+  neverDispatchedEvents?: FamilyEvent[];
   conflictReasons?: Map<string, string>;
   members: FamilyMember[]; colors: any; isDark: boolean;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
@@ -334,6 +336,10 @@ export function AlertBanner({
   // instead of routing the common "I'll just take it" case through the full
   // reassign picker.
   activeName?: string;
+  // Lets the confirmed driver start the trip directly from their own
+  // never-dispatched card, instead of having to scroll down to Pick-up
+  // Radar and find the right nextRide slot themselves.
+  onDispatch?: (memberId: string | undefined, etaMinutes: number) => void;
 }) {
   const viewer = members.find(m => m.name === activeName);
 
@@ -475,6 +481,49 @@ export function AlertBanner({
                     notes: reason || undefined,
                   });
                 }} />
+            </View>
+          </View>
+        );
+      })}
+
+      {/* Confirmed driver, scheduled time already passed, no trip ever
+          dispatched — the gap between "nobody answered" (No Reply, above)
+          and "someone's actually en route" (Pick-up Radar, below). Visible
+          to every parent, not just the confirmed driver, so a forgotten
+          pickup doesn't sit invisible until the kid themselves notices and
+          taps their own manual alert. */}
+      {neverDispatchedEvents.map(ev => {
+        const kid = members.find(m => m.id === ev.memberId);
+        const assignee = eventAssignee(ev);
+        const isMe = assignee.name === activeName;
+        return (
+          <View key={`nd-${ev.id}`} style={{
+            backgroundColor: isDark ? colors.danger + '14' : colors.dangerLight,
+            borderRadius: 16, borderWidth: 1.5, borderColor: colors.danger + '50', overflow: 'hidden',
+          }}>
+            <View style={{ backgroundColor: colors.danger, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
+              <Car size={15} color="#fff" />
+              <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
+                Trip Never Started — {ev.title}
+              </Text>
+              <Text style={{ fontSize: TYPO.label, color: 'rgba(255,255,255,0.85)', fontWeight: '700' }}>{fmtTime(ev.time)}</Text>
+            </View>
+            <View style={{ padding: 14, gap: 8 }}>
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                <Text style={{ fontWeight: '700', color: colors.danger }}>{relationalNameByName(assignee.name, members)}</Text> confirmed
+                {kid ? ` ${kid.name.split(' ')[0]}'s pickup` : ' this ride'} for {fmtTime(ev.time)}, but never started the trip.
+              </Text>
+              {isMe && onDispatch ? (
+                <Pressable onPress={() => onDispatch(ev.memberId, 10)}
+                  style={{ backgroundColor: colors.danger, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Car size={13} color="#fff" />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Start Trip Now</Text>
+                </Pressable>
+              ) : (
+                <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, fontStyle: 'italic' }}>
+                  Check in with {relationalNameByName(assignee.name, members)} — the pickup may already be handled but never marked En Route.
+                </Text>
+              )}
             </View>
           </View>
         );

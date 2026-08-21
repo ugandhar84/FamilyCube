@@ -12,9 +12,10 @@ import { useChoreStore } from '@/store/choreStore';
 import type { ChoreTask } from '@/store/choreStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
+import { useChatStore } from '@/store/chatStore';
 import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
 import type { FamilyMember } from '@/store/familyStore';
-import { localToday, isWorkEvent, hoursUntilEvent } from './hubUtils';
+import { localToday, isWorkEvent, hoursUntilEvent, useCountdown } from './hubUtils';
 import { withinLast24h } from '@/lib/dates';
 import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
 
@@ -32,6 +33,7 @@ import { MySponsoredQuestsSection } from './senior/MySponsoredQuestsSection';
 import { ReceiptSubmissionModal } from './senior/ReceiptSubmissionModal';
 import { FamilyMemoriesCard } from './senior/FamilyMemoriesCard';
 import { PickupRadarStatus } from './hubComponents';
+import { KidRideBanner } from './kid/KidRideBanner';
 
 export function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute, activeTrips }: {
   active: FamilyMember; members: FamilyMember[];
@@ -43,6 +45,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   activeTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
 }) {
   const { events, updateEvent } = useEventStore();
+  const sendMessage = useChatStore(s => s.sendMessage);
   // Scenarios 9.2/9.3 — caregiver mode: if a parent has granted this GP
   // temporary approval access, isActiveApprover flips true and the review
   // deck below appears. loadFromStorage may not have run yet if SeniorView
@@ -547,6 +550,37 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     // placeholder for an already-scheduled event instead of hiding it.
     (!isEventSensitive(e) || canViewSensitiveEventDetail(e, 'senior', active.id, active.name) === 'full')
   );
+  // Confirmed ride where THIS grandparent is being picked up (the ride's
+  // subject/rider — e.g. a parent or another family member driving them
+  // somewhere), not one they're driving. Scoped to memberId/memberIds so
+  // it never matches myDrivingToday/myPendingAssignments above, which are
+  // matched on driver name instead. Same pattern as KidView/TeenView.
+  const [dismissedRideIds, setDismissedRideIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    AsyncStorage.getItem(`dismissed_rides_${active.id}`).then(val => {
+      if (val) setDismissedRideIds(new Set(JSON.parse(val)));
+    });
+  }, [active.id]);
+  useEffect(() => {
+    AsyncStorage.setItem(`dismissed_rides_${active.id}`, JSON.stringify([...dismissedRideIds]));
+  }, [dismissedRideIds, active.id]);
+
+  const confirmedRide = upcomingEvents.find(e => {
+    if (e.date < today) return false;
+    if (!(e.memberId === active.id || e.memberIds?.includes(active.id))) return false;
+    const a = eventAssignee(e);
+    return a.name && a.status === 'confirmed';
+  });
+  const rideCountdown = useCountdown(confirmedRide?.date, confirmedRide?.time);
+
+  // Either side (rider or driver) can confirm a pickup actually happened —
+  // mirrors KidView's confirmPickup exactly, scoped to this GP as rider.
+  const confirmPickup = (ev: typeof events[0]) => {
+    if (ev.pickupConfirmedAt) return;
+    updateEvent(ev.id, { pickupConfirmedAt: new Date().toISOString(), pickupConfirmedBy: active.id });
+    sendMessage('all', active.id, `✅ ${active.name.split(' ')[0]} confirmed pickup for "${ev.title}" — all good!`);
+  };
+
   // Urgent pending: I still haven't replied and < 1 hr to go
   const urgentPending = myPendingAssignments.filter(e =>
     hoursUntilEvent(e.date, e.time) < 1 && hoursUntilEvent(e.date, e.time) >= 0
@@ -652,6 +686,15 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           </View>
           <ParentReviewDeck parent={active} members={members} colors={colors} isDark={isDark} />
         </View>
+      )}
+
+      {confirmedRide && rideCountdown !== null && rideCountdown > -30 && !dismissedRideIds.has(confirmedRide.id) && (
+        <KidRideBanner
+          ev={confirmedRide} rideCountdown={rideCountdown} colors={colors} isDark={isDark}
+          active={active}
+          onConfirmPickup={confirmPickup}
+          onDismiss={(id) => setDismissedRideIds(prev => new Set([...prev, id]))}
+        />
       )}
 
       {activeTrips?.map(trip => (

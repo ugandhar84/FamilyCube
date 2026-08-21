@@ -1,5 +1,7 @@
 // Shared pure utilities for the Hub feature.
 
+import { useState, useEffect } from 'react';
+
 export function localToday(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -61,4 +63,26 @@ const CAT_COLOR: Record<string, string> = {
 
 export function catColor(cat?: string): string {
   return cat ? (CAT_COLOR[cat] ?? BRAND.teal) : BRAND.teal;
+}
+
+// ─── Ride countdown hook ──────────────────────────────────────────────────────
+// Shared by KidView/TeenView/SeniorView — any role that can be a ride's rider
+// (not driver) needs the same "minutes until pickup" countdown for its own
+// ride banner/hero card.
+export function useCountdown(date?: string, time?: string) {
+  const [mins, setMins] = useState<number | null>(null);
+  useEffect(() => {
+    if (!date || !time) { setMins(null); return; }
+    const tick = () => {
+      const [h, m] = time.split(':').map(Number);
+      const target = new Date();
+      target.setFullYear(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)));
+      target.setHours(h, m, 0, 0);
+      setMins(Math.round((target.getTime() - Date.now()) / 60000));
+    };
+    tick();
+    const id = setInterval(tick, 30000);
+    return () => clearInterval(id);
+  }, [date, time]);
+  return mins;
 }

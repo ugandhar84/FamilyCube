@@ -11,7 +11,7 @@ import { useKidRequestStore } from '@/store/kidRequestStore';
 import { withinLast24h } from '@/lib/dates';
 import { KidRequestModal } from '@/features/calendar/KidRequestModal';
 import { useChatStore } from '@/store/chatStore';
-import { localToday, fmtTime, hoursUntilEvent } from './hubUtils';
+import { localToday, fmtTime, hoursUntilEvent, useCountdown } from './hubUtils';
 
 // Encoding helpers and modals live in KidModals.tsx
 export { GROCERY_PREFIX, SUPPLIES_PREFIX, encodeGroceryRequest, decodeGroceryRequest } from './KidModals';
@@ -35,25 +35,6 @@ import { PiggyBankSheet } from './kid/PiggyBankSheet';
 import { SubmitProofSheet } from './kid/SubmitProofSheet';
 import { DeclineQuestSheet } from './kid/DeclineQuestSheet';
 import { AskParentSheet } from './kid/AskParentSheet';
-
-// ─── Ride countdown hook ──────────────────────────────────────────────────────
-function useCountdown(date?: string, time?: string) {
-  const [mins, setMins] = useState<number | null>(null);
-  useEffect(() => {
-    if (!date || !time) { setMins(null); return; }
-    const tick = () => {
-      const [h, m] = time.split(':').map(Number);
-      const target = new Date();
-      target.setFullYear(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)));
-      target.setHours(h, m, 0, 0);
-      setMins(Math.round((target.getTime() - Date.now()) / 60000));
-    };
-    tick();
-    const id = setInterval(tick, 30000);
-    return () => clearInterval(id);
-  }, [date, time]);
-  return mins;
-}
 
 // ─── Main KidView ──────────────────────────────────────────────────────────────
 export function KidView({ active, members, colors, isDark, activeTrips }: {

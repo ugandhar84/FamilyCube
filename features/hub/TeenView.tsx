@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Pressable, Alert, ScrollView } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Bell, ShoppingCart, ClipboardList, Car, Fuel, BookOpen, CreditCard, MessageCircle,
 } from 'lucide-react-native';
@@ -14,7 +15,7 @@ import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
-import { localToday, hoursUntilEvent } from './hubUtils';
+import { localToday, hoursUntilEvent, useCountdown } from './hubUtils';
 import { KidRequestHistoryModal, GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from './KidModals';
 import { AskParentSheet } from './kid/AskParentSheet';
 import { MyQuestsSection } from './kid/MyQuestsSection';
@@ -24,6 +25,7 @@ import { HubTimelineSection } from './HubTimelineSection';
 import { HubGreetingHeader } from './HubGreetingHeader';
 import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
 import { PickupRadarStatus } from './hubComponents';
+import { KidRideBanner } from './kid/KidRideBanner';
 import { TeenTile } from './teen/TeenTile';
 import { TeenTileSheet } from './teen/TeenTileSheet';
 import { TeenCarDispatchSection } from './teen/TeenCarDispatchSection';
@@ -134,6 +136,29 @@ export function TeenView({ active, members, colors, isDark, activeTrips }: {
   const [passedPickups, setPassedPickups] = useState<string[]>([]);
   const urgentPickups = openPickups.filter(e => !passedPickups.includes(e.id) &&
     hoursUntilEvent(e.date, e.time) >= 0 && hoursUntilEvent(e.date, e.time) < 1);
+
+  // Confirmed ride where THIS teen is being picked up (the ride's subject/
+  // rider), not driving it — same pattern KidView uses for confirmedRide.
+  // Scoped to memberId/memberIds so a teen driving someone else's ride
+  // (myPickups above, matched on driver name) never double-counts as their
+  // own pickup banner.
+  const [dismissedRideIds, setDismissedRideIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    AsyncStorage.getItem(`dismissed_rides_${active.id}`).then(val => {
+      if (val) setDismissedRideIds(new Set(JSON.parse(val)));
+    });
+  }, [active.id]);
+  useEffect(() => {
+    AsyncStorage.setItem(`dismissed_rides_${active.id}`, JSON.stringify([...dismissedRideIds]));
+  }, [dismissedRideIds, active.id]);
+
+  const confirmedRide = upcomingEvents.find(e => {
+    if (e.date < today) return false;
+    if (!(e.memberId === active.id || e.memberIds?.includes(active.id))) return false;
+    const a = eventAssignee(e);
+    return a.name && a.status === 'confirmed';
+  });
+  const rideCountdown = useCountdown(confirmedRide?.date, confirmedRide?.time);
   // A direct assignment awaiting confirmation is at least as urgent as an
   // open pickup up for grabs — it's already on this teen specifically —
   // so it counts toward the same "Rides" tile badge.
@@ -207,6 +232,14 @@ export function TeenView({ active, members, colors, isDark, activeTrips }: {
     updateEvent(evId, isDriverPair ? { driverStatus: 'confirmed' } : { helperStatus: 'confirmed' });
   };
 
+  // Either side (rider or driver) can confirm a pickup actually happened —
+  // mirrors KidView's confirmPickup exactly, scoped to this teen as rider.
+  const confirmPickup = (ev: typeof events[0]) => {
+    if (ev.pickupConfirmedAt) return;
+    updateEvent(ev.id, { pickupConfirmedAt: new Date().toISOString(), pickupConfirmedBy: active.id });
+    sendMessage('all', active.id, `✅ ${active.name.split(' ')[0]} confirmed pickup for "${ev.title}" — all good!`);
+  };
+
   // ── Tutoring / sibling help ───────────────────────────────────────────────────
   const myPendingOffers = requests.filter(r =>
     r.fromMemberId === active.id && r.status === 'pending' && (r.type === 'tutor' || r.type === 'cheer')
@@ -272,6 +305,15 @@ export function TeenView({ active, members, colors, isDark, activeTrips }: {
         balance={active.mainCoins ?? active.coins ?? 0}
         colors={colors} isDark={isDark}
       />
+
+      {confirmedRide && rideCountdown !== null && rideCountdown > -30 && !dismissedRideIds.has(confirmedRide.id) && (
+        <KidRideBanner
+          ev={confirmedRide} rideCountdown={rideCountdown} colors={colors} isDark={isDark}
+          active={active}
+          onConfirmPickup={confirmPickup}
+          onDismiss={(id) => setDismissedRideIds(prev => new Set([...prev, id]))}
+        />
+      )}
 
       {activeTrips?.map(trip => (
         <PickupRadarStatus key={trip.tripId} colors={colors} isDark={isDark} activeTrip={trip} />

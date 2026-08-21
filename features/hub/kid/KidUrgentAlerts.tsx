@@ -6,7 +6,7 @@ import {
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { KID } from './kidTheme';
 import CelebrationBurst from '@/components/CelebrationBurst';
-import { fmtTime } from '../hubUtils';
+import { fmtTime, hoursUntilEvent } from '../hubUtils';
 import type { FamilyMember } from '@/store/familyStore';
 import { eventAssignee } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
@@ -84,11 +84,21 @@ export function KidUrgentAlerts({
           onDismiss={() => onDismiss(`ride-${ev.id}`)} />
       ))}
 
-      {pendingRides.filter(ev => !dismissedIds.has(`pending-${ev.id}`)).map(ev => (
-        <AlertRow key={ev.id} Icon={Clock} accent={BRAND.amber} colors={colors} isDark={isDark}
-          title="Waiting on driver…" detail={`${ev.title} · ${fmtTime(ev.time)}`}
-          onDismiss={() => onDismiss(`pending-${ev.id}`)} />
-      ))}
+      {pendingRides.filter(ev => !dismissedIds.has(`pending-${ev.id}`)).map(ev => {
+        // Parent's own Hub escalates an unassigned ride once it's <2hr away
+        // (ParentView.tsx's unassignedUrgent) — this alert rendered every
+        // pending ride identically regardless of how soon it was, so the
+        // assigned kid had no urgency signal at all for their own ride
+        // getting close, unlike both parents (QA Round 19, Medium).
+        const h = hoursUntilEvent(ev.date, ev.time);
+        const isUrgent = h >= 0 && h < 2;
+        return (
+          <AlertRow key={ev.id} Icon={isUrgent ? AlertTriangle : Clock} accent={isUrgent ? colors.danger : BRAND.amber} colors={colors} isDark={isDark}
+            title={isUrgent ? 'Still no driver — getting close!' : 'Waiting on driver…'}
+            detail={`${ev.title} · ${fmtTime(ev.time)}`}
+            onDismiss={() => onDismiss(`pending-${ev.id}`)} />
+        );
+      })}
 
       {declinedQuests.filter(q => !dismissedIds.has(`quest-${q.id}`)).map(q => {
         const note = q.history?.slice().reverse().find((h: any) => h.action === 'declined')?.note;

@@ -219,14 +219,15 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'propose_quest',
-      description: 'Propose creating a quest/chore. Does NOT create it — returns a proposal the user must confirm. Use for choreable to-dos with no fixed appointment time.',
+      description: 'Propose creating a quest/chore. Does NOT create it — returns a proposal the user must confirm. Use for choreable to-dos, not a fixed calendar appointment — but a quest CAN still carry a specific due time (e.g. "clean the dishwasher at 8 tonight" is a quest due today at 20:00, not a new calendar event).',
       parameters: {
         type: 'object',
         properties: {
           title:         { type: 'string' },
           coins:         { type: 'number' },
           memberName:    { type: 'string', description: 'Who this is assigned to, if named — omit for the open pool' },
-          dueDate:       { type: 'string', description: 'YYYY-MM-DD, if a deadline was implied' },
+          dueDate:       { type: 'string', description: 'YYYY-MM-DD, if a deadline was implied — resolve "today"/"tonight"/"tomorrow" yourself using the current date' },
+          dueTime:       { type: 'string', description: 'HH:MM 24-hour, if a specific deadline time was implied (e.g. "at 8 tonight" -> "20:00", "by 5pm" -> "17:00"). Omit if no specific time was mentioned, even if dueDate is set.' },
           photoRequired: { type: 'boolean' },
           alertCallLeadMinutes: {
             type: 'number',
@@ -715,6 +716,27 @@ serve(async (req) => {
       .select('role, content, tool_calls, tool_call_id, tool_name')
       .eq('conversation_id', conversationId).order('created_at').limit(30);
 
+    // Every raw tool-call/tool-result pair from every past turn was being
+    // replayed to the model on every single new message — a conversation a
+    // few turns into "what's going on this week" style questions ships the
+    // full get_schedule/get_quests JSON payloads back and forth on every
+    // subsequent turn even though the model only ever needs THIS turn's
+    // tool results; the assistant's own final text reply after each old
+    // round already summarized what mattered. Keep tool rounds (an
+    // assistant tool_calls message plus its paired tool result rows) only
+    // from the most recent round that had them — older rounds collapse to
+    // nothing but the assistant's own final natural-language reply that
+    // followed them, which is what the user actually saw and is >90%
+    // smaller than the raw data it was built from. Plain user/assistant
+    // text turns are untouched (that's the real conversational context
+    // worth keeping).
+    const rows = priorMessages ?? [];
+    const lastToolCallIdx = rows.reduce((last, m, i) => (m.tool_calls?.length ? i : last), -1);
+    const trimmedPriorMessages = rows.filter((m, i) => {
+      if (m.role !== 'tool' && !m.tool_calls?.length) return true; // plain text turn — always keep
+      return i >= lastToolCallIdx; // only the most recent tool round (its assistant call + all its result rows) survives
+    });
+
     const today = new Date().toISOString().slice(0, 10);
     const systemPrompt = `You are Cube, the family's assistant inside FamilyCube. Today is ${today}.
 You're talking to ${viewerAlias} (role: ${member.role}).
@@ -766,7 +788,7 @@ Keep answers concise and conversational, not a bulleted data dump unless the use
 
     const messages: any[] = [
       { role: 'system', content: systemPrompt },
-      ...(priorMessages ?? []).map(m => {
+      ...trimmedPriorMessages.map(m => {
         if (m.role === 'tool') return { role: 'tool', tool_call_id: m.tool_call_id, name: m.tool_name, content: m.content };
         if (m.tool_calls) return { role: 'assistant', content: m.content, tool_calls: m.tool_calls };
         return { role: m.role, content: m.content };

@@ -32,10 +32,11 @@ export function MealHero({ imageUrl, emoji, accent, height }: { imageUrl?: strin
 }
 
 const KIND_META: Record<AskCubeProposal['kind'], { label: string; icon: any; accent: string }> = {
-  event:   { label: 'Event draft',   icon: Calendar,      accent: 'primary' },
-  quest:   { label: 'Quest draft',   icon: ClipboardList, accent: 'kid' },
-  grocery: { label: 'Grocery draft', icon: ShoppingCart,  accent: 'teal' },
-  meal:    { label: 'Meal draft',    icon: ChefHat,       accent: 'amber' },
+  event:          { label: 'Event draft',    icon: Calendar,      accent: 'primary' },
+  quest:          { label: 'Quest draft',    icon: ClipboardList, accent: 'kid' },
+  grocery:        { label: 'Grocery draft',  icon: ShoppingCart,  accent: 'teal' },
+  meal:           { label: 'Meal draft',     icon: ChefHat,       accent: 'amber' },
+  event_reminder: { label: 'Reminder draft', icon: Clock,         accent: 'primary' },
 };
 
 function memberName(members: FamilyMember[], id?: string | null) {
@@ -115,7 +116,8 @@ export default function AskCubeProposalCard({
       <Pressable onPress={onCreate}
         style={{ flex: 2, borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: accent }}>
         <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>
-          {proposal.kind === 'grocery' ? `Add ${d.items?.length ?? ''} item${d.items?.length === 1 ? '' : 's'}` : 'Create'}
+          {proposal.kind === 'grocery' ? `Add ${d.items?.length ?? ''} item${d.items?.length === 1 ? '' : 's'}`
+            : proposal.kind === 'event_reminder' ? 'Set reminder' : 'Create'}
         </Text>
       </Pressable>
     </View>
@@ -236,6 +238,29 @@ export default function AskCubeProposalCard({
               </Text>
             </View>
           )}
+        </View>
+        {Actions}
+      </View>
+    );
+  }
+
+  if (proposal.kind === 'event_reminder') {
+    return (
+      <View style={cardBase}>
+        {Header}
+        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          {!!d.date && (
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+              {new Date(`${d.date}T${d.time ?? '00:00'}`).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+            </Text>
+          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Clock size={12} color={colors.textSecondary} />
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+              📞 {d.alertCallLeadMinutes ? `${d.alertCallLeadMinutes} min before` : 'On time'}
+            </Text>
+          </View>
         </View>
         {Actions}
       </View>

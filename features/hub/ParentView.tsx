@@ -27,7 +27,7 @@ import { ChoreReviewSection } from './parent/ChoreReviewSection';
 import { PushbackSheet } from './parent/PushbackSheet';
 import { DelegateSheet } from './parent/DelegateSheet';
 
-export function ParentView({ active, members, colors, isDark, onScanFlyer, onDispatchDirect, onPickupDone, onCancelTrip, activeTrip, onUpdateEta }: {
+export function ParentView({ active, members, colors, isDark, onScanFlyer, onDispatchDirect, onPickupDone, onCancelTrip, activeTrip, otherActiveTrips, onUpdateEta }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   onScanFlyer: () => void;
@@ -35,10 +35,16 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // is linked, else undefined for a generic "family" broadcast. Matches the
   // mock's plain in-card toggle exactly (no picker ever).
   onDispatchDirect: (memberId: string | undefined, etaMinutes: number) => void;
-  onPickupDone: () => void;
-  onCancelTrip: () => void;
-  activeTrip?: { kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number } | null;
-  onUpdateEta?: (etaMinutes: number) => void;
+  onPickupDone: (tripId: string) => void;
+  onCancelTrip: (tripId: string) => void;
+  activeTrip?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number } | null;
+  // Every OTHER concurrently-active trip besides `activeTrip` (e.g. a
+  // different parent's own trip, running at the same time as this parent's)
+  // — rendered read-only below `activeTrip`'s own card so a trip started by
+  // someone else is never invisible just because this parent's Hub is
+  // showing their own dispatch UI in the primary slot.
+  otherActiveTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
+  onUpdateEta?: (tripId: string, etaMinutes: number) => void;
 }) {
   const { quests, approveQuest, declineQuest, updateQuest } = useQuestStore();
   const { events, updateEvent, addEvent, updateEventScoped }  = useEventStore();
@@ -581,8 +587,8 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
           colors={colors} isDark={isDark}
           members={members} activeMemberId={active.id}
           onDispatchRide={(etaMinutes, memberId) => onDispatchDirect(memberId ?? nextRide?.memberId, etaMinutes)}
-          onPickupDone={onPickupDone}
-          onCancelTrip={onCancelTrip}
+          onPickupDone={() => activeTrip && onPickupDone(activeTrip.tripId)}
+          onCancelTrip={() => activeTrip && onCancelTrip(activeTrip.tripId)}
           nextRide={nextRide ? {
             kidName: members.find(m => m.id === nextRide.memberId)?.name.split(' ')[0] ?? 'Family',
             kidEmoji: members.find(m => m.id === nextRide.memberId)?.emoji,
@@ -591,9 +597,20 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
             location: nextRide.location,
             hoursUntil: hoursUntilEvent(nextRide.date, nextRide.time),
           } : null}
-          activeTrip={activeTrip} onUpdateEta={onUpdateEta}
+          activeTrip={activeTrip}
+          onUpdateEta={(etaMinutes) => activeTrip && onUpdateEta?.(activeTrip.tripId, etaMinutes)}
         />
       )}
+
+      {/* Every OTHER family member's concurrently-active trip — e.g. the
+          other parent driving a different pickup right now. Always
+          read-only here regardless of who's driving it, since the slot
+          above already covers this parent's own trip (interactive) or the
+          single most-relevant other trip (read-only); this covers however
+          many MORE trips are active beyond that one. */}
+      {otherActiveTrips?.map(trip => (
+        <PickupRadarStatus key={trip.tripId} colors={colors} isDark={isDark} activeTrip={trip} />
+      ))}
 
       <View style={pad}>
         <FamilyRadarSection members={members} colors={colors} isDark={isDark} />

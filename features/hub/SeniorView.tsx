@@ -33,13 +33,14 @@ import { ReceiptSubmissionModal } from './senior/ReceiptSubmissionModal';
 import { FamilyMemoriesCard } from './senior/FamilyMemoriesCard';
 import { PickupRadarStatus } from './hubComponents';
 
-export function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute, activeTrip }: {
+export function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute, activeTrips }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   onHelpRequest: () => void;
   onEnRoute: () => void;
-  // Family-wide Pick-up Radar state, synced from tripStore — read-only here.
-  activeTrip?: { kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; etaMinutes: number; startedAtMs?: number } | null;
+  // Family-wide Pick-up Radar state, synced from tripStore — read-only
+  // here. Every concurrently active trip is shown, not just one.
+  activeTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
 }) {
   const { events, updateEvent } = useEventStore();
   // Scenarios 9.2/9.3 — caregiver mode: if a parent has granted this GP
@@ -653,7 +654,9 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         </View>
       )}
 
-      {activeTrip && <PickupRadarStatus colors={colors} isDark={isDark} activeTrip={activeTrip} />}
+      {activeTrips?.map(trip => (
+        <PickupRadarStatus key={trip.tripId} colors={colors} isDark={isDark} activeTrip={trip} />
+      ))}
 
       <YourRidesSection
         myPendingAssignments={dedupMyPendingAssignments}

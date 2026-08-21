@@ -56,13 +56,15 @@ function useCountdown(date?: string, time?: string) {
 }
 
 // ─── Main KidView ──────────────────────────────────────────────────────────────
-export function KidView({ active, members, colors, isDark, activeTrip }: {
+export function KidView({ active, members, colors, isDark, activeTrips }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   // Family-wide Pick-up Radar state, synced from tripStore — shown here
   // read-only (driver controls the ETA/Pickup Done) so a kid can see the
-  // same live trip progress the driver's own Hub shows.
-  activeTrip?: { kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; etaMinutes: number; startedAtMs?: number } | null;
+  // same live trip progress the driver's own Hub shows. Every concurrently
+  // active trip is shown, not just one, since a trip is visible family-wide
+  // regardless of who's driving or who it's for.
+  activeTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
 }) {
   const { quests, submitQuest, claimQuest, cheerQuest } = useQuestStore();
   const { startGrandparentQuest, declineGrandparentQuest } = useChoreStore();
@@ -360,7 +362,9 @@ export function KidView({ active, members, colors, isDark, activeTrip }: {
         />
       )}
 
-      {activeTrip && <PickupRadarStatus colors={colors} isDark={isDark} activeTrip={activeTrip} />}
+      {activeTrips?.map(trip => (
+        <PickupRadarStatus key={trip.tripId} colors={colors} isDark={isDark} activeTrip={trip} />
+      ))}
 
       <KidCheckinRow colors={colors} onCheckin={sendCheckin} />
       <KidActionRow colors={colors} isDark={isDark}

@@ -4,8 +4,18 @@
  * A trip is family-wide, not driver-only: the requester (whoever the ride
  * is for), any other kid/teen, and every parent all see the same live
  * progress on their own Hub, synced via Supabase realtime — not just the
- * driver's own device. AsyncStorage caches the last-known trip so it
- * survives an app reload before the realtime channel reconnects.
+ * driver's own device. AsyncStorage caches the last-known trips so they
+ * survive an app reload before the realtime channel reconnects.
+ *
+ * Multiple trips CAN be active at once for a family — e.g. two parents each
+ * independently driving to pick up a different kid at the same time. The
+ * DB (`trips` table) has never enforced a one-active-trip-per-family limit;
+ * that used to be a client-side assumption only (`activeTrip: Trip | null`),
+ * which meant a second parent dispatching their own trip would silently
+ * clobber the first parent's trip on every device's local state. The store
+ * now tracks a list, keyed by trip id, so concurrent trips from different
+ * drivers coexist correctly. The one real constraint kept is per-DRIVER:
+ * the same person can't sanely be "en route" to two places at once.
  */
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -49,9 +59,15 @@ function fromRow(row: TripRow): Trip {
 const DISK_TRIP = '@fc_active_trip_v1';
 
 interface TripState {
-  // Null = no active trip. At most one active (completed_at IS NULL) trip
-  // per family is expected — dispatching a new one while another is active
-  // isn't a flow the UI currently offers.
+  // Every currently-active (completed_at IS NULL) trip for the family —
+  // zero, one, or more. `activeTrip` below is a derived convenience getter
+  // for the common single-trip case; callers that need to distinguish
+  // between concurrent trips (e.g. per-driver effects, multi-banner
+  // rendering) should read `activeTrips` directly.
+  activeTrips: Trip[];
+  // Convenience: the most-recently-started active trip, or null. Kept for
+  // callers that only ever cared about "the" trip — behaves identically to
+  // the old `activeTrip` field when at most one trip is active.
   activeTrip: Trip | null;
   loaded: boolean;
 
@@ -60,15 +76,24 @@ interface TripState {
     familyId: string; driverMemberId: string;
     pickupMemberId?: string; etaMinutes: number;
   }) => Promise<void>;
-  updateEta: (etaMinutes: number) => Promise<void>;
-  markOverdueAlertSent: () => Promise<void>;
-  complete: () => Promise<void>;
+  updateEta: (tripId: string, etaMinutes: number) => Promise<void>;
+  markOverdueAlertSent: (tripId: string) => Promise<void>;
+  complete: (tripId: string) => Promise<void>;
+}
+
+function deriveActiveTrip(trips: Trip[]): Trip | null {
+  if (trips.length === 0) return null;
+  return [...trips].sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+}
+
+function persist(trips: Trip[]) {
+  AsyncStorage.setItem(DISK_TRIP, JSON.stringify(trips));
 }
 
 let _rtChannel: ReturnType<typeof supabase.channel> | null = null;
 let _rtFamilyId = '';
 
-function ensureRealtime(familyId: string, set: (s: Partial<TripState>) => void) {
+function ensureRealtime(familyId: string, set: (fn: (s: TripState) => Partial<TripState>) => void) {
   if (_rtFamilyId === familyId && _rtChannel) return;
   if (_rtChannel) { supabase.removeChannel(_rtChannel); _rtChannel = null; }
   _rtFamilyId = familyId;
@@ -82,22 +107,36 @@ function ensureRealtime(familyId: string, set: (s: Partial<TripState>) => void) 
         const row = (payload.new ?? payload.old) as TripRow | undefined;
         if (!row) return;
         const trip = fromRow(row as TripRow);
-        const next = trip.completedAt ? null : trip;
-        set({ activeTrip: next });
-        AsyncStorage.setItem(DISK_TRIP, JSON.stringify(next));
+
+        set((state) => {
+          // Patch just the ONE trip that changed, keyed by id — never
+          // replace the whole list off a single row. A prior version did
+          // `set({ activeTrip: next })` on every insert/update, which meant
+          // any OTHER family member starting their own trip would overwrite
+          // (and appear to delete) everyone else's view of an unrelated,
+          // still-running trip.
+          const withoutThis = state.activeTrips.filter(t => t.id !== trip.id);
+          const nextTrips = trip.completedAt ? withoutThis : [...withoutThis, trip];
+          persist(nextTrips);
+          return { activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) };
+        });
       }
     )
     .subscribe();
 }
 
 export const useTripStore = create<TripState>((set, get) => ({
+  activeTrips: [],
   activeTrip: null,
   loaded: false,
 
   loadFromStorage: async (familyId) => {
     try {
       const raw = await AsyncStorage.getItem(DISK_TRIP);
-      if (raw) set({ activeTrip: JSON.parse(raw) });
+      if (raw) {
+        const cached: Trip[] = JSON.parse(raw);
+        set({ activeTrips: cached, activeTrip: deriveActiveTrip(cached) });
+      }
     } catch {}
 
     ensureRealtime(familyId, set);
@@ -107,24 +146,30 @@ export const useTripStore = create<TripState>((set, get) => ({
       .select('*')
       .eq('family_id', familyId)
       .is('completed_at', null)
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .order('started_at', { ascending: true });
 
-    const trip = data ? fromRow(data as TripRow) : null;
-    set({ activeTrip: trip, loaded: true });
-    AsyncStorage.setItem(DISK_TRIP, JSON.stringify(trip));
+    const trips = (data ?? []).map(row => fromRow(row as TripRow));
+    set({ activeTrips: trips, activeTrip: deriveActiveTrip(trips), loaded: true });
+    persist(trips);
   },
 
   dispatch: async ({ familyId, driverMemberId, pickupMemberId, etaMinutes }) => {
+    // Same-driver guard only: one person can't sanely be "en route" to two
+    // places simultaneously. A DIFFERENT driver dispatching their own trip
+    // while this one is active is a normal two-parent scenario and must NOT
+    // be blocked — that's the whole point of this being a list now.
+    const existing = get().activeTrips.find(t => t.driverMemberId === driverMemberId);
+    if (existing) return;
+
     const id = `trip_${Date.now()}`;
     const startedAt = new Date().toISOString();
     const optimistic: Trip = {
       id, familyId, driverMemberId, pickupMemberId, etaMinutes, startedAt,
       overdueAlertSent: false,
     };
-    set({ activeTrip: optimistic });
-    AsyncStorage.setItem(DISK_TRIP, JSON.stringify(optimistic));
+    const nextTrips = [...get().activeTrips, optimistic];
+    set({ activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) });
+    persist(nextTrips);
 
     await supabase.from('trips').insert({
       id, family_id: familyId, driver_member_id: driverMemberId,
@@ -133,29 +178,32 @@ export const useTripStore = create<TripState>((set, get) => ({
     });
   },
 
-  updateEta: async (etaMinutes) => {
-    const trip = get().activeTrip;
-    if (!trip) return;
-    const next = { ...trip, etaMinutes };
-    set({ activeTrip: next });
-    AsyncStorage.setItem(DISK_TRIP, JSON.stringify(next));
-    await supabase.from('trips').update({ eta_minutes: etaMinutes }).eq('id', trip.id);
+  updateEta: async (tripId, etaMinutes) => {
+    const trips = get().activeTrips;
+    const idx = trips.findIndex(t => t.id === tripId);
+    if (idx === -1) return;
+    const nextTrips = trips.map(t => t.id === tripId ? { ...t, etaMinutes } : t);
+    set({ activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) });
+    persist(nextTrips);
+    await supabase.from('trips').update({ eta_minutes: etaMinutes }).eq('id', tripId);
   },
 
-  markOverdueAlertSent: async () => {
-    const trip = get().activeTrip;
+  markOverdueAlertSent: async (tripId) => {
+    const trips = get().activeTrips;
+    const trip = trips.find(t => t.id === tripId);
     if (!trip || trip.overdueAlertSent) return;
-    const next = { ...trip, overdueAlertSent: true };
-    set({ activeTrip: next });
-    AsyncStorage.setItem(DISK_TRIP, JSON.stringify(next));
-    await supabase.from('trips').update({ overdue_alert_sent: true }).eq('id', trip.id);
+    const nextTrips = trips.map(t => t.id === tripId ? { ...t, overdueAlertSent: true } : t);
+    set({ activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) });
+    persist(nextTrips);
+    await supabase.from('trips').update({ overdue_alert_sent: true }).eq('id', tripId);
   },
 
-  complete: async () => {
-    const trip = get().activeTrip;
-    if (!trip) return;
-    set({ activeTrip: null });
-    AsyncStorage.setItem(DISK_TRIP, JSON.stringify(null));
-    await supabase.from('trips').update({ completed_at: new Date().toISOString() }).eq('id', trip.id);
+  complete: async (tripId) => {
+    const trips = get().activeTrips;
+    if (!trips.some(t => t.id === tripId)) return;
+    const nextTrips = trips.filter(t => t.id !== tripId);
+    set({ activeTrips: nextTrips, activeTrip: deriveActiveTrip(nextTrips) });
+    persist(nextTrips);
+    await supabase.from('trips').update({ completed_at: new Date().toISOString() }).eq('id', tripId);
   },
 }));

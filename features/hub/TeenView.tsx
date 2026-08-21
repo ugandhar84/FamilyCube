@@ -36,11 +36,12 @@ const pad = { paddingHorizontal: 16, marginBottom: 4 } as const;
 
 type SheetKey = 'rides' | 'gas' | 'tutor' | 'grocery' | 'cashout' | 'history' | null;
 
-export function TeenView({ active, members, colors, isDark, activeTrip }: {
+export function TeenView({ active, members, colors, isDark, activeTrips }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
-  // Family-wide Pick-up Radar state, synced from tripStore — read-only here.
-  activeTrip?: { kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; etaMinutes: number; startedAtMs?: number } | null;
+  // Family-wide Pick-up Radar state, synced from tripStore — read-only
+  // here. Every concurrently active trip is shown, not just one.
+  activeTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
 }) {
   const { events, updateEvent } = useEventStore();
   const familyIdForRides = (active as any).familyId as string | undefined;
@@ -272,7 +273,9 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
         colors={colors} isDark={isDark}
       />
 
-      {activeTrip && <PickupRadarStatus colors={colors} isDark={isDark} activeTrip={activeTrip} />}
+      {activeTrips?.map(trip => (
+        <PickupRadarStatus key={trip.tripId} colors={colors} isDark={isDark} activeTrip={trip} />
+      ))}
 
       <HubTimelineSection active={active} members={members} events={visibleEvents} updateEvent={updateEvent} colors={colors} isDark={isDark} />
 

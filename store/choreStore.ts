@@ -1746,10 +1746,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       return true;
     }
 
-    // Spec: if redo_count >= 2, auto-approve immediately — no more manual review
-    if ((chore.redoCount ?? 0) >= 2) {
+    // Spec: if redo_count >= 2, auto-approve immediately — no more manual
+    // review. Same photo-proof gap as resubmitChore's identical branch:
+    // must still require a photo before this fires for a photo-required
+    // chore, not silently pay out with no proof on file.
+    if ((chore.redoCount ?? 0) >= 2 && (!chore.requiresPhotoProof || !!opts?.photoUrl)) {
       const now = new Date().toISOString();
-      get().updateChore(choreId, { status: 'auto_approved', approvedAt: now, reviewedAt: now });
+      get().updateChore(choreId, {
+        status: 'auto_approved', approvedAt: now, reviewedAt: now,
+        submissionNote: opts?.note, submissionPhotoUrl: opts?.photoUrl, submittedAt: now,
+      });
       const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
       const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
       // Scenario 1.13 — same reward gate as approveChore: work still
@@ -1798,10 +1804,26 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       return;
     }
 
-    // Spec: redo_count >= 2 → auto-approve
-    if ((chore.redoCount ?? 0) >= 2) {
+    // Spec: redo_count >= 2 → auto-approve. Was: paid out unconditionally
+    // here with zero regard for opts?.photoUrl or chore.requiresPhotoProof
+    // — every UI entry point (Hub's SubmitProofSheet, the Quests tab's
+    // submit sheet, ChildChoreBoard) correctly resets its own local photo
+    // state and blocks its Submit button until a fresh photo is attached
+    // for redo attempts 1 and 2, but this 3rd-attempt auto-approve branch
+    // never checked at all — a kid tapping resubmit with no photo on their
+    // 3rd try (or a caller that bypassed the client gate) got paid for a
+    // photo-required chore with literally no proof on file (reported
+    // directly by the user). The "don't let a parent indefinitely
+    // stonewall a kid" protection stays intact — a photo is still
+    // required to actually trigger it, it just can't be skipped.
+    if ((chore.redoCount ?? 0) >= 2 && (!chore.requiresPhotoProof || !!opts?.photoUrl)) {
       const now = new Date().toISOString();
-      get().updateChore(choreId, { status: 'auto_approved', approvedAt: now, reviewedAt: now });
+      get().updateChore(choreId, {
+        status: 'auto_approved', approvedAt: now, reviewedAt: now,
+        submissionNote: opts?.note ?? chore.submissionNote,
+        submissionPhotoUrl: opts?.photoUrl ?? chore.submissionPhotoUrl,
+        submittedAt: now,
+      });
       const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
       const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
       // Scenario 1.13 — same reward gate as approveChore/submitChore.

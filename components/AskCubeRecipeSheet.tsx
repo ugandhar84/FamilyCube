@@ -7,7 +7,7 @@
  * specially, not as a plain text bubble).
  */
 import { useState, useEffect } from 'react';
-import { Modal, View, Text, Pressable, ScrollView } from 'react-native';
+import { View, Text, Pressable, ScrollView } from 'react-native';
 import { X, Clock, User, Send, Check } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
@@ -35,11 +35,16 @@ export default function AskCubeRecipeSheet({
   const { colors } = useTheme();
   const [shared, setShared] = useState(false);
   useEffect(() => { if (visible) setShared(false); }, [visible, data?.title]);
-  if (!data) return null;
+  if (!data || !visible) return null;
   const accent = colors.amber;
 
+  // Was a second nested <Modal> rendered inside AskCubeChat's own outer
+  // Modal — see AskCubeMealDayPicker.tsx's identical fix for why that's
+  // unreliable on iOS (silently fails to appear depending on timing, not a
+  // deterministic bug in when it's triggered). Same fix: a plain absolute
+  // overlay within the same outer Modal instead of its own native modal.
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50 }}>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 24 }}>
         <Pressable style={{ ...{ position: 'absolute' as const }, top: 0, left: 0, right: 0, bottom: 0 }} onPress={onClose} />
         <View style={{ backgroundColor: colors.card, borderRadius: 22, overflow: 'hidden', maxHeight: '80%' }}>
@@ -133,6 +138,6 @@ export default function AskCubeRecipeSheet({
           )}
         </View>
       </View>
-    </Modal>
+    </View>
   );
 }

@@ -6,7 +6,7 @@
  * future date via the native calendar picker, not just the current week.
  */
 import { useState, useEffect } from 'react';
-import { View, Text, Pressable, Modal } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Calendar } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
@@ -85,8 +85,19 @@ export default function AskCubeMealDayPicker({
     onConfirm(weekOf, dayAbbr, mealType, date);
   };
 
+  // Was a second nested <Modal> rendered inside AskCubeChat's own outer
+  // Modal — on iOS, RN's Modal presents its own native view controller, and
+  // stacking a second one inside an already-presented Modal is unreliable:
+  // it can silently fail to appear depending on timing (right after the
+  // parent modal's presentation animation, or triggered in the same render
+  // pass), which is exactly "sometimes shows, sometimes doesn't" rather
+  // than a deterministic bug in when it's triggered. This is already
+  // structured as a full-screen absolute overlay, so a plain View (gated
+  // on `visible`) positioned within the SAME outer Modal is both correct
+  // and reliable — no native modal-stacking involved.
+  if (!visible) return null;
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+    <View pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50 }}>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', padding: 24 }}>
         <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} onPress={onCancel} />
         <View style={{ backgroundColor: colors.card, borderRadius: 18, padding: 18, gap: 14 }}>
@@ -159,6 +170,6 @@ export default function AskCubeMealDayPicker({
           )}
         </View>
       </View>
-    </Modal>
+    </View>
   );
 }

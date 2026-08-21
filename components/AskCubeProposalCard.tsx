@@ -133,7 +133,7 @@ function ReminderPicker({ leadMinutes, hasReminder, accent, colors, onChange }: 
 }
 
 export default function AskCubeProposalCard({
-  proposal, members, onDiscard, onCreate, onExpand, compact, onChangeReminder,
+  proposal, members, onDiscard, onCreate, onExpand, compact, onChangeReminder, added,
 }: {
   proposal: AskCubeProposal;
   members: FamilyMember[];
@@ -148,6 +148,12 @@ export default function AskCubeProposalCard({
   // display — omitted entirely for proposal kinds with no reminder concept
   // (grocery/meal), so those never render a picker.
   onChangeReminder?: (leadMinutes: number) => void;
+  // Once accepted, the card previously vanished entirely — replaced by a
+  // single bare "✓ Title" text line, which read as the meal/event itself
+  // disappearing rather than a confirmation (user-reported: "it just
+  // briefly disappears"). Keep rendering the full card (photo, prep time,
+  // recipe) with a checkmark instead of the discard/create actions.
+  added?: boolean;
 }) {
   const { colors } = useTheme();
   const meta = KIND_META[proposal.kind];
@@ -158,14 +164,22 @@ export default function AskCubeProposalCard({
   if (compact && proposal.kind === 'meal') {
     return (
       <View style={{ backgroundColor: colors.card, borderRadius: 14,
-        borderWidth: 1.5, borderColor: accent + '40', overflow: 'hidden' }}>
+        borderWidth: 1.5, borderColor: (added ? colors.success : accent) + '40', overflow: 'hidden',
+        opacity: added ? 0.85 : 1 }}>
         <Pressable onPress={onExpand} disabled={!onExpand}>
           <MealHero imageUrl={d.imageUrl} emoji={d.emoji} accent={accent} height={72} />
-          <Pressable onPress={onDiscard} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            style={{ position: 'absolute', top: 6, right: 6, width: 22, height: 22, borderRadius: 11,
-              backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' }}>
-            <X size={12} color="#fff" />
-          </Pressable>
+          {added ? (
+            <View style={{ position: 'absolute', top: 6, right: 6, width: 22, height: 22, borderRadius: 11,
+              backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 12, fontWeight: '900', color: '#fff' }}>✓</Text>
+            </View>
+          ) : (
+            <Pressable onPress={onDiscard} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ position: 'absolute', top: 6, right: 6, width: 22, height: 22, borderRadius: 11,
+                backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' }}>
+              <X size={12} color="#fff" />
+            </Pressable>
+          )}
         </Pressable>
         <Pressable onPress={onExpand} disabled={!onExpand} style={{ padding: 10, gap: 4 }}>
           <Text style={{ fontSize: 12.5, fontWeight: '800', color: colors.textPrimary }} numberOfLines={2}>{d.title}</Text>
@@ -182,10 +196,16 @@ export default function AskCubeProposalCard({
           </View>
         </Pressable>
         <View style={{ paddingHorizontal: 10, paddingBottom: 10 }}>
-          <Pressable onPress={onCreate}
-            style={{ borderRadius: 8, paddingVertical: 7, alignItems: 'center', backgroundColor: accent }}>
-            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }}>Pick this</Text>
-          </Pressable>
+          {added ? (
+            <View style={{ borderRadius: 8, paddingVertical: 7, alignItems: 'center', backgroundColor: colors.successLight }}>
+              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.success }}>✓ Added</Text>
+            </View>
+          ) : (
+            <Pressable onPress={onCreate}
+              style={{ borderRadius: 8, paddingVertical: 7, alignItems: 'center', backgroundColor: accent }}>
+              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }}>Pick this</Text>
+            </Pressable>
+          )}
         </View>
       </View>
     );
@@ -200,7 +220,11 @@ export default function AskCubeProposalCard({
     </View>
   );
 
-  const Actions = (
+  const Actions = added ? (
+    <View style={{ borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: colors.successLight, marginTop: 4 }}>
+      <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.success }}>✓ Added</Text>
+    </View>
+  ) : (
     <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
       <Pressable onPress={onDiscard}
         style={{ flex: 1, borderRadius: 10, paddingVertical: 9, alignItems: 'center', borderWidth: 1, borderColor: colors.border }}>

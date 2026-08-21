@@ -509,13 +509,22 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                       <View style={{ width: '100%', flexDirection: isMealGrid ? 'row' : 'column', flexWrap: isMealGrid ? 'wrap' : 'nowrap', gap: isMealGrid ? 8 : 4 }}>
                         {m.proposals.map((p, i) => {
                           const status = m.proposalStatuses?.[i] ?? 'pending';
-                          if (status === 'pending') {
+                          // Was: any non-pending status collapsed the whole
+                          // card to a single bare text line — for 'created'
+                          // this read as the meal/event itself disappearing
+                          // rather than a confirmation (user-reported: "it
+                          // just briefly disappears"). Keep the real card
+                          // visible with a checkmark instead; 'discarded'
+                          // stays a plain text line since there's genuinely
+                          // nothing left worth showing for that one.
+                          if (status === 'pending' || status === 'created') {
                             return (
                               <View key={i} style={isMealGrid ? { width: '48%' } : undefined}>
                                 <AskCubeProposalCard
                                   proposal={p}
                                   members={members}
                                   compact={isMealGrid}
+                                  added={status === 'created'}
                                   onDiscard={() => discardProposal(m.id, i)}
                                   onCreate={() => createProposal(m.id, i, p)}
                                   onExpand={p.kind === 'meal' ? () => setExpandedRecipe({ msgId: m.id, index: i }) : undefined}
@@ -529,9 +538,9 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                             );
                           }
                           return (
-                            <Text key={i} style={{ marginTop: 4, fontSize: TYPO.label, fontWeight: status === 'created' ? '700' : '400',
-                              color: status === 'created' ? colors.success : colors.textTertiary, fontStyle: status === 'discarded' ? 'italic' : 'normal' }}>
-                              {status === 'created' ? `✓ ${p.data?.title ?? 'Created'}` : `${p.data?.title ?? 'Draft'} — discarded`}
+                            <Text key={i} style={{ marginTop: 4, fontSize: TYPO.label, fontWeight: '400',
+                              color: colors.textTertiary, fontStyle: 'italic' }}>
+                              {p.data?.title ?? 'Draft'} — discarded
                             </Text>
                           );
                         })}

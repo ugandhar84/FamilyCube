@@ -38,6 +38,7 @@ import PickerOverlay from './components/eventForm/PickerOverlay';
 import GroceryLinkSection from './components/eventForm/GroceryLinkSection';
 import CategoryFields from './components/eventForm/CategoryFields';
 import HelperAssignmentSection from './components/eventForm/HelperAssignmentSection';
+import { KidRideSection } from './components/eventForm/KidRideSection';
 import { f } from './components/eventForm/styles';
 import {
   EventCategory, CATEGORIES, SUGGESTIONS, SPORT_TYPES, SUBJECTS, APPT_TYPES,
@@ -750,49 +751,27 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               </View>
             )}
 
-            {/* ── Ride needed? (kid only) — moved above Date & Time so the
-                relationship reads correctly: this event happens at ONE
-                time (below); "Ride needed" just means "I also need
-                dropping off/picking up around that time," not a second
-                unrelated date to fill in. Toggling it on auto-fills
-                drop-off = this event's own date/time with no extra pick
-                required — a kid only ever has to touch a SEPARATE picker
-                for pickup (when the event ends), the one genuinely
-                different value. Previously this toggle sat below the date
-                section and, once on, asked the kid to re-enter a drop-off
-                date that already defaulted to the same value — reading as
-                3 separate date decisions for what's really 1-2 (user
-                feedback: "why do we need these many, kids also confuse"). */}
+            {/* ── Ride needed? + drop-off/pickup (kid only) — the whole
+                thing lives in one block, right above Date & Time, so cause
+                (the toggle) and effect (its own fields) are never split
+                apart by unrelated sections in between. Drop-off silently
+                pre-fills to this event's own date/time the moment the
+                toggle turns on — a kid only ever has to actively pick a
+                SEPARATE time for pickup (when the event ends), the one
+                value that's genuinely different (user feedback: drop-off/
+                pickup should render directly underneath "Ride needed?",
+                not detached near the bottom of the form). */}
             {isKid && (
-              <TouchableOpacity
-                onPress={() => {
-                  setKidRideNeeded(r => {
-                    const next = !r;
-                    if (next) { setKidDropoffOn(true); setKidDropoffDate(new Date(eventDate)); }
-                    else { setKidDropoffOn(false); setKidDropoffDate(null); setKidPickupOn(false); setKidPickupDate(null); }
-                    return next;
-                  });
-                }}
-                activeOpacity={0.8}
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                  paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5, marginBottom: 14,
-                  borderColor: kidRideNeeded ? catColor : (isDark ? colors.border : '#E2E8F0'),
-                  backgroundColor: kidRideNeeded ? catColor + '18' : (isDark ? colors.surface : '#F9FAFB') }}>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: kidRideNeeded ? catColor : colors.textPrimary }}>
-                    🚗 Ride needed?
-                  </Text>
-                  <Text style={{ fontSize: TYPO.label, color: kidRideNeeded ? catColor : colors.textSecondary }}>
-                    {kidRideNeeded ? 'Yes — drop-off set to this event\'s time below' : 'Off · I have my own way there'}
-                  </Text>
-                </View>
-                <View style={{ width: 44, height: 26, borderRadius: 13,
-                  backgroundColor: kidRideNeeded ? catColor : (isDark ? '#334155' : '#CBD5E1'),
-                  justifyContent: 'center', paddingHorizontal: 3 }}>
-                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: colors.textInverse,
-                    alignSelf: kidRideNeeded ? 'flex-end' : 'flex-start' }} />
-                </View>
-              </TouchableOpacity>
+              <KidRideSection
+                catColor={catColor} colors={colors} isDark={isDark} eventDate={eventDate}
+                kidRideNeeded={kidRideNeeded} setKidRideNeeded={setKidRideNeeded}
+                kidDropoffOn={kidDropoffOn} setKidDropoffOn={setKidDropoffOn} kidDropoffDate={kidDropoffDate} setKidDropoffDate={setKidDropoffDate}
+                kidPickupOn={kidPickupOn} setKidPickupOn={setKidPickupOn} kidPickupDate={kidPickupDate} setKidPickupDate={setKidPickupDate}
+                showKidDropDate={showKidDropDate} setShowKidDropDate={setShowKidDropDate}
+                showKidDropTime={showKidDropTime} setShowKidDropTime={setShowKidDropTime}
+                showKidPickDate={showKidPickDate} setShowKidPickDate={setShowKidPickDate}
+                showKidPickTime={showKidPickTime} setShowKidPickTime={setShowKidPickTime}
+              />
             )}
 
             {/* ── Date / Time ── */}
@@ -990,22 +969,13 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               />
             )}
 
-            {/* For a kid, this whole section is only meaningful once "Ride
-                needed?" (now above Date & Time) is actually on — the toggle
-                itself already fully communicates the off state ("Off · I
-                have my own way there"), so rendering an empty section
-                below it here would just repeat that with nothing to show. */}
-            {((isKid && kidRideNeeded) || (!isKid && category !== 'Work' && category !== 'Event')) && (
+            {/* Kid's ride request is fully handled by KidRideSection above,
+                right beside the toggle that reveals it — this call is now
+                parent/senior only (adult MemberPicker + free-text helper
+                name fallback). */}
+            {!isKid && category !== 'Work' && category !== 'Event' && (
               <HelperAssignmentSection
-                isKid={isKid} category={category} catColor={catColor} colors={colors} isDark={isDark} siblings={siblings} adults={adults}
-                eventDate={eventDate}
-                kidRideNeeded={kidRideNeeded} setKidRideNeeded={setKidRideNeeded}
-                kidDropoffOn={kidDropoffOn} setKidDropoffOn={setKidDropoffOn} kidDropoffDate={kidDropoffDate} setKidDropoffDate={setKidDropoffDate}
-                kidPickupOn={kidPickupOn} setKidPickupOn={setKidPickupOn} kidPickupDate={kidPickupDate} setKidPickupDate={setKidPickupDate}
-                showKidDropDate={showKidDropDate} setShowKidDropDate={setShowKidDropDate}
-                showKidDropTime={showKidDropTime} setShowKidDropTime={setShowKidDropTime}
-                showKidPickDate={showKidPickDate} setShowKidPickDate={setShowKidPickDate}
-                showKidPickTime={showKidPickTime} setShowKidPickTime={setShowKidPickTime}
+                category={category} catColor={catColor} colors={colors} isDark={isDark} siblings={siblings} adults={adults}
                 helperId={helperId} handleHelperSelect={handleHelperSelect}
                 helperName={helperName} setHelperName={setHelperName} setHelperId={setHelperId}
               />

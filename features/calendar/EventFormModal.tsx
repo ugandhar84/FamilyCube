@@ -385,13 +385,24 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
       allDay,
       location,
       notes:           notes.trim() || undefined,
-      // Encode kid ride request as structured metadata in returnTime field
-      returnTime:      isKid && kidRideType === 'both' && kidPickupDate
-        ? `RIDE:both:${fmtLocalDateTimeStamp(kidPickupDate)}`
+      // Encode kid ride request as structured metadata in returnTime field.
+      // Was: the 'both'/'pickup' branches required kidPickupDate to be
+      // truthy — but that field only gets set once the kid actually TAPS
+      // the pickup date/time picker, not just from toggling "Pickup
+      // needed" on. A kid who toggled both drop-off and pickup on but
+      // never opened the pickup picker fell through to `undefined` here,
+      // silently and permanently losing the pickup leg — the toggle they
+      // explicitly set had no effect, no error, no visible difference
+      // (QA Round 12, Finding C-2). parseRideMeta already supports the
+      // bare 'RIDE:both'/'RIDE:pickup' form with no timestamp (falls back
+      // to the event's own date, no pickup time) — same as the 'dropoff'
+      // branch below, which never had this guard and always encoded.
+      returnTime:      isKid && kidRideType === 'both'
+        ? (kidPickupDate ? `RIDE:both:${fmtLocalDateTimeStamp(kidPickupDate)}` : 'RIDE:both')
         : isKid && kidRideType === 'dropoff'
         ? 'RIDE:dropoff'
-        : isKid && kidRideType === 'pickup' && kidPickupDate
-        ? `RIDE:pickup:${fmtLocalDateTimeStamp(kidPickupDate)}`
+        : isKid && kidRideType === 'pickup'
+        ? (kidPickupDate ? `RIDE:pickup:${fmtLocalDateTimeStamp(kidPickupDate)}` : 'RIDE:pickup')
         : returnDate ? fmtTimeDisplay(returnDate) : undefined,
       memberId:        memberIds[0],
       memberIds:       memberIds.length > 1 ? memberIds : undefined,

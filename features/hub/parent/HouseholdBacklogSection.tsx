@@ -10,6 +10,7 @@ import { OutgoingPendingCard } from './backlog/OutgoingPendingCard';
 import { LockedAssignmentCard } from './backlog/LockedAssignmentCard';
 import { PoolQuestCard } from './backlog/PoolQuestCard';
 import { HelperEventCard } from './backlog/HelperEventCard';
+import { RideCoordinationRow } from './backlog/RideCoordinationRow';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { Quest } from '@/store/questStore';
@@ -18,6 +19,7 @@ import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 export function HouseholdBacklogSection({
   active, members, colors, isDark,
   questPool, myAdultQuests, othersAdultQuests, myDirectPending, myLockedItems, myOutgoingPending, myHelperEvents,
+  familyRideCoordination,
   systemBIds, parentAssignments,
   updateQuest, updateEvent, updateEventScoped, completeParentQuest, respondToParentQuest, cancelLockedAssignment, recallParentQuest, appreciationPing, handlePullTask,
   onAddTask, onDelegate, onRespond,
@@ -28,6 +30,9 @@ export function HouseholdBacklogSection({
   myDirectPending: ParentQuestAssignment[]; myLockedItems: ParentQuestAssignment[];
   myOutgoingPending: ParentQuestAssignment[];
   myHelperEvents: FamilyEvent[];
+  // Read-only — a co-parent's ride still finding a driver. Optional so any
+  // call site not yet updated still compiles.
+  familyRideCoordination?: FamilyEvent[];
   systemBIds: Set<string>; parentAssignments: ParentQuestAssignment[];
   updateQuest: (id: string, patch: Partial<Quest>) => void;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
@@ -70,7 +75,8 @@ export function HouseholdBacklogSection({
   // empty, even though the section visibly had content.
   const isEmpty = questPool.length === 0 && myDirectPending.length === 0
     && myHelperEvents.length === 0 && myLockedItems.length === 0 && myOutgoingPending.length === 0
-    && othersAdultQuests.length === 0 && myAdultQuests.length === 0;
+    && othersAdultQuests.length === 0 && myAdultQuests.length === 0
+    && !familyRideCoordination?.length;
 
   // Soonest due date first within a group — undated items sort last so
   // something with a deadline never gets buried under whatever loaded first.
@@ -173,6 +179,18 @@ export function HouseholdBacklogSection({
                 </View>
                 {myHelperEvents.map(ev => (
                   <HelperEventCard key={ev.id} ev={ev} members={members} active={active} colors={colors} isDark={isDark} updateEvent={updateEvent} updateEventScoped={updateEventScoped} />
+                ))}
+              </View>
+            )}
+
+            {!!familyRideCoordination?.length && (
+              <View style={{ gap: 6 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+                  <Car size={12} color={colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>Family ride status</Text>
+                </View>
+                {familyRideCoordination.map(ev => (
+                  <RideCoordinationRow key={ev.id} ev={ev} members={members} colors={colors} isDark={isDark} />
                 ))}
               </View>
             )}

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuestStore } from '@/store/choreAdapter';
-import { useEventStore } from '@/store/eventStore';
+import { useEventStore, eventAssignee } from '@/store/eventStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
@@ -414,6 +414,24 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     return (e.date ?? '') >= today;
   });
 
+  // A ride the OTHER parent opened to helpers, or that's been claimed by
+  // a GP/teen but not yet confirmed, previously fell through every parent
+  // surface: pendingRequests requires approvalPending (already cleared
+  // once opened), pendingRideRequiredEvents requires rideRequired (this
+  // is category:'Ride'), myHelperEvents requires this parent to BE the
+  // assignee. A parent had zero visibility into a co-parent's outstanding
+  // ride until it either got confirmed or stalled long enough to trip the
+  // <1hr escalation banner (QA Round 12, Finding M3 — confirmed still
+  // open). Read-only awareness only, deliberately no claim/assign action
+  // here — offering one would reopen the exact claim-race class Round 11
+  // just closed, from a third surface.
+  const familyRideCoordination = events.filter(e => {
+    if (e.createdBy === active.id || isWorkEvent(e)) return false;
+    if (!(e.isOpenToGrandparents || e.isOpenToTeens)) return false;
+    if (eventAssignee(e).status === 'confirmed') return false;
+    return hoursUntilEvent(e.date, e.time) >= 0;
+  });
+
   const backlogCount = questPool.length + myAdultQuests.length + othersAdultQuests.length + myHelperEvents.length;
 
   // The next confirmed ride THIS parent is driving today, soonest first —
@@ -510,7 +528,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         questPool={questPool} myAdultQuests={myAdultQuests} othersAdultQuests={othersAdultQuests}
         myDirectPending={myDirectPending} myLockedItems={myLockedItems}
         myOutgoingPending={myOutgoingPending}
-        myHelperEvents={myHelperEvents} systemBIds={systemBIds} parentAssignments={parentAssignments}
+        myHelperEvents={myHelperEvents} familyRideCoordination={familyRideCoordination} systemBIds={systemBIds} parentAssignments={parentAssignments}
         updateQuest={updateQuest} updateEvent={updateEvent} updateEventScoped={updateEventScoped}
         completeParentQuest={completeParentQuest} respondToParentQuest={respondToParentQuest}
         cancelLockedAssignment={cancelLockedAssignment} recallParentQuest={recallParentQuest}

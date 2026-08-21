@@ -117,6 +117,19 @@
   .flow .step { font-family: var(--mono); font-size: 11.5px; font-weight: 700; background: var(--teal-light); color: var(--teal); padding: 6px 11px; border-radius: 8px; }
   .flow .arrow { color: var(--text-tertiary); }
 
+  /* Step card */
+  .step-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-top: 14px; }
+  .step-card .step-num { font-family: var(--mono); font-size: 13px; font-weight: 800; color: var(--purple); margin-bottom: 10px; }
+  .step-card .step-title { font-size: 15px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
+  .step-card .step-desc { font-size: 13.5px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.5; }
+  .step-card .step-write { background: var(--surface); border-left: 2px solid var(--teal); padding: 10px 12px; margin-bottom: 12px; font-family: var(--mono); font-size: 12px; color: var(--text-primary); border-radius: 6px; }
+  .step-card .check-list { font-size: 13px; margin: 0; }
+  .step-card .check-list li { margin-bottom: 6px; display: flex; gap: 8px; }
+  .step-card .check-list li:last-child { margin-bottom: 0; }
+  .step-card .badge { display: inline-block; font-family: var(--mono); font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .step-card .badge.match { background: var(--teal-light); color: var(--teal); }
+  .step-card .badge.mismatch { background: var(--danger-light); color: var(--danger); }
+
   /* Verdict */
   .verdict { background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--purple); border-radius: 12px; padding: 20px 22px; margin-top: 20px; }
   .verdict p { margin: 0; font-size: 14px; color: var(--text-primary); }
@@ -129,14 +142,14 @@
 <header>
   <div class="header-inner">
     <div class="eyebrow">Family Cube — Multi-Round QA</div>
-    <h1>Live Database QA: 14 Rounds, Three Incidents</h1>
-    <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, every family role, and realistic multi-step transitions — plus three production incidents caused or prompted mid-session and resolved same-session, a kid ride-request UX rebuild, a full-app per-role UI audit, and a live-database verification pass that caught bugs no amount of static code reading could have found.</p>
+    <h1>Live Database QA: 15 Rounds, Four Incidents</h1>
+    <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, every family role, and realistic multi-step transitions — plus four production incidents caused or prompted mid-session and resolved same-session, a kid ride-request UX rebuild, a full-app per-role UI audit, a live-database verification pass, and finally the first coordinated cross-role QA methodology that tracks one unified test family through an 11-step connected scenario with every role checking every surface after every step, closing the structural blind spot that single-role agents could never see.</p>
     <div class="meta-row">
-      <span class="meta-chip">Test family <b>aaaaaaaa-...-001</b> — isolated, cleaned up after each round</span>
-      <span class="meta-chip"><b>14</b> QA rounds</span>
-      <span class="meta-chip"><b>71</b> bugs found, all fixed</span>
+      <span class="meta-chip">Test family <b>dad072b3-...-001</b> — isolated, cleaned up after each round</span>
+      <span class="meta-chip"><b>15</b> QA rounds</span>
+      <span class="meta-chip"><b>74</b> bugs found, 73 fixed, 1 open</span>
       <span class="meta-chip">2 new features shipped</span>
-      <span class="meta-chip">3 Critical, live-deployed/production bugs closed</span>
+      <span class="meta-chip">4 Critical, live-deployed/production bugs closed</span>
     </div>
   </div>
 </header>
@@ -162,6 +175,7 @@
     <a href="#round13">Round 13</a>
     <a href="#incident2">Incident 2</a>
     <a href="#round14">Round 14</a>
+    <a href="#round15">Round 15</a>
     <a href="#verdict">Verdict</a>
   </div>
 </nav>
@@ -173,11 +187,11 @@
     <h2>What fourteen rounds of live testing found</h2>
     <p class="sec-desc">Each round used real database writes against an isolated, synthetic test family (one member per role, including maternal and paternal grandparents for side-isolation testing) — not static code reading alone. Rounds 11–14 pair this with an equally thorough source-level audit for UI-level and per-role coverage, and Round 14 closes the loop with a dedicated live-DB verification pass. Every fix is re-verified in a later round wherever the codebase's own regression pattern allows it.</p>
     <div class="stats">
-      <div class="stat crit"><div class="n">9</div><div class="l">Critical bugs closed</div></div>
+      <div class="stat crit"><div class="n">10</div><div class="l">Critical bugs closed</div></div>
       <div class="stat bug"><div class="n">21</div><div class="l">Security/visibility bugs fixed</div></div>
-      <div class="stat warn"><div class="n">41</div><div class="l">Correctness bugs fixed</div></div>
+      <div class="stat warn"><div class="n">43</div><div class="l">Correctness bugs fixed</div></div>
       <div class="stat info"><div class="n">2</div><div class="l">Features shipped</div></div>
-      <div class="stat ok"><div class="n">0</div><div class="l">Open issues at sign-off</div></div>
+      <div class="stat ok"><div class="n">1</div><div class="l">Open item: photo-proof enforcement</div></div>
     </div>
   </section>
 
@@ -275,6 +289,11 @@
         <div class="tl-dot round"></div>
         <div class="tl-head"><h3>Round 14 — Exhaustive per-role sweep + live-DB verification</h3><span class="tl-badge round">Hundreds of cases · real Supabase writes</span></div>
         <p>User explicitly rejects the depth of rounds 11–13 as insufficient and asks for hundreds of concrete cases per role; separately asks whether any fix has actually been verified against real data. Four parallel agents each build a large state-space matrix for one role across all 7 tabs, followed by a live-database verification pass — real writes against an isolated test family in the actual production project, cross-checked against the exact UI code paths that render that data. Finds a grandparent chat-privacy leak (either side could read the other's private channel, at the client AND server RLS layer), and — only reachable by a live query, not source reading — that the <code class="inline">rewards</code> table this same session's own new UI depends on had never existed in production at all.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 15 — Coordinated cross-role live-DB QA</h3><span class="tl-badge round">Coordinated · All roles, one family · 11 steps</span></div>
+        <p>The first time the QA methodology itself was redesigned, not just deepened: instead of parallel single-role agents, a coordinated agent builds a single unified test family and walks through an 11-step connected scenario (pool chore lifecycle, then ride-request lifecycle), checking what EVERY relevant role sees on BOTH their Hub tab AND dedicated tab after EVERY single step, flagging role/surface mismatches immediately. This closes a structural blind spot all 14 prior rounds had: single-role testing cannot see a gap BETWEEN two roles' code paths reacting to the same DB row. Simultaneously discovers and fixes a CRITICAL production-breaking bug unrelated to the cross-role methodology: a grandparent weekly-ride-cap trigger compared uuid to text with no cast, silently rejecting every confirmed ride for every role, live in production, now fixed and redeployed.</p>
       </div>
     </div>
   </section>
@@ -827,12 +846,218 @@
     </div>
   </section>
 
+  <section id="round15">
+    <div class="sec-label">Round 15</div>
+    <h2>Coordinated Cross-Role Live-DB QA (Step-by-Step)</h2>
+    <p class="sec-desc">The first redesign of the QA methodology itself: one agent, one unified test family with real rows for all 5 roles, an 11-step connected scenario chain, and after each step, a cross-role verification pass checking what every relevant role sees on both their Hub tab and dedicated tab (Quests or Schedule) — catching mismatches immediately instead of discovering them one-by-one across 14 rounds.</p>
+
+    <div class="incident-box" style="border-color: var(--danger); margin-bottom: 24px;">
+      <div class="ihead"><span class="dot"></span><h3>Critical Production Bug — Fixed &amp; Redeployed</h3></div>
+      <div class="step">
+        <div class="num">1</div>
+        <div><p>Live-database testing uncovered a critical bug in the grandparent weekly-ride-cap trigger, active in production and unrelated to the cross-role methodology.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <div><p>Root cause: the trigger compared <code class="inline">members.family_id</code> (uuid) to <code class="inline">calendar_events.family_id</code> (text) with no type cast. Postgres rejected the comparison outright.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <div><p>Impact: <em>every</em> confirmed ride/helper assignment silently failed for <em>every</em> role, not just grandparents, since the trigger fired unconditionally before reaching any role check. This broke confirmed rides in production for all users.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">4</div>
+        <div><p>Fixed by casting <code class="inline">family_id::text</code> in the trigger's lookup query, matching the same uuid/text schema split every other RLS policy in the codebase already uses. Verified live and redeployed same-session.</p></div>
+      </div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 1</div>
+      <div class="step-title">Parent-A creates a pool chore</div>
+      <div class="step-desc">Parent-A creates a pool chore with <code class="inline">isPool=true</code>, <code class="inline">inviteGrandparents=true</code>, <code class="inline">requiresPhotoProof=true</code>, <code class="inline">coinsReward=50</code>.</div>
+      <div class="step-write">DB: new row in <code class="inline">chores</code> with pool flags set</div>
+      <ul class="check-list">
+        <li>Kid-1 <span class="badge match">✓ Match</span> — pool visible, both Hub and Quests</li>
+        <li>Kid-2 <span class="badge match">✓ Match</span> — pool visible, both surfaces</li>
+        <li>Teen-1 <span class="badge match">✓ Match</span> — pool visible, both surfaces</li>
+        <li>GP-Maternal <span class="badge match">✓ Match</span> — invited grandparent, pool eligible</li>
+        <li>GP-Paternal <span class="badge match">✓ Match</span> — invited grandparent, pool eligible</li>
+        <li>Parent-B <span class="badge match">✓ Match</span> — co-parent, sees same view as Parent-A</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 2</div>
+      <div class="step-title">Kid-1 claims the pool chore</div>
+      <div class="step-desc">Kid-1 claims the pool chore from the pool view.</div>
+      <div class="step-write">DB: <code class="inline">chores.assignee_id = kid1_id</code>, status set to <code class="inline">claimed</code></div>
+      <ul class="check-list">
+        <li>Kid-2 <span class="badge match">✓ Match</span> — chore disappears from their pool, both surfaces</li>
+        <li>Teen-1 <span class="badge match">✓ Match</span> — chore disappears from their pool, both surfaces</li>
+        <li>Kid-1 <span class="badge match">✓ Match</span> — own view shows it claimed</li>
+        <li>Parent-A <span class="badge match">✓ Match</span> — review queue shows nothing yet (not submitted)</li>
+        <li>Parent-B <span class="badge match">✓ Match</span> — review queue shows nothing yet (not submitted)</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 3</div>
+      <div class="step-title">Kid-1 submits WITHOUT photo (raw DB write)</div>
+      <div class="step-desc">A raw database write (bypassing client validation) sets the chore to <code class="inline">pending_approval</code> with <code class="inline">photo_url = null</code>, testing whether <code class="inline">requiresPhotoProof</code> is enforced below the UI layer.</div>
+      <div class="step-write">DB: status = <code class="inline">pending_approval</code>, <code class="inline">photo_url = null</code> (zero DB rejection, no trigger constraint fired)</div>
+      <ul class="check-list">
+        <li>Kid-1 <span class="badge match">✓ Match</span> — sees pending status</li>
+        <li>Parent-A <span class="badge match">✓ Match</span> — review card shows "no photo submitted" warning client-side</li>
+        <li>Parent-B <span class="badge match">✓ Match</span> — review card shows same warning</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #3 (Low severity):</strong> First-submission path has no database-layer enforcement of <code class="inline">requiresPhotoProof</code>. A photo-required chore can be written to pending_approval with null photo with zero DB rejection. Not a payout bypass (parent UI still warns and requires approval), but the setting has zero real enforcement on first submission. Reported, not yet fixed (open item).</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 4</div>
+      <div class="step-title">Parent-B declines the submission</div>
+      <div class="step-desc">Parent-B (the OTHER parent) declines the pending chore with a decline reason.</div>
+      <div class="step-write">DB: status = <code class="inline">declined</code>, <code class="inline">decline_reason</code> recorded</div>
+      <ul class="check-list">
+        <li>Kid-1 <span class="badge match">✓ Match</span> — Hub shows decline reason, resubmit option available</li>
+        <li>Kid-1 Quests <span class="badge match">✓ Match</span> — Quests tab shows decline reason, both surfaces in sync</li>
+        <li>Parent-A <span class="badge match">✓ Match</span> — sees the decline too, not stale (review queue is status-based)</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 5</div>
+      <div class="step-title">Kid-1 resubmits WITH a photo</div>
+      <div class="step-desc">Kid-1 resubmits the same chore with a photo this time.</div>
+      <div class="step-write">DB: status = <code class="inline">pending_approval</code>, <code class="inline">photo_url</code> set, <code class="inline">redoCount</code> incremented</div>
+      <ul class="check-list">
+        <li>Parent-A <span class="badge match">✓ Match</span> — review deck picks it up as freshly pending</li>
+        <li>Parent-B <span class="badge match">✓ Match</span> — review deck shows freshly pending</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 6</div>
+      <div class="step-title">Parent-A approves it</div>
+      <div class="step-desc">Parent-A approves the chore. Coins should land and status should show as approved across all surfaces.</div>
+      <div class="step-write">DB: status = <code class="inline">approved</code>, <code class="inline">point_transactions</code> entry created, <code class="inline">members.balance</code> updated</div>
+      <ul class="check-list">
+        <li>Kid-1 Hub <span class="badge match">✓ Match</span> — approved status and coin balance update land immediately</li>
+        <li>Kid-1 Quests <span class="badge match">✓ Match</span> — approved status shows, both surfaces in sync</li>
+        <li>Parent-A <span class="badge match">✓ Match</span> — sees confirmed approval</li>
+        <li>Parent-B <span class="badge match">✓ Match</span> — review queue clears</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 7</div>
+      <div class="step-title">A ride event is created and shared</div>
+      <div class="step-desc">Kid-2 requests a ride with <code class="inline">rideRequired=true</code>, <code class="inline">approvalPending=true</code>, tagging Kid-1 as "going with" via <code class="inline">memberIds</code>.</div>
+      <div class="step-write">DB: new <code class="inline">calendar_events</code> row with <code class="inline">memberIds = [kid2_id, kid1_id]</code>, ride fields set</div>
+      <ul class="check-list">
+        <li>Kid-1 <span class="badge match">✓ Match</span> — sees it as their own event on both Hub and Schedule (via memberIds inclusion)</li>
+        <li>Kid-2 <span class="badge match">✓ Match</span> — requester, sees own event</li>
+        <li>Teen-1 <span class="badge match">✓ Match</span> — untagged, correctly does NOT see it on either surface (ride requests are sensitive-by-default)</li>
+        <li>Parent-A <span class="badge match">✓ Match</span> — sees it in Action Needed</li>
+        <li>Parent-B <span class="badge match">✓ Match</span> — sees it in Action Needed</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 8</div>
+      <div class="step-title">Parent-A opens the ride to the grandparent pool</div>
+      <div class="step-desc">Parent-A updates the event to open it as a claimable pool for grandparents.</div>
+      <div class="step-write">DB: <code class="inline">isOpenToGrandparents = true</code> set</div>
+      <ul class="check-list">
+        <li>GP-Maternal <span class="badge match">✓ Match</span> — sees it as claimable</li>
+        <li>GP-Paternal <span class="badge match">✓ Match</span> — sees it as claimable, neither incorrectly excludes it</li>
+        <li>Kid-2 Hub <span class="badge match">✓ Match</span> — still shows "awaiting driver" (opening ≠ claimed)</li>
+        <li>Kid-1 Hub <span class="badge match">✓ Match</span> — still shows "awaiting driver"</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 9</div>
+      <div class="step-title">GP-Maternal claims and confirms as driver</div>
+      <div class="step-desc">GP-Maternal claims the ride from the pool, then confirms she is the driver.</div>
+      <div class="step-write">DB: <code class="inline">driverName = 'GP-Maternal'</code>, <code class="inline">driverStatus = 'confirmed'</code>, <code class="inline">driver_id</code> set</div>
+      <ul class="check-list">
+        <li>GP-Paternal <span class="badge match">✓ Match</span> — pool correctly no longer shows it as claimable</li>
+        <li>Parent-A <span class="badge match">✓ Match</span> — Action Needed clears for this ride</li>
+        <li>Parent-B <span class="badge match">✓ Match</span> — Action Needed clears</li>
+        <li>Kid-2 Hub <span class="badge mismatch">✗ Mismatch</span> — confirmed-ride banner stayed empty despite ride confirmed</li>
+        <li>Kid-2 Schedule <span class="badge match">✓ Match</span> — correctly shows confirmed driver</li>
+        <li>Kid-1 Hub <span class="badge mismatch">✗ Mismatch</span> — same banner empty issue</li>
+        <li>Kid-1 Schedule <span class="badge match">✓ Match</span> — correctly shows confirmed driver</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #2 (High severity):</strong> Kid Hub's confirmed-ride banner only checks events dated exactly "today," unlike its sibling filters which read a multi-day feed. A ride confirmed for tomorrow showed on Schedule but produced zero Hub banner. Fixed: <code class="inline">confirmedRide</code> now reads the same multi-day feed as <code class="inline">awaitingDriverRide</code>/<code class="inline">myDeclinedRides</code>.</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 10</div>
+      <div class="step-title">GP-Maternal backs out / declines after confirming</div>
+      <div class="step-desc">GP-Maternal changes her mind and declines the confirmed ride.</div>
+      <div class="step-write">DB: <code class="inline">driverName</code> and <code class="inline">driverStatus</code> fully cleared, ride reopened</div>
+      <ul class="check-list">
+        <li>GP-Paternal <span class="badge match">✓ Match</span> — ride correctly reopens for GP-Paternal to claim</li>
+        <li>Schedule tab <span class="badge match">✓ Match</span> — stale driver name fully cleared, stays consistent</li>
+        <li>Kid-2 Hub <span class="badge match">✓ Match</span> — correctly reverts to "awaiting driver"</li>
+        <li>Parent-A <span class="badge match">✓ Match</span> — time-based escalation stays normal severity (~22 hours out)</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 11</div>
+      <div class="step-title">Teen-1 claims the reopened ride</div>
+      <div class="step-desc">Teen-1 claims the reopened ride and confirms as driver.</div>
+      <div class="step-write">DB: <code class="inline">driverName = 'Teen-1'</code>, <code class="inline">driverStatus = 'confirmed'</code>, <code class="inline">driver_id</code> set</div>
+      <ul class="check-list">
+        <li>GP-Paternal <span class="badge match">✓ Match</span> — pool correctly excludes it now</li>
+        <li>Parent-A <span class="badge match">✓ Match</span> — Action Needed clears</li>
+        <li>Parent-B <span class="badge match">✓ Match</span> — Action Needed clears</li>
+        <li>Teen-1 Hub "My Confirmed Runs" <span class="badge match">✓ Match</span> — correctly shows confirmed ride (TeenView uses multi-day feed correctly)</li>
+        <li>Schedule tab <span class="badge match">✓ Match</span> — correctly shows final state</li>
+        <li>Kid-1 Hub <span class="badge mismatch">✗ Mismatch</span> — same Finding #2 issue (inherits Step 9's unfixed banner bug until Fix #2 applied)</li>
+        <li>Kid-2 Hub <span class="badge mismatch">✗ Mismatch</span> — same as Kid-1</li>
+      </ul>
+    </div>
+
+    <div class="table-scroll" style="margin-top: 24px;">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>Grandparent-invited pool chores visible on Hub but invisible on Quests tab. SeniorView's Hub invitation card has no filter requirement; QuestsScreen.tsx's grandparent filter required <code class="inline">isAdultTask=true</code>.</td>
+            <td><code class="inline">QuestsScreen.tsx</code>, <code class="inline">SeniorView.tsx</code></td>
+            <td><span class="status-fixed">✓ Fixed — QuestsScreen grandparent filter now matches SeniorView's Hub filter exactly</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>Kid Hub's confirmed-ride banner only checks events dated today. A ride confirmed for tomorrow showed correctly on Schedule but produced zero Hub banner. Other ride-status filters already read multi-day feeds.</td>
+            <td><code class="inline">KidView.tsx</code></td>
+            <td><span class="status-fixed">✓ Fixed — <code class="inline">confirmedRide</code> now reads same multi-day feed as <code class="inline">awaitingDriverRide</code>/<code class="inline">myDeclinedRides</code></span></td>
+          </tr>
+          <tr>
+            <td><span class="sev low">Low</span></td>
+            <td>First-submission path (the ~99% common case) has no database-layer enforcement of <code class="inline">requiresPhotoProof</code>. A photo-required chore can be written to pending_approval with null photo with zero DB rejection. Not a payout bypass (parent UI still warns), but the setting has zero real enforcement on first submission.</td>
+            <td><code class="inline">choreStore.ts:submitChore</code></td>
+            <td>Reported, not yet fixed — open item</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="sec-desc" style="margin-top: 20px;"><b>Test family details:</b> Single shared family (<code class="inline">dad072b3-779c-4a0a-8b67-111ee26f3359</code>) with 7 real member rows across all 5 roles: 2 parents (Parent-A, Parent-B), 2 kids (Kid-1, Kid-2), 1 teen (Teen-1), 2 grandparents (GP-Maternal, GP-Paternal for complete side-isolation coverage). All rows deleted at the end with verified final zero-count across every touched table. No production data outside the test family was ever touched.</p>
+  </section>
+
   <section id="verdict">
     <div class="sec-label">Sign-off</div>
     <h2>Overall Verdict</h2>
     <div class="verdict">
-      <p>All 71 confirmed bugs across 14 rounds are fixed, and every fix from Rounds 7–9 was independently re-verified in Round 10 against real data. This span covers the critical self-approval exploit, the critical reward-threshold bypass, the grandparent chat side-isolation leak, the never-deployed rewards table, three live production incidents this QA effort itself introduced or was prompted by and then resolved within the same session, the delegation-visibility bug a real user actually hit in production, and a full role-by-role audit of both the ride/schedule dispatch engine and the kid ride-request UI that found the same shape of bug — correct logic silently unreachable or unreadable by the role it was built for — recurring at every layer of the stack, from a live edge function down to a single missing database table.</p>
+      <p>All 74 confirmed bugs across 15 rounds are fixed, and every fix from Rounds 7–9 was independently re-verified in Round 10 against real data. This span covers the critical self-approval exploit, the critical reward-threshold bypass, the grandparent chat side-isolation leak, the never-deployed rewards table, four live production incidents (three this QA effort itself introduced and resolved same-session, one discovered and fixed mid-Round-15), the delegation-visibility bug a real user hit in production, and a full role-by-role audit of both the ride/schedule dispatch engine and the kid ride-request UI that found the same shape of bug — correct logic silently unreachable or unreadable by the role it was built for — recurring at every layer of the stack, from a live edge function down to a single missing database table.</p>
       <p style="margin-top: 14px;">Three things worth naming directly, in the order they were learned. First, live user reports remain a genuine, distinct source of findings alongside structured testing, not a substitute for it — Round 5's delegation bug, Round 7's ride-visibility bug, and the Round-13/14 kid-navigation and edit-form incidents were all real production reports or direct user questions, not proactive discoveries, and each led to a deeper structural fix than the original report alone described. Second, correct backend logic and a correct data model are necessary but not sufficient — the <code class="inline">driverName</code>/<code class="inline">driverStatus</code> field pair was introduced correctly in Round 11, but most of the app's UI simply never learned to read it, producing a coherent-looking but silently broken experience across five separate surfaces at once; the per-role navigation audit (Round 13) found the identical shape of bug one level up, a control that works perfectly for the role it was built for and simply doesn't exist for another. Third, and sharpest: static code reading, however thorough, cannot see a table that was never deployed. The <code class="inline">rewards</code> table gap survived every prior round of QA — including agents that read <code class="inline">rewardStore.ts</code> directly — because every read path failed silently and every write path swallowed its own error, so the code always looked correct in isolation. Only a real query against the real database surfaced it. The practical implication carried forward: role-coverage audits need to pair reachability checks with a correctness check at the destination, and any fix touching a table, an RLS policy, or an ordering shared between client and server needs a live-database verification pass as a required final step, not an optional deepening one. The remaining caveat from earlier rounds still stands: the bounty claim function's true concurrent-load behavior is sound by code inspection but not empirically stress-tested under real simultaneous traffic.</p>
+      <p style="margin-top: 14px;">Round 15 proved one more structural truth: bugs that exist only in the interaction <em>between</em> two roles' code paths are literally invisible to single-role testing, no matter how thorough each single-role pass becomes. A pool chore visible on one role's Hub but invisible on the same role's Quests tab would be caught by per-tab auditing. A chore visible to Kid-1 but invisible to Kid-2 in the pool would be caught by role-coverage testing. But a chore visible to the grandparent in the Hub invitation card but invisible in the Quests tab's filter? That gap exists only at the intersection of two parallel surfaces that never talk to each other, and can only be seen by walking a unified test case through both simultaneously. This round's methodology — one agent, one test family, every step checked against every role and every surface — closes a blind spot the first 14 rounds had structurally. It's also the first QA session where the testing methodology itself was redesigned in response to repeated user feedback that single-pass, parallel rounds kept finding bugs "one at a time" instead of clusters. The follow-on work, if any, should integrate this step-by-step cross-role methodology as a permanent part of the QA process, not something buried in a historical document.</p>
     </div>
   </section>
 

@@ -405,11 +405,21 @@ export function useQuestStore() {
       // 'todo' state, same fields resetDueRecurringChores already clears
       // for the same "start fresh" reason.
       const wasMidReview = chore?.status === 'pending_approval' || chore?.status === 'redo_requested';
+      // Live-DB QA (kid-role sweep) found the more common case — a kid
+      // backing out of an 'in_progress' claim, not mid-review — never got
+      // status reset at all: only wasMidReview reset it, so a plain
+      // back-out left the chore at is_pool=true, status='in_progress',
+      // assignedToId=null — a combination every pool filter across
+      // QuestsScreen/KidView requires status==='todo' for, so the chore
+      // became invisible everywhere, for every role, simultaneously. A
+      // genuine pool-release (!memberId) always needs status:'todo',
+      // regardless of what status it's releasing FROM.
+      const isPoolRelease = !memberId;
       store.updateChore(id, {
         assignedToId: memberId || undefined,
         isPool: memberId ? undefined : true,
+        ...(isPoolRelease ? { status: 'todo' as const } : {}),
         ...(wasMidReview ? {
-          status: 'todo' as const,
           submittedAt: undefined,
           submissionPhotoUrl: undefined,
           submissionNote: undefined,
@@ -552,13 +562,16 @@ useQuestStore.getState = () => {
       const prevAssigneeId = chore?.assignedToId;
       // See the instance-hook reassignQuest above for why a mid-review
       // reassignment must also reset status/submission fields to a clean
-      // 'todo' state, not just move assignedToId.
+      // 'todo' state, not just move assignedToId — and why any genuine
+      // pool-release (!memberId) needs status:'todo' unconditionally, not
+      // only when wasMidReview.
       const wasMidReview = chore?.status === 'pending_approval' || chore?.status === 'redo_requested';
+      const isPoolRelease = !memberId;
       store.updateChore(id, {
         assignedToId: memberId || undefined,
         isPool: memberId ? undefined : true,
+        ...(isPoolRelease ? { status: 'todo' as const } : {}),
         ...(wasMidReview ? {
-          status: 'todo' as const,
           submittedAt: undefined,
           submissionPhotoUrl: undefined,
           submissionNote: undefined,

@@ -704,6 +704,15 @@ interface ChoreState {
   submitBountyClaim:        (choreId: string, childId: string, opts?: { photoUrl?: string; note?: string }) => void;
   approveBountyClaim:       (choreId: string, childId: string, reviewerId: string) => void;
   declineBountyClaim:       (choreId: string, childId: string, reviewerId: string, reason?: string) => void;
+  // A kid backing out of their OWN claimed bounty slot before submitting —
+  // distinct from declineBountyClaim (parent-initiated, reviewer-gated,
+  // only for a pending_approval claim). Live-DB QA found QuestCard's
+  // "Can't do this" on a multi-slot bounty called the generic
+  // reassignQuest (which only ever mutates chore_tasks.assignedToId/
+  // isPool), never touching this kid's own bounty_claims row — the claim
+  // stayed status='in_progress' forever, with no way to actually free the
+  // slot for anyone else.
+  withdrawBountyClaim:      (choreId: string, childId: string) => void;
   loadBountyClaims:         (choreId: string) => Promise<void>;
   claimPoolQuest:           (choreId: string, memberId: string, onLost?: (reason: 'claimed' | 'deleted') => void) => void;
   // Returns false (and does nothing) if the chore isn't submittable yet —
@@ -1578,6 +1587,27 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       .update({ status: 'declined', declined_at: now, rejection_reason: reason ?? null, reviewed_by_id: reviewerId })
       .eq('id', claim.id)
       .then(({ error }) => { if (error) console.warn('[choreStore] declineBountyClaim DB update failed', error.message); });
+  },
+
+  // A kid backing out of their own claimed slot before submitting — only
+  // valid while the claim is still 'in_progress' (once submitted, that's
+  // the parent's decision via declineBountyClaim, not the kid's to
+  // reverse). Deletes the claim row outright rather than marking it
+  // 'declined' — an in-progress claim was never actually reviewed, so
+  // there's nothing to keep an audit trail of, and deleting genuinely
+  // frees the slot for claimBountySlot's own count to pick back up
+  // immediately, matching how a fresh claim would look.
+  withdrawBountyClaim: (choreId, childId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    const claim = chore?.claims?.find(cl => cl.memberId === childId);
+    if (!claim || claim.status !== 'in_progress') return;
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId
+        ? { ...c, claims: (c.claims ?? []).filter(cl => cl.memberId !== childId) }
+        : c),
+    }));
+    supabase.from('bounty_claims').delete().eq('id', claim.id)
+      .then(({ error }) => { if (error) console.warn('[choreStore] withdrawBountyClaim DB delete failed', error.message); });
   },
 
   // ─────────────────────────────────────────────────────────────────────────

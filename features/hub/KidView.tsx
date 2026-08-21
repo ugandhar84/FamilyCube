@@ -127,7 +127,13 @@ export function KidView({ active, members, colors, isDark, activeTrip }: {
   // (this kid IS the subject) always pass through unaffected.
   const visibleEvents = events.filter(e =>
     !isEventSensitive(e) || canViewSensitiveEventDetail(e, 'kid', active.id, active.name));
-  const myEvents    = visibleEvents.filter(e => (e.memberId === active.id || !e.memberId) && e.category !== 'Work');
+  // Was e.memberId-only — a kid tagged via memberIds as "going with" a
+  // sibling's ride (KidRequestModal's sibling-tagging feature) was
+  // completely absent from their own Hub: no ride banner, no pending/
+  // awaiting/confirmed/declined status, despite the Schedule tab correctly
+  // showing it (CalendarScreen.tsx already checks memberIds). Live-DB QA,
+  // kid-role sweep, High.
+  const myEvents    = visibleEvents.filter(e => (e.memberId === active.id || e.memberIds?.includes(active.id) || !e.memberId) && e.category !== 'Work');
   const todayEvents = myEvents.filter(e => e.date === today).sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
 
   // Confirmed ride today — QA sweep Critical Finding C3: these 5 filters
@@ -146,7 +152,7 @@ export function KidView({ active, members, colors, isDark, activeTrip }: {
   // on the teen side (QA Round 11, Medium Finding M2).
   const { events: kidUpcomingEvents } = useUpcomingOpenEvents((active as any).familyId);
   const myUpcomingEvents = kidUpcomingEvents.filter(e =>
-    (e.memberId === active.id || !e.memberId) && e.category !== 'Work' &&
+    (e.memberId === active.id || e.memberIds?.includes(active.id) || !e.memberId) && e.category !== 'Work' &&
     (!isEventSensitive(e) || canViewSensitiveEventDetail(e, 'kid', active.id, active.name)));
 
   // A driver has been named but hasn't confirmed yet — the gap between
@@ -172,7 +178,7 @@ export function KidView({ active, members, colors, isDark, activeTrip }: {
   // contradictory banners simultaneously (QA Round 7, finding B2). Once an
   // assignee is named, the other filters own communicating status.
   const myPendingRides  = events.filter(e =>
-    e.memberId === active.id && e.approvalPending && !eventAssignee(e).name && e.date >= today
+    (e.memberId === active.id || e.memberIds?.includes(active.id)) && e.approvalPending && !eventAssignee(e).name && e.date >= today
   );
 
   const myRequests = requests.filter(r => r.fromMemberId === active.id && r.status !== 'cancelled');

@@ -694,7 +694,24 @@ export function QuestCard({
                           `Send "${q.title}" back to the family pool so a parent can reassign it?`,
                           [
                             { text: 'Keep it', style: 'cancel' },
-                            { text: 'Send back', style: 'destructive', onPress: () => reassignQuest(q.id, '', activeMember?.id) },
+                            {
+                              text: 'Send back', style: 'destructive',
+                              onPress: () => {
+                                // A multi-slot bounty (real claims tracked in
+                                // bounty_claims, not chore_tasks.assignedToId)
+                                // needs its own withdraw path — reassignQuest
+                                // only ever mutates the parent chore row's
+                                // assignedToId/isPool, never touching this
+                                // kid's own claim, so their slot stayed
+                                // status='in_progress' forever with no way to
+                                // free it (live-DB QA, kid-role sweep, High).
+                                if ((choreData?.maxClaimants ?? 1) > 1 && myId) {
+                                  useChoreStore.getState().withdrawBountyClaim(q.id, myId);
+                                } else {
+                                  reassignQuest(q.id, '', activeMember?.id);
+                                }
+                              },
+                            },
                           ]
                         )}
                       >

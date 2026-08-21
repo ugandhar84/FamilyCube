@@ -199,6 +199,14 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
     }
     setInput('');
     setMessages(prev => [...prev, { id: `local-${Date.now()}`, role: 'user', content: trimmed, timestamp: new Date().toISOString() }]);
+    // Was: nothing scrolled here at all — if the user had scrolled up to
+    // read earlier messages, their own just-sent message landed off-screen,
+    // with no scroll happening until the reply started streaming in
+    // (line ~224 below) or the whole exchange finished. Scroll immediately
+    // on send, same as any normal chat app, instead of waiting on the
+    // network round-trip.
+    setShowScrollToBottom(false);
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
     setSending(true);
     try {
       const res = await askCube.send(activeMember.id, trimmed, conversationId);
@@ -441,7 +449,13 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
               onScroll={(e) => {
                 const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
                 const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
-                setShowScrollToBottom(distanceFromBottom > 120);
+                // Was 120 — on a phone-sized viewport that's easily "still
+                // basically at the bottom," so scrolling up even a little to
+                // reread something never actually surfaced the button. A
+                // much smaller threshold (just enough to ignore floating-
+                // point/bounce noise right at the bottom) matches normal
+                // chat-app behavior: any real scroll-up shows the button.
+                setShowScrollToBottom(distanceFromBottom > 40);
               }}
               scrollEventThrottle={100}>
               {messages.length === 0 && !sending && (

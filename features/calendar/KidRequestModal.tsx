@@ -46,8 +46,8 @@
  * here is what actually fixes that, not just a copy/layout change.
  */
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Modal, KeyboardAvoidingView, Platform, ActivityIndicator, Switch } from 'react-native';
-import { Mic, ChevronLeft, X, Check, Phone } from 'lucide-react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Modal, KeyboardAvoidingView, Platform, ActivityIndicator, Switch, Alert } from 'react-native';
+import { Mic, ChevronLeft, X, Check, Phone, Trash2 } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
@@ -57,7 +57,7 @@ import { useVoiceIntake } from '@/lib/hooks/useVoiceIntake';
 import PickerOverlay from './components/eventForm/PickerOverlay';
 import { f } from './components/eventForm/styles';
 import { SUGGESTIONS, localDateStr, fmtTime as fmtTimeVal, fmtDisplay, fmtTimeDisplay } from './components/eventForm/types';
-import { RIDE_PICKUP_TIME_UNKNOWN } from '../hub/parent/rideLegs';
+import { RIDE_PICKUP_TIME_UNKNOWN, parseRideMeta } from '../hub/parent/rideLegs';
 import type { EventCategory } from './components/eventForm/types';
 import type { FamilyEvent, EventType } from '@/store/eventStore';
 
@@ -98,7 +98,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
   editEvent?: FamilyEvent;
 }) {
   const { colors, isDark } = useTheme();
-  const { addEvent, updateEvent } = useEventStore();
+  const { addEvent, updateEvent, deleteEvent } = useEventStore();
   const members = useFamilyStore(s => s.members);
   const active = members.find(m => m.id === activeMemberId);
   const parentNames = members.filter(m => m.role === 'parent').map(m => m.name.split(' ')[0]);
@@ -130,7 +130,20 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
   // on-time, matching the kid-form's "one clear answer" philosophy rather
   // than the adult form's 3-way picker.
   const [alertCall, setAlertCall] = useState(editEvent?.alertCall ?? false);
-  const [rideChoice, setRideChoice] = useState<RideChoice | null>(null);
+  // Seed the existing ride choice + pickup date/time from editEvent so
+  // re-opening this in edit mode doesn't silently blank out what was
+  // already answered — previously editEvent never fed into these fields at
+  // all, so Step 3 always looked unanswered even when a kid was just
+  // revising the title/location of an already-fully-specified request.
+  const editRideMeta = editEvent ? parseRideMeta(editEvent.returnTime, editEvent.date) : null;
+  const [rideChoice, setRideChoice] = useState<RideChoice | null>(() => {
+    if (!editEvent) return null;
+    if (!editEvent.rideRequired) return 'none';
+    if (editRideMeta?.isBothWays) return 'both';
+    if (editRideMeta?.isPickup) return 'pickup';
+    if (editRideMeta?.isDropoff) return 'dropoff';
+    return null;
+  });
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   // "Bring me home" and "Both ways" both need a pickup TIME before they can
@@ -140,10 +153,23 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
   // needs a same-day-vs-different-day answer first (sleepaway trip, multi-
   // day camp) — the app previously just assumed same-day, silently losing
   // a multi-day pickup date entirely.
-  const [askingPickupDay, setAskingPickupDay] = useState(false);
   const [askingPickupTime, setAskingPickupTime] = useState(false);
-  const [pickupDate, setPickupDate] = useState<Date | null>(null);
-  const [pickupTime, setPickupTime] = useState<Date | null>(null);
+  const [pickupDate, setPickupDate] = useState<Date | null>(() => {
+    if (editRideMeta?.pickupDate && editRideMeta.pickupDate !== editEvent?.date) {
+      const [y, mo, d] = editRideMeta.pickupDate.split('-').map(Number);
+      return new Date(y, mo - 1, d);
+    }
+    return null;
+  });
+  const [pickupTime, setPickupTime] = useState<Date | null>(() => {
+    if (editRideMeta?.pickupTime) {
+      const d = new Date();
+      const [h, mi] = editRideMeta.pickupTime.split(':').map(Number);
+      d.setHours(h, mi, 0, 0);
+      return d;
+    }
+    return null;
+  });
   const [showPickupDatePick, setShowPickupDatePick] = useState(false);
   const [showPickupTimePick, setShowPickupTimePick] = useState(true);
 
@@ -168,7 +194,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
     if (editEvent) return; // editing closes via onClose directly, no blank-state flash needed
     setStep(1); setCategory(null); setTitle(''); setLocation(''); setNotes('');
     setRideChoice(null); setDone(false); setMicOpen(false); voice.cancel();
-    setAskingPickupDay(false); setAskingPickupTime(false);
+    setAskingPickupTime(false);
     setPickupDate(null); setPickupTime(null); setShowPickupDatePick(false);
     setAlertCall(false);
   };
@@ -273,12 +299,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
               <TouchableOpacity
                 onPress={() => {
                   if (done) return;
-                  if (askingPickupTime) {
-                    setAskingPickupTime(false);
-                    if (rideChoice === 'both') setAskingPickupDay(true);
-                    return;
-                  }
-                  if (askingPickupDay) { setAskingPickupDay(false); setPickupDate(null); setShowPickupDatePick(false); return; }
+                  if (askingPickupTime) { setAskingPickupTime(false); return; }
                   if (step > 1) setStep((step - 1) as 1 | 2);
                   else close();
                 }}
@@ -487,10 +508,32 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                         paddingVertical: 14, alignItems: 'center' }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Next →</Text>
                     </TouchableOpacity>
+
+                    {/* Withdraw — a kid reaching this screen in edit mode
+                        (via long-press on their own still-pending request)
+                        previously had no delete affordance at all once the
+                        Schedule tab's Month/Week/Agenda views were opened up
+                        to kids: those views never had SwipeableEventCard's
+                        swipe-delete wired in, only the old kid-only fallback
+                        timeline did, and that's no longer where a kid with a
+                        real view-mode toolbar actually lands. */}
+                    {isEditing && editEvent && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          Alert.alert('Withdraw Request', `Withdraw "${editEvent.title}"?`, [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Withdraw', style: 'destructive', onPress: () => { deleteEvent(editEvent.id); close(); } },
+                          ]);
+                        }}
+                        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 }}>
+                        <Trash2 size={14} color={colors.danger} />
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.danger }}>Withdraw this request</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 )}
 
-                {step === 3 && !askingPickupDay && (
+                {step === 3 && !askingPickupTime && (
                   <View style={{ gap: 14 }}>
                     <Text style={{ fontSize: TYPO.title, fontWeight: '900', color: colors.textPrimary, textAlign: 'center', marginBottom: 4 }}>
                       Do you need a lift? 🚗
@@ -501,28 +544,45 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                       { key: 'pickup'  as const, icon: '⬅️🚗', label: 'Yes, bring me home', sub: 'I can get there myself' },
                       { key: 'both'    as const, icon: '🔄',   label: 'Both ways', sub: 'There and back' },
                       { key: 'none'    as const, icon: '🚶',   label: "No, I'm all set", sub: undefined },
-                    ].map(opt => (
+                    ].map(opt => {
+                      const isCurrent = isEditing && rideChoice === opt.key;
+                      // Editing shows the actual current details right on
+                      // the card — drop-off time is always eventDate's own
+                      // time; pickup time/date only apply to 'pickup'/'both'
+                      // — previously only visible after tapping back into
+                      // the sub-screen, so a kid reviewing their own request
+                      // couldn't tell what was already set at a glance.
+                      const detailLine =
+                        opt.key === 'dropoff' ? `Drop-off at ${fmtTimeDisplay(eventDate)}`
+                        : opt.key === 'pickup' && pickupTime ? `Pickup at ${fmtTimeDisplay(pickupTime)}${pickupDate ? ` · ${fmtDisplay(pickupDate)}` : ''}`
+                        : opt.key === 'both' && pickupTime ? `Drop-off ${fmtTimeDisplay(eventDate)} · Pickup ${fmtTimeDisplay(pickupTime)}${pickupDate ? ` (${fmtDisplay(pickupDate)})` : ''}`
+                        : undefined;
+                      return (
                       <TouchableOpacity key={opt.key} disabled={submitting}
                         onPress={() => {
                           setRideChoice(opt.key);
-                          if (opt.key === 'both') { setAskingPickupDay(true); return; }
-                          if (opt.key === 'pickup') {
+                          if (opt.key === 'pickup' || opt.key === 'both') {
                             if (!pickupTime) { const d = new Date(eventDate); d.setMinutes(d.getMinutes() + 90); setPickupTime(d); }
+                            if (opt.key === 'pickup') setPickupDate(null);
                             setAskingPickupTime(true);
                             return;
                           }
                           submit(opt.key);
                         }}
                         style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 16,
-                          backgroundColor: isDark ? colors.surface : '#F9FAFB', borderWidth: 1.5, borderColor: colors.border }}>
+                          backgroundColor: isCurrent ? accentColor + '14' : (isDark ? colors.surface : '#F9FAFB'),
+                          borderWidth: 1.5, borderColor: isCurrent ? accentColor : colors.border }}>
                         <Text style={{ fontSize: 22 }}>{opt.icon}</Text>
                         <View style={{ flex: 1 }}>
                           <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>{opt.label}</Text>
-                          {opt.sub && <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>{opt.sub}</Text>}
+                          <Text style={{ fontSize: TYPO.micro, color: detailLine ? accentColor : colors.textTertiary, marginTop: 1, fontWeight: detailLine ? '700' : '400' }}>
+                            {detailLine ?? opt.sub}
+                          </Text>
                         </View>
                         {submitting && rideChoice === opt.key && <ActivityIndicator color={accentColor} />}
                       </TouchableOpacity>
-                    ))}
+                      );
+                    })}
 
                     <View>
                       <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
@@ -539,41 +599,44 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                   </View>
                 )}
 
-                {step === 3 && askingPickupDay && (
+                {/* One screen for pickup date+time, not three sequential
+                    taps — same-day/different-day, the date picker (only
+                    when relevant), and the time picker all live together
+                    so a kid sees the whole "when's the pickup" question at
+                    once instead of being walked through it step by step. */}
+                {step === 3 && askingPickupTime && (
                   <View style={{ gap: 14 }}>
                     <Text style={{ fontSize: TYPO.title, fontWeight: '900', color: colors.textPrimary, textAlign: 'center', marginBottom: 4 }}>
-                      When's the pickup? 📅
+                      When's the pickup? 🕐
                     </Text>
 
-                    <TouchableOpacity
-                      onPress={() => {
-                        setPickupDate(null);
-                        if (!pickupTime) { const d = new Date(eventDate); d.setMinutes(d.getMinutes() + 90); setPickupTime(d); }
-                        setAskingPickupDay(false); setAskingPickupTime(true);
-                      }}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 16,
-                        backgroundColor: isDark ? colors.surface : '#F9FAFB', borderWidth: 1.5,
-                        borderColor: !pickupDate ? accentColor : colors.border }}>
-                      <Text style={{ fontSize: 22 }}>🔁</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>Same day</Text>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>Next, what time?</Text>
+                    {rideChoice === 'both' && (
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity
+                          onPress={() => setPickupDate(null)}
+                          style={{ flex: 1, alignItems: 'center', padding: 12, borderRadius: 14,
+                            backgroundColor: !pickupDate ? accentColor + '14' : (isDark ? colors.surface : '#F9FAFB'),
+                            borderWidth: 1.5, borderColor: !pickupDate ? accentColor : colors.border }}>
+                          <Text style={{ fontSize: 18 }}>🔁</Text>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary, marginTop: 2 }}>Same day</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => { if (!pickupDate) { setPickupDate(eventDate); setShowPickupDatePick(true); } else setShowPickupDatePick(true); }}
+                          style={{ flex: 1, alignItems: 'center', padding: 12, borderRadius: 14,
+                            backgroundColor: pickupDate ? accentColor + '14' : (isDark ? colors.surface : '#F9FAFB'),
+                            borderWidth: 1.5, borderColor: pickupDate ? accentColor : colors.border }}>
+                          <Text style={{ fontSize: 18 }}>🗓️</Text>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary, marginTop: 2 }}>
+                            {pickupDate ? fmtDisplay(pickupDate) : 'Different day'}
+                          </Text>
+                        </TouchableOpacity>
                       </View>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={() => { setShowPickupDatePick(true); if (!pickupDate) setPickupDate(eventDate); }}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 16,
-                        backgroundColor: isDark ? colors.surface : '#F9FAFB', borderWidth: 1.5,
-                        borderColor: pickupDate ? accentColor : colors.border }}>
-                      <Text style={{ fontSize: 22 }}>🗓️</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>
-                          {pickupDate ? `Different day — ${fmtDisplay(pickupDate)}` : 'A different day'}
-                        </Text>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>Sleepaway trip, multi-day camp</Text>
-                      </View>
-                    </TouchableOpacity>
+                    )}
+                    {rideChoice === 'both' && (
+                      <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, textAlign: 'center', marginTop: -6 }}>
+                        Sleepaway trip, multi-day camp — otherwise same day is right
+                      </Text>
+                    )}
 
                     <PickerOverlay
                       showDate={showPickupDatePick} showTime={false}
@@ -584,27 +647,6 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                       accentColor={accentColor} colors={colors}
                       minimumDate={eventDate}
                     />
-
-                    {pickupDate && !showPickupDatePick && (
-                      <TouchableOpacity onPress={() => {
-                        if (!pickupTime) { const d = new Date(pickupDate); d.setHours(9, 0); setPickupTime(d); }
-                        setAskingPickupDay(false); setAskingPickupTime(true);
-                      }}
-                        style={{ backgroundColor: accentColor, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Next: pick a time →</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                )}
-
-                {step === 3 && askingPickupTime && (
-                  <View style={{ gap: 14 }}>
-                    <Text style={{ fontSize: TYPO.title, fontWeight: '900', color: colors.textPrimary, textAlign: 'center', marginBottom: 4 }}>
-                      What time's the pickup? 🕐
-                    </Text>
-                    <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, textAlign: 'center', marginBottom: 4 }}>
-                      {pickupDate ? `On ${fmtDisplay(pickupDate)}` : 'A parent can adjust this later if plans change'}
-                    </Text>
 
                     <TouchableOpacity
                       style={[f.dateBtn, { alignSelf: 'center', paddingHorizontal: 28, backgroundColor: accentColor + '14', borderColor: accentColor }]}

@@ -166,6 +166,15 @@ const save = (rewards: Reward[], redemptions: Redemption[]) => {
   AsyncStorage.setItem(REDEMPTIONS_KEY, JSON.stringify(redemptions));
 };
 
+// Same getFamilyId() pattern eventStore.ts/choreStore.ts use — the rewards
+// table (unlike reward_redemptions) has a real family_id column, since a
+// reward isn't inherently scoped to one member the way a redemption is.
+function getFamilyId(): string | null {
+  const s = useFamilyStore.getState();
+  const m = s.members.find(mem => mem.id === s.activeMemberId) ?? s.members[0];
+  return (m as any)?.familyId ?? null;
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useRewardStore = create<RewardState>((set, get) => ({
@@ -208,7 +217,13 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     const reward: Reward = { ...r, id: 'r' + Date.now(), createdAt: new Date().toISOString() };
     const next = [...get().rewards, reward];
     set({ rewards: next }); save(next, get().redemptions);
-    supabase.from('rewards').insert([rewardToRow(reward)]).then(() => {});
+    // Was a bare .then(() => {}) — silently swallowed the 42P01 "relation
+    // rewards does not exist" error that made every reward-catalog write
+    // permanently no-op against production (QA sweep, live-DB
+    // verification). Now surfaced the same way every other store's writes
+    // already report failures.
+    supabase.from('rewards').insert([rewardToRow(reward)])
+      .then(({ error }) => { if (error) console.warn('[rewardStore] addReward insert', error.message); });
     return reward;
   },
 
@@ -216,14 +231,18 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     const next = get().rewards.map(r => r.id === id ? { ...r, ...updates } : r);
     set({ rewards: next }); save(next, get().redemptions);
     const updated = next.find(r => r.id === id);
-    if (updated) supabase.from('rewards').update(rewardToRow(updated)).eq('id', id).then(() => {});
+    if (updated) {
+      supabase.from('rewards').update(rewardToRow(updated)).eq('id', id)
+        .then(({ error }) => { if (error) console.warn('[rewardStore] updateReward', error.message); });
+    }
   },
 
   deleteReward: (id) => {
     const nextR  = get().rewards.filter(r => r.id !== id);
     const nextRd = get().redemptions.filter(rd => rd.rewardId !== id);
     set({ rewards: nextR, redemptions: nextRd }); save(nextR, nextRd);
-    supabase.from('rewards').delete().eq('id', id).then(() => {});
+    supabase.from('rewards').delete().eq('id', id)
+      .then(({ error }) => { if (error) console.warn('[rewardStore] deleteReward', error.message); });
   },
 
   toggleAvailability: (id) => {
@@ -403,7 +422,7 @@ export const useRewardStore = create<RewardState>((set, get) => ({
 
 function rewardToRow(r: Reward) {
   return {
-    id: r.id, title: r.title, emoji: r.emoji, description: r.description ?? null,
+    id: r.id, family_id: getFamilyId(), title: r.title, emoji: r.emoji, description: r.description ?? null,
     category: r.category, cost: r.cost, stock: r.stock ?? null, available: r.available,
     eligible_member_ids: r.eligibleMemberIds ?? null, max_per_member: r.maxPerMember ?? null,
     expires_at: r.expiresAt ?? null, icon_color: r.iconColor ?? null,

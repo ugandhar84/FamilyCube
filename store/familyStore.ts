@@ -544,9 +544,18 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       const knownFamilyId = get().members.find(m => m.familyId)?.familyId;
       const [activeId, { data, error }] = await Promise.all([
         AsyncStorage.getItem(ACTIVE_KEY),
+        // Secondary .order('id') breaks ties — two parents created in the
+        // same request/batch (plausible during family onboarding) share an
+        // identical created_at with no ordering guarantee from Postgres on
+        // ties alone. ChatScreen.tsx's viewerGpSide derivation (parents[0]/
+        // parents[1] → maternal/paternal side) needs the SAME ordering the
+        // server-side RLS function (is_chat_channel_participant, ordered by
+        // id asc) uses, or a tie could make the client show/hide the wrong
+        // seniors_a/seniors_b tab compared to what the server actually
+        // enforces (live-DB QA verification finding, this session).
         knownFamilyId
-          ? supabase.from('members').select('*').eq('family_id', knownFamilyId).order('created_at')
-          : supabase.from('members').select('*').order('created_at'),
+          ? supabase.from('members').select('*').eq('family_id', knownFamilyId).order('created_at').order('id')
+          : supabase.from('members').select('*').order('created_at').order('id'),
       ]);
       if (error || !data) return;
       const members = dedupeMembers(data.map(fromRow));

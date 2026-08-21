@@ -252,6 +252,24 @@ export function QuestCard({
               {statusLine}
             </Text>
           </View>
+          {/* Full claimed → submitted → approved timeline — previously only
+              shown once the card was expanded (the collapsed body below),
+              so a parent scanning a long Completed list never saw it
+              without tapping into every card individually. Kid's own view
+              renders through this exact same component, so this was never
+              actually a role difference in the code — but making it
+              visible in the always-shown header, not just the collapsed
+              body, is the fix that actually matches what "show the detail
+              like kid's chores" is asking for. */}
+          {isDoneCard && (q.claimedAt || q.submittedAt) && (
+            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }} numberOfLines={1}>
+              {q.claimedAt && `Claimed ${new Date(q.claimedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${new Date(q.claimedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+              {q.claimedAt && q.submittedAt ? ' → ' : ''}
+              {q.submittedAt && `Submitted ${new Date(q.submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+              {q.submittedAt && (q as any).approvedAt ? ' → ' : ''}
+              {(q as any).approvedAt && `Done ${new Date((q as any).approvedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${new Date((q as any).approvedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+            </Text>
+          )}
           {/* Cheer indicator — previously nothing anywhere showed whether a
               chore had been cheered, so a correctly-recorded cheer (write
               confirmed in the DB) looked identical to an uncheered chore on

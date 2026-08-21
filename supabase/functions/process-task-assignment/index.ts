@@ -232,11 +232,15 @@ serve(async (req) => {
     // ── 4. Load calendar conflicts for candidates at that date/time ──────────
     const conflictedMemberIds = new Set<string>();
     if (taskDate && taskTime) {
+      // Missing deleted_at filter meant a cancelled event still created a
+      // phantom scheduling conflict, wrongly excluding an otherwise-free
+      // candidate (QA Round 10 verification finding).
       const { data: dayEvents } = await supabase
         .from('calendar_events')
         .select('id, member_id, member_ids, start_time, end_time')
         .eq('family_id', familyId)
-        .eq('date', taskDate);
+        .eq('date', taskDate)
+        .is('deleted_at', null);
       const toMinutes = (t: string) => {
         const [h, m] = t.split(':').map(Number);
         return (h ?? 0) * 60 + (m ?? 0);
@@ -352,6 +356,11 @@ serve(async (req) => {
           // confirmed rides against cap=1, still ranked top candidate,
           // uncapped). helper_name is where a confirmed driver's name
           // actually lands (see eventStore.ts's own row mapping).
+          // Missing deleted_at filter meant a ride the parent had since
+          // CANCELLED still counted against the GP's weekly cap for the
+          // rest of that week, with no visible cause (QA Round 10
+          // verification finding — hit live: a soft-deleted ride from 5
+          // hours earlier still excluded the GP from candidacy).
           const { count: ridesThisWeek } = await supabase
             .from('calendar_events')
             .select('id', { count: 'exact', head: true })
@@ -359,7 +368,8 @@ serve(async (req) => {
             .eq('helper_name', c.name)
             .eq('helper_status', 'confirmed')
             .gte('date', weekStartStr)
-            .lt('date', weekEndStr);
+            .lt('date', weekEndStr)
+            .is('deleted_at', null);
           if ((ridesThisWeek ?? 0) >= (c.gp_weekly_ride_cap ?? 2)) {
             scored.push({
               memberId: c.id, memberName: c.name, score: 0, breakdown,

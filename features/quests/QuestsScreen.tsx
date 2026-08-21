@@ -558,9 +558,18 @@ export default function QuestsScreen() {
       const [h, m] = parsed.split(':').map(Number);
       return ms + (h * 60 + m) * 60_000;
     };
+    // Among done items specifically, due date is meaningless (the deadline
+    // is moot once it's finished) — sort by when it actually CLOSED
+    // instead, most-recent first, so the Completed tab reads as a log of
+    // what just happened rather than a stale worklist ordering.
+    const closedMs = (q: typeof list[number]) => {
+      const iso = (q as any).completedAt ?? (q as any).approvedAt ?? q.submittedAt;
+      return iso ? new Date(iso).getTime() : 0;
+    };
     list = [...list].sort((a, b) => {
       const doneDiff = Number(isDone(a)) - Number(isDone(b));
       if (doneDiff !== 0) return doneDiff;
+      if (isDone(a) && isDone(b)) return closedMs(b) - closedMs(a);
       return dueMs(a) - dueMs(b);
     });
     return list;

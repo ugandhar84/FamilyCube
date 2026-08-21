@@ -184,6 +184,20 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'get_quest_pace',
+      description: 'PARENT-ONLY. Compare how long a kid/teen typically takes to complete quests — time from claiming to submitting, plus on-time vs. late rate and current streak. Use for "how is X doing on chores lately", "is X slower than usual", "does X need encouragement" — a factual pace summary for the parent, never shown to or about-to-be-relayed-to the kid themselves.',
+      parameters: {
+        type: 'object',
+        properties: {
+          memberName: { type: 'string', description: 'Required — whose pace to check' },
+        },
+        required: ['memberName'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'get_chore_history',
       description: 'Get completed/approved chores in a date range. Use for "has anyone done X this week", "what did we get done".',
       parameters: {
@@ -618,6 +632,41 @@ async function executeTool(
         person: e.member_id ? (aliasMap.toAlias.get(e.member_id) ?? 'Someone') : 'Family',
         title: realNameToAlias(aliasMap, members, e.title), start: e.start_time, end: e.end_time,
       })),
+    };
+  }
+
+  if (name === 'get_quest_pace') {
+    if (viewerRole !== 'parent') return { error: 'Quest pace is only available to parents.' };
+    const id = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
+    if (!id) return { error: `Couldn't find a family member named "${args.memberName}".` };
+    const { data: recent, error } = await supabase.from('chore_tasks')
+      .select('created_at, submitted_at, due_date, status')
+      .eq('family_id', familyId).eq('assigned_to_id', id)
+      .in('status', ['approved', 'auto_approved', 'completed'])
+      .not('submitted_at', 'is', null)
+      .order('submitted_at', { ascending: false }).limit(20);
+    if (error) return { error: error.message };
+    const rows = recent ?? [];
+    if (rows.length < 3) {
+      return { note: 'Not enough completed quest history yet to compare pace meaningfully (fewer than 3 recent completions).' };
+    }
+    // Split the last 20 into an older baseline half and a recent half —
+    // comparing recent pace against the SAME kid's own history, not an
+    // arbitrary external standard, so "slower than usual" actually means
+    // something for that specific kid's normal rhythm.
+    const durationHours = (r: any) => (new Date(r.submitted_at).getTime() - new Date(r.created_at).getTime()) / 3_600_000;
+    const mid = Math.floor(rows.length / 2);
+    const recentHalf = rows.slice(0, mid);
+    const olderHalf = rows.slice(mid);
+    const avg = (arr: any[]) => arr.reduce((s, r) => s + durationHours(r), 0) / arr.length;
+    const { data: member } = await supabase.from('members').select('streak').eq('id', id).single();
+    const lateCount = rows.filter((r: any) => r.due_date && r.submitted_at && r.submitted_at.slice(0, 10) > r.due_date).length;
+    return {
+      person: aliasMap.toAlias.get(id) ?? 'Unknown',
+      recentAvgHoursToComplete: Math.round(avg(recentHalf) * 10) / 10,
+      priorAvgHoursToComplete: Math.round(avg(olderHalf) * 10) / 10,
+      lateOutOfLast: `${lateCount}/${rows.length}`,
+      currentStreak: member?.streak ?? 0,
     };
   }
 
@@ -1118,6 +1167,12 @@ both calls before you reply) for these, not just whichever one the phrasing happ
 of them if the user's question is unambiguously about just the calendar ("what's on the calendar Tuesday") or just
 chores ("what chores are left") specifically.
 Location and health tools are sensitive and parent-only — if a non-parent asks, explain you can't share that.
+get_quest_pace is also parent-only, and its data is for the PARENT's understanding only — never suggest relaying its
+numbers directly to the kid, never frame it as a report card or comparison to siblings. If recentAvgHoursToComplete
+is meaningfully higher than priorAvgHoursToComplete (their own past pace, not some external standard), or the streak
+just broke, briefly and kindly suggest something a parent could actually DO — a specific, low-pressure encouragement
+idea (a smaller first step, checking in without pressure, a fresh coin/streak incentive) — not just restating the
+numbers back at the parent. Keep it to 1-2 sentences of actual suggestion, not a data dump.
 
 When the user wants to add/schedule/plan something, DO NOT interrogate them with clarifying questions one field at a
 time — that's slow and annoying in a chat. Instead, fill in every reasonable default yourself and call the propose

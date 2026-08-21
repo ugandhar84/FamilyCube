@@ -292,23 +292,82 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   removeMember: async (id) => {
     const prev = get().members;
     const prevActiveId = get().activeMemberId;
+
+    // Spec 9.1 — eligibility recompute before removal. chore_tasks.
+    // assigned_to_id has ON DELETE SET NULL (Postgres won't block the
+    // delete), so without this a removed member's in-flight chores would
+    // silently end up assigned_to_id=null while still sitting at status
+    // 'todo'/'in_progress' — invisible to the pool (isPool wasn't set) and
+    // liable to break any `members.find(m => m.id === assignedToId)` UI
+    // that assumed a non-null assignedToId always resolves to someone real.
+    // calendar_events.member_id/memberIds and parent_quest_assignments.
+    // assigned_to/assigned_by have NO FK at all, so those would dangle
+    // forever with zero DB-level signal. Release everything to pool/
+    // unassigned FIRST so the member row has nothing live still pointing at
+    // it by the time the delete below runs.
+    try {
+      const { useChoreStore } = require('./choreStore');
+      const choreState = useChoreStore.getState();
+      const orphanedChores = choreState.chores.filter((c: any) =>
+        c.assignedToId === id && !['approved', 'auto_approved', 'completed', 'declined', 'expired', 'cancelled'].includes(c.status)
+      );
+      for (const c of orphanedChores) {
+        choreState.updateChore(c.id, { assignedToId: undefined, isPool: true, status: 'todo' });
+      }
+      const orphanedAssignments = choreState.parentAssignments.filter((a: any) =>
+        (a.assignedTo === id || a.assignedBy === id) &&
+        ['PENDING', 'ACCEPTED', 'SNOOZED', 'PARKED'].includes(a.status)
+      );
+      // Not routed through recallParentQuest — that action requires the
+      // recaller to BE the original delegator (assignedBy), which doesn't
+      // hold when the removed member is the assignedTo side. This is a
+      // distinct case (member removal, not a user-initiated recall): just
+      // close the assignment out directly, same DECLINED-terminal shape
+      // recallParentQuest itself writes. The underlying chore was already
+      // released to pool above.
+      for (const a of orphanedAssignments) {
+        useChoreStore.setState((s: any) => ({
+          parentAssignments: s.parentAssignments.map((x: any) =>
+            x.id === a.id ? { ...x, status: 'DECLINED', isLocked: false, updatedAt: new Date().toISOString() } : x
+          ),
+        }));
+        supabase.from('parent_quest_assignments')
+          .update({ status: 'DECLINED', is_locked: false, updated_at: new Date().toISOString() })
+          .eq('id', a.id)
+          .then(({ error }: any) => { if (error) console.warn('[familyStore] removeMember assignment cleanup', error.message); });
+      }
+    } catch (e) {
+      console.warn('[familyStore] removeMember chore cleanup failed', e);
+    }
+    try {
+      const { useEventStore } = require('./eventStore');
+      const eventState = useEventStore.getState();
+      const orphanedEvents = eventState.events.filter((e: any) =>
+        (e.memberId === id || e.memberIds?.includes(id)) && !e.approvalPending
+      );
+      for (const ev of orphanedEvents) {
+        const nextIds = (ev.memberIds ?? []).filter((mid: string) => mid !== id);
+        eventState.updateEvent(ev.id, {
+          memberId: ev.memberId === id ? undefined : ev.memberId,
+          memberIds: nextIds.length ? nextIds : undefined,
+        });
+      }
+    } catch (e) {
+      console.warn('[familyStore] removeMember event cleanup failed', e);
+    }
+
     const next = prev.filter(m => m.id !== id);
     set({ members: next, activeMemberId: prevActiveId === id ? (next[0]?.id ?? null) : prevActiveId });
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    // chore_tasks.assigned_to_id -> members(id) has no ON DELETE clause
-    // (defaults to NO ACTION), so removing a member who still holds an
-    // in-flight assigned chore/quest is very likely to be rejected by
-    // Postgres. This previously discarded the result entirely (no `error`
-    // check, unlike updateMember right above which was hardened this
-    // session for the same class of silent-failure bug) — the member would
-    // vanish from local state and AsyncStorage while the DB row survived,
-    // then reappear on the next syncFromDB with no explanation. Surface the
-    // failure AND roll the optimistic removal back so the local UI doesn't
-    // lie about the member being gone (spec 6.2 — a removed member's
-    // active work should never just silently reappear or vanish).
+    // A handful of audit-trail columns (calendar_events.created_by/
+    // updated_by/deleted_by, vault/grocery assigned_by/added_by/scanned_by)
+    // still carry a hard-blocking FK with no cascade/set-null clause — those
+    // are historical record columns, not live assignments, so this is
+    // intentionally left as a surfaced failure (below) rather than silently
+    // clearing someone's audit trail.
     const { error } = await supabase.from('members').delete().eq('id', id);
     if (error) {
-      console.warn('[familyStore] removeMember failed (likely still has assigned chores/quests):', error.message);
+      console.warn('[familyStore] removeMember failed (likely still referenced in an audit-trail column):', error.message);
       set({ members: prev, activeMemberId: prevActiveId });
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(prev));
       throw error;

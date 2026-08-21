@@ -1,0 +1,636 @@
+<title>Chores & Schedule Audit</title>
+<style>
+  :root {
+    --navy: #1E2D6B;
+    --purple: #9261C7;
+    --purple-light: #F0E8FA;
+    --teal: #00BBA4;
+    --teal-light: #D6F5F1;
+    --amber: #F5A623;
+    --amber-light: #FEF0D3;
+    --danger: #EF4444;
+    --danger-light: #FDE8E8;
+    --bg: #F8FAFC;
+    --surface: #F1F5F9;
+    --card: #FFFFFF;
+    --border: rgba(30,45,107,0.13);
+    --text-primary: #1E2D6B;
+    --text-secondary: #64748B;
+    --text-tertiary: #94A3B8;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --navy: #A5B4FC;
+      --purple: #B98EDB;
+      --purple-light: rgba(185,142,219,0.14);
+      --teal: #2DD4BF;
+      --teal-light: rgba(45,212,191,0.14);
+      --amber: #FCD34D;
+      --amber-light: rgba(252,211,77,0.14);
+      --danger: #F87171;
+      --danger-light: rgba(248,113,113,0.14);
+      --bg: #0B0F1A;
+      --surface: #161C2D;
+      --card: #1E2640;
+      --border: rgba(165,180,252,0.15);
+      --text-primary: #F8FAFC;
+      --text-secondary: #94A3B8;
+      --text-tertiary: #64748B;
+    }
+  }
+  :root[data-theme="dark"] {
+    --navy: #A5B4FC;
+    --purple: #B98EDB;
+    --purple-light: rgba(185,142,219,0.14);
+    --teal: #2DD4BF;
+    --teal-light: rgba(45,212,191,0.14);
+    --amber: #FCD34D;
+    --amber-light: rgba(252,211,77,0.14);
+    --danger: #F87171;
+    --danger-light: rgba(248,113,113,0.14);
+    --bg: #0B0F1A;
+    --surface: #161C2D;
+    --card: #1E2640;
+    --border: rgba(165,180,252,0.15);
+    --text-primary: #F8FAFC;
+    --text-secondary: #94A3B8;
+    --text-tertiary: #64748B;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--purple-light); }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px 96px; }
+
+  /* ── Header ────────────────────────────────────────────────── */
+  header {
+    padding: 56px 20px 40px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, var(--surface), var(--bg));
+  }
+  .header-inner { max-width: 1120px; margin: 0 auto; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--purple);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .eyebrow::before {
+    content: '';
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--purple);
+  }
+  h1 {
+    font-size: clamp(28px, 4vw, 40px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin: 0 0 12px;
+    text-wrap: balance;
+    color: var(--text-primary);
+  }
+  .subhead {
+    font-size: 16px;
+    color: var(--text-secondary);
+    max-width: 62ch;
+    margin: 0 0 28px;
+  }
+  .meta-row {
+    display: flex; flex-wrap: wrap; gap: 10px;
+  }
+  .meta-chip {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 999px;
+  }
+  .meta-chip b { color: var(--text-primary); font-weight: 600; }
+
+  /* ── Headline callout ─────────────────────────────────────── */
+  .headline {
+    margin: 32px 0 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--purple);
+    border-radius: 12px;
+    padding: 20px 22px;
+  }
+  .headline .label {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--purple);
+    margin-bottom: 8px;
+  }
+  .headline p { margin: 0; color: var(--text-primary); font-size: 14.5px; }
+  .headline p + p { margin-top: 10px; }
+  .headline code { font-family: var(--mono); font-size: 13px; background: var(--purple-light); padding: 1px 5px; border-radius: 4px; }
+
+  /* ── Nav ───────────────────────────────────────────────────── */
+  nav.toc {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .toc-inner {
+    max-width: 1120px; margin: 0 auto; padding: 0 20px;
+    display: flex; gap: 4px; overflow-x: auto;
+  }
+  .toc-inner a {
+    font-family: var(--mono); font-size: 12.5px; font-weight: 600;
+    color: var(--text-secondary); text-decoration: none;
+    padding: 14px 14px 12px; white-space: nowrap;
+    border-bottom: 2px solid transparent;
+  }
+  .toc-inner a:hover { color: var(--text-primary); }
+  .toc-inner a:focus-visible { outline: 2px solid var(--purple); outline-offset: -2px; }
+
+  /* ── Sections ──────────────────────────────────────────────── */
+  section { padding-top: 56px; scroll-margin-top: 56px; }
+  .sec-label {
+    font-family: var(--mono); font-size: 12px; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal);
+    margin: 0 0 6px;
+  }
+  h2 {
+    font-size: 24px; font-weight: 800; letter-spacing: -0.01em;
+    margin: 0 0 8px; color: var(--text-primary);
+  }
+  .sec-desc { color: var(--text-secondary); font-size: 14.5px; max-width: 72ch; margin: 0 0 28px; }
+
+  /* ── Stat strip ────────────────────────────────────────────── */
+  .stats {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    margin: 28px 0 0;
+  }
+  .stat {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .stat .n {
+    font-family: var(--mono); font-size: 28px; font-weight: 700;
+    font-variant-numeric: tabular-nums; line-height: 1;
+    margin-bottom: 6px;
+  }
+  .stat .l { font-size: 12.5px; color: var(--text-secondary); font-weight: 600; }
+  .stat.ok .n { color: var(--teal); }
+  .stat.warn .n { color: var(--amber); }
+  .stat.bug .n { color: var(--danger); }
+  .stat.info .n { color: var(--text-tertiary); }
+
+  /* ── Table ─────────────────────────────────────────────────── */
+  .table-scroll { overflow-x: auto; margin-top: 24px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); }
+  table { width: 100%; border-collapse: collapse; min-width: 920px; }
+  thead th {
+    text-align: left; font-family: var(--mono); font-size: 11px; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary);
+    padding: 13px 16px; border-bottom: 1px solid var(--border);
+    background: var(--surface); position: sticky; top: 0;
+  }
+  tbody td {
+    padding: 14px 16px; border-bottom: 1px solid var(--border);
+    font-size: 13.5px; color: var(--text-primary); vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--surface); }
+  td.type-cell { font-weight: 700; white-space: nowrap; }
+  td .fine { color: var(--text-secondary); font-size: 12.5px; }
+  code.inline { font-family: var(--mono); font-size: 12px; background: var(--surface); padding: 1px 5px; border-radius: 4px; color: var(--text-primary); }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+    white-space: nowrap;
+  }
+  .pill.match { background: var(--teal-light); color: var(--teal); }
+  .pill.diverge { background: var(--amber-light); color: #92600A; }
+  :root[data-theme="dark"] .pill.diverge,
+  :root:not([data-theme="light"]) .pill.diverge { color: var(--amber); }
+  .pill.none { background: var(--surface); color: var(--text-tertiary); }
+  .pill.unconfirmed { background: var(--danger-light); color: var(--danger); }
+
+  /* ── Findings ──────────────────────────────────────────────── */
+  .finding {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 20px 22px; margin-bottom: 14px;
+  }
+  .finding-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .sev {
+    font-family: var(--mono); font-size: 11px; font-weight: 800;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 6px;
+  }
+  .sev.med { background: var(--amber-light); color: #92600A; }
+  :root[data-theme="dark"] .sev.med, :root:not([data-theme="light"]) .sev.med { color: var(--amber); }
+  .finding h3 { font-size: 15.5px; font-weight: 700; margin: 0; color: var(--text-primary); }
+  .finding p { margin: 0 0 8px; font-size: 14px; color: var(--text-secondary); }
+  .finding p:last-child { margin-bottom: 0; }
+  .finding .repro { background: var(--surface); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-top: 10px; }
+  .finding .repro b { color: var(--text-primary); }
+  .ref { font-family: var(--mono); font-size: 12px; color: var(--purple); background: var(--purple-light); padding: 2px 7px; border-radius: 5px; }
+
+  /* ── Divergence list ───────────────────────────────────────── */
+  .diverge-list { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+  .diverge-item {
+    display: grid; grid-template-columns: 64px 1fr; gap: 16px;
+    padding: 14px 18px; background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    align-items: start;
+  }
+  .diverge-item .refnum {
+    font-family: var(--mono); font-weight: 800; color: var(--amber); font-size: 15px;
+  }
+  .diverge-item p { margin: 0; font-size: 13.5px; color: var(--text-primary); }
+  .diverge-item .tag { display: block; font-size: 11.5px; color: var(--text-tertiary); margin-top: 4px; }
+
+  /* ── Verify table ──────────────────────────────────────────── */
+  .verify-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 20px; }
+  .verify-card {
+    background: var(--card); border: 1px solid var(--teal); border-radius: 12px; padding: 18px 20px;
+  }
+  .verify-card .vhead { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .verify-card .check {
+    width: 20px; height: 20px; border-radius: 50%; background: var(--teal); color: var(--card);
+    display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 900; flex-shrink: 0;
+  }
+  .verify-card h4 { margin: 0; font-size: 13.5px; font-weight: 700; }
+  .verify-card p { margin: 0; font-size: 12.5px; color: var(--text-secondary); }
+
+  footer {
+    margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--border);
+    font-size: 12.5px; color: var(--text-tertiary); font-family: var(--mono);
+  }
+
+  @media (max-width: 760px) {
+    .stats, .verify-grid { grid-template-columns: 1fr 1fr; }
+    .diverge-item { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 480px) {
+    .stats, .verify-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<header>
+  <div class="header-inner">
+    <div class="eyebrow">Family Cube — QA Audit</div>
+    <h1>Chores &amp; Schedule System, End to End</h1>
+    <p class="subhead">Full lifecycle trace of every chore/quest type and every event/schedule type — creation, assignment, approval, payout, notifications — cross-checked against the 65-scenario requirements audit.</p>
+    <div class="meta-row">
+      <span class="meta-chip">Branch <b>feat/redesign-phase1-hub-quests</b></span>
+      <span class="meta-chip">Read-only trace — no code changed</span>
+      <span class="meta-chip"><b>11</b> chore types · <b>8</b> event types</span>
+    </div>
+
+    <div class="headline">
+      <div class="label">Headline finding</div>
+      <p>The branch has moved substantially past what <code>docs/requirements_vs_code_gaps.html</code> describes. Roughly <b>15+ scenarios</b> the doc marks as gaps now have real, working implementations — not just the three items built this session (1.6, 1.13, 4.2/4.6), but also 4.7, 2.6/5.4/5.5, 2.11, 2.5, 2.9, 2.12, 5.1, 5.7, and 9.2/9.3. <b>Treat the HTML audit doc as stale</b> anywhere this report says "doc says X, code now does Y."</p>
+    </div>
+  </div>
+</header>
+
+<nav class="toc">
+  <div class="toc-inner">
+    <a href="#summary">Summary</a>
+    <a href="#chores">Chore Types</a>
+    <a href="#events">Event Types</a>
+    <a href="#bugs">Confirmed Bugs</a>
+    <a href="#diverge">Spec Divergences</a>
+    <a href="#verify">Verified Fixes</a>
+  </div>
+</nav>
+
+<div class="wrap">
+
+  <section id="summary">
+    <div class="sec-label">Overview</div>
+    <h2>Where things stand</h2>
+    <p class="sec-desc">Counting every row across both inventories below.</p>
+    <div class="stats">
+      <div class="stat ok"><div class="n">12</div><div class="l">Match spec ✅</div></div>
+      <div class="stat warn"><div class="n">5</div><div class="l">Diverges from spec ⚠️</div></div>
+      <div class="stat bug"><div class="n">2</div><div class="l">Confirmed bugs 🐞</div></div>
+      <div class="stat info"><div class="n">2</div><div class="l">Unconfirmed / needs follow-up</div></div>
+    </div>
+  </section>
+
+  <section id="chores">
+    <div class="sec-label">Part 1</div>
+    <h2>Chore &amp; Quest Type Inventory</h2>
+    <p class="sec-desc">Every distinct category, assignment mode, and approval path a chore/quest can take, traced from creation through payout.</p>
+
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Creation</th><th>Assignment</th><th>Approval gate</th><th>Payout wallet</th><th>Notifications</th><th>Spec match</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="type-cell">Citizenship</td>
+            <td>Parent · <code class="inline">addChore</code>, 0 pts</td>
+            <td>Direct or pool</td>
+            <td><code class="inline">approveChore</code> / <code class="inline">canApprove</code></td>
+            <td>mainCoins</td>
+            <td><span class="fine"><code class="inline">quest_posted</code> · <code class="inline">quest_submitted</code> · <code class="inline">quest_approved</code></span></td>
+            <td><span class="pill match">✓ matches</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">Routine</td>
+            <td>Parent, or teen self-create</td>
+            <td>Direct or pool</td>
+            <td><code class="inline">approveChore</code></td>
+            <td>mainCoins</td>
+            <td><span class="fine">Standard lifecycle events</span></td>
+            <td><span class="pill match">✓ matches</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">Bounty</td>
+            <td>Parent, first-come pool</td>
+            <td><code class="inline">claimBounty</code> / <code class="inline">claimPoolQuest</code> — CAS write</td>
+            <td><code class="inline">approveChore</code></td>
+            <td>mainCoins</td>
+            <td><span class="fine">Posted · claimed · submitted · approved</span></td>
+            <td><span class="pill match">✓ matches</span> <span class="fine">CAS claim confirmed intact</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">Shopping</td>
+            <td>Parent, always adult-only</td>
+            <td>Direct, or opened to GP</td>
+            <td><code class="inline">approveChore</code></td>
+            <td>mainCoins</td>
+            <td><span class="fine">Standard lifecycle events</span></td>
+            <td><span class="pill match">✓ matches</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">Parent-only</td>
+            <td>Parent, hidden from kids/GP</td>
+            <td>Direct or self-assigned</td>
+            <td>Self-complete if self-assigned; else respond/complete</td>
+            <td>mainCoins <span class="fine">(usually 0)</span></td>
+            <td><span class="fine">None on complete</span></td>
+            <td><span class="pill diverge">⚠ diverges</span> <span class="fine">Ref 1.3</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">GP-created quest</td>
+            <td>Grandparent → <code class="inline">pending_parent_approval</code></td>
+            <td>Parent approves, splits to kid(s) or pool</td>
+            <td><code class="inline">approveGrandparentQuestAsParent</code></td>
+            <td>gpCoins</td>
+            <td><span class="fine">Sponsor DM on approve/decline</span></td>
+            <td><span class="pill match">✓ matches</span> <span class="fine">Ref 1.14</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">GP quest, kid-submitted</td>
+            <td>—</td>
+            <td>—</td>
+            <td><code class="inline">submitGrandparentQuest</code> → GP review</td>
+            <td>gpCoins</td>
+            <td><span class="fine"><code class="inline">quest_submitted</code> → parents + seniors</span></td>
+            <td><span class="pill match">✓ matches</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">GP-offered errand <span class="fine">— new</span></td>
+            <td>GP taps "I'll Handle It" → <code class="inline">gp_offer_pending</code></td>
+            <td>Parent <code class="inline">acceptGPOffer</code> / <code class="inline">declineGPOffer</code>; GP <code class="inline">withdrawGPOffer</code></td>
+            <td><code class="inline">canApprove</code> gate on accept/decline</td>
+            <td>n/a until accepted</td>
+            <td><span class="fine"><code class="inline">gp_offer_pending</code> → parents</span></td>
+            <td><span class="pill match">✓ matches</span> <span class="fine">closes Ref 1.6</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">GP errand receipt <span class="fine">— new</span></td>
+            <td><code class="inline">submitGPErrandReceipt</code></td>
+            <td>—</td>
+            <td>No receipt → auto-completes. Receipt attached → parent review</td>
+            <td>Standard formula <span class="fine">(verified fixed)</span></td>
+            <td><span class="fine">Informational DM only, no push</span></td>
+            <td><span class="pill match">✓ matches</span> <span class="fine">closes Ref 4.2 / 4.6</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">Teen quest, under threshold</td>
+            <td>Teen, via Add Quest</td>
+            <td>Direct or pool</td>
+            <td><code class="inline">approveChore</code></td>
+            <td>mainCoins / gpCoins</td>
+            <td><span class="fine">Standard</span></td>
+            <td><span class="pill none">➖ no scenario</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">Teen quest, over threshold <span class="fine">— new</span></td>
+            <td>Teen · flags <code class="inline">rewardPendingReview</code> at creation</td>
+            <td>Same — task is fully workable</td>
+            <td>Work approves normally; payout waits on parent Approve/Adjust/Decline</td>
+            <td>Standard formula, gated by flag</td>
+            <td><span class="fine">DM on reward decision</span></td>
+            <td><span class="pill match">✓ matches</span> <span class="fine">closes Ref 1.13</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">Pool / claimable</td>
+            <td>Any creator, unassigned</td>
+            <td><code class="inline">claimPoolQuest</code> — CAS, rollback on lost race</td>
+            <td>Standard</td>
+            <td>Standard formula</td>
+            <td><span class="fine"><code class="inline">quest_posted</code> on creation</span></td>
+            <td><span class="pill match">✓ matches</span> <span class="fine">closes Ref 7.1</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">Multi-assign / team</td>
+            <td><code class="inline">createParticipants</code> clones per member</td>
+            <td>Direct, one clone each</td>
+            <td>Independent per clone</td>
+            <td>Full value paid per clone, independently</td>
+            <td><span class="fine">Standard, per clone</span></td>
+            <td><span class="pill diverge">⚠ diverges</span> <span class="fine">Ref 1.7 — deliberate, not a bug</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">Recurring instance</td>
+            <td>Any type with a recurrence rule</td>
+            <td>Same as base category</td>
+            <td>Same, plus cycle rollover</td>
+            <td>Standard</td>
+            <td>Standard</td>
+            <td><span class="pill diverge">⚠ partial</span> <span class="fine">Streak logic landed; no per-instance history yet — Ref 1.9</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="events">
+    <div class="sec-label">Part 2</div>
+    <h2>Event &amp; Schedule Type Inventory</h2>
+    <p class="sec-desc">Every distinct event mode, its response flow, per-role visibility, and whether real conflict detection applies.</p>
+
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Creation</th><th>Response flow</th><th>Role visibility</th><th>Conflicts</th><th>Spec match</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="type-cell">Plain event</td>
+            <td>Any role, per form gates</td>
+            <td>n/a</td>
+            <td>Full family if no member scope set</td>
+            <td>Applies</td>
+            <td><span class="pill diverge">⚠ diverges</span> <span class="fine">Ref 2.1 / 2.10 — no explicit visibility tag</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">Helper-needed</td>
+            <td>Parent sets <code class="inline">helper</code>/<code class="inline">helperStatus</code></td>
+            <td><code class="inline">claimHelperSlot</code> — CAS, reconcile to winner</td>
+            <td>Standard</td>
+            <td>Applies</td>
+            <td><span class="pill match">✓ matches</span> <span class="fine">Ref 2.2 / 3.2 / 7.4</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">Ride / driver-needed</td>
+            <td>Parent/teen sets <code class="inline">driverName</code>/<code class="inline">driverStatus</code></td>
+            <td><code class="inline">claimHelperSlot</code>, driver role</td>
+            <td>GP calendar now checks driverName too</td>
+            <td>Applies</td>
+            <td><span class="pill match">✓ matches</span> <span class="fine">closes Ref 5.1</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">GP-open event</td>
+            <td>Parent flag at creation/edit</td>
+            <td>GP claims straight to <code class="inline">confirmed</code></td>
+            <td>Visible in GP's open-requests pool</td>
+            <td>Applies</td>
+            <td><span class="pill diverge">⚠ diverges</span> <span class="fine">Ref 2.8 — one-stage, not offer→accept</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">Teen-dispatch</td>
+            <td>Parent flag + optional <code class="inline">rideCoins</code></td>
+            <td>Same CAS claim path</td>
+            <td>Coin reward shown to teens only</td>
+            <td>Applies</td>
+            <td><span class="pill match">✓ matches</span> <span class="fine">Ref 3.2</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">Recurring event</td>
+            <td><code class="inline">addRecurringEvent</code> — one row per occurrence</td>
+            <td>Edit-occurrence vs edit-series, via <code class="inline">*Scoped</code> actions</td>
+            <td>Standard, per occurrence</td>
+            <td>Applies per-occurrence</td>
+            <td><span class="pill diverge">⚠ diverges</span> <span class="fine">Ref 2.3 — driver toggle still gated to Ride/Study only</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">Privacy-flagged <span class="fine">— new</span></td>
+            <td>Parent toggle, or auto for Medical category</td>
+            <td>n/a</td>
+            <td><code class="inline">canViewSensitiveEventDetail</code> — parent/subject full, senior busy-block only, sibling hidden entirely</td>
+            <td>Applies</td>
+            <td><span class="pill match">✓ matches</span> <span class="fine">closes Ref 2.6 / 5.4 / 5.5</span></td>
+          </tr>
+          <tr>
+            <td class="type-cell">RSVP <span class="fine">— new field</span></td>
+            <td>Field exists on FamilyEvent</td>
+            <td><span class="fine">No live writer traced this pass</span></td>
+            <td>—</td>
+            <td>—</td>
+            <td><span class="pill unconfirmed">? unconfirmed</span> <span class="fine">Ref 2.11 — needs a follow-up check</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="bugs">
+    <div class="sec-label">Part 3</div>
+    <h2>Confirmed Bugs</h2>
+    <p class="sec-desc">Both found this pass are the same failure mode: a store action invokes <code class="inline">quest-event-notifier</code> with an event name the edge function's switch statement doesn't recognize — it silently falls to <code class="inline">default</code> and nothing is ever delivered.</p>
+
+    <div class="finding">
+      <div class="finding-head">
+        <span class="sev med">Low–Medium</span>
+        <h3>cheerChore fires a dead notification event</h3>
+      </div>
+      <p><span class="ref">choreStore.ts:1973</span> invokes <code class="inline">event: 'chore_cheered'</code>. <span class="ref">quest-event-notifier/index.ts:118-257</span> has no matching case.</p>
+      <div class="repro"><b>Repro:</b> a grandparent or sibling cheers a completed chore. The coin-award side effect still works (separate call), but the "someone cheered you!" push never fires.</div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-head">
+        <span class="sev med">Low–Medium</span>
+        <h3>appreciationPing fires a dead notification event</h3>
+      </div>
+      <p><span class="ref">choreStore.ts:3078</span> invokes <code class="inline">event: 'appreciation_ping'</code> — same silent no-op via <code class="inline">default</code>.</p>
+      <div class="repro"><b>Repro:</b> a parent sends an appreciation ping on a completed delegated quest. It likely still lands as an in-app chat DM via a separate path, but never arrives as a push notification.</div>
+    </div>
+
+    <p class="sec-desc" style="margin-top:20px;"><b>Recommended fix</b> (not applied): add <code class="inline">case 'chore_cheered':</code> and <code class="inline">case 'appreciation_ping':</code> to the notifier's switch, mirroring the existing <code class="inline">gp_offer_pending</code> pattern.</p>
+  </section>
+
+  <section id="diverge">
+    <div class="sec-label">Part 4</div>
+    <h2>Spec Divergences</h2>
+    <p class="sec-desc">Behavior that differs from the 65-scenario doc without being a bug — either a documented deliberate decision, or a gap the doc already knew about that this session didn't touch.</p>
+
+    <div class="diverge-list">
+      <div class="diverge-item">
+        <div class="refnum">1.7</div>
+        <div><p>Shared/team quest pays full value per kid instead of splitting the reward — confirmed still true, and explicitly a documented deliberate design decision in code, not a regression.</p><span class="tag">Out of scope this session, by request</span></div>
+      </div>
+      <div class="diverge-item">
+        <div class="refnum">2.3</div>
+        <div><p>The driver-flag toggle for a recurring occurrence is still hard-gated to <code class="inline">Ride</code>/<code class="inline">Study</code> categories — a recurring Sports practice has no UI path to flag that week as needing a driver.</p></div>
+      </div>
+      <div class="diverge-item">
+        <div class="refnum">2.8</div>
+        <div><p>GP ride/pickup claim is still single-stage (claim → confirmed), not the two-stage offer → parent-accept model 1.6 just built for chores. The event-side equivalent of 1.6 was not part of this session's scope.</p></div>
+      </div>
+      <div class="diverge-item">
+        <div class="refnum">1.3</div>
+        <div><p>Parent-to-parent delegated quest completion still fires no notification to the other parent — confirmed unchanged.</p></div>
+      </div>
+      <div class="diverge-item">
+        <div class="refnum">8.2</div>
+        <div><p>Quest ↔ event linking remains one-way and non-cascading — the field exists on both sides, but no cascade/badge behavior was verified.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="verify">
+    <div class="sec-label">Part 5</div>
+    <h2>This Session's Fixes — Re-Verified</h2>
+    <p class="sec-desc">Independently re-traced, not just re-read, against the actual code on disk.</p>
+
+    <div class="verify-grid">
+      <div class="verify-card">
+        <div class="vhead"><span class="check">✓</span><h4>1.6 — GP offer gate</h4></div>
+        <p><code class="inline">claimGPErrand</code> writes only <code class="inline">gp_offer_pending</code> + <code class="inline">gpOfferById</code>, never touches <code class="inline">assignedToId</code> until a parent accepts. Withdraw path confirmed present.</p>
+      </div>
+      <div class="verify-card">
+        <div class="vhead"><span class="check">✓</span><h4>1.13 — threshold reads bonus</h4></div>
+        <p><code class="inline">AddQuestModal.tsx</code> now includes <code class="inline">bonusCoins</code> in the initial <code class="inline">addQuest</code> payload, not a later <code class="inline">updateQuest</code> — the co-sign check sees the real total.</p>
+      </div>
+      <div class="verify-card">
+        <div class="vhead"><span class="check">✓</span><h4>4.2/4.6 — wallet formula</h4></div>
+        <p>Auto-complete payout now uses the identical <code class="inline">categoryType/sponsorUserId</code> formula as every other payout site — no hardcoded <code class="inline">gpCoins</code> remains.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Scope: store/choreStore.ts · questStore.ts · choreAdapter.ts · eventStore.ts · CalendarScreen.tsx · EventFormModal.tsx · quest-event-notifier — cross-checked against docs/requirements_vs_code_gaps.html. Read-only audit, no files modified.
+  </footer>
+
+</div>

@@ -236,7 +236,7 @@ export default function QuestsScreen() {
     const ok = submitQuest(submitTarget.id, {
       photoUrl: submissionPhotoUri ?? undefined,
       note: submissionNote.trim() || undefined,
-    });
+    }, activeMemberId ?? undefined);
     if (!ok) {
       Alert.alert('Not due yet', "This chore's next turn hasn't started yet — check back on its due date.");
       return;
@@ -372,6 +372,16 @@ export default function QuestsScreen() {
       // Force-assign: reassign the quest to the target kid
       if (item.questId && item.targetKidId) {
         store.reassignQuest(item.questId, item.targetKidId, activeMember?.id);
+        // Live QA audit found this coin penalty (shown to the parent in the
+        // Force Assign confirmation dialog, e.g. "-25🪙 deduction") was
+        // never actually applied — reassignQuest only moves the assignee,
+        // it has no payout side effect. Follows the same negative-awardPoints
+        // clawback pattern _executeReversal already uses elsewhere in
+        // choreStore.ts for the same kind of "remove coins that were never
+        // truly earned" case.
+        if (item.coinPenalty > 0 && item.currentKidId) {
+          useChoreStore.getState().awardPoints(item.currentKidId, item.questId, -item.coinPenalty, 0);
+        }
       }
     } else if (type === 'bounty') {
       const goPool = !item.assignedToId;
@@ -899,7 +909,7 @@ export default function QuestsScreen() {
               )}
 
               {myAdultQuests.length > 0 && activeMember && myAdultQuests.map(q => (
-                <MyAdultQuestCard key={q.id} q={q} parentAssignments={parentAssignments} active={activeMember}
+                <MyAdultQuestCard key={q.id} q={q} parentAssignments={parentAssignments} active={activeMember} members={members}
                   colors={colors} isDark={isDark} completeParentQuest={completeParentQuest}
                   updateQuest={updateQuest} onDelegate={(choreId, choreTitle) => setDelegateFromLocked({ choreId, choreTitle })}
                   onLongPress={() => setEditTarget(q)} />

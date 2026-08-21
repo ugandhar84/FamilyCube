@@ -88,7 +88,7 @@ export function HouseholdBacklogSection({
               <View style={{ gap: 6 }}>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.primary, marginBottom: 2 }}>Assigned to you</Text>
                 {sortedMyAdultQuests.map(q => (
-                  <MyAdultQuestCard key={q.id} q={q} parentAssignments={parentAssignments} active={active}
+                  <MyAdultQuestCard key={q.id} q={q} parentAssignments={parentAssignments} active={active} members={members}
                     colors={colors} isDark={isDark} completeParentQuest={completeParentQuest}
                     updateQuest={updateQuest} onDelegate={onDelegate} />
                 ))}

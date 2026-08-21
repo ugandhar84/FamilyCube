@@ -15,8 +15,8 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useChoreStore } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
-import { resolveSpeechLocale } from '@/lib/units';
-import { endCallAlert, waitForAudioSession, routeAudioToSpeaker } from '@/lib/callAlert';
+import { resolveSpeechLocale, resolveBestVoiceId } from '@/lib/units';
+import { endCallAlert, waitForAudioSession, routeAudioToSpeaker, onCallEnded } from '@/lib/callAlert';
 
 const SNOOZE_TIERS = [
   { label: 'On time', minutes: 0 },
@@ -48,6 +48,20 @@ export default function CallAlertScreen() {
     : (dayEvents.find(e => e.id === itemId) ?? rangeEvents.find(e => e.id === itemId));
   const title = item?.title ?? 'Your reminder';
 
+  // router.back() is a silent no-op when this screen has nothing before it
+  // on the navigation stack — which happens on a cold start (app was
+  // killed, CallKit/PushKit relaunched it straight into this screen via
+  // checkNativeAnsweredCall/onCallAnswered before any normal tab ever
+  // mounted). Every action button here (Done/Dismiss/Snooze) ultimately
+  // calls this, so that case looked like the whole screen had frozen —
+  // taps registered (the call itself did hang up / re-arm) but the UI
+  // never left. Falls back to routing into the Hub tab so there's always
+  // somewhere to land.
+  const closeScreen = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)');
+  };
+
   const listener = members.find(m => m.id === activeMemberId);
   const creatorId = itemType === 'chore' ? (item as any)?.createdById : (item as any)?.createdBy;
   const creator = members.find(m => m.id === creatorId);
@@ -75,19 +89,46 @@ export default function CallAlertScreen() {
     ).start();
   }, []);
 
+  // Hanging up from the native CallKit UI (the system's own end-call
+  // control, e.g. the lock-screen "decline"/red hang-up button, or the
+  // in-call banner) ends the call at the OS level but never touches this
+  // screen — previously nothing here listened for that, so the reminder UI
+  // (and the still-in-progress TTS readout) stayed on screen indefinitely
+  // after the call itself was already gone. This closes the screen the
+  // moment CallKit reports the call ended, from any source.
+  useEffect(() => {
+    const remove = onCallEnded((endedUUID) => {
+      if (callUUID && endedUUID && endedUUID.toLowerCase() !== callUUID.toLowerCase()) return;
+      Speech.stop();
+      closeScreen();
+    });
+    return remove;
+  }, [callUUID]);
+
   useEffect(() => {
     const effectId = Math.random().toString(36).slice(2, 8);
     console.log(`[call-alert][${effectId}] speak effect MOUNTED — spokenForItemId=`, spokenForItemId.current, 'item=', !!item, 'itemId=', itemId, 'itemType=', itemType);
     if (!item || spokenForItemId.current === item.id) return;
     const dueLabel = itemType === 'chore' ? (item as any).dueTime : (item as any).time;
     const kind = itemType === 'chore' ? 'chore' : 'event';
-    const greeting = listener ? `Hi ${firstName(listener.name)}, ` : 'Hi, ';
+    const greeting = listener ? `Hi ${firstName(listener.name)}.` : 'Hi there.';
     const from = creator && creator.id !== listener?.id
-      ? ` It was set by ${firstName(creator.name)}.`
+      ? `It was set by ${firstName(creator.name)}.`
       : '';
-    const text = `${greeting}this is your Family Cube reminder for the ${kind} "${title}"${dueLabel ? `, due at ${dueLabel}` : ''}.${from}`;
+    // Split into short, separately-spoken clauses instead of one long
+    // comma-joined sentence — expo-speech (the underlying platform TTS)
+    // paces on utterance boundaries far better than on punctuation alone,
+    // so queuing several short utterances (each speak() call queues by
+    // default) sounds like natural spoken pauses instead of one flat run-on
+    // read at a constant clip.
+    const segments = [
+      greeting,
+      `This is your Family Cube reminder for the ${kind}, "${title}."`,
+      ...(dueLabel ? [`It's due at ${dueLabel}.`] : []),
+      ...(from ? [from] : []),
+    ];
     let cancelled = false;
-    console.log(`[call-alert][${effectId}] waiting for audio session before speaking:`, text);
+    console.log(`[call-alert][${effectId}] waiting for audio session before speaking:`, segments.join(' | '));
     // CallKit still owns the audio session for a moment after Answer —
     // speaking before it hands control back (didActivateAudioSession) is
     // silently dropped, no error, just no sound. See waitForAudioSession.
@@ -100,31 +141,71 @@ export default function CallAlertScreen() {
       // normally. Force it to the speaker before speaking.
       if (callUUID) await routeAudioToSpeaker(callUUID);
       if (cancelled) return;
+      const voiceId = await resolveBestVoiceId();
+      if (cancelled) return;
       // Mark as spoken only once we're actually committing to speak — not
       // at effect-start, which would poison a StrictMode-cancelled first
       // attempt into blocking the real second mount from ever speaking.
       spokenForItemId.current = item.id;
-      // Repeats up to 3 times total (1 initial + 2 repeats), 1.5s apart —
+      // Repeats up to 3 times total (1 initial + 2 repeats), 2s apart —
       // without this, a person who answers but doesn't immediately tap
       // Done/Dismiss is left on a silently-connected call after the first
       // (and only) reading, indistinguishable from the call having dropped.
+      // After the 3rd read with still no response, the call now actually
+      // hangs up (endCallAlert) instead of just going silent while staying
+      // connected — previously MAX_SPEAKS only stopped the *voice*, leaving
+      // an open call that looked answered-but-abandoned until the person on
+      // the other end manually noticed and hung up.
       const MAX_SPEAKS = 3;
-      const REPEAT_GAP_MS = 1500;
+      const REPEAT_GAP_MS = 2000;
+      const SEGMENT_GAP_MS = 350;
       let speakCount = 0;
+
+      const speakSegments = (onAllDone: () => void) => {
+        let i = 0;
+        const next = () => {
+          if (cancelled) return;
+          if (i >= segments.length) { onAllDone(); return; }
+          const segment = segments[i++];
+          // expo-speech's iOS bridge can call onDone more than once for the
+          // same utterance (observed as "Hi Alex" being read twice back to
+          // back) — AVSpeechSynthesizer's didFinish delegate callback fires
+          // once genuinely, but a subsequent didCancel/boundary event is
+          // sometimes also mapped to onDone by the native module. Guard so
+          // only the first onDone per segment can advance to the next one.
+          let advanced = false;
+          const advance = () => {
+            if (advanced || cancelled) return;
+            advanced = true;
+            setTimeout(next, SEGMENT_GAP_MS);
+          };
+          Speech.speak(segment, {
+            language: resolveSpeechLocale(),
+            voice: voiceId,
+            rate: 0.93,
+            pitch: 1.0,
+            onDone: advance,
+            onStopped: advance,
+            onError: (e) => { console.warn(`[call-alert][${effectId}] Speech onError`, e); advance(); },
+          });
+        };
+        next();
+      };
+
       const speakOnce = () => {
         if (cancelled) return;
         speakCount++;
-        console.log(`[call-alert][${effectId}] calling Speech.speak now (attempt ${speakCount}/${MAX_SPEAKS})`);
-        Speech.speak(text, {
-          language: resolveSpeechLocale(),
-          rate: 0.95,
-          onStart: () => console.log(`[call-alert][${effectId}] Speech onStart (attempt ${speakCount})`),
-          onDone: () => {
-            console.log(`[call-alert][${effectId}] Speech onDone (attempt ${speakCount})`);
-            if (cancelled || speakCount >= MAX_SPEAKS) return;
-            setTimeout(speakOnce, REPEAT_GAP_MS);
-          },
-          onError: (e) => console.warn(`[call-alert][${effectId}] Speech onError`, e),
+        console.log(`[call-alert][${effectId}] speaking segments now (attempt ${speakCount}/${MAX_SPEAKS})`);
+        speakSegments(async () => {
+          console.log(`[call-alert][${effectId}] all segments done (attempt ${speakCount})`);
+          if (cancelled) return;
+          if (speakCount >= MAX_SPEAKS) {
+            console.log(`[call-alert][${effectId}] no response after ${MAX_SPEAKS} reads — ending call`);
+            if (callUUID) await endCallAlert(callUUID);
+            if (!cancelled) closeScreen();
+            return;
+          }
+          setTimeout(speakOnce, REPEAT_GAP_MS);
         });
       };
       speakOnce();
@@ -148,7 +229,7 @@ export default function CallAlertScreen() {
   const dismiss = async () => {
     Speech.stop();
     if (callUUID) await endCallAlert(callUUID);
-    router.back();
+    closeScreen();
   };
 
   // Done previously did the exact same thing as Dismiss (close the call
@@ -170,7 +251,7 @@ export default function CallAlertScreen() {
   const finishAndClose = async () => {
     Speech.stop();
     if (callUUID) await endCallAlert(callUUID);
-    router.back();
+    closeScreen();
   };
 
   const done = () => {
@@ -213,7 +294,7 @@ export default function CallAlertScreen() {
         await supabase.from('call_reminder_log').delete().eq('item_type', itemType).eq('item_id', itemId);
       } catch { /* best-effort — worst case the item just doesn't re-ring */ }
     }
-    router.back();
+    closeScreen();
   };
 
   return (

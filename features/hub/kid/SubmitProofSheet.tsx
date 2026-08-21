@@ -7,6 +7,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Camera, Image as ImageIcon, CheckCircle2, X } from 'lucide-react-native';
 import { KID } from './kidTheme';
 import type { Quest } from '@/store/questStore';
+import { useFamilyStore } from '@/store/familyStore';
 
 // Money-green — "photo proof / submit" positive accent, distinct from
 // brand teal used elsewhere in the kid hub. Not colors.success (which IS
@@ -18,10 +19,11 @@ const MONEY_GREEN = '#10B981';
 export function SubmitProofSheet({ quest, colors, isDark, onClose, submitQuest }: {
   quest: Quest | null; colors: any; isDark: boolean;
   onClose: () => void;
-  submitQuest: (id: string, opts?: { photoUrl?: string; note?: string }) => void;
+  submitQuest: (id: string, opts?: { photoUrl?: string; note?: string }, memberId?: string) => void;
 }) {
   const [uri, setUri] = useState<string | null>(null);
   const [note, setNote] = useState('');
+  const activeMemberId = useFamilyStore(s => s.activeMemberId);
 
   const close = () => { setUri(null); setNote(''); onClose(); };
 
@@ -110,7 +112,7 @@ export function SubmitProofSheet({ quest, colors, isDark, onClose, submitQuest }
           disabled={!uri}
           onPress={() => {
             if (!quest || !uri) return;
-            submitQuest(quest.id, { photoUrl: uri, note: note.trim() || undefined });
+            submitQuest(quest.id, { photoUrl: uri, note: note.trim() || undefined }, activeMemberId ?? undefined);
             close();
           }}
           style={{ borderRadius: 14, paddingVertical: 15, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8,

@@ -9,7 +9,7 @@ import { GP } from './seniorTheme';
 const DISPATCH_AMBER = '#F59E0B';
 import { OpenRideRequestsList } from './OpenRideRequestsList';
 import { QuestInvitationsSection } from './QuestInvitationsSection';
-import { ActiveErrandsSection } from './ActiveErrandsSection';
+import { ActiveErrandsSection, PendingOffersSection } from './ActiveErrandsSection';
 import { FamilyNeedsHandSection } from './FamilyNeedsHandSection';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
@@ -32,7 +32,8 @@ export function LendAHandCard({
   availSettingsOpen, setAvailSettingsOpen,
   hasDispatchItems, dispatchBadgeCount,
   openRides, gpInvitations, passedInvitations, setPassedInvitations,
-  myActiveErrands, onOpenReceiptModal,
+  myActiveErrands, onOpenReceiptModal, onMarkDoneNoReceipt,
+  myPendingOffers, onWithdrawOffer,
   openRequests, gpWelcomeRequests, gpWelcomeChores, volunteerPool,
   active, members, allNames, colors, isDark,
   updateEvent, updateChore, assignRequest, claimGPErrand,
@@ -49,7 +50,8 @@ export function LendAHandCard({
   hasDispatchItems: boolean; dispatchBadgeCount: number;
   openRides: FamilyEvent[]; gpInvitations: ChoreTask[];
   passedInvitations: string[]; setPassedInvitations: (fn: (prev: string[]) => string[]) => void;
-  myActiveErrands: ChoreTask[]; onOpenReceiptModal: (choreId: string) => void;
+  myActiveErrands: ChoreTask[]; onOpenReceiptModal: (choreId: string) => void; onMarkDoneNoReceipt: (choreId: string) => void;
+  myPendingOffers: ChoreTask[]; onWithdrawOffer: (choreId: string) => void;
   openRequests: FamilyEvent[]; gpWelcomeRequests: KidRequest[]; gpWelcomeChores: ChoreTask[]; volunteerPool: FamilyEvent[];
   active: FamilyMember; members: FamilyMember[]; allNames: string[]; colors: any; isDark: boolean;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
@@ -234,13 +236,16 @@ export function LendAHandCard({
               colors={colors} isDark={isDark} claimGPErrand={claimGPErrand} />
           )}
 
-          <ActiveErrandsSection errands={myActiveErrands} onOpenReceiptModal={onOpenReceiptModal} colors={colors} isDark={isDark} />
+          <ActiveErrandsSection errands={myActiveErrands} onOpenReceiptModal={onOpenReceiptModal} onMarkDoneNoReceipt={onMarkDoneNoReceipt} colors={colors} isDark={isDark} />
+
+          <PendingOffersSection offers={myPendingOffers} onWithdraw={onWithdrawOffer} colors={colors} isDark={isDark} />
 
           <FamilyNeedsHandSection
             openRequests={openRequests} gpWelcomeRequests={gpWelcomeRequests}
             gpWelcomeChores={gpWelcomeChores} volunteerPool={volunteerPool}
             active={active} members={members} allNames={allNames} colors={colors} isDark={isDark}
-            updateEvent={updateEvent} updateChore={updateChore} assignRequest={assignRequest} />
+            updateEvent={updateEvent} updateChore={updateChore} assignRequest={assignRequest}
+            claimGPErrand={claimGPErrand} />
         </>}
       </View>
     </View>

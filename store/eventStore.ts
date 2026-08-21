@@ -161,20 +161,31 @@ export function isEventSensitive(e: Pick<FamilyEvent, 'privacyLevel' | 'category
 
 // Scenario 2.6/5.4/5.5 — the single shared visibility predicate every
 // calendar/hub surface should call for a sensitive event, instead of each
-// screen re-deriving its own version of "am I allowed to see this." Returns
-// true if the viewer gets FULL detail; false means the caller should either
-// omit the event entirely (kid/teen sibling default) or render a
-// busy-block-only stub (GP default, unless explicitly shared for care).
+// screen re-deriving its own version of "am I allowed to see this."
+//
+// Live QA audit found the previous plain-boolean version was consumed
+// identically to a hard include/exclude filter at all 4 call sites — the
+// promised "GP sees a busy block, not nothing" behavior (the actual UI copy
+// in EventFormModal says exactly this) was never implemented; a GP with
+// `sharedWithGPForCare` unset just had the event vanish from their calendar
+// entirely, same as an uninvolved sibling kid/teen, risking a real-world
+// double-booked pickup since they had no signal the slot was occupied at
+// all. Now a real 3-state result so callers can tell the two "false" cases
+// apart: 'full' (render normally), 'busy-block' (render a stripped
+// placeholder — no title/notes/doctorName, just that the time is taken),
+// 'hidden' (omit entirely, unchanged for kid/teen siblings).
+export type SensitiveEventVisibility = 'full' | 'busy-block' | 'hidden';
+
 export function canViewSensitiveEventDetail(
   e: Pick<FamilyEvent, 'memberId' | 'memberIds' | 'sharedWithGPForCare'>,
   viewerRole: 'parent' | 'kid' | 'teen' | 'senior' | undefined,
   viewerId: string | undefined,
-): boolean {
-  if (viewerRole === 'parent') return true; // both legal guardians always see full detail
+): SensitiveEventVisibility {
+  if (viewerRole === 'parent') return 'full'; // both legal guardians always see full detail
   const isSubject = !!viewerId && (e.memberId === viewerId || !!e.memberIds?.includes(viewerId));
-  if (isSubject) return true; // never hidden from the person it's about
-  if (viewerRole === 'senior') return !!e.sharedWithGPForCare; // GP: busy-block unless explicitly shared
-  return false; // sibling kid/teen: hidden entirely, no busy-block
+  if (isSubject) return 'full'; // never hidden from the person it's about
+  if (viewerRole === 'senior') return e.sharedWithGPForCare ? 'full' : 'busy-block'; // GP: busy-block unless explicitly shared
+  return 'hidden'; // sibling kid/teen: hidden entirely, no busy-block
 }
 
 export type StripMap = Record<string, string[]>;   // date → unique category[]

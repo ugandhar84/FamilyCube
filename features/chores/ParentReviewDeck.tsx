@@ -22,6 +22,7 @@ import {
 } from '@/store/choreStore';
 import { choreToQuest } from '@/store/choreAdapter';
 import { QuestApprovalCard } from '../hub/parent/QuestApprovalCard';
+import { GpOfferReviewCard } from '../hub/parent/GpOfferReviewCard';
 import type { FamilyMember } from '@/store/familyStore';
 
 // ─── Countdown hook ───────────────────────────────────────────────────────────
@@ -440,7 +441,7 @@ interface ParentReviewDeckProps {
 
 export function ParentReviewDeck({ parent, members, colors, isDark }: ParentReviewDeckProps) {
   const {
-    approveChore, requestRedo,
+    approveChore, requestRedo, acceptGPOffer, declineGPOffer,
     scanAndAutoApprove, resetDueRecurringChores, syncFromDB, loadFromStorage,
   } = useChoreStore();
   const allNames = members.map(m => m.name);
@@ -449,7 +450,7 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
   const transactions = useChoreStore(s => s.transactions);
   const getPendingCashOuts = useChoreStore(s => s.getPendingCashOuts);
 
-  const { pendingSubmissions, pendingCashOuts } = useMemo(() => ({
+  const { pendingSubmissions, pendingCashOuts, gpOffersPending } = useMemo(() => ({
     // pending_grandparent_approval is that GP's own completion review, not
     // the parent's — this deck's Approve button calls approveChore, which
     // requires status === 'pending_approval' and silently no-ops on
@@ -457,6 +458,12 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
     // for a chore only the sponsoring grandparent can actually complete.
     pendingSubmissions: chores.filter(c => c.status === 'pending_approval'),
     pendingCashOuts:    getPendingCashOuts(),
+    // Scenario 1.6 — a caregiver GP holding a temporary-approver grant
+    // passes canApprove()'s authorization check for acceptGPOffer/
+    // declineGPOffer, but this deck (their only review surface — see
+    // SeniorView.tsx's hasCaregiverAccess-gated render) had no card at all
+    // for it, leaving them authorized with nothing to act on.
+    gpOffersPending:    chores.filter(c => c.status === 'gp_offer_pending'),
   }), [chores, transactions]);
 
   const [redoTask, setRedoTask] = useState<ChoreTask | null>(null);
@@ -466,7 +473,7 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
     loadFromStorage().then(() => { syncFromDB(); scanAndAutoApprove(); resetDueRecurringChores(); });
   }, []);
 
-  const totalCount = pendingSubmissions.length + pendingCashOuts.length;
+  const totalCount = pendingSubmissions.length + pendingCashOuts.length + gpOffersPending.length;
 
   if (totalCount === 0) {
     // Matches HouseholdBacklogSection's empty state — compact single-line
@@ -529,7 +536,20 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
           </>
         )}
 
-        {/* 2. Cash-out requests */}
+        {/* 2. GP offers awaiting Accept/Decline */}
+        {gpOffersPending.length > 0 && (
+          <>
+            <SectionHeader emoji="🤝" title="Grandparent Offers" count={gpOffersPending.length} colors={colors} />
+            {gpOffersPending.map(c => (
+              <GpOfferReviewCard
+                key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={parent}
+                acceptGPOffer={acceptGPOffer} declineGPOffer={declineGPOffer}
+              />
+            ))}
+          </>
+        )}
+
+        {/* 3. Cash-out requests */}
         {pendingCashOuts.length > 0 && (
           <>
             <SectionHeader emoji="💵" title="Cash-Out Requests" count={pendingCashOuts.length} colors={colors} />

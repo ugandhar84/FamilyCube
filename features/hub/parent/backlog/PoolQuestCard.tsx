@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
-import { ChevronUp, ChevronDown, Lock, CheckCircle2, ShoppingBag, HandHelping, Send, HeartHandshake, Check } from 'lucide-react-native';
+import { View, Text, Pressable, Alert } from 'react-native';
+import { ChevronUp, ChevronDown, Lock, CheckCircle2, ShoppingBag, HandHelping, Send, HeartHandshake, Check, XCircle, RotateCcw } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
 import type { ChoreTask } from '@/store/choreStore';
@@ -40,6 +40,14 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
     else timeAgo = `${Math.floor(diffMins / 1440)}d ago`;
   }
 
+  // Spec 1.10 — a kid decline sets rejectionReason+declinedAt on this same
+  // record before dropping it back in the pool, so the creator sees it came
+  // back declined (not just newly opened) and gets a Cancel option here
+  // rather than only "Take it" / "Delegate". declinedAt is cleared the
+  // moment anyone acts on it (take/delegate/cancel), so this only shows for
+  // the window between the decline and the next action.
+  const declineNote = chore.declinedAt ? (chore as any).rejectionReason : undefined;
+
   return (
     <View style={{
       borderRadius: 14, borderWidth: 1,
@@ -58,6 +66,12 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
             <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 2 }}>
               {creatorName && `By ${creatorName}`}{creatorName && timeAgo && ' · '}{timeAgo}
             </Text>
+          )}
+          {declineNote && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+              <RotateCcw size={10} color={colors.danger} />
+              <Text style={{ fontSize: TYPO.micro, color: colors.danger, flex: 1 }} numberOfLines={1}>{declineNote}</Text>
+            </View>
           )}
           {(chore as any).shoppingItems?.length > 0 && !isExp ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
@@ -89,19 +103,42 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
 
       {!isDisabled && (
         <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
-          <Pressable onPress={() => onTakeIt(chore)}
+          <Pressable onPress={() => {
+              // Clear the stale decline marker the moment it's re-actioned —
+              // otherwise "declined by X" would keep showing on this same
+              // record forever even after someone else picked it up.
+              if (declineNote) useChoreStore.getState().updateChore(chore.id, { rejectionReason: undefined, declinedAt: undefined });
+              onTakeIt(chore);
+            }}
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
               backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 7 }}>
             <HandHelping size={13} color="#fff" />
             <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Take It</Text>
           </Pressable>
-          <Pressable onPress={() => onDelegate(chore.id, chore.title)}
+          <Pressable onPress={() => {
+              if (declineNote) useChoreStore.getState().updateChore(chore.id, { rejectionReason: undefined, declinedAt: undefined } as any);
+              onDelegate(chore.id, chore.title);
+            }}
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
               borderWidth: 1.5, borderColor: colors.parent + '80',
               borderRadius: 10, paddingVertical: 7 }}>
             <Send size={12} color={colors.parent} />
             <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.parent }}>Delegate</Text>
           </Pressable>
+          {declineNote && (
+            <Pressable
+              onPress={() => Alert.alert(
+                'Cancel this task?',
+                `"${chore.title}" was declined and will be permanently removed.`,
+                [{ text: 'Keep it', style: 'cancel' },
+                 { text: 'Cancel Task', style: 'destructive', onPress: () => useChoreStore.getState().deleteChore(chore.id) }],
+              )}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+                borderWidth: 1.5, borderColor: colors.danger + '80',
+                borderRadius: 10, paddingVertical: 7, paddingHorizontal: 10 }}>
+              <XCircle size={12} color={colors.danger} />
+            </Pressable>
+          )}
         </View>
       )}
 

@@ -211,13 +211,46 @@ serve(async (req) => {
     // of an unmodified item still collide on the identical due_at and stay
     // deduped. See supabase/migrations/*_call_reminder_log_due_at.sql for
     // the matching unique-constraint change (item_type,item_id,due_at).
+    //
+    // This used to be a plain SELECT-then-filter followed by an upsert
+    // AFTER sendVoipPush() had already fired — a classic check-then-act
+    // race. The cron fires every minute, but nothing guarantees a run
+    // finishes within a minute (APNs JWT signing + an HTTP POST per
+    // target, possibly dozens of targets); pg_cron does not skip an
+    // overlapping tick if the previous invocation of this function is
+    // still in flight, so two concurrent sweeps could both SELECT and see
+    // "not yet rung" for the same (item_type,item_id,due_at), both pass
+    // the in-memory filter, and both call sendVoipPush — a real double
+    // ring on the phone — before either had written the log row that was
+    // supposed to stop the other. The unique constraint on
+    // call_reminder_log only ever protected the *log table* from a
+    // duplicate row, never the *push*, because the write happened after
+    // the send.
+    //
+    // Fixed by claiming each (item_type,item_id,due_at) atomically BEFORE
+    // sending anything: upsert with ignoreDuplicates lets Postgres's own
+    // unique constraint be the race judge — of two concurrent inserts for
+    // the same key, exactly one wins and is returned; the other is
+    // silently dropped (not an error) and simply doesn't come back in the
+    // response, so it's excluded from toRing and never sends a push. This
+    // makes the claim-and-send atomic instead of check-then-act.
     const dueAtKey = (d: Date) => new Date(Math.floor(d.getTime() / 60000) * 60000).toISOString();
-    const { data: alreadyRung } = await supabase
+    const claimRows = targets.map(t => ({
+      item_type: t.itemType,
+      item_id: t.itemId,
+      due_at: dueAtKey(t.dueAt),
+      fired_at: new Date().toISOString(),
+    }));
+    const { data: claimed, error: claimError } = await supabase
       .from('call_reminder_log')
-      .select('item_type, item_id, due_at')
-      .in('item_id', targets.map(t => t.itemId));
-    const rungSet = new Set((alreadyRung ?? []).map((r: any) => `${r.item_type}:${r.item_id}:${r.due_at}`));
-    const toRing = targets.filter(t => !rungSet.has(`${t.itemType}:${t.itemId}:${dueAtKey(t.dueAt)}`));
+      .upsert(claimRows, { onConflict: 'item_type,item_id,due_at', ignoreDuplicates: true })
+      .select('item_type, item_id, due_at');
+    if (claimError) {
+      console.error('[call-reminder-sweeper] claim upsert failed, aborting sweep', claimError);
+      return json({ ok: false, error: claimError.message }, 500);
+    }
+    const claimedSet = new Set((claimed ?? []).map((r: any) => `${r.item_type}:${r.item_id}:${r.due_at}`));
+    const toRing = targets.filter(t => claimedSet.has(`${t.itemType}:${t.itemId}:${dueAtKey(t.dueAt)}`));
     if (toRing.length === 0) return json({ ok: true, rung: 0, alreadyRung: targets.length });
 
     // ── Resolve VoIP tokens for each target's members ─────────────────────────
@@ -248,15 +281,13 @@ serve(async (req) => {
         memberNames: t.memberIds.map(id => nameOf[id]).filter(Boolean),
       });
       results.push({ itemType: t.itemType, itemId: t.itemId, title: t.title, delivery });
-      // Log even if delivery had zero tokens (no device registered) — the
-      // window has passed either way, and re-ringing 90s later on a retry
-      // sweep would be a duplicate, not a fix. due_at is part of the key
-      // now (see the comment above the dedupe query) so an edit that moves
-      // the item to a new time is free to ring again on its own schedule.
-      await supabase.from('call_reminder_log').upsert(
-        { item_type: t.itemType, item_id: t.itemId, due_at: dueAtKey(t.dueAt), fired_at: new Date().toISOString() },
-        { onConflict: 'item_type,item_id,due_at' },
-      );
+      // The claim row (item_type,item_id,due_at) was already written
+      // atomically BEFORE this send, above — see the claim upsert. Even a
+      // zero-token delivery keeps its claim (no separate write needed
+      // here): the window has passed either way, and re-ringing 90s later
+      // on a retry sweep would be a duplicate, not a fix. due_at being
+      // part of the key means an edit that moves the item to a new time
+      // is free to ring again on its own schedule regardless.
       rung++;
     }
 

@@ -46,10 +46,14 @@ export function SharedCardBubble({ payload, colors, onLongPress, onPress }: { pa
 // ─── Message bubble (WhatsApp style — rounded rect with tail) ────────────────
 
 export function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, senderEmoji,
-  senderColor, activeMemberId, memberMap, searchQuery, colors, isDark, highlighted, isParent, readers,
+  senderColor, replyToColor, activeMemberId, memberMap, searchQuery, colors, isDark, highlighted, isParent, readers,
   onLongPress, onDoubleTap, onSwipeRight, onQuoteTap, onOpenImage, onOpenVideo, onOpenSharedCard }: {
   msg: ChatMessage; isMe: boolean; isGroupFirst: boolean; isGroupLast: boolean;
   senderName: string; senderEmoji: string; senderColor: string;
+  // Color of the ORIGINAL sender of the quoted message (msg.replyTo), not
+  // this message's own sender — lets the quote strip stand out as "whose
+  // message this was" rather than blending into the replying bubble.
+  replyToColor?: string;
   activeMemberId: string; memberMap: Record<string, any>;
   highlighted?: boolean;
   isParent?: boolean;
@@ -66,7 +70,9 @@ export function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName
   const alertTint = detectAlertTint(msg.text);
   const alertColor = alertTint === 'danger' ? colors.danger : alertTint === 'warning' ? colors.warning : alertTint === 'success' ? colors.success : null;
 
-  const bubbleMe       = isDark ? colors.primary + 'E0' : colors.primary + 'D8';
+  // Reduced from E0/D8 (~88%/85% opacity) — a lighter "my bubble" so it
+  // sits back a bit rather than reading as the loudest thing on screen.
+  const bubbleMe       = isDark ? colors.primary + 'B0' : colors.primary + 'A8';
   const bubbleMeTxt    = '#FFFFFF';
   const bubbleOther    = alertColor ? (isDark ? alertColor + '20' : alertColor + '12') : colors.card;
   const bubbleOtherTxt = colors.textPrimary;
@@ -203,9 +209,6 @@ export function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName
             : <View style={{ width: 34 }} />
         )}
         <View style={{ maxWidth: '82%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 2 }}>
-          {!isMe && isGroupFirst && (
-            <Text style={{ fontSize: 11, fontWeight: '800', color: senderColor, marginLeft: 4, marginBottom: 1 }}>{senderName}</Text>
-          )}
           <SharedCardBubble payload={msg.systemEvent.payload} colors={colors} onLongPress={onLongPress}
             onPress={() => onOpenSharedCard?.(msg.systemEvent!.payload)} />
           {metaRow}
@@ -234,13 +237,6 @@ export function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName
 
         <Animated.View style={{ maxWidth: '78%', alignItems: isMe ? 'flex-end' : 'flex-start', gap: 2,
           borderRadius: BUBBLE_R, borderWidth: highlightWidth, borderColor: highlightBorder }}>
-          {/* Sender name — above bubble, outside */}
-          {!isMe && isGroupFirst && (
-            <Text style={{ fontSize: 11, fontWeight: '800', color: senderColor, marginLeft: 4, marginBottom: 1 }}>
-              {senderName}
-            </Text>
-          )}
-
           {/* Bubble */}
           <Pressable
             onPress={handlePress}
@@ -271,11 +267,13 @@ export function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName
                   // primary bubble; incoming: colors.surface against the card.
                   backgroundColor: isMe ? 'rgba(255,255,255,0.16)' : colors.surface,
                 }}>
-                {/* Accent strip — sender colour */}
-                <View style={{ width: 3, backgroundColor: senderColor }} />
+                {/* Accent strip — the QUOTED message's own sender's color
+                    (not this message's sender), so it reads as "whose
+                    message this was" and stands out against the reply. */}
+                <View style={{ width: 3, backgroundColor: replyToColor ?? senderColor }} />
                 <View style={{ flex: 1, paddingHorizontal: 9, paddingVertical: 7 }}>
                   <Text style={{ fontSize: 11, fontWeight: '800', marginBottom: 2,
-                    color: senderColor }}>
+                    color: replyToColor ?? senderColor }}>
                     {memberMap[msg.replyTo.senderId]?.name?.split(' ')[0] ?? 'Family'}
                   </Text>
                   <Text numberOfLines={2} style={{ fontSize: 12, lineHeight: 16,
@@ -285,9 +283,6 @@ export function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName
                 </View>
               </Pressable>
             )}
-
-            {/* Sender name — shown outside/above bubble on first in group */}
-            {!isMe && isGroupFirst && false && null}
 
             {/* Voice note */}
             {isVoice && msg.voiceUri ? (

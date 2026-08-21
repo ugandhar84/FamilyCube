@@ -19,6 +19,7 @@ import { localDateStr } from '@/lib/dates';
 import { supabase } from '@/lib/supabase';
 import { fetchCustomCategories, fetchCustomSuggestions, recordCustomSuggestion, CustomCategory } from '@/lib/familyCustomCategories';
 import { useGroceryStore } from '@/store/groceryStore';
+import { useEventStore } from '@/store/eventStore';
 import { QUEST_SUGGESTIONS, ALL_CATEGORIES, CATEGORY_META, fmtDateLabel, fmtTimeLabel } from './questFormShared';
 import {
   resolveDomainFromLooseLabel, fetchSubcategoriesForDomain, previewAssignment, applyAssignment,
@@ -135,6 +136,22 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   // unconditionally regardless of whether isRoutine/isAdultTask ever showed
   // the picker.
   const [routineFreq,  setRoutineFreq]  = useState<'daily' | 'weekly' | 'monthly' | 'first_come' | 'once'>('once');
+
+  // Live QA audit found "shopping is always adult-only" was UI copy/intent
+  // only — a kid could be selected as assignee for a shopping run and it
+  // would save, submit, and pay out with zero rejection anywhere in the
+  // stack (addChore/updateChore have no categoryType==='shopping' guard).
+  // Mirrors toggleAdultTask's existing kid-filtering behavior: switching
+  // INTO shopping strips any already-selected kid/teen from assignIds, the
+  // same way turning on the separate "Adult Task" toggle already does.
+  useEffect(() => {
+    if (routineType === 'shopping') {
+      setAssignIds(prev => prev.filter(id => {
+        const role = members.find(m => m.id === id)?.role;
+        return role === 'parent' || role === 'senior';
+      }));
+    }
+  }, [routineType]);
 
   // Shopping quest item list
   const [shoppingLines, setShoppingLines] = useState<string[]>(['']);
@@ -309,6 +326,10 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   // ConnectionService this many minutes before dueTime.
   const [alertCall,           setAlertCall]           = useState(false);
   const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(10);
+  // Spec 8.2 — optional tie to an upcoming calendar event this quest
+  // logistically supports (e.g. "Pack for the trip" -> "Family Trip").
+  const [linkedEventId, setLinkedEventId] = useState<string | undefined>(undefined);
+  const [showEventPicker, setShowEventPicker] = useState(false);
 
   const onDateChange = (_: any, selected?: Date) => {
     setShowDatePick(Platform.OS === 'ios'); // keep open on iOS (inline), close on Android
@@ -440,6 +461,12 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
       title: title.trim(), description: desc.trim(), category: routineType === 'shopping' ? 'Shopping' : category,
       priority: 'medium', difficulty: difficulty || undefined,
       coins: coinsDisabled ? 0 : (parseInt(coins) || 30), xpReward: 20,
+      // bonusCoins must be present in this initial payload (not just the
+      // later updateQuest below) — addChore's teen-reward co-sign threshold
+      // check reads coins+bonusCoins at creation time, so a bonus applied
+      // only afterward would let a teen's real total reward slip past the
+      // threshold unflagged. See store/choreAdapter.ts's questInputToChoreInput.
+      bonusCoins: bonus > 0 ? bonus : undefined,
       assignedToId: isPool || isMulti || isDirectCoParentAssign ? undefined : (assignIds[0] || undefined),
       assignedToIds: isMulti ? assignIds : [],
       isPool: !isAdultTask && (isPool || assignIds.length === 0), isDaily: false,
@@ -457,6 +484,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
       shoppingStore:  shoppingStore.trim() || undefined,
       shoppingBudget: shoppingBudget.trim() ? parseFloat(shoppingBudget) : undefined,
       inviteGrandparents: inviteGrandparent || undefined,
+      linkedEventId: linkedEventId,
     } as any);
     if (newQ?.id) {
       if (isDirectCoParentAssign) {
@@ -555,6 +583,18 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
     }
 
     setSaving(false);
+    // Scenario 1.13 — a teen whose reward exceeded the household co-sign
+    // threshold got zero indication of it: the modal just closed the same
+    // as any other quest, with the flag silently set server-side. The quest
+    // is still fully created and workable — only the coin payout is held —
+    // but the teen deserves to know that up front rather than discovering
+    // it later from a locked 🔒 pill on the card.
+    if (creatorIsTeen && (newQ as any)?.rewardPendingReview) {
+      Alert.alert(
+        'Reward needs a parent’s OK',
+        `This quest's reward is above the family's usual limit, so a parent will need to approve the payout once it's done. The quest itself is ready to go now.`,
+      );
+    }
     reset();
     onClose();
   };
@@ -951,6 +991,57 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                 </TouchableOpacity>
               </Modal>
             )}
+
+            {/* Linked event (spec 8.2) — optional tie to an upcoming calendar
+                event this quest logistically supports, e.g. "Pack for the
+                trip" -> "Family Trip". Display-only, no cascading behavior. */}
+            {(() => {
+              const upcomingEvents = useEventStore.getState().events
+                .filter(e => e.date >= localDateStr(new Date()))
+                .sort((a, b) => (a.date + (a.time ?? '')).localeCompare(b.date + (b.time ?? '')))
+                .slice(0, 30);
+              const linkedEvent = linkedEventId ? upcomingEvents.find(e => e.id === linkedEventId) : undefined;
+              return (
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={[aq.label, { color: colors.textSecondary }]}>Link to Event (optional)</Text>
+                  <TouchableOpacity
+                    style={[aq.datePill, { alignSelf: 'flex-start', backgroundColor: showEventPicker ? BRAND.purple + '20' : pillBg, borderColor: showEventPicker ? BRAND.purple : pillBdr }]}
+                    onPress={() => setShowEventPicker(p => !p)}
+                  >
+                    <Text style={{ fontSize: TYPO.label, marginRight: 4 }}>🔗</Text>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showEventPicker ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
+                      {linkedEvent ? linkedEvent.title : 'None'}
+                    </Text>
+                  </TouchableOpacity>
+                  {showEventPicker && (
+                    <View style={{ marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: pillBdr, backgroundColor: colors.card, maxHeight: 220, overflow: 'hidden' }}>
+                      <ScrollView keyboardShouldPersistTaps="always">
+                        <TouchableOpacity
+                          style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                          onPress={() => { setLinkedEventId(undefined); setShowEventPicker(false); }}
+                        >
+                          <Text style={{ fontSize: TYPO.label, fontWeight: !linkedEventId ? '800' : '600', color: !linkedEventId ? BRAND.purple : colors.textSecondary }}>None</Text>
+                        </TouchableOpacity>
+                        {upcomingEvents.length === 0 ? (
+                          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, padding: 14 }}>No upcoming events</Text>
+                        ) : upcomingEvents.map(ev => (
+                          <TouchableOpacity
+                            key={ev.id}
+                            style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                            onPress={() => { setLinkedEventId(ev.id); setShowEventPicker(false); }}
+                          >
+                            <Text style={{ fontSize: TYPO.label, fontWeight: linkedEventId === ev.id ? '800' : '600', color: linkedEventId === ev.id ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
+                              {ev.title}
+                            </Text>
+                            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>{ev.date}{ev.time ? ` · ${ev.time}` : ''}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
 
             {/* Call-style reminder — opt-in, rings via CallKit/ConnectionService */}
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: alertCall ? 8 : 14 }}>

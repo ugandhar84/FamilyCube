@@ -28,6 +28,8 @@ const json = (b: unknown, s = 200) =>
 // force_assigned     → new assignee (kid)
 // bonus_activated    → assignee (kid), or all kids if pool
 // coins_awarded      → assignee (kid)
+// gp_offer_pending   → parents only (scenario 1.6 — a GP offered to handle
+//                      an openToGP chore, awaiting Accept/Decline)
 
 const NOTIFY_APPROVERS = ['quest_claimed', 'quest_submitted'];
 const NOTIFY_ASSIGNEE  = ['quest_assigned', 'quest_approved', 'quest_declined', 'quest_reopened', 'force_assigned', 'bonus_activated', 'coins_awarded'];
@@ -51,6 +53,7 @@ serve(async (req) => {
       declineReason, // string — for declined
       coinPenalty, // number — for penalty
       inviteGrandparents, // boolean — for quest_posted, whether seniors are eligible too
+      note, // string — for chore_cheered
     } = await req.json() as Record<string, any>;
 
     if (!event || !familyId) return json({ ok: false, error: 'event and familyId required' }, 400);
@@ -83,6 +86,10 @@ serve(async (req) => {
     // mapping. Comparing against the app-level names here meant every
     // approver-resolution silently matched zero grandparents.
     const approverIds   = (members ?? []).filter(m => m.role === 'parent' || m.role === 'grandparent').map(m => m.id);
+    // Scenario 1.6 — gp_offer_pending is specifically a parent decision (a
+    // grandparent offering to handle a chore), so it goes to parents only,
+    // not the broader approverIds set which also includes other seniors.
+    const parentOnlyIds = (members ?? []).filter(m => m.role === 'parent').map(m => m.id);
     const triggerer     = triggeredById ? memberMap[triggeredById] : null;
     const assignee      = assigneeId    ? memberMap[assigneeId]    : null;
     const newAssignee   = newAssigneeId ? memberMap[newAssigneeId] : null;
@@ -235,6 +242,32 @@ serve(async (req) => {
         });
         break;
       }
+
+      case 'gp_offer_pending':
+        // Grandparent offered to handle an openToGP chore — parents decide.
+        await fire('gp_offer_pending', parentOnlyIds, {
+          ...base,
+          gpName: assignee?.name ?? 'A grandparent',
+          title: `🙋 ${assignee?.name ?? 'A grandparent'} offered to help`,
+          body: `${assignee?.name ?? 'A grandparent'} wants to handle "${questTitle}" — accept or decline`,
+        });
+        break;
+
+      case 'chore_cheered':
+        // Someone (any family member) cheered a completed chore — tell the
+        // kid who did it. Previously invoked with no matching case here
+        // (fell to this same default, silent no-op) and no familyId in the
+        // payload, so it would have 400'd before even reaching this switch.
+        if (assigneeId) {
+          await fire('chore_cheered', [assigneeId], {
+            ...base,
+            fromName: triggerer?.name ?? 'Someone',
+            title: `🎉 ${triggerer?.name ?? 'Someone'} cheered you on!`,
+            body: note ? `"${questTitle}": ${note}` : `${triggerer?.name ?? 'Someone'} cheered "${questTitle}"${coins ? ` and sent ${coins}🪙!` : '!'}`,
+            coins: coins ?? 0,
+          });
+        }
+        break;
 
       default:
         console.warn('[quest-event-notifier] unknown event:', event);

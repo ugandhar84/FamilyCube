@@ -7,10 +7,32 @@
  */
 import { useChoreStore } from './choreStore';
 import type { ChoreTask, ChoreCategoryType } from './choreStore';
+import { supabase } from '@/lib/supabase';
 import type {
   Quest, QuestStatus, QuestDifficulty, QuestCategory, QuestType,
   QuestRecurrence,
 } from './questStore';
+
+// 6.1 — shared by both reassignQuest implementations below (the instance
+// hook and the static .getState() shim) so a manual reassignment from
+// EITHER call path actually tells someone it happened, matching every
+// other quest mutation (approve/decline/submit/etc.) which already fires
+// quest-event-notifier. The edge function's 'quest_reassigned' case was
+// fully built (notifies new assignee + parents) but nothing ever called it.
+function notifyQuestReassigned(chore: ChoreTask, prevAssigneeId: string | undefined, newAssigneeId: string, triggeredById: string) {
+  supabase.functions.invoke('quest-event-notifier', {
+    body: {
+      event: 'quest_reassigned',
+      questId: chore.id,
+      questTitle: chore.title,
+      familyId: chore.familyId,
+      triggeredById,
+      assigneeId: prevAssigneeId,
+      newAssigneeId,
+      coins: chore.basePoints > 0 ? chore.basePoints : chore.coinsReward,
+    },
+  }).catch(e => console.warn('[choreAdapter] reassignQuest notify', e?.message));
+}
 
 // ─── ChoreTask → Quest mapping ────────────────────────────────────────────────
 
@@ -20,6 +42,12 @@ function choreStatusToQuestStatus(s: ChoreTask['status']): QuestStatus {
     case 'pending_approval':             return 'pending_approval';
     case 'pending_grandparent_approval': return 'pending_approval';
     case 'pending_parent_approval':      return 'todo';
+    // Scenario 1.6 — a GP's pending offer maps to 'pending_approval' so it
+    // rides the existing pending-approval UI (QuestsScreen's Review tab,
+    // etc.) without new plumbing there. The real ChoreTask status stays
+    // distinct so parent-facing UI (ChoreReviewSection.tsx) can filter
+    // specifically for GP offers — see gpOfferById.
+    case 'gp_offer_pending':             return 'pending_approval';
     case 'approved':                     return 'approved';
     case 'auto_approved':                return 'approved';
     case 'redo_requested':               return 'declined';
@@ -68,11 +96,28 @@ export function choreToQuest(c: ChoreTask): Quest {
     assignedToIds:    c.assignedToId ? [c.assignedToId] : [],
     isPool:           c.isPool ?? (!c.assignedToId && c.categoryType === 'bounty'),
     isMultiAssign:    false,
-    maxClaimants:     1,
+    // Was hardcoded to 1 — the "up to N kids" setting was saved nowhere
+    // (see choreAdapter.ts's updateQuest, previously a no-op for this
+    // field) so every quest read back as single-claimant regardless of
+    // what was actually set. Now reads the real persisted value.
+    maxClaimants:     c.maxClaimants ?? 1,
     preferredAssigneeId: undefined,
-    participants:     c.assignedToId
-      ? [{ id: `${c.id}_${c.assignedToId}`, questId: c.id, memberId: c.assignedToId, status: (choreStatusToQuestStatus(c.status) === 'done' ? 'approved' : choreStatusToQuestStatus(c.status)) as import('@/store/questStore').ParticipantStatus, photoUrls: [], createdAt: c.createdAt }]
-      : [],
+    // Multi-slot bounty (maxClaimants > 1): participants come from the
+    // real bounty_claims rows (c.claims, loaded via loadBountyClaims),
+    // each independently tracked. Single-claimant chore: synthesized from
+    // assignedToId as before, unchanged.
+    participants:     c.claims?.length
+      ? c.claims.map(cl => ({
+          id: cl.id, questId: c.id, memberId: cl.memberId,
+          status: (cl.status === 'in_progress' ? 'in_progress' : cl.status === 'pending_approval' ? 'pending_approval' : cl.status === 'approved' ? 'approved' : 'declined') as import('@/store/questStore').ParticipantStatus,
+          claimedAt: cl.claimedAt, submittedAt: cl.submittedAt, approvedAt: cl.approvedAt, declinedAt: cl.declinedAt,
+          photoUrl: cl.submissionPhotoUrl, photoUrls: cl.submissionPhotoUrl ? [cl.submissionPhotoUrl] : [],
+          completionNote: cl.submissionNote, coinsAwarded: cl.coinsAwarded, declineReason: cl.rejectionReason,
+          createdAt: cl.createdAt,
+        }))
+      : c.assignedToId
+        ? [{ id: `${c.id}_${c.assignedToId}`, questId: c.id, memberId: c.assignedToId, status: (choreStatusToQuestStatus(c.status) === 'done' ? 'approved' : choreStatusToQuestStatus(c.status)) as import('@/store/questStore').ParticipantStatus, photoUrls: [], createdAt: c.createdAt }]
+        : [],
 
     isDaily:          c.recurrenceRule?.frequency === 'daily',
     recurrence,
@@ -92,7 +137,7 @@ export function choreToQuest(c: ChoreTask): Quest {
     // "Claimed" step show as not-done for any already-finished GP-sponsored
     // quest (grandparentApproveAndCheer's terminal status is 'completed',
     // not 'approved').
-    claimedAt:        (['in_progress','pending_approval','pending_grandparent_approval','approved','auto_approved','completed'] as string[]).includes(c.status)
+    claimedAt:        (['in_progress','pending_approval','pending_grandparent_approval','gp_offer_pending','approved','auto_approved','completed'] as string[]).includes(c.status)
                         ? c.createdAt
                         : undefined,
     submittedAt:      c.submittedAt,
@@ -115,6 +160,7 @@ export function choreToQuest(c: ChoreTask): Quest {
 
     linkedGroceryIds: [],
     linkedStore:      undefined,
+    linkedEventId:    c.linkedEventId,
 
     tags:             [],
     history:          [],
@@ -159,6 +205,13 @@ function questInputToChoreInput(q: Partial<Quest> & Record<string, any>) {
     category:          q.category ?? 'Other',
     basePoints:        q.coins ?? 20,
     coinsReward:       q.coins ?? 20,
+    // Must reach addChore's creation-time payload, not just a follow-up
+    // updateQuest call — addChore's teenRewardCoSignThreshold check reads
+    // this field at creation time (see store/choreStore.ts), so a bonus
+    // applied only afterward is invisible to that check and lets a teen's
+    // real total reward (base + bonus) silently exceed the co-sign
+    // threshold without ever flagging rewardPendingReview.
+    bonusCoins:        q.bonusCoins ?? 0,
     xpReward:          q.xpReward ?? 10,
     difficulty:        q.difficulty,
     // A grandparent_quest must clear the parent's safety-review gate before
@@ -195,6 +248,7 @@ function questInputToChoreInput(q: Partial<Quest> & Record<string, any>) {
     alertCall:            (q as any).alertCall,
     alertCallLeadMinutes: (q as any).alertCallLeadMinutes,
     rewardPendingReview:  (q as any).rewardPendingReview,
+    linkedEventId:        q.linkedEventId,
   };
 }
 
@@ -214,8 +268,17 @@ export function useQuestStore() {
 
     // Returns false when choreStore.submitChore rejected it (recurring chore
     // not due yet) — the GP/redo paths always succeed if reached.
-    submitQuest: (id: string, opts?: { note?: string; photoUrl?: string }): boolean => {
+    // memberId is optional and NEW — only needed for a multi-slot bounty
+    // (maxClaimants > 1), where submitChore's single assignedToId path
+    // doesn't apply and the caller must say WHICH kid's claim this submit
+    // is for. Every existing call site omits it and is unaffected.
+    submitQuest: (id: string, opts?: { note?: string; photoUrl?: string }, memberId?: string): boolean => {
       const chore = store.chores.find(c => c.id === id);
+      if (chore?.maxClaimants && chore.maxClaimants > 1) {
+        if (!memberId) { console.warn('[choreAdapter] submitQuest on a multi-slot bounty requires memberId'); return false; }
+        store.submitBountyClaim(id, memberId, opts);
+        return true;
+      }
       // A GP-sponsored quest is the grandparent's to review, not the parent's —
       // submitChore always routed to pending_approval (parent review deck)
       // regardless of category, so every GP quest submission was landing in
@@ -273,6 +336,7 @@ export function useQuestStore() {
       if (updates.difficulty    !== undefined) choreUpdates.difficulty        = updates.difficulty;
       if (updates.photoRequired !== undefined) choreUpdates.requiresPhotoProof= updates.photoRequired;
       if (updates.assignedToId  !== undefined) choreUpdates.assignedToId      = updates.assignedToId;
+      if (updates.linkedEventId !== undefined) choreUpdates.linkedEventId     = updates.linkedEventId;
       if ((updates as any).isPool !== undefined) choreUpdates.isPool          = (updates as any).isPool;
       // isAdultTask is derived from categoryType on read (choreToQuest), so
       // the edit form's toggle has to write back to categoryType/
@@ -326,7 +390,41 @@ export function useQuestStore() {
           return;
         }
       }
-      store.updateChore(id, { assignedToId: memberId || undefined, isPool: memberId ? undefined : true });
+      const chore = store.chores.find(c => c.id === id);
+      const prevAssigneeId = chore?.assignedToId;
+      // Live QA audit found reassigning a chore that was mid-review
+      // (status='pending_approval', with the previous assignee's
+      // submission note/photo still attached) only ever patched
+      // assignedToId/isPool — leaving the OLD assignee's submission data
+      // and pending_approval status attributed to the NEW assignee. Only
+      // masked because the next real claim/submit happened to overwrite
+      // those same fields; a parent's review queue read in between would
+      // show one kid's abandoned attempt as if it belonged to whoever the
+      // chore was just reassigned to. A genuine reassignment (not the
+      // pool-release/decline path above) resets the chore to a clean
+      // 'todo' state, same fields resetDueRecurringChores already clears
+      // for the same "start fresh" reason.
+      const wasMidReview = chore?.status === 'pending_approval' || chore?.status === 'redo_requested';
+      store.updateChore(id, {
+        assignedToId: memberId || undefined,
+        isPool: memberId ? undefined : true,
+        ...(wasMidReview ? {
+          status: 'todo' as const,
+          submittedAt: undefined,
+          submissionPhotoUrl: undefined,
+          submissionNote: undefined,
+          rejectionReason: undefined,
+        } : {}),
+      });
+      // 6.1 — reassigning a quest silently moved it to a new kid with zero
+      // notification to either the new assignee or the parents who'd expect
+      // to know it happened. quest-event-notifier already has a fully-built
+      // 'quest_reassigned' case (notifies new assignee + parents) that
+      // nothing was ever calling. Skip when memberId is '' — that's the
+      // pool-release/decline path above, not a real reassignment.
+      if (memberId && chore?.familyId) {
+        notifyQuestReassigned(chore, prevAssigneeId, memberId, _by);
+      }
     },
 
     cheerQuest: (id: string, fromMemberId: string, opts?: { coins?: number; note?: string }) => {
@@ -368,8 +466,21 @@ export function useQuestStore() {
         } as any);
       }
     },
-    approveParticipant: (_questId: string, _memberId: string, _by: string) => {},
-    declineParticipant: (_questId: string, _memberId: string, _by: string, _reason?: string, _code?: string) => {},
+    // Were dead no-op stubs — a multi-slot bounty's per-kid Approve/Decline
+    // (rendered by QuestCard whenever participants.length > 1, which is now
+    // real data instead of always a single synthesized entry) had buttons
+    // with nothing behind them. Now routed to the real bounty_claims-backed
+    // actions.
+    approveParticipant: (questId: string, memberId: string, by: string) => {
+      store.approveBountyClaim(questId, memberId, by);
+    },
+    declineParticipant: (questId: string, memberId: string, by: string, reason?: string, _code?: string) => {
+      store.declineBountyClaim(questId, memberId, by, reason);
+    },
+    // No re-open concept for a declined bounty claim yet — a kid can
+    // re-claim the slot fresh (if one is still open) rather than resuming
+    // a declined attempt. Left as a no-op intentionally, unlike the other
+    // two which were unintentional dead stubs.
     reopenParticipant:  (_questId: string, _memberId: string, _by: string) => {},
   };
 }
@@ -382,7 +493,13 @@ useQuestStore.getState = () => {
     updateQuest: (id: string, updates: Partial<Quest>, _by?: string) => {
       const choreUpdates: Partial<ChoreTask> = {};
       if (updates.coins          !== undefined) { choreUpdates.basePoints = updates.coins; choreUpdates.coinsReward = updates.coins; }
-      if (updates.maxClaimants   !== undefined) { /* no-op — pool managed by isPool flag */ }
+      // Was a no-op — "up to N kids" already had a full built UI
+      // (AddQuestAssignSection's picker, QuestCard's "Full — X/Y claimed"
+      // copy) but the value was never actually persisted anywhere, so
+      // every multi-slot bounty setting silently did nothing and every
+      // pool chore behaved as first-come-single-claimant regardless of
+      // what the parent picked. Now wired through to chore_tasks.max_claimants.
+      if (updates.maxClaimants   !== undefined) choreUpdates.maxClaimants  = updates.maxClaimants;
       if (updates.bonusCoins     !== undefined) choreUpdates.bonusCoins    = updates.bonusCoins;
       if (updates.difficulty     !== undefined) choreUpdates.difficulty    = updates.difficulty;
       if (updates.dueDate        !== undefined) choreUpdates.dueDate       = updates.dueDate;
@@ -431,7 +548,26 @@ useQuestStore.getState = () => {
           return;
         }
       }
-      store.updateChore(id, { assignedToId: memberId || undefined, isPool: memberId ? undefined : true });
+      const chore = store.chores.find(c => c.id === id);
+      const prevAssigneeId = chore?.assignedToId;
+      // See the instance-hook reassignQuest above for why a mid-review
+      // reassignment must also reset status/submission fields to a clean
+      // 'todo' state, not just move assignedToId.
+      const wasMidReview = chore?.status === 'pending_approval' || chore?.status === 'redo_requested';
+      store.updateChore(id, {
+        assignedToId: memberId || undefined,
+        isPool: memberId ? undefined : true,
+        ...(wasMidReview ? {
+          status: 'todo' as const,
+          submittedAt: undefined,
+          submissionPhotoUrl: undefined,
+          submissionNote: undefined,
+          rejectionReason: undefined,
+        } : {}),
+      });
+      if (memberId && chore?.familyId) {
+        notifyQuestReassigned(chore, prevAssigneeId, memberId, _by ?? '');
+      }
     },
   };
   return shim;

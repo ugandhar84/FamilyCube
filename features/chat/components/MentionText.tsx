@@ -73,7 +73,13 @@ export function CollapsibleText({ text, memberMap, myId, searchQuery, isMe, bubb
   const [collapsed, setCollapsed] = useState(true);
   const [needsCollapse, setNeedsCollapse] = useState(false);
   const txtColor = isMe ? bubbleMeTxt : bubbleOtherTxt;
-  const txtStyle = { fontSize: 15, lineHeight: 22, letterSpacing: 0.1, fontWeight: '400' as const, color: txtColor };
+  // My own sent messages get a touch more size/weight — medium (500) reads
+  // more intentional than regular (400) on a solid colored bubble, and the
+  // larger size holds up better against the tinted background than plain
+  // white-on-purple at the smaller weight.
+  const txtStyle = isMe
+    ? { fontSize: 15.5, lineHeight: 22.5, letterSpacing: 0.15, fontWeight: '500' as const, color: txtColor }
+    : { fontSize: 15, lineHeight: 22, letterSpacing: 0.1, fontWeight: '400' as const, color: txtColor };
 
   return (
     <View>

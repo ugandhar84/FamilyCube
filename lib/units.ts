@@ -13,6 +13,34 @@ export function resolveSpeechLocale(): string {
   }
 }
 
+// expo-speech defaults to the OS's "compact" voice when no `voice` id is
+// passed, which is the flat/robotic-sounding one — iOS ships noticeably
+// better-sounding "Enhanced"/"Premium" voices (e.g. Ava, Nathan) for the
+// same language, but only if the device has actually downloaded that voice
+// pack (Settings > Accessibility > Spoken Content > Voices); on a device
+// that hasn't, no Enhanced voice will be present in the list and this
+// falls back to whatever Default voice matches the locale, same as before.
+// Cached per-process since the installed voice list doesn't change mid-session.
+let _cachedVoiceId: string | null | undefined;
+
+export async function resolveBestVoiceId(): Promise<string | undefined> {
+  if (_cachedVoiceId !== undefined) return _cachedVoiceId ?? undefined;
+  try {
+    const Speech = await import('expo-speech');
+    const voices = await Speech.getAvailableVoicesAsync();
+    const locale = resolveSpeechLocale();
+    const lang = locale.split('-')[0].toLowerCase();
+    const matches = voices.filter(v => v.language?.toLowerCase().startsWith(lang));
+    const pool = matches.length > 0 ? matches : voices;
+    const enhanced = pool.find(v => v.quality === Speech.VoiceQuality.Enhanced && v.language?.toLowerCase() === locale.toLowerCase())
+      ?? pool.find(v => v.quality === Speech.VoiceQuality.Enhanced);
+    _cachedVoiceId = enhanced?.identifier ?? null;
+  } catch {
+    _cachedVoiceId = null;
+  }
+  return _cachedVoiceId ?? undefined;
+}
+
 // Detect whether the device locale uses imperial (miles) or metric (km).
 // Imperial countries: US, Liberia (LR), Myanmar (MM), UK (GB) uses miles for road distances.
 const IMPERIAL_COUNTRIES = new Set(['US', 'LR', 'MM', 'GB']);

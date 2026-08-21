@@ -77,7 +77,7 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
 
   const handleSubmitTap = (q: Quest) => {
     if (q.photoRequired) setSubmitProofQuest(q);
-    else submitQuest(q.id);
+    else submitQuest(q.id, undefined, active.id);
   };
 
   // ── Car / dispatch — opt-in, only relevant once the teen says they drive ────
@@ -201,7 +201,7 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
               : 'Someone else already claimed this quest — check the pool for others.',
           );
         })}
-        onStart={(id) => submitQuest(id)}
+        onStart={(id) => submitQuest(id, undefined, active.id)}
         onSubmit={handleSubmitTap}
         onAcceptGpQuest={(id) => startGrandparentQuest(id, active.id)}
         onDeclineGpQuest={(q) => setDeclineQuest({ id: q.id, title: q.title })}

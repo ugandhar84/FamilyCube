@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { View, Text, Pressable, Alert, TextInput } from 'react-native';
-import { ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins, Camera, MessageCircle, Coins, X } from 'lucide-react-native';
+import { ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins, Camera, MessageCircle, Coins, X, Hand } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
 import { useChatStore } from '@/store/chatStore';
 import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
+import { GpOfferReviewCard } from './GpOfferReviewCard';
 import { SectionCard } from '../hubComponents';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
@@ -89,6 +90,11 @@ function GpSafetyReviewCard({ c, members, colors, isDark, approveGrandparentQues
   );
 }
 
+// Scenario 1.6 — a grandparent/senior offered to handle an openToGP chore
+// ("I'll Handle It") and it's sitting in gp_offer_pending until a parent
+// decides. Nothing is assigned yet (gpOfferById only, not assignedToId) —
+// Accept makes it real (assignedToId + in_progress), Decline sends it back
+// to the open pool for any GP to pick up again.
 // A GP-sponsored quest the child already submitted proof for — waiting on
 // the SPONSOR grandparent to verify (pending_grandparent_approval), not the
 // parent. Previously invisible to the parent entirely: if the sponsoring
@@ -438,6 +444,7 @@ export function ChoreReviewSection({
   approveGrandparentQuestAsParent, declineGrandparentQuestAsParent,
   grandparentApproveAndCheer,
   approveTeenReward, adjustTeenReward, declineTeenReward,
+  acceptGPOffer, declineGPOffer,
   flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal,
 }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
@@ -448,6 +455,8 @@ export function ChoreReviewSection({
   approveTeenReward: (choreId: string, approverId: string) => void;
   adjustTeenReward: (choreId: string, approverId: string, newAmount: number) => void;
   declineTeenReward: (choreId: string, approverId: string, reason?: string) => void;
+  acceptGPOffer: (choreId: string, parentId: string) => void;
+  declineGPOffer: (choreId: string, parentId: string, reason?: string) => void;
   flagApprovalForDiscussion?: (choreId: string, byParentId: string, note?: string) => void;
   standByApproval?: (choreId: string, byParentId: string) => void;
   requestApprovalReversal?: (choreId: string, byParentId: string, reason: string) => void;
@@ -466,6 +475,10 @@ export function ChoreReviewSection({
   // payout, not the work — a teen can be mid-task or already done while
   // this still needs a parent's decision.
   const teenRewardPending = chores.filter(c => c.rewardPendingReview);
+  // Scenario 1.6 — a GP offer waiting on a parent's Accept/Decision. Filtered
+  // on the real ChoreStatus ('gp_offer_pending'), not the Quest-shim status
+  // it maps to (which is shared with ordinary kid submissions).
+  const gpOffersPending = chores.filter(c => c.status === 'gp_offer_pending');
   // Scenario 4.7 — approved-in-the-last-7-days chores, so a co-parent
   // catching up after being away still has a reasonable window to dispute
   // something they missed, without surfacing every approval ever made.
@@ -479,7 +492,7 @@ export function ChoreReviewSection({
   const disputeBadgeCount = recentlyApproved.filter(c =>
     c.disputeStatus === 'reversal_requested' && c.reviewedById === active.id,
   ).length;
-  const badgeCount = pendingReviewsCount + gpPending.length + teenRewardPending.length + disputeBadgeCount;
+  const badgeCount = pendingReviewsCount + gpPending.length + teenRewardPending.length + gpOffersPending.length + disputeBadgeCount;
 
   return (
     <View style={{ paddingHorizontal: 16 }}>
@@ -504,6 +517,22 @@ export function ChoreReviewSection({
                 {teenRewardPending.map(c => (
                   <TeenRewardReviewCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
                     approveTeenReward={approveTeenReward} adjustTeenReward={adjustTeenReward} declineTeenReward={declineTeenReward} />
+                ))}
+              </View>
+            )}
+
+            {gpOffersPending.length > 0 && (
+              <View style={{ gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Hand size={12} color={colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                    textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                    Grandparent Offers — Accept or Decline
+                  </Text>
+                </View>
+                {gpOffersPending.map(c => (
+                  <GpOfferReviewCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
+                    acceptGPOffer={acceptGPOffer} declineGPOffer={declineGPOffer} />
                 ))}
               </View>
             )}

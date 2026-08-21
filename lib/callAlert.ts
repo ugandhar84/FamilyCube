@@ -166,6 +166,59 @@ export interface CallAlertPayload {
 
 const pendingPayloads = new Map<string, CallAlertPayload>();
 
+// Resolvers waiting on a payload that hasn't arrived yet for a given
+// callUUID — see the "blank second call" fix below in onCallAnswered.
+const pendingWaiters = new Map<string, Array<(payload: CallAlertPayload | null) => void>>();
+
+function resolvePendingPayload(key: string, payload: CallAlertPayload): void {
+  pendingPayloads.set(key, payload);
+  const waiters = pendingWaiters.get(key);
+  if (waiters) {
+    pendingWaiters.delete(key);
+    for (const w of waiters) w(payload);
+  }
+}
+
+// answerCall only carries a callUUID; didDisplayIncomingCall (which carries
+// the actual itemType/itemId/dueAtIso) is a SEPARATE bridge event for the
+// same call and is not guaranteed to have been processed by JS yet when
+// answerCall fires — normally it lands first (CallKit reports the call,
+// THEN the user can answer it), but when a second, genuinely-distinct
+// CallUUID rings in close succession behind an already-answered first call
+// (the exact shape of the server-side double-send race this module's
+// sweeper-side fix addresses — two overlapping sweeps, two VoIP pushes,
+// two fresh callUUIDs minted in AppDelegate.swift's didReceiveIncomingPush),
+// the app can be mid-navigation/mid-speech for the first call when the
+// second one's reportNewIncomingCall completion (and thus its
+// didDisplayIncomingCall bridge event) is still in flight. Answering that
+// second call before its own didDisplayIncomingCall has been processed
+// used to resolve immediately to extractPayload(callUUID, {}) — an EMPTY
+// payload, with itemId '' and itemType defaulted to 'chore' — producing a
+// call that rings, connects, and shows/speaks nothing (no matching chore
+// or event to find), a "blank call" indistinguishable from a real bug
+// beyond just being an unwanted duplicate ring. Waiting briefly for the
+// payload to actually arrive (instead of assuming it never will) closes
+// that gap; only if it genuinely never shows up within the timeout do we
+// fall back to the old blank-payload behavior so answering isn't left
+// hanging forever on a truly payload-less call.
+function waitForPendingPayload(key: string, timeoutMs = 2000): Promise<CallAlertPayload | null> {
+  const existing = pendingPayloads.get(key);
+  if (existing) return Promise.resolve(existing);
+  return new Promise(resolve => {
+    const list = pendingWaiters.get(key) ?? [];
+    list.push(resolve);
+    pendingWaiters.set(key, list);
+    setTimeout(() => {
+      const stillWaiting = pendingWaiters.get(key);
+      if (!stillWaiting) return; // already resolved via resolvePendingPayload
+      const idx = stillWaiting.indexOf(resolve);
+      if (idx !== -1) stillWaiting.splice(idx, 1);
+      if (stillWaiting.length === 0) pendingWaiters.delete(key);
+      resolve(null);
+    }, timeoutMs);
+  });
+}
+
 // react-native-callkeep is inconsistent about callUUID casing between
 // events — reportNewIncomingCall's uuid passes through as-given (our own
 // UUID().uuidString on iOS is uppercase) for didDisplayIncomingCall, but
@@ -209,7 +262,7 @@ export function trackIncomingCallPayloads(): () => void {
   if (!RNCallKeep) return () => {};
   const live = RNCallKeep.addEventListener('didDisplayIncomingCall', ({ callUUID, payload }) => {
     console.log('[callAlert] live didDisplayIncomingCall', callUUID, payload);
-    pendingPayloads.set(normalizeUUID(callUUID), extractPayload(callUUID, payload));
+    resolvePendingPayload(normalizeUUID(callUUID), extractPayload(callUUID, payload));
   });
   RNCallKeep.getInitialEvents().then(events => {
     console.log('[callAlert] getInitialEvents resolved, count=', events?.length ?? 0, JSON.stringify(events));
@@ -222,12 +275,16 @@ export function trackIncomingCallPayloads(): () => void {
         answeredCallUUIDs.push(data.callUUID);
         continue;
       }
-      pendingPayloads.set(normalizeUUID(data.callUUID), extractPayload(data.callUUID, data.payload ?? data));
+      resolvePendingPayload(normalizeUUID(data.callUUID), extractPayload(data.callUUID, data.payload ?? data));
     }
     console.log('[callAlert] replay processed — answeredCallUUIDs=', answeredCallUUIDs, 'onAnsweredHandler set=', !!onAnsweredHandler);
     // Process answers after the loop so a payload arriving later in the
     // same batch (order isn't guaranteed) is still available by the time
-    // we resolve it.
+    // we resolve it. Within a single getInitialEvents() batch the payload
+    // event and its answer event are both already in hand (it's the same
+    // array), so no waiting is needed here — unlike the live path in
+    // onCallAnswered below, which can genuinely race a still-in-flight
+    // didDisplayIncomingCall bridge event for a second, later-arriving call.
     for (const callUUID of answeredCallUUIDs) {
       const key = normalizeUUID(callUUID);
       const payload = pendingPayloads.get(key) ?? extractPayload(callUUID, {});
@@ -246,9 +303,33 @@ export function onCallAnswered(handler: (payload: CallAlertPayload) => void): ()
   const listener = RNCallKeep.addEventListener('answerCall', ({ callUUID }) => {
     console.log('[callAlert] LIVE answerCall event fired', callUUID);
     const key = normalizeUUID(callUUID);
-    const payload = pendingPayloads.get(key) ?? extractPayload(callUUID, {});
-    pendingPayloads.delete(key);
-    handler(payload);
+    const existing = pendingPayloads.get(key);
+    if (existing) {
+      pendingPayloads.delete(key);
+      handler(existing);
+      return;
+    }
+    // No payload yet for this callUUID — normally didDisplayIncomingCall
+    // (carrying the actual itemType/itemId) arrives well before the user
+    // can answer, since CallKit has to report+display the call before an
+    // answer action is even possible. But a SECOND, distinct call ringing
+    // in close succession behind an already-answered first one (the
+    // server-side double-send race — two overlapping sweeps, two VoIP
+    // pushes, two fresh callUUIDs) can have its own didDisplayIncomingCall
+    // bridge event still in flight (JS busy navigating/speaking for the
+    // first call) when this second call is answered. Answering used to
+    // resolve immediately to an EMPTY payload in that case (itemId '',
+    // itemType defaulted to 'chore') — a call that rings, connects, and
+    // has nothing to show or speak: a "blank call". Wait briefly for the
+    // real payload to land instead of assuming it never will; only if it
+    // genuinely never arrives (true payload-less call, e.g. a real phone
+    // call somehow routed here) do we fall back to blank so the screen
+    // doesn't hang forever unresolved.
+    console.log('[callAlert] answerCall fired before payload arrived, waiting briefly for', key);
+    waitForPendingPayload(key).then((payload) => {
+      console.log('[callAlert] deferred payload resolution for', key, '=>', payload);
+      handler(payload ?? extractPayload(callUUID, {}));
+    });
   });
   return () => { listener.remove(); onAnsweredHandler = null; };
 }

@@ -6,6 +6,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import { fmtDateShort, fmtDateTime, parseLocalDate, parseTimeInput } from '@/lib/dates';
 import { useChoreStore } from '@/store/choreStore';
+import { useEventStore } from '@/store/eventStore';
 import type { Quest } from '@/store/questStore';
 import { I } from './icons';
 import { s } from './questCardStyles';
@@ -197,7 +198,15 @@ export function QuestCard({
       : ` · ${fmtSpan(diffH)} late (${submittedStamp})`;
   })();
 
-  const paidSuffix = q.participants.length > 1 ? ` · ${q.participants.length} paid` : q.coins > 0 ? ` · +${q.coins} paid` : '';
+  // Scenario 1.13 — a teen's over-threshold reward stays flagged
+  // rewardPendingReview until a parent Approves/Adjusts/Declines it, but
+  // the WORK itself can still fully approve in the meantime (approveChore
+  // proceeds normally, only payout is gated). Without this, the card looked
+  // byte-for-byte identical to a normal, fully-paid "Approved" quest —
+  // the teen had zero indication their coins were actually withheld.
+  const paidSuffix = q.rewardPendingReview
+    ? ' · reward pending parent review'
+    : q.participants.length > 1 ? ` · ${q.participants.length} paid` : q.coins > 0 ? ` · +${q.coins} paid` : '';
   const statusLine = isReview
     ? `Submitted ${q.submittedAt ? new Date(q.submittedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'for review'}`
     : isDoneCard
@@ -274,7 +283,14 @@ export function QuestCard({
             const isGPQuest = q.questType === 'grandparent_quest';
             if (isAdult || isGPQuest || q.isAdultTask) return null;
             const coinAmt = hasBonus ? q.coins + q.bonusCoins : q.coins;
-            const locked = isReview;
+            // rewardPendingReview (1.13's teen co-sign threshold) reuses
+            // the same "locked" purple/🔒 treatment isReview already uses —
+            // both mean the same thing to the teen looking at this pill:
+            // the coins aren't really theirs yet. Without this, a flagged
+            // quest showed the normal amber/🪙 pill from the moment it was
+            // created, identical to any other quest, with no hint the
+            // reward needs a parent's sign-off before it'll actually pay.
+            const locked = isReview || q.rewardPendingReview;
             const coinColor = locked ? BRAND.purple : BRAND.amber;
             return (
               <View style={{
@@ -510,6 +526,16 @@ export function QuestCard({
               <Text style={[s.badgeText, { color: colors.danger }]}>🔴 Urgent</Text>
             </View>
           )}
+          {/* Spec 8.2 — display-only badge for a quest linked to a calendar event. */}
+          {(q as any).linkedEventId && (() => {
+            const linkedEvent = useEventStore.getState().events.find(e => e.id === (q as any).linkedEventId);
+            if (!linkedEvent) return null;
+            return (
+              <View style={[s.badge, { backgroundColor: colors.primaryLight, borderColor: colors.primary + '40' }]}>
+                <Text style={[s.badgeText, { color: colors.primary }]} numberOfLines={1}>🔗 {linkedEvent.title}</Text>
+              </View>
+            );
+          })()}
           {q.difficulty && (
             <View style={[s.badge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Text style={[s.badgeText, { color: colors.textSecondary }]}>

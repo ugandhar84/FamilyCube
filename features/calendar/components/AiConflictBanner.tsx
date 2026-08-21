@@ -48,6 +48,10 @@ export interface AiConflict {
   eventsInvolved: string[];
   suggestedFix?: string;
   recommendedDriverSwap?: string;
+  // Real event id(s) this conflict is actually about — lets Apply Swap
+  // patch the correct event(s) directly instead of re-guessing from title
+  // text or a stale `.conflict` flag.
+  eventIds?: string[];
 }
 export interface AiResult {
   summary: string;

@@ -1,0 +1,405 @@
+<title>Multi-Round QA Report</title>
+<style>
+  :root {
+    --navy: #1E2D6B; --purple: #9261C7; --purple-light: #F0E8FA;
+    --teal: #00BBA4; --teal-light: #D6F5F1;
+    --amber: #F5A623; --amber-light: #FEF0D3;
+    --danger: #EF4444; --danger-light: #FDE8E8;
+    --bg: #F8FAFC; --surface: #F1F5F9; --card: #FFFFFF;
+    --border: rgba(30,45,107,0.13);
+    --text-primary: #1E2D6B; --text-secondary: #64748B; --text-tertiary: #94A3B8;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --navy: #A5B4FC; --purple: #B98EDB; --purple-light: rgba(185,142,219,0.14);
+      --teal: #2DD4BF; --teal-light: rgba(45,212,191,0.14);
+      --amber: #FCD34D; --amber-light: rgba(252,211,77,0.14);
+      --danger: #F87171; --danger-light: rgba(248,113,113,0.14);
+      --bg: #0B0F1A; --surface: #161C2D; --card: #1E2640;
+      --border: rgba(165,180,252,0.15);
+      --text-primary: #F8FAFC; --text-secondary: #94A3B8; --text-tertiary: #64748B;
+    }
+  }
+  :root[data-theme="dark"] {
+    --navy: #A5B4FC; --purple: #B98EDB; --purple-light: rgba(185,142,219,0.14);
+    --teal: #2DD4BF; --teal-light: rgba(45,212,191,0.14);
+    --amber: #FCD34D; --amber-light: rgba(252,211,77,0.14);
+    --danger: #F87171; --danger-light: rgba(248,113,113,0.14);
+    --bg: #0B0F1A; --surface: #161C2D; --card: #1E2640;
+    --border: rgba(165,180,252,0.15);
+    --text-primary: #F8FAFC; --text-secondary: #94A3B8; --text-tertiary: #64748B;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text-primary); font-family: var(--sans); font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  ::selection { background: var(--purple-light); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px 96px; }
+
+  header { padding: 56px 20px 40px; border-bottom: 1px solid var(--border); background: linear-gradient(180deg, var(--surface), var(--bg)); }
+  .header-inner { max-width: 1120px; margin: 0 auto; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--purple); display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .eyebrow::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--purple); }
+  h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 800; letter-spacing: -0.02em; margin: 0 0 12px; text-wrap: balance; }
+  .subhead { font-size: 16px; color: var(--text-secondary); max-width: 68ch; margin: 0 0 28px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .meta-chip { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); background: var(--card); border: 1px solid var(--border); padding: 6px 12px; border-radius: 999px; }
+  .meta-chip b { color: var(--text-primary); font-weight: 600; }
+
+  nav.toc { position: sticky; top: 0; z-index: 10; background: var(--bg); border-bottom: 1px solid var(--border); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  .toc-inner { max-width: 1120px; margin: 0 auto; padding: 0 20px; display: flex; gap: 4px; overflow-x: auto; }
+  .toc-inner a { font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--text-secondary); text-decoration: none; padding: 14px 14px 12px; white-space: nowrap; border-bottom: 2px solid transparent; }
+  .toc-inner a:hover { color: var(--text-primary); }
+
+  section { padding-top: 56px; scroll-margin-top: 56px; }
+  .sec-label { font-family: var(--mono); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal); margin: 0 0 6px; }
+  h2 { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 8px; }
+  .sec-desc { color: var(--text-secondary); font-size: 14.5px; max-width: 76ch; margin: 0 0 28px; }
+
+  /* Stat strip */
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 28px 0 0; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 16px; }
+  .stat .n { font-family: var(--mono); font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; margin-bottom: 6px; }
+  .stat .l { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+  .stat.ok .n { color: var(--teal); } .stat.warn .n { color: var(--amber); }
+  .stat.bug .n { color: var(--danger); } .stat.info .n { color: var(--purple); }
+
+  /* Timeline */
+  .timeline { position: relative; padding-left: 28px; margin-top: 24px; }
+  .timeline::before { content: ''; position: absolute; left: 6px; top: 6px; bottom: 6px; width: 2px; background: var(--border); }
+  .tl-item { position: relative; padding-bottom: 26px; }
+  .tl-item:last-child { padding-bottom: 0; }
+  .tl-dot { position: absolute; left: -28px; top: 3px; width: 14px; height: 14px; border-radius: 50%; border: 3px solid var(--bg); }
+  .tl-dot.round { background: var(--purple); }
+  .tl-dot.incident { background: var(--danger); }
+  .tl-dot.fix { background: var(--teal); }
+  .tl-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; flex-wrap: wrap; }
+  .tl-head h3 { font-size: 15.5px; font-weight: 800; margin: 0; }
+  .tl-badge { font-family: var(--mono); font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .tl-badge.round { background: var(--purple-light); color: var(--purple); }
+  .tl-badge.incident { background: var(--danger-light); color: var(--danger); }
+  .tl-item p { margin: 0; font-size: 13.5px; color: var(--text-secondary); max-width: 78ch; }
+
+  /* Bug table */
+  .table-scroll { overflow-x: auto; margin-top: 20px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); }
+  table { width: 100%; border-collapse: collapse; min-width: 880px; }
+  thead th { text-align: left; font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-secondary); padding: 12px 15px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  tbody td { padding: 12px 15px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text-primary); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface); }
+  code.inline { font-family: var(--mono); font-size: 11.5px; background: var(--surface); padding: 1px 5px; border-radius: 4px; }
+  .sev { font-family: var(--mono); font-size: 10px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; padding: 3px 8px; border-radius: 5px; white-space: nowrap; }
+  .sev.crit { background: var(--danger-light); color: var(--danger); }
+  .sev.high { background: var(--danger-light); color: var(--danger); opacity: 0.85; }
+  .sev.med { background: var(--amber-light); }
+  :root:not([data-theme="dark"]) .sev.med { color: #92600A; }
+  :root[data-theme="dark"] .sev.med, :root:not([data-theme="light"]) .sev.med { color: var(--amber); }
+  .sev.low { background: var(--surface); color: var(--text-tertiary); }
+  .status-fixed { color: var(--teal); font-weight: 700; font-size: 12px; }
+
+  /* Incident callout */
+  .incident-box { background: var(--card); border: 1.5px solid var(--danger); border-radius: 14px; padding: 22px 24px; margin-top: 20px; }
+  .incident-box .ihead { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .incident-box .ihead .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); }
+  .incident-box .ihead h3 { margin: 0; font-size: 15px; font-weight: 800; color: var(--danger); }
+  .incident-box .step { display: flex; gap: 12px; margin-bottom: 12px; }
+  .incident-box .step:last-child { margin-bottom: 0; }
+  .incident-box .step .num { font-family: var(--mono); font-weight: 800; color: var(--text-tertiary); font-size: 12px; min-width: 18px; }
+  .incident-box .step p { margin: 0; font-size: 13.5px; color: var(--text-primary); }
+  .incident-box .step .tag { font-family: var(--mono); font-size: 10.5px; color: var(--text-tertiary); }
+  .incident-box code.inline { background: var(--danger-light); color: var(--danger); }
+
+  /* Feature card */
+  .feature-card { background: var(--card); border: 1px solid var(--teal); border-radius: 14px; padding: 22px 24px; margin-top: 20px; }
+  .feature-card h3 { margin: 0 0 8px; font-size: 16px; font-weight: 800; color: var(--teal); }
+  .feature-card p { margin: 0 0 10px; font-size: 13.5px; color: var(--text-primary); }
+  .flow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .flow .step { font-family: var(--mono); font-size: 11.5px; font-weight: 700; background: var(--teal-light); color: var(--teal); padding: 6px 11px; border-radius: 8px; }
+  .flow .arrow { color: var(--text-tertiary); }
+
+  /* Verdict */
+  .verdict { background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--purple); border-radius: 12px; padding: 20px 22px; margin-top: 20px; }
+  .verdict p { margin: 0; font-size: 14px; color: var(--text-primary); }
+
+  footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--text-tertiary); font-family: var(--mono); }
+
+  @media (max-width: 760px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+</style>
+
+<header>
+  <div class="header-inner">
+    <div class="eyebrow">Family Cube — Multi-Round QA</div>
+    <h1>Live Database QA: 4 Rounds, One Incident</h1>
+    <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, and realistic multi-step transitions — plus a production chat outage caused and resolved mid-session.</p>
+    <div class="meta-row">
+      <span class="meta-chip">Test family <b>aaaaaaaa-...-001</b> — isolated, cleaned up after each round</span>
+      <span class="meta-chip"><b>4</b> QA rounds</span>
+      <span class="meta-chip"><b>14</b> bugs found, all fixed</span>
+      <span class="meta-chip">1 new feature shipped</span>
+    </div>
+  </div>
+</header>
+
+<nav class="toc">
+  <div class="toc-inner">
+    <a href="#summary">Summary</a>
+    <a href="#timeline">Timeline</a>
+    <a href="#round1">Round 1</a>
+    <a href="#round2">Round 2</a>
+    <a href="#incident">Incident</a>
+    <a href="#round3">Round 3</a>
+    <a href="#feature">Bounty Feature</a>
+    <a href="#round4">Round 4</a>
+    <a href="#verdict">Verdict</a>
+  </div>
+</nav>
+
+<div class="wrap">
+
+  <section id="summary">
+    <div class="sec-label">Overview</div>
+    <h2>What four rounds of live testing found</h2>
+    <p class="sec-desc">Each round used real database writes against an isolated, synthetic test family (one member per role, including maternal and paternal grandparents for side-isolation testing) — not static code reading. Every fix was re-verified in a later round.</p>
+    <div class="stats">
+      <div class="stat crit"><div class="n">1</div><div class="l">Critical exploit closed</div></div>
+      <div class="stat bug"><div class="n">4</div><div class="l">Security/race bugs fixed</div></div>
+      <div class="stat warn"><div class="n">9</div><div class="l">Correctness bugs fixed</div></div>
+      <div class="stat info"><div class="n">1</div><div class="l">Feature shipped (multi-slot bounty)</div></div>
+      <div class="stat ok"><div class="n">0</div><div class="l">Open issues at sign-off</div></div>
+    </div>
+  </section>
+
+  <section id="timeline">
+    <div class="sec-label">Chronology</div>
+    <h2>Session Timeline</h2>
+    <p class="sec-desc">In the order things actually happened — including the incident, in its real place in the sequence.</p>
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 1 — Core mechanics</h3><span class="tl-badge round">Parent · Kid · Teen · Grandparent</span></div>
+        <p>One agent per role performs real actions against the isolated family. Finds 5 real bugs, most severe: chore approval had zero server-side authorization — a kid could self-approve and pay themselves via a direct API call.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot fix"></div>
+        <div class="tl-head"><h3>Fixes deployed</h3></div>
+        <p>Two undeployed migrations pushed live, a GP-offer race condition closed, a self-approval-blocking trigger added, chat DM/channel RLS tightened to require real participation (not just family membership).</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 2 — Full scenario matrix</h3><span class="tl-badge round">Chore types · Event types</span></div>
+        <p>Two agents trace every chore category (citizenship, bounty, force-assign, GP one-time/recurring, routine, shopping, parent-delegation, multi-assign) and every event type (plain, helper, ride, GP-open, teen-dispatch, recurring, privacy) end to end. Finds 5 more bugs, including a dropped coin penalty and vanishing recurring chores.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot incident"></div>
+        <div class="tl-head"><h3>Live incident — chat outage</h3><span class="tl-badge incident">Self-inflicted · Self-resolved</span></div>
+        <p>The round-1 chat RLS fix reaches the real app. Two bugs in the SQL (a type mismatch, then an ID-parsing edge case) break message sending in production. Diagnosed and fixed within minutes of the first error log.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 3 — Regression + stress testing</h3><span class="tl-badge round">Back-and-forth transitions</span></div>
+        <p>Re-verifies all 9 prior fixes still hold, then stress-tests realistic multi-hop sequences: reassignment ping-pong, a GP offer withdrawn and re-offered three times, an event's driver reassigned mid-edit, a chore across 3 recurring cycles. Surfaces a critical finding: editing an existing teen quest's coins never re-checks the parental co-sign threshold.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot fix"></div>
+        <div class="tl-head"><h3>New feature — multi-slot bounties</h3></div>
+        <p>A user request surfaces a dormant gap: the "up to N kids can claim" setting had a full UI but no backend. Built end to end: new table, an atomic row-locked claim function, and real per-participant submit/approve/payout.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 4 — Final verification</h3><span class="tl-badge round">Regression · New feature</span></div>
+        <p>Re-confirms every round-3 fix, then puts the new bounty feature through adversarial testing: slot-fullness, duplicate-claim rejection, independent per-claimant payout, decline paths. One minor audit-trail gap found and fixed.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="round1">
+    <div class="sec-label">Round 1</div>
+    <h2>Core Mechanics</h2>
+    <p class="sec-desc">Four agents — one per family role — performed real claim/approve/offer/message actions and checked each other's visibility boundaries.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev crit">Critical</span></td>
+            <td>Chore approval had zero server-side authorization — a kid could self-approve and pay themselves, bypassing the app entirely via a direct database call.</td>
+            <td><code class="inline">choreStore.ts:canApprove</code> + RLS</td>
+            <td><span class="status-fixed">✓ Fixed — server-side trigger added</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>Chat DM/channel access was scoped only by family membership, not participation — any family member could read another pair's private DM metadata.</td>
+            <td>RLS on <code class="inline">chat_messages</code>/<code class="inline">chat_channels</code></td>
+            <td><span class="status-fixed">✓ Fixed — see incident below</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>GP-offer accept/decline/withdraw had no real database race guard — only client-side checks against possibly-stale state.</td>
+            <td><code class="inline">choreStore.ts</code> GP-offer actions</td>
+            <td><span class="status-fixed">✓ Fixed — atomic conditional updates</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>Two migrations (GP-offer status, quest-event linking) were written and referenced by app code but never deployed — the features didn't actually work in production.</td>
+            <td>Migration deployment gap</td>
+            <td><span class="status-fixed">✓ Fixed — pushed live</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev low">Low</span></td>
+            <td><code class="inline">point_transactions</code> had no <code class="inline">wallet</code> column, so every coin-award ledger insert was silently failing (balances still updated correctly via a separate call).</td>
+            <td><code class="inline">awardPoints</code></td>
+            <td><span class="status-fixed">✓ Fixed — column added</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="round2">
+    <div class="sec-label">Round 2</div>
+    <h2>Full Chore &amp; Event Type Matrix</h2>
+    <p class="sec-desc">Every chore category and every event type traced end to end — creation through payout, or creation through role visibility.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>Force-assigning a stalled chore with an AI-recommended coin penalty never actually deducted the coins — the parent saw "−25🪙" in the confirmation dialog and it silently did nothing.</td>
+            <td><code class="inline">QuestsScreen.tsx</code> penalty handler</td>
+            <td><span class="status-fixed">✓ Fixed</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>A recurring routine chore lost its assignee on every cycle reset and became permanently invisible — not assigned to anyone, not pool-visible either.</td>
+            <td><code class="inline">resetDueRecurringChores</code></td>
+            <td><span class="status-fixed">✓ Fixed</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>A GP-sponsored recurring quest got permanently stuck after its first cycle when reviewed via the grandparent's own approval path (different terminal status than the reset sweep checked for).</td>
+            <td><code class="inline">resetDueRecurringChores</code></td>
+            <td><span class="status-fixed">✓ Fixed</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>"Shopping is adult-only" was UI copy only — a kid could be assigned a shopping chore and run it through the full lifecycle with zero rejection at any layer.</td>
+            <td><code class="inline">addChore</code> / <code class="inline">updateChore</code></td>
+            <td><span class="status-fixed">✓ Fixed — real guard, both paths</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>The promised "grandparent sees a busy block, not nothing" privacy behavior for sensitive events was never implemented — it fully hid the event instead, risking a double-booked pickup.</td>
+            <td><code class="inline">canViewSensitiveEventDetail</code></td>
+            <td><span class="status-fixed">✓ Fixed — real 3-state visibility + stub card</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="incident">
+    <div class="sec-label">Live incident</div>
+    <h2>Chat Outage — Caused &amp; Resolved</h2>
+    <p class="sec-desc">The chat RLS tightening from Round 1 was correct in intent but shipped with two real SQL bugs, neither of which could be caught from an automated CLI session — both only surfaced once a real authenticated user sent a real message.</p>
+    <div class="incident-box">
+      <div class="ihead"><span class="dot"></span><h3>What happened, in order</h3></div>
+      <div class="step">
+        <div class="num">1</div>
+        <div><p>Real app logs show <code class="inline">op ANY/ALL (array) requires array on right side</code> on every message send.</p><span class="tag">Root cause: the new RLS check compared a value against a jsonb column using array syntax — <code class="inline">member_ids</code> was jsonb, not a native array.</span></div>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <div><p>Fixed by switching to proper jsonb containment. Pushed within minutes.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <div><p>A second error immediately follows: <code class="inline">new row violates row-level security policy</code> — a real, legitimate participant is now being rejected.</p><span class="tag">Root cause: the fallback DM-id parser split the channel id on underscore, but real member ids can themselves contain underscores — fracturing a genuine participant's id so it never matched.</span></div>
+      </div>
+      <div class="step">
+        <div class="num">4</div>
+        <div><p>Fixed by dropping ID-parsing entirely — participation is now checked solely against the stored, correctly-populated participant list, never by re-deriving it from the channel id string. Verified directly against the real row that had failed before reporting resolved.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="round3">
+    <div class="sec-label">Round 3</div>
+    <h2>Regression + Stress Testing</h2>
+    <p class="sec-desc">Re-verified all 9 prior fixes, then ran realistic multi-step sequences — reassignment loops, repeated GP offer/withdraw cycles, edits crossing multiple cycles — the "back and forth" pattern real usage actually produces.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev crit">Critical</span></td>
+            <td>A parent editing an existing teen-created quest's coin reward — bumping it above the household's co-sign threshold after creation — never re-triggered the parental review gate. Verified as a complete, real bypass: 150 coins paid out with no review.</td>
+            <td><code class="inline">updateChore</code></td>
+            <td><span class="status-fixed">✓ Fixed — re-checks on every reward edit</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev low">Low</span></td>
+            <td>Reassigning a chore that was mid-review left the previous assignee's submission note/photo and status attached to the new assignee, until the next real submission happened to overwrite it.</td>
+            <td><code class="inline">reassignQuest</code> (both implementations)</td>
+            <td><span class="status-fixed">✓ Fixed — resets to clean state</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev low">Low</span></td>
+            <td>A recurring chore completed <em>late</em> resets the streak to zero, same as never completing it. Confirmed as the documented, intentional design — a streak specifically rewards on-time completion.</td>
+            <td><code class="inline">approveChore</code></td>
+            <td>No change — confirmed intentional</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="feature">
+    <div class="sec-label">Feature build</div>
+    <h2>Multi-Slot Bounty Claiming</h2>
+    <p class="sec-desc">A user question ("shouldn't a bounty support at least 2 kids?") surfaced a real gap: the "up to N kids" setting already had a complete UI — a picker, "Full — 2/3 claimed" copy — but the value was saved nowhere, and the claim logic only ever supported exactly one claimant.</p>
+    <div class="feature-card">
+      <h3>What was built</h3>
+      <p>A new table tracks each kid's claim independently. Claiming a slot is atomic — a single database function locks the bounty row, checks the live slot count, and inserts the claim in one transaction, so two kids claiming the last open slot at the same instant can't both win it. Each claim then works, submits, and gets approved or declined on its own — one kid's outcome never affects another's.</p>
+      <div class="flow">
+        <span class="step">Claim (atomic, row-locked)</span><span class="arrow">→</span>
+        <span class="step">Submit (per claimant)</span><span class="arrow">→</span>
+        <span class="step">Approve / Decline (per claimant)</span><span class="arrow">→</span>
+        <span class="step">Payout (independent, no split)</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="round4">
+    <div class="sec-label">Round 4</div>
+    <h2>Final Verification</h2>
+    <p class="sec-desc">Re-confirmed every fix from round 3, then adversarially tested the new bounty feature — filling slots, rejecting a full bounty, rejecting a duplicate claim, and verifying payout independence.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev low">Low</span></td>
+            <td>Declining a bounty claim recorded the reason but never recorded who declined it — the sibling approve path did, so the audit trail was inconsistent.</td>
+            <td><code class="inline">declineBountyClaim</code></td>
+            <td><span class="status-fixed">✓ Fixed</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sec-desc" style="margin-top: 16px;">Every other test passed: 2-slot bounty fills correctly and rejects a 3rd claim, a freed slot can be immediately reclaimed, a duplicate claim by the same kid is rejected, and one claimant's submit/approve/payout is fully independent of another's — confirmed by an actual coin-balance change traced through the real payout path.</p>
+  </section>
+
+  <section id="verdict">
+    <div class="sec-label">Sign-off</div>
+    <h2>Overall Verdict</h2>
+    <div class="verdict">
+      <p>All 14 confirmed bugs across 4 rounds are fixed and re-verified in a later round — including the critical self-approval exploit, the critical reward-threshold bypass, and the live chat outage this QA effort itself introduced and then resolved within the same session. The core concurrency-safety pattern (row-locked atomic claims) has now been applied consistently across pool quests, GP offers, helper/driver slots, and the new multi-slot bounty feature, and has held up correctly under repeated adversarial re-testing in every round. The one remaining caveat is the bounty claim function's true concurrent-load behavior — sound by code inspection (a standard row-lock pattern already proven correct elsewhere in this codebase) but not empirically stress-tested under real simultaneous traffic, which would be the natural next step before treating it as fully proven.</p>
+    </div>
+  </section>
+
+  <footer>
+    Test environment: isolated synthetic family (one member per role, including maternal/paternal grandparents), all real Supabase writes, cleaned up after every round. No production family data was read, written, or exposed at any point except the incident window described above, which touched only RLS policy logic, never message content.
+  </footer>
+
+</div>

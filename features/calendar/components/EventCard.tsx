@@ -501,3 +501,32 @@ export function EventCardTimeline({
     </TouchableOpacity>
   );
 }
+
+// Scenario 2.6/5.4/5.5 — a sensitive event a grandparent isn't explicitly
+// shared into (sharedWithGPForCare) should still tell them the time slot is
+// taken, not vanish entirely (which risks a real double-booked pickup) —
+// but must show NOTHING else: no title, no notes, no doctorName, no
+// category. A deliberately separate, minimal component rather than a mode
+// flag threaded through EventCardTimeline above — that card is large,
+// shared across 4 view densities, and has many detail-bearing branches
+// (notes, approval row, category-specific fields); a new boolean prop
+// risks a detail slipping through some branch nobody re-audited. This
+// component structurally cannot render anything but the time, by only
+// ever receiving the time as a prop.
+export function BusyBlockCard({ time, endTime, colors, isDark }: {
+  time?: string; endTime?: string; colors: any; isDark: boolean;
+}) {
+  return (
+    <View style={[s.eventCard, {
+      backgroundColor: isDark ? colors.surface : '#F1F5F9',
+      borderColor: colors.border, opacity: 0.75,
+    }]}>
+      <View style={{ padding: 14, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Text style={{ fontSize: 14 }}>🔒</Text>
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textSecondary }}>
+          Busy{time ? ` · ${time}${endTime ? `–${endTime}` : ''}` : ''}
+        </Text>
+      </View>
+    </View>
+  );
+}

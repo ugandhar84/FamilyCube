@@ -243,7 +243,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest, active
   // opens the capture sheet instead — "Take Photo to Get Paid" has to mean it.
   const handleSubmitTap = (q: Quest) => {
     if (q.photoRequired) setSubmitProofQuest(q);
-    else submitQuest(q.id);
+    else submitQuest(q.id, undefined, active.id);
   };
 
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
@@ -312,7 +312,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest, active
               : 'Someone else already claimed this quest — check the pool for others.',
           );
         })}
-        onStart={(id) => submitQuest(id)}
+        onStart={(id) => submitQuest(id, undefined, active.id)}
         onSubmit={handleSubmitTap}
         onAcceptGpQuest={(id) => startGrandparentQuest(id, active.id)}
         onDeclineGpQuest={(q) => setDeclineQuest({ id: q.id, title: q.title })}

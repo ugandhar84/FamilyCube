@@ -138,6 +138,10 @@ export interface Quest {
   shoppingStore?:   string;
   shoppingBudget?:  number;
   linkedStore?:     string;
+  // Spec 8.2 — optional tie to a calendar event this quest logistically
+  // supports (e.g. "pack for the trip" linked to the "Family Trip" event).
+  // Display-only association, no bidirectional sync/cascade.
+  linkedEventId?:   string;
 
   tags:             string[];
   history:          QuestHistoryEntry[];

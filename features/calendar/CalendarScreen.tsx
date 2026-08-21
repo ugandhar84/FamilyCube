@@ -29,7 +29,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { useEventStore, FamilyEvent, EventType, StripMap, isEventSensitive, canViewSensitiveEventDetail } from '@/store/eventStore';
+import { useEventStore, FamilyEvent, EventType, StripMap, isEventSensitive, canViewSensitiveEventDetail, SensitiveEventVisibility } from '@/store/eventStore';
 import { supabase } from '@/lib/supabase';
 import AppHeader from '@/components/AppHeader';
 import NotificationPanel from '@/components/NotificationPanel';
@@ -43,7 +43,7 @@ import { EventDetailSheet } from '@/features/hub/hubComponents';
 import AddIntakeChooser from '@/components/AddIntakeChooser';
 import { useChatStore } from '@/store/chatStore';
 import { relationalNameByName } from '@/lib/format';
-import { EventCardTimeline, roleStyle, catStyle, LocationLink } from './components/EventCard';
+import { EventCardTimeline, BusyBlockCard, roleStyle, catStyle, LocationLink } from './components/EventCard';
 import { s as calCardStyles } from './components/calendarCardStyles';
 import { AiConflictBanner, type AiConflict, type AiResult } from './components/AiConflictBanner';
 import { CalendarSearchBar } from './components/CalendarSearchBar';
@@ -224,32 +224,93 @@ const I = {
 // AiConflict/AiResult types now live in ./components/AiConflictBanner
 // (imported above) — role/category color helpers moved to ./components/EventCard.
 
-function simulateConflictDetection(events: FamilyEvent[]): Promise<AiResult> {
-  return new Promise(res => setTimeout(() => {
-    const conflicted = events.filter(e => e.conflict);
-    const pending    = events.filter(e => e.helperStatus === 'pending');
-    const rejected   = events.filter(e => e.helperStatus === 'rejected');
+// Minutes-since-midnight for a "h:mm AM/PM" or "HH:mm" time string — returns
+// null for anything unparsable (all-day events, missing time) so callers can
+// skip those rather than treating them as a false midnight overlap.
+function parseTimeToMinutes(t?: string): number | null {
+  if (!t) return null;
+  const m = t.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?$/);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const ampm = m[3]?.toUpperCase();
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return h * 60 + min;
+}
+
+function eventMemberIds(e: FamilyEvent): string[] {
+  if (e.memberIds?.length) return e.memberIds;
+  return e.memberId ? [e.memberId] : [];
+}
+
+// Real overlap detection replacing the old fake version, which only ever
+// read a manually-set `conflict` boolean flag (never computed from actual
+// times, so it could only "detect" a conflict someone had separately
+// hand-flagged) and recommended hardcoded names ("Grandma Mary", "Priya
+// (Mom)") regardless of who was actually free that day. This now computes
+// genuine start/end-time overlaps between same-day events sharing a family
+// member, and suggests a real adult who has no conflicting event in that
+// window instead of a fixed name.
+function detectRealConflicts(events: FamilyEvent[], members: { id: string; name: string; role: string }[]): Promise<AiResult> {
+  return new Promise(res => {
+    const byDate = new Map<string, FamilyEvent[]>();
+    for (const e of events) {
+      if (!byDate.has(e.date)) byDate.set(e.date, []);
+      byDate.get(e.date)!.push(e);
+    }
 
     const conflicts: AiConflict[] = [];
+    const seenPairs = new Set<string>();
 
-    if (conflicted.length > 0) {
-      conflicted.forEach(ev => {
-        conflicts.push({
-          description: `"${ev.title}" at ${ev.time} overlaps with another commitment — assistant gap detected`,
-          eventsInvolved: [ev.title, 'Parent schedule'],
-          suggestedFix: 'Assign an available adult family member to assist',
-          recommendedDriverSwap: 'Grandma Mary',
-        });
-      });
+    for (const dayEvents of byDate.values()) {
+      for (let i = 0; i < dayEvents.length; i++) {
+        for (let j = i + 1; j < dayEvents.length; j++) {
+          const a = dayEvents[i], b = dayEvents[j];
+          const sharedMembers = eventMemberIds(a).filter(id => eventMemberIds(b).includes(id));
+          if (sharedMembers.length === 0) continue;
+
+          const aStart = parseTimeToMinutes(a.time);
+          const aEnd = parseTimeToMinutes(a.endTime) ?? (aStart !== null ? aStart + 60 : null);
+          const bStart = parseTimeToMinutes(b.time);
+          const bEnd = parseTimeToMinutes(b.endTime) ?? (bStart !== null ? bStart + 60 : null);
+          if (aStart === null || aEnd === null || bStart === null || bEnd === null) continue;
+          if (aStart >= bEnd || bStart >= aEnd) continue; // no actual overlap
+
+          const pairKey = [a.id, b.id].sort().join('_');
+          if (seenPairs.has(pairKey)) continue;
+          seenPairs.add(pairKey);
+
+          const conflictedMember = members.find(m => m.id === sharedMembers[0]);
+          const busyIds = new Set([...eventMemberIds(a), ...eventMemberIds(b)]);
+          const freeAdult = members.find(m => (m.role === 'parent' || m.role === 'senior') && !busyIds.has(m.id));
+
+          conflicts.push({
+            description: `"${a.title}" at ${a.time} overlaps with "${b.title}" at ${b.time}${conflictedMember ? ` — both need ${conflictedMember.name.split(' ')[0]}` : ''}`,
+            eventsInvolved: [a.title, b.title],
+            eventIds: [a.id, b.id],
+            suggestedFix: freeAdult
+              ? `${freeAdult.name.split(' ')[0]} is free during this window and can help`
+              : 'No adult is currently free during this window — consider rescheduling one event',
+            recommendedDriverSwap: freeAdult?.name,
+          });
+        }
+      }
     }
+
+    const pending  = events.filter(e => e.helperStatus === 'pending');
+    const rejected = events.filter(e => e.helperStatus === 'rejected');
 
     if (rejected.length > 0) {
       rejected.forEach(ev => {
+        const busyIds = new Set(eventMemberIds(ev));
+        const freeAdult = members.find(m => (m.role === 'parent' || m.role === 'senior') && !busyIds.has(m.id));
         conflicts.push({
           description: `"${ev.title}" assistant declined — no confirmed helper assigned`,
           eventsInvolved: [ev.title],
-          suggestedFix: 'Find another available parent or grandparent',
-          recommendedDriverSwap: 'Priya (Mom)',
+          eventIds: [ev.id],
+          suggestedFix: freeAdult ? `${freeAdult.name.split(' ')[0]} is available to help instead` : 'Find another available parent or grandparent',
+          recommendedDriverSwap: freeAdult?.name,
         });
       });
     }
@@ -262,14 +323,15 @@ function simulateConflictDetection(events: FamilyEvent[]): Promise<AiResult> {
       });
     }
 
+    const timeConflictCount = conflicts.length - rejected.length - (pending.length > 0 ? 1 : 0);
     res({
       summary: conflicts.length === 0
         ? 'All events have confirmed assistants. No time overlaps detected. Family schedule looks smooth for the selected period!'
-        : `Detected ${conflicts.length} logistics issue(s): ${conflicted.length} time conflict(s), ${rejected.length} declined assistant(s), ${pending.length} pending confirmation(s). Immediate attention recommended.`,
+        : `Detected ${conflicts.length} logistics issue(s): ${timeConflictCount} time conflict(s), ${rejected.length} declined assistant(s), ${pending.length} pending confirmation(s).`,
       conflictsFound: conflicts.length > 0,
       conflicts,
     });
-  }, 1800));
+  });
 }
 
 // Gentle mount-fade — used so Month view arrives as a soft continuation of
@@ -592,17 +654,21 @@ export default function CalendarScreen() {
     setShowAiPanel(true);
     const todayStr = toDateStr(new Date());
     const futureEvents = events.filter(e => e.date >= todayStr);
-    const result = await simulateConflictDetection(futureEvents);
+    const result = await detectRealConflicts(futureEvents, members);
     setAiResult(result);
     setIsAnalyzing(false);
   };
 
   const handleApplySwap = (idx: number, conflict: AiConflict) => {
     if (!conflict.recommendedDriverSwap) return;
-    const targetEv = events.find(e => e.conflict || e.helperStatus === 'rejected') ?? events[0];
-    if (targetEv) {
-      updateEvent(targetEv.id, { helper: conflict.recommendedDriverSwap, helperStatus: 'pending', conflict: false });
-    }
+    // Uses the real event id(s) the scan attached to this specific conflict
+    // — previously this guessed at "the first event with .conflict set or a
+    // rejected helper", which could patch the wrong event entirely once more
+    // than one conflict was in play.
+    const targetIds = conflict.eventIds?.length ? conflict.eventIds : [events[0]?.id].filter(Boolean) as string[];
+    targetIds.forEach(id => {
+      updateEvent(id, { helper: conflict.recommendedDriverSwap, helperStatus: 'pending', conflict: false });
+    });
     setAppliedSwaps(p => ({ ...p, [`swap_${idx}`]: true }));
   };
 
@@ -658,17 +724,27 @@ export default function CalendarScreen() {
     return map;
   }, [stripMap, stripRows, filterMember, filterMemberName]);
 
+  // Live QA audit found the busy-block promise (GP sees a stripped
+  // placeholder for a sensitive event, not nothing) was never implemented —
+  // the old filter used the visibility check as a hard include/exclude,
+  // collapsing 'busy-block' into the same "excluded" bucket as 'hidden'.
+  // This resolves the mode once per event so the filter can correctly
+  // INCLUDE a busy-block event (rather than drop it) and EventCard can
+  // render the stripped variant instead of full detail.
+  const sensitiveVisibility = (e: FamilyEvent): SensitiveEventVisibility =>
+    !isEventSensitive(e) ? 'full' : canViewSensitiveEventDetail(e, isSenior ? 'senior' : isKid ? 'kid' : isTeen ? 'teen' : isParent ? 'parent' : undefined, activeMemberId ?? undefined);
+
   // Filtered events for selected day
   const dayEvents = useMemo(() => {
     return events
       .filter(e => e.date === selectedDate &&
         e.category !== 'Holiday' &&
         // Scenarios 2.6/2.10/5.4/5.5 — a sensitive/private/Medical event is
-        // hidden entirely from a sibling kid/teen and from GP (unless
-        // explicitly shared for care) BEFORE any of the ordinary
+        // hidden entirely from a sibling kid/teen, OR shown as a busy-block
+        // stub to a GP without care-sharing, BEFORE any of the ordinary
         // assignee-based visibility rules below even apply. Both parents
         // and the event's own subject always pass this check.
-        (!isEventSensitive(e) || canViewSensitiveEventDetail(e, isSenior ? 'senior' : isKid ? 'kid' : isTeen ? 'teen' : isParent ? 'parent' : undefined, activeMemberId ?? undefined)) &&
+        sensitiveVisibility(e) !== 'hidden' &&
         // Kid: full family visibility, same as parent/teen — kids can see
         // siblings' events (e.g. "what's Leo up to today"), not just their
         // own. Kids just don't get the member-filter/view-mode toolbar UI.
@@ -705,7 +781,7 @@ export default function CalendarScreen() {
     return rangeEvents.filter(e =>
       e.category !== 'Holiday' &&
       // Same sensitivity gate as dayEvents above.
-      (!isEventSensitive(e) || canViewSensitiveEventDetail(e, isSenior ? 'senior' : isKid ? 'kid' : isTeen ? 'teen' : isParent ? 'parent' : undefined, activeMemberId ?? undefined)) &&
+      sensitiveVisibility(e) !== 'hidden' &&
       // Same memberIds fix as dayEvents above — a senior/GP who's one of a
       // multi-member event's assignees (not the sole e.memberId) previously
       // never matched here either, so a shared event silently vanished from
@@ -718,7 +794,22 @@ export default function CalendarScreen() {
       )) &&
       matchesMemberFilter(e) &&
       matchesSearch(e)
-    );
+    ).map(e => {
+      // Week/Agenda render through the shared, reusable EventCardRow, which
+      // always shows full detail — unlike the Day view above, which swaps
+      // in a dedicated BusyBlockCard component, sanitizing the row's OWN
+      // detail-bearing fields here is simpler than teaching a shared card
+      // renderer a new busy-block mode. Only a senior/GP can ever get
+      // 'busy-block' (kid/teen siblings get 'hidden' and are already
+      // filtered out above), so this only ever strips detail for that role.
+      if (sensitiveVisibility(e) !== 'busy-block') return e;
+      return {
+        ...e,
+        title: 'Busy', notes: undefined, location: undefined,
+        doctorName: undefined, subject: undefined, coachName: undefined,
+        helper: undefined, driverName: undefined,
+      };
+    });
   }, [rangeEvents, isSenior, isKid, isTeen, isParent, activeMemberName, activeMemberId, filterMember, filterMemberName, searchQuery]);
 
   // Events where senior can volunteer as helper (has a pending/no helper, dated today or future)
@@ -1142,6 +1233,8 @@ export default function CalendarScreen() {
                 const minsUntil = minutesUntilEvent(ev.date, ev.time);
                 const isUrgent = !isPast && minsUntil >= 0 && minsUntil <= 60 &&
                   (isConf || (!!ev.helper && ev.helperStatus !== 'confirmed') || (!!ev.rideRequired && (!ev.driverName || ev.driverStatus !== 'confirmed')));
+                const isBusyBlock = sensitiveVisibility(ev) === 'busy-block';
+
                 return (
                   <View key={ev.id} style={{ flexDirection: 'row', minHeight: 56, opacity: isPast ? 0.45 : 1 }}>
 
@@ -1159,7 +1252,14 @@ export default function CalendarScreen() {
                       )}
                     </View>
 
-                    {/* Right col: card */}
+                    {/* Right col: card — busy-block for a sensitive event the
+                        viewer isn't shared into (see BusyBlockCard's own
+                        comment), full detail otherwise. */}
+                    {isBusyBlock ? (
+                      <View style={{ flex: 1, marginBottom: isLast ? 0 : 8 }}>
+                        <BusyBlockCard time={ev.time} endTime={ev.endTime} colors={colors} isDark={isDark} />
+                      </View>
+                    ) : (
                     <TouchableOpacity
                       activeOpacity={0.78}
                       onPress={() => setDetailEv(ev)}
@@ -1210,6 +1310,7 @@ export default function CalendarScreen() {
                         })() : null}
                       </View>
                     </TouchableOpacity>
+                    )}
                   </View>
                 );
               })}
@@ -1301,32 +1402,36 @@ export default function CalendarScreen() {
                       body itself now renders through the shared
                       EventCardTimeline so this matches DaySlotView's card
                       treatment 1:1. */}
-                  <SwipeableEventCard
-                    canDelete={canDelete}
-                    onDelete={handleEvDelete}
-                    onLongPress={() => setEditEv(ev)}
-                    onPress={() => setDetailEv(ev)}
-                  >
-                    <EventCardTimeline
-                      ev={ev}
-                      members={members}
-                      colors={colors} isDark={isDark}
-                      isPast={isPast}
-                      isConf={!!isConf}
-                      cs={cs}
-                      forLabel={forLabel}
-                      helperLabel={helperLabel}
-                      pickerMembers={pickerMembers}
-                      isParent={isParent}
-                      isKid={isKid}
-                      canApproveRequest={!!canApproveRequest}
-                      onPress={() => setDetailEv(ev)}
-                      onLongPress={() => setEditEv(ev)}
-                      onAssignMember={(memberId) => updateEvent(ev.id, { memberId })}
-                      onApprove={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'pending' })}
+                  {sensitiveVisibility(ev) === 'busy-block' ? (
+                    <BusyBlockCard time={ev.time} endTime={ev.endTime} colors={colors} isDark={isDark} />
+                  ) : (
+                    <SwipeableEventCard
                       canDelete={canDelete}
-                    />
-                  </SwipeableEventCard>
+                      onDelete={handleEvDelete}
+                      onLongPress={() => setEditEv(ev)}
+                      onPress={() => setDetailEv(ev)}
+                    >
+                      <EventCardTimeline
+                        ev={ev}
+                        members={members}
+                        colors={colors} isDark={isDark}
+                        isPast={isPast}
+                        isConf={!!isConf}
+                        cs={cs}
+                        forLabel={forLabel}
+                        helperLabel={helperLabel}
+                        pickerMembers={pickerMembers}
+                        isParent={isParent}
+                        isKid={isKid}
+                        canApproveRequest={!!canApproveRequest}
+                        onPress={() => setDetailEv(ev)}
+                        onLongPress={() => setEditEv(ev)}
+                        onAssignMember={(memberId) => updateEvent(ev.id, { memberId })}
+                        onApprove={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'pending' })}
+                        canDelete={canDelete}
+                      />
+                    </SwipeableEventCard>
+                  )}
                 </View>
               );
             })}

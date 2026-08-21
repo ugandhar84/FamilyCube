@@ -1134,6 +1134,12 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const isParent = activeMember?.role === 'parent';
   const isKid    = activeMember?.role === 'kid';
   const isTeen   = activeMember?.role === 'teen';
+  // Spec 5.7 — AddEventModal computes isSenior (gates which categories a GP
+  // can create: Medical/Work/Event/Other) but this edit modal never did, so
+  // a senior editing their own self-created event fell through every
+  // branch below (not isParent, not isKid/isTeen's isOwnPending) and Save
+  // silently built an empty patch — nothing they typed ever persisted.
+  const isSenior = activeMember?.role === 'senior';
   const isPast   = (() => {
     if (!event.date) return false;
     // Local calendar date, not UTC — toISOString() can already read as
@@ -1156,6 +1162,12 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   // false (isKid-only), so the save handler below built an empty patch and
   // the delete/withdraw button never rendered for them (spec 2.7).
   const isOwnPending   = (isKid || isTeen) && event.approvalPending && event.memberId === activeMemberId;
+  // A senior editing an event they're the subject/organiser of (their own
+  // Medical/Work/Event/Other, per isSenior's create-time category gate) —
+  // notes/alertCall/date-time, same safe subset isOwnPending gets, NOT the
+  // full isParent reassignment surface (picking a different kid/helper/
+  // driver for someone else's event stays parent-only).
+  const isOwnEventBySenior = isSenior && (event.memberId === activeMemberId || (!event.memberId && !event.memberIds?.length));
   const isParentApproved = !event.approvalPending;
   const restricted     = isPast || (isKid && isParentApproved); // past or kid approved → read-only
 
@@ -1195,6 +1207,17 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   // sensitive regardless (see isEventSensitive), so this toggle is only
   // meaningful for a non-Medical event.
   const [isPrivateTag,         setIsPrivateTag]         = useState(event.privacyLevel === 'private');
+  // Spec 2.9 — date/time were never editable after creation; only
+  // title/notes/etc. Same PickerOverlay component AddEventModal already
+  // uses, seeded from the event's existing date+time (falls back to "now,
+  // rounded" for an all-day event with no time set, matching AddEventModal's
+  // own nowRounded default so the picker never opens on an invalid date).
+  const [editEventDate, setEditEventDate] = useState<Date>(() => {
+    const d = event.date ? new Date(`${event.date}T${event.time ?? '00:00'}:00`) : new Date();
+    return isNaN(d.getTime()) ? new Date() : d;
+  });
+  const [showEditDatePick, setShowEditDatePick] = useState(false);
+  const [showEditTimePick, setShowEditTimePick] = useState(false);
   const handleDriverSelect = (id: string) => {
     const m = members.find(x => x.id === id);
     setEditDriverId(id);
@@ -1241,6 +1264,12 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       // anything for a non-Medical event.
       const newPrivacyLevel = isPrivateTag ? 'private' : 'normal';
       if (newPrivacyLevel !== (event.privacyLevel ?? 'normal')) patch.privacyLevel = newPrivacyLevel;
+      // Spec 2.9 — date/time edit. All-day events carry no time field at all
+      // (matches AddEventModal's own `allDay ? undefined : fmtTime(...)`).
+      const newDateStr = localDateStr(editEventDate);
+      const newTimeStr = event.allDay ? undefined : fmtTime(editEventDate);
+      if (newDateStr !== event.date) patch.date = newDateStr;
+      if (newTimeStr !== event.time) patch.time = newTimeStr;
       if (helperName !== event.helper) {
         let newHelperName = helperName.trim();
         // Same auto-assign-to-other-parent convenience as creating a new
@@ -1279,6 +1308,17 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
     } else if (isOwnPending) {
       // Kid can only update notes on their own pending request
       patch.notes = notes.trim() || undefined;
+    } else if (isOwnEventBySenior) {
+      // Spec 5.7 — a senior editing their own Medical/Work/Event/Other gets
+      // the same safe subset a restricted edit gets (notes/alertCall/date-
+      // time), not the full parent reassignment surface.
+      if (notes !== event.notes) patch.notes = notes.trim() || undefined;
+      if (alertCall !== (event.alertCall ?? false)) patch.alertCall = alertCall;
+      if (alertCallLeadMinutes !== (event.alertCallLeadMinutes ?? 10)) patch.alertCallLeadMinutes = alertCallLeadMinutes;
+      const newDateStr = localDateStr(editEventDate);
+      const newTimeStr = event.allDay ? undefined : fmtTime(editEventDate);
+      if (newDateStr !== event.date) patch.date = newDateStr;
+      if (newTimeStr !== event.time) patch.time = newTimeStr;
     }
     if (Object.keys(patch).length > 0) {
       // A recurring occurrence's edit needs to know whether it applies to
@@ -1426,6 +1466,44 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ gap: 12, paddingBottom: 12 }}
             >
+              {/* Date / Time — spec 2.9. Same PickerOverlay AddEventModal uses.
+                  Spec 5.7 — also available to a senior editing their own event. */}
+              {!restricted && (isParent || isOwnEventBySenior) && (
+                <View style={{ gap: 8 }}>
+                  <Text style={[f.label, { color: colors.textSecondary }]}>Date & Time</Text>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TouchableOpacity
+                      style={[f.dateBtn, { flex: 3, backgroundColor: showEditDatePick ? catColor + '20' : colors.surface, borderColor: showEditDatePick ? catColor : colors.border }]}
+                      onPress={() => { setShowEditDatePick(p => !p); setShowEditTimePick(false); }}
+                    >
+                      <Text style={{ fontSize: 13 }}>📅</Text>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showEditDatePick ? catColor : colors.textPrimary }}>
+                        {fmtDisplay(editEventDate)}
+                      </Text>
+                    </TouchableOpacity>
+                    {!event.allDay && (
+                      <TouchableOpacity
+                        style={[f.dateBtn, { flex: 2, backgroundColor: showEditTimePick ? catColor + '20' : colors.surface, borderColor: showEditTimePick ? catColor : colors.border }]}
+                        onPress={() => { setShowEditTimePick(p => !p); setShowEditDatePick(false); }}
+                      >
+                        <Text style={{ fontSize: 13 }}>🕐</Text>
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showEditTimePick ? catColor : colors.textPrimary }}>
+                          {fmtTimeDisplay(editEventDate)}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <PickerOverlay
+                    showDate={showEditDatePick} showTime={showEditTimePick}
+                    value={editEventDate}
+                    onChangeDate={d => { const m = new Date(d); m.setHours(editEventDate.getHours(), editEventDate.getMinutes()); setEditEventDate(m); }}
+                    onChangeTime={d => { const m = new Date(editEventDate); m.setHours(d.getHours(), d.getMinutes()); setEditEventDate(m); }}
+                    onDone={() => { setShowEditDatePick(false); setShowEditTimePick(false); }}
+                    accentColor={catColor} colors={colors}
+                  />
+                </View>
+              )}
+
               {/* Change who it's for */}
               {!restricted && isParent && !['Work', 'Event'].includes(event.category ?? '') && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 8 }}>

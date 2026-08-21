@@ -9,6 +9,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useChoreStore } from '@/store/choreStore';
+import { useEventStore } from '@/store/eventStore';
 import type { Quest, QuestCategory, QuestDifficulty } from '@/store/questStore';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -61,6 +62,10 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
   const [isAdultTask,       setIsAdultTask]        = useState(quest.isAdultTask ?? false);
   const [inviteGrandparent, setInviteGrandparent] = useState(quest.inviteGrandparents ?? false);
   const [dueDate,           setDueDate]           = useState<Date>(parseDue);
+  // Spec 8.2 — optional tie to a calendar event this quest logistically
+  // supports. Display-only, no cascading behavior.
+  const [linkedEventId, setLinkedEventId] = useState<string | undefined>((quest as any).linkedEventId);
+  const [showEventPicker, setShowEventPicker] = useState(false);
   // Always shown regardless of whether recurrence was ever set — a chore
   // can silently carry a recurrence_rule (e.g. from a prior form default
   // bug) with no way to see or clear it otherwise.
@@ -159,6 +164,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
         dueTime: fmtTimeLabel(dueDate),
         recurrence: routineFreq,
         alertCall, alertCallLeadMinutes,
+        linkedEventId,
       };
     }
     onSave(quest.id, patch);
@@ -460,6 +466,56 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                   </TouchableOpacity>
                 </Modal>
               )}
+
+              {/* Linked event (spec 8.2) — optional tie to an upcoming
+                  calendar event this quest logistically supports. */}
+              {!locked && (() => {
+                const upcomingEvents = useEventStore.getState().events
+                  .filter(e => e.date >= localDateStr(new Date()))
+                  .sort((a, b) => (a.date + (a.time ?? '')).localeCompare(b.date + (b.time ?? '')))
+                  .slice(0, 30);
+                const linkedEvent = linkedEventId ? upcomingEvents.find(e => e.id === linkedEventId) : undefined;
+                return (
+                  <View style={{ marginBottom: 14 }}>
+                    <Text style={[aq.label, { color: colors.textSecondary }]}>Link to Event (optional)</Text>
+                    <TouchableOpacity
+                      style={[aq.datePill, { alignSelf: 'flex-start', backgroundColor: showEventPicker ? BRAND.purple + '20' : pillBg, borderColor: showEventPicker ? BRAND.purple : pillBdr }]}
+                      onPress={() => setShowEventPicker(p => !p)}
+                    >
+                      <Text style={{ fontSize: TYPO.label, marginRight: 4 }}>🔗</Text>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showEventPicker ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
+                        {linkedEvent ? linkedEvent.title : 'None'}
+                      </Text>
+                    </TouchableOpacity>
+                    {showEventPicker && (
+                      <View style={{ marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: pillBdr, backgroundColor: colors.card, maxHeight: 220, overflow: 'hidden' }}>
+                        <ScrollView keyboardShouldPersistTaps="always">
+                          <TouchableOpacity
+                            style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                            onPress={() => { setLinkedEventId(undefined); setShowEventPicker(false); }}
+                          >
+                            <Text style={{ fontSize: TYPO.label, fontWeight: !linkedEventId ? '800' : '600', color: !linkedEventId ? BRAND.purple : colors.textSecondary }}>None</Text>
+                          </TouchableOpacity>
+                          {upcomingEvents.length === 0 ? (
+                            <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, padding: 14 }}>No upcoming events</Text>
+                          ) : upcomingEvents.map(ev => (
+                            <TouchableOpacity
+                              key={ev.id}
+                              style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                              onPress={() => { setLinkedEventId(ev.id); setShowEventPicker(false); }}
+                            >
+                              <Text style={{ fontSize: TYPO.label, fontWeight: linkedEventId === ev.id ? '800' : '600', color: linkedEventId === ev.id ? BRAND.purple : colors.textPrimary }} numberOfLines={1}>
+                                {ev.title}
+                              </Text>
+                              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>{ev.date}{ev.time ? ` · ${ev.time}` : ''}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    )}
+                  </View>
+                );
+              })()}
 
               {/* Call-style reminder — allowed even in restricted edit mode,
                   since it's not a sensitive field like title/coins. */}

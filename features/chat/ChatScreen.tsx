@@ -48,7 +48,7 @@ import { GroceryModal } from './components/GroceryModal';
 import { RecordingBar, VoiceReviewBar } from './components/VoiceComponents';
 import { formatDay, QUICK_REACTIONS, buildGroupChannels } from './components/constants';
 import { s } from './components/styles';
-import { loadPinnedChannels, savePinnedChannels, sortChannelIds } from '@/lib/chatChannelOrder';
+import { loadPinnedChannels, togglePinnedChannel, sortChannelIds } from '@/lib/chatChannelOrder';
 import { Pin, PinOff } from 'lucide-react-native';
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
@@ -117,7 +117,10 @@ export default function ChatScreen() {
   const searchAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => { if (!loaded) loadFromStorage(); }, [loaded]);
-  useEffect(() => { loadPinnedChannels().then(setPinnedChannels); }, []);
+  useEffect(() => {
+    if (!activeMemberId) return;
+    loadPinnedChannels(activeMemberId).then(setPinnedChannels);
+  }, [activeMemberId]);
   useEffect(() => { loadChannel(channelId); }, [channelId]);
   // Inverted FlatList starts at bottom — no scroll-to-end needed.
   // Only reset scroll position on channel switch.
@@ -151,8 +154,17 @@ export default function ChatScreen() {
   // icon while a channel is open) is the only manual override, always
   // sorting first regardless of activity. DM tabs stay appended after
   // group channels, in member order.
+  // #parents-vault is a GROUP channel for 3+ co-parents/guardians — with
+  // exactly the typical 2 parents, it's fully redundant with their own 1-1
+  // DM (same 2 people, same content, just a second tab for it). Hidden
+  // rather than removed: the channel/data model still fully supports it so
+  // nothing needs re-adding if a 3rd parent-role member (a temp-approver,
+  // a blended-family co-parent) is ever added — parentsCount recomputes
+  // live off the real roster, not a one-time flag.
+  const parentsCount = members.filter(m => m.role === 'parent').length;
   const rawGroupChannels = buildGroupChannels(members)
     .filter(ch => ch.id !== 'all' || !isSenior)
+    .filter(ch => ch.id !== 'parents' || parentsCount > 2)
     .filter(ch => !(ch as any).seniorOnly || isSenior || isParent);
   const groupChannels = sortChannelIds(rawGroupChannels.map(ch => ch.id), pinnedChannels, lastActivity)
     .map(id => rawGroupChannels.find(ch => ch.id === id))
@@ -167,8 +179,11 @@ export default function ChatScreen() {
     // conversation thread. dmChannelId() below makes the id unique PER
     // PAIR (both member ids, sorted so it's the same value regardless of
     // who opens it from which side) instead of per-counterpart.
-    ...coParents.map(p => ({ id: dmChannelId(activeMemberId ?? '', p.id), otherId: p.id, label: `💬 ${p.name.split(' ')[0]}`, isDM: true, lock: false })),
-    ...kids.map(k => ({ id: dmChannelId(activeMemberId ?? '', k.id), otherId: k.id, label: `💬 ${k.name.split(' ')[0]}`, isDM: true, lock: false })),
+    // label no longer carries a 💬 emoji prefix — the strip tab now renders
+    // a real avatar for a DM tile (see allChannels.map below) instead of a
+    // generic chat-bubble icon standing in for the actual person.
+    ...coParents.map(p => ({ id: dmChannelId(activeMemberId ?? '', p.id), otherId: p.id, label: p.name.split(' ')[0], isDM: true, lock: false })),
+    ...kids.map(k => ({ id: dmChannelId(activeMemberId ?? '', k.id), otherId: k.id, label: k.name.split(' ')[0], isDM: true, lock: false })),
   ];
   const FULL_LABELS: Record<string, string> = Object.fromEntries(groupChannels.map(ch => [ch.id, ch.label]));
   // channelLabel used to look up memberMap[channelId] directly, relying on
@@ -209,9 +224,10 @@ export default function ChatScreen() {
 
   const isPinned = pinnedChannels.includes(channelId);
   const togglePin = () => {
+    if (!activeMemberId) return;
     const next = isPinned ? pinnedChannels.filter(id => id !== channelId) : [...pinnedChannels, channelId];
     setPinnedChannels(next);
-    savePinnedChannels(next);
+    togglePinnedChannel(activeMemberId, channelId, !isPinned);
   };
 
   const rawMsgs = channels[channelId]?.messages ?? [];
@@ -241,9 +257,64 @@ export default function ChatScreen() {
   const reversedItems = [...items].reverse();
 
   // ── @mention suggestions ───────────────────────────────────────────────────
+  // Scoped to who's ACTUALLY in the open channel — this used to suggest
+  // every family member regardless of which conversation was open, so
+  // typing "@" in a private 1-on-1 DM (e.g. Alex ↔ Priya) still offered
+  // Maya/Leo/Sam etc. as mentionable. Since mention-notify (the edge
+  // function that actually pushes a notification when a message is sent
+  // containing "@FirstName") has no channel-membership check of its own,
+  // picking one of those out-of-channel suggestions and sending would
+  // genuinely notify someone with no access to that conversation, plus
+  // give them a text preview of a message they can't otherwise read.
+  // Also drives the channel sub-header's avatar cluster below — a group
+  // channel previously fell through to the RAW `members` array regardless
+  // of which one was open, so opening #parents-vault showed kid avatars
+  // and opening a seniors_* channel showed the OTHER side's grandparent —
+  // every group channel's header looked identical to #all-family's,
+  // defeating the whole point of these being separate, scoped channels.
+  // Side derivation (linkedParentId → parents[0]='a' side / parents[1]='b'
+  // side) mirrors buildGroupChannels' own sideForGp exactly (constants.ts)
+  // — kept in sync deliberately since this determines who a message in a
+  // side-specific Grand Squad channel actually reaches.
+  const parentsForSide = members.filter(m => m.role === 'parent');
+  const sideForGp = (gp: any): 'a' | 'b' | 'unlinked' => {
+    if (!gp.linkedParentId) return 'unlinked';
+    if (gp.linkedParentId === parentsForSide[0]?.id) return 'a';
+    if (gp.linkedParentId === parentsForSide[1]?.id) return 'b';
+    return 'unlinked';
+  };
+
+  const currentChannelMemberIds: string[] = dmOtherId
+    ? [activeMemberId, dmOtherId].filter((id): id is string => !!id)
+    : channelId === 'parents'
+      ? members.filter(m => m.role === 'parent').map(m => m.id)
+      // seniors_all (#the-grand-squad) — the WHOLE family: both
+      // grandparents, both parents, every kid/teen.
+      : channelId === 'seniors_all'
+        ? members.map(m => m.id)
+        // seniors_a / seniors_b — that SIDE's grandparent(s) + the whole
+        // rest of the family (parents + kids/teens), excluding only the
+        // OTHER side's grandparent(s). An unlinked senior (no side
+        // determined) falls into seniors_a per buildGroupChannels' own
+        // fallback, so mirror that here too.
+        : channelId === 'seniors_a' || channelId === 'seniors_b'
+          ? members.filter(m => {
+              if (m.role !== 'senior') return true; // every parent + kid/teen
+              const side = sideForGp(m);
+              const wantSide = channelId === 'seniors_a' ? 'a' : 'b';
+              return side === wantSide || (side === 'unlinked' && wantSide === 'a');
+            }).map(m => m.id)
+          // 'all' (#all-family) — grandparents are already blocked from even
+          // opening this channel (see the groupChannels filter above and
+          // the matching server-side RLS rule), so its real participants
+          // are parents + kids/teens only, never seniors.
+          : members.filter(m => m.role !== 'senior').map(m => m.id);
 
   const mentionSuggestions = mentionQuery !== null
-    ? members.filter(m => m.id !== activeMemberId && m.name.toLowerCase().includes(mentionQuery.toLowerCase()))
+    ? members.filter(m =>
+        m.id !== activeMemberId
+        && currentChannelMemberIds.includes(m.id)
+        && m.name.toLowerCase().includes(mentionQuery.toLowerCase()))
     : [];
 
   const handleTextChange = (val: string) => {
@@ -467,9 +538,18 @@ export default function ChatScreen() {
                     style={[s.channelBtn, { backgroundColor: act ? ((ch as any).isDM ? colors.primary : colors.card) : 'transparent' }]}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                       {(ch as any).isDM && (
-                        <View style={{ width: 7, height: 7, borderRadius: 4,
-                          backgroundColor: '#22c55e',
-                          borderWidth: 1.5, borderColor: act ? colors.primary : colors.surface }} />
+                        <View style={{ width: 16, height: 16 }}>
+                          <FamilyAvatar
+                            name={memberMap[(ch as any).otherId]?.name ?? ch.label}
+                            emoji={memberMap[(ch as any).otherId]?.emoji}
+                            avatarUrl={memberMap[(ch as any).otherId]?.avatarUrl}
+                            siblings={[]}
+                            size={16}
+                            ringColor={accentColor((ch as any).otherId)}
+                            ringWidth={0}
+                            bgColor={accentColor((ch as any).otherId) + '44'}
+                          />
+                        </View>
                       )}
                       {pinned && <Pin size={10} color={act ? '#fff' : colors.textTertiary} fill={act ? '#fff' : colors.textTertiary} />}
                       <Text style={{ fontSize: 13, fontWeight: '700', color: act ? ((ch as any).isDM ? '#fff' : colors.textPrimary) : colors.textTertiary }}>
@@ -507,14 +587,14 @@ export default function ChatScreen() {
               which for a 1-1 DM misleadingly displayed "5 members" and
               every family member's avatar, undermining the fact that a
               DM is actually private. */}
-          {!dmOtherId && <Text style={{ fontSize: 10, color: colors.textTertiary }}>· {members.length} members</Text>}
+          {!dmOtherId && <Text style={{ fontSize: 10, color: colors.textTertiary }}>· {currentChannelMemberIds.length} members</Text>}
         </View>
 
         {/* Avatar cluster — solid separator border so no ring bleed */}
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           {(dmOtherId
             ? [activeMember, memberMap[dmOtherId]].filter(Boolean)
-            : members
+            : currentChannelMemberIds.map(id => memberMap[id]).filter(Boolean)
           ).slice(0, 5).map((m: any, i: number) => {
             const sep = colors.card;
             return (
@@ -538,7 +618,7 @@ export default function ChatScreen() {
               </View>
             );
           })}
-          {members.length > 5 && (
+          {!dmOtherId && currentChannelMemberIds.length > 5 && (
             <View style={{
               marginLeft: -10, zIndex: 0,
               width: 26, height: 26, borderRadius: 13,
@@ -547,7 +627,7 @@ export default function ChatScreen() {
               borderWidth: 2, borderColor: colors.card,
             }}>
               <Text style={{ fontSize: 8, fontWeight: '900', color: colors.textSecondary }}>
-                +{members.length - 5}
+                +{currentChannelMemberIds.length - 5}
               </Text>
             </View>
           )}
@@ -681,6 +761,12 @@ export default function ChatScreen() {
                     senderName={sender?.name?.split(' ')[0] ?? 'Family'}
                     senderEmoji={sender?.emoji ?? '👤'}
                     senderColor={accentColor(msg.senderId)}
+                    // The quoted message's OWN sender's color, not the
+                    // replying message's — the accent strip should identify
+                    // whose message is being quoted, so replying to someone
+                    // else's message previously (incorrectly) showed the
+                    // REPLIER's color on the quote strip instead of theirs.
+                    replyToColor={msg.replyTo ? accentColor(msg.replyTo.senderId) : undefined}
                     activeMemberId={activeMemberId ?? ''}
                     memberMap={memberMap}
                     searchQuery={searchQuery}

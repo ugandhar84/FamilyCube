@@ -23,7 +23,7 @@ const GP_WELCOME_GREEN = '#22c55e';
 export function FamilyNeedsHandSection({
   openRequests, gpWelcomeRequests, gpWelcomeChores, volunteerPool,
   active, members, allNames, colors, isDark,
-  updateEvent, updateChore, assignRequest,
+  updateEvent, updateChore, assignRequest, claimGPErrand,
 }: {
   openRequests: FamilyEvent[];
   gpWelcomeRequests: KidRequest[];
@@ -33,6 +33,10 @@ export function FamilyNeedsHandSection({
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
   updateChore: (id: string, patch: Partial<ChoreTask>) => void;
   assignRequest: (id: string, memberId: string) => void;
+  // Scenario 1.6 — "I'll Handle It" now offers instead of claiming outright;
+  // routes through the same claimGPErrand gate QuestInvitationsSection uses,
+  // rather than writing assignedToId/status directly.
+  claimGPErrand: (choreId: string, gpMemberId: string) => void;
 }) {
   if (openRequests.length === 0 && gpWelcomeRequests.length === 0 &&
       gpWelcomeChores.length === 0 && volunteerPool.length === 0) return null;
@@ -163,7 +167,7 @@ export function FamilyNeedsHandSection({
               </View>
             )}
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Pressable onPress={() => updateChore(c.id, { assignedToId: active.id, status: 'in_progress', openToGP: false })}
+              <Pressable onPress={() => claimGPErrand(c.id, active.id)}
                 style={{ flex: 1, backgroundColor: GP_WELCOME_GREEN, paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                 <Hand size={14} color="#fff" />
                 <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Handle It</Text>

@@ -30,6 +30,18 @@ export type ChoreStatus =
   | 'pending_approval'               // Submitted; awaiting parent review
   | 'pending_grandparent_approval'   // GP quest done; awaiting grandparent review
   | 'pending_parent_approval'        // GP quest created; awaiting parent approve
+  // Scenario 1.6 — a grandparent/senior tapped "I'll Handle It" on an
+  // openToGP-flagged chore. Distinct from 'in_progress': nothing is
+  // actually assigned yet — the offer sits here until a parent Accepts
+  // (→ 'in_progress', assignedToId = the offering GP) or Declines
+  // (→ back to 'todo', pool-visible again), or the GP Withdraws it
+  // themselves (→ back to 'todo'). See claimGPErrand/acceptGPOffer/
+  // declineGPOffer/withdrawGPOffer. Maps to 'pending_approval' in the
+  // Quest-shim status space (choreAdapter.ts) so it rides the existing
+  // pending-approval UI, but stays a distinct real ChoreStatus so
+  // parent-facing UI (ChoreReviewSection.tsx) can filter specifically
+  // for GP offers rather than lumping them in with kid submissions.
+  | 'gp_offer_pending'
   | 'approved'                       // Parent approved; points credited
   | 'auto_approved'                  // 24h window closed; auto-approved
   | 'redo_requested'                 // Parent rejected; child resubmitting
@@ -98,6 +110,11 @@ export interface ChoreTask {
   shoppingStore?: string;            // e.g. 'Walmart', 'Target'
   shoppingBudget?: number;           // optional spend cap in dollars
   openToGP?: boolean;        // parent flagged this for grandparent to handle (e.g. grocery run + scan receipt)
+  // Spec 8.2 — optional tie to a calendar event this quest logistically
+  // supports (e.g. "pack for the trip" linked to the "Family Trip" event).
+  // Display-only association picked at creation/edit, no bidirectional
+  // sync/cascade to the event itself.
+  linkedEventId?: string;
   // Household Backlog's pool "disable without deleting" toggle
   // (PoolQuestCard.tsx). A real, dedicated, persisted flag — previously
   // that toggle wrote isPrivateParent instead (a field that means
@@ -113,6 +130,13 @@ export interface ChoreTask {
   // not award points while this is still true. Cleared by a parent via
   // approveTeenReward / adjustTeenReward / declineTeenReward.
   rewardPendingReview?: boolean;
+  // Scenario 1.6 — memberId of the grandparent/senior who offered to
+  // handle this openToGP chore while status === 'gp_offer_pending'.
+  // Deliberately NOT written to assignedToId until a parent actually
+  // Accepts the offer (acceptGPOffer) — assignedToId still means "this
+  // is who is doing the work," which isn't true yet for a pending offer.
+  // Cleared on accept/decline/withdraw.
+  gpOfferById?: string;
   // GP receipt reimbursement
   receiptPhotoUrl?: string;
   receiptAmount?: number;       // in dollars/currency units (not points)
@@ -143,6 +167,32 @@ export interface ChoreTask {
   // visible audit note" requirement.
   reversedAt?: string;
   reversedById?: string;
+
+  // Multi-slot bounty claiming — a bounty with maxClaimants > 1 lets that
+  // many kids each independently claim/work/submit/get paid for their own
+  // slot, instead of the single-claimant first-come model claimBounty uses
+  // by default (assignedToId stays unused for a multi-slot bounty; each
+  // claim is tracked in the separate bounty_claims table instead). NULL/1
+  // means the existing single-claimant behavior, unchanged.
+  maxClaimants?: number;
+  claims?: BountyClaim[];
+}
+
+export interface BountyClaim {
+  id: string;
+  choreId: string;
+  memberId: string;
+  status: 'in_progress' | 'pending_approval' | 'approved' | 'declined';
+  claimedAt: string;
+  submittedAt?: string;
+  submissionPhotoUrl?: string;
+  submissionNote?: string;
+  approvedAt?: string;
+  reviewedById?: string;
+  declinedAt?: string;
+  rejectionReason?: string;
+  coinsAwarded?: number;
+  createdAt: string;
 }
 
 export interface ChoreCheer {
@@ -450,6 +500,7 @@ function choreFromRow(row: any): ChoreTask {
     reviewedAt:              row.reviewed_at ?? undefined,
     reviewedById:            row.reviewed_by_id ?? undefined,
     declinedAt:              row.declined_at ?? undefined,
+    linkedEventId:           row.linked_event_id ?? undefined,
     createdAt:               row.created_at ?? new Date().toISOString(),
     shoppingItems:           Array.isArray(row.shopping_items) ? row.shopping_items : undefined,
     shoppingStore:           row.shopping_store ?? undefined,
@@ -457,6 +508,8 @@ function choreFromRow(row: any): ChoreTask {
     openToGP:                row.open_to_gp ?? false,
     isDisabled:              row.is_disabled ?? false,
     rewardPendingReview:     row.reward_pending_review ?? false,
+    gpOfferById:             row.gp_offer_by_id ?? undefined,
+    maxClaimants:            row.max_claimants ?? undefined,
     receiptPhotoUrl:         row.receipt_photo_url ?? undefined,
     receiptAmount:           row.receipt_amount != null ? Number(row.receipt_amount) : undefined,
     receiptNote:             row.receipt_note ?? undefined,
@@ -591,6 +644,18 @@ interface ChoreState {
   // by a parent"). Distinguished with one extra existence check on the lost
   // race, so the caller can show the right message instead of a generic one.
   claimBounty:              (choreId: string, childId: string, onLost?: (reason: 'claimed' | 'deleted') => void) => void;
+  // Multi-slot bounty claiming (chore_tasks.max_claimants > 1) — each kid's
+  // claim tracked independently in bounty_claims rather than assignedToId.
+  // claimBounty automatically delegates here when maxClaimants > 1.
+  // Reuses claimBounty's own 'claimed' | 'deleted' reason shape so both
+  // functions' callers (claimBounty delegates to this one when
+  // maxClaimants > 1) can share one onLost handler — 'claimed' covers both
+  // "someone else took the last slot" and "you already have a claim."
+  claimBountySlot:          (choreId: string, childId: string, onLost?: (reason: 'claimed' | 'deleted') => void) => void;
+  submitBountyClaim:        (choreId: string, childId: string, opts?: { photoUrl?: string; note?: string }) => void;
+  approveBountyClaim:       (choreId: string, childId: string, reviewerId: string) => void;
+  declineBountyClaim:       (choreId: string, childId: string, reviewerId: string, reason?: string) => void;
+  loadBountyClaims:         (choreId: string) => Promise<void>;
   claimPoolQuest:           (choreId: string, memberId: string, onLost?: (reason: 'claimed' | 'deleted') => void) => void;
   // Returns false (and does nothing) if the chore isn't submittable yet —
   // currently: a recurring chore whose due_date is still in the future.
@@ -602,7 +667,14 @@ interface ChoreState {
   submitGrandparentQuest:   (choreId: string, opts?: { photoUrl?: string; note?: string }) => void;
 
   // ── GP errand receipt ─────────────────────────────────────────────────────
+  // Scenario 1.6 — claimGPErrand no longer claims outright; it records an
+  // OFFER (status 'gp_offer_pending', gpOfferById set) that a parent must
+  // Accept or Decline before assignedToId/status:'in_progress' are set. See
+  // acceptGPOffer/declineGPOffer/withdrawGPOffer below.
   claimGPErrand:           (choreId: string, gpMemberId: string) => void;
+  acceptGPOffer:           (choreId: string, parentId: string) => void;
+  declineGPOffer:          (choreId: string, parentId: string, reason?: string) => void;
+  withdrawGPOffer:         (choreId: string, gpMemberId: string) => void;
   submitGPErrandReceipt:   (choreId: string, opts: { receiptPhotoUrl?: string; receiptAmount?: number; receiptNote?: string }) => void;
   acknowledgeGPReimbursement: (choreId: string) => void;
 
@@ -1013,6 +1085,26 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   addChore: (partial) => {
     const familyId = getFamilyId();
     const now = new Date().toISOString();
+
+    // Live QA audit found "shopping is adult-only" was UI-copy-only —
+    // nothing in this function (or updateChore, below) actually rejected a
+    // kid/teen assignedToId on a shopping chore; one was inserted and ran
+    // the full submit→approve→payout cycle with zero rejection anywhere.
+    // Real data-layer guard: strip a non-adult assignee back to unassigned
+    // (pool) rather than silently letting the write through with the wrong
+    // assignee, or throwing and losing the whole create.
+    if (partial.categoryType === 'shopping' && partial.assignedToId) {
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const assignee = useFamilyStore.getState().members.find((m: any) => m.id === partial.assignedToId);
+        if (assignee && assignee.role !== 'parent' && assignee.role !== 'senior') {
+          console.warn('[choreStore] addChore blocked a non-adult assignedToId on a shopping chore — clearing to pool', assignee.role);
+          partial = { ...partial, assignedToId: undefined, isPool: true };
+        }
+      } catch (e) {
+        console.warn('[choreStore] addChore shopping adult-only check failed', e);
+      }
+    }
     const autoExpire = partial.categoryType === 'parent_only_quest'
       ? undefined
       : ['citizenship', 'routine', 'shopping'].includes(partial.categoryType)
@@ -1098,6 +1190,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       shopping_items:           (partial as any).shoppingItems ?? null,
       shopping_store:           (partial as any).shoppingStore ?? null,
       shopping_budget:          (partial as any).shoppingBudget ?? null,
+      linked_event_id:          chore.linkedEventId ?? null,
     });
     _choreInsertPromises.set(chore.id, insertPromise);
 
@@ -1124,6 +1217,59 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   updateChore: (id, rawUpdates) => {
+    // Live QA audit found a shopping chore's assignedToId could be changed
+    // to a kid/teen via a later edit (not just at creation, which addChore
+    // now separately guards) with zero rejection. Same fix here: an edit
+    // reassigning a shopping chore to a non-adult is redirected back to
+    // pool rather than silently accepted.
+    if ('assignedToId' in rawUpdates && (rawUpdates as any).assignedToId) {
+      const existing = get().chores.find(c => c.id === id);
+      const effectiveCategory = (rawUpdates as any).categoryType ?? existing?.categoryType;
+      if (effectiveCategory === 'shopping') {
+        try {
+          const { useFamilyStore } = require('./familyStore');
+          const assignee = useFamilyStore.getState().members.find((m: any) => m.id === (rawUpdates as any).assignedToId);
+          if (assignee && assignee.role !== 'parent' && assignee.role !== 'senior') {
+            console.warn('[choreStore] updateChore blocked a non-adult assignedToId on a shopping chore — clearing to pool', assignee.role);
+            rawUpdates = { ...rawUpdates, assignedToId: undefined, isPool: true } as any;
+          }
+        } catch (e) {
+          console.warn('[choreStore] updateChore shopping adult-only check failed', e);
+        }
+      }
+    }
+    // Scenario 1.13 — live QA audit found the teen reward co-sign threshold
+    // was ONLY ever checked at addChore (creation) time. A parent editing an
+    // EXISTING teen-created quest's coinsReward/bonusCoins upward — e.g.
+    // bumping a 50-coin quest to 150 — never re-ran the check, so the
+    // reward silently exceeded the threshold with rewardPendingReview
+    // staying false: a complete, verified bypass of the co-sign gate (the
+    // full submit→approve→payout cycle went through with no review). Only
+    // re-flags (never un-flags on a downward edit — a parent can already
+    // clear the flag deliberately via approveTeenReward/adjustTeenReward,
+    // and auto-clearing on edit risks quietly releasing a payout that
+    // still needed sign-off for other reasons). Only acts when the caller
+    // hasn't already explicitly set rewardPendingReview themselves, same
+    // trust-the-caller escape hatch addChore's own check uses.
+    if (('coinsReward' in rawUpdates || 'bonusCoins' in rawUpdates) && !('rewardPendingReview' in rawUpdates)) {
+      const existing = get().chores.find(c => c.id === id);
+      if (existing && !existing.rewardPendingReview && existing.createdById) {
+        try {
+          const { useFamilyStore } = require('./familyStore');
+          const creator = useFamilyStore.getState().members.find((m: any) => m.id === existing.createdById);
+          const newCoins  = 'coinsReward' in rawUpdates ? (rawUpdates as any).coinsReward ?? 0 : existing.coinsReward;
+          const newBonus  = 'bonusCoins'  in rawUpdates ? (rawUpdates as any).bonusCoins  ?? 0 : (existing.bonusCoins ?? 0);
+          const totalReward = newCoins + newBonus;
+          const threshold = get().householdSettings.teenRewardCoSignThreshold;
+          if (creator?.role === 'teen' && totalReward > threshold) {
+            console.warn('[choreStore] updateChore edit pushed a teen quest reward over threshold — flagging rewardPendingReview', id);
+            rawUpdates = { ...rawUpdates, rewardPendingReview: true } as any;
+          }
+        } catch (e) {
+          console.warn('[choreStore] updateChore teen-reward-threshold recheck failed', e);
+        }
+      }
+    }
     // openToGP (the "Offer to GP" toggle in OthersAdultQuestCard/
     // PoolQuestCard/DelegateSheet) and inviteGrandparents (the separate
     // "Invite Grandparents?" toggle in Add/EditQuestModal, and what
@@ -1180,6 +1326,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('openToGP'    in (updates as any)) patch.open_to_gp                = (updates as any).openToGP;
     if ('isDisabled'  in (updates as any)) patch.is_disabled               = (updates as any).isDisabled;
     if ('rewardPendingReview' in (updates as any)) patch.reward_pending_review = (updates as any).rewardPendingReview;
+    if ('gpOfferById'   in (updates as any)) patch.gp_offer_by_id             = (updates as any).gpOfferById ?? null;
+    if ('maxClaimants'  in (updates as any)) patch.max_claimants              = (updates as any).maxClaimants ?? null;
     if ('receiptPhotoUrl'      in updates) patch.receipt_photo_url          = updates.receiptPhotoUrl ?? null;
     if ('receiptAmount'        in updates) patch.receipt_amount             = updates.receiptAmount ?? null;
     if ('receiptNote'          in updates) patch.receipt_note               = updates.receiptNote ?? null;
@@ -1195,6 +1343,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('reviewedAt'         in updates) patch.reviewed_at              = updates.reviewedAt ?? null;
     if ('reviewedById'       in updates) patch.reviewed_by_id           = updates.reviewedById ?? null;
     if ('declinedAt'         in updates) patch.declined_at              = updates.declinedAt ?? null;
+    if ('linkedEventId'      in updates) patch.linked_event_id          = updates.linkedEventId ?? null;
     if ('redoCount'          in updates) patch.redo_count               = updates.redoCount;
     if ('cheers'             in updates) patch.cheered_by               = updates.cheers;
     if ('disputeStatus'      in (updates as any)) patch.dispute_status  = (updates as any).disputeStatus ?? null;
@@ -1233,12 +1382,139 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   // ─────────────────────────────────────────────────────────────────────────
+  // MULTI-SLOT BOUNTY CLAIMING (maxClaimants > 1) ─────────────────────────
+  // "Up to N kids can claim" already had a full built UI (AddQuestAssignSection's
+  // picker, QuestCard's "Full — X/Y claimed" copy) but no backend — this is
+  // the actual implementation, tracked via the separate bounty_claims table
+  // rather than the single-claimant assignedToId field.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  claimBountySlot: (choreId, childId, onLost) => {
+    supabase.rpc('claim_bounty_slot', { p_chore_id: choreId, p_member_id: childId })
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn('[choreStore] claimBountySlot RPC failed', error.message);
+          return;
+        }
+        const result = Array.isArray(data) ? data[0] : data;
+        if (!result?.claimed) {
+          console.warn('[choreStore] claimBountySlot lost — bounty full or already claimed by this member', choreId);
+          if (onLost) onLost('claimed');
+          return;
+        }
+        const now = new Date().toISOString();
+        const claim: BountyClaim = {
+          id: result.claim_id, choreId, memberId: childId, status: 'in_progress',
+          claimedAt: now, createdAt: now,
+        };
+        set(s => ({
+          chores: s.chores.map(c => c.id === choreId ? { ...c, claims: [...(c.claims ?? []), claim] } : c),
+        }));
+      });
+  },
+
+  loadBountyClaims: async (choreId) => {
+    const { data, error } = await supabase.from('bounty_claims').select('*').eq('chore_id', choreId);
+    if (error) { console.warn('[choreStore] loadBountyClaims failed', error.message); return; }
+    const claims: BountyClaim[] = (data ?? []).map((r: any) => ({
+      id: r.id, choreId: r.chore_id, memberId: r.member_id, status: r.status,
+      claimedAt: r.claimed_at, submittedAt: r.submitted_at ?? undefined,
+      submissionPhotoUrl: r.submission_photo_url ?? undefined, submissionNote: r.submission_note ?? undefined,
+      approvedAt: r.approved_at ?? undefined, reviewedById: r.reviewed_by_id ?? undefined,
+      declinedAt: r.declined_at ?? undefined, rejectionReason: r.rejection_reason ?? undefined,
+      coinsAwarded: r.coins_awarded ?? undefined, createdAt: r.created_at,
+    }));
+    set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, claims } : c) }));
+  },
+
+  submitBountyClaim: (choreId, childId, opts) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    const claim = chore?.claims?.find(cl => cl.memberId === childId);
+    if (!claim || claim.status !== 'in_progress') return;
+    const now = new Date().toISOString();
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? {
+        ...c, claims: (c.claims ?? []).map(cl => cl.memberId === childId
+          ? { ...cl, status: 'pending_approval', submittedAt: now, submissionPhotoUrl: opts?.photoUrl, submissionNote: opts?.note }
+          : cl),
+      } : c),
+    }));
+    supabase.from('bounty_claims')
+      .update({ status: 'pending_approval', submitted_at: now, submission_photo_url: opts?.photoUrl ?? null, submission_note: opts?.note ?? null })
+      .eq('id', claim.id)
+      .then(({ error }) => { if (error) console.warn('[choreStore] submitBountyClaim DB update failed', error.message); });
+    if (chore?.familyId) {
+      supabase.functions.invoke('quest-event-notifier', {
+        body: { event: 'quest_submitted', questId: choreId, questTitle: chore.title, familyId: chore.familyId, assigneeId: childId },
+      }).catch(e => console.warn('[choreStore] submitBountyClaim notify', e?.message));
+    }
+  },
+
+  approveBountyClaim: (choreId, childId, reviewerId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    const claim = chore?.claims?.find(cl => cl.memberId === childId);
+    if (!chore || !claim || claim.status !== 'pending_approval') return;
+    if (!get().canApprove(reviewerId)) {
+      console.warn('[choreStore] approveBountyClaim blocked — reviewer is not a parent and has no active temporary-approver grant');
+      return;
+    }
+    const now = new Date().toISOString();
+    const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? {
+        ...c, claims: (c.claims ?? []).map(cl => cl.memberId === childId
+          ? { ...cl, status: 'approved', approvedAt: now, reviewedById: reviewerId, coinsAwarded: pts }
+          : cl),
+      } : c),
+    }));
+    supabase.from('bounty_claims')
+      .update({ status: 'approved', approved_at: now, reviewed_by_id: reviewerId, coins_awarded: pts })
+      .eq('id', claim.id)
+      .then(({ error }) => { if (error) console.warn('[choreStore] approveBountyClaim DB update failed', error.message); });
+    // Each claim pays out fully and independently — same "no split" model
+    // team-clone quests already use (1.7, deliberate/unchanged this session).
+    if (pts > 0) get().awardPoints(childId, choreId, pts, chore.xpReward);
+  },
+
+  declineBountyClaim: (choreId, childId, reviewerId, reason) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    const claim = chore?.claims?.find(cl => cl.memberId === childId);
+    if (!claim || claim.status !== 'pending_approval') return;
+    if (!get().canApprove(reviewerId)) {
+      console.warn('[choreStore] declineBountyClaim blocked — reviewer is not a parent and has no active temporary-approver grant');
+      return;
+    }
+    const now = new Date().toISOString();
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? {
+        ...c, claims: (c.claims ?? []).map(cl => cl.memberId === childId
+          // Round 4 QA found reviewedById was never set on decline (unlike
+          // approveBountyClaim's sibling path, which does) — a declined
+          // claim's audit trail was missing who actually declined it.
+          ? { ...cl, status: 'declined', declinedAt: now, rejectionReason: reason, reviewedById: reviewerId }
+          : cl),
+      } : c),
+    }));
+    supabase.from('bounty_claims')
+      .update({ status: 'declined', declined_at: now, rejection_reason: reason ?? null, reviewed_by_id: reviewerId })
+      .eq('id', claim.id)
+      .then(({ error }) => { if (error) console.warn('[choreStore] declineBountyClaim DB update failed', error.message); });
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
   // CHILD ACTIONS
   // ─────────────────────────────────────────────────────────────────────────
 
   claimBounty: (choreId, childId, onLost) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.categoryType !== 'bounty' || chore.status !== 'todo') return;
+    // maxClaimants > 1 is a genuinely different mechanism — claimBountySlot,
+    // below — tracked per-participant via the separate bounty_claims table
+    // instead of the single assignedToId field this function's CAS guards.
+    if (chore.maxClaimants && chore.maxClaimants > 1) {
+      get().claimBountySlot(choreId, childId, onLost);
+      return;
+    }
     if (chore.assignedToId) return; // Already claimed
 
     // Two kids tapping "Claim" on the same pool bounty within the same
@@ -1302,7 +1578,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // expect) instead of 'todo'.
   claimPoolQuest: (choreId, memberId, onLost) => {
     const chore = get().chores.find(c => c.id === choreId);
-    if (!chore || chore.assignedToId) return; // Already claimed or gone
+    if (!chore) return;
+    // claimPoolQuest — not claimBounty — is the actual reachable "Claim"
+    // action from every live screen (see choreAdapter.ts's claimQuest
+    // comment), so the multi-slot branch has to live here too, not just on
+    // claimBounty's own dormant single-claimant path.
+    if (chore.maxClaimants && chore.maxClaimants > 1) {
+      get().claimBountySlot(choreId, memberId, onLost);
+      return;
+    }
+    if (chore.assignedToId) return; // Already claimed or gone
 
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? { ...c, assignedToId: memberId, status: 'in_progress', isPool: false } : c),
@@ -1498,24 +1783,257 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // GP ERRAND RECEIPT
   // ─────────────────────────────────────────────────────────────────────────
 
+  // Scenario 1.6 — a GP tapping "I'll Handle It" on an openToGP chore used
+  // to claim it outright (assignedToId + status:'in_progress'), with zero
+  // parent involvement and no way to withdraw. Now it records an OFFER: the
+  // chore stays unassigned (assignedToId untouched) but moves to
+  // 'gp_offer_pending' with gpOfferById recording who offered, and parents
+  // get notified to Accept/Decline. See acceptGPOffer/declineGPOffer below.
   claimGPErrand: (choreId, gpMemberId) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !chore.inviteGrandparents || chore.status !== 'todo') return;
-    get().updateChore(choreId, { status: 'in_progress', assignedToId: gpMemberId });
+
+    // Live QA audit (round 1) found updateChore's underlying dbUpdate has
+    // no WHERE guard beyond id — the 'status !== todo' check above only
+    // reads possibly-stale LOCAL state, so two GPs offering near-
+    // simultaneously (or one client with stale cache) could have the
+    // second unconditional UPDATE silently overwrite the first offer with
+    // zero error surfaced. Fixed the same way claimPoolQuest already
+    // guards its own race (spec 3.1) — a conditional UPDATE keyed on the
+    // DB still showing 'todo', with a rows-affected check and local
+    // rollback on loss, instead of trusting only the in-memory read above.
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'gp_offer_pending', gpOfferById: gpMemberId } : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    supabase.from('chore_tasks')
+      .update({ status: 'gp_offer_pending', gp_offer_by_id: gpMemberId })
+      .eq('id', choreId)
+      .eq('status', 'todo')
+      .select('id')
+      .then(({ data, error }) => {
+        if (error) { console.warn('[choreStore] claimGPErrand DB update failed', error.message); return; }
+        if (!data || data.length === 0) {
+          console.warn('[choreStore] claimGPErrand lost the race on', choreId, '— another GP already offered, rolling back local state');
+          set(s => ({
+            chores: s.chores.map(c =>
+              c.id === choreId && c.gpOfferById === gpMemberId ? { ...c, status: 'todo', gpOfferById: undefined } : c
+            ),
+          }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+        }
+      });
+
+    if (chore.familyId) {
+      supabase.functions.invoke('quest-event-notifier', {
+        body: {
+          event: 'gp_offer_pending',
+          questId: chore.id,
+          questTitle: chore.title,
+          familyId: chore.familyId,
+          assigneeId: gpMemberId,
+        },
+      }).catch(e => console.warn('[choreStore] claimGPErrand gp_offer_pending notify', e?.message));
+    }
   },
 
+  // A parent accepting a pending GP offer — this is the ONLY point the
+  // chore actually becomes assigned to the offering GP (assignedToId +
+  // status:'in_progress'), mirroring startGrandparentQuest's claim shape.
+  // Same canApprove gate as approveChore — this is a real authorization
+  // decision, not just a UI convenience.
+  acceptGPOffer: (choreId, parentId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.status !== 'gp_offer_pending' || !chore.gpOfferById) return;
+    if (!get().canApprove(parentId)) {
+      console.warn('[choreStore] acceptGPOffer blocked — reviewer', parentId, 'is not a parent and has no active temporary-approver grant');
+      return;
+    }
+    const offeringGpId = chore.gpOfferById;
+
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId
+        ? { ...c, status: 'in_progress', assignedToId: offeringGpId, gpOfferById: undefined, isPool: false }
+        : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    // Guard on gp_offer_by_id too, not just status — if the parent's client
+    // was showing a stale offer (e.g. GP A withdrew and GP B has since
+    // offered), this must accept the LIVE offer or fail entirely, never
+    // silently accept/msg the wrong (no-longer-current) GP.
+    supabase.from('chore_tasks')
+      .update({ status: 'in_progress', assigned_to_id: offeringGpId, gp_offer_by_id: null, is_pool: false })
+      .eq('id', choreId)
+      .eq('status', 'gp_offer_pending')
+      .eq('gp_offer_by_id', offeringGpId)
+      .select('id')
+      .then(({ data, error }) => {
+        if (error) { console.warn('[choreStore] acceptGPOffer DB update failed', error.message); return; }
+        if (!data || data.length === 0) {
+          console.warn('[choreStore] acceptGPOffer lost the race on', choreId, '— offer changed underneath, rolling back local state');
+          set(s => ({
+            chores: s.chores.map(c =>
+              c.id === choreId && c.assignedToId === offeringGpId ? { ...c, status: 'gp_offer_pending', assignedToId: undefined, gpOfferById: offeringGpId, isPool: false } : c
+            ),
+          }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+          return;
+        }
+        try {
+          const { useChatStore } = require('./chatStore');
+          useChatStore.getState().sendMessage(offeringGpId, parentId,
+            `✅ Your offer to handle "${chore.title}" was accepted — go ahead!`);
+        } catch (e) {
+          console.warn('[choreStore] acceptGPOffer notification failed', e);
+        }
+      });
+  },
+
+  // A parent declining a pending GP offer — reverts to pre-offer 'todo',
+  // still visible/claimable to any opted-in GP (inviteGrandparents/openToGP
+  // is untouched, only the offer itself is undone).
+  declineGPOffer: (choreId, parentId, reason) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.status !== 'gp_offer_pending' || !chore.gpOfferById) return;
+    if (!get().canApprove(parentId)) {
+      console.warn('[choreStore] declineGPOffer blocked — reviewer', parentId, 'is not a parent and has no active temporary-approver grant');
+      return;
+    }
+    const offeringGpId = chore.gpOfferById;
+
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId
+        ? { ...c, status: 'todo', gpOfferById: undefined, rejectionReason: reason }
+        : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    supabase.from('chore_tasks')
+      .update({ status: 'todo', gp_offer_by_id: null, rejection_reason: reason ?? null })
+      .eq('id', choreId)
+      .eq('status', 'gp_offer_pending')
+      .eq('gp_offer_by_id', offeringGpId)
+      .select('id')
+      .then(({ data, error }) => {
+        if (error) { console.warn('[choreStore] declineGPOffer DB update failed', error.message); return; }
+        if (!data || data.length === 0) {
+          console.warn('[choreStore] declineGPOffer lost the race on', choreId, '— offer changed underneath, rolling back local state');
+          set(s => ({
+            chores: s.chores.map(c =>
+              c.id === choreId && c.status === 'todo' ? { ...c, status: 'gp_offer_pending', gpOfferById: offeringGpId } : c
+            ),
+          }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+          return;
+        }
+        try {
+          const { useChatStore } = require('./chatStore');
+          useChatStore.getState().sendMessage(offeringGpId, parentId,
+            `💬 "${chore.title}" wasn't accepted this time${reason ? ` — "${reason}"` : ''}. Thanks for offering!`);
+        } catch (e) {
+          console.warn('[choreStore] declineGPOffer notification failed', e);
+        }
+      });
+  },
+
+  // The offering GP retracting their own offer before a parent acts on it —
+  // reverts to 'todo', same end state as declineGPOffer minus the parent's
+  // decision and notification.
+  withdrawGPOffer: (choreId, gpMemberId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.status !== 'gp_offer_pending' || chore.gpOfferById !== gpMemberId) return;
+
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'todo', gpOfferById: undefined } : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    supabase.from('chore_tasks')
+      .update({ status: 'todo', gp_offer_by_id: null })
+      .eq('id', choreId)
+      .eq('status', 'gp_offer_pending')
+      .eq('gp_offer_by_id', gpMemberId)
+      .select('id')
+      .then(({ data, error }) => {
+        if (error) { console.warn('[choreStore] withdrawGPOffer DB update failed', error.message); return; }
+        if (!data || data.length === 0) {
+          console.warn('[choreStore] withdrawGPOffer lost the race on', choreId, '— offer already resolved (accepted/declined) underneath, re-syncing from DB');
+          // Unlike the other 3, there's no safe local rollback here — if this
+          // 0-rows result means a parent already accepted/declined between
+          // this GP's stale read and this call, reverting to 'gp_offer_pending'
+          // locally would be actively wrong (the offer is genuinely gone).
+          // Force a resync instead of guessing.
+          get().syncFromDB(true);
+        }
+      });
+  },
+
+  // Scenario 4.2/4.6 — a GP completing a plain errand with no receipt/
+  // reimbursement data attached auto-completes instantly (status straight
+  // to 'auto_approved', the same terminal "done and paid" status the
+  // parent-self-assign auto-complete path already uses — see submitChore's
+  // isSelfAssignedByParent branch above) and pays out immediately via the
+  // same awardPoints call approveChore uses, plus a lightweight informational
+  // ping to parents (not an approval request). A submission that DOES carry
+  // receipt/reimbursement data still routes to 'pending_approval' for real
+  // parent review, unchanged from before.
   submitGPErrandReceipt: (choreId, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !chore.inviteGrandparents) return;
     if (!['todo', 'in_progress'].includes(chore.status)) return;
+
+    const hasReceiptData = !!(opts.receiptPhotoUrl || opts.receiptAmount != null || opts.receiptNote);
+    const now = new Date().toISOString();
+
+    if (!hasReceiptData) {
+      get().updateChore(choreId, {
+        status:      'auto_approved',
+        approvedAt:  now,
+        reviewedAt:  now,
+        submittedAt: now,
+      });
+      const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
+      if (pts > 0 && chore.assignedToId && !chore.rewardPendingReview) {
+        // Same wallet-selection rule every other payout site in this file
+        // uses — a plain inviteGrandparents errand (not GP-sponsored, no
+        // categoryType: 'grandparent_quest') must pay mainCoins, the kid's
+        // real spendable/Spend-Save-Give-split balance. Hardcoding 'gpCoins'
+        // here misrouted a common case into a separate GP-only ledger the
+        // Store tab doesn't reflect and skipped the jar split entirely.
+        const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+        get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward, wallet);
+      }
+      // Informational-only ping to parents — mirrors the sponsor-notification
+      // pattern (chatStore.sendMessage via require()-based cross-store call)
+      // approveChore already uses for GP-sponsored quests, just addressed to
+      // parents instead of the sponsor since there's no separate sponsor here.
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const { useChatStore } = require('./chatStore');
+        const gp = useFamilyStore.getState().members.find((m: any) => m.id === chore.assignedToId);
+        const parents = useFamilyStore.getState().members.filter((m: any) => m.role === 'parent');
+        for (const parent of parents) {
+          if (!chore.assignedToId) continue;
+          useChatStore.getState().sendMessage(parent.id, chore.assignedToId,
+            `✅ ${gp?.name?.split(' ')[0] ?? 'A grandparent'} finished "${chore.title}" — all done, no receipt needed!`);
+        }
+      } catch (e) {
+        console.warn('[choreStore] submitGPErrandReceipt auto-complete notification failed', e);
+      }
+      return;
+    }
+
     get().updateChore(choreId, {
       status:              'pending_approval',  // goes to parent review deck
       receiptPhotoUrl:     opts.receiptPhotoUrl,
       receiptAmount:       opts.receiptAmount,
       receiptNote:         opts.receiptNote,
-      receiptSubmittedAt:  new Date().toISOString(),
-      submittedAt:         new Date().toISOString(),
+      receiptSubmittedAt:  now,
+      submittedAt:         now,
     });
+    notifyQuestSubmitted(chore);
   },
 
   acknowledgeGPReimbursement: (choreId) => {
@@ -1680,6 +2198,27 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       });
     }
 
+    // Spec 1.9 — real streak tracking. members.streak was a static seeded
+    // column, never actually touched by real completions. Only recurring
+    // chores (frequency !== 'once') count toward a streak — a one-off task
+    // has no "keep it going" cadence to track. On-time (approved on/before
+    // dueDate, same definition submitChore/resetDueRecurringChores already
+    // use for "overdue") increments the streak by 1; approved LATE (after
+    // dueDate had already passed) breaks the streak back to 0 — it still
+    // counts as done, just not on-schedule, matching resetDueRecurringChores'
+    // rollover clock rather than inventing a separate one.
+    if (chore.assignedToId && chore.recurrenceRule?.frequency && chore.recurrenceRule.frequency !== 'once') {
+      const onTime = !chore.dueDate || chore.dueDate >= localDateStr(new Date());
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const member = useFamilyStore.getState().members.find((m: any) => m.id === chore.assignedToId);
+        const nextStreak = onTime ? ((member as any)?.streak ?? 0) + 1 : 0;
+        useFamilyStore.getState().updateMember(chore.assignedToId, { streak: nextStreak });
+      } catch (e) {
+        console.warn('[choreStore] approveChore streak update failed', e);
+      }
+    }
+
     // Sync shoppingItems to grocery_items table so they appear everywhere
     if (chore.shoppingItems?.length && chore.familyId) {
       const rows = chore.shoppingItems.map((name: string) => ({
@@ -1780,9 +2319,25 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (opts?.coins && opts.coins > 0 && chore.assignedToId) {
       get().awardPoints(chore.assignedToId, choreId, opts.coins, 0, 'gpCoins');
     }
-    supabase.functions.invoke('quest-event-notifier', {
-      body: { event: 'chore_cheered', choreId, fromId: fromMemberId, coins: opts?.coins ?? 0, note: entry.note ?? null },
-    }).catch(e => console.warn('[choreStore] cheerChore notify', e?.message));
+    // event: 'chore_cheered' previously had no matching case in
+    // quest-event-notifier's switch (fell to its unknown-event default,
+    // silent no-op) AND never included familyId/questTitle/assigneeId,
+    // which the function needs to actually resolve and notify anyone —
+    // it would have 400'd even with a matching case added. Both fixed here.
+    if (chore.familyId && chore.assignedToId) {
+      supabase.functions.invoke('quest-event-notifier', {
+        body: {
+          event: 'chore_cheered',
+          questId: choreId,
+          questTitle: chore.title,
+          familyId: chore.familyId,
+          triggeredById: fromMemberId,
+          assigneeId: chore.assignedToId,
+          coins: opts?.coins ?? 0,
+          note: entry.note ?? undefined,
+        },
+      }).catch(e => console.warn('[choreStore] cheerChore notify', e?.message));
+    }
   },
 
   approveGrandparentQuestAsParent: (choreId, parentId) => {
@@ -2105,7 +2660,15 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   resetDueRecurringChores: () => {
     const today = localDateStr(new Date());
     const toReset = get().chores.filter(c =>
-      c.status === 'approved' &&
+      // 'completed' is the terminal status grandparentApproveAndCheer sets
+      // for a GP-sponsored quest reviewed via the GP's own approval path
+      // (distinct from 'approved', which the generic approveChore path
+      // uses) — a recurring GP quest approved this way never matched this
+      // filter before, so it got stuck forever after cycle 1: correctly
+      // completed and paid, but never reopened for its next cycle. Live QA
+      // audit caught this by testing a GP-sponsored recurring quest through
+      // 2+ full cycles, not just one.
+      (c.status === 'approved' || c.status === 'completed') &&
       c.recurrenceRule?.frequency && c.recurrenceRule.frequency !== 'once' &&
       c.approvedAt &&
       (() => {
@@ -2136,9 +2699,22 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now });
         }
       }
+      // Live QA audit found this unconditionally cleared assignedToId on
+      // EVERY reset, including a directly-assigned recurring routine chore
+      // (e.g. daily "Brush Teeth" assigned to one specific kid) — but
+      // getChildDashboard's `routines` filter (unlike every other category)
+      // has no `|| !c.assignedToId` pool fallback, by design ("Routines:
+      // only mine" — see that comment). Clearing the assignee here silently
+      // orphaned the chore: not assigned to anyone, not pool-visible to
+      // anyone either, permanently invisible until a parent manually
+      // reassigned it. A routine chore keeps its assignee across resets;
+      // only genuinely poolable categories (bounty/shopping/citizenship/
+      // grandparent_quest, all of which already have that fallback) should
+      // ever lose their assignment here.
+      const preserveAssignee = chore.categoryType === 'routine' && !chore.isPool;
       get().updateChore(chore.id, {
         status:             'todo',
-        assignedToId:       undefined,
+        assignedToId:       preserveAssignee ? chore.assignedToId : undefined,
         submittedAt:        undefined,
         submissionPhotoUrl: undefined,
         submissionNote:     undefined,
@@ -2147,6 +2723,37 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         rejectionReason:    undefined,
         redoCount:          0,
       });
+    }
+
+    // Spec 1.9 — the missed-cycle half of streak tracking (approveChore
+    // handles the on-time-vs-late-completion half). A recurring chore whose
+    // dueDate has already passed while it's still sitting incomplete
+    // (nobody ever submitted/approved it for this cycle at all) breaks its
+    // assignee's streak — same "dueDate < today" overdue definition
+    // submitChore/chore-deadline-notifier already use, scanned on the same
+    // cadence as the reset-to-'todo' sweep above rather than a new cron.
+    const missed = get().chores.filter(c =>
+      c.assignedToId &&
+      ['todo', 'in_progress', 'redo_requested'].includes(c.status) &&
+      c.recurrenceRule?.frequency && c.recurrenceRule.frequency !== 'once' &&
+      c.dueDate && c.dueDate < today,
+    );
+    if (missed.length > 0) {
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const seen = new Set<string>();
+        for (const chore of missed) {
+          const memberId = chore.assignedToId!;
+          if (seen.has(memberId)) continue;
+          seen.add(memberId);
+          const member = useFamilyStore.getState().members.find((m: any) => m.id === memberId);
+          if ((member as any)?.streak > 0) {
+            useFamilyStore.getState().updateMember(memberId, { streak: 0 });
+          }
+        }
+      } catch (e) {
+        console.warn('[choreStore] resetDueRecurringChores streak reset failed', e);
+      }
     }
   },
 
@@ -2722,6 +3329,27 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           }));
         }
       });
+
+    // Notify the delegator — they fired off a delegation and otherwise have
+    // no signal it was actually accepted/declined until they happen to
+    // reopen the backlog. Only ACCEPT/DECLINE are terminal-enough to be
+    // worth a ping here; SNOOZE/BLOCKER/TRADE/DISCUSS already surface via
+    // PushbackSheet's existing flow.
+    if (newStatus === 'ACCEPTED' || newStatus === 'DECLINED') {
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const { useChatStore } = require('./chatStore');
+        const delegate = useFamilyStore.getState().members.find((m: any) => m.id === assignment.assignedTo);
+        const chore = get().chores.find(c => c.id === assignment.choreId);
+        const firstName = delegate?.name?.split(' ')[0] ?? 'They';
+        const msg = newStatus === 'ACCEPTED'
+          ? `✅ ${firstName} accepted "${chore?.title ?? 'that task'}".`
+          : `🚫 ${firstName} declined "${chore?.title ?? 'that task'}".`;
+        useChatStore.getState().sendMessage(assignment.assignedBy, assignment.assignedTo, msg);
+      } catch (e) {
+        console.warn('[choreStore] respondToParentQuest notify failed', e);
+      }
+    }
   },
 
   completeParentQuest: (assignmentId, completedBy) => {
@@ -2746,6 +3374,21 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     });
     console.log(`[choreStore] completeParentQuest → syncing chore ${assignment.choreId} status=completed`);
     get().updateChore(assignment.choreId, { status: 'completed' });
+
+    // Let the delegator know their delegated task actually got done —
+    // matches the accept/decline notify above and the recall notify's
+    // existing pattern.
+    try {
+      const { useFamilyStore } = require('./familyStore');
+      const { useChatStore } = require('./chatStore');
+      const delegate = useFamilyStore.getState().members.find((m: any) => m.id === completedBy);
+      const chore = get().chores.find(c => c.id === assignment.choreId);
+      const firstName = delegate?.name?.split(' ')[0] ?? 'They';
+      useChatStore.getState().sendMessage(assignment.assignedBy, completedBy,
+        `🎉 ${firstName} completed "${chore?.title ?? 'that task'}"!`);
+    } catch (e) {
+      console.warn('[choreStore] completeParentQuest notify failed', e);
+    }
   },
 
   cancelLockedAssignment: (assignmentId) => {
@@ -2817,10 +3460,28 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   appreciationPing: (assignmentId, fromId, message) => {
-    // Fire-and-forget appreciation message (no points)
-    supabase.functions.invoke('quest-event-notifier', {
-      body: { event: 'appreciation_ping', assignmentId, fromId, message },
-    }).catch(e => console.warn('[choreStore] appreciationPing', e?.message));
+    // Was invoking quest-event-notifier with 'appreciation_ping' — the
+    // function has no matching case (falls to its unknown-event default and
+    // silently no-ops) AND the payload never included familyId, which the
+    // function requires unconditionally, so this would have 400'd even with
+    // a matching case added. Same underlying problem the doc's Category 7
+    // intro described for the original two dead call sites. Since this is
+    // fundamentally a one-to-one appreciation message with no state change
+    // to fan out, it's simpler and more consistent to send it the same way
+    // recallParentQuest (right above) already notifies a specific person —
+    // a direct chatStore DM — rather than build out a new edge-function
+    // case for a single-recipient message.
+    try {
+      const { useFamilyStore } = require('./familyStore');
+      const { useChatStore } = require('./chatStore');
+      const assignment = get().parentAssignments.find(a => a.id === assignmentId);
+      if (!assignment) return;
+      const sender = useFamilyStore.getState().members.find((m: any) => m.id === fromId);
+      useChatStore.getState().sendMessage(assignment.assignedBy, fromId,
+        `💛 ${sender?.name?.split(' ')[0] ?? 'They'}: ${message}`);
+    } catch (e) {
+      console.warn('[choreStore] appreciationPing notify failed', e);
+    }
   },
 
   // ─────────────────────────────────────────────────────────────────────────

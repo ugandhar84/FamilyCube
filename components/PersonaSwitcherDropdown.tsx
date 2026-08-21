@@ -6,7 +6,8 @@
  * flow for locked non-active profiles.
  */
 import React, { useState, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Pressable, Animated as RNAnimated } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Animated as RNAnimated, Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/lib/ThemeContext';
@@ -207,13 +208,25 @@ function MemberRow({ member, isActive, onPress, isDark }: {
   );
 }
 
+// Matches AppHeader's own bar height (paddingVertical 10 ×2 + the persona
+// row's real content) — same fixed-offset approach NotificationPanel
+// already uses successfully. Previously this dropdown rendered IN-TREE
+// (absolute-positioned inside AppHeader's own returned JSX, stacked via
+// zIndex against sibling screen content like Chat's channel strip) rather
+// than as a true top-level overlay — React Native's zIndex only reliably
+// orders siblings within the SAME parent stacking context, so a sibling
+// elsewhere in a screen's tree (not a child of AppHeader) could still
+// render on top regardless of the dropdown's own zIndex/backdrop color,
+// which is exactly what kept happening. A Modal guarantees its own native
+// top-level layer, sidestepping that class of bug entirely — same fix
+// already proven correct for NotificationPanel.
+const HEADER_OFFSET = 10 + 40 + 10 + 6;
+
 // ── Main export ─────────────────────────────────────────────────────────────
 export default function PersonaSwitcherDropdown({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, setActiveMember } = useFamilyStore();
   const [pinTarget, setPinTarget] = useState<FamilyMember | null>(null);
-
-  if (!visible) return null;
 
   const handleSelect = (m: FamilyMember) => {
     if (m.pinEnabled && m.id !== activeMemberId) {
@@ -236,50 +249,43 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
   };
 
   return (
-    <>
-      {/* Backdrop — tap outside to dismiss. Previously had no background
-          color at all (a purely invisible tap-catcher), so whatever sat
-          below the header (e.g. Chat's own channel strip/sub-header) stayed
-          fully visible and looked like it was sliding into/behind the
-          dropdown rather than being cleanly covered by it. */}
-      <Pressable
-        onPress={handleClose}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: -2000, zIndex: 40,
-          backgroundColor: 'rgba(0,0,0,0.35)' }}
-      />
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
+      <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' }} activeOpacity={1} onPress={handleClose}>
+        <SafeAreaView edges={['top']} style={{ flex: 1 }}>
+          <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+            <View style={{
+              marginTop: HEADER_OFFSET, marginHorizontal: 12, borderRadius: 22, overflow: 'hidden',
+              backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+              shadowColor: '#000', shadowOpacity: isDark ? 0.4 : 0.14, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 16,
+            }}>
+              {!pinTarget && (
+                <View style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12,
+                  borderBottomWidth: 1, borderBottomColor: colors.border,
+                }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 1, color: colors.textSecondary, textTransform: 'uppercase' }}>
+                    Select Family Profile
+                  </Text>
+                  <View style={{ backgroundColor: colors.primaryLight, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: colors.primary }}>Kinfolk OS</Text>
+                  </View>
+                </View>
+              )}
 
-      {/* Panel — drops down directly under the header */}
-      <View style={{
-        position: 'absolute', top: '100%', left: 12, right: 12, zIndex: 50,
-        marginTop: 8, borderRadius: 22, overflow: 'hidden',
-        backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-        shadowColor: '#000', shadowOpacity: isDark ? 0.4 : 0.14, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 16,
-      }}>
-        {!pinTarget && (
-          <View style={{
-            flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-            paddingHorizontal: 18, paddingTop: 16, paddingBottom: 12,
-            borderBottomWidth: 1, borderBottomColor: colors.border,
-          }}>
-            <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 1, color: colors.textSecondary, textTransform: 'uppercase' }}>
-              Select Family Profile
-            </Text>
-            <View style={{ backgroundColor: colors.primaryLight, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-              <Text style={{ fontSize: 10, fontWeight: '800', color: colors.primary }}>Kinfolk OS</Text>
+              {pinTarget ? (
+                <PinPad member={pinTarget} isDark={isDark} onSuccess={handlePinSuccess} onCancel={() => setPinTarget(null)} />
+              ) : (
+                <ScrollView style={{ maxHeight: 380 }} contentContainerStyle={{ padding: 8, gap: 2 }} showsVerticalScrollIndicator={false}>
+                  {members.map(m => (
+                    <MemberRow key={m.id} member={m} isActive={m.id === activeMemberId} onPress={() => handleSelect(m)} isDark={isDark} />
+                  ))}
+                </ScrollView>
+              )}
             </View>
-          </View>
-        )}
-
-        {pinTarget ? (
-          <PinPad member={pinTarget} isDark={isDark} onSuccess={handlePinSuccess} onCancel={() => setPinTarget(null)} />
-        ) : (
-          <ScrollView style={{ maxHeight: 380 }} contentContainerStyle={{ padding: 8, gap: 2 }} showsVerticalScrollIndicator={false}>
-            {members.map(m => (
-              <MemberRow key={m.id} member={m} isActive={m.id === activeMemberId} onPress={() => handleSelect(m)} isDark={isDark} />
-            ))}
-          </ScrollView>
-        )}
-      </View>
-    </>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </TouchableOpacity>
+    </Modal>
   );
 }

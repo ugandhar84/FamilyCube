@@ -30,7 +30,7 @@ const DELEGATE_CONFORMANCE_OLD = 'public class AppDelegate: ExpoAppDelegate {';
 const DELEGATE_CONFORMANCE_NEW = 'public class AppDelegate: ExpoAppDelegate, PKPushRegistryDelegate, CXCallObserverDelegate {';
 
 const PROPERTY_MARKER = 'var reactNativeFactory: RCTReactNativeFactory?';
-const PROPERTY_ADDITION = `${PROPERTY_MARKER}\n  var voipRegistry: PKPushRegistry?\n  var callObserver: CXCallObserver?`;
+const PROPERTY_ADDITION = `${PROPERTY_MARKER}\n  var voipRegistry: PKPushRegistry?\n  var callObserver: CXCallObserver?\n  // CXCallObserver's callChanged delegate fires on EVERY state transition\n  // of a call, not just once on connect — a call reliably re-fires this\n  // with hasConnected still true / hasEnded still false more than once\n  // over its lifetime (e.g. audio-route changes, hold/mute toggles, or\n  // just a redundant re-notify from CallKit's own internals). Each such\n  // re-fire used to unconditionally rewrite familycube_last_answered_* to\n  // UserDefaults again — so if JS had already consumed (cleared) that\n  // pointer via getLastAnsweredCall once the user handled the call, a\n  // LATER redundant callChanged for that same already-answered call would\n  // resurrect it, and the app would show the call-alert banner again on\n  // next reopen for a call that was already over. This set tracks which\n  // callUUIDs have already been surfaced to JS so a repeat delivery for\n  // the same call is a no-op instead of a phantom re-answer.\n  var surfacedCallUUIDs = Set<String>()`;
 
 const SETUP_MARKER = 'return super.application(application, didFinishLaunchingWithOptions: launchOptions)\n  }';
 // react-native-callkeep's answerCall/getInitialEvents replay queue
@@ -64,12 +64,32 @@ const SETUP_ADDITION = `RNCallKeep.setup([
   }
 
   public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
-    guard call.hasConnected, !call.hasEnded else { return }
     let uuid = call.uuid.uuidString
-    guard let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\\(uuid)"),
-          let itemId = UserDefaults.standard.string(forKey: "familycube_call_itemId_\\(uuid)") else {
+    // A call ending is the one transition that must actually clear state,
+    // not just be ignored — otherwise the per-UUID payload cache
+    // (familycube_call_itemType_/itemId_) outlives the call itself and can
+    // still be read back by a later, unrelated callChanged delivery for
+    // the same now-dead CXCall object.
+    if call.hasEnded {
+      UserDefaults.standard.removeObject(forKey: "familycube_call_itemType_\\(uuid)")
+      UserDefaults.standard.removeObject(forKey: "familycube_call_itemId_\\(uuid)")
+      surfacedCallUUIDs.remove(uuid)
       return
     }
+    guard call.hasConnected else { return }
+    // Already surfaced this exact call to JS once — a repeat hasConnected
+    // delivery for the same UUID (CallKit re-fires callChanged for
+    // unrelated state changes while a call stays connected) must not
+    // resurrect an already-handled call.
+    guard !surfacedCallUUIDs.contains(uuid) else { return }
+    guard let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\\(uuid)"),
+          let itemId = UserDefaults.standard.string(forKey: "familycube_call_itemId_\\(uuid)") else {
+      // No cached payload for this call — either it's a real phone call
+      // (this app has no other CallKit use) or the payload was already
+      // consumed. Nothing to answer-notify JS about.
+      return
+    }
+    surfacedCallUUIDs.insert(uuid)
     UserDefaults.standard.set(uuid, forKey: "familycube_last_answered_call_uuid")
     UserDefaults.standard.set(itemType, forKey: "familycube_last_answered_itemType")
     UserDefaults.standard.set(itemId, forKey: "familycube_last_answered_itemId")
@@ -136,7 +156,12 @@ function withCallKeepAppDelegate(config) {
     if (!contents.includes('var voipRegistry')) {
       contents = contents.replace(PROPERTY_MARKER, PROPERTY_ADDITION);
     } else if (!contents.includes('var callObserver')) {
-      contents = contents.replace('var voipRegistry: PKPushRegistry?', 'var voipRegistry: PKPushRegistry?\n  var callObserver: CXCallObserver?');
+      contents = contents.replace('var voipRegistry: PKPushRegistry?', 'var voipRegistry: PKPushRegistry?\n  var callObserver: CXCallObserver?\n  var surfacedCallUUIDs = Set<String>()');
+    } else if (!contents.includes('var surfacedCallUUIDs')) {
+      // callObserver property already applied by an older version of this
+      // plugin/fix but missing the surfacedCallUUIDs de-dup tracking set —
+      // insert just that piece.
+      contents = contents.replace('var callObserver: CXCallObserver?', 'var callObserver: CXCallObserver?\n  var surfacedCallUUIDs = Set<String>()');
     }
     if (!contents.includes('RNCallKeep.setup(')) {
       contents = contents.replace(SETUP_MARKER, SETUP_ADDITION);
@@ -151,8 +176,23 @@ function withCallKeepAppDelegate(config) {
       if (!contents.includes('func callObserver(_ callObserver: CXCallObserver')) {
         contents = contents.replace(
           '  // ── PushKit — VoIP call-reminder wake ──────────────────────────────────────',
-          '  public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {\n    guard call.hasConnected, !call.hasEnded else { return }\n    let uuid = call.uuid.uuidString\n    guard let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\\(uuid)"),\n          let itemId = UserDefaults.standard.string(forKey: "familycube_call_itemId_\\(uuid)") else {\n      return\n    }\n    UserDefaults.standard.set(uuid, forKey: "familycube_last_answered_call_uuid")\n    UserDefaults.standard.set(itemType, forKey: "familycube_last_answered_itemType")\n    UserDefaults.standard.set(itemId, forKey: "familycube_last_answered_itemId")\n    NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered"), object: nil,\n      userInfo: ["callUUID": uuid, "itemType": itemType, "itemId": itemId])\n  }\n\n  // ── PushKit — VoIP call-reminder wake ──────────────────────────────────────',
+          '  public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {\n    let uuid = call.uuid.uuidString\n    if call.hasEnded {\n      UserDefaults.standard.removeObject(forKey: "familycube_call_itemType_\\(uuid)")\n      UserDefaults.standard.removeObject(forKey: "familycube_call_itemId_\\(uuid)")\n      surfacedCallUUIDs.remove(uuid)\n      return\n    }\n    guard call.hasConnected else { return }\n    guard !surfacedCallUUIDs.contains(uuid) else { return }\n    guard let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\\(uuid)"),\n          let itemId = UserDefaults.standard.string(forKey: "familycube_call_itemId_\\(uuid)") else {\n      return\n    }\n    surfacedCallUUIDs.insert(uuid)\n    UserDefaults.standard.set(uuid, forKey: "familycube_last_answered_call_uuid")\n    UserDefaults.standard.set(itemType, forKey: "familycube_last_answered_itemType")\n    UserDefaults.standard.set(itemId, forKey: "familycube_last_answered_itemId")\n    NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered"), object: nil,\n      userInfo: ["callUUID": uuid, "itemType": itemType, "itemId": itemId])\n  }\n\n  // ── PushKit — VoIP call-reminder wake ──────────────────────────────────────',
         );
+      }
+    } else if (!contents.includes('surfacedCallUUIDs.contains(uuid)')) {
+      // setup() AND callObserver both already present, but callObserver
+      // still has the old unguarded version (this plugin's own previously-
+      // generated template, from before the hasEnded-clears-state /
+      // surfacedCallUUIDs de-dup fix) — replace that exact old function
+      // body in place. A literal string match (not a brace-counting regex)
+      // — the function contains nested `guard ... else { }` blocks whose
+      // inner closing braces are indistinguishable from the outer one to a
+      // non-greedy [\s\S]*? pattern, which previously stopped at the wrong
+      // `}` and silently left the old body untouched.
+      const OLD_CALLOBSERVER_BODY = 'public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {\n    guard call.hasConnected, !call.hasEnded else { return }\n    let uuid = call.uuid.uuidString\n    guard let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\\(uuid)"),\n          let itemId = UserDefaults.standard.string(forKey: "familycube_call_itemId_\\(uuid)") else {\n      return\n    }\n    UserDefaults.standard.set(uuid, forKey: "familycube_last_answered_call_uuid")\n    UserDefaults.standard.set(itemType, forKey: "familycube_last_answered_itemType")\n    UserDefaults.standard.set(itemId, forKey: "familycube_last_answered_itemId")\n    NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered"), object: nil,\n      userInfo: ["callUUID": uuid, "itemType": itemType, "itemId": itemId])\n  }';
+      const NEW_CALLOBSERVER_BODY = 'public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {\n    let uuid = call.uuid.uuidString\n    if call.hasEnded {\n      UserDefaults.standard.removeObject(forKey: "familycube_call_itemType_\\(uuid)")\n      UserDefaults.standard.removeObject(forKey: "familycube_call_itemId_\\(uuid)")\n      surfacedCallUUIDs.remove(uuid)\n      return\n    }\n    guard call.hasConnected else { return }\n    guard !surfacedCallUUIDs.contains(uuid) else { return }\n    guard let itemType = UserDefaults.standard.string(forKey: "familycube_call_itemType_\\(uuid)"),\n          let itemId = UserDefaults.standard.string(forKey: "familycube_call_itemId_\\(uuid)") else {\n      return\n    }\n    surfacedCallUUIDs.insert(uuid)\n    UserDefaults.standard.set(uuid, forKey: "familycube_last_answered_call_uuid")\n    UserDefaults.standard.set(itemType, forKey: "familycube_last_answered_itemType")\n    UserDefaults.standard.set(itemId, forKey: "familycube_last_answered_itemId")\n    NotificationCenter.default.post(name: NSNotification.Name("FCCallAnswered"), object: nil,\n      userInfo: ["callUUID": uuid, "itemType": itemType, "itemId": itemId])\n  }';
+      if (contents.includes(OLD_CALLOBSERVER_BODY)) {
+        contents = contents.replace(OLD_CALLOBSERVER_BODY, NEW_CALLOBSERVER_BODY);
       }
     }
     if (!contents.includes('familycube_call_itemType_')) {

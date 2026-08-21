@@ -124,8 +124,14 @@ export function DeclineQuestSheet({ target, active, members, colors, isDark, onC
                       // for a System-B chore, so this is a direct unassign,
                       // not a negotiation — matches the "flat decline, no
                       // back-and-forth" design already documented for kids.
+                      // rejectionReason/declinedAt (spec 1.10) record WHO
+                      // declined and WHY so the creator sees it re-enter the
+                      // pool as "declined by X" instead of looking like a
+                      // brand new unclaimed task — PoolQuestCard reads these.
                       useChoreStore.getState().updateChore(target.id, {
                         assignedToId: undefined, isPool: true, status: 'todo',
+                        rejectionReason: `Declined by ${active.name.split(' ')[0]}: "${finalNote}"`,
+                        declinedAt: new Date().toISOString(),
                       });
                       useChatStore.getState().sendMessage('all', active.id,
                         `🙏 ${active.name.split(' ')[0]} can't take "${target.title}" — "${finalNote}"`);

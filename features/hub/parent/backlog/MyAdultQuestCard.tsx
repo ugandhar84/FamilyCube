@@ -1,15 +1,18 @@
 import { useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
-import { ChevronUp, ChevronDown, Check, Send } from 'lucide-react-native';
+import { View, Text, Pressable, Alert } from 'react-native';
+import { ChevronUp, ChevronDown, Check, Send, MessageCircle } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
+import { useChatStore } from '@/store/chatStore';
 import type { Quest } from '@/store/questStore';
 import type { ParentQuestAssignment } from '@/store/choreStore';
+import type { FamilyMember } from '@/store/familyStore';
 
 // A parent-only quest assigned to the current parent — mark it done (closing
 // the linked assignment too, if one exists, or a second "Done" card would
 // resurface after this one disappears) or hand it off to a co-parent.
-export function MyAdultQuestCard({ q, parentAssignments, active, colors, isDark, completeParentQuest, updateQuest, onDelegate, onLongPress }: {
+export function MyAdultQuestCard({ q, parentAssignments, active, members, colors, isDark, completeParentQuest, updateQuest, onDelegate, onLongPress }: {
   q: Quest; parentAssignments: ParentQuestAssignment[]; active: { id: string };
+  members: FamilyMember[];
   colors: any; isDark: boolean;
   completeParentQuest: (assignmentId: string, completedBy: string) => void;
   updateQuest: (id: string, patch: Partial<Quest>) => void;
@@ -19,6 +22,26 @@ export function MyAdultQuestCard({ q, parentAssignments, active, colors, isDark,
   onLongPress?: () => void;
 }) {
   const [isExp, setExp] = useState(false);
+
+  // Previously this card showed only "Done / Reassign" with zero indication
+  // of whether the task was self-created or handed to you by a co-parent —
+  // a real gap noticed in actual use, not caught by any spec-conformance
+  // audit since "who assigned this" isn't a numbered requirement, just a
+  // thing a person looking at two identical-looking cards on two different
+  // parents' phones would reasonably want to know. Mirrors the "→ Partner"
+  // line and Nudge action OthersAdultQuestCard (the read-only view of a
+  // task assigned to a co-parent) already has, so this reads as the mirror
+  // image of that card instead of two visually unrelated things.
+  const linkedAssignment = parentAssignments.find(x => x.choreId === q.id && x.status !== 'COMPLETED' && x.status !== 'DECLINED');
+  const assignerId = linkedAssignment?.assignedBy ?? (q.createdById !== active.id ? q.createdById : undefined);
+  const assigner = assignerId && assignerId !== active.id ? members.find(m => m.id === assignerId) : undefined;
+
+  const sendNudgeBack = () => {
+    if (!assigner) return;
+    const msg = `👋 Just a heads up — I'm on "${q.title}", will handle it soon!`;
+    useChatStore.getState().sendMessage(assigner.id, active.id, msg);
+    Alert.alert('Sent!', `${assigner.name.split(' ')[0]} was notified you're on it.`);
+  };
 
   return (
     <View style={{
@@ -33,7 +56,11 @@ export function MyAdultQuestCard({ q, parentAssignments, active, colors, isDark,
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 }}>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{q.title}</Text>
-          {q.dueDate && !isExp ? (
+          {assigner ? (
+            <Text style={{ fontSize: TYPO.label, color: colors.warning, marginTop: 2, fontWeight: '600' }}>
+              ← from {assigner.name.split(' ')[0]}{q.dueDate ? ` · Due ${q.dueDate}` : ''}
+            </Text>
+          ) : q.dueDate && !isExp ? (
             <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>Due {q.dueDate}</Text>
           ) : null}
         </View>
@@ -55,6 +82,13 @@ export function MyAdultQuestCard({ q, parentAssignments, active, colors, isDark,
           <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.warning }}>Reassign</Text>
         </Pressable>
       </View>
+      {assigner && (
+        <Pressable onPress={sendNudgeBack}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingBottom: 12 }}>
+          <MessageCircle size={12} color={colors.textTertiary} />
+          <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>Let {assigner.name.split(' ')[0]} know you're on it</Text>
+        </Pressable>
+      )}
       {isExp && (
         <View style={{ borderTopWidth: 1, borderTopColor: colors.primary + '30', padding: 12, gap: 6 }}>
           {q.description ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{q.description}</Text> : null}

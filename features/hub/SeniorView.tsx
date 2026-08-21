@@ -58,7 +58,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const { awardCoins, updateMember } = useFamilyStore();
   const {
     chores, updateChore, grandparentMatches, grandparentApproveAndCheer, requestGrandparentRedo, createGrandparentQuest,
-    addGrandparentMatch, claimGPErrand, submitGPErrandReceipt, cheerChore,
+    addGrandparentMatch, claimGPErrand, withdrawGPOffer, submitGPErrandReceipt, cheerChore,
   } = useChoreStore();
   const { requests: kidRequests, assignRequest, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
   const gpWelcomeRequests = kidRequests.filter(r =>
@@ -67,6 +67,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // Partner chores flagged openToGP — GP can buy supplies + scan receipt
   const gpWelcomeChores = chores.filter(c =>
     (c as any).openToGP && (c.status === 'todo' || c.status === 'in_progress')
+  );
+  // Scenario 1.6 — offers THIS GP made that are still waiting on a parent
+  // to Accept/Decline (see claimGPErrand/PendingOffersSection).
+  const myPendingOffers = chores.filter(c =>
+    c.status === 'gp_offer_pending' && c.gpOfferById === active.id
   );
 
   const kids    = members.filter(m => m.role === 'kid');
@@ -425,7 +430,12 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // unless a parent explicitly shared it for this GP's care occasion.
   const openRequests = events.filter(e =>
     e.date === today && !e.approvalPending && !e.helper && !isWorkEvent(e) && !isPastEvent(e) &&
-    (!isEventSensitive(e) || canViewSensitiveEventDetail(e, 'senior', active.id))
+    // A claimable "needs a hand" opportunity is meaningless as a busy-block
+    // stub (can't volunteer for a mystery slot) — this one stays a hard
+    // exclude unless truly shared, unlike the Day/Week/Agenda calendar
+    // views (CalendarScreen.tsx), which now correctly show a busy-block
+    // placeholder for an already-scheduled event instead of hiding it.
+    (!isEventSensitive(e) || canViewSensitiveEventDetail(e, 'senior', active.id) === 'full')
   );
   // Urgent pending: I still haven't replied and < 1 hr to go
   const urgentPending = myPendingAssignments.filter(e =>
@@ -445,7 +455,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     if (e.helper === active.name) return false;      // already assigned to me
     if (e.approvalPending) return false;             // kid-initiated, parent hasn't approved
     // Scenarios 2.6/5.5 — same sensitive-event gate as openRequests above.
-    if (isEventSensitive(e) && !canViewSensitiveEventDetail(e, 'senior', active.id)) return false;
+    if (isEventSensitive(e) && canViewSensitiveEventDetail(e, 'senior', active.id) !== 'full') return false;
     const hrs = hoursUntilEvent(e.date, e.time);
     if (hrs < 0 || hrs > 4) return false;            // only 0–4 hr window
     // Don't offer if I'd create a driver conflict with my confirmed drives
@@ -483,13 +493,15 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const hasDispatchItems = (
     dedupOpenRides.length > 0 ||
     gpInvitations.filter(c => !passedInvitations.includes(c.id)).length > 0 ||
-    driveAlerts > 0
+    driveAlerts > 0 ||
+    myPendingOffers.length > 0
   ) && !cheerleaderMode;
   useEffect(() => { if (hasDispatchItems) setHelperDispatchExpanded(true); }, []);
 
   const dispatchBadgeCount = dedupOpenRides.length
     + gpInvitations.filter(c => !passedInvitations.includes(c.id)).length
-    + driveAlerts;
+    + driveAlerts
+    + myPendingOffers.length;
 
   const handleSendBonus = () => {
     if (!gpKid) return;
@@ -556,6 +568,8 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         openRides={dedupOpenRides} gpInvitations={gpInvitations}
         passedInvitations={passedInvitations} setPassedInvitations={setPassedInvitations}
         myActiveErrands={myActiveErrands} onOpenReceiptModal={openReceiptModal}
+        onMarkDoneNoReceipt={(choreId) => submitGPErrandReceipt(choreId, {})}
+        myPendingOffers={myPendingOffers} onWithdrawOffer={(choreId) => withdrawGPOffer(choreId, active.id)}
         openRequests={dedupOpenRequests} gpWelcomeRequests={gpWelcomeRequests}
         gpWelcomeChores={gpWelcomeChores} volunteerPool={dedupVolunteerPool}
         active={active} members={members} allNames={allNames} colors={colors} isDark={isDark}

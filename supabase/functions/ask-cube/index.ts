@@ -5,9 +5,9 @@
 // different shape — multi-turn, stateful (persisted conversation), and uses
 // real function-calling instead of one prompt -> one JSON reply.
 //
-// Model strategy matches family-ai: DeepSeek primary (OpenAI-compatible
-// tools API), Gemini fallback (functionDeclarations) — same provider order,
-// same reasoning (DeepSeek is cheaper/faster for text-only work).
+// Model strategy: Gemini 2.5 Flash primary (functionDeclarations) — cheaper
+// and faster than DeepSeek for this workload — DeepSeek fallback (OpenAI-
+// compatible tools API) if Gemini's call fails for any reason.
 //
 // Deploy: supabase functions deploy ask-cube
 // Secrets required: GEMINI_API_KEY, DEEPSEEK_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -460,10 +460,10 @@ async function callGemini(messages: any[], tools: unknown[]) {
 }
 
 async function callModel(messages: unknown[], tools: unknown[]) {
-  try { return await callDeepSeek(messages, tools); }
+  try { return await callGemini(messages as any[], tools); }
   catch (err) {
-    console.warn('[ask-cube] DeepSeek failed, falling back to Gemini:', (err as Error).message);
-    return callGemini(messages as any[], tools);
+    console.warn('[ask-cube] Gemini failed, falling back to DeepSeek:', (err as Error).message);
+    return callDeepSeek(messages, tools);
   }
 }
 
@@ -1115,9 +1115,23 @@ serve(async (req) => {
     // smaller than the raw data it was built from. Plain user/assistant
     // text turns are untouched (that's the real conversational context
     // worth keeping).
+    // A prior turn's own error/apology text ("I ran into a snag pulling
+    // X...") was being kept verbatim and replayed on every later turn,
+    // even once that request was long resolved or the user moved on to a
+    // completely different topic — the model would then blend that stale
+    // apology into a NEW, unrelated reply (e.g. a meal-suggestion answer
+    // opening with an apology about chore history nobody asked about this
+    // turn). A system-prompt instruction alone ("answer only what was
+    // asked") wasn't reliable enough against the model's own prior turn
+    // sitting right there in its context — drop these from what's replayed
+    // instead of trusting the model not to reuse them.
+    const isStaleErrorReply = (content: string | null) =>
+      !!content && /\b(ran into (a |an )?snag|couldn't (retrieve|find|reach)|wasn't able to|wasn't sent|try again)\b/i.test(content);
+
     const rows = priorMessages ?? [];
     const lastToolCallIdx = rows.reduce((last, m, i) => (m.tool_calls?.length ? i : last), -1);
     const trimmedPriorMessages = rows.filter((m, i) => {
+      if (m.role === 'assistant' && !m.tool_calls?.length && isStaleErrorReply(m.content)) return false;
       if (m.role !== 'tool' && !m.tool_calls?.length) return true; // plain text turn — always keep
       return i >= lastToolCallIdx; // only the most recent tool round (its assistant call + all its result rows) survives
     });
@@ -1235,7 +1249,10 @@ for an event -> your reply is about that reminder ONLY, never a summary of chore
 they didn't ask about right now, even if it seems helpful or was discussed earlier in this conversation). Do not
 call a tool unless it is needed to answer THIS message. Never invent or guess at data that wasn't returned by a real
 tool call in THIS turn — if you don't have real data for something, say so plainly rather than filling in a
-plausible-sounding but made-up answer.`;
+plausible-sounding but made-up answer. If an earlier message in this conversation mentioned an error, a failed
+lookup, or an apology about something not working, that was about a DIFFERENT, separate request — do not repeat,
+reference, or lead with it when answering a new, unrelated message now, even if it's still visible above in this
+same conversation.`;
 
     const aliasedMessage = realNameToAlias(aliasMap, allMembers ?? [], body.message);
 

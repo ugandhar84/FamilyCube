@@ -66,18 +66,18 @@ function renderLine(line: string, lineKey: string, color: string, urgentColor: s
   if (bulletMatch) {
     return (
       <View key={lineKey} style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-        <Text style={{ fontSize: TYPO.caption, color, lineHeight: 20 }}>•</Text>
-        <Text style={{ flex: 1, fontSize: TYPO.caption, lineHeight: 20 }}>{inline}</Text>
+        <Text style={{ fontSize: TYPO.body, color, lineHeight: 22 }}>•</Text>
+        <Text style={{ flex: 1, fontSize: TYPO.body, lineHeight: 22 }}>{inline}</Text>
       </View>
     );
   }
   if (isHeaderLine) {
     return (
-      <Text key={lineKey} style={{ fontSize: TYPO.caption, lineHeight: 20, marginTop: 6, letterSpacing: 0.2 }}>{inline}</Text>
+      <Text key={lineKey} style={{ fontSize: TYPO.body, lineHeight: 22, marginTop: 6, letterSpacing: 0.2 }}>{inline}</Text>
     );
   }
   return (
-    <Text key={lineKey} style={{ fontSize: TYPO.caption, lineHeight: 20 }}>{inline}</Text>
+    <Text key={lineKey} style={{ fontSize: TYPO.body, lineHeight: 22 }}>{inline}</Text>
   );
 }
 

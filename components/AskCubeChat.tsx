@@ -475,7 +475,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                     borderBottomRightRadius: m.role === 'user' ? 4 : 16,
                     borderBottomLeftRadius: m.role === 'user' ? 16 : 4 }}>
                     {m.role === 'user' ? (
-                      <Text style={{ fontSize: TYPO.caption, color: '#fff', lineHeight: 20 }}>{m.content}</Text>
+                      <Text style={{ fontSize: TYPO.body, color: '#fff', lineHeight: 22 }}>{m.content}</Text>
                     ) : (
                       <AskCubeMessageText content={m.content} color={colors.textPrimary} urgentColor={colors.danger} soonColor={colors.amber} />
                     )}
@@ -588,7 +588,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                   placeholder="Ask Cube anything…"
                   placeholderTextColor={colors.placeholder}
                   editable={voice.state !== 'listening'}
-                  style={{ fontSize: TYPO.caption,
+                  style={{ fontSize: TYPO.body,
                     color: voice.state === 'listening' && !voice.liveTranscript ? colors.textTertiary : colors.textPrimary,
                     backgroundColor: colors.surface, borderRadius: 20, borderWidth: 1,
                     borderColor: voice.state === 'listening' ? colors.danger + '60' : colors.borderMed,

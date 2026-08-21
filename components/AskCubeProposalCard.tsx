@@ -301,7 +301,7 @@ export default function AskCubeProposalCard({
     return (
       <View style={cardBase}>
         {Header}
-        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           {!assignedToAdult && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -345,7 +345,7 @@ export default function AskCubeProposalCard({
     return (
       <View style={cardBase}>
         {Header}
-        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Coins size={12} color={accent} />
@@ -375,7 +375,7 @@ export default function AskCubeProposalCard({
     return (
       <View style={cardBase}>
         {Header}
-        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
         {!isChore && !!d.date && (
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: -4 }}>
             Currently {new Date(`${d.date}T${d.time ?? '00:00'}`).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
@@ -413,7 +413,7 @@ export default function AskCubeProposalCard({
   return (
     <View style={cardBase}>
       {Header}
-      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
+      <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         {!!d.startAt && (
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>

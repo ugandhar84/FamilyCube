@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert, View, Text } from 'react-native';
+import { Alert, View, Text, Pressable } from 'react-native';
+import { router } from 'expo-router';
+import { Gift, ChevronRight } from 'lucide-react-native';
 import * as Calendar from 'expo-calendar';
 import * as ImagePicker from 'expo-image-picker';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -645,6 +647,31 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         gpSent={gpSent}
         onSend={handleSendBonus}
       />
+
+      {/* Perks — a senior's own Store redemption (canRedeemSelf, "My
+          Redemptions" — built this session) had no reachable path at all:
+          seniors get Memories instead of Apps in their 5th tab slot
+          (deliberate simplification), and Store's own Vault-tile entry
+          point is parent/kid-only. Rather than restructure the tab bar,
+          this is the same pattern every other senior feature already uses
+          — a Hub card that opens the screen directly (QA sweep,
+          grandparent-role audit, Critical C2). */}
+      <Pressable onPress={() => router.push('/(tabs)/store' as any)}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
+          backgroundColor: isDark ? colors.card : '#fff', borderRadius: 16,
+          borderWidth: 1, borderColor: colors.border, padding: 14 }}>
+        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#7C3AED20',
+          alignItems: 'center', justifyContent: 'center' }}>
+          <Gift size={20} color="#7C3AED" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>Perks</Text>
+          <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
+            {(active as any).gpCoins ?? 0} 🪙 · redeem a reward
+          </Text>
+        </View>
+        <ChevronRight size={18} color={colors.textTertiary} />
+      </Pressable>
 
       <SponsorQuestsSection
         active={active} kids={kids} members={members} allNames={allNames} colors={colors} isDark={isDark}

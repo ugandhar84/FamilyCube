@@ -33,16 +33,18 @@ export function MyQuestsSection({
   // after in-progress, ahead of the passive pool listing, so it doesn't get
   // buried under quests nobody's blocked on yet.
   const combined = [...todoQuests, ...inProgressQuests, ...declinedQuests, ...reviewQuests, ...poolQuests, ...cancelledToday];
-  const actionableCount = todoQuests.length + inProgressQuests.length + reviewQuests.length + declinedQuests.length;
 
-  // Collapsed by default like every Hub section — auto-opens once there's
-  // more than one thing to do. A single actionable quest is easy to spot
-  // collapsed (the count badge already says "1"); it's only once there's
-  // a real list worth scanning that auto-opening earns the screen space.
+  // Collapsed by default when there's nothing to show, expanded whenever
+  // there's real content — was gated on actionableCount (todo/in-progress/
+  // review/declined only), which excluded poolQuests and cancelledToday.
+  // Both of those render real visible cards in this same section (bounty
+  // chores up for grabs, today's cancellations), so a kid with ONLY pool
+  // quests available — a common, ordinary case, not an edge case — saw
+  // this default to collapsed despite having something worth seeing.
   const [expanded, setExpanded] = useState(false);
   useEffect(() => {
-    if (actionableCount > 1) setExpanded(true);
-  }, [actionableCount > 1]);
+    if (combined.length > 0) setExpanded(true);
+  }, [combined.length > 0]);
 
   const visible = combined.slice(0, VISIBLE_LIMIT);
   const overflow = combined.length - visible.length;

@@ -493,6 +493,13 @@ export function ChoreReviewSection({
     c.disputeStatus === 'reversal_requested' && c.reviewedById === active.id,
   ).length;
   const badgeCount = pendingReviewsCount + gpPending.length + teenRewardPending.length + gpOffersPending.length + disputeBadgeCount;
+  // badgeCount deliberately only counts items needing a decision — but
+  // gpDeclined/gpAwaitingSponsor/recentlyApproved all render real visible
+  // content below (informational, not "pending"), so a card with only
+  // those still had genuine content while badgeCount stayed 0, defaulting
+  // to collapsed even though there was something to see. Same pattern
+  // Household Backlog's own defaultExpanded fix addressed.
+  const hasContent = badgeCount > 0 || gpDeclined.length > 0 || gpAwaitingSponsor.length > 0 || recentlyApproved.length > 0;
 
   return (
     <View style={{ paddingHorizontal: 16 }}>
@@ -502,9 +509,9 @@ export function ChoreReviewSection({
         subtitle={badgeCount === 0 ? 'All caught up' : undefined}
         accent={colors.parent}
         badge={badgeCount} badgeLabel="Pending" badgeColor={colors.parent}
-        // Was `> 1` — same "one real item still stays hidden by default"
-        // gap as Household Backlog's own threshold, fixed the same way.
-        collapsible defaultExpanded={badgeCount > 0}
+        // Was `badgeCount > 0` — see hasContent above for why that missed
+        // real content in this card.
+        collapsible defaultExpanded={hasContent}
         colors={colors} isDark={isDark}>
           <View style={{ gap: 8 }}>
             {teenRewardPending.length > 0 && (

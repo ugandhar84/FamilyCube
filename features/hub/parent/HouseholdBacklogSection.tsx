@@ -93,11 +93,14 @@ export function HouseholdBacklogSection({
         subtitle="pull what you can handle"
         accent={colors.warning}
         badge={badgeCount} badgeLabel="Active" badgeColor={colors.warning}
-        // Was `> 1` — a section with exactly ONE pending item (a single
-        // delegation, a single claimable task) stayed collapsed by
-        // default, requiring an extra tap to see the one thing actually
-        // worth seeing. Any real content is worth expanding for.
-        collapsible defaultExpanded={myPendingCount > 0}
+        // Was `myPendingCount > 0` — that count excludes othersAdultQuests
+        // and familyRideCoordination, both of which render real visible
+        // content in this card (an "Assigned to others" delegation, a
+        // family ride coordination row) — so a parent could see genuine
+        // content here yet the section still defaulted to collapsed. Use
+        // the same !isEmpty check the card's own render logic uses, so
+        // "has content" and "expanded by default" always agree.
+        collapsible defaultExpanded={!isEmpty}
         colors={colors} isDark={isDark}>
         <View style={{ gap: 8 }}>
             {myAdultQuests.length > 0 && (

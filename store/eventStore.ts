@@ -561,6 +561,51 @@ function dbUpdate(id: string, patch: Record<string, unknown>) {
   });
 }
 
+// Maps FamilyEvent keys to their calendar_events column names — the same
+// mapping toRow() uses, but exposed so a partial patch can be built from
+// only the keys a caller actually intended to change, without pulling in
+// toRow()'s unconditional full-row serialization (see toRowPartial below).
+const EVENT_COLUMN: Partial<Record<keyof FamilyEvent, string>> = {
+  title: 'title', date: 'date', time: 'start_time', endTime: 'end_time', allDay: 'all_day',
+  type: 'type', category: 'category', color: 'color', memberId: 'member_id', memberIds: 'member_ids',
+  location: 'location', notes: 'notes',
+  helper: 'helper_name', helperStatus: 'helper_status', helperRequestedBy: 'helper_requested_by',
+  declineReason: 'helper_decline_reason', declinedBy: 'helper_declined_by',
+  doctorName: 'doctor_name', subject: 'subject', coachName: 'coach_name',
+  pickupLocation: 'pickup_location', dropLocation: 'drop_location',
+  approvalPending: 'approval_pending', conflict: 'conflict',
+  isOpenToGrandparents: 'is_open_to_grandparents', grandparentPassedIds: 'grandparent_passed_ids',
+  isOpenToTeens: 'is_open_to_teens', rideCoins: 'ride_coins', rideRequired: 'ride_required',
+  driverName: 'driver_name', driverStatus: 'driver_status',
+  pickupConfirmedAt: 'pickup_confirmed_at', pickupConfirmedBy: 'pickup_confirmed_by',
+  createdBy: 'created_by', createdAt: 'created_at', updatedBy: 'updated_by', updatedAt: 'updated_at',
+  deletedBy: 'deleted_by', alertCall: 'alert_call', alertCallLeadMinutes: 'alert_call_lead_minutes',
+  seriesId: 'series_id', recurrenceRule: 'recurrence_rule', isSeriesAnchor: 'is_series_anchor',
+  acknowledgedBy: 'acknowledged_by', privacyLevel: 'privacy_level',
+  sharedWithGPForCare: 'shared_with_gp_for_care', sharedWithSiblings: 'shared_with_siblings',
+  isOptionalRsvp: 'is_optional_rsvp', rsvps: 'rsvps', linkedLegId: 'linked_leg_id',
+};
+
+// A DB write scoped to only the fields a caller actually intended to
+// change — unlike toRow(updated), which serializes the ENTIRE local
+// FamilyEvent object unconditionally. QA Round 21 (High) found that
+// full-row overwrite let a stale client (one that missed another parent's
+// realtime update, e.g. Parent-A editing a ride's location right after
+// Parent-B opened it to the grandparent pool) silently clobber every
+// column back to its own outdated snapshot, including fields it never
+// meant to touch. Building the patch from `keys` (the update's own field
+// list, plus whatever stamped always adds) means a write can only ever
+// affect columns the caller actually named.
+function toRowPartial(ev: FamilyEvent, keys: Iterable<keyof FamilyEvent>): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  for (const key of keys) {
+    const col = EVENT_COLUMN[key];
+    if (!col) continue;
+    patch[col] = (ev as any)[key] ?? null;
+  }
+  return patch;
+}
+
 // ── Realtime ──────────────────────────────────────────────────────────────────
 let _rtChannel: ReturnType<typeof supabase.channel> | null = null;
 let _rtFamilyId = '';
@@ -1132,7 +1177,7 @@ export const useEventStore = create<EventState>((set, get) => ({
     set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? { ...e, ...stamped } : e)) });
     const updated = next.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
     if (updated) {
-      dbUpdate(id, toRow(updated));
+      dbUpdate(id, toRowPartial(updated, Object.keys(stamped) as (keyof FamilyEvent)[]));
       if (prevEvent) logUpdateActivity(prevEvent, updates, updated);
     }
     // Was: a decline silently reopened the pool with zero signal to anyone
@@ -1207,8 +1252,15 @@ export const useEventStore = create<EventState>((set, get) => ({
 
     const dbPatch: Record<string, unknown> = { [dbNameCol]: claimantName, [dbStatusCol]: 'confirmed' };
     if (extra) {
+      // Was Object.assign(dbPatch, toRow(merged)) — same full-row-overwrite
+      // risk QA Round 21 (High) found in updateEvent: this callsite's own
+      // local snapshot could be stale relative to another parent's
+      // concurrent edit, and toRow() would silently rewrite every column
+      // back to that stale state. Scope the write to only nameField/
+      // statusField (already set above) plus whatever keys extra itself
+      // names — never anything wider.
       const merged = nextDay.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
-      if (merged) Object.assign(dbPatch, toRow(merged));
+      if (merged) Object.assign(dbPatch, toRowPartial(merged, Object.keys(extra) as (keyof FamilyEvent)[]));
     }
 
     supabase.from('calendar_events')

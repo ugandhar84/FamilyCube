@@ -7,7 +7,7 @@
  */
 import { useState } from 'react';
 import { View, Text, Pressable, Image } from 'react-native';
-import { Calendar, ClipboardList, ShoppingCart, ChefHat, Coins, Clock, User, Camera, X } from 'lucide-react-native';
+import { Calendar, ClipboardList, ShoppingCart, ChefHat, Coins, Clock, User, Camera, X, Repeat } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
 import type { AskCubeProposal } from '@/lib/askCubeService';
@@ -59,6 +59,24 @@ function formatChangeValue(field: string, value: any): string {
   if (field === 'alertCallLeadMinutes') return value === 0 ? 'On time' : `${value} min before`;
   if (field === 'coinsReward') return `${value} coins`;
   return String(value);
+}
+
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// The reply text could already say "recurring every Thursday" while the
+// card itself showed only a single date with nothing marking it as
+// repeating — a user has no way to confirm from the card alone (the thing
+// they're actually about to confirm) that it's really a series, not a
+// one-off, without just trusting the chat text.
+function formatRecurrence(rule: { frequency?: string; days?: number[] } | null | undefined): string | null {
+  if (!rule?.frequency) return null;
+  if (rule.frequency === 'daily') return 'Repeats daily';
+  if (rule.frequency === 'monthly') return 'Repeats monthly';
+  if (rule.frequency === 'weekly') {
+    const days = (rule.days ?? []).map(d => WEEKDAY_SHORT[d]).filter(Boolean);
+    return days.length ? `Repeats weekly on ${days.join(', ')}` : 'Repeats weekly';
+  }
+  return null;
 }
 
 function memberName(members: FamilyMember[], id?: string | null) {
@@ -306,6 +324,12 @@ export default function AskCubeProposalCard({
               <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Photo required</Text>
             </View>
           )}
+          {!!formatRecurrence(d.recurrenceRule) && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Repeat size={12} color={colors.textSecondary} />
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{formatRecurrence(d.recurrenceRule)}</Text>
+            </View>
+          )}
         </View>
         <ReminderPicker leadMinutes={d.alertCallLeadMinutes} hasReminder={!!d.alertCall} accent={accent} colors={colors} onChange={onChangeReminder} />
         {Actions}
@@ -374,6 +398,12 @@ export default function AskCubeProposalCard({
         {!!d.category && (
           <View style={{ backgroundColor: accent + '16', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
             <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: accent }}>{d.category}</Text>
+          </View>
+        )}
+        {!!formatRecurrence(d.recurrenceRule) && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Repeat size={12} color={colors.textSecondary} />
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{formatRecurrence(d.recurrenceRule)}</Text>
           </View>
         )}
       </View>

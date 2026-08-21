@@ -946,7 +946,14 @@ ingredient list, or any other proposal field in your reply text — that just du
 After a tool call returns, you MUST respond with a normal natural-language sentence summarizing the result for a
 person to read. NEVER reply with raw JSON, a code block, or the tool's output verbatim — always turn it into plain
 conversational text (e.g. "Nothing on the calendar today" or "${viewerAlias} has 2 chores approved and 1 pending").
-Keep answers concise and conversational, not a bulleted data dump unless the user asked for a list.`;
+Keep answers concise and conversational, not a bulleted data dump unless the user asked for a list.
+CRITICAL: answer ONLY what the user actually asked in their most recent message this turn — never append unrelated
+information, unrequested status updates, or content about a different topic (e.g. the user asks to set a reminder
+for an event -> your reply is about that reminder ONLY, never a summary of chores, other events, or anything else
+they didn't ask about right now, even if it seems helpful or was discussed earlier in this conversation). Do not
+call a tool unless it is needed to answer THIS message. Never invent or guess at data that wasn't returned by a real
+tool call in THIS turn — if you don't have real data for something, say so plainly rather than filling in a
+plausible-sounding but made-up answer.`;
 
     const aliasedMessage = realNameToAlias(aliasMap, allMembers ?? [], body.message);
 

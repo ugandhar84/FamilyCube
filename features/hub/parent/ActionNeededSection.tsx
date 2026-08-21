@@ -3,6 +3,7 @@ import { Sparkles, Footprints, Home, Backpack, AlertOctagon } from 'lucide-react
 import { TYPO } from '@/constants/theme';
 import { SectionCard } from '../hubComponents';
 import { decodeRideLate, SUPPLIES_PREFIX } from '../KidModals';
+import { hoursUntilEvent } from '../hubUtils';
 import { InlineReplyCard } from './InlineReplyCard';
 import { RideRequestCard } from './RideRequestCard';
 import { RideRequiredEventCard } from './RideRequiredEventCard';
@@ -146,13 +147,30 @@ export function ActionNeededSection({
   // rideRequired), but sharing the set keeps the dedup pass a single
   // consistent operation instead of two independently-correct-looking
   // halves that happen to never collide today.
+  // Was hardcoded severity:'soon' regardless of how close the ride
+  // actually was — a still-unconfirmed ride 15 minutes out ranked
+  // identically to one 3 days out, with no escalation as the deadline
+  // approached (unlike the age-based question/permission escalation right
+  // below, or ParentView's own <1hr/<2hr/<4hr urgency banners). Mirrors
+  // those same thresholds: <1hr with nobody driving is 'urgent', <4hr is
+  // 'soon' escalated by score only (stays visually 'soon' but sorts above
+  // a plain 'soon' card), otherwise 'normal'.
+  const rideSeverity = (ev: FamilyEvent): { severity: Severity; score: number } => {
+    const h = hoursUntilEvent(ev.date, ev.time);
+    if (h < 0) return { severity: 'normal', score: SEVERITY.normal };
+    if (h < 1) return { severity: 'urgent', score: SEVERITY.urgent };
+    if (h < 4) return { severity: 'soon', score: SEVERITY.soon + 0.5 };
+    return { severity: 'normal', score: SEVERITY.normal };
+  };
+
   const dedupedPendingRequests = dedupBySeries(pendingRequests);
   const dedupedRideRequiredEvents = dedupBySeries(pendingRideRequiredEvents ?? []);
   for (const ev of dedupedPendingRequests) {
     const age = ageMinutes(ev.date ? `${ev.date}T${ev.time ?? '00:00'}` : undefined);
+    const { severity, score } = rideSeverity(ev);
     ranked.push({
       key: `ride-${ev.id}`, age,
-      severity: 'soon', score: SEVERITY.soon,
+      severity, score,
       node: <RideRequestCard key={ev.id} ev={ev} active={active} members={members} colors={colors} isDark={isDark}
         updateEvent={updateEvent} addEvent={addEvent} updateEventScoped={updateEventScoped} />,
     });
@@ -165,9 +183,10 @@ export function ActionNeededSection({
   // day's Schedule/Agenda list.
   for (const ev of dedupedRideRequiredEvents) {
     const age = ageMinutes(ev.date ? `${ev.date}T${ev.time ?? '00:00'}` : undefined);
+    const { severity, score } = rideSeverity(ev);
     ranked.push({
       key: `ride-required-${ev.id}`, age,
-      severity: 'soon', score: SEVERITY.soon,
+      severity, score,
       node: <RideRequiredEventCard key={ev.id} ev={ev} active={active} colors={colors} isDark={isDark}
         updateEvent={updateEvent} updateEventScoped={updateEventScoped} addEvent={addEvent} />,
     });

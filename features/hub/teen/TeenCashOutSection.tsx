@@ -18,9 +18,18 @@ export function TeenCashOutSection({ balance, onRequest, colors, isDark }: {
 }) {
   const [cashMethod, setCashMethod] = useState<string>(CASH_METHODS[0].label);
   const [cashAmount, setCashAmount] = useState('');
+  // Was no client-side check at all — the Store's own redeem button
+  // already disables/labels itself when a request exceeds the balance
+  // (canRedeem); this had no equivalent, so a teen could submit (and only
+  // find out it was invalid once a parent reviewed it) a cash-out request
+  // for more than they actually have (QA sweep, teen-role audit, Low).
+  // The real backstop is still parent approval — this is just parity with
+  // the Store's own sanity check, not a new authorization boundary.
+  const requestedAmount = parseFloat(cashAmount) || 0;
+  const overBalance = requestedAmount > balance;
 
   const submit = () => {
-    if (!cashAmount.trim()) return;
+    if (!cashAmount.trim() || overBalance || requestedAmount <= 0) return;
     onRequest(cashAmount, cashMethod);
     setCashAmount('');
   };
@@ -53,14 +62,14 @@ export function TeenCashOutSection({ balance, onRequest, colors, isDark }: {
             padding: 10, fontSize: TYPO.body, color: colors.textPrimary,
             backgroundColor: isDark ? colors.surface : '#F8FAFC' }}
         />
-        <Pressable onPress={submit}
-          style={({ pressed }) => ({ backgroundColor: BRAND.amber, borderRadius: 12,
-            paddingHorizontal: 16, justifyContent: 'center', opacity: pressed ? 0.8 : 1 })}>
-          <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Request</Text>
+        <Pressable onPress={submit} disabled={overBalance || requestedAmount <= 0}
+          style={({ pressed }) => ({ backgroundColor: (overBalance || requestedAmount <= 0) ? colors.border : BRAND.amber,
+            borderRadius: 12, paddingHorizontal: 16, justifyContent: 'center', opacity: pressed ? 0.8 : 1 })}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: (overBalance || requestedAmount <= 0) ? colors.textTertiary : '#fff' }}>Request</Text>
         </Pressable>
       </View>
-      <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 8 }}>
-        Balance: {balance} coins
+      <Text style={{ fontSize: TYPO.micro, color: overBalance ? colors.danger : colors.textTertiary, marginTop: 8, fontWeight: overBalance ? '700' : '400' }}>
+        {overBalance ? `Only ${balance} coins available` : `Balance: ${balance} coins`}
       </Text>
     </View>
   );

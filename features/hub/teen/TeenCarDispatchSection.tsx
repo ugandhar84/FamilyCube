@@ -99,6 +99,46 @@ export function TeenCarDispatchSection({
         </View>
       )}
 
+      {/* My Confirmed Runs (and its only cancel action) must also show
+          regardless of the "I Have a Car" toggle — same reasoning as
+          myPendingAssignments above. Was nested inside the hasCar branch:
+          a teen who claimed a ride, then flipped the toggle off (e.g. car
+          became unavailable — the most realistic reason to toggle off
+          mid-commitment), lost the only way to back out of an already-
+          confirmed ride, with no signal anywhere that the commitment still
+          existed (QA sweep, teen-role audit, High). */}
+      {myPickups.length > 0 && (
+        <View style={{ gap: 6 }}>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+            textTransform: 'uppercase', letterSpacing: 0.8 }}>My Confirmed Runs</Text>
+          {myPickups.map(ev => {
+            const kid = members.find(m => m.id === ev.memberId);
+            const evDay = ev.date ? new Date(ev.date + 'T12:00').toLocaleDateString('en-US',
+              { weekday: 'short', month: 'short', day: 'numeric' }) : ev.date;
+            return (
+              <View key={ev.id} style={{ borderRadius: 12, overflow: 'hidden',
+                backgroundColor: isDark ? BRAND.teal + '15' : BRAND.teal + '12',
+                borderWidth: 1, borderColor: BRAND.teal + '30' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10 }}>
+                  <CheckCircle size={14} color={BRAND.teal} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>
+                      {kid?.name.split(' ')[0] ?? 'Sibling'} · {ev.title}
+                    </Text>
+                    <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>{evDay}{ev.time ? ` · ${ev.time}` : ''}</Text>
+                  </View>
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: BRAND.teal }}>Confirmed</Text>
+                </View>
+                <Pressable onPress={() => onDrop(ev.id)}
+                  style={{ borderTopWidth: 1, borderTopColor: BRAND.teal + '25', paddingVertical: 9, alignItems: 'center' }}>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.danger }}>Can't Make It</Text>
+                </Pressable>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
       {!hasCar ? (
         <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, textAlign: 'center', paddingVertical: 12 }}>
           Turn on "I Have a Car" to see sibling pickups you can cover.
@@ -165,37 +205,6 @@ export function TeenCarDispatchSection({
             <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, textAlign: 'center', paddingVertical: 8 }}>
               No open pickups — check back later
             </Text>
-          )}
-          {myPickups.length > 0 && (
-            <View style={{ gap: 6, marginTop: 4 }}>
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
-                textTransform: 'uppercase', letterSpacing: 0.8 }}>My Confirmed Runs</Text>
-              {myPickups.map(ev => {
-                const kid = members.find(m => m.id === ev.memberId);
-                const evDay = ev.date ? new Date(ev.date + 'T12:00').toLocaleDateString('en-US',
-                  { weekday: 'short', month: 'short', day: 'numeric' }) : ev.date;
-                return (
-                  <View key={ev.id} style={{ borderRadius: 12, overflow: 'hidden',
-                    backgroundColor: isDark ? BRAND.teal + '15' : BRAND.teal + '12',
-                    borderWidth: 1, borderColor: BRAND.teal + '30' }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10 }}>
-                      <CheckCircle size={14} color={BRAND.teal} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>
-                          {kid?.name.split(' ')[0] ?? 'Sibling'} · {ev.title}
-                        </Text>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textSecondary }}>{evDay}{ev.time ? ` · ${ev.time}` : ''}</Text>
-                      </View>
-                      <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: BRAND.teal }}>Confirmed</Text>
-                    </View>
-                    <Pressable onPress={() => onDrop(ev.id)}
-                      style={{ borderTopWidth: 1, borderTopColor: BRAND.teal + '25', paddingVertical: 9, alignItems: 'center' }}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.danger }}>Can't Make It</Text>
-                    </Pressable>
-                  </View>
-                );
-              })}
-            </View>
           )}
         </View>
       )}

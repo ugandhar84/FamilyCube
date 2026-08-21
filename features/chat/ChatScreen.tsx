@@ -162,10 +162,35 @@ export default function ChatScreen() {
   // a blended-family co-parent) is ever added — parentsCount recomputes
   // live off the real roster, not a one-time flag.
   const parentsCount = members.filter(m => m.role === 'parent').length;
+  // Which side (a/b) THIS viewing senior belongs to — buildGroupChannels
+  // always returns BOTH seniors_a and seniors_b whenever both sides have
+  // GPs (it has no concept of "the current viewer"), and the filter below
+  // previously only checked seniorOnly, not side — so a maternal
+  // grandparent's channel strip showed the paternal side's private channel
+  // too, and could open/post in it. Same derivation buildGroupChannels
+  // itself uses (linkedParentId → parents[0]/parents[1]).
+  const viewerGpSide: 'a' | 'b' | 'unlinked' | null = (() => {
+    if (!isSenior || !activeMember) return null;
+    const parents = members.filter(m => m.role === 'parent');
+    if (!(activeMember as any).linkedParentId) return 'unlinked';
+    if ((activeMember as any).linkedParentId === parents[0]?.id) return 'a';
+    if ((activeMember as any).linkedParentId === parents[1]?.id) return 'b';
+    return 'unlinked';
+  })();
   const rawGroupChannels = buildGroupChannels(members)
     .filter(ch => ch.id !== 'all' || !isSenior)
     .filter(ch => ch.id !== 'parents' || parentsCount > 2)
-    .filter(ch => !(ch as any).seniorOnly || isSenior || isParent);
+    .filter(ch => !(ch as any).seniorOnly || isSenior || isParent)
+    // A senior only ever sees/opens THEIR OWN side channel, never the
+    // other side's — parents still see both (they're on neither side and
+    // are the ones who'd coordinate across them). seniors_all (combined)
+    // and an unlinked senior's fallback seniors_a are unaffected.
+    .filter(ch => {
+      if (!isSenior) return true;
+      if (ch.id === 'seniors_a') return viewerGpSide === 'a' || viewerGpSide === 'unlinked';
+      if (ch.id === 'seniors_b') return viewerGpSide === 'b';
+      return true;
+    });
   const groupChannels = sortChannelIds(rawGroupChannels.map(ch => ch.id), pinnedChannels, lastActivity)
     .map(id => rawGroupChannels.find(ch => ch.id === id))
     .filter((ch): ch is NonNullable<typeof ch> => !!ch);

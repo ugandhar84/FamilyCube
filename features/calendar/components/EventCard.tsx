@@ -106,6 +106,12 @@ export interface EventCardRowProps {
   members: FamilyMember[];
   colors: any; isDark: boolean;
   onPress: () => void;
+  // Long-press → edit (date/time/recurrence/driver/delete). Previously
+  // missing on this row variant entirely — Week/Agenda/DaySlot (every
+  // consumer of this row) had no edit path at all, only Month's other row
+  // variant (EventCardTimeline) had it, so parent edit access was
+  // inconsistent across calendar views.
+  onLongPress?: () => void;
   /** 'boxed' (Agenda's time chip) | 'inline' (Week/Month's time-first row) */
   timeStyle?: 'boxed' | 'inline';
   showCategory?: boolean;
@@ -119,7 +125,7 @@ export interface EventCardRowProps {
   isViewerParent?: boolean;
 }
 
-export function EventCardRow({ ev, members, colors, isDark, onPress, timeStyle = 'inline', showCategory = false, showLocation = true, showHelperStatus = false, isViewerParent = false }: EventCardRowProps) {
+export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress, timeStyle = 'inline', showCategory = false, showLocation = true, showHelperStatus = false, isViewerParent = false }: EventCardRowProps) {
   const assignee = members.find(m => m.id === ev.memberId);
   const rs = roleStyle(assignee?.role, colors);
   const timeParts = fmtTimePartsLocal(ev.time);
@@ -176,7 +182,7 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, timeStyle =
           opacity: isPast ? 0.5 : 1,
         };
     return (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
+      <TouchableOpacity onPress={onPress} onLongPress={onLongPress} delayLongPress={450} activeOpacity={0.85}>
         <Container style={containerStyle}>
           {isNow && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: -2 }}>
@@ -276,7 +282,7 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, timeStyle =
 
   // 'inline' — Week/Month style: time label + title + name, all in one row
   return (
-    <TouchableOpacity onPress={onPress}
+    <TouchableOpacity onPress={onPress} onLongPress={onLongPress} delayLongPress={450}
       style={{
         flexDirection: 'row', alignItems: 'center', gap: 8,
         borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8,

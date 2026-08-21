@@ -32,10 +32,13 @@ const ChevronRight = ({ c, size = 16 }: { c: string; size?: number }) => (
 // today highlighted, each showing its events as compact rows colored by
 // who they're for.
 export default function WeekView({
-  weekStart, events, members, colors, isDark, onSelectEvent, onNavigateWeek, onAddDay,
+  weekStart, events, members, colors, isDark, onSelectEvent, onLongPressEvent, onNavigateWeek, onAddDay,
 }: {
   weekStart: Date; events: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
   onSelectEvent: (ev: FamilyEvent) => void;
+  // Long-press → edit (date/time/recurrence/driver/delete) — parent edit
+  // access must be consistent across every calendar view, not just Month.
+  onLongPressEvent?: (ev: FamilyEvent) => void;
   onNavigateWeek: (delta: number) => void;
   onAddDay?: (dateKey: string) => void;
 }) {
@@ -107,6 +110,7 @@ export default function WeekView({
                     members={members}
                     colors={colors} isDark={isDark}
                     onPress={() => onSelectEvent(ev)}
+                    onLongPress={onLongPressEvent ? () => onLongPressEvent(ev) : undefined}
                     timeStyle="inline"
                   />
                 ))}

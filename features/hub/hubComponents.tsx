@@ -587,7 +587,7 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, excludeName, a
 
 // ─── EventDetailSheet — bottom-sheet modal for full event details + actions ───
 
-export function EventDetailSheet({ ev, members, colors, isDark, activeName, updateEvent, onClose, conflictReason }: {
+export function EventDetailSheet({ ev, members, colors, isDark, activeName, updateEvent, onClose, conflictReason, onEditFull }: {
   ev: FamilyEvent; members: FamilyMember[]; colors: any; isDark: boolean;
   activeName?: string;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
@@ -596,6 +596,16 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
   // kid/helper, or overlap with a work event) — shown as a warning banner
   // when this specific event has one.
   conflictReason?: string;
+  // Opens the full edit form (date/time/recurrence/driver/delete) — this
+  // sheet previously had NO path there at all, only the narrow accept/
+  // decline/reassign actions below. A parent tapping any event card (the
+  // default entry point on every calendar view) landed here with no way
+  // to actually edit or delete it, only a hidden long-press elsewhere
+  // provided that — this makes it a visible, discoverable button instead.
+  // Optional + parent-gated by the caller: only CalendarScreen actually
+  // has EditEventModal to hand off to; Hub timeline call sites don't pass
+  // this and simply don't show the button.
+  onEditFull?: () => void;
 }) {
   // Whether the driver-chip row is showing — replaces the old multi-button
   // stack (Assign to Me / Reassign to Someone Else / open picker / pick a
@@ -699,6 +709,13 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
             <View style={{ width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12, backgroundColor: colors.border }} />
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
               <Text style={{ flex: 1, fontSize: 20, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary }}>{ev.title}</Text>
+              {onEditFull && isViewerParent && (
+                <Pressable onPress={onEditFull} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                  style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: isDark ? '#1E293B' : '#F1F5F9', marginRight: 8 }}>
+                  <Pencil size={16} color={colors.textSecondary} />
+                </Pressable>
+              )}
               <Pressable onPress={onClose} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
                 style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
                 <X size={18} color={colors.textSecondary} />

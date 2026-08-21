@@ -33,10 +33,17 @@ const ChevronRight = ({ c, size = 18 }: { c: string; size?: number }) => (
 // below the grid, and as the Day-first intro shown above the grid when
 // Month opens on today (before the user has scrolled into the full grid).
 export function DayEventsSummaryCard({
-  dateLabel, events, members, colors, isDark, onSelectEvent,
+  dateLabel, events, members, colors, isDark, onSelectEvent, onLongPressEvent,
 }: {
   dateLabel: string; events: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
   onSelectEvent: (ev: FamilyEvent) => void;
+  // Long-press → edit (date/time/recurrence/driver/delete). This card had
+  // NO long-press at all — a parent's actual default view (compact
+  // defaults to isKid, so a parent lands here, not the compact time-grid
+  // that DOES have long-press-to-edit wired) meant tapping only ever
+  // reached the read-only detail sheet, with no way to edit or delete any
+  // event, including a kid-created one, from the view parents actually use.
+  onLongPressEvent?: (ev: FamilyEvent) => void;
 }) {
   const shown = events.filter(ev => ev.category !== 'Holiday');
   return (
@@ -64,6 +71,7 @@ export function DayEventsSummaryCard({
             const { time, ampm } = fmtTimeParts(ev.time);
             return (
               <TouchableOpacity key={ev.id} onPress={() => onSelectEvent(ev)}
+                onLongPress={onLongPressEvent ? () => onLongPressEvent(ev) : undefined}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14,
                   borderWidth: 1, borderColor: rs.dot + '35',
                   backgroundColor: isDark ? rs.dot + '1A' : rs.badge,

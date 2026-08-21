@@ -1034,6 +1034,7 @@ export default function CalendarScreen() {
               members={members}
               colors={colors} isDark={isDark}
               onSelectEvent={(ev) => setDetailEv(ev)}
+              onLongPressEvent={(ev) => setEditEv(ev)}
               onNavigateWeek={(delta) => setWeekCursor(prev => addDays(prev, delta * 7))}
               onAddDay={(d) => { setSelectedDate(d); storeSelectDate(d); setShowAdd(true); }}
             />
@@ -1054,6 +1055,7 @@ export default function CalendarScreen() {
                 members={members}
                 colors={colors} isDark={isDark}
                 onSelectEvent={(ev) => setDetailEv(ev)}
+                onLongPressEvent={(ev) => setEditEv(ev)}
                 isViewerParent={isParent}
               />
             )}
@@ -1096,6 +1098,7 @@ export default function CalendarScreen() {
               members={members}
               colors={colors} isDark={isDark}
               onSelectEvent={(ev) => setDetailEv(ev)}
+              onLongPressEvent={(ev) => setEditEv(ev)}
             />
           </View>
         ) : viewMode === 'day' && isParentOrSenior ? (
@@ -1186,6 +1189,7 @@ export default function CalendarScreen() {
                 members={members}
                 colors={colors} isDark={isDark}
                 onSelect={(ev) => setDetailEv(ev)}
+                onLongPressEvent={(ev) => setEditEv(ev)}
                 onAddAtTime={() => setShowAdd(true)}
               />
             </ScrollView>
@@ -1523,6 +1527,7 @@ export default function CalendarScreen() {
           activeName={activeMemberName}
           updateEvent={updateEvent}
           onClose={() => setDetailEv(null)}
+          onEditFull={() => { const ev = detailEv; setDetailEv(null); setEditEv(ev); }}
         />
       )}
     </SafeAreaView>

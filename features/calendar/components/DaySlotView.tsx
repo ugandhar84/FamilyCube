@@ -25,10 +25,13 @@ const DAY_SLOT_START_HOUR = 5;
 const DAY_SLOT_END_HOUR = 23;
 
 export default function DaySlotView({
-  dayEvents, members, colors, isDark, onSelect, onAddAtTime,
+  dayEvents, members, colors, isDark, onSelect, onLongPressEvent, onAddAtTime,
 }: {
   dayEvents: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
   onSelect: (ev: FamilyEvent) => void;
+  // Long-press → edit — same parent edit-access-everywhere reasoning as
+  // every other calendar view.
+  onLongPressEvent?: (ev: FamilyEvent) => void;
   onAddAtTime: (hourTimeKey: string) => void;
 }) {
   const hours = Array.from({ length: DAY_SLOT_END_HOUR - DAY_SLOT_START_HOUR + 1 }, (_, i) => DAY_SLOT_START_HOUR + i);
@@ -57,6 +60,7 @@ export default function DaySlotView({
                   const rs = roleStyle(assignee?.role, colors);
                   return (
                     <TouchableOpacity key={ev.id} onPress={() => onSelect(ev)}
+                      onLongPress={onLongPressEvent ? () => onLongPressEvent(ev) : undefined} delayLongPress={450}
                       style={{ borderRadius: 14, backgroundColor: isDark ? rs.dot + '1A' : rs.badge, padding: 10 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                         <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }} numberOfLines={1}>

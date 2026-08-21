@@ -18,10 +18,13 @@ import { toDateStr, parseDate } from './calendarDateHelpers';
 // Spans many upcoming days (not just one selected date) — the "what's
 // coming up" view, matching the reference's grouped-by-date list pattern.
 export default function AgendaView({
-  events, members, colors, isDark, onSelectEvent, isViewerParent = false,
+  events, members, colors, isDark, onSelectEvent, onLongPressEvent, isViewerParent = false,
 }: {
   events: FamilyEvent[]; members: FamilyMember[]; colors: any; isDark: boolean;
   onSelectEvent: (ev: FamilyEvent) => void;
+  // Long-press → edit — same parent edit-access-everywhere reasoning as
+  // WeekView/DayEventsSummaryCard.
+  onLongPressEvent?: (ev: FamilyEvent) => void;
   isViewerParent?: boolean;
 }) {
   const todayStr = toDateStr(new Date());
@@ -72,6 +75,7 @@ export default function AgendaView({
                 members={members}
                 colors={colors} isDark={isDark}
                 onPress={() => onSelectEvent(ev)}
+                onLongPress={onLongPressEvent ? () => onLongPressEvent(ev) : undefined}
                 timeStyle="boxed"
                 showCategory
                 showHelperStatus

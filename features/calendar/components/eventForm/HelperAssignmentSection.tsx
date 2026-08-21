@@ -158,23 +158,24 @@ export default function HelperAssignmentSection({
             </View>
           )}
 
-          <View style={[f.kidNote, { backgroundColor: isDark ? '#1C1700' : colors.warningLight, borderColor: colors.warning + '40', marginTop: 4 }]}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.amber }}>
-              👋 Parent will review &amp; assign a driver
-            </Text>
-            <Text style={{ fontSize: TYPO.label, color: colors.amber, opacity: 0.8, marginTop: 2 }}>
-              {!kidRideNeeded        ? 'No ride requested — you have your own way there.' :
-               // A single request is created; a parent splits it into
-               // drop-off + pickup when assigning drivers (RideRequestCard's
-               // forkRide) — this previously implied 2 rows exist the
-               // instant the kid submits, which isn't what happens until a
-               // parent acts (QA Round 12, Finding C-1).
-               kidDropoffOn && kidPickupOn ? 'One request for both legs — parent splits it into drop-off + pickup when assigning drivers.' :
-               kidDropoffOn          ? 'A drop-off event will be created for parent to assign.' :
-               kidPickupOn           ? 'A pickup event will be created for parent to assign.' :
-                                      'Toggle drop-off or pickup below.'}
-            </Text>
-          </View>
+          {kidRideNeeded && (
+            <View style={[f.kidNote, { backgroundColor: isDark ? '#1C1700' : colors.warningLight, borderColor: colors.warning + '40', marginTop: 4 }]}>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.amber }}>
+                👋 Parent will review &amp; assign a driver
+              </Text>
+              <Text style={{ fontSize: TYPO.label, color: colors.amber, opacity: 0.8, marginTop: 2 }}>
+                {/* A single request is created; a parent splits it into
+                    drop-off + pickup when assigning drivers (RideRequestCard's
+                    forkRide) — this previously implied 2 rows exist the
+                    instant the kid submits, which isn't what happens until a
+                    parent acts (QA Round 12, Finding C-1). */}
+                {kidDropoffOn && kidPickupOn ? 'One request for both legs — parent splits it into drop-off + pickup when assigning drivers.' :
+                 kidDropoffOn          ? 'A drop-off event will be created for parent to assign.' :
+                 kidPickupOn           ? 'A pickup event will be created for parent to assign.' :
+                                        'Turn drop-off or pickup back on above if you do need a ride.'}
+              </Text>
+            </View>
+          )}
         </View>
       ) : (
         <MemberPicker

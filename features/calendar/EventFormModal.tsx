@@ -3,9 +3,11 @@
  *
  * RBAC:
  *  Parent  — full form, all categories, immediate helper assignment
- *  Senior  — can create Work / Event for themselves; can accept helper role
- *  Kid     — limited to Ride & Study requests → auto approvalPending = true,
- *            no helper picker (parent assigns later), can withdraw before approved
+ *  Senior  — can create Medical / Work / Event / Other for themselves; can accept helper role
+ *  Kid     — limited to Sports / Study / Event / Birthday / Other, with an
+ *            optional "Ride needed?" request layered on top → auto
+ *            approvalPending = true, no helper picker (parent assigns
+ *            later), can withdraw before approved
  *
  * Edit mode restrictions (same as quests):
  *  - Past events: read-only for kids; parents can edit notes/helper only
@@ -988,7 +990,12 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               />
             )}
 
-            {(isKid || (category !== 'Work' && category !== 'Event')) && (
+            {/* For a kid, this whole section is only meaningful once "Ride
+                needed?" (now above Date & Time) is actually on — the toggle
+                itself already fully communicates the off state ("Off · I
+                have my own way there"), so rendering an empty section
+                below it here would just repeat that with nothing to show. */}
+            {((isKid && kidRideNeeded) || (!isKid && category !== 'Work' && category !== 'Event')) && (
               <HelperAssignmentSection
                 isKid={isKid} category={category} catColor={catColor} colors={colors} isDark={isDark} siblings={siblings} adults={adults}
                 eventDate={eventDate}
@@ -1136,17 +1143,12 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               {notes.length}/200
             </Text>
 
-            {/* ── Kid approval reminder ── */}
-            {isKid && (
-              <View style={[f.kidNote, { backgroundColor: isDark ? '#1E1B4B' : '#F0F0FE', borderColor: BRAND.purple + '40', marginBottom: 16 }]}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple }}>
-                  ⏳ Sent for parent approval
-                </Text>
-                <Text style={{ fontSize: TYPO.micro, color: BRAND.purple, opacity: 0.8, marginTop: 2 }}>
-                  A parent will review and assign someone. You'll see it on your schedule once confirmed.
-                </Text>
-              </View>
-            )}
+            {/* Was a 3rd near-identical "a parent will review this" note —
+                the header subtitle already sets this expectation up front,
+                and HelperAssignmentSection's own note (shown only when
+                Ride needed is on) already explains the driver-assignment
+                specifics. Repeating it a third time right before Submit
+                added length without adding information. */}
 
             {/* ── Submit ── */}
             <TouchableOpacity

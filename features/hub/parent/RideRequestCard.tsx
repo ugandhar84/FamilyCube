@@ -5,6 +5,8 @@ import { TYPO } from '@/constants/theme';
 import { CollapsibleCard } from '../hubComponents';
 import { fmtTime } from '../hubUtils';
 import { applyAssignment } from '@/lib/responsibilityCategories';
+import { parseRideMeta, plus90Minutes, forkRideLegs } from './rideLegs';
+import { PickupTimeStepper } from './PickupTimeStepper';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
@@ -15,41 +17,6 @@ import type { FamilyEvent } from '@/store/eventStore';
 // leg-vs-leg distinction, so both are kept as named local constants.
 const DROPOFF_GREEN = '#10B981';
 const PICKUP_INDIGO = '#6366F1';
-
-const to24HourTime = (raw: string): string | undefined => {
-  const normalized = raw.trim();
-  if (/^\d{2}:\d{2}$/.test(normalized)) return normalized;
-  const m = normalized.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (!m) return undefined;
-  let hour = parseInt(m[1], 10);
-  const minute = parseInt(m[2], 10);
-  const meridiem = m[3].toUpperCase();
-  if (hour === 12) hour = 0;
-  if (meridiem === 'PM') hour += 12;
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-};
-
-function parseRideMeta(encoded: string | undefined, fallbackDate?: string) {
-  const rideCode = encoded?.startsWith('RIDE:') ? encoded : null;
-  const isBothWays = rideCode === 'RIDE:both' || rideCode?.startsWith('RIDE:both:');
-  const isDropoff  = rideCode === 'RIDE:dropoff';
-  const isPickup   = rideCode === 'RIDE:pickup' || rideCode?.startsWith('RIDE:pickup:');
-  let pickupDate = fallbackDate;
-  let pickupTime: string | undefined;
-
-  if (rideCode?.startsWith('RIDE:both:') || rideCode?.startsWith('RIDE:pickup:')) {
-    const payload = rideCode.slice(rideCode.indexOf(':', 5) + 1).trim();
-    const localStamp = payload.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/);
-    if (localStamp) {
-      pickupDate = localStamp[1];
-      pickupTime = localStamp[2];
-    } else {
-      pickupTime = to24HourTime(payload);
-    }
-  }
-
-  return { isBothWays, isDropoff, isPickup, pickupDate, pickupTime, pickupLabel: pickupTime ? fmtTime(pickupTime) : undefined };
-}
 
 export function RideRequestCard({ ev, active, members, colors, isDark, updateEvent, addEvent, updateEventScoped }: {
   ev: FamilyEvent; active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
@@ -121,40 +88,28 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
     tryAutoDispatchToGrandparent(ev.id);
   };
 
-  // Fork both-ways ride → 2 separate event cards
+  // A kid's ride request never includes a pickup TIME (the redesigned
+  // KidRequestModal deliberately drops that field — a kid usually doesn't
+  // know precisely when practice ends). This is the one-tap fill-in at
+  // approval time: pre-filled at drop-off + 90 minutes, adjustable before
+  // forking. Only relevant when there IS a pickup leg with no time yet.
+  const [pickupTimeOverride, setPickupTimeOverride] = useState<string | null>(null);
+
+  // Fork both-ways ride → 2 separate event cards. Pickup leg now inherits
+  // the SAME category as the original event via forkRideLegs (was always
+  // hardcoded to 'Ride', which is correct here since this card only ever
+  // handles category:'Ride' events anyway — kept via the shared helper so
+  // RideRequiredEventCard's own fork behaves the same way for its events).
   const forkRide = (selfDrive: boolean) => {
-    updateEvent(ev.id, {
-      approvalPending: false,
-      helper: selfDrive ? active.name : undefined,
-      helperStatus: selfDrive ? 'confirmed' : undefined,
-      returnTime: undefined,
-      title: `${ev.title} — Drop-off`,
-      notes: ev.notes,
-      color: DROPOFF_GREEN,
-      isOpenToGrandparents: !selfDrive,
-      isOpenToTeens: !selfDrive,
-      rideCoins: selfDrive ? undefined : splitCoins,
-      pickupLocation: ev.pickupLocation,
-      dropLocation: ev.dropLocation,
+    forkRideLegs({
+      ev, selfDrive, splitCoins,
+      assigneePatch: (confirmed) => ({
+        helper: confirmed ? active.name : undefined,
+        helperStatus: confirmed ? 'confirmed' : undefined,
+      }),
+      updateEvent, addEvent, tryAutoDispatch: tryAutoDispatchToGrandparent,
+      pickupTimeOverride: pickupTimeOverride ?? undefined,
     });
-    if (!selfDrive) tryAutoDispatchToGrandparent(ev.id);
-    const pickupId = addEvent({
-      title: `${ev.title} — Pickup`,
-      date: rideMeta.pickupDate ?? ev.date,
-      time: rideMeta.pickupTime ?? ev.time,
-      type: 'event', category: 'Ride', allDay: false, memberId: ev.memberId,
-      approvalPending: false, conflict: false,
-      helper: selfDrive ? active.name : undefined,
-      helperStatus: selfDrive ? 'confirmed' : undefined,
-      notes: ev.notes ? `(Return) ${ev.notes}` : `Pickup leg for "${ev.title}"`,
-      color: PICKUP_INDIGO,
-      isOpenToGrandparents: !selfDrive,
-      isOpenToTeens: !selfDrive,
-      rideCoins: selfDrive ? undefined : splitCoins,
-      pickupLocation: ev.dropLocation,
-      dropLocation: ev.pickupLocation,
-    });
-    if (!selfDrive) tryAutoDispatchToGrandparent(pickupId);
   };
 
   return (
@@ -211,10 +166,23 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
               <MapPinCheck size={12} color={DROPOFF_GREEN} />
               <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: DROPOFF_GREEN }}>Drop-off · {ev.time ? fmtTime(ev.time) : 'time TBD'}</Text>
             </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
-              <Flag size={12} color={PICKUP_INDIGO} />
-              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: PICKUP_INDIGO }}>Pickup · {returnTimeStr ?? 'time TBD'}</Text>
-            </View>
+            {returnTimeStr ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                <Flag size={12} color={PICKUP_INDIGO} />
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: PICKUP_INDIGO }}>Pickup · {returnTimeStr}</Text>
+              </View>
+            ) : (
+              // No pickup time came with the request (a kid's ride request
+              // never includes one) — one-tap fill-in, pre-filled at
+              // drop-off + 90 min, before approving/forking.
+              <View style={{ marginTop: 4 }}>
+                <PickupTimeStepper
+                  value={pickupTimeOverride ?? plus90Minutes(ev.time)}
+                  onChange={setPickupTimeOverride}
+                  accentColor={PICKUP_INDIGO} colors={colors}
+                />
+              </View>
+            )}
             <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4 }}>
               Creates 2 cards — GP or teen first to claim each leg wins.
               {splitCoins ? ` +${splitCoins} coins each leg.` : ''}

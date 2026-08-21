@@ -39,6 +39,7 @@ import FamilyAvatar from '@/components/FamilyAvatar';
 import { TYPO } from '@/constants/theme';
 import { fmtDate, fmtDateShort, fmtTimeParts } from '@/lib/dates';
 import { AddEventModal as EventFormAdd, EditEventModal } from './EventFormModal';
+import { KidRequestModal } from './KidRequestModal';
 import { EventDetailSheet } from '@/features/hub/hubComponents';
 import AddIntakeChooser from '@/components/AddIntakeChooser';
 import { useChatStore } from '@/store/chatStore';
@@ -1460,12 +1461,21 @@ export default function CalendarScreen() {
       </ScrollView>
 
       {/* Modals */}
-      {/* Full event form — parent/senior create; kid requests Ride/Study */}
+      {/* Full event form — parent/senior/teen create only. A kid's own
+          "+ Ask Help" button (showAskHelp) now opens KidRequestModal
+          instead — the purpose-built 3-step kid flow, not this shared
+          adult form's isKid branch (removed; see KidRequestModal's own
+          header comment for why). */}
       <EventFormAdd
-        visible={showAdd || showAskHelp}
+        visible={showAdd}
         activeMemberId={activeMember?.id ?? ''}
-        onClose={() => { setShowAdd(false); setShowAskHelp(false); setAddPrefill(undefined); }}
+        onClose={() => { setShowAdd(false); setAddPrefill(undefined); }}
         prefill={addPrefill as any}
+      />
+      <KidRequestModal
+        visible={showAskHelp}
+        activeMemberId={activeMember?.id ?? ''}
+        onClose={() => setShowAskHelp(false)}
       />
 
       {/* Header "+ Event" button opens the Speak it/Type it chooser first —

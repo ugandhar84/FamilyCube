@@ -9,7 +9,7 @@ import { useRewardStore } from '@/store/rewardStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { withinLast24h } from '@/lib/dates';
-import { AddEventModal } from '@/features/calendar/EventFormModal';
+import { KidRequestModal } from '@/features/calendar/KidRequestModal';
 import { useChatStore } from '@/store/chatStore';
 import { localToday, fmtTime, hoursUntilEvent } from './hubUtils';
 
@@ -398,7 +398,7 @@ export function KidView({ active, members, colors, isDark, activeTrip }: {
         mainCoins={mainCoins} gpCoins={gpCoins} almostAffordable={almostAffordable} goalReward={goalReward}
         doneToday={doneToday} streak={streak} level={level} memberId={active.id}
       />
-      <AddEventModal visible={addEventModal} onClose={() => setAddEventModal(false)} activeMemberId={active.id} />
+      <KidRequestModal visible={addEventModal} onClose={() => setAddEventModal(false)} activeMemberId={active.id} />
     </>
   );
 }

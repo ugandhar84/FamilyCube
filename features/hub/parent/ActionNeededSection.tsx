@@ -169,7 +169,7 @@ export function ActionNeededSection({
       key: `ride-required-${ev.id}`, age,
       severity: 'soon', score: SEVERITY.soon,
       node: <RideRequiredEventCard key={ev.id} ev={ev} active={active} colors={colors} isDark={isDark}
-        updateEvent={updateEvent} updateEventScoped={updateEventScoped} />,
+        updateEvent={updateEvent} updateEventScoped={updateEventScoped} addEvent={addEvent} />,
     });
   }
 

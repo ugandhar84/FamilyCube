@@ -9,7 +9,7 @@ import { GP } from './seniorTheme';
 const DISPATCH_AMBER = '#F59E0B';
 import { OpenRideRequestsList } from './OpenRideRequestsList';
 import { QuestInvitationsSection } from './QuestInvitationsSection';
-import { ActiveErrandsSection, PendingOffersSection } from './ActiveErrandsSection';
+import { ActiveErrandsSection, ErrandsAwaitingReviewSection, PendingOffersSection } from './ActiveErrandsSection';
 import { FamilyNeedsHandSection } from './FamilyNeedsHandSection';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
@@ -33,6 +33,7 @@ export function LendAHandCard({
   hasDispatchItems, dispatchBadgeCount,
   openRides, gpInvitations, passedInvitations, setPassedInvitations,
   myActiveErrands, onOpenReceiptModal, onMarkDoneNoReceipt,
+  myErrandsAwaitingReview,
   myPendingOffers, onWithdrawOffer,
   openRequests, gpWelcomeRequests, gpWelcomeChores, volunteerPool,
   active, members, allNames, colors, isDark,
@@ -51,6 +52,7 @@ export function LendAHandCard({
   openRides: FamilyEvent[]; gpInvitations: ChoreTask[];
   passedInvitations: string[]; setPassedInvitations: (fn: (prev: string[]) => string[]) => void;
   myActiveErrands: ChoreTask[]; onOpenReceiptModal: (choreId: string) => void; onMarkDoneNoReceipt: (choreId: string) => void;
+  myErrandsAwaitingReview: ChoreTask[];
   myPendingOffers: ChoreTask[]; onWithdrawOffer: (choreId: string) => void;
   openRequests: FamilyEvent[]; gpWelcomeRequests: KidRequest[]; gpWelcomeChores: ChoreTask[]; volunteerPool: FamilyEvent[];
   active: FamilyMember; members: FamilyMember[]; allNames: string[]; colors: any; isDark: boolean;
@@ -237,6 +239,7 @@ export function LendAHandCard({
           )}
 
           <ActiveErrandsSection errands={myActiveErrands} onOpenReceiptModal={onOpenReceiptModal} onMarkDoneNoReceipt={onMarkDoneNoReceipt} colors={colors} isDark={isDark} />
+          <ErrandsAwaitingReviewSection errands={myErrandsAwaitingReview} colors={colors} isDark={isDark} />
 
           <PendingOffersSection offers={myPendingOffers} onWithdraw={onWithdrawOffer} colors={colors} isDark={isDark} />
 

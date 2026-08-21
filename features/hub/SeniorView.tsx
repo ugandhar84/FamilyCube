@@ -260,6 +260,20 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     c.assignedToId === active.id
   );
 
+  // Coordinated live-DB QA (GP receipt round) found this GP's own Hub
+  // dropped an errand entirely the moment she submitted its receipt — no
+  // section anywhere covered pending_approval for a plain inviteGrandparents
+  // errand, so she had zero in-app confirmation the receipt was received or
+  // later reimbursed, despite both parents seeing it correctly on their own
+  // review deck the whole time. Tracks the same errand through submission
+  // and reimbursement, distinct from myActiveErrands' still-shopping state.
+  const myErrandsAwaitingReview = chores.filter(c =>
+    c.inviteGrandparents &&
+    c.status === 'pending_approval' &&
+    c.assignedToId === active.id &&
+    (!!c.receiptPhotoUrl || c.receiptAmount != null || !!c.receiptNote)
+  );
+
   // ── Helper Dispatch / Availability (persisted in FamilyMember) ──────────────
   const cheerleaderMode  = active.gpCheerleaderMode  ?? false;
   const driveWindowDays  = active.gpDriveWindowDays  ?? [2, 4];
@@ -584,19 +598,26 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const driveAlerts = dedupOpenRequests.length + dedupVolunteerPool.length
     + gpWelcomeRequests.length + gpWelcomeChores.length;
 
-  // Expand Helper Dispatch on first load when there's anything actionable
+  // Expand Helper Dispatch on first load when there's anything actionable.
+  // myActiveErrands/myErrandsAwaitingReview weren't counted here — same
+  // "has real content but defaults to collapsed" gap fixed elsewhere this
+  // session (Household Backlog, Chore Reviews, My Chores).
   const hasDispatchItems = (
     dedupOpenRides.length > 0 ||
     gpInvitations.filter(c => !passedInvitations.includes(c.id)).length > 0 ||
     driveAlerts > 0 ||
-    myPendingOffers.length > 0
+    myPendingOffers.length > 0 ||
+    myActiveErrands.length > 0 ||
+    myErrandsAwaitingReview.length > 0
   ) && !cheerleaderMode;
   useEffect(() => { if (hasDispatchItems) setHelperDispatchExpanded(true); }, []);
 
   const dispatchBadgeCount = dedupOpenRides.length
     + gpInvitations.filter(c => !passedInvitations.includes(c.id)).length
     + driveAlerts
-    + myPendingOffers.length;
+    + myPendingOffers.length
+    + myActiveErrands.length
+    + myErrandsAwaitingReview.length;
 
   const handleSendBonus = () => {
     if (!gpKid) return;
@@ -664,6 +685,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         passedInvitations={passedInvitations} setPassedInvitations={setPassedInvitations}
         myActiveErrands={myActiveErrands} onOpenReceiptModal={openReceiptModal}
         onMarkDoneNoReceipt={(choreId) => submitGPErrandReceipt(choreId, {})}
+        myErrandsAwaitingReview={myErrandsAwaitingReview}
         myPendingOffers={myPendingOffers} onWithdrawOffer={(choreId) => withdrawGPOffer(choreId, active.id)}
         openRequests={dedupOpenRequests} gpWelcomeRequests={gpWelcomeRequests}
         gpWelcomeChores={gpWelcomeChores} volunteerPool={dedupVolunteerPool}

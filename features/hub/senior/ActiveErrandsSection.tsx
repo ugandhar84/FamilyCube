@@ -77,6 +77,61 @@ export function ActiveErrandsSection({ errands, onOpenReceiptModal, onMarkDoneNo
   );
 }
 
+// GP-submitted errands whose receipt is in a parent's hands — awaiting
+// review, or already reimbursed but not yet finally approved/closed out.
+// Coordinated live-DB QA (GP receipt round) found the GP had no visibility
+// into this window at all: her own Hub dropped the errand the instant she
+// submitted the receipt, with no way to see it was received or later
+// reimbursed, despite both parents seeing it correctly the whole time.
+export function ErrandsAwaitingReviewSection({ errands, colors, isDark }: {
+  errands: ChoreTask[];
+  colors: any; isDark: boolean;
+}) {
+  if (errands.length === 0) return null;
+
+  return (
+    <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Clock size={14} color={BRAND.purple} />
+        <Text style={{ fontSize: GP.sub, fontWeight: '800', color: BRAND.purple,
+          textTransform: 'uppercase', letterSpacing: 0.8 }}>Awaiting Reimbursement</Text>
+      </View>
+      {errands.map(c => {
+        const reimbursed = !!c.receiptReimbursedAt;
+        return (
+          <View key={c.id} style={{ borderRadius: 16, borderWidth: 1.5,
+            borderColor: (reimbursed ? BRAND.teal : BRAND.purple) + '40',
+            backgroundColor: isDark ? (reimbursed ? BRAND.teal : BRAND.purple) + '10' : (reimbursed ? '#ECFDF5' : '#F5F0FC'),
+            overflow: 'hidden' }}>
+            <View style={{ backgroundColor: reimbursed ? BRAND.teal : BRAND.purple, paddingHorizontal: 14, paddingVertical: 13,
+              flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {reimbursed ? <CheckCircle2 size={16} color="#fff" /> : <Camera size={16} color="#fff" />}
+              <Text style={{ flex: 1, fontSize: GP.sub, fontWeight: '900', color: '#fff' }}>
+                {c.title}
+              </Text>
+              <View style={{ backgroundColor: '#fff3', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: '#fff' }}>
+                  {reimbursed ? 'Reimbursed ✓' : 'Receipt Sent'}
+                </Text>
+              </View>
+            </View>
+            <View style={{ paddingHorizontal: 14, paddingVertical: 10, gap: 4 }}>
+              {c.receiptAmount != null && (
+                <Text style={{ fontSize: GP.body, fontWeight: '800', color: colors.textPrimary }}>
+                  ${c.receiptAmount.toFixed(2)}
+                </Text>
+              )}
+              <Text style={{ fontSize: GP.tiny, color: colors.textSecondary }}>
+                {reimbursed ? 'A parent has marked this reimbursed.' : 'Waiting on a parent to reimburse you.'}
+              </Text>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 // Scenario 1.6 — an offer this GP made ("I'll Handle It") that's still
 // waiting on a parent to Accept/Decline. Same visual shell as the errands
 // above (amber instead of teal — "waiting," not "in progress yet") with a

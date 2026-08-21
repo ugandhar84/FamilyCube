@@ -1285,6 +1285,12 @@ export const useEventStore = create<EventState>((set, get) => ({
           onError?.(
             error.message.includes('gp_weekly_ride_cap_exceeded')
               ? "You've reached your weekly ride limit."
+              // Server-side backstop for a ride that isn't actually open to
+              // this claimant's role — should never fire from the normal UI
+              // (the pool/picker already only offers open rides), but can
+              // if the underlying row changed between load and claim.
+              : error.message.includes('not_open_to_grandparents') || error.message.includes('not_open_to_teens')
+              ? "This ride isn't open to you anymore — it may have changed since you last checked."
               : "Couldn't confirm this — please try again."
           );
           return;

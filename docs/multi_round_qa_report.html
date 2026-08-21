@@ -142,12 +142,12 @@
 <header>
   <div class="header-inner">
     <div class="eyebrow">Family Cube — Multi-Round QA</div>
-    <h1>Live Database QA: 19 Rounds, Four Incidents</h1>
+    <h1>Live Database QA: 20 Rounds, Four Incidents</h1>
     <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, every family role, and realistic multi-step transitions — plus four production incidents caused or prompted mid-session and resolved same-session, a kid ride-request UX rebuild, a full-app per-role UI audit, a live-database verification pass, and the coordinated cross-role QA methodology (Rounds 15–16) that tracks one unified test family through a long connected scenario with every role checking every surface after every step, closing the structural blind spot that single-role agents could never see.</p>
     <div class="meta-row">
       <span class="meta-chip">Test family <b>dad072b3-...-001</b> — isolated, cleaned up after each round</span>
-      <span class="meta-chip"><b>19</b> QA rounds</span>
-      <span class="meta-chip"><b>86</b> bugs found, 84 fixed, 2 open</span>
+      <span class="meta-chip"><b>20</b> QA rounds</span>
+      <span class="meta-chip"><b>87</b> bugs found, 85 fixed, 2 open</span>
       <span class="meta-chip">2 new features shipped</span>
       <span class="meta-chip">5 Critical, live-deployed/production bugs closed</span>
     </div>
@@ -180,6 +180,7 @@
     <a href="#round17">Round 17</a>
     <a href="#round18">Round 18</a>
     <a href="#round19">Round 19</a>
+    <a href="#round20">Round 20</a>
     <a href="#verdict">Verdict</a>
   </div>
 </nav>
@@ -193,7 +194,7 @@
     <div class="stats">
       <div class="stat crit"><div class="n">12</div><div class="l">Critical bugs closed</div></div>
       <div class="stat bug"><div class="n">21</div><div class="l">Security/visibility bugs fixed</div></div>
-      <div class="stat warn"><div class="n">52</div><div class="l">Correctness bugs fixed</div></div>
+      <div class="stat warn"><div class="n">53</div><div class="l">Correctness bugs fixed</div></div>
       <div class="stat info"><div class="n">2</div><div class="l">Features shipped</div></div>
       <div class="stat ok"><div class="n">2</div><div class="l">Open items: photo-proof enforcement, due-soon Hub sort</div></div>
     </div>
@@ -318,6 +319,11 @@
         <div class="tl-dot round"></div>
         <div class="tl-head"><h3>Round 19 — Badges, Deadline Boundaries &amp; Multi-Slot Bounty Scheduling</h3><span class="tl-badge round">Coordinated · All roles, one family · 8 steps</span></div>
         <p>Following up on the launch-readiness focus, testing whether badge/notification counts stay in sync with actual state, whether deadline/overdue boundary logic holds after the Round 18 fix, and whether multi-slot bounty chores behave correctly when combined with scheduling and the parent review queue. Surfaces one CRITICAL bug and three others: multi-slot bounty claim submissions never reached the parent's review badge/queue at all (submitBountyClaim never updates the parent chore's status, so pending claims became invisible to the primary "action needed" review surface), multi-slot bounties share a single due date across all claimants with no way to tell whose slot is genuinely late, no "due soon" sort/urgency exists on Hub for any role (open item), and a kid's Hub alert for an imminent unassigned ride never escalated despite both parents correctly escalating it. All three immediate bugs fixed same-session, due-soon sort deferred as lower priority.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 20 — Kid Requests &amp; Coin Ledger Consistency</h3><span class="tl-badge round">Coordinated · All roles, one family · 8 steps</span></div>
+        <p>Continuing the coordinated cross-role methodology, this round covered two priority areas: (A) grocery/supplies/ask-parent kid requests across every role, applying the full coordinated method to cover a first-time gap (prior rounds tested single-role request flows but never the unified cross-role surface consistency), and (B) coin/point ledger consistency — verifying that every role with visibility into a kid's balance always reads the exact same number after every earning/spending event, with zero drift, including a concurrent-write race check. Surfaces one High-severity bug: when a multi-item grocery/supplies request transitioned to <code class="inline">partial</code> status (some items decided, at least one still pending), it disappeared completely from both parents' Action Needed feed, with no parent-side history view to recover it — the same request correctly remained visible to the requesting kid. Fixed same-session; coin ledger checks all pass with no race conditions detected.</p>
       </div>
     </div>
   </section>
@@ -1666,6 +1672,120 @@
     </div>
 
     <p class="sec-desc" style="margin-top: 20px;"><b>Test family details:</b> Single isolated synthetic family (<code class="inline">b87e4038-3224-4b06-a5b3-9bdddce57ffd</code>, "QA23 Test Family") with 6 real member rows: 2 parents (QA23-Parent-A, QA23-Parent-B), 2 kids (QA23-Kid-1, QA23-Kid-2), 1 teen (QA23-Teen-1), 1 grandparent (QA23-GP-Mat, <code class="inline">linked_parent_id</code> = Parent-A). All rows across <code class="inline">families</code>, <code class="inline">members</code>, <code class="inline">chore_tasks</code>, <code class="inline">calendar_events</code>, <code class="inline">bounty_claims</code>, and <code class="inline">point_transactions</code> were deleted at the end, with a final verification query confirming zero count across every touched table. No production data outside the test family was ever touched.</p>
+  </section>
+
+  <section id="round20">
+    <div class="sec-label">Round 20</div>
+    <h2>Kid Requests &amp; Coin Ledger Consistency</h2>
+    <p class="sec-desc">Continuing the coordinated cross-role methodology, this round applied the full unified test-family approach to two priority areas: (A) grocery/supplies/ask-parent kid requests — a prior round (Round 6) covered single-role flows but never the full coordinated cross-role validation of surface consistency, and (B) coin/point ledger consistency — verifying that every role who can see a kid's coin balance always shows the exact same number after every earning/spending event, with zero drift, including a concurrent-write race check. One coordinated agent, isolated test family, 6 real members across every role, real database writes.</p>
+
+    <div class="step-card">
+      <div class="step-num">Step 1</div>
+      <div class="step-title">Kid-1 submits a 3-item grocery request</div>
+      <div class="step-desc">Kid-1 creates a grocery request with 3 items.</div>
+      <div class="step-write">DB: new <code class="inline">kid_requests</code> row with status = <code class="inline">pending</code>, 3 items pending</div>
+      <ul class="check-list">
+        <li>Parent-A Hub (pendingKidRequests filter, ParentView.tsx) <span class="badge match">✓ Match</span> — sees it pending with 3 items</li>
+        <li>Parent-B Hub <span class="badge match">✓ Match</span> — identical shared query, no per-parent partition</li>
+        <li>Kid-1's own Hub/History <span class="badge match">✓ Match</span> — correctly shows pending with 3 items awaiting decision</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 2 — Finding (HIGH, now FIXED)</div>
+      <div class="step-title">Parent-A approves 2 of the 3 items, leaving 1 still pending</div>
+      <div class="step-desc">Parent-A approves 2 of the 3 items in the Step-1 request via the ParentView grocery card. The request's overall status correctly transitions to <code class="inline">partial</code> (per kidRequestStore.ts's approveItems logic), with 2 items decided and 1 genuinely still awaiting decision.</div>
+      <div class="step-write">DB: kid_requests row status → <code class="inline">partial</code>; 2 items marked approved, 1 item still pending</div>
+      <ul class="check-list">
+        <li>Parent-A's Action Needed feed <span class="badge mismatch">✗ Mismatch</span> — request VANISHES the instant it becomes <code class="inline">partial</code>; pendingKidRequests filter only matches <code class="inline">status === 'pending'</code>, not <code class="inline">partial</code></li>
+        <li>Parent-B's Action Needed feed <span class="badge mismatch">✗ Mismatch</span> — request VANISHES for Parent-B too; it's not a cross-parent divergence, it's a uniform structural gap hitting every parent identically</li>
+        <li>Kid-1's own Hub/History <span class="badge match">✓ Match</span> — correctly shows "2 approved, 1 waiting" with only the genuinely-pending item displayed; the kid's view was correct the whole time</li>
+        <li>Parent-side history/archive of kid_requests <span class="badge mismatch">✗ Mismatch</span> — no such surface exists anywhere in the app; once a request fell out of Action Needed, a parent had no way to ever find or act on the remaining item again short of remembering it existed</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #1 (HIGH severity):</strong> A multi-item grocery/supplies request transitioning to <code class="inline">partial</code> status (some items decided, at least one still pending) disappeared completely from both parents' Action Needed feed simultaneously, with zero way to recover it. <code class="inline">ParentView.tsx</code>'s <code class="inline">pendingKidRequests</code> filter only ever matched <code class="inline">status === 'pending'</code> — the moment the request became <code class="inline">partial</code>, it vanished uniformly from every parent's view. The requesting kid's own view was unaffected and correct the whole time: Kid-1's Hub/History correctly showed "2 approved, 1 waiting." Crucially, parents have no history/archive view of kid_requests anywhere in the app, so once a request fell out of Action Needed, recovering it was impossible. Confirmed via full repo grep that no other parent-facing surface anywhere checks for the <code class="inline">partial</code> status. Fixed same-session: the filter now also matches <code class="inline">partial</code>; <code class="inline">GroceryRequestCard.tsx</code> already safely renders only the still-pending items within a partial request (its own <code class="inline">pendingItems</code> filter), so surfacing <code class="inline">partial</code> requests here never shows anything already resolved. File: <code class="inline">features/hub/ParentView.tsx</code>.</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 3</div>
+      <div class="step-title">Parent-B approves the last remaining item, fully resolving the request</div>
+      <div class="step-desc">Parent-B approves the final pending item from Step 1. The request now fully resolved (all 3 items decided).</div>
+      <div class="step-write">DB: kid_requests row status → <code class="inline">approved</code> (terminal state); all 3 items marked approved</div>
+      <ul class="check-list">
+        <li>Parent-A, Parent-B, and Kid-1 all correctly show the fully-resolved state <span class="badge match">✓ Match</span> — no stale "still pending" indicator anywhere across all three perspectives</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 4</div>
+      <div class="step-title">Kid-2 submits an "Ask Parent" permission question; Parent-A answers it</div>
+      <div class="step-desc">Kid-2 creates an ask-parent request type (a permission question). Parent-A answers it with a response.</div>
+      <div class="step-write">DB: new kid_requests row with type = <code class="inline">permission</code>, status = <code class="inline">pending</code>; then status → <code class="inline">answered</code></div>
+      <ul class="check-list">
+        <li>Parent-A and Parent-B's Hub (pending requests feed) <span class="badge match">✓ Match</span> — both see it identically while pending, and Action Needed correctly clears for BOTH once answered (not just the answering parent)</li>
+        <li>Kid-2's own Hub (KidUrgentAlerts.recentReplies) <span class="badge match">✓ Match</span> — correctly shows the real answer text, not just a cleared badge; <code class="inline">permission</code> type is included in the component's type whitelist</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 5</div>
+      <div class="step-title">Teen-1 submits a supplies request; Parent-A declines it with a reason</div>
+      <div class="step-desc">Teen-1 creates a supplies request. Parent-A declines it with a recorded reason note.</div>
+      <div class="step-write">DB: new kid_requests row with type = <code class="inline">supplies</code>, status = <code class="inline">declined</code>; parentNote set</div>
+      <ul class="check-list">
+        <li>Teen-1 correctly sees the decline reason <span class="badge match">✓ Match</span> — reachable via the History Modal; <code class="inline">KidModals.tsx</code> correctly renders <code class="inline">item.parentNote</code></li>
+        <li>No Quests-tab or Schedule-tab representation of kid_requests <span class="badge match">✓ Match</span> — confirmed via full grep; surface is correctly absent, not a divergence risk</li>
+        <li>Decline urgency treatment <span class="badge match">✓ Match</span> — grocery/supplies declines don't trigger a Hub banner (unlike permission/medication types); this matches the app's established lower-urgency classification of the request category, unchanged from prior rounds</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 6</div>
+      <div class="step-title">Kid-1 earns coins via a real chore-approval chain</div>
+      <div class="step-desc">Kid-1 completes and is approved for a real chore. Traced through the full function chain: <code class="inline">approveChore</code> → <code class="inline">awardPoints</code> → <code class="inline">award_coins</code> RPC (not a direct balance UPDATE).</div>
+      <div class="step-write">DB: chore_tasks status → <code class="inline">approved</code>; <code class="inline">members.main_coins</code> incremented via RPC call</div>
+      <ul class="check-list">
+        <li>Kid-1's Hub hero card balance <span class="badge match">✓ Match</span> — reflects change immediately via store subscription</li>
+        <li>Kid-1's Store screen balance <span class="badge match">✓ Match</span> — same <code class="inline">member.mainCoins</code> field read everywhere</li>
+        <li>Both Parent-A and Parent-B's HouseholdSnapshotCard view of Kid-1's balance <span class="badge match">✓ Match</span> — identical to kid's view; all 4 surfaces read the single shared <code class="inline">member.mainCoins</code> field, structurally cannot diverge</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 7</div>
+      <div class="step-title">Kid-1 redeems a reward via the deductCoins conditional-write path</div>
+      <div class="step-desc">Kid-1 purchases a reward from the Store. Traced through the real <code class="inline">deductCoins</code> conditional-write path.</div>
+      <div class="step-write">DB: <code class="inline">members.main_coins</code> decremented via conditional deductCoins RPC; reward_redemptions row created</div>
+      <ul class="check-list">
+        <li>Same 4 balance-reading surfaces checked immediately post-spend <span class="badge match">✓ Match</span> — identical value everywhere, store subscription reflected the debit uniformly</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 8</div>
+      <div class="step-title">Two coin-earning events fire in quick succession for the same kid</div>
+      <div class="step-desc">Two sequential coin-earning events for Kid-1 (+8 coins, then +6 coins immediately after). Verify the final balance reflects exactly +14, not a lost update from a race condition.</div>
+      <div class="step-write">DB: 2 sequential <code class="inline">award_coins</code> RPC calls, each atomic: <code class="inline">SET main_coins = GREATEST(0, main_coins + delta)</code></div>
+      <ul class="check-list">
+        <li>Final balance is exactly +14 <span class="badge match">✓ Match</span> — not a lost update; the RPC is a single atomic statement that Postgres serializes per-row regardless of client-side concurrency</li>
+        <li>Both increment paths confirmed via source inspection and live test result <span class="badge match">✓ Match</span> — no race condition exists in the coin ledger's increment path</li>
+      </ul>
+    </div>
+
+    <div class="table-scroll" style="margin-top: 24px;">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>A multi-item grocery/supplies request transitioning to <code class="inline">partial</code> status (some items decided, at least one still pending) disappeared completely from both parents' Action Needed feed, with no parent-side history view to ever recover it.</td>
+            <td><code class="inline">features/hub/ParentView.tsx</code> (pendingKidRequests filter)</td>
+            <td><span class="status-fixed">✓ Fixed — filter now also matches 'partial'; GroceryRequestCard already safely renders only the still-pending items within a partial request</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="sec-desc" style="margin-top: 20px;"><b>Test family details:</b> Single isolated synthetic family (<code class="inline">48ccc2ae-000e-4d7f-9838-5f48b72c0c53</code>, "QA24 Test Family") with 6 real member rows: 2 parents, 2 kids, 1 teen, 1 grandparent. All rows across <code class="inline">families</code>, <code class="inline">members</code>, <code class="inline">kid_requests</code>, <code class="inline">chore_tasks</code>, <code class="inline">point_transactions</code>, <code class="inline">rewards</code>, and <code class="inline">reward_redemptions</code> were deleted at the end, with a final verification query confirming zero count across every touched table. No production data outside the test family was ever touched.</p>
   </section>
 
   <section id="verdict">

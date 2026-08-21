@@ -1257,6 +1257,19 @@ export const useEventStore = create<EventState>((set, get) => ({
         // instead of doing it optimistically before the outcome is known.
         onWon?.();
 
+        // Recurring QA sweep found the "initial accept propagates to the
+        // series" rule (Round 7) only ever applied to the parent-assignment
+        // path (RideRequestCard/RideRequiredEventCard/HelperEventCard all
+        // call updateEventScoped(..., 'following')) — a GP/teen self-claim
+        // via this function never propagated at all, silently leaving every
+        // later occurrence unassigned/open even though the same driver just
+        // confirmed for the first one. Mirror the parent-assignment
+        // behavior here so both paths agree.
+        const wonRow = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
+        if (wonRow?.seriesId) {
+          get().updateEventScoped(id, { [nameField]: claimantName, [statusField]: 'confirmed' } as Partial<FamilyEvent>, 'following');
+        }
+
         // Notify the event creator their open slot was just filled — this
         // only runs on the confirmed winner's branch (0-row losers return
         // above and never reach here), so exactly one notification fires

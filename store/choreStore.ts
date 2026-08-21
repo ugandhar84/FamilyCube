@@ -2861,6 +2861,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       // grandparent_quest, all of which already have that fallback) should
       // ever lose their assignment here.
       const preserveAssignee = chore.categoryType === 'routine' && !chore.isPool;
+      // Recurring QA sweep found dueDate was never re-anchored on reset,
+      // frozen at the chore's original creation date forever — the missed-
+      // cycle streak-break scan below (`dueDate < today`) became permanently
+      // true starting the day after any reset, breaking a kid's streak
+      // before they'd had any real chance at the new cycle. Advance it here
+      // to the new cycle's own due date, same nextDueDate() calc used to
+      // decide this chore was even due for reset in the first place.
+      const newDueDate = nextDueDate(now, chore.recurrenceRule!.frequency) ?? undefined;
       get().updateChore(chore.id, {
         status:             'todo',
         assignedToId:       preserveAssignee ? chore.assignedToId : undefined,
@@ -2871,6 +2879,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         reviewedAt:         undefined,
         rejectionReason:    undefined,
         redoCount:          0,
+        dueDate:            newDueDate,
       });
     }
 

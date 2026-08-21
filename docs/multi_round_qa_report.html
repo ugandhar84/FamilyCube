@@ -142,12 +142,12 @@
 <header>
   <div class="header-inner">
     <div class="eyebrow">Family Cube — Multi-Round QA</div>
-    <h1>Live Database QA: 21 Rounds, Four Incidents</h1>
+    <h1>Live Database QA: 22 Rounds, Four Incidents</h1>
     <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, every family role, and realistic multi-step transitions — plus four production incidents caused or prompted mid-session and resolved same-session, a kid ride-request UX rebuild, a full-app per-role UI audit, a live-database verification pass, and the coordinated cross-role QA methodology (Rounds 15–16) that tracks one unified test family through a long connected scenario with every role checking every surface after every step, closing the structural blind spot that single-role agents could never see.</p>
     <div class="meta-row">
       <span class="meta-chip">Test family <b>dad072b3-...-001</b> — isolated, cleaned up after each round</span>
-      <span class="meta-chip"><b>21</b> QA rounds</span>
-      <span class="meta-chip"><b>90</b> bugs found, 86 fixed, 4 open</span>
+      <span class="meta-chip"><b>22</b> QA rounds</span>
+      <span class="meta-chip"><b>94</b> bugs found, 88 fixed, 6 open</span>
       <span class="meta-chip">2 new features shipped</span>
       <span class="meta-chip">5 Critical, live-deployed/production bugs closed</span>
     </div>
@@ -182,6 +182,7 @@
     <a href="#round19">Round 19</a>
     <a href="#round20">Round 20</a>
     <a href="#round21">Round 21</a>
+    <a href="#round22">Round 22</a>
     <a href="#verdict">Verdict</a>
   </div>
 </nav>
@@ -194,10 +195,10 @@
     <p class="sec-desc">Each round used real database writes against an isolated, synthetic test family (one member per role, including maternal and paternal grandparents for side-isolation testing) — not static code reading alone. Rounds 11–14 pair this with an equally thorough source-level audit for UI-level and per-role coverage, Round 14 closes the loop with a dedicated live-DB verification pass, and Rounds 15–19 introduce the coordinated cross-role methodology. Every fix is re-verified in a later round wherever the codebase's own regression pattern allows it.</p>
     <div class="stats">
       <div class="stat crit"><div class="n">12</div><div class="l">Critical bugs closed</div></div>
-      <div class="stat bug"><div class="n">21</div><div class="l">Security/visibility bugs fixed</div></div>
+      <div class="stat bug"><div class="n">23</div><div class="l">Security/visibility bugs fixed</div></div>
       <div class="stat warn"><div class="n">53</div><div class="l">Correctness bugs fixed</div></div>
       <div class="stat info"><div class="n">2</div><div class="l">Features shipped</div></div>
-      <div class="stat ok"><div class="n">4</div><div class="l">Open items: photo-proof enforcement, due-soon Hub sort, teen welcome-to-help gap, dead FamilyNeedsHandSection branch</div></div>
+      <div class="stat ok"><div class="n">6</div><div class="l">Open items: photo-proof enforcement, due-soon Hub sort, teen welcome-to-help gap, dead FamilyNeedsHandSection branch, parent-to-kid delegation server-side gap, nudge offline-first confirmation</div></div>
     </div>
   </section>
 
@@ -330,6 +331,11 @@
         <div class="tl-dot round"></div>
         <div class="tl-head"><h3>Round 21 — Parent Co-Management &amp; Family-Needs-a-Hand Flows</h3><span class="tl-badge round">Coordinated · All roles, one family · 8 steps</span></div>
         <p>Testing realistic two-parent co-management and the "family could use a hand" volunteer flows where grandparents or teens offer to help. Surfaces one HIGH-severity concurrency bug (now fixed): two parents editing the same calendar event could silently clobber each other's changes — <code class="inline">updateEvent</code> serialized the caller's entire local snapshot with no diff or version check, unlike the guarded claim/accept paths. Real risk for any multi-parent household editing within the realtime round-trip window. Also reports (not fixed): a missing teen equivalent of the grandparent welcome-invitation surface for helper requests (product gap, future feature pass), and an unreachable grandparent-welcome-chore card in the UI (dead code cleanup for a future pass).</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 22 — Parent-to-Parent Task Delegation</h3><span class="tl-badge round">Coordinated · All roles, one family · 7 steps</span></div>
+        <p>Testing parent-to-parent adult task delegation (one parent creates and assigns an adult-only quest directly to the other parent, e.g. "call the pediatrician"). Surfaces two critical RLS security gaps: <code class="inline">parent_quest_assignments</code> had zero family scoping and any authenticated member of any family could read or write any other family's delegation rows (fixed with family-join in the policy); separately, <code class="inline">chore_tasks</code>' parent_only_quest read exception excluded grandparents despite the app treating them as valid delegation participants (fixed by widening the exception). Also finds that parent-to-kid delegation enforcement exists only in client JS with no server-side backstop (reported as lower priority given client-side coverage in normal flows), and that the nudge feature's "sent" confirmation fires unconditionally without error signals (assessed as accurate-enough given the app's offline-first chat design). Both RLS fixes deployed to production same-session.</p>
       </div>
     </div>
   </section>
@@ -1920,6 +1926,128 @@
     </div>
 
     <p class="sec-desc" style="margin-top: 20px;"><b>Test family details:</b> Single isolated synthetic family (<code class="inline">b8c77145-391e-431a-81b4-11e05cf4fb1c</code>, "QA25 Test Family") with 7 real member rows across all roles: 2 parents, 2 kids, 1 teen, 2 grandparents (maternal and paternal for side-isolation testing). All rows across <code class="inline">families</code>, <code class="inline">members</code>, <code class="inline">chore_tasks</code>, <code class="inline">calendar_events</code>, <code class="inline">point_transactions</code>, and related tables were deleted at the end, with a final verification query confirming zero count across every touched table. No production data outside the test family was ever touched.</p>
+  </section>
+
+  <section id="round22">
+    <div class="sec-label">Round 22</div>
+    <h2>Parent-to-Parent Task Delegation</h2>
+    <p class="sec-desc">Testing adult-to-adult delegation via the System A parent_quest_assignments mechanism, where one parent creates an adult-only task and assigns it directly to the other parent (e.g. "call the pediatrician," "pick up dry cleaning"). This is a distinct flow from parent-to-kid chore assignment and uses a separate database pattern. All 4 family members included as participants to verify role-based visibility: two parents (delegators/assignees), one kid, one teen (both bystanders to confirm they correctly cannot see adult-only tasks). One coordinated agent, isolated test family, real database writes.</p>
+
+    <div class="step-card">
+      <div class="step-num">Step 1</div>
+      <div class="step-title">Parent-A creates a parent-only adult task and assigns it directly to Parent-B</div>
+      <div class="step-desc">Parent-A opens the chore creation flow, sets the type to adult-only, assigns it directly to Parent-B (not a pool). Traces the addParentQuest path.</div>
+      <div class="step-write">DB: new <code class="inline">chore_tasks</code> row with <code class="inline">parent_only_quest=true</code>, <code class="inline">status='todo'</code>; new <code class="inline">parent_quest_assignments</code> row with <code class="inline">assigned_to=Parent-B's uuid</code></div>
+      <ul class="check-list">
+        <li>Parent-B's Household Backlog — <span class="badge match">✓ Match</span> — sees it as a pending direct assignment ("Assigned to you")</li>
+        <li>Parent-A's Hub — <span class="badge match">✓ Match</span> — sees it correctly as "waiting on response" / "Assigned to others," not as if still their own</li>
+        <li>Kid-1 (bystander) — <span class="badge match">✓ Match</span> — correctly excluded both client-side (query filter for parent_only_quest=true) and server-side (RLS policy checks role='parent') via direct trace, not assumption</li>
+        <li>Teen-1 (bystander) — <span class="badge match">✓ Match</span> — same exclusion confirmed via the same RLS path</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 2</div>
+      <div class="step-title">Testing whether a "viewed" or "acknowledged" concept exists</div>
+      <div class="step-desc">Parent-B views the task in their backlog. Check whether any <code class="inline">viewedAt</code>/<code class="inline">seenAt</code>/<code class="inline">openedAt</code>/<code class="inline">read_at</code> field exists to track acknowledgment.</div>
+      <div class="step-write">DB schema inspection on <code class="inline">parent_quest_assignments</code> and <code class="inline">FamilyChore.ts</code> TypeScript definition</div>
+      <ul class="check-list">
+        <li>Schema inspection — <span class="badge match">✓ Match</span> — no <code class="inline">viewedAt</code>/<code class="inline">seenAt</code>/<code class="inline">openedAt</code>/<code class="inline">read_at</code> field exists anywhere on <code class="inline">parent_quest_assignments</code> or its TypeScript type; confirmed directly, not assumed — not a bug, just a feature that doesn't exist in the current design</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 3</div>
+      <div class="step-title">Parent-B marks the task complete</div>
+      <div class="step-desc">Parent-B calls completeParentQuest for the task from Step 1. Verify the completion is unilateral (no approval gate) and immediately visible to Parent-A.</div>
+      <div class="step-write">DB: <code class="inline">chore_tasks</code> status → <code class="inline">completed</code></div>
+      <ul class="check-list">
+        <li>Parent-A's Hub — <span class="badge match">✓ Match</span> — reflects completion immediately, with no stuck "still assigned to others" state</li>
+        <li>Parent-B's own view — <span class="badge match">✓ Match</span> — correctly shows the task as done</li>
+        <li>Completion is unilateral (no approval gate) — <span class="badge match">✓ Match</span> — confirmed via trace: completeParentQuest sets status to 'completed' directly, no kid-chore-approval-gate logic fires; parent-to-parent tasks complete the moment the assignee marks them done, unlike a kid's chore which needs parent review</li>
+        <li>Completed task via Completed filter — <span class="badge match">✓ Match</span> — confirmed <code class="inline">chore_tasks.status='completed'</code> correctly maps through choreAdapter.ts to Quest.status='done', and the Quests tab's "Completed" filter matches this state for both parents; no permanent-disappearance risk</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 4</div>
+      <div class="step-title">Parent-A creates a second adult task, left unassigned (delegatable/poolable)</div>
+      <div class="step-desc">Parent-A creates a new adult-only task but does not assign it immediately — leaving it in a poolable state where either parent can claim it.</div>
+      <div class="step-write">DB: new <code class="inline">chore_tasks</code> row with <code class="inline">parent_only_quest=true</code>, no entry in <code class="inline">parent_quest_assignments</code></div>
+      <ul class="check-list">
+        <li>Parent-B's Household Backlog — <span class="badge match">✓ Match</span> — sees it as claimable in their own pool</li>
+        <li>Parent-A's own backlog pool — <span class="badge match">✓ Match</span> — ALSO still sees it in their own pool; confirmed genuinely symmetric (both parents see an unclaimed adult task identically), not accidentally reusing kid-pool-only logic that would have hidden it from one side</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 5</div>
+      <div class="step-title">Parent-B claims the second unclaimed task from Step 4</div>
+      <div class="step-desc">Parent-B claims the poolable task via claimParentQuest.</div>
+      <div class="step-write">DB: new <code class="inline">parent_quest_assignments</code> row with <code class="inline">assigned_to=Parent-B's uuid</code> for the Step-4 chore</div>
+      <ul class="check-list">
+        <li>Parent-B — <span class="badge match">✓ Match</span> — task moves correctly from "unclaimed pool" to "assigned to you"</li>
+        <li>Parent-A — <span class="badge match">✓ Match</span> — sees it correctly move to "assigned to others," immediately and consistently on both sides</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 6 — Finding (HIGH, now FIXED)</div>
+      <div class="step-title">Testing nudge feature and tracing underlying data access for RLS security gaps</div>
+      <div class="step-desc">Parent-A sends a nudge to Parent-B about the still-open task from Step 1. While tracing the nudge's underlying chat message write, a deeper RLS policy inspection surfaces critical data-access gaps in the parent_quest_assignments table.</div>
+      <div class="step-write">DB: chat message inserted; tracing shows underlying parent_quest_assignments RLS policy</div>
+      <ul class="check-list">
+        <li>Nudge "sent" confirmation — <span class="badge match">✓ Match (accurate enough)</span> — nudge fires a "Nudge sent!" success message, but traced to chatStore's sendMessage function, which catches all failures internally and queues them for offline retry rather than surfacing an error to the caller, so there's no failure signal actually available to gate on. Assessed as accurate-enough messaging given the app's deliberate offline-first chat design (the message genuinely will send once connectivity returns); not fixed as a separate change since a mechanical await/catch wrapper wouldn't meaningfully improve anything given current architecture.</li>
+        <li>RLS policy on <code class="inline">parent_quest_assignments</code> — <span class="badge mismatch">✗ Mismatch (CRITICAL)</span> — the table's only RLS policy checked nothing but whether the referenced chore_id existed in chore_tasks AT ALL — no family scoping whatsoever. The table has no family_id column of its own and the policy never joined through one to check it. Confirmed live via a raw insert: assigning a parent_only_quest referencing a chore from a DIFFERENT family succeeded with zero rejection. Any authenticated member of any family could read or write any other family's parent-to-parent delegation rows — a real cross-family data leak, not a UI bug. A misleading in-code comment in store/choreStore.ts claimed this was "already scoped via the chore_tasks join" — it was not, confirmed by reading the actual deployed policy definition.</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #1 (HIGH severity, now FIXED and deployed):</strong> <code class="inline">parent_quest_assignments</code> had zero family scoping in its RLS policy. The table has no <code class="inline">family_id</code> column of its own and the only policy rule checked nothing but whether the referenced <code class="inline">chore_id</code> existed in <code class="inline">chore_tasks</code> AT ALL — with no join through to <code class="inline">chore_tasks.family_id</code> to verify the chore belonged to the current user's family. Confirmed live: a raw insert succeeded in assigning a parent_only_quest referencing a chore from a DIFFERENT family with zero rejection. Any authenticated member of any family could read or write any other family's parent-to-parent delegation rows — a real cross-family data leak. Fixed same-session: new migration <code class="inline">20260831090000_fix_parent_quest_assignments_family_scope.sql</code> adds the missing join through <code class="inline">chore_tasks.family_id</code> using the same <code class="inline">current_user_family_id()</code> pattern the chore_tasks' own policies already use. Deployed to production immediately. Files: <code class="inline">supabase/migrations/20260831090000_fix_parent_quest_assignments_family_scope.sql</code>, <code class="inline">store/choreStore.ts</code>.</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 7 — Finding (MEDIUM, now FIXED)</div>
+      <div class="step-title">Testing grandparent access to parent-only quests and verifying role-enforcement depth</div>
+      <div class="step-desc">While investigating the RLS gap above, also found a secondary issue: chore_tasks' own parent_only_quest read policy exception only allowed role='parent' through, but the app's own code documents grandparents as valid assignees/assigners of parent_only_quest delegations, and the client-side sync filter already permits role==='senior' through. Also tested whether the "adult-only" rule (blocking parent-to-kid delegation) holds at the database level.</div>
+      <div class="step-write">DB schema inspection on <code class="inline">chore_tasks</code> RLS policy and <code class="inline">parent_only_quest</code> exception; raw insert test bypassing client validation</div>
+      <ul class="check-list">
+        <li>Grandparent given a direct parent-to-GP delegation — <span class="badge mismatch">✗ Mismatch</span> — the <code class="inline">chore_tasks</code> read policy exception for parent_only_quest only allowed role='parent'; a grandparent would have the row silently filtered out by RLS despite the client believing it should be visible — a real client/server contract mismatch</li>
+        <li>Parent-to-kid delegation enforcement at database level — <span class="badge mismatch">✗ Mismatch</span> — a raw insert bypassing client validation successfully assigned a parent_only_quest to a kid with zero rejection; the "adult-only" rule is enforced exclusively in client JavaScript, with no server-side backstop</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #2 (MEDIUM severity, grandparent gap now FIXED and deployed; parent-to-kid gap reported, not fixed):</strong> The <code class="inline">chore_tasks</code> parent_only_quest read policy exception excluded grandparents despite the app's own code treating them as valid delegation participants. <code class="inline">addParentQuest</code>'s own code comments explicitly document grandparents as valid assignees/assigners, and the client-side sync filter in choreStore.ts already permits role==='senior' (which includes grandparents) through. A grandparent given a direct parent-to-GP delegation would have the row silently filtered out by RLS despite the client believing it should be visible — a real client/server contract mismatch. Fixed same-session: new migration <code class="inline">20260831100000_allow_grandparent_read_parent_only_quest.sql</code> widens the read exception to <code class="inline">role IN ('parent', 'grandparent')</code>. Deployed to production immediately. Separately, tested whether the "adult-only" rule (blocking a parent from delegating an adult task to a kid) holds at the database level — confirmed it does NOT: a raw insert bypassing client validation successfully assigned a parent_only_quest to a kid with zero rejection, meaning that rule is enforced exclusively in client JavaScript with no server-side backstop. This is a real gap, but the client already blocks it in the normal app flow, and closing it needs a broader assignee-role-validation policy design decision, not a quick widen; reported as a documented, lower-priority follow-up, not fixed this round. Location: <code class="inline">supabase/migrations/20260831100000_allow_grandparent_read_parent_only_quest.sql</code> (grandparent fix), <code class="inline">store/choreStore.ts</code> (both findings).</p>
+    </div>
+
+    <div class="table-scroll" style="margin-top: 24px;">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td><code class="inline">parent_quest_assignments</code> had zero family scoping in its RLS policy; any family could read/write any other family's parent-to-parent delegation rows.</td>
+            <td><code class="inline">supabase/migrations/20260831090000_fix_parent_quest_assignments_family_scope.sql</code>, <code class="inline">store/choreStore.ts</code></td>
+            <td><span class="status-fixed">✓ Fixed &amp; deployed — policy now joins through chore_tasks.family_id using current_user_family_id()</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td><code class="inline">chore_tasks</code>' parent_only_quest read exception excluded grandparents despite the app treating them as valid delegation participants.</td>
+            <td><code class="inline">supabase/migrations/20260831100000_allow_grandparent_read_parent_only_quest.sql</code></td>
+            <td><span class="status-fixed">✓ Fixed &amp; deployed — read exception widened to role IN ('parent', 'grandparent')</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>Adult-only role enforcement (blocking parent-to-kid delegation) exists only in client JS, no server-side backstop; confirmed exploitable via raw insert.</td>
+            <td><code class="inline">store/choreStore.ts</code> (ADULT_ROLES check), RLS policy on <code class="inline">chore_tasks</code></td>
+            <td>Reported — open item, lower priority given client-side enforcement already covers the normal app flow, needs broader policy design decision</td>
+          </tr>
+          <tr>
+            <td><span class="sev low">Low</span></td>
+            <td>Nudge "sent" confirmation fires unconditionally without a real failure signal to gate on, since chatStore's sendMessage catches all errors internally for offline-first retry.</td>
+            <td><code class="inline">features/hub/parent/backlog/OthersAdultQuestCard.tsx</code>, <code class="inline">MyAdultQuestCard.tsx</code>, <code class="inline">OutgoingPendingCard.tsx</code></td>
+            <td>Assessed, not changed — accurate-enough given the app's deliberate offline-first chat design</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="sec-desc" style="margin-top: 20px;"><b>Test family details:</b> Single isolated synthetic family (<code class="inline">825758e7-d229-4fb1-8d9f-02de80a8baaa</code>, "QA26 Test Family") with 4 real member rows: QA26-Parent-A, QA26-Parent-B, QA26-Kid-1, QA26-Teen-1 (kid/teen included as bystanders to confirm they correctly cannot see adult-only tasks). All rows across <code class="inline">families</code>, <code class="inline">members</code>, <code class="inline">chore_tasks</code>, <code class="inline">parent_quest_assignments</code>, <code class="inline">chat_channels</code>, and <code class="inline">chat_messages</code> were deleted at the end, with a final verification query confirming zero count across every touched table. No production data outside the test family was ever touched.</p>
   </section>
 
   <section id="verdict">

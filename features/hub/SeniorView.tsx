@@ -188,6 +188,20 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     c.sponsorUserId === active.id
   );
 
+  // Coordinated live-DB QA (launch-readiness round) found a sponsored quest
+  // vanished from the GP's own Hub the instant a parent approved it — the
+  // GP's Quests tab (sponsorUserId scope, no status filter) kept tracking
+  // it through every stage, but Hub only ever showed the pre-approval
+  // "Awaiting Parent Review" list. A GP watching only Hub had no way to
+  // know her grandkid ever accepted, worked on, or finished a quest she
+  // sponsored. Mirrors the same sponsorUserId scope, just for the
+  // post-approval, not-yet-resolved statuses.
+  const mySponsoredQuestsInProgress = chores.filter(c =>
+    c.categoryType === 'grandparent_quest' &&
+    c.sponsorUserId === active.id &&
+    ['todo', 'in_progress', 'pending_approval', 'redo_requested'].includes(c.status)
+  );
+
   const openEditSponsoredQuest = (c: ChoreTask) => {
     setEditingQuestId(c.id);
     setNewQuestTitle(c.title);
@@ -660,7 +674,8 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       />
 
       <MySponsoredQuestsSection
-        quests={myPendingSponsoredQuests} colors={colors} isDark={isDark}
+        quests={myPendingSponsoredQuests} inProgressQuests={mySponsoredQuestsInProgress}
+        colors={colors} isDark={isDark}
         onEdit={openEditSponsoredQuest}
       />
 

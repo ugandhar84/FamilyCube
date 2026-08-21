@@ -3,7 +3,7 @@ import {
   Clock, CheckCircle2, Ban, Zap, Coins, ClipboardList, Sparkles, Trophy, Camera, Target, RotateCcw,
 } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
-import { fmtDateTime } from '@/lib/dates';
+import { fmtDateTime, fmtDateShort, parseLocalDate } from '@/lib/dates';
 import { KID } from './kidTheme';
 import { CollapsibleCard, QuestLiveness } from '../hubComponents';
 import { BonusCoinBadge } from './BonusCoinBadge';
@@ -57,6 +57,17 @@ export function KidQuestCard({
   // independently; nobody's payout depends on the others finishing.
   const teamMates = q.teamGroupId ? allQuests.filter(t => t.teamGroupId === q.teamGroupId && t.id !== q.id) : [];
 
+  // Coordinated live-DB QA (launch-readiness round) found this Hub card had
+  // zero due-date awareness at all, while the same chore's Chores-tab
+  // QuestCard.tsx flags it with a red "⚠ Overdue" badge — same kid, same
+  // chore, two different pictures depending which tab they're on. Mirrors
+  // QuestCard.tsx's isOverdue definition exactly (date-only compare against
+  // the start of today, excluded once done/declined).
+  const isDoneCard = q.status === 'approved' || q.status === 'done';
+  const dueMs = q.dueDate ? parseLocalDate(q.dueDate).getTime() : null;
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const isOverdue = !!dueMs && dueMs < todayStart.getTime() && !isDoneCard && !isDeclined;
+
   return (
     <CollapsibleCard accent={meta.color} colors={colors} isDark={isDark} defaultExpanded={false}
       summary={
@@ -72,6 +83,11 @@ export function KidQuestCard({
               <meta.Icon size={11} color={meta.color} />
               <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: meta.color }}>{meta.label}</Text>
             </View>
+            {isOverdue && (
+              <View style={{ backgroundColor: colors.danger + '20', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: colors.danger }}>⚠ {fmtDateShort(q.dueDate!)}</Text>
+              </View>
+            )}
             {q.rewardPendingReview && (
               <View style={{ backgroundColor: BRAND.amber + '20', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <Clock size={11} color={BRAND.amber} />

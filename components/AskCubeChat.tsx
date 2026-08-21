@@ -309,7 +309,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
         coins: d.memberId && members.find(m => m.id === d.memberId)?.role === 'parent' ? 0 : (d.coins ?? 20),
         xpReward: 15, isPool: !d.memberId, isDaily: false, recurrence: 'once', status: 'todo',
         assignedToIds: d.memberId ? [d.memberId] : [], isAdultTask: false,
-        dueDate: d.dueDate ?? undefined, photoRequired: d.photoRequired ?? false,
+        dueDate: d.dueDate ?? undefined, dueTime: d.dueTime ?? undefined, photoRequired: d.photoRequired ?? false,
         createdById: activeMember.id,
         alertCall: d.alertCall ?? false, alertCallLeadMinutes: d.alertCallLeadMinutes ?? undefined,
       });

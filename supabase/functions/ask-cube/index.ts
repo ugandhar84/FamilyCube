@@ -599,10 +599,14 @@ async function executeTool(
       if (!memberId) unresolvedName = args.memberName;
     }
     const alertCallLeadMinutes = typeof args.alertCallLeadMinutes === 'number' ? args.alertCallLeadMinutes : null;
+    // HH:MM only — anything else the model might send (e.g. "8pm", "20:00:00")
+    // gets dropped rather than written as-is, since dueTime feeds a plain
+    // time-of-day column with no format validation of its own downstream.
+    const dueTime = typeof args.dueTime === 'string' && /^\d{2}:\d{2}$/.test(args.dueTime) ? args.dueTime : null;
     return {
       __proposal: 'quest',
       title: args.title, coins: args.coins ?? 20, memberId,
-      dueDate: args.dueDate ?? null, photoRequired: args.photoRequired ?? false,
+      dueDate: args.dueDate ?? null, dueTime, photoRequired: args.photoRequired ?? false,
       alertCall: alertCallLeadMinutes != null, alertCallLeadMinutes,
       ...(unresolvedName ? { _unresolvedName: unresolvedName } : {}),
     };
@@ -744,6 +748,11 @@ Family members are referred to only by alias in this conversation (${viewerAlias
 real names, and always use the alias exactly as given in tool results and messages.
 Answer questions about the family's schedule and chores using the tools available — always call a tool to check
 real data before answering "what's going on" type questions; never guess or make up events/chores.
+A broad question like "what's going on today/this week", "what's on our plate", or "anything I should know about"
+is asking about BOTH the calendar AND chores, not just one — call get_schedule AND get_quests together (same turn,
+both calls before you reply) for these, not just whichever one the phrasing happens to mention first. Only skip one
+of them if the user's question is unambiguously about just the calendar ("what's on the calendar Tuesday") or just
+chores ("what chores are left") specifically.
 Location and health tools are sensitive and parent-only — if a non-parent asks, explain you can't share that.
 
 When the user wants to add/schedule/plan something, DO NOT interrogate them with clarifying questions one field at a

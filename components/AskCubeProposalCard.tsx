@@ -222,7 +222,9 @@ export default function AskCubeProposalCard({
             </View>
           )}
           {!!d.dueDate && (
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Due {d.dueDate}</Text>
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+              Due {d.dueDate}{d.dueTime ? ` · ${d.dueTime}` : ''}
+            </Text>
           )}
           {!!d.photoRequired && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>

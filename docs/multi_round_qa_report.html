@@ -129,14 +129,14 @@
 <header>
   <div class="header-inner">
     <div class="eyebrow">Family Cube — Multi-Round QA</div>
-    <h1>Live Database QA: 10 Rounds, Two Incidents</h1>
-    <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, every family role, and realistic multi-step transitions — plus two production incidents caused and resolved mid-session, and a dedicated verification pass confirming every fix actually holds under live re-testing.</p>
+    <h1>Live Database QA: 14 Rounds, Three Incidents</h1>
+    <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, every family role, and realistic multi-step transitions — plus three production incidents caused or prompted mid-session and resolved same-session, a kid ride-request UX rebuild, a full-app per-role UI audit, and a live-database verification pass that caught bugs no amount of static code reading could have found.</p>
     <div class="meta-row">
       <span class="meta-chip">Test family <b>aaaaaaaa-...-001</b> — isolated, cleaned up after each round</span>
-      <span class="meta-chip"><b>10</b> QA rounds</span>
-      <span class="meta-chip"><b>37</b> bugs found, all fixed</span>
+      <span class="meta-chip"><b>14</b> QA rounds</span>
+      <span class="meta-chip"><b>71</b> bugs found, all fixed</span>
       <span class="meta-chip">2 new features shipped</span>
-      <span class="meta-chip">2 Critical, live-deployed corruption bugs closed</span>
+      <span class="meta-chip">3 Critical, live-deployed/production bugs closed</span>
     </div>
   </div>
 </header>
@@ -157,6 +157,11 @@
     <a href="#round8">Round 8</a>
     <a href="#round9">Round 9</a>
     <a href="#round10">Round 10</a>
+    <a href="#round11">Round 11</a>
+    <a href="#round12">Round 12</a>
+    <a href="#round13">Round 13</a>
+    <a href="#incident2">Incident 2</a>
+    <a href="#round14">Round 14</a>
     <a href="#verdict">Verdict</a>
   </div>
 </nav>
@@ -165,12 +170,12 @@
 
   <section id="summary">
     <div class="sec-label">Overview</div>
-    <h2>What four rounds of live testing found</h2>
-    <p class="sec-desc">Each round used real database writes against an isolated, synthetic test family (one member per role, including maternal and paternal grandparents for side-isolation testing) — not static code reading. Every fix was re-verified in a later round.</p>
+    <h2>What fourteen rounds of live testing found</h2>
+    <p class="sec-desc">Each round used real database writes against an isolated, synthetic test family (one member per role, including maternal and paternal grandparents for side-isolation testing) — not static code reading alone. Rounds 11–14 pair this with an equally thorough source-level audit for UI-level and per-role coverage, and Round 14 closes the loop with a dedicated live-DB verification pass. Every fix is re-verified in a later round wherever the codebase's own regression pattern allows it.</p>
     <div class="stats">
-      <div class="stat crit"><div class="n">3</div><div class="l">Critical bugs closed</div></div>
-      <div class="stat bug"><div class="n">10</div><div class="l">Security/visibility bugs fixed</div></div>
-      <div class="stat warn"><div class="n">24</div><div class="l">Correctness bugs fixed</div></div>
+      <div class="stat crit"><div class="n">9</div><div class="l">Critical bugs closed</div></div>
+      <div class="stat bug"><div class="n">21</div><div class="l">Security/visibility bugs fixed</div></div>
+      <div class="stat warn"><div class="n">41</div><div class="l">Correctness bugs fixed</div></div>
       <div class="stat info"><div class="n">2</div><div class="l">Features shipped</div></div>
       <div class="stat ok"><div class="n">0</div><div class="l">Open issues at sign-off</div></div>
     </div>
@@ -245,6 +250,31 @@
         <div class="tl-dot round"></div>
         <div class="tl-head"><h3>Round 10 — Verification pass</h3><span class="tl-badge round">Skeptical re-check, live</span></div>
         <p>User asks directly: "did you complete all?" Rather than restate the fix list, a fresh agent independently re-verifies all 14 items from rounds 7–9 against real data and, for the two Critical items, the actual deployed edge function — not just source. 13 of 14 hold exactly as claimed, including both Critical fixes confirmed via a real non-dry-run invocation. One new bug surfaces in the process: the ride-cap and scheduling-conflict queries never excluded soft-deleted events, so a cancelled ride kept silently counting against a grandparent's weekly cap. Fixed and redeployed.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 11 — Kid ride-request redesign</h3><span class="tl-badge round">UX rebuild · driverName field pair</span></div>
+        <p>Three rounds of incremental fixes to the kid ride form kept producing the same "still confusing" feedback — diagnosed as an information-architecture problem, not a placement one. Full 3-step rebuild (<code class="inline">KidRequestModal</code>), plus the actual root-cause data bug: kid ride requests never set <code class="inline">rideRequired</code>, silently routing every one of them to the wrong parent-facing card and field pair for months.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 12 — Cross-role field-pair sweep</h3><span class="tl-badge round">helper/helperStatus vs driverName/driverStatus</span></div>
+        <p>Once <code class="inline">rideRequired</code> was fixed, every kid ride request started using the <code class="inline">driverName</code>/<code class="inline">driverStatus</code> field pair — and most of the app had only ever been built against the older <code class="inline">helper</code>/<code class="inline">helperStatus</code> pair. Two agent-driven sweeps trace every scenario × every role and find the blindness is load-bearing in far more places than expected: grandparents literally could not see or claim a kid's ride request; teens the same; the shared event detail sheet rendered as unassigned even when a driver was confirmed.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 13 — Full-app per-role UI audit</h3><span class="tl-badge round">Kid · Teen · Grandparent · Parent, all 7 tabs</span></div>
+        <p>Triggered by a real user report of a kid having no way to navigate the Schedule tab past today. Widened to a proactive, parallel audit — one agent per role, all 7 tabs each. Finds the same Schedule dead-end independently hits teens, and that Store redemption was completely non-functional for both teens and grandparents.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot incident"></div>
+        <div class="tl-head"><h3>Live incident — kid edit-form dead-end</h3><span class="tl-badge incident">User-reported</span></div>
+        <p>A direct user question — "do kids have rights to edit before approval?" — surfaces a real gap the automated sweeps missed: long-pressing ANY event, for ANY role including kid, routed unconditionally to the full adult edit form — the exact form the round-11 redesign existed to replace. Fixed within the same turn: kids now edit their own still-pending request through <code class="inline">KidRequestModal</code>'s new edit mode, gated to their own event while still <code class="inline">approvalPending</code>.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 14 — Exhaustive per-role sweep + live-DB verification</h3><span class="tl-badge round">Hundreds of cases · real Supabase writes</span></div>
+        <p>User explicitly rejects the depth of rounds 11–13 as insufficient and asks for hundreds of concrete cases per role; separately asks whether any fix has actually been verified against real data. Four parallel agents each build a large state-space matrix for one role across all 7 tabs, followed by a live-database verification pass — real writes against an isolated test family in the actual production project, cross-checked against the exact UI code paths that render that data. Finds a grandparent chat-privacy leak (either side could read the other's private channel, at the client AND server RLS layer), and — only reachable by a live query, not source reading — that the <code class="inline">rewards</code> table this same session's own new UI depends on had never existed in production at all.</p>
       </div>
     </div>
   </section>
@@ -668,17 +698,146 @@
     </div>
   </section>
 
+  <section id="round11">
+    <div class="sec-label">Round 11</div>
+    <h2>Kid Ride-Request Redesign</h2>
+    <p class="sec-desc">Three rounds of incremental fixes to the shared adult scheduling form's kid branch — moving the ride toggle, relabeling fields, trimming redundant cards — kept producing the same "still confusing" feedback from real use. Diagnosis: the kid was seeing an adult scheduling tool with two toggles renamed, not a field-placement problem. Dispatched to a deep-research UX pass; result was a genuinely separate, purpose-built component rather than another patch.</p>
+    <div class="feature-card">
+      <h3>What was built — KidRequestModal</h3>
+      <p>3 steps, ~8 taps for the simplest case: category card grid → title/when/where → one plain-language ride question (Take me there / Bring me home / Both ways / I'm all set). No Repeats, All-day, or category-specific adult fields — a parent editing afterward has the full form for that. A mic button lives in the form's own header (not a separate pre-step screen, per explicit direction) with a live inline transcript.</p>
+      <div class="flow">
+        <span class="step">Category</span><span class="arrow">→</span>
+        <span class="step">Title / when / where</span><span class="arrow">→</span>
+        <span class="step">Ride choice</span><span class="arrow">→</span>
+        <span class="step">Sent to parent</span>
+      </div>
+    </div>
+    <div class="table-scroll" style="margin-top: 20px;">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><span class="sev crit">Critical</span></td><td>The real, previously-shipping root cause: kid ride requests never set <code class="inline">rideRequired</code>, so every one silently routed to the card built for <code class="inline">category:'Ride'</code> events (reading <code class="inline">helper</code>/<code class="inline">helperStatus</code>) instead of the correct card for this shape (<code class="inline">driverName</code>/<code class="inline">driverStatus</code>) — writing to fields nothing downstream consumed correctly.</td><td><code class="inline">KidRequestModal.tsx</code></td><td><span class="status-fixed">✓ Fixed</span></td></tr>
+          <tr><td><span class="sev high">High</span></td><td>A both-ways fork orphaned its second event with a hardcoded <code class="inline">'Ride'</code> category instead of inheriting the original — a kid's Sports/Study request forked into an unrelated-looking card.</td><td><code class="inline">rideLegs.ts:forkRideLegs</code></td><td><span class="status-fixed">✓ Fixed — shared leg-parsing module</span></td></tr>
+          <tr><td><span class="sev med">Medium</span></td><td>A both-ways request assumed same-day pickup — no way to place a multi-day (sleepaway trip) pickup date. Pickup time was also left entirely to a parent's blind +90min guess at approval time — reversed on direct product feedback: a kid's own answer beats a guess.</td><td><code class="inline">KidRequestModal.tsx</code></td><td><span class="status-fixed">✓ Fixed — same-day/different-day sub-step; kid now sets real pickup time</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="round12">
+    <div class="sec-label">Round 12</div>
+    <h2>Cross-Role Field-Pair Sweep</h2>
+    <p class="sec-desc">Two agent-driven sweeps — one tracing data flow through every ride scenario × role, one tracing what actually renders on screen for each — after the round-11 fix meant every kid ride request now genuinely used the <code class="inline">driverName</code>/<code class="inline">driverStatus</code> pair. Most of the app had only ever been built and tested against the older <code class="inline">helper</code>/<code class="inline">helperStatus</code> pair from the adult Ride-category flow.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><span class="sev crit">Critical</span></td><td>SeniorView's claim pool and KidView's own status view were <code class="inline">helper</code>-only — a grandparent could not see or claim a kid's ride request at all, and a kid never saw "awaiting driver" or "declined" for their own request.</td><td><code class="inline">SeniorView.tsx</code>, <code class="inline">KidView.tsx</code></td><td><span class="status-fixed">✓ Fixed — via shared <code class="inline">eventAssignee()</code></span></td></tr>
+          <tr><td><span class="sev crit">Critical</span></td><td>The shared <code class="inline">EventDetailSheet</code> — the single most common entry point, tapping any event on Hub or Schedule — rendered as if a driverName-based ride had no driver at all, hiding every confirm/decline/take-over action.</td><td><code class="inline">hubComponents.tsx</code></td><td><span class="status-fixed">✓ Fixed</span></td></tr>
+          <tr><td><span class="sev crit">Critical</span></td><td>TeenView's pools were <code class="inline">helper</code>-only — a kid's request opened to teens was invisible to every teen, with no way to claim it despite <code class="inline">isOpenToTeens</code> being correctly set.</td><td><code class="inline">TeenView.tsx</code></td><td><span class="status-fixed">✓ Fixed</span></td></tr>
+          <tr><td><span class="sev high">High</span></td><td>A decline silently reopened the pool with zero notification to the assigning parent or the requesting kid, and left the declined person's stale name/status sitting in the DB even while the pool was "reopened" — the reopened slot could never actually be reclaimed (compare-and-swap only matches a NULL status column).</td><td><code class="inline">eventStore.ts:autoOpenOnDecline</code></td><td><span class="status-fixed">✓ Fixed — real notification, name+status cleared</span></td></tr>
+          <tr><td><span class="sev high">High</span></td><td>A takeover/reassignment notifier was a literal no-op stub; a teen's own decline path bypassed the canonical decline flow with a hand-rolled workaround, so it never triggered pool-reopen notifications.</td><td><code class="inline">hubComponents.tsx</code>, <code class="inline">TeenView.tsx</code></td><td><span class="status-fixed">✓ Fixed</span></td></tr>
+          <tr><td><span class="sev high">High</span></td><td>Forked both-ways legs (Drop-off/Pickup) carried no linking field — every calendar view rendered them as two unrelated cards with no pairing cue.</td><td><code class="inline">calendar_events</code> schema</td><td><span class="status-fixed">✓ Fixed — new <code class="inline">linked_leg_id</code> column + UI badge</span></td></tr>
+          <tr><td><span class="sev low">Low</span></td><td>A kid's own newly-submitted request could be invisible on the Schedule tab up to 5 minutes, due to the day/range SWR cache never being patched for a date other than whatever was last viewed. <code class="inline">DriverChipRow</code>'s selection state was never seeded from persisted state either.</td><td><code class="inline">eventStore.ts</code>, <code class="inline">hubComponents.tsx</code></td><td><span class="status-fixed">✓ Fixed</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="round13">
+    <div class="sec-label">Round 13</div>
+    <h2>Full-App Per-Role UI Audit</h2>
+    <p class="sec-desc">Triggered by a direct user report — a kid's Schedule tab had no way to navigate to any date but today. Rather than patch that one spot, four parallel agents audited every role (Kid, Teen, Grandparent, Parent) across all 7 tabs, hunting specifically for controls gated to one role with silently no equivalent for another.</p>
+    <div class="role-grid">
+      <div class="role-card">
+        <h4><span class="rc-crit">●</span> Kid</h4>
+        <ul>
+          <li>Schedule tab: no date navigation, no Month/Week, no My/All toggle — permanently stuck on today's single-day view</li>
+          <li>No redemption-history view in Store</li>
+        </ul>
+      </div>
+      <div class="role-card">
+        <h4><span class="rc-crit">●</span> Teen</h4>
+        <ul>
+          <li>Same Schedule dead-end as kid, independently — not covered by the kid-only fix</li>
+          <li>Store: every perk card showed "Kid Mode Required"</li>
+        </ul>
+      </div>
+      <div class="role-card">
+        <h4><span class="rc-crit">●</span> Grandparent</h4>
+        <ul>
+          <li>Store: zero <code class="inline">isSenior</code> handling anywhere — bare title bar, every card "Kid Mode Required"</li>
+        </ul>
+        <p class="clean">Hub, Quests, Schedule, Chat, Profile — all clean.</p>
+      </div>
+      <div class="role-card">
+        <h4 style="color: var(--teal);">✓ Parent / Co-parent</h4>
+        <p class="clean">Clean pass across all 7 tabs on this round — co-parent sync all correctly global/shared rather than per-device.</p>
+      </div>
+    </div>
+    <div class="table-scroll" style="margin-top: 20px;">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><span class="sev crit">Critical</span></td><td>Kid + Teen: Schedule's Month/Week/Day/Agenda toolbar and day-nav chevrons were gated to parent/senior only, leaving both roles with no way to browse any date but today.</td><td><code class="inline">CalendarScreen.tsx</code></td><td><span class="status-fixed">✓ Fixed — role-inclusive nav gate, permission gates untouched</span></td></tr>
+          <tr><td><span class="sev crit">Critical</span></td><td>Teen + Grandparent: Store's redeem UI checked <code class="inline">isKid</code>/<code class="inline">isParent</code> only — every perk card dead-ended for both roles despite both having their own coin wallets already tracked elsewhere.</td><td><code class="inline">StoreScreen.tsx</code></td><td><span class="status-fixed">✓ Fixed — <code class="inline">canRedeemSelf</code> covers kid/teen/senior</td></tr>
+          <tr><td><span class="sev high">High</span></td><td>Kid: locked out of Month/Week even after the nav-bar fix — the view content branches themselves were still <code class="inline">!isKid</code>-gated. No self-view of redemption status for any redeeming role.</td><td><code class="inline">CalendarScreen.tsx</code>, <code class="inline">StoreScreen.tsx</code></td><td><span class="status-fixed">✓ Fixed — widened; new "My Redemptions" list</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="incident2">
+    <div class="sec-label">Live incident</div>
+    <h2>Kid Edit-Form Dead-End</h2>
+    <p class="sec-desc">A direct user question — "do kids have rights to edit before parent approval?" — prompted a live check rather than an assumption, and surfaced a real gap none of the automated sweeps above had caught: they were checking whether a role could <em>reach</em> a screen, not whether what it reached was actually correct for that role.</p>
+    <div class="incident-box">
+      <div class="ihead"><span class="dot"></span><h3>What was found and fixed, in order</h3></div>
+      <div class="step"><div class="num">1</div><div><p>Every long-press call site across Month/Week/Agenda/Day (7 total) routed unconditionally to the shared adult <code class="inline">EditEventModal</code> — no role gate of any kind.</p><span class="tag">A kid long-pressing their own pending request, or literally any other event, opened the exact pre-redesign adult form with dead <code class="inline">isKid</code> branches — the form the round-11 rebuild existed to replace.</span></div></div>
+      <div class="step"><div class="num">2</div><div><p>Swipe-to-delete was already correctly scoped — only long-press/edit had no gate.</p></div></div>
+      <div class="step"><div class="num">3</div><div><p>Fixed by adding edit-mode support to <code class="inline">KidRequestModal</code> itself and a routing function that sends a kid only to their own still-<code class="inline">approvalPending</code> event. Later hardened further: a kid can no longer edit a still-unapproved request once its own event time has passed, and a new hourly cron (<code class="inline">stale-request-sweep</code>) deletes such requests 24h after their time passes with nobody ever having acted on them.</p></div></div>
+    </div>
+  </section>
+
+  <section id="round14">
+    <div class="sec-label">Round 14</div>
+    <h2>Exhaustive Per-Role Sweep + Live-DB Verification</h2>
+    <p class="sec-desc">The user explicitly rejected the depth of rounds 11–13 as insufficient and asked for hundreds of concrete cases per role, then separately asked whether any fix had been verified against real data rather than static code reading. Both answered directly: four parallel agents each built and traced a large state-space matrix for one role across all 7 tabs, followed by a live-database verification pass — real writes against an isolated synthetic test family in the actual production Supabase project, cross-checked against the exact UI code paths that would render that data.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><span class="sev crit">Critical</span></td><td>Live-DB verification found the <code class="inline">rewards</code> table this session's own Pending Approvals UI depends on had never existed in production — <code class="inline">select * from rewards</code> returned 42P01. Every reward-catalog write had been silently no-opping indefinitely; every redemption card rendered a placeholder instead of the real reward's title.</td><td><code class="inline">rewardStore.ts</code>, new <code class="inline">rewards</code> table migration</td><td><span class="status-fixed">✓ Fixed — table created, 3 silent error-swallowing writes surfaced</span></td></tr>
+          <tr><td><span class="sev crit">Critical</span></td><td>Grandparent chat side-isolation: <code class="inline">is_chat_channel_participant</code> (the RLS function enforcing the maternal/paternal split) granted ANY grandparent full read/write on BOTH side channels, with no side check — a maternal grandparent could read and post in the paternal side's private channel via a direct API call. The client-side filter had the identical bug.</td><td>RLS function, <code class="inline">ChatScreen.tsx</code></td><td><span class="status-fixed">✓ Fixed at both layers</span></td></tr>
+          <tr><td><span class="sev crit">Critical</span></td><td>Teen: dropping a claimed ride after spending its coin payout silently kept the coins — the race-safe balance guard used for double-spend prevention misfired identically on a genuine clawback, rolling back to zero deduction whenever the balance couldn't cover the full amount.</td><td><code class="inline">familyStore.ts</code>, <code class="inline">TeenView.tsx</code></td><td><span class="status-fixed">✓ Fixed — new <code class="inline">clawbackCoins()</code>, clamps to 0</td></tr>
+          <tr><td><span class="sev crit">Critical</span></td><td>Parent: reward-approval had a fully-implemented store but zero UI anywhere — any "requires approval" redemption was permanently stuck in Pending. Separately, <code class="inline">HelperEventCard</code>'s "Can't" button bypassed the whole decline pipeline (no pool reopen, no notification).</td><td><code class="inline">StoreScreen.tsx</code>, <code class="inline">HelperEventCard.tsx</code></td><td><span class="status-fixed">✓ Fixed</span></td></tr>
+          <tr><td><span class="sev high">High</span></td><td>Live-DB verification independently found a client/server ordering tie-break divergence in grandparent side derivation — two parents created in the same onboarding batch can share an identical <code class="inline">created_at</code>, and the client vs. the RLS function could disagree on which parent is "side A."</td><td><code class="inline">familyStore.ts</code>, RLS function</td><td><span class="status-fixed">✓ Fixed — both ends now use the same (created_at, id) key</span></td></tr>
+          <tr><td><span class="sev high">High</span></td><td>Kid: 3 Hub ride banners all read <code class="inline">ev.helper</code> directly — undefined for every driverName-based kid ride request, rendering literal "undefined is HERE!" The "My Schedule / All" toggle only ever filtered the Day view — Week/Agenda/Month never applied it at all.</td><td><code class="inline">KidRideBanner.tsx</code> +2, <code class="inline">CalendarScreen.tsx</code></td><td><span class="status-fixed">✓ Fixed</span></td></tr>
+          <tr><td><span class="sev high">High</span></td><td>Teen: <code class="inline">EditEventModal</code>'s read-only flag was kid-only — a teen long-pressing a sibling's event got a fully-interactive-looking form whose Save silently discarded everything. "My Confirmed Runs" (only cancel action) was nested inside the "I Have a Car" toggle's on-branch.</td><td><code class="inline">EventFormModal.tsx</code>, <code class="inline">TeenCarDispatchSection.tsx</code></td><td><span class="status-fixed">✓ Fixed</span></td></tr>
+          <tr><td><span class="sev high">High</span></td><td>Grandparent: busy-block privacy stripping was missing entirely from Month/Day's data source, and separately re-defeated in <code class="inline">EventDetailSheet</code> by a raw unsanitized lookup. Store's redemption feature had no reachable path at all — seniors get Memories instead of Apps in their 5th tab slot.</td><td><code class="inline">CalendarScreen.tsx</code>, <code class="inline">SeniorView.tsx</code></td><td><span class="status-fixed">✓ Fixed — new Perks card on the Senior Hub</span></td></tr>
+          <tr><td><span class="sev med">Medium</span></td><td>Parent: ride-request cards were hardcoded to severity 'soon' regardless of how close the ride actually was — asked directly by the user mid-session ("no driver confirmed, is escalation in place?") — it wasn't. Urgency-banner escalation lists were also helper-only, missing every driverName-based request.</td><td><code class="inline">ActionNeededSection.tsx</code>, <code class="inline">ParentView.tsx</code></td><td><span class="status-fixed">✓ Fixed — real time-based severity</span></td></tr>
+          <tr><td><span class="sev med">Medium</span></td><td>Kid: level was read from a stored column nothing ever increments — the XP bar filled, wrapped to 0%, forever. A claimed pool quest's decline button was dead code (branch order).</td><td><code class="inline">KidView.tsx</code>, <code class="inline">KidQuestCard.tsx</code></td><td><span class="status-fixed">✓ Fixed</span></td></tr>
+          <tr><td><span class="sev low">Low</span></td><td>Grandparent: <code class="inline">MedicationsCard</code> had no add/edit UI, permanently stuck on 3 hardcoded placeholders. <code class="inline">SavingsMatchModal</code>'s monthly cap was hardcoded with no control. Teen cash-out had no balance validation.</td><td>3 files</td><td><span class="status-fixed">✓ Fixed</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="feature-card" style="margin-top: 20px;">
+      <h3>Also shipped this round, per direct user requests mid-sweep</h3>
+      <p>Kids can now tag a sibling as "going with" them on a ride request. Ride requests now count as sensitive-by-default, so a sibling's "All" schedule view no longer shows another kid's ride request unless a parent explicitly opts that event into sibling sharing (new <code class="inline">sharedWithSiblings</code> field) — closing a privacy gap the user flagged directly ("siblings shouldn't see each other's requests unless a parent delegates").</p>
+    </div>
+  </section>
+
   <section id="verdict">
     <div class="sec-label">Sign-off</div>
     <h2>Overall Verdict</h2>
     <div class="verdict">
-      <p>All 37 confirmed bugs across 10 rounds are fixed, and every fix from Rounds 7–9 was independently re-verified in Round 10 against real data (the two Critical items against the actual deployed engine, not just source). This span covers the critical self-approval exploit, the critical reward-threshold bypass, two live production incidents this QA effort itself introduced and then resolved within the same session, the delegation-visibility bug a real user actually hit in production, and — the largest single cluster — a full role-by-role audit of the ride/schedule system that found the zero-touch dispatch engine silently corrupting live data on every automated grandparent assignment. The core concurrency-safety pattern (row-locked atomic claims) is now applied consistently across pool quests, GP offers, helper/driver slots, and the multi-slot bounty feature. The recurring-series propagation logic built in Round 7 — carry the driver forward on first accept, but never on a later one-off decline or reassignment — was then correctly reused, not reinvented, across every driver-assignment surface touched in Rounds 8 and 9.</p>
-      <p style="margin-top: 14px;">Two things worth naming directly. First, live user reports remain a genuine, distinct source of findings alongside structured testing, not a substitute for it — Round 5's delegation bug and Round 7's ride-visibility bug were both real production reports, not proactive discoveries, and both led to deeper structural fixes than the original report alone described. Second, "the code was fixed" and "the fix was verified against live, real behavior" are different claims, and Round 10 exists because the difference matters: it caught a genuine gap (soft-deleted events still counting against a live constraint) that a second read of the diff alone would not have surfaced. Round 11, still open, extends verification one layer further — confirming not just that the underlying data ends up correct, but that the actual UI action available to each role at each lifecycle step is the right one, role by role, state by state. The remaining caveat from earlier rounds still stands: the bounty claim function's true concurrent-load behavior is sound by code inspection but not empirically stress-tested under real simultaneous traffic.</p>
+      <p>All 71 confirmed bugs across 14 rounds are fixed, and every fix from Rounds 7–9 was independently re-verified in Round 10 against real data. This span covers the critical self-approval exploit, the critical reward-threshold bypass, the grandparent chat side-isolation leak, the never-deployed rewards table, three live production incidents this QA effort itself introduced or was prompted by and then resolved within the same session, the delegation-visibility bug a real user actually hit in production, and a full role-by-role audit of both the ride/schedule dispatch engine and the kid ride-request UI that found the same shape of bug — correct logic silently unreachable or unreadable by the role it was built for — recurring at every layer of the stack, from a live edge function down to a single missing database table.</p>
+      <p style="margin-top: 14px;">Three things worth naming directly, in the order they were learned. First, live user reports remain a genuine, distinct source of findings alongside structured testing, not a substitute for it — Round 5's delegation bug, Round 7's ride-visibility bug, and the Round-13/14 kid-navigation and edit-form incidents were all real production reports or direct user questions, not proactive discoveries, and each led to a deeper structural fix than the original report alone described. Second, correct backend logic and a correct data model are necessary but not sufficient — the <code class="inline">driverName</code>/<code class="inline">driverStatus</code> field pair was introduced correctly in Round 11, but most of the app's UI simply never learned to read it, producing a coherent-looking but silently broken experience across five separate surfaces at once; the per-role navigation audit (Round 13) found the identical shape of bug one level up, a control that works perfectly for the role it was built for and simply doesn't exist for another. Third, and sharpest: static code reading, however thorough, cannot see a table that was never deployed. The <code class="inline">rewards</code> table gap survived every prior round of QA — including agents that read <code class="inline">rewardStore.ts</code> directly — because every read path failed silently and every write path swallowed its own error, so the code always looked correct in isolation. Only a real query against the real database surfaced it. The practical implication carried forward: role-coverage audits need to pair reachability checks with a correctness check at the destination, and any fix touching a table, an RLS policy, or an ordering shared between client and server needs a live-database verification pass as a required final step, not an optional deepening one. The remaining caveat from earlier rounds still stands: the bounty claim function's true concurrent-load behavior is sound by code inspection but not empirically stress-tested under real simultaneous traffic.</p>
     </div>
   </section>
 
   <footer>
-    Test environment: isolated synthetic family (one member per role, including maternal/paternal grandparents), all real Supabase writes, cleaned up after every round. No production family data was read, written, or exposed at any point except the incident window described above, which touched only RLS policy logic, never message content.
+    Test environment: isolated synthetic family (one member per role, including maternal/paternal grandparents), all real Supabase writes, cleaned up after every round. No production family data was read, written, or exposed at any point except the incident windows described above, which touched only RLS policy logic and UI routing, never message or event content.
   </footer>
 
 </div>

@@ -21,6 +21,7 @@ import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore } from '@/store/choreStore';
 import { useGroceryStore } from '@/store/groceryStore';
+import { useRewardStore } from '@/store/rewardStore';
 import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
 import { checkProfanity } from '@/lib/contentModeration';
@@ -78,6 +79,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
   const { addQuest } = useQuestStore();
   const updateChore = useChoreStore(s => s.updateChore);
   const addGroceryItem = useGroceryStore(s => s.addItem);
+  const redeemReward = useRewardStore(s => s.redeemReward);
   const sendChatMessage = useChatStore(s => s.sendMessage);
 
   const [expandedRecipe, setExpandedRecipe] = useState<{ msgId: string; index: number } | null>(null);
@@ -359,6 +361,14 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
           category: it.category ?? 'Other', addedBy: activeMember.id, aiGenerated: true,
         });
       }
+    } else if (proposal.kind === 'redemption') {
+      // redeemReward (store/rewardStore.ts) owns the real eligibility/
+      // balance re-check and coin deduction — propose_redemption already
+      // verified both server-side so the card the user saw was accurate,
+      // but the actual mutation only ever happens through the same store
+      // function every other redemption in the app uses, not a bespoke
+      // write here.
+      redeemReward(d.rewardId, d.memberId);
     } else if (proposal.kind === 'update_event') {
       // Targeted patch onto the EXISTING event the edge function already
       // resolved server-side (propose_update) — never a new row, and only

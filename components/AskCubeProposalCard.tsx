@@ -32,12 +32,13 @@ export function MealHero({ imageUrl, emoji, accent, height }: { imageUrl?: strin
 }
 
 const KIND_META: Record<AskCubeProposal['kind'], { label: string; icon: any; accent: string }> = {
-  event:        { label: 'Event draft',   icon: Calendar,      accent: 'primary' },
-  quest:        { label: 'Quest draft',   icon: ClipboardList, accent: 'kid' },
-  grocery:      { label: 'Grocery draft', icon: ShoppingCart,  accent: 'teal' },
-  meal:         { label: 'Meal draft',    icon: ChefHat,       accent: 'amber' },
-  update_event: { label: 'Update draft',  icon: Clock,         accent: 'primary' },
-  update_chore: { label: 'Update draft',  icon: Clock,         accent: 'kid' },
+  event:        { label: 'Event draft',      icon: Calendar,      accent: 'primary' },
+  quest:        { label: 'Quest draft',      icon: ClipboardList, accent: 'kid' },
+  grocery:      { label: 'Grocery draft',    icon: ShoppingCart,  accent: 'teal' },
+  meal:         { label: 'Meal draft',       icon: ChefHat,       accent: 'amber' },
+  update_event: { label: 'Update draft',     icon: Clock,         accent: 'primary' },
+  update_chore: { label: 'Update draft',     icon: Clock,         accent: 'kid' },
+  redemption:   { label: 'Redemption draft', icon: Coins,         accent: 'amber' },
 };
 
 // Human-readable label per changeable field, shared by both update_event and
@@ -209,7 +210,8 @@ export default function AskCubeProposalCard({
         style={{ flex: 2, borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: accent }}>
         <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>
           {proposal.kind === 'grocery' ? `Add ${d.items?.length ?? ''} item${d.items?.length === 1 ? '' : 's'}`
-            : (proposal.kind === 'update_event' || proposal.kind === 'update_chore') ? 'Confirm update' : 'Create'}
+            : (proposal.kind === 'update_event' || proposal.kind === 'update_chore') ? 'Confirm update'
+            : proposal.kind === 'redemption' ? 'Redeem' : 'Create'}
         </Text>
       </Pressable>
     </View>
@@ -332,6 +334,35 @@ export default function AskCubeProposalCard({
           )}
         </View>
         <ReminderPicker leadMinutes={d.alertCallLeadMinutes} hasReminder={!!d.alertCall} accent={accent} colors={colors} onChange={onChangeReminder} />
+        {Actions}
+      </View>
+    );
+  }
+
+  if (proposal.kind === 'redemption') {
+    const redeemerName = memberName(members, d.memberId) ?? d.memberAlias;
+    const balanceAfter = typeof d.currentBalance === 'number' ? d.currentBalance - d.cost : null;
+    return (
+      <View style={cardBase}>
+        {Header}
+        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Coins size={12} color={accent} />
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: accent }}>{d.cost} coins</Text>
+          </View>
+          {!!redeemerName && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <User size={12} color={colors.textSecondary} />
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{redeemerName}</Text>
+            </View>
+          )}
+        </View>
+        {balanceAfter != null && (
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+            {d.currentBalance} coins now → {balanceAfter} after redeeming
+          </Text>
+        )}
         {Actions}
       </View>
     );

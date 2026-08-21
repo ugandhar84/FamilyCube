@@ -196,6 +196,34 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'get_rewards',
+      description: 'Get the family reward store\'s catalog, optionally for one member (their coin balance and which rewards they can currently afford/are eligible for). Use for "what can I redeem", "how many coins do I have", "what\'s in the reward store".',
+      parameters: {
+        type: 'object',
+        properties: {
+          memberName: { type: 'string', description: 'Whose balance/eligibility to check — omit to just list the catalog' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'propose_redemption',
+      description: 'Propose redeeming a reward from the store for a family member. Does NOT redeem it — returns a proposal the user must confirm. Use when the user asks to redeem/claim/cash in a reward (e.g. "redeem the movie night reward for Alex").',
+      parameters: {
+        type: 'object',
+        properties: {
+          rewardSearch: { type: 'string', description: 'Words to match the reward\'s title, e.g. "movie night"' },
+          memberName:   { type: 'string', description: 'Who is redeeming it — required, coins are deducted from this specific person' },
+        },
+        required: ['rewardSearch', 'memberName'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'propose_event',
       description: 'Propose creating a calendar event. Does NOT create it — returns a proposal the user must confirm. Use when the user asks to add/schedule something with a specific date/time, appointment, or ride.',
       parameters: {
@@ -650,6 +678,72 @@ async function executeTool(
     };
   }
 
+  if (name === 'get_rewards') {
+    const { data, error } = await supabase.from('rewards')
+      .select('id, title, cost, available, eligible_member_ids, max_per_member')
+      .eq('family_id', familyId).eq('available', true);
+    if (error) return { error: error.message };
+    let memberId: string | null = null;
+    let mainCoins: number | null = null;
+    if (args.memberName) {
+      memberId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
+      if (memberId) {
+        const { data: m } = await supabase.from('members').select('main_coins').eq('id', memberId).single();
+        mainCoins = m?.main_coins ?? 0;
+      }
+    }
+    return {
+      // Same non-name-leak treatment as every other free-text title above.
+      rewards: (data ?? []).map((r: any) => ({
+        title: realNameToAlias(aliasMap, members, r.title), cost: r.cost,
+        eligible: !r.eligible_member_ids?.length || !memberId || r.eligible_member_ids.includes(memberId),
+        affordable: mainCoins != null ? mainCoins >= r.cost : null,
+      })),
+      ...(memberId ? { balance: mainCoins } : {}),
+    };
+  }
+
+  if (name === 'propose_redemption') {
+    const memberId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
+    if (!memberId) {
+      return { error: `Couldn't find a family member named "${args.memberName}". Tell the user plainly rather than guessing who they meant.` };
+    }
+    const search = args.rewardSearch ?? '';
+    const { data, error } = await supabase.from('rewards')
+      .select('id, title, cost, available, eligible_member_ids, max_per_member')
+      .eq('family_id', familyId).eq('available', true).ilike('title', `%${search}%`).limit(5);
+    if (error) return { error: error.message };
+    const candidates = data ?? [];
+    if (!candidates.length) {
+      return { error: `Couldn't find an available reward matching "${search}". Tell the user plainly that nothing matched — don't guess.` };
+    }
+    if (candidates.length > 1) {
+      return {
+        error: 'Multiple matching rewards found — ask the user which one they mean before proposing a redemption. Do not guess.',
+        candidates: candidates.map((r: any) => ({ title: realNameToAlias(aliasMap, members, r.title), cost: r.cost })),
+      };
+    }
+    const reward = candidates[0];
+    if (reward.eligible_member_ids?.length && !reward.eligible_member_ids.includes(memberId)) {
+      return { error: `"${reward.title}" isn't eligible for ${args.memberName}. Tell the user plainly rather than proposing a redemption that would be rejected.` };
+    }
+    const { data: m } = await supabase.from('members').select('main_coins').eq('id', memberId).single();
+    const balance = m?.main_coins ?? 0;
+    if (balance < reward.cost) {
+      return { error: `${args.memberName} only has ${balance} coins — "${reward.title}" costs ${reward.cost}. Tell the user plainly rather than proposing a redemption that would fail.` };
+    }
+    // Client-side redeemReward (store/rewardStore.ts) owns the actual coin
+    // deduction/eligibility re-check and insert — this tool only verifies
+    // up front so the proposal card the user sees is accurate, same
+    // division of responsibility as every other propose_* tool in this file.
+    return {
+      __proposal: 'redemption',
+      rewardId: reward.id, title: realNameToAlias(aliasMap, members, reward.title), cost: reward.cost,
+      memberId, memberAlias: aliasMap.toAlias.get(memberId) ?? args.memberName,
+      currentBalance: balance,
+    };
+  }
+
   if (name === 'propose_event') {
     let memberId: string | null = null;
     // Distinguish "no name given" (fine — open/unassigned) from "a name was
@@ -932,8 +1026,10 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
   update something else, and don't create a new item unless they then confirm that's actually what they want. If it
   reports multiple matches, ask the user which one they mean before calling propose_update again.
 When the user asks to add/schedule something NEW, use propose_event, propose_quest, propose_grocery_items, or
-propose_meal as appropriate. When they're referring to something that already exists, use propose_update. These only
-PROPOSE, they do not create or change anything themselves.
+propose_meal as appropriate. When they're referring to something that already exists, use propose_update. When they
+ask about redeeming/claiming a reward, use get_rewards to check the catalog/balance and propose_redemption to
+redeem — never treat a reward like a quest or event. These only PROPOSE, they do not create or change anything
+themselves.
 If a propose_event/propose_quest tool result includes "_unresolvedName", the person you tried to assign it to
 couldn't be matched to anyone in this family (misspelled, or not a real member) — the draft below was created
 UNASSIGNED/open-pool instead. Say so plainly in your one-sentence reply (e.g. "I couldn't find someone named X, so

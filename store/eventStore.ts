@@ -79,6 +79,15 @@ export interface FamilyEvent {
   // unrelated one-off event (QA sweep UI pass, High Finding #4).
   linkedLegId?: string;
 
+  // A ride request previously fell through to ordinary sibling visibility
+  // — "All" on a kid/teen's Schedule tab showed every sibling's ride
+  // request (pickup location, timing, notes) with no way to turn that off.
+  // A ride is between the requesting kid and their parent, not something a
+  // sibling should see by default, unless a parent has actually delegated
+  // a helping/driving role to that sibling (explicit user direction).
+  // Parent-settable opt-in, same shape as sharedWithGPForCare below.
+  sharedWithSiblings?: boolean;
+
   // "Helper confirmed" (helperStatus === 'confirmed') only means the driver
   // agreed to do the run — it says nothing about whether the pickup actually
   // happened. This is that separate, later signal: either the rider or the
@@ -163,8 +172,11 @@ export interface FamilyEvent {
 // so a Medical-category event is treated as sensitive even if the creator
 // never touched the explicit privacy toggle — the two conditions OR
 // together rather than requiring both.
-export function isEventSensitive(e: Pick<FamilyEvent, 'privacyLevel' | 'category'>): boolean {
-  return e.privacyLevel === 'private' || e.category === 'Medical';
+// Ride requests count as sensitive too — see sharedWithSiblings above for
+// why. Needs rideRequired/category alongside the existing checks, so the
+// Pick type widens to match.
+export function isEventSensitive(e: Pick<FamilyEvent, 'privacyLevel' | 'category' | 'rideRequired'>): boolean {
+  return e.privacyLevel === 'private' || e.category === 'Medical' || e.category === 'Ride' || !!e.rideRequired;
 }
 
 // A category:'Ride' event's assignee lives in helper/helperStatus. A
@@ -208,7 +220,7 @@ export function eventAssignee(e: Pick<FamilyEvent, 'helper' | 'helperStatus' | '
 export type SensitiveEventVisibility = 'full' | 'busy-block' | 'hidden';
 
 export function canViewSensitiveEventDetail(
-  e: Pick<FamilyEvent, 'memberId' | 'memberIds' | 'sharedWithGPForCare' | 'helper' | 'driverName'>,
+  e: Pick<FamilyEvent, 'memberId' | 'memberIds' | 'sharedWithGPForCare' | 'sharedWithSiblings' | 'helper' | 'driverName'>,
   viewerRole: 'parent' | 'kid' | 'teen' | 'senior' | undefined,
   viewerId: string | undefined,
   // Needed to match helper/driverName (display-name fields, not ids)
@@ -228,7 +240,14 @@ export function canViewSensitiveEventDetail(
   const isAssignee = !!viewerName && (e.helper === viewerName || e.driverName === viewerName);
   if (isAssignee) return 'full';
   if (viewerRole === 'senior') return e.sharedWithGPForCare ? 'full' : 'busy-block'; // GP: busy-block unless explicitly shared
-  return 'hidden'; // sibling kid/teen: hidden entirely, no busy-block
+  // Sibling kid/teen: hidden by default (a sibling's ride request or
+  // private/Medical event is between them and their parent), UNLESS a
+  // parent has explicitly delegated by flipping sharedWithSiblings — the
+  // path for "parent asks an older sibling to help with a younger one's
+  // ride." No busy-block carve-out here (unlike GP) — a sibling doesn't
+  // need "someone's busy at this time" awareness the way a GP driving
+  // pool coordinator does.
+  return e.sharedWithSiblings ? 'full' : 'hidden';
 }
 
 export type StripMap = Record<string, string[]>;   // date → unique category[]
@@ -460,6 +479,7 @@ export function fromRow(row: any): FamilyEvent {
     acknowledgedBy:         Array.isArray(row.acknowledged_by) ? row.acknowledged_by : [],
     privacyLevel:           row.privacy_level === 'private' ? 'private' : 'normal',
     sharedWithGPForCare:    row.shared_with_gp_for_care ?? false,
+    sharedWithSiblings:     row.shared_with_siblings ?? false,
     isOptionalRsvp:         row.is_optional_rsvp ?? false,
     rsvps:                  (typeof row.rsvps === 'object' && row.rsvps) ? row.rsvps : undefined,
     linkedLegId:            row.linked_leg_id ?? undefined,
@@ -523,6 +543,7 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     acknowledged_by:            ev.acknowledgedBy ?? [],
     privacy_level:              ev.privacyLevel ?? 'normal',
     shared_with_gp_for_care:    ev.sharedWithGPForCare ?? false,
+    shared_with_siblings:       ev.sharedWithSiblings ?? false,
     is_optional_rsvp:           ev.isOptionalRsvp ?? false,
     rsvps:                      ev.rsvps ?? {},
     linked_leg_id:              ev.linkedLegId ?? null,

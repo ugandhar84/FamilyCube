@@ -122,6 +122,13 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
   const [showTimePick, setShowTimePick] = useState(false);
   const [location, setLocation] = useState(editEvent?.location ?? '');
   const [notes, setNotes] = useState(editEvent?.notes ?? '');
+  // Siblings going to the same place — the requesting kid can add them
+  // directly (parent still approves the ride itself via the normal
+  // approvalPending flow; no separate approval step for the sibling-join,
+  // per explicit product direction). Writes into memberIds alongside the
+  // requesting kid's own memberId.
+  const [withSiblings, setWithSiblings] = useState<string[]>(editEvent?.memberIds?.filter(id => id !== activeMemberId) ?? []);
+  const siblings = members.filter(m => m.id !== activeMemberId && (m.role === 'kid' || m.role === 'teen'));
   // Call-style reminder (rings via CallKit at event time, 5, or 10 min
   // before) — full infrastructure already exists (alertCall/
   // alertCallLeadMinutes on FamilyEvent, used by the adult form) but was
@@ -196,7 +203,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
     setRideChoice(null); setDone(false); setMicOpen(false); voice.cancel();
     setAskingPickupTime(false);
     setPickupDate(null); setPickupTime(null); setShowPickupDatePick(false);
-    setAlertCall(false);
+    setAlertCall(false); setWithSiblings([]);
   };
   const close = () => { reset(); onClose(); };
 
@@ -240,6 +247,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
         notes: notes.trim() || undefined,
         returnTime,
         rideRequired: choice !== 'none',
+        memberIds: withSiblings.length > 0 ? [activeMemberId, ...withSiblings] : undefined,
         alertCall,
         alertCallLeadMinutes: 0,
         ...(rideFieldsChanged && !editEvent.driverName
@@ -263,6 +271,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
       notes: notes.trim() || undefined,
       returnTime,
       memberId: activeMemberId,
+      memberIds: withSiblings.length > 0 ? [activeMemberId, ...withSiblings] : undefined,
       helperRequestedBy: active.name,
       approvalPending: true,
       conflict: false,
@@ -488,6 +497,31 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                         value={location} onChangeText={setLocation}
                       />
                     </View>
+
+                    {siblings.length > 0 && (
+                      <View>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
+                          Going with a sibling? (optional)
+                        </Text>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                          {siblings.map(sib => {
+                            const isOn = withSiblings.includes(sib.id);
+                            return (
+                              <TouchableOpacity key={sib.id}
+                                onPress={() => setWithSiblings(prev => isOn ? prev.filter(id => id !== sib.id) : [...prev, sib.id])}
+                                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8,
+                                  borderRadius: 999, borderWidth: 1.5,
+                                  backgroundColor: isOn ? accentColor : (isDark ? colors.surface : '#F9FAFB'),
+                                  borderColor: isOn ? accentColor : colors.border }}>
+                                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isOn ? '#fff' : colors.textPrimary }}>
+                                  {sib.name.split(' ')[0]}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    )}
 
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                       backgroundColor: isDark ? colors.surface : '#F9FAFB', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 }}>

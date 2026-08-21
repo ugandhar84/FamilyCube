@@ -15,6 +15,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, LETTER_SPACING } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import type { FamilyMember } from '@/store/familyStore';
+import { eventAssignee } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import { fmtTime, hoursUntilEvent, catColor, isWorkEvent, isHomeLocation } from './hubUtils';
 import { EventCardRow } from '@/features/calendar/components/EventCard';
@@ -298,6 +299,26 @@ export function UrgencyBadge({ hours, hasIssue }: { hours: number; hasIssue: boo
 
 // ─── AlertBanner ──────────────────────────────────────────────────────────────
 
+// Was a no-op — the previous assignee, the kid, and any other parent got
+// zero signal when a ride was reassigned out from under the current
+// assignee (QA sweep High Finding H1). Shared at module level since two
+// separate components (AlertBanner and EventDetailSheet) both drive
+// DriverChipRow's onAssign. Call BEFORE updateEvent so `ev` still holds
+// the outgoing assignee's name.
+function notifyTakeover(ev: FamilyEvent, newName: string, members: FamilyMember[], activeName?: string) {
+  const prevName = ev.helper ?? ev.driverName;
+  if (!prevName || prevName === newName) return;
+  const actor = members.find(m => m.name === activeName);
+  const prevMember = members.find(m => m.name === prevName);
+  const msg = `🔄 ${relationalNameByName(newName, members)} is now driving "${ev.title}" instead of ${relationalNameByName(prevName, members)}.`;
+  const recipients = new Set<string>();
+  if (prevMember && prevMember.id !== actor?.id) recipients.add(prevMember.id);
+  if (ev.memberId && ev.memberId !== actor?.id) recipients.add(ev.memberId);
+  for (const recipientId of recipients) {
+    useChatStore.getState().sendMessage(recipientId, actor?.id ?? recipientId, msg);
+  }
+}
+
 export function AlertBanner({
   conflictEvents, rejectedEvents, pendingNoResponseEvents = [], unassignedUrgentEvents = [],
   conflictReasons, members, colors, isDark, updateEvent, activeName,
@@ -313,11 +334,6 @@ export function AlertBanner({
   activeName?: string;
 }) {
   const viewer = members.find(m => m.name === activeName);
-  // Reassignment used to also post a "🔄 X took over Y" broadcast to family
-  // chat, but that reads as noise — the Hub itself already reflects who has
-  // it now, so this is a no-op left in place only to avoid touching every
-  // call site below.
-  const notifyTakeover = (_ev: FamilyEvent) => {};
 
   return (
     <View style={{ marginHorizontal: 16, marginBottom: 12, gap: 8 }}>
@@ -352,7 +368,7 @@ export function AlertBanner({
                   updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
                 }}
                 onAssign={(name, reason) => {
-                  notifyTakeover(ev);
+                  notifyTakeover(ev, name, members, activeName);
                   // Assigning it to yourself IS the confirmation — no separate
                   // "accept" step needed, unlike handing it to someone else
                   // who still needs to acknowledge before it's settled.
@@ -392,7 +408,7 @@ export function AlertBanner({
                   updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
                 }}
                 onAssign={(name, reason) => {
-                  notifyTakeover(ev);
+                  notifyTakeover(ev, name, members, activeName);
                   // Assigning it to yourself IS the confirmation — no separate
                   // "accept" step needed, unlike handing it to someone else
                   // who still needs to acknowledge before it's settled.
@@ -431,7 +447,7 @@ export function AlertBanner({
                   updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
                 }}
                 onAssign={(name, reason) => {
-                  notifyTakeover(ev);
+                  notifyTakeover(ev, name, members, activeName);
                   // Assigning it to yourself IS the confirmation — no separate
                   // "accept" step needed, unlike handing it to someone else
                   // who still needs to acknowledge before it's settled.
@@ -520,26 +536,42 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, excludeName, a
   onAssign: (name: string, reason: string) => void;
   onOpenPool: (kind: 'gp' | 'teen') => void;
 }) {
-  const [picked, setPicked] = useState<string | null>(null);
+  // Was never seeded from the event's actual persisted state — reopening
+  // this row on an already-assigned or already-open-to-pool event showed
+  // NOTHING highlighted, even though the DB already had a real answer.
+  // Confirmed/named-driver and open-pool are deliberately different visual
+  // treatments (user-confirmed direction): a confirmed specific driver gets
+  // the same solid fill a fresh tap would; an open GP/Teen pool gets a
+  // distinct "open/pending" outline style instead, since nobody has
+  // actually committed yet.
+  const assignee = eventAssignee(ev);
+  const initialPicked = assignee.name
+    ? (assignee.name === activeName ? 'me' : members.find(m => m.name === assignee.name && m.role === 'parent')?.id ?? null)
+    : null;
+  const [picked, setPicked] = useState<string | null>(initialPicked);
   const [reason, setReason] = useState('');
   const viewer = members.find(m => m.name === activeName);
   const viewerCanDrive = !!viewer && viewer.hasCar !== false && viewer.name !== excludeName;
   const otherParents = members.filter(m =>
     m.role === 'parent' && m.hasCar !== false && m.name !== excludeName && m.name !== activeName
   );
+  const gpOpen = !!ev.isOpenToGrandparents && !assignee.name;
+  const teenOpen = !!ev.isOpenToTeens && !assignee.name;
 
-  const chip = (key: string, label: string, Icon: typeof User, onPress: () => void, tone: 'primary' | 'neutral' = 'neutral') => {
+  const chip = (key: string, label: string, Icon: typeof User, onPress: () => void, tone: 'primary' | 'neutral' | 'open' = 'neutral') => {
     const sel = picked === key;
-    const fg = sel ? '#fff' : tone === 'primary' ? colors.parent : colors.textPrimary;
+    const isOpenTone = tone === 'open' && !sel;
+    const fg = sel ? '#fff' : isOpenTone ? colors.warningDark : tone === 'primary' ? colors.parent : colors.textPrimary;
     return (
       <Pressable key={key} onPress={onPress}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 9,
           borderRadius: 999, borderWidth: 1.5,
-          backgroundColor: sel ? colors.parent : tone === 'primary' ? colors.parent + '14' : (isDark ? colors.surface : '#F8FAFC'),
-          borderColor: sel ? colors.parent : tone === 'primary' ? colors.parent + '50' : colors.border }}>
+          backgroundColor: sel ? colors.parent : isOpenTone ? colors.warning + '18' : tone === 'primary' ? colors.parent + '14' : (isDark ? colors.surface : '#F8FAFC'),
+          borderColor: sel ? colors.parent : isOpenTone ? colors.warning : tone === 'primary' ? colors.parent + '50' : colors.border,
+          borderStyle: isOpenTone ? 'dashed' : 'solid' }}>
         <Icon size={14} color={fg} />
         <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: fg }}>
-          {label}
+          {label}{isOpenTone ? ' · Open' : ''}
         </Text>
       </Pressable>
     );
@@ -550,8 +582,8 @@ function DriverChipRow({ ev, members, colors, isDark, activeName, excludeName, a
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 4 }}>
         {viewerCanDrive && chip('me', 'Me', User, () => setPicked('me'), 'primary')}
         {otherParents.map(m => chip(m.id, m.name.split(' ')[0], User, () => setPicked(m.id)))}
-        {allowGpTeen && chip('gp', 'Grandparent', Users, () => onOpenPool('gp'))}
-        {allowGpTeen && chip('teen', 'Teen', Backpack, () => onOpenPool('teen'))}
+        {allowGpTeen && chip('gp', 'Grandparent', Users, () => onOpenPool('gp'), gpOpen ? 'open' : 'neutral')}
+        {allowGpTeen && chip('teen', 'Teen', Backpack, () => onOpenPool('teen'), teenOpen ? 'open' : 'neutral')}
       </ScrollView>
       {picked && (
         <>
@@ -647,14 +679,24 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
   // actions. Derived from members rather than threading a new activeRole
   // prop through three call sites just for this one gate.
   const isViewerParent = members.find(m => m.name === activeName)?.role === 'parent';
-  const helperMissing  = !ev.helper && !!ev.location && !isWork && !isHomeLocation(ev.location);
-  const helperPending  = ev.helperStatus === 'pending';
-  const helperRejected = ev.helperStatus === 'rejected';
-  const isSelfAssigned = !!activeName && ev.helper === activeName;
-  const hadPriorHelper = !!ev.helper;
+  // QA sweep Critical Finding #1 — this whole section was ev.helper/
+  // ev.helperStatus-only, so ANY driverName-based ride (every kid ride
+  // request now uses this pair) rendered as if it had no driver at all
+  // here, regardless of role — hiding the true state and every action
+  // (confirm/decline/take-over/remind) a role should have been able to
+  // take from this, the single most common entry point (tapping any event
+  // card, on both Hub and Schedule). eventAssignee() normalizes both pairs;
+  // assigneeRole tracks which pair to actually write back to.
+  const assignee       = eventAssignee(ev);
+  const assigneeRole: 'helper' | 'driver' = ev.driverName || (ev.rideRequired && !ev.helper) ? 'driver' : 'helper';
+  const helperMissing  = !assignee.name && !!ev.location && !isWork && !isHomeLocation(ev.location);
+  const helperPending  = assignee.status === 'pending';
+  const helperRejected = assignee.status === 'rejected';
+  const isSelfAssigned = !!activeName && assignee.name === activeName;
+  const hadPriorHelper = !!assignee.name;
 
-  const helperConfirmed = ev.helperStatus === 'confirmed';
-  const showRemind    = !isPast && !isWork && isViewerParent && !!ev.helper && helperPending && !isSelfAssigned;
+  const helperConfirmed = assignee.status === 'confirmed';
+  const showRemind    = !isPast && !isWork && isViewerParent && !!assignee.name && helperPending && !isSelfAssigned;
   // helperMissing's "has a real away-from-home location" check exists to
   // avoid flagging events that never needed a helper in the first place —
   // but once someone explicitly backs out via "Can't Make It", the event
@@ -668,7 +710,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
   // Reassigning/opening-to-GP/opening-to-Teen are parent-only actions —
   // a kid or teen viewing their own event (e.g. their own dentist
   // appointment) shouldn't see controls for picking who drives them.
-  const showReassign   = !isPast && !isWork && isViewerParent && (!ev.helper || (helperPending && !isSelfAssigned) || helperRejected);
+  const showReassign   = !isPast && !isWork && isViewerParent && (!assignee.name || (helperPending && !isSelfAssigned) || helperRejected);
   // A parent viewing someone ELSE's still-open/pending/rejected slot can take
   // it directly in one tap instead of opening the reassign picker and finding
   // their own name in a list of everyone else — the common case shouldn't be
@@ -898,10 +940,10 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
           )}
 
           {/* Helper section */}
-          {ev.helper && !ev.approvalPending && (() => {
-            const helperMember = members.find(m => m.name === ev.helper);
-            const isRejected = ev.helperStatus === 'rejected';
-            const isPending  = ev.helperStatus === 'pending';
+          {assignee.name && !ev.approvalPending && (() => {
+            const helperMember = members.find(m => m.name === assignee.name);
+            const isRejected = assignee.status === 'rejected';
+            const isPending  = assignee.status === 'pending';
             // A declined driver is a scheduling problem for a PARENT to
             // solve — to a kid it should read as "no driver yet," not a
             // five-alarm fire on their own Hub. Only the parent-facing
@@ -915,7 +957,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                 {/* Avatar with warning badge */}
                 <View style={{ position: 'relative' }}>
                   <FamilyAvatar
-                    name={ev.helper} emoji={helperMember?.emoji} avatarUrl={helperMember?.avatarUrl}
+                    name={assignee.name} emoji={helperMember?.emoji} avatarUrl={helperMember?.avatarUrl}
                     siblings={members.map(m => m.name)} size={36}
                     ringColor={showAlarm ? colors.danger : isPending ? colors.warning : isRejected ? colors.border : colors.success}
                     ringWidth={2}
@@ -936,7 +978,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{helperLabel}</Text>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: showAlarm ? colors.danger : colors.textPrimary }}>
-                    {relationalNameByName(ev.helper, members)}
+                    {relationalNameByName(assignee.name, members)}
                   </Text>
                   {showAlarm && ev.declineReason && (
                     <Text style={{ fontSize: TYPO.label, color: colors.danger, marginTop: 2 }}>
@@ -945,7 +987,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                   )}
                 </View>
 
-                {ev.helperStatus === 'confirmed' && (
+                {assignee.status === 'confirmed' && (
                   <View style={{ backgroundColor: isDark ? colors.successDark + '30' : colors.successLight, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: colors.success }}>
                     <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.success }}>Confirmed ✓</Text>
                   </View>
@@ -974,7 +1016,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: borderCol }}>
                   {showRemind && (
                     <Pressable
-                      onPress={() => { Alert.alert('Reminder Sent', `A nudge was sent to ${relationalNameByName(ev.helper, members)}.`); onClose(); }}
+                      onPress={() => { Alert.alert('Reminder Sent', `A nudge was sent to ${relationalNameByName(assignee.name, members)}.`); onClose(); }}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, backgroundColor: colors.warning + '18' }}>
                       <Bell size={13} color={colors.warningDark} />
                       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warningDark }}>Remind</Text>
@@ -998,7 +1040,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                       onPress={() => {
                         Alert.alert(
                           'Override Confirmed Ride?',
-                          `${relationalNameByName(ev.helper, members)} already confirmed this. Only change it if there's a real problem.`,
+                          `${relationalNameByName(assignee.name, members)} already confirmed this. Only change it if there's a real problem.`,
                           [
                             { text: 'Cancel', style: 'cancel' },
                             { text: 'Yes, Reassign', style: 'destructive', onPress: () => setChangeOpen(true) },
@@ -1015,6 +1057,21 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
             </View>
             );
           })()}
+
+          {/* Paired leg indicator — a both-ways ride fork creates 2
+              independent rows; without this, opening just one leg's detail
+              sheet gives no cue the other half exists (QA sweep UI pass,
+              High Finding #4). */}
+          {!!ev.linkedLegId && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#6366F118', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 }}>
+              <Repeat size={13} color="#6366F1" />
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: '#6366F1' }}>
+                {ev.title.includes('Pickup') ? 'This is the Pickup half of a both-ways ride — there\'s a Drop-off event too.'
+                  : ev.title.includes('Drop-off') ? 'This is the Drop-off half of a both-ways ride — there\'s a Pickup event too.'
+                  : 'This is paired with another ride leg.'}
+              </Text>
+            </View>
+          )}
 
           {/* Notes */}
           {ev.notes && (
@@ -1044,7 +1101,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   {showConfirm && (
                     <Pressable
-                      onPress={() => updateEvent(ev.id, { helperStatus: 'confirmed' })}
+                      onPress={() => updateEvent(ev.id, assigneeRole === 'driver' ? { driverStatus: 'confirmed' } : { helperStatus: 'confirmed' })}
                       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
                         backgroundColor: colors.success + '15', borderRadius: 14, paddingVertical: 12,
                         borderWidth: 1, borderColor: colors.success + '40' }}>
@@ -1081,7 +1138,9 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                       // Backing out of the chip row without picking anyone
                       // is the actual decline — write it now, not before.
                       if (cancelledSelfName) {
-                        updateEvent(ev.id, { helperStatus: 'rejected', declinedBy: cancelledSelfName });
+                        updateEvent(ev.id, assigneeRole === 'driver'
+                          ? { driverStatus: 'rejected', declinedBy: cancelledSelfName }
+                          : { helperStatus: 'rejected', declinedBy: cancelledSelfName });
                       }
                       setChangeOpen(false);
                       setCancelledSelfName(undefined);
@@ -1098,28 +1157,35 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                   </Text>
                   <DriverChipRow ev={ev} members={members} colors={colors} isDark={isDark}
                     activeName={activeName}
-                    excludeName={cancelledSelfName ?? ev.helper}
+                    excludeName={cancelledSelfName ?? assignee.name}
                     allowGpTeen={cat !== 'Work'}
                     onOpenPool={(kind) => {
                       updateEvent(ev.id, {
                         ...(kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true }),
                         // Coming from Can't Make It — opening the pool IS
                         // the decline in this path, since no replacement was
-                        // picked. Without this, ev.helper would still show
-                        // the person who just said they can't make it.
-                        ...(cancelledSelfName ? { helperStatus: 'rejected' as const, declinedBy: cancelledSelfName } : {}),
+                        // picked. Without this, the assignee field would
+                        // still show the person who just said they can't
+                        // make it.
+                        ...(cancelledSelfName
+                          ? (assigneeRole === 'driver'
+                              ? { driverStatus: 'rejected' as const, declinedBy: cancelledSelfName }
+                              : { helperStatus: 'rejected' as const, declinedBy: cancelledSelfName })
+                          : {}),
                       });
                       Alert.alert(kind === 'gp' ? 'Opened to Grandparents' : 'Opened to Teens',
                         `Any eligible ${kind === 'gp' ? 'grandparent' : 'teen'} can now claim "${ev.title}" from their own Hub.`);
                       onClose();
                     }}
                     onAssign={(name, reason) => {
-                      const priorHelperName = ev.helper;
+                      notifyTakeover(ev, name, members, activeName);
                       // Assigning it to yourself IS the confirmation — no
                       // separate "accept" step needed (see HelperEventCard's
                       // backlog card, which otherwise asks for one).
                       updateEvent(ev.id, {
-                        helper: name, helperStatus: name === activeName ? 'confirmed' : 'pending',
+                        ...(assigneeRole === 'driver'
+                          ? { driverName: name, driverStatus: name === activeName ? 'confirmed' as const : 'pending' as const }
+                          : { helper: name, helperStatus: name === activeName ? 'confirmed' as const : 'pending' as const }),
                         notes: reason
                           ? `${cancelledSelfName ?? activeName ?? 'Parent'} can't do "${helperLabel}" — "${reason}"`
                           : undefined,

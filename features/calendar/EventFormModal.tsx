@@ -197,19 +197,17 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
     fetchCustomSuggestions(familyId, 'event', 'Other').then(setCustomSuggestions);
   }, [familyId, category]);
 
-  // Pre-fill GP-welcome/teen-eligible from the Responsibility Engine's
-  // category taxonomy when the category changes — e.g. picking "Ride"
-  // defaults both toggles on (transport is teen_eligible + gp_welcome),
-  // picking "Medical" leaves them off. Never overwrites a toggle the
-  // parent has already touched by hand this session.
-  useEffect(() => {
-    if (isKid || isTeen || gpTeenToggledByUser) return;
-    lookupCategoryDefaultsByLooseLabel(category).then(defaults => {
-      if (!defaults) return;
-      setOpenToGrandparents(defaults.gpWelcome);
-      setOpenToTeens(defaults.teenEligible);
-    });
-  }, [category, isKid, isTeen, gpTeenToggledByUser]);
+  // Was: silently defaulted Grandparents/Teens Welcome ON the moment a
+  // category like "Ride" was picked (transport's taxonomy is gp_welcome +
+  // teen_eligible) — a parent creating what they assumed was a private
+  // family ride had it auto-opened to the whole GP/teen pool with zero
+  // explicit action on their part, then saw both toggles already lit on
+  // the very next edit with no memory of turning them on (user report:
+  // "by default GP and teens are showing welcome on edit"). Opening a
+  // ride to people outside the two parents is consequential enough that
+  // it should always be something the parent actively chose, never a
+  // silent category-driven default — removed entirely; both toggles now
+  // only ever change via the parent's own tap.
 
   // Subcategory options for the current category's mapped taxonomy domain
   // — optional refinement, resets whenever the top-level category changes
@@ -222,18 +220,9 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
     fetchSubcategoriesForDomain(domain).then(setSubcategoryOptions);
   }, [category, isKid, isTeen]);
 
-  // Picking a specific subcategory sharpens the eligibility defaults beyond
-  // the domain-level majority vote above — e.g. "Medical" alone splits
-  // roughly evenly, but "medical.prescription" specifically is teen/GP-
-  // eligible while "medical.emergency" is parent-only. Still never
-  // overwrites a manually-touched toggle.
-  useEffect(() => {
-    if (!subcategoryId || gpTeenToggledByUser) return;
-    const match = subcategoryOptions.find(s => s.id === subcategoryId);
-    if (!match) return;
-    setOpenToGrandparents(match.defaultGpWelcome);
-    setOpenToTeens(match.defaultTeenEligible);
-  }, [subcategoryId, subcategoryOptions, gpTeenToggledByUser]);
+  // Same removal as the category-level default above — a subcategory pick
+  // (e.g. "medical.prescription") no longer silently opens the event to
+  // GP/teen either. Both toggles are parent-tap-only now.
 
   useEffect(() => {
     if (!linkGroceries || !familyId) return;

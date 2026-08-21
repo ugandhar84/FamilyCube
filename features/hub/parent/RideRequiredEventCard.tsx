@@ -33,7 +33,8 @@ export function RideRequiredEventCard({ ev, active, colors, isDark, updateEvent,
 }) {
   const CatIcon = ev.category === 'Sports' ? Medal : ev.category === 'Medical' ? HeartPulse : ev.category === 'Study' ? BookOpen : Calendar;
   const rideMeta = parseRideMeta(ev.returnTime, ev.date);
-  const { isBothWays, isDropoff, isPickup, pickupLabel: returnTimeStr } = rideMeta;
+  const { isBothWays, isDropoff, isPickup, pickupDateKnownOnly, pickupLabel: returnTimeStr } = rideMeta;
+  const pickupIsDifferentDay = rideMeta.pickupDate && rideMeta.pickupDate !== ev.date;
   const [pickupTimeOverride, setPickupTimeOverride] = useState<string | null>(null);
 
   // Naming yourself as the driver here IS the "yes, I'm driving this
@@ -106,7 +107,15 @@ export function RideRequiredEventCard({ ev, active, colors, isDark, updateEvent,
               <MapPinCheck size={12} color={DROPOFF_GREEN} />
               <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: DROPOFF_GREEN }}>Drop-off · {ev.time ? fmtTime(ev.time) : 'time TBD'}</Text>
             </View>
-            {returnTimeStr ? (
+            {pickupIsDifferentDay && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                <Calendar size={12} color={PICKUP_INDIGO} />
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: PICKUP_INDIGO }}>
+                  Pickup is a different day — {rideMeta.pickupDate}
+                </Text>
+              </View>
+            )}
+            {returnTimeStr && !pickupDateKnownOnly ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
                 <Flag size={12} color={PICKUP_INDIGO} />
                 <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: PICKUP_INDIGO }}>Pickup · {returnTimeStr}</Text>

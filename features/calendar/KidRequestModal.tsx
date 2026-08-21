@@ -52,6 +52,7 @@ import { useVoiceIntake } from '@/lib/hooks/useVoiceIntake';
 import PickerOverlay from './components/eventForm/PickerOverlay';
 import { f } from './components/eventForm/styles';
 import { SUGGESTIONS, localDateStr, fmtTime as fmtTimeVal, fmtDisplay, fmtTimeDisplay } from './components/eventForm/types';
+import { RIDE_PICKUP_TIME_UNKNOWN } from '../hub/parent/rideLegs';
 import type { EventCategory } from './components/eventForm/types';
 import type { FamilyEvent, EventType } from '@/store/eventStore';
 
@@ -102,6 +103,15 @@ export function KidRequestModal({ visible, onClose, activeMemberId }: {
   const [rideChoice, setRideChoice] = useState<RideChoice | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  // "Both ways" needs one more answer before it can submit: same day (the
+  // common case — practice ends, someone picks you up a couple hours
+  // later) vs a different day (sleepaway trip, multi-day camp) — the app
+  // previously just assumed same-day, silently losing a multi-day pickup
+  // date entirely. Only asked for 'both', since a single-leg request has
+  // no second date to place.
+  const [askingPickupDay, setAskingPickupDay] = useState(false);
+  const [pickupDate, setPickupDate] = useState<Date | null>(null);
+  const [showPickupDatePick, setShowPickupDatePick] = useState(false);
 
   // ── Mic / voice intake — in the header, not a separate chooser screen ──
   // Live transcript shown inline, right where the mic was tapped, so the
@@ -123,6 +133,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId }: {
   const reset = () => {
     setStep(1); setCategory(null); setTitle(''); setLocation(''); setNotes('');
     setRideChoice(null); setDone(false); setMicOpen(false); voice.cancel();
+    setAskingPickupDay(false); setPickupDate(null); setShowPickupDatePick(false);
   };
   const close = () => { reset(); onClose(); };
 
@@ -136,9 +147,14 @@ export function KidRequestModal({ visible, onClose, activeMemberId }: {
     setRideChoice(choice);
 
     // Same RIDE: encoding parseRideMeta (features/hub/parent/rideLegs.ts)
-    // already decodes — deliberately NEVER includes a timestamp for a kid.
-    // See PickupTimeStepper for where the parent fills that in.
-    const returnTime = choice === 'both' ? 'RIDE:both' : choice === 'dropoff' ? 'RIDE:dropoff' : choice === 'pickup' ? 'RIDE:pickup' : undefined;
+    // already decodes — deliberately NEVER includes a TIME for a kid (see
+    // PickupTimeStepper for where the parent fills that in), but DOES
+    // carry a pickup DATE when the kid said "different day" — parseRideMeta
+    // reads `RIDE:both:YYYY-MM-DDTHH:MM`, so a bare date-only pickup uses a
+    // placeholder time here that PickupTimeStepper overwrites regardless.
+    const returnTime = choice === 'both'
+      ? (pickupDate ? `RIDE:both:${localDateStr(pickupDate)}T${RIDE_PICKUP_TIME_UNKNOWN}` : 'RIDE:both')
+      : choice === 'dropoff' ? 'RIDE:dropoff' : choice === 'pickup' ? 'RIDE:pickup' : undefined;
 
     const eventInput: Omit<FamilyEvent, 'id'> = {
       title: title.trim(),
@@ -183,7 +199,12 @@ export function KidRequestModal({ visible, onClose, activeMemberId }: {
             {/* ── Header: back, progress dots, mic, close ── */}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
               <TouchableOpacity
-                onPress={() => step > 1 && !done ? setStep((step - 1) as 1 | 2) : close()}
+                onPress={() => {
+                  if (done) return;
+                  if (askingPickupDay) { setAskingPickupDay(false); setPickupDate(null); setShowPickupDatePick(false); return; }
+                  if (step > 1) setStep((step - 1) as 1 | 2);
+                  else close();
+                }}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 style={{ padding: 4 }}>
                 <ChevronLeft size={22} color={colors.textSecondary} />
@@ -380,7 +401,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId }: {
                   </View>
                 )}
 
-                {step === 3 && (
+                {step === 3 && !askingPickupDay && (
                   <View style={{ gap: 14 }}>
                     <Text style={{ fontSize: TYPO.title, fontWeight: '900', color: colors.textPrimary, textAlign: 'center', marginBottom: 4 }}>
                       Do you need a lift? 🚗
@@ -393,7 +414,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId }: {
                       { key: 'none'    as const, icon: '🚶',   label: "No, I'm all set", sub: undefined },
                     ].map(opt => (
                       <TouchableOpacity key={opt.key} disabled={submitting}
-                        onPress={() => submit(opt.key)}
+                        onPress={() => opt.key === 'both' ? setAskingPickupDay(true) : submit(opt.key)}
                         style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 16,
                           backgroundColor: isDark ? colors.surface : '#F9FAFB', borderWidth: 1.5, borderColor: colors.border }}>
                         <Text style={{ fontSize: 22 }}>{opt.icon}</Text>
@@ -417,6 +438,58 @@ export function KidRequestModal({ visible, onClose, activeMemberId }: {
                         multiline numberOfLines={2} textAlignVertical="top"
                       />
                     </View>
+                  </View>
+                )}
+
+                {step === 3 && askingPickupDay && (
+                  <View style={{ gap: 14 }}>
+                    <Text style={{ fontSize: TYPO.title, fontWeight: '900', color: colors.textPrimary, textAlign: 'center', marginBottom: 4 }}>
+                      When's the pickup? 📅
+                    </Text>
+
+                    <TouchableOpacity disabled={submitting} onPress={() => submit('both')}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 16,
+                        backgroundColor: isDark ? colors.surface : '#F9FAFB', borderWidth: 1.5,
+                        borderColor: !pickupDate ? accentColor : colors.border }}>
+                      <Text style={{ fontSize: 22 }}>🔁</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>Same day</Text>
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>A parent will pick a pickup time</Text>
+                      </View>
+                      {submitting && !pickupDate && <ActivityIndicator color={accentColor} />}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => { setShowPickupDatePick(true); if (!pickupDate) setPickupDate(eventDate); }}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 16,
+                        backgroundColor: isDark ? colors.surface : '#F9FAFB', borderWidth: 1.5,
+                        borderColor: pickupDate ? accentColor : colors.border }}>
+                      <Text style={{ fontSize: 22 }}>🗓️</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>
+                          {pickupDate ? `Different day — ${fmtDisplay(pickupDate)}` : 'A different day'}
+                        </Text>
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>Sleepaway trip, multi-day camp</Text>
+                      </View>
+                    </TouchableOpacity>
+
+                    <PickerOverlay
+                      showDate={showPickupDatePick} showTime={false}
+                      value={pickupDate ?? eventDate}
+                      onChangeDate={d => setPickupDate(new Date(d))}
+                      onChangeTime={() => {}}
+                      onDone={() => setShowPickupDatePick(false)}
+                      accentColor={accentColor} colors={colors}
+                      minimumDate={eventDate}
+                    />
+
+                    {pickupDate && !showPickupDatePick && (
+                      <TouchableOpacity disabled={submitting} onPress={() => submit('both')}
+                        style={{ backgroundColor: accentColor, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
+                        {submitting ? <ActivityIndicator color="#fff" /> :
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Confirm pickup day →</Text>}
+                      </TouchableOpacity>
+                    )}
                   </View>
                 )}
               </ScrollView>

@@ -15,6 +15,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
+import { logActivity, type ActivityAction } from '@/lib/activityLog';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 export type EventType    = 'event' | 'reminder' | 'appointment' | 'birthday';
@@ -70,6 +71,13 @@ export interface FamilyEvent {
   rideRequired?: boolean;
   driverName?: string;
   driverStatus?: HelperStatus;
+
+  // A both-ways ride request forks into 2 fully independent rows (Drop-off
+  // leg + Pickup leg, see rideLegs.ts's forkRideLegs) — this points each
+  // leg at the other's id, so any card rendering just one leg can show a
+  // "paired with the other leg" indicator instead of looking like an
+  // unrelated one-off event (QA sweep UI pass, High Finding #4).
+  linkedLegId?: string;
 
   // "Helper confirmed" (helperStatus === 'confirmed') only means the driver
   // agreed to do the run — it says nothing about whether the pickup actually
@@ -359,6 +367,46 @@ function today(): string {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
+// Diffs a small set of user-meaningful fields between the pre-update event
+// and what actually changed, logging one activity_log row per field —
+// deliberately NOT a generic "log every prop" diff, since most of
+// FamilyEvent's ~80 columns changing would be noise nobody wants to read
+// in a history sheet. Covers exactly what the user asked to see: date/
+// time, recurrence, driver/helper assignment, GP/Teen welcome, notes.
+function logUpdateActivity(prevEvent: FamilyEvent, updates: Partial<FamilyEvent>, updated: FamilyEvent) {
+  const familyId = getFamilyId();
+  const actorId = updated.updatedBy ?? getActiveMemberId();
+  const push = (action: ActivityAction, field: string, oldValue: unknown, newValue: unknown, note?: string) => {
+    logActivity({
+      entityType: 'event', entityId: updated.id, familyId, actorId, action, field,
+      oldValue: oldValue == null ? null : String(oldValue),
+      newValue: newValue == null ? null : String(newValue),
+      note,
+    });
+  };
+
+  if ('date' in updates && updates.date !== prevEvent.date) push('date_changed', 'date', prevEvent.date, updated.date);
+  if ('time' in updates && updates.time !== prevEvent.time) push('time_changed', 'time', prevEvent.time, updated.time);
+  if ('recurrenceRule' in updates) {
+    if (updates.recurrenceRule && !prevEvent.recurrenceRule) push('recurrence_changed', 'recurrenceRule', null, JSON.stringify(updates.recurrenceRule));
+    else if (!updates.recurrenceRule && prevEvent.recurrenceRule) push('recurrence_cancelled', 'recurrenceRule', JSON.stringify(prevEvent.recurrenceRule), null);
+    else if (updates.recurrenceRule) push('recurrence_changed', 'recurrenceRule', JSON.stringify(prevEvent.recurrenceRule), JSON.stringify(updates.recurrenceRule));
+  }
+  if ('helper' in updates && updates.helper !== prevEvent.helper) {
+    push(!prevEvent.helper ? 'driver_assigned' : !updates.helper ? 'driver_removed' : 'driver_reassigned', 'helper', prevEvent.helper, updated.helper);
+  }
+  if ('driverName' in updates && updates.driverName !== prevEvent.driverName) {
+    push(!prevEvent.driverName ? 'driver_assigned' : !updates.driverName ? 'driver_removed' : 'driver_reassigned', 'driverName', prevEvent.driverName, updated.driverName);
+  }
+  if ('isOpenToGrandparents' in updates && updates.isOpenToGrandparents !== prevEvent.isOpenToGrandparents) {
+    push('gp_welcome_changed', 'isOpenToGrandparents', prevEvent.isOpenToGrandparents, updated.isOpenToGrandparents);
+  }
+  if ('isOpenToTeens' in updates && updates.isOpenToTeens !== prevEvent.isOpenToTeens) {
+    push('teen_welcome_changed', 'isOpenToTeens', prevEvent.isOpenToTeens, updated.isOpenToTeens);
+  }
+  if ('notes' in updates && updates.notes !== prevEvent.notes) push('notes_changed', 'notes', prevEvent.notes, updated.notes);
+}
+
 function sortByTime(evs: FamilyEvent[]): FamilyEvent[] {
   return [...evs].sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
 }
@@ -414,6 +462,7 @@ export function fromRow(row: any): FamilyEvent {
     sharedWithGPForCare:    row.shared_with_gp_for_care ?? false,
     isOptionalRsvp:         row.is_optional_rsvp ?? false,
     rsvps:                  (typeof row.rsvps === 'object' && row.rsvps) ? row.rsvps : undefined,
+    linkedLegId:            row.linked_leg_id ?? undefined,
   };
 }
 
@@ -476,6 +525,7 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     shared_with_gp_for_care:    ev.sharedWithGPForCare ?? false,
     is_optional_rsvp:           ev.isOptionalRsvp ?? false,
     rsvps:                      ev.rsvps ?? {},
+    linked_leg_id:              ev.linkedLegId ?? null,
   };
 }
 
@@ -933,6 +983,22 @@ export const useEventStore = create<EventState>((set, get) => ({
       set({ dayEvents: next, events: next });
       const entry = get()._dayCache[event.date];
       if (entry) set({ _dayCache: { ...get()._dayCache, [event.date]: { ...entry, events: next } } });
+    } else {
+      // Was: a request created for any date OTHER than whatever the
+      // Schedule tab currently has open (e.g. a kid submitting from the Hub
+      // tab, which never touched currentDate this session, or the Schedule
+      // tab having a stale 5-min SWR cache entry for that date already)
+      // silently skipped BOTH the live view update above AND this cache —
+      // navigating to that date afterward would keep serving the stale
+      // cached list for up to DAY_TTL_MS, with the kid's own brand-new
+      // request nowhere on screen. Patch the target date's cache entry
+      // directly (if one exists) so it's correct the moment they get there,
+      // without waiting for a real refetch.
+      const entry = get()._dayCache[event.date];
+      if (entry) {
+        const next = sortByTime([...entry.events, event]);
+        set({ _dayCache: { ...get()._dayCache, [event.date]: { ...entry, events: next } } });
+      }
     }
 
     // Optimistic: add to rangeEvents (Week/Agenda) if it falls in the
@@ -941,6 +1007,21 @@ export const useEventStore = create<EventState>((set, get) => ({
     // filtering anyway.
     const rangeNext = sortByTime([...get().rangeEvents, event]);
     set({ rangeEvents: rangeNext });
+    // Same staleness gap as _dayCache above, for Week/Agenda's own SWR
+    // cache — without this, a component remount that re-triggers loadRange
+    // for a window covering this date would read the pre-insert cached
+    // list and clobber the live rangeEvents update just made above.
+    const rc = get()._rangeCache;
+    let rangeCacheChanged = false;
+    const nextRangeCache = { ...rc };
+    for (const key of Object.keys(rc)) {
+      const [from, to] = key.split(':');
+      if (event.date >= from && event.date <= to) {
+        nextRangeCache[key] = { ...rc[key], events: sortByTime([...rc[key].events, event]) };
+        rangeCacheChanged = true;
+      }
+    }
+    if (rangeCacheChanged) set({ _rangeCache: nextRangeCache });
 
     // Optimistic: update strip map
     const cat = event.category;
@@ -963,6 +1044,8 @@ export const useEventStore = create<EventState>((set, get) => ({
         const rolledBack = get().dayEvents.filter(e => e.id !== event.id);
         set({ dayEvents: rolledBack, events: rolledBack });
         set({ rangeEvents: get().rangeEvents.filter(e => e.id !== event.id) });
+      } else {
+        logActivity({ entityType: 'event', entityId: event.id, familyId: getFamilyId(), actorId: event.createdBy, action: 'created' });
       }
     });
 
@@ -983,12 +1066,37 @@ export const useEventStore = create<EventState>((set, get) => ({
     // path back to the claimable pool (QA Round 11, High Finding H5).
     const justDeclinedHelper = updates.helperStatus === 'rejected' && prevEvent?.helperStatus !== 'rejected';
     const justDeclinedDriver = updates.driverStatus === 'rejected' && prevEvent?.driverStatus !== 'rejected';
-    const autoOpenOnDecline = (justDeclinedHelper || justDeclinedDriver) && (prevEvent?.category === 'Ride' || prevEvent?.rideRequired)
+    const justDeclined = justDeclinedHelper || justDeclinedDriver;
+    // Was: reopened the pool but left the declined person's name/status
+    // sitting in helper/driverName — eventAssignee() (which prefers name
+    // truthiness) then kept reporting them as the assignee everywhere,
+    // even though the ride was simultaneously reopened to the pool (QA
+    // sweep C2, a genuine data/UI contradiction, not just cosmetic). Clear
+    // the stale name alongside reopening.
+    const autoOpenOnDecline = justDeclined && (prevEvent?.category === 'Ride' || prevEvent?.rideRequired)
       ? { isOpenToGrandparents: true, isOpenToTeens: true }
+      : {};
+    // Was: helperStatus/driverStatus stayed at 'rejected' even after
+    // "reopening" the pool — claimHelperSlot's compare-and-swap only
+    // matches a still-NULL status column (.is(dbStatusCol, null)), so a
+    // ride "reopened" this way could never actually be re-claimed by
+    // anyone; the only reason TeenView's dropPickup worked at all was a
+    // separate workaround that cleared helper/helperStatus directly instead
+    // of going through the normal decline path, which every OTHER decline
+    // site (GP, hubComponents.tsx) does not do (QA sweep H3). Clearing the
+    // stale name+status here, after updates so it isn't clobbered back to
+    // 'rejected', makes decline-and-reopen actually reopen for every caller
+    // uniformly, and lets dropPickup drop its own workaround.
+    const clearOnDecline = justDeclined
+      ? {
+          ...(justDeclinedHelper ? { helper: undefined, helperStatus: undefined } : {}),
+          ...(justDeclinedDriver ? { driverName: undefined, driverStatus: undefined } : {}),
+        }
       : {};
     const stamped = {
       ...autoOpenOnDecline,
       ...updates,
+      ...clearOnDecline,
       updatedBy: updates.updatedBy ?? getActiveMemberId() ?? undefined,
       updatedAt: updates.updatedAt ?? new Date().toISOString(),
     };
@@ -999,6 +1107,29 @@ export const useEventStore = create<EventState>((set, get) => ({
     const updated = next.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
     if (updated) {
       dbUpdate(id, toRow(updated));
+      if (prevEvent) logUpdateActivity(prevEvent, updates, updated);
+    }
+    // Was: a decline silently reopened the pool with zero signal to anyone
+    // — the assigning parent found out only if they happened to see a Hub
+    // banner, and the requesting kid was never told at all (QA sweep C1).
+    // Notify whoever last assigned this driver/helper (prevEvent.updatedBy
+    // — stamped by the assignment action itself) and the requesting kid,
+    // skipping whichever of those is the declining actor themselves.
+    if (justDeclined && updated) {
+      try {
+        const { useChatStore } = require('@/store/chatStore');
+        const declinerName = justDeclinedDriver ? prevEvent?.driverName : prevEvent?.helper;
+        const actorId = getActiveMemberId();
+        const msg = `🚫 ${declinerName ?? 'The driver'} can't make "${updated.title}" — it's back open for someone else.`;
+        const recipients = new Set<string>();
+        if (prevEvent?.updatedBy && prevEvent.updatedBy !== actorId) recipients.add(prevEvent.updatedBy);
+        if (updated.memberId && updated.memberId !== actorId) recipients.add(updated.memberId);
+        for (const recipientId of recipients) {
+          useChatStore.getState().sendMessage(recipientId, actorId ?? recipientId, msg);
+        }
+      } catch (e) {
+        console.warn('[eventStore] decline notification failed', e);
+      }
     }
   },
 
@@ -1112,7 +1243,9 @@ export const useEventStore = create<EventState>((set, get) => ({
     const next = prev.filter(e => e.id !== id);
     set({ dayEvents: next, events: next });
     set({ rangeEvents: get().rangeEvents.filter(e => e.id !== id) });
-    dbUpdate(id, { deleted_at: new Date().toISOString(), deleted_by: getActiveMemberId() });
+    const actorId = getActiveMemberId();
+    dbUpdate(id, { deleted_at: new Date().toISOString(), deleted_by: actorId });
+    logActivity({ entityType: 'event', entityId: id, familyId: getFamilyId(), actorId, action: 'deleted' });
     // Also refresh strip for that date (category count may drop to zero)
     const ev = prev.find(e => e.id === id);
     if (ev?.date && ev.category) {

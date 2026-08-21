@@ -26,6 +26,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
 import FamilyAvatar from '@/components/FamilyAvatar';
+import { eventAssignee } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { s } from './calendarCardStyles';
@@ -146,10 +147,15 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
   // "this is going on right now" is the most time-critical thing to signal.
   const isNow = isEventNow(ev.date, ev.time, ev.endTime);
 
-  const helperPending  = ev.helperStatus === 'pending';
-  const helperRejected = ev.helperStatus === 'rejected';
+  // QA sweep (UI pass) High Finding #3 — was ev.helperStatus-only, so a
+  // driverName-based ride (every kid ride request now uses this pair)
+  // showed the driver's avatar with no status pill at all — pending and
+  // confirmed looked visually identical. eventAssignee() covers both pairs.
+  const assigneeStatus = eventAssignee(ev).status;
+  const helperPending  = assigneeStatus === 'pending';
+  const helperRejected = assigneeStatus === 'rejected';
   const showAlarm      = helperRejected && isViewerParent;
-  const helperMissing  = !ev.helper && !!ev.location;
+  const helperMissing  = !eventAssignee(ev).name && !!ev.location;
 
   // Slow glow pulse for the "happening now" card — light green border/wash
   // that breathes in and out rather than a hard blink.
@@ -206,6 +212,18 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
                   <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textSecondary }}>{ev.category}</Text>
                 </View>
               )}
+              {/* A both-ways ride fork creates 2 independent rows (Drop-off
+                  + Pickup) — without this, a role encountering just one leg
+                  (e.g. in Agenda/Week, or a GP who wasn't around for the
+                  other) has no cue a companion leg exists elsewhere (QA
+                  sweep UI pass, High Finding #4). */}
+              {!!ev.linkedLegId && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#6366F118', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 }}>
+                  <Text style={{ fontSize: 9, fontWeight: '700', color: '#6366F1' }}>
+                    ⇄ {ev.title.includes('Pickup') ? 'has a Drop-off leg' : ev.title.includes('Drop-off') ? 'has a Pickup leg' : 'paired ride'}
+                  </Text>
+                </View>
+              )}
               {showLocation && ev.location && (
                 <LocationLink addr={ev.location} color={colors.info} fontSize={TYPO.micro} iconSize={12} fontWeight="700" />
               )}
@@ -238,9 +256,9 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
                   separate "Accompanied by: Name" text line, since the
                   avatar already shows who; the pill only needs to answer
                   "are they confirmed yet". */}
-              {showHelperStatus && driver && ev.helperStatus && (
+              {showHelperStatus && driver && assigneeStatus && (
                 <>
-                  {ev.helperStatus === 'confirmed' && (
+                  {assigneeStatus === 'confirmed' && (
                     <View style={{ backgroundColor: colors.success + '18', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 }}>
                       <Text style={{ fontSize: 9, fontWeight: '800', color: colors.success }}>Confirmed ✓</Text>
                     </View>
@@ -340,10 +358,13 @@ export function EventCardTimeline({
   const assignee = members.find(m => m.id === ev.memberId);
   const cat = ev.category ?? 'Event';
   const accentColor = isConf ? colors.warning : cs.dot;
-  // ev.helper is a free-text name (driver/tutor/coach/escort), not a
-  // memberId — resolved by name match against the roster so a real avatar
-  // can be shown instead of just initials/text.
-  const helperMember = ev.helper ? members.find(m => m.name === ev.helper || m.name.split(' ')[0] === ev.helper) : undefined;
+  // ev.helper/ev.driverName is a free-text name (driver/tutor/coach/
+  // escort), not a memberId — resolved by name match against the roster so
+  // a real avatar can be shown instead of just initials/text. Was
+  // ev.helper-only, so a driverName-based ride (every kid ride request)
+  // never showed its driver here at all (QA sweep UI pass).
+  const assigneeName = eventAssignee(ev).name;
+  const helperMember = assigneeName ? members.find(m => m.name === assigneeName || m.name.split(' ')[0] === assigneeName) : undefined;
 
   return (
     <TouchableOpacity activeOpacity={0.88} onPress={onPress} onLongPress={onLongPress} delayLongPress={450}>
@@ -421,7 +442,7 @@ export function EventCardTimeline({
 
           {/* Accompanied-by / driver — bottom-right, real avatar when the
               named helper matches a real family member. */}
-          {ev.helper && (
+          {assigneeName && (
             <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>
@@ -431,7 +452,7 @@ export function EventCardTimeline({
                   <FamilyAvatar name={helperMember.name} emoji={helperMember.emoji} avatarUrl={(helperMember as any).avatarUrl}
                     siblings={members.map(m => m.name)} size={24} ringColor={colors.info} ringWidth={1.5} />
                 ) : (
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>{ev.helper}</Text>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary }}>{assigneeName}</Text>
                 )}
               </View>
             </View>
@@ -499,7 +520,7 @@ export function EventCardTimeline({
 
           {!isPast && (
             <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4, textAlign: 'right', opacity: 0.6 }}>
-              Hold to edit{canDelete ? ' · Swipe ← to delete' : ''}{ev.helper ? ' · Tap for driver actions' : ''}
+              Hold to edit{canDelete ? ' · Swipe ← to delete' : ''}{assigneeName ? ' · Tap for driver actions' : ''}
             </Text>
           )}
         </View>

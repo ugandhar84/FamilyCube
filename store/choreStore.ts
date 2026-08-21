@@ -6,6 +6,7 @@
  * Pattern follows questStore: AsyncStorage cache + Supabase sync + realtime.
  */
 import { create } from 'zustand';
+import { logActivity, type ActivityAction } from '@/lib/activityLog';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 
@@ -422,6 +423,54 @@ const getFamilyId = (): string | null => {
     return (active as any)?.familyId ?? null;
   } catch { return null; }
 };
+
+const getActiveMemberId = (): string | null => {
+  try {
+    const { useFamilyStore } = require('@/store/familyStore');
+    const s = useFamilyStore.getState();
+    return s.activeMemberId ?? s.members[0]?.id ?? null;
+  } catch { return null; }
+};
+
+// Mirrors eventStore.ts's logUpdateActivity — one row per meaningful field
+// change, covering the transitions a family actually wants in the shared
+// history sheet (claim/submit/approve/decline, reassignment, reward edits,
+// due-date changes), not every column patch (e.g. photo proof URLs).
+function logChoreUpdateActivity(prevChore: ChoreTask, updates: Partial<ChoreTask>, id: string) {
+  const familyId = getFamilyId();
+  const actorId = getActiveMemberId();
+  const push = (action: ActivityAction, field: string, oldValue: unknown, newValue: unknown, note?: string) => {
+    logActivity({
+      entityType: 'chore', entityId: id, familyId, actorId, action, field,
+      oldValue: oldValue == null ? null : String(oldValue),
+      newValue: newValue == null ? null : String(newValue),
+      note,
+    });
+  };
+  if ('status' in updates && updates.status !== prevChore.status) {
+    const statusAction: ActivityAction =
+      updates.status === 'pending_approval' || updates.status === 'pending_grandparent_approval' || updates.status === 'pending_parent_approval' ? 'submitted' :
+      updates.status === 'approved' ? 'approved' :
+      updates.status === 'declined' ? 'declined' :
+      'status_changed';
+    push(statusAction, 'status', prevChore.status, updates.status);
+  }
+  if ('assignedToId' in updates && updates.assignedToId !== prevChore.assignedToId) {
+    push('reassigned', 'assignedToId', prevChore.assignedToId, updates.assignedToId);
+  }
+  if ('coinsReward' in updates && updates.coinsReward !== prevChore.coinsReward) {
+    push('reward_changed', 'coinsReward', prevChore.coinsReward, updates.coinsReward);
+  }
+  if ('bonusCoins' in updates && updates.bonusCoins !== prevChore.bonusCoins) {
+    push('reward_changed', 'bonusCoins', prevChore.bonusCoins, updates.bonusCoins);
+  }
+  if ('dueDate' in updates && updates.dueDate !== prevChore.dueDate) {
+    push('due_date_changed', 'dueDate', prevChore.dueDate, updates.dueDate);
+  }
+  if ('description' in updates && updates.description !== prevChore.description) {
+    push('notes_changed', 'description', prevChore.description, updates.description);
+  }
+}
 
 // ─── Helper: get active member role ──────────────────────────────────────────
 
@@ -1217,6 +1266,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       linked_event_id:          chore.linkedEventId ?? null,
     });
     _choreInsertPromises.set(chore.id, insertPromise);
+    logActivity({ entityType: 'chore', entityId: chore.id, familyId, actorId: chore.createdById ?? getActiveMemberId(), action: 'created' });
 
     // 7.1 — a newly-posted claimable POOL quest gets zero signal to eligible
     // kids/teens (and seniors, if GP-eligible) otherwise — they'd only see
@@ -1241,6 +1291,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   },
 
   updateChore: (id, rawUpdates) => {
+    const prevChore = get().chores.find(c => c.id === id);
     // Live QA audit found a shopping chore's assignedToId could be changed
     // to a kid/teen via a later edit (not just at creation, which addChore
     // now separately guards) with zero rejection. Same fix here: an edit
@@ -1377,6 +1428,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('reversedAt'         in (updates as any)) patch.reversed_at     = (updates as any).reversedAt ?? null;
     if ('reversedById'       in (updates as any)) patch.reversed_by_id  = (updates as any).reversedById ?? null;
     if (Object.keys(patch).length > 0) dbUpdate('chore_tasks', id, patch);
+    if (prevChore) logChoreUpdateActivity(prevChore, updates, id);
   },
 
   deleteChore: (id) => {
@@ -1398,11 +1450,14 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now });
       }
     }
+    const familyId = getFamilyId();
+    const actorId = getActiveMemberId();
     set(s => ({ chores: s.chores.filter(c => c.id !== id) }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     supabase.from('chore_tasks').delete().eq('id', id).then(({ error }) => {
       if (error) console.warn('[choreStore] delete error', error.message);
     });
+    logActivity({ entityType: 'chore', entityId: id, familyId, actorId, action: 'deleted' });
   },
 
   // ─────────────────────────────────────────────────────────────────────────

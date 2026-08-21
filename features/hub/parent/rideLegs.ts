@@ -25,6 +25,14 @@ const to24HourTime = (raw: string): string | undefined => {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 };
 
+// A kid choosing "Both ways / a different day" (multi-day trip — sleepaway
+// camp, etc) knows the pickup DATE but never a time — this sentinel keeps
+// that state distinguishable from "time already known" (a parent-created
+// both-ways request) and from "nothing known yet" (same-day, the common
+// case), so the pickup date shows up for the parent without falsely
+// implying a time has already been set.
+const UNKNOWN_TIME = '__unknown__';
+
 export function parseRideMeta(encoded: string | undefined, fallbackDate?: string) {
   const rideCode = encoded?.startsWith('RIDE:') ? encoded : null;
   const isBothWays = rideCode === 'RIDE:both' || rideCode?.startsWith('RIDE:both:');
@@ -32,20 +40,27 @@ export function parseRideMeta(encoded: string | undefined, fallbackDate?: string
   const isPickup   = rideCode === 'RIDE:pickup' || rideCode?.startsWith('RIDE:pickup:');
   let pickupDate = fallbackDate;
   let pickupTime: string | undefined;
+  let pickupDateKnownOnly = false;
 
   if (rideCode?.startsWith('RIDE:both:') || rideCode?.startsWith('RIDE:pickup:')) {
     const payload = rideCode.slice(rideCode.indexOf(':', 5) + 1).trim();
-    const localStamp = payload.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/);
+    const localStamp = payload.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}|__unknown__)$/);
     if (localStamp) {
       pickupDate = localStamp[1];
-      pickupTime = localStamp[2];
+      if (localStamp[2] === UNKNOWN_TIME) pickupDateKnownOnly = true;
+      else pickupTime = localStamp[2];
     } else {
       pickupTime = to24HourTime(payload);
     }
   }
 
-  return { isBothWays, isDropoff, isPickup, pickupDate, pickupTime, pickupLabel: pickupTime ? fmtTime(pickupTime) : undefined };
+  return {
+    isBothWays, isDropoff, isPickup, pickupDate, pickupTime, pickupDateKnownOnly,
+    pickupLabel: pickupTime ? fmtTime(pickupTime) : undefined,
+  };
 }
+
+export { UNKNOWN_TIME as RIDE_PICKUP_TIME_UNKNOWN };
 
 // Adds 90 minutes to a 24h "HH:MM" time string, wrapping past midnight.
 export function plus90Minutes(time: string | undefined): string {
@@ -83,21 +98,15 @@ export function forkRideLegs({
   const rideMeta = parseRideMeta(ev.returnTime, ev.date);
   const pickupTime = pickupTimeOverride ?? rideMeta.pickupTime ?? ev.time;
 
-  updateEvent(ev.id, {
-    approvalPending: false,
-    ...assigneePatch(selfDrive),
-    returnTime: undefined,
-    title: `${ev.title} — Drop-off`,
-    notes: ev.notes,
-    color: DROPOFF_GREEN,
-    isOpenToGrandparents: !selfDrive,
-    isOpenToTeens: !selfDrive,
-    rideCoins: selfDrive ? undefined : splitCoins,
-    pickupLocation: ev.pickupLocation,
-    dropLocation: ev.dropLocation,
-  });
-  if (!selfDrive) tryAutoDispatch(ev.id);
-
+  // The 2 legs are otherwise fully independent rows with no way for any
+  // role encountering just one of them (e.g. in Schedule's Agenda/Week/Day,
+  // or a GP who wasn't around for the other leg) to know a companion leg
+  // exists elsewhere (QA sweep UI pass, High Finding #4). linkedLegId
+  // points each leg at the other's id — the pickup leg is created first so
+  // its id is known when the drop-off leg (ev.id, already exists) is
+  // updated in the same pass; the pickup leg then gets a 2nd small patch
+  // pointing back, since addEvent can't self-reference an id that doesn't
+  // exist yet at call time.
   const pickupId = addEvent({
     title: `${ev.title} — Pickup`,
     date: rideMeta.pickupDate ?? ev.date,
@@ -112,6 +121,23 @@ export function forkRideLegs({
     rideCoins: selfDrive ? undefined : splitCoins,
     pickupLocation: ev.dropLocation,
     dropLocation: ev.pickupLocation,
+    linkedLegId: ev.id,
   });
   if (!selfDrive) tryAutoDispatch(pickupId);
+
+  updateEvent(ev.id, {
+    approvalPending: false,
+    ...assigneePatch(selfDrive),
+    returnTime: undefined,
+    title: `${ev.title} — Drop-off`,
+    notes: ev.notes,
+    color: DROPOFF_GREEN,
+    isOpenToGrandparents: !selfDrive,
+    isOpenToTeens: !selfDrive,
+    rideCoins: selfDrive ? undefined : splitCoins,
+    pickupLocation: ev.pickupLocation,
+    dropLocation: ev.dropLocation,
+    linkedLegId: pickupId,
+  });
+  if (!selfDrive) tryAutoDispatch(ev.id);
 }

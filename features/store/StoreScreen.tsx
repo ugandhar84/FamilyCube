@@ -112,12 +112,18 @@ function AiPerksPanel({ onAdd, onClose, colors, isDark }: {
 
 // ─── Perk Card ────────────────────────────────────────────────────────────────
 
-function PerkCard({ reward, myCoins, isKid, isParent, colors, isDark, onRedeem, onEdit, onDelete, isGoal, onToggleGoal }: {
-  reward: Reward; myCoins: number; isKid: boolean; isParent: boolean; colors: any; isDark: boolean;
+function PerkCard({ reward, myCoins, isKid, isParent, canRedeemSelf, colors, isDark, onRedeem, onEdit, onDelete, isGoal, onToggleGoal }: {
+  reward: Reward; myCoins: number; isKid: boolean; isParent: boolean;
+  // Was isKid-only, so teen and senior roles — both of whom earn coins
+  // elsewhere in the app with nowhere else to spend them — got a
+  // permanently-disabled card with no redeem action at all (QA sweep,
+  // full-app per-role audit, Critical for both roles).
+  canRedeemSelf: boolean;
+  colors: any; isDark: boolean;
   onRedeem: (r: Reward) => void; onEdit: (r: Reward) => void; onDelete: (r: Reward) => void;
   isGoal?: boolean; onToggleGoal?: (r: Reward) => void;
 }) {
-  const canRedeem = isKid && myCoins >= reward.cost;
+  const canRedeem = canRedeemSelf && myCoins >= reward.cost;
   return (
     <View style={[s.perkCard, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.textPrimary, overflow: 'hidden' }]}>
       <LinearGradient
@@ -162,7 +168,7 @@ function PerkCard({ reward, myCoins, isKid, isParent, colors, isDark, onRedeem, 
         </Text>
       ) : null}
 
-      {isKid ? (
+      {canRedeemSelf ? (
         <>
           <Pressable onPress={() => onRedeem(reward)} disabled={!canRedeem}
             style={[s.redeemBtn, { backgroundColor: canRedeem ? colors.teal : colors.border, marginTop: 8 }]}>
@@ -170,7 +176,7 @@ function PerkCard({ reward, myCoins, isKid, isParent, colors, isDark, onRedeem, 
               {canRedeem ? 'Redeem Perk' : `Need ${reward.cost - myCoins} more 🪙`}
             </Text>
           </Pressable>
-          {onToggleGoal && (
+          {isKid && onToggleGoal && (
             <Pressable onPress={() => onToggleGoal(reward)}
               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 6 }}>
               <Ionicons name={isGoal ? 'star' : 'star-outline'} size={13} color={isGoal ? colors.amber : colors.textTertiary} />
@@ -182,7 +188,7 @@ function PerkCard({ reward, myCoins, isKid, isParent, colors, isDark, onRedeem, 
         </>
       ) : !isParent ? (
         <Text style={{ fontSize: 10, color: colors.textTertiary, textAlign: 'center', marginTop: 8 }}>
-          Kid Mode Required
+          Not available for your role
         </Text>
       ) : null}
     </View>
@@ -317,7 +323,7 @@ function PerkModal({ visible, editing, colors, onClose, onSave }: {
 export default function StoreScreen({ hideHeader = false }: { hideHeader?: boolean }) {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, loaded, loadFromStorage, deductCoins, awardCoins } = useFamilyStore();
-  const { rewards, loadFromStorage: loadRewards, addReward, updateReward, deleteReward, redeemReward } = useRewardStore();
+  const { rewards, redemptions, loadFromStorage: loadRewards, addReward, updateReward, deleteReward, redeemReward } = useRewardStore();
   const pointsToFiatRatio = useChoreStore(s => s.householdSettings.pointsToFiatRatio);
 
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
@@ -340,6 +346,16 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const isParent = activeMember?.role === 'parent';
   const isKid    = activeMember?.role === 'kid';
+  // Was isKid/isParent-only, so teen AND senior both fell through to the
+  // else-branch: a bare title with no balance, and every perk card showing
+  // the literal text "Kid Mode Required" with no redeem action — despite
+  // both roles genuinely earning coins elsewhere (teens via quests,
+  // seniors via gpCoins/Send Bonus in SeniorView's Hub) and having no other
+  // place in the app to spend them (QA sweep, full-app per-role audit,
+  // Critical for both roles). redeemFrom/handleRedeem below already sum
+  // BOTH wallets and are fully role-agnostic — only the UI gating was
+  // narrow.
+  const canRedeemSelf = isKid || activeMember?.role === 'teen' || activeMember?.role === 'senior';
   const myMainCoins = (activeMember as any)?.mainCoins ?? 0;
   const myGpCoins   = (activeMember as any)?.gpCoins ?? 0;
   const myCoins  = myMainCoins + myGpCoins;
@@ -440,7 +456,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
           <Text style={{ fontSize: 20, fontWeight: '900', color: colors.textPrimary }}>
             Family Perks Store
           </Text>
-          {isKid ? (
+          {canRedeemSelf ? (
             <View style={[s.coinBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textSecondary }}>
                 Balance: <Text style={{ color: '#F5A623', fontWeight: '900' }}>{myCoins} 🪙</Text>
@@ -460,6 +476,54 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
             </View>
           ) : null}
         </View>
+
+        {/* ── My Redemptions ── redeeming was fire-and-forget (a one-time
+            Alert, then nothing) — a kid/teen/senior who redeemed a perk had
+            no way to check whether it was still pending or already
+            fulfilled anywhere in the app (QA sweep, full-app per-role
+            audit, High). The parent-only "Kids' Piggy Banks" glance below
+            never substituted for this — that's a parent's view of OTHERS'
+            balances, not a self-view of one's own redemption history. */}
+        {canRedeemSelf && activeMember && (() => {
+          const mine = redemptions
+            .filter(r => r.memberId === activeMember.id)
+            .sort((a, b) => b.redeemedAt.localeCompare(a.redeemedAt))
+            .slice(0, 5);
+          if (mine.length === 0) return null;
+          const statusMeta: Record<string, { label: string; color: string }> = {
+            pending:   { label: 'Pending',   color: colors.warning },
+            approved:  { label: 'Fulfilled', color: colors.success },
+            rejected:  { label: 'Declined',  color: colors.danger },
+            cancelled: { label: 'Cancelled', color: colors.textTertiary },
+          };
+          return (
+            <View style={{ paddingHorizontal: 12, marginBottom: 10 }}>
+              <Text style={{ fontSize: 13, fontWeight: '900', color: colors.textPrimary, marginBottom: 8 }}>
+                My Redemptions
+              </Text>
+              <View style={{ gap: 6 }}>
+                {mine.map(r => {
+                  const reward = rewards.find(rw => rw.id === r.rewardId);
+                  const meta = statusMeta[r.status] ?? statusMeta.pending;
+                  return (
+                    <View key={r.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+                      backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
+                      paddingHorizontal: 10, paddingVertical: 8 }}>
+                      <Text style={{ fontSize: 16 }}>{reward?.emoji ?? '🎁'}</Text>
+                      <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
+                        {reward?.title ?? 'Perk'}
+                      </Text>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textTertiary }}>{r.deductedCoins} 🪙</Text>
+                      <View style={{ backgroundColor: meta.color + '20', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 }}>
+                        <Text style={{ fontSize: 9, fontWeight: '800', color: meta.color }}>{meta.label}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          );
+        })()}
 
         {/* ── AI Panel ── */}
         {isParent && showAiPanel && (
@@ -557,7 +621,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
             <View style={s.grid}>
               {rewards.map(r => (
                 <PerkCard key={r.id} reward={r} myCoins={myCoins}
-                  isKid={isKid} isParent={isParent} colors={colors} isDark={isDark}
+                  isKid={isKid} isParent={isParent} canRedeemSelf={canRedeemSelf} colors={colors} isDark={isDark}
                   onRedeem={handleRedeem}
                   onEdit={r => { setEditing(r); setShowCreate(true); }}
                   onDelete={handleDelete}

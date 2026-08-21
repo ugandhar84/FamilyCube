@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore } from '@/store/choreStore';
 import type { Quest } from '@/store/questStore';
-import { useEventStore, isEventSensitive, canViewSensitiveEventDetail } from '@/store/eventStore';
+import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssignee } from '@/store/eventStore';
 import { useRewardStore } from '@/store/rewardStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
@@ -130,8 +130,13 @@ export function KidView({ active, members, colors, isDark, activeTrip }: {
   const myEvents    = visibleEvents.filter(e => (e.memberId === active.id || !e.memberId) && e.category !== 'Work');
   const todayEvents = myEvents.filter(e => e.date === today).sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
 
-  // Confirmed ride today
-  const confirmedRide = todayEvents.find(e => e.helper && e.helperStatus === 'confirmed');
+  // Confirmed ride today — QA sweep Critical Finding C3: these 5 filters
+  // were all helper/helperStatus-only, so a kid's OWN ride request (which
+  // now always writes driverName/driverStatus via KidRequestModal's
+  // rideRequired:true fix) never showed up in any of the kid's own status
+  // banners — "awaiting driver," "confirmed," or "declined" all silently
+  // stayed invisible for the exact request type this kid actually creates.
+  const confirmedRide = todayEvents.find(e => { const a = eventAssignee(e); return a.name && a.status === 'confirmed'; });
   const rideCountdown = useCountdown(confirmedRide?.date, confirmedRide?.time);
 
   // Multi-day feed — previously awaitingDriverRide/myDeclinedRides only
@@ -150,24 +155,24 @@ export function KidView({ active, members, colors, isDark, activeTrip }: {
   // Previously invisible: a kid whose parent assigned a specific driver
   // had zero indication anyone had even acted on their request until that
   // driver tapped confirm, sometimes hours or days later.
-  const awaitingDriverRide = myUpcomingEvents.find(e => e.date >= today && e.helper && e.helperStatus === 'pending');
+  const awaitingDriverRide = myUpcomingEvents.find(e => { if (e.date < today) return false; const a = eventAssignee(e); return a.name && a.status === 'pending'; });
 
   // Next upcoming event (any, for countdown on hero if no ride)
-  const nextEvent = todayEvents.find(e => hoursUntilEvent(e.date, e.time) > 0 && e.helperStatus !== 'rejected');
+  const nextEvent = todayEvents.find(e => hoursUntilEvent(e.date, e.time) > 0 && eventAssignee(e).status !== 'rejected');
   const nextCountdown = useCountdown(nextEvent?.date, nextEvent?.time);
 
   const myDeclinedRides = myUpcomingEvents.filter(e =>
-    e.date >= today && e.helperStatus === 'rejected' && !e.approvalPending && hoursUntilEvent(e.date, e.time) >= -1
+    e.date >= today && eventAssignee(e).status === 'rejected' && !e.approvalPending && hoursUntilEvent(e.date, e.time) >= -1
   );
   // A kid can name a preferred helper right when creating the ride request
   // (EventFormModal sets both approvalPending=true AND helper/helperStatus
-  // in the same insert) — without excluding e.helper here, that single
-  // event matched BOTH this "nobody's looked at it yet" filter AND
-  // awaitingDriverRide/confirmedRide below at once, rendering two
-  // contradictory banners simultaneously (QA Round 7, finding B2). Once a
-  // helper is named, the other filters own communicating status.
+  // in the same insert) — without excluding an already-named assignee here,
+  // that single event matched BOTH this "nobody's looked at it yet" filter
+  // AND awaitingDriverRide/confirmedRide below at once, rendering two
+  // contradictory banners simultaneously (QA Round 7, finding B2). Once an
+  // assignee is named, the other filters own communicating status.
   const myPendingRides  = events.filter(e =>
-    e.memberId === active.id && e.approvalPending && !e.helper && e.date >= today
+    e.memberId === active.id && e.approvalPending && !eventAssignee(e).name && e.date >= today
   );
 
   const myRequests = requests.filter(r => r.fromMemberId === active.id && r.status !== 'cancelled');
@@ -246,7 +251,7 @@ export function KidView({ active, members, colors, isDark, activeTrip }: {
         eventId:      ev.id,
         title:        ev.title,
         time:         ev.time,
-        driver:       ev.helper,
+        driver:       eventAssignee(ev).name,
         location:     ev.pickupLocation ?? ev.location,
         dropLocation: ev.dropLocation,
         sentAt:       new Date().toISOString(),

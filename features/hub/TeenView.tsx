@@ -5,7 +5,7 @@ import {
 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
-import { useEventStore, isEventSensitive, canViewSensitiveEventDetail } from '@/store/eventStore';
+import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssignee } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore } from '@/store/choreStore';
@@ -94,12 +94,13 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
   const rideEarnings = active.rideEarningsPerRun ?? 50;
   const toggleCar = () => updateMember(active.id, { hasCar: !hasCar });
 
-  // A dropped ride previously left helper/helperStatus:'rejected' set,
-  // which openPickups' own `!== 'confirmed'` check re-admitted as
-  // claimable — but claimHelperSlot's conditional write only ever matches
-  // a still-NULL status, so it silently could never actually be reclaimed
-  // by anyone. Excluding 'rejected' here keeps a dropped ride out of the
-  // pool until dropPickup (below) actually clears the stale helper fields.
+  // dropPickup (below) goes through updateEvent's normal decline path,
+  // which clears helper/helperStatus back to unset (via autoOpenOnDecline)
+  // rather than leaving a stale 'rejected' status sitting there — so a
+  // dropped ride is genuinely reclaimable again, not dead-ended against
+  // claimHelperSlot's conditional (NULL-status-only) write. The 'rejected'
+  // exclusion here is just a defensive guard against the brief instant
+  // between the decline write landing and the reopen clearing it.
   // A parent naming this teen directly as driver (helper=teen's name,
   // helperStatus='pending') is a DIRECT assignment, not something the teen
   // claimed from the open pool — previously invisible everywhere: not in
@@ -107,16 +108,28 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
   // and HubTimelineSection only surfaces today-dated events, so a future
   // assignment had literally no UI anywhere telling the teen it existed
   // (QA Round 8, "no teen surface for you've been asked to drive").
-  const myPendingAssignments = upcomingEvents.filter(e =>
-    e.helper === active.name && e.helperStatus === 'pending' && !e.approvalPending && e.date >= today
-  );
-  const openPickups = upcomingEvents.filter(e => e.isOpenToTeens && e.helperStatus !== 'confirmed' && e.helperStatus !== 'rejected' && e.date >= today);
+  // QA sweep (UI pass) Critical Finding — these 3 filters were
+  // helper/helperStatus-only, so a driverName-based kid ride request opened
+  // to teens (isOpenToTeens:true) never showed up in ANY teen pool at all —
+  // isOpenToTeens was correctly set, but nothing here ever looked at
+  // driverName/driverStatus, so no teen had any visible way to see or claim
+  // it. eventAssignee() covers both field pairs, same fix already applied
+  // to SeniorView/KidView/EventDetailSheet.
+  const myPendingAssignments = upcomingEvents.filter(e => {
+    const a = eventAssignee(e);
+    return a.name === active.name && a.status === 'pending' && !e.approvalPending && e.date >= today;
+  });
+  const openPickups = upcomingEvents.filter(e => {
+    const a = eventAssignee(e);
+    return e.isOpenToTeens && a.status !== 'confirmed' && a.status !== 'rejected' && e.date >= today;
+  });
   // Exact name match — the previous fuzzy includes()-based match ("Sam"
   // vs. "Sam Wilson") could show a DIFFERENT member's confirmed ride as
   // this teen's own the moment two names happened to share a first name.
-  const myPickups = upcomingEvents.filter(e =>
-    e.helper === active.name && e.helperStatus === 'confirmed' && e.date >= today
-  );
+  const myPickups = upcomingEvents.filter(e => {
+    const a = eventAssignee(e);
+    return a.name === active.name && a.status === 'confirmed' && e.date >= today;
+  });
   const [passedPickups, setPassedPickups] = useState<string[]>([]);
   const urgentPickups = openPickups.filter(e => !passedPickups.includes(e.id) &&
     hoursUntilEvent(e.date, e.time) >= 0 && hoursUntilEvent(e.date, e.time) < 1);
@@ -136,7 +149,11 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
     // winner instead of both teens' devices showing themselves as confirmed.
     // Coins are awarded only via onWon — a teen who loses the race must not
     // keep coins for a ride they were never actually confirmed on.
-    useEventStore.getState().claimHelperSlot(evId, 'helper', active.name, undefined, () => {
+    // Same fix as SeniorView's handleClaimRide — was hardcoded 'helper',
+    // so claiming a driverName-based (rideRequired) pickup wrote to the
+    // wrong column pair and never actually claimed the slot being shown.
+    const role: 'helper' | 'driver' = ev?.rideRequired && ev.category !== 'Ride' ? 'driver' : 'helper';
+    useEventStore.getState().claimHelperSlot(evId, role, active.name, undefined, () => {
       if (coins > 0) awardCoins(active.id, coins, 'mainCoins');
     });
   };
@@ -145,25 +162,32 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
   // flow the parent-facing sheet uses, so Parent Hub's own urgency banner
   // (<4hr window) picks it up automatically once it's close enough to matter.
   //
-  // Two bugs fixed here (QA Round 8, finding "coins kept on abandoned ride"):
-  // 1. claimPickup pays coins the moment a claim WINS the race, but dropping
-  //    afterward never reversed that payout — a teen could claim, get paid,
-  //    then immediately drop and keep the coins for a ride they never drove.
-  // 2. Leaving `helper`/`helperStatus:'rejected'` set made the ride a
-  //    phantom claimable: openPickups' old filter re-showed it (status
-  //    isn't 'confirmed'), but claimHelperSlot's conditional write only
-  //    matches a still-NULL status column, so nobody could actually claim
-  //    it again. Clearing helper/helperStatus back to unset makes the pool
-  //    truly reopen instead of dead-ending.
+  // Bug fixed here (QA Round 8, finding "coins kept on abandoned ride"):
+  // claimPickup pays coins the moment a claim WINS the race, but dropping
+  // afterward never reversed that payout — a teen could claim, get paid,
+  // then immediately drop and keep the coins for a ride they never drove.
+  //
+  // Previously this also directly cleared helper/helperStatus to undefined
+  // instead of setting helperStatus:'rejected' through the normal
+  // updateEvent path — a hand-rolled workaround for autoOpenOnDecline
+  // leaving the status stuck at 'rejected' (dead-ending claimHelperSlot's
+  // CAS, which only matches a NULL status column) that made a teen's
+  // decline behave differently from every other decline site (GP, parent
+  // reassignment via hubComponents.tsx) — those never got the same
+  // clean-reopen treatment, never triggered autoOpenOnDecline's GP/Teen
+  // pool-open, and weren't recognized as a decline by anything checking
+  // helperStatus==='rejected' (QA sweep H3). Now that updateEvent's own
+  // autoOpenOnDecline clears the stale name+status itself, this can just
+  // go through the canonical decline path like everyone else.
   const dropPickup = (evId: string) => {
     const ev = upcomingEvents.find(e => e.id === evId);
+    const a = ev ? eventAssignee(ev) : undefined;
     const paidCoins = ev?.rideCoins ?? rideEarnings;
-    if (ev?.helper === active.name && paidCoins > 0) deductCoins(active.id, paidCoins, 'mainCoins');
-    updateEvent(evId, {
-      helper: undefined, helperStatus: undefined,
-      isOpenToGrandparents: true, isOpenToTeens: true,
-      declinedBy: active.name,
-    });
+    if (a?.name === active.name && paidCoins > 0) deductCoins(active.id, paidCoins, 'mainCoins');
+    const isDriverPair = ev?.driverName === active.name || (ev?.rideRequired && ev.category !== 'Ride');
+    updateEvent(evId, isDriverPair
+      ? { driverStatus: 'rejected', declinedBy: active.name }
+      : { helperStatus: 'rejected', declinedBy: active.name });
   };
 
   // Confirming a direct assignment settles it — no coins change hands here
@@ -172,7 +196,9 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
   // rideCoins already has on the claim path, left as-is rather than
   // invented here without a clear source of truth for the amount).
   const confirmAssignment = (evId: string) => {
-    updateEvent(evId, { helperStatus: 'confirmed' });
+    const ev = upcomingEvents.find(e => e.id === evId);
+    const isDriverPair = ev?.driverName === active.name || (ev?.rideRequired && ev.category !== 'Ride');
+    updateEvent(evId, isDriverPair ? { driverStatus: 'confirmed' } : { helperStatus: 'confirmed' });
   };
 
   // ── Tutoring / sibling help ───────────────────────────────────────────────────

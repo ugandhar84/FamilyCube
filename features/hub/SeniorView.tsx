@@ -274,9 +274,15 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // 'rejected' ride (already excluded on the teen side, per M1) stayed
   // stuck advertised here too. Excluding !!e.helper entirely closes both
   // (QA Round 11, Critical Finding C1 / Medium M1).
+  // QA sweep Critical Finding C3 — this was helper-only, so a
+  // rideRequired:true request from KidRequestModal (which always writes
+  // driverName/driverStatus, never helper/helperStatus) never showed up
+  // here at all: a GP could not browse or claim a kid's ride request. Using
+  // eventAssignee() covers both field pairs the same way myDrivingToday/
+  // myPendingAssignments already do further down this file.
   const openRides = upcomingEvents.filter(e =>
     e.isOpenToGrandparents &&
-    !e.helper &&
+    !eventAssignee(e).name &&
     !(e.grandparentPassedIds ?? []).includes(active.id) &&
     !cheerleaderMode &&
     !isPastEvent(e) &&
@@ -290,11 +296,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // OTHER's claimed ride as their own, including a working "Can't Make It"
   // decline button on a ride that was never theirs (QA Round 9, High
   // Finding 4 — reproduced live, both directions matched true).
-  const myClaimedRides = upcomingEvents.filter(e =>
-    e.isOpenToGrandparents &&
-    e.helper === active.name &&
-    e.helperStatus === 'confirmed'
-  );
+  const myClaimedRides = upcomingEvents.filter(e => {
+    if (!e.isOpenToGrandparents) return false;
+    const a = eventAssignee(e);
+    return a.name === active.name && a.status === 'confirmed';
+  });
   // Weekly cap counts everything claimed this week, past included; the list
   // shown in dispatch only carries what's still ahead.
   const upcomingClaimedRides = myClaimedRides.filter(e => !isPastEvent(e));
@@ -352,7 +358,13 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     // does the same conditional (only-if-still-unclaimed) DB write the
     // teen claim path already used — the teen side had this from the
     // start, the GP side never did (QA Round 11, Critical Finding C1).
-    useEventStore.getState().claimHelperSlot(evId, 'helper', active.name, undefined, () => {
+    // QA sweep C3 — was hardcoded 'helper', so claiming a rideRequired:true
+    // (non-Ride-category) request — the field pair every kid ride request
+    // now uses — wrote to the wrong column pair entirely and never actually
+    // claimed the slot the GP was looking at.
+    const target = upcomingEvents.find(e => e.id === evId) ?? events.find(e => e.id === evId);
+    const role: 'helper' | 'driver' = target?.rideRequired && target.category !== 'Ride' ? 'driver' : 'helper';
+    useEventStore.getState().claimHelperSlot(evId, role, active.name, undefined, () => {
       const ev = events.find(e => e.id === evId);
       if (ev) addToDeviceCalendar(ev);
     });

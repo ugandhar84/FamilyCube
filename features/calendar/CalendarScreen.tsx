@@ -442,6 +442,18 @@ export default function CalendarScreen() {
   const isTeen           = activeMember?.role === 'teen';
   const isKid            = activeMember?.role === 'kid';
   const isParentOrSenior = isParent || isSenior;
+  // Full Month/Week/Day/Agenda toolbar + day-nav — was isParentOrSenior
+  // only, leaving teens AND kids with no way to browse any date but today
+  // (teens had neither this toolbar nor the separate kid-only day-nav bar;
+  // kids had only that day-nav bar, permanently locked to Agenda/day view
+  // with no Month/Week even though those views render correctly for any
+  // non-parent role). Both were dead zones — a kid's own ride request for
+  // tomorrow, or any future event, was invisible on this tab (QA sweep,
+  // full-app per-role audit, Critical for both roles). Deliberately
+  // separate from isParentOrSenior itself — that flag also gates the
+  // "+ Event" create button and other parent/senior-only PERMISSIONS
+  // elsewhere on this screen, which neither teens nor kids should get.
+  const canUseFullCalendarToolbar = isParentOrSenior || isTeen || isKid;
   const activeMemberName = activeMember?.name ?? '';
 
   // Whoever had committed to drive/help only finds out an event vanished by
@@ -466,16 +478,28 @@ export default function CalendarScreen() {
         : (ev.helper && ev.helper !== activeMemberName && (ev.helperStatus === 'pending' || ev.helperStatus === 'confirmed'))
           ? ev.helper
           : undefined;
-    if (!claimantName) return;
-    const msg = `🗑️ ${relationalNameByName(activeMemberName, members)} removed "${ev.title}" — ${relationalNameByName(claimantName, members)} is no longer needed for it.`;
-    const claimantMember = members.find(m => m.name === claimantName);
-    if (claimantMember) {
-      useChatStore.getState().sendMessage(claimantMember.id, activeMemberId ?? '', msg);
-    } else {
-      // Free-text helper/driver name that isn't a real family member (e.g.
-      // an external tutor/coach) — no member id to DM, fall back to the
-      // family channel so the cancellation is still visible somewhere.
-      useChatStore.getState().sendMessage('all', activeMemberId ?? '', msg);
+    const actorLabel = relationalNameByName(activeMemberName, members);
+    if (claimantName) {
+      const msg = `🗑️ ${actorLabel} removed "${ev.title}" — ${relationalNameByName(claimantName, members)} is no longer needed for it.`;
+      const claimantMember = members.find(m => m.name === claimantName);
+      if (claimantMember) {
+        useChatStore.getState().sendMessage(claimantMember.id, activeMemberId ?? '', msg);
+      } else {
+        // Free-text helper/driver name that isn't a real family member (e.g.
+        // an external tutor/coach) — no member id to DM, fall back to the
+        // family channel so the cancellation is still visible somewhere.
+        useChatStore.getState().sendMessage('all', activeMemberId ?? '', msg);
+      }
+    }
+    // The kid whose event this was previously got NO notice at all when a
+    // parent deleted/cancelled their ride — only the assigned driver did.
+    // A kid who requested a ride should never have to discover it's gone
+    // by silently watching their schedule, same reasoning the driver-side
+    // notice above already documents (user report: parent deletions
+    // should notify the kid, and say which parent did it).
+    if (ev.memberId && ev.memberId !== activeMemberId) {
+      const kidMsg = `🗑️ ${actorLabel} removed "${ev.title}" from your schedule.`;
+      useChatStore.getState().sendMessage(ev.memberId, activeMemberId ?? '', kidMsg);
     }
   };
 
@@ -957,10 +981,12 @@ export default function CalendarScreen() {
               Week own their own prev/next chevrons inside the view itself;
               Agenda has no single-date concept at all; so the day-step
               chevrons + Range button only show for Day, where "which
-              single date" is still the relevant question. Parent/senior
-              only — kids keep the simpler single Day view with no toolbar
-              at all. */}
-          {isParentOrSenior && (
+              single date" is still the relevant question. Available to
+              every role (parent/senior/teen/kid) — the "+ Event" create
+              button above and other genuine permission gates stay on
+              isParentOrSenior specifically; this is pure navigation, not a
+              permission. */}
+          {canUseFullCalendarToolbar && (
             <View style={{ marginTop: 10, gap: 8 }}>
               {/* Mock's segmented control: equal-width tabs in one pill-shaped
                   bar, active tab lifted on a white/card chip — not a
@@ -990,10 +1016,10 @@ export default function CalendarScreen() {
 
         </View>
 
-        {/* My Schedule / All — kid/teen/senior scope toggle, not in the
-            reference (it has no kid-mode concept), so this stays scoped
-            to Day only, where "whose day am I looking at" is relevant. */}
-        {viewMode === 'day' && !isParent && (
+        {/* My Schedule / All — kid/teen/senior scope toggle. Was gated to
+            viewMode==='day', which a kid never reaches (no toolbar exists
+            to set it) — silently hid this toggle from kids entirely. */}
+        {(viewMode === 'day' || isKid) && !isParent && (
           <View style={{ backgroundColor: isDark ? colors.card : '#fff', borderBottomWidth: 1, borderBottomColor: colors.border }}>
             <View style={{ flexDirection: 'row', marginHorizontal: 14, marginTop: 10, marginBottom: 10,
               backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 12, padding: 3 }}>
@@ -1010,7 +1036,7 @@ export default function CalendarScreen() {
           </View>
         )}
 
-        {!isKid && viewMode === 'month' && (
+        {viewMode === 'month' && (
           <FadeInView>
             <MonthGridView
               monthDate={monthCursor}
@@ -1026,7 +1052,7 @@ export default function CalendarScreen() {
           </FadeInView>
         )}
 
-        {!isKid && viewMode === 'week' && (
+        {viewMode === 'week' && (
           <FadeInView>
             <WeekView
               weekStart={weekCursor}
@@ -1036,12 +1062,15 @@ export default function CalendarScreen() {
               onSelectEvent={(ev) => setDetailEv(ev)}
               onLongPressEvent={(ev) => setEditEv(ev)}
               onNavigateWeek={(delta) => setWeekCursor(prev => addDays(prev, delta * 7))}
-              onAddDay={(d) => { setSelectedDate(d); storeSelectDate(d); setShowAdd(true); }}
+              // showAdd opens the parent/senior EventFormAdd modal — a kid
+              // now reaching WeekView (widened from !isKid) should use
+              // KidRequestModal via "+ Ask Help" instead, not this.
+              onAddDay={isKid ? undefined : (d) => { setSelectedDate(d); storeSelectDate(d); setShowAdd(true); }}
             />
           </FadeInView>
         )}
 
-        {!isKid && viewMode === 'agenda' && (
+        {viewMode === 'agenda' && (
           <FadeInView>
             {rangeLoading && scopedRangeEvents.length === 0 ? (
               <View style={{ paddingHorizontal: 14, gap: 10, paddingTop: 8 }}>
@@ -1086,7 +1115,7 @@ export default function CalendarScreen() {
             timeline underneath every other view too (the bug where a Day-
             style detail card kept appearing under Agenda/Week). */}
         {(viewMode === 'month' || viewMode === 'day') && (<React.Fragment>
-        {!isKid && viewMode === 'month' ? (
+        {viewMode === 'month' ? (
           // Selected-day card below the month grid — matches the reference
           // exactly: white rounded card, title + count badge header, each
           // event a colored-left-bar + light-tint row (role color, not
@@ -1101,7 +1130,7 @@ export default function CalendarScreen() {
               onLongPressEvent={(ev) => setEditEv(ev)}
             />
           </View>
-        ) : viewMode === 'day' && isParentOrSenior ? (
+        ) : viewMode === 'day' && canUseFullCalendarToolbar ? (
           // Simple hour-slot list — matches the reference's Day view.
           // The full date card scrolls away normally as part of the
           // content (no stickyHeaderIndices — that fought this row's

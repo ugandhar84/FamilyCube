@@ -14,6 +14,7 @@ import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { roleStyle } from './EventCard';
 import { toDateStr, parseDate, DAY_SHORT, CAT_DOT, MONTH_LABELS, buildMonthGrid } from './calendarDateHelpers';
+import { eventAssignee } from '@/store/eventStore';
 
 // ─── Icons (chevron-left/right only — kept local to avoid pulling in
 // CalendarScreen's full icon set for two glyphs) ───────────────────────────
@@ -69,6 +70,12 @@ export function DayEventsSummaryCard({
             const assignee = members.find(m => m.id === ev.memberId);
             const rs = roleStyle(assignee?.role, colors);
             const { time, ampm } = fmtTimeParts(ev.time);
+            // This card previously showed zero ride/driver context at all —
+            // a "needs a ride" or "driver confirmed" event looked identical
+            // to any other event here (QA sweep UI pass, Medium finding).
+            const driver = eventAssignee(ev);
+            const driverStatusColor = driver.status === 'confirmed' ? colors.success
+              : driver.status === 'rejected' ? colors.danger : colors.warning;
             return (
               <TouchableOpacity key={ev.id} onPress={() => onSelectEvent(ev)}
                 onLongPress={onLongPressEvent ? () => onLongPressEvent(ev) : undefined}
@@ -87,6 +94,15 @@ export function DayEventsSummaryCard({
                       <>
                         <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>·</Text>
                         <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={1}>{ev.location}</Text>
+                      </>
+                    )}
+                    {(ev.rideRequired || ev.category === 'Ride') && (
+                      <>
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>·</Text>
+                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: driverStatusColor }} />
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: driverStatusColor }} numberOfLines={1}>
+                          {driver.name ? (driver.status === 'confirmed' ? driver.name.split(' ')[0] : `${driver.name.split(' ')[0]} pending`) : 'needs a ride'}
+                        </Text>
                       </>
                     )}
                   </View>

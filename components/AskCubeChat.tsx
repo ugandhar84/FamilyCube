@@ -256,18 +256,31 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
   };
 
   const addMealToPlan = async (d: any, weekOf: string, day: string, mealType: string) => {
-    // Replacing an existing slot — delete it first rather than leaving two
-    // rows stacked in the same day/type slot.
-    await supabase.from('family_meals').delete()
-      .eq('family_id', activeMember.familyId).eq('week_of', weekOf)
-      .eq('day', day).eq('type', mealType.toLowerCase());
-    await supabase.from('family_meals').insert({
-      id: `${activeMember.familyId}-${weekOf}-${day}-askcube-${Date.now()}`,
-      family_id: activeMember.familyId, week_of: weekOf, day,
-      title: d.title, type: mealType.toLowerCase(), chef_id: d.chefId ?? null,
-      ingredients: d.ingredients ?? [], emoji: d.emoji ?? null, image_url: d.imageUrl ?? null, prep_minutes: d.prepMinutes ?? null,
-      dietary_tags: [], prep_steps: d.prepSteps ?? [], ai_generated: true,
-    });
+    // Was entirely unguarded — any failure here (RLS denial, network blip,
+    // a bad column value) threw an unhandled rejection with pendingMealCreate
+    // never cleared, leaving the confirm modal stuck open with no feedback
+    // (user-reported: "goes silent and then frozen"). Report the failure and
+    // let the caller decide what to do, instead of silently hanging.
+    try {
+      // Replacing an existing slot — delete it first rather than leaving two
+      // rows stacked in the same day/type slot.
+      const { error: delError } = await supabase.from('family_meals').delete()
+        .eq('family_id', activeMember.familyId).eq('week_of', weekOf)
+        .eq('day', day).eq('type', mealType.toLowerCase());
+      if (delError) throw delError;
+      const { error: insError } = await supabase.from('family_meals').insert({
+        id: `${activeMember.familyId}-${weekOf}-${day}-askcube-${Date.now()}`,
+        family_id: activeMember.familyId, week_of: weekOf, day,
+        title: d.title, type: mealType.toLowerCase(), chef_id: d.chefId ?? null,
+        ingredients: d.ingredients ?? [], emoji: d.emoji ?? null, image_url: d.imageUrl ?? null, prep_minutes: d.prepMinutes ?? null,
+        dietary_tags: [], prep_steps: d.prepSteps ?? [], ai_generated: true,
+      });
+      if (insError) throw insError;
+      return true;
+    } catch (e: any) {
+      console.warn('[AskCubeChat] addMealToPlan failed', e?.message ?? e);
+      return false;
+    }
   };
 
   // Meal creation is a two-step flow: tapping Create/Add opens the day/meal
@@ -709,9 +722,17 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
         onConfirm={async (weekOf, day, mealType) => {
           if (!pendingMealCreate) return;
           const { msgId, index, proposal } = pendingMealCreate;
-          await addMealToPlan(proposal.data, weekOf, day, mealType);
-          markProposalCreated(msgId, index);
+          const ok = await addMealToPlan(proposal.data, weekOf, day, mealType);
+          // Always close the modal and clear pending state regardless of
+          // outcome — this is what was previously missing on failure,
+          // leaving the confirm sheet stuck open with no way forward.
           setPendingMealCreate(null);
+          if (ok) {
+            markProposalCreated(msgId, index);
+          } else {
+            setMessages(prev => [...prev, { id: `local-${Date.now()}-mealerr`, role: 'assistant',
+              content: "Sorry, that meal couldn't be added — try again in a moment.", timestamp: new Date().toISOString() }]);
+          }
         }}
       />
     </Modal>

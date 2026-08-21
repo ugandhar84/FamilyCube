@@ -1128,12 +1128,34 @@ serve(async (req) => {
     const isStaleErrorReply = (content: string | null) =>
       !!content && /\b(ran into (a |an )?snag|couldn't (retrieve|find|reach)|wasn't able to|wasn't sent|try again)\b/i.test(content);
 
+    // The actual root cause of the "leftover apology" bug: a tool round
+    // whose own result was a genuine {error: ...} — e.g. a model calling
+    // get_chore_history without proper args and getting a real Postgrest
+    // error back — was still kept as "the most recent tool round" and
+    // replayed on every SUBSequent turn until a NEWER tool call happened to
+    // override it. In a conversation with several tool-free turns in a row
+    // (a run of propose_meal-only requests, say), that one stale failure
+    // sat in context and kept resurfacing in unrelated replies — filtering
+    // just the text reply (below) wasn't enough, since the raw failed
+    // tool_call/tool_result pair itself was still right there to react to.
+    // A tool round only "counts" as the one worth keeping if it actually
+    // succeeded — a failed round is dropped outright, not preserved as
+    // context for anything later.
     const rows = priorMessages ?? [];
-    const lastToolCallIdx = rows.reduce((last, m, i) => (m.tool_calls?.length ? i : last), -1);
+    const failedToolCallIds = new Set(
+      rows.filter(m => m.role === 'tool' && typeof m.content === 'string' && (() => {
+        try { return 'error' in JSON.parse(m.content); } catch { return false; }
+      })()).map(m => m.tool_call_id),
+    );
+    const lastToolCallIdx = rows.reduce((last, m, i) => {
+      if (!m.tool_calls?.length) return last;
+      const allFailed = m.tool_calls.every((c: any) => failedToolCallIds.has(c.id));
+      return allFailed ? last : i;
+    }, -1);
     const trimmedPriorMessages = rows.filter((m, i) => {
       if (m.role === 'assistant' && !m.tool_calls?.length && isStaleErrorReply(m.content)) return false;
       if (m.role !== 'tool' && !m.tool_calls?.length) return true; // plain text turn — always keep
-      return i >= lastToolCallIdx; // only the most recent tool round (its assistant call + all its result rows) survives
+      return i >= lastToolCallIdx; // only the most recent SUCCESSFUL tool round (its assistant call + all its result rows) survives
     });
 
     // Edge functions run in UTC, but "today"/"this weekend" must mean the
@@ -1197,7 +1219,10 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
   with different specific dish ideas of your own invention (real dish names, real ingredient lists, realistic prep
   times, AND 3-6 short numbered prepSteps — always include cooking steps, not just a title and ingredient list)
   for the user to pick from — never ask "what dish?" first. Prefer well-known, classic dish names for these so a
-  real Wikimedia Commons photo is likely to exist, and include imageUrl whenever you're confident one does.
+  real Wikimedia Commons photo is likely to exist, and include imageUrl whenever you're confident one does. A meal
+  request needs ONLY propose_meal — never call get_quests/get_chore_history/get_schedule for a meal suggestion, that
+  data has nothing to do with what's being asked and calling it risks a pointless failure (missing required args)
+  that then has nothing to do with your actual answer.
 - "tonight"/"today"/"tomorrow" -> resolve to the real date yourself using today's date, don't ask. "this weekend" ->
   see the exact date already given to you above, don't recompute it yourself.
 - No coin amount mentioned for a quest -> use a reasonable default (10-30 based on effort), don't ask.

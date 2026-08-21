@@ -896,7 +896,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                 </View>
                 {alertCall && (
                   <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16, paddingHorizontal: 4 }}>
-                    {[0, 5, 10].map(mins => (
+                    {[0, 10, 15, 30].map(mins => (
                       <TouchableOpacity key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
                         style={[f.dateBtn, { flex: 1, backgroundColor: alertCallLeadMinutes === mins ? catColor + '20' : colors.surface, borderColor: alertCallLeadMinutes === mins ? catColor : colors.border }]}>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: alertCallLeadMinutes === mins ? catColor : colors.textPrimary }}>
@@ -1768,7 +1768,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   </View>
                   {alertCall && (
                     <View style={{ flexDirection: 'row', gap: 8 }}>
-                      {[0, 5, 10].map(mins => (
+                      {[0, 10, 15, 30].map(mins => (
                         <TouchableOpacity key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
                           style={[f.dateBtn, { flex: 1, backgroundColor: alertCallLeadMinutes === mins ? colors.primary + '20' : colors.surface, borderColor: alertCallLeadMinutes === mins ? colors.primary : colors.border }]}>
                           <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: alertCallLeadMinutes === mins ? colors.primary : colors.textPrimary }}>

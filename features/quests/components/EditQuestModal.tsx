@@ -528,7 +528,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
               </View>
               {alertCall && (
                 <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-                  {[0, 5, 10].map(mins => (
+                  {[0, 10, 15, 30].map(mins => (
                     <TouchableOpacity key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
                       style={[aq.datePill, {
                         backgroundColor: alertCallLeadMinutes === mins ? BRAND.purple + '20' : pillBg,

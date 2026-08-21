@@ -43,8 +43,56 @@ function memberName(members: FamilyMember[], id?: string | null) {
   return id ? members.find(m => m.id === id)?.name : undefined;
 }
 
+// Matches the manual Add Event/Chore forms' own lead-time picker exactly
+// (EventFormModal.tsx/AddQuestModal.tsx/EditQuestModal.tsx) — same 4
+// options everywhere a reminder can be set, so there's no behavior
+// difference between typing an event manually and asking Cube for one.
+const REMINDER_LEAD_OPTIONS = [0, 10, 15, 30];
+
+// The reminder chip was previously read-only — showing whatever lead time
+// the AI happened to pick with no way to adjust it before confirming.
+// Renders as a row of tappable pills when onChange is provided (a still-
+// pending proposal), or falls back to the old plain-text chip otherwise
+// (e.g. inside a compact/already-decided card that never gets this prop).
+function ReminderPicker({ leadMinutes, hasReminder, accent, colors, onChange }: {
+  leadMinutes?: number | null; hasReminder?: boolean; accent: string; colors: any; onChange?: (mins: number) => void;
+}) {
+  if (!onChange) {
+    // Editing isn't available here (no onChangeReminder passed) — fall back
+    // to the old read-only chip, and only show it at all if a reminder was
+    // actually set, same as before this feature existed.
+    if (!hasReminder) return null;
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <Clock size={12} color={colors.textSecondary} />
+        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+          📞 {leadMinutes ? `${leadMinutes} min before` : 'On time'}
+        </Text>
+      </View>
+    );
+  }
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      <Clock size={12} color={colors.textSecondary} />
+      {REMINDER_LEAD_OPTIONS.map(mins => {
+        const active = (leadMinutes ?? 0) === mins;
+        return (
+          <Pressable key={mins} onPress={() => onChange(mins)}
+            style={{ borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
+              backgroundColor: active ? accent + '20' : 'transparent',
+              borderWidth: 1, borderColor: active ? accent : colors.border }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: active ? accent : colors.textSecondary }}>
+              {mins === 0 ? 'On time' : `${mins}m`}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function AskCubeProposalCard({
-  proposal, members, onDiscard, onCreate, onExpand, compact,
+  proposal, members, onDiscard, onCreate, onExpand, compact, onChangeReminder,
 }: {
   proposal: AskCubeProposal;
   members: FamilyMember[];
@@ -55,6 +103,10 @@ export default function AskCubeProposalCard({
   // side (2 per row) instead of stacked full-width, so picking between
   // options doesn't mean scrolling through 3 tall cards in a row.
   compact?: boolean;
+  // Lets the reminder chip become an editable picker instead of read-only
+  // display — omitted entirely for proposal kinds with no reminder concept
+  // (grocery/meal), so those never render a picker.
+  onChangeReminder?: (leadMinutes: number) => void;
 }) {
   const { colors } = useTheme();
   const meta = KIND_META[proposal.kind];
@@ -232,15 +284,8 @@ export default function AskCubeProposalCard({
               <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Photo required</Text>
             </View>
           )}
-          {!!d.alertCall && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Clock size={12} color={colors.textSecondary} />
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                📞 {d.alertCallLeadMinutes ? `${d.alertCallLeadMinutes} min before` : 'On time'}
-              </Text>
-            </View>
-          )}
         </View>
+        <ReminderPicker leadMinutes={d.alertCallLeadMinutes} hasReminder={!!d.alertCall} accent={accent} colors={colors} onChange={onChangeReminder} />
         {Actions}
       </View>
     );
@@ -257,13 +302,8 @@ export default function AskCubeProposalCard({
               {new Date(`${d.date}T${d.time ?? '00:00'}`).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
             </Text>
           )}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Clock size={12} color={colors.textSecondary} />
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-              📞 {d.alertCallLeadMinutes ? `${d.alertCallLeadMinutes} min before` : 'On time'}
-            </Text>
-          </View>
         </View>
+        <ReminderPicker leadMinutes={d.alertCallLeadMinutes} hasReminder accent={accent} colors={colors} onChange={onChangeReminder} />
         {Actions}
       </View>
     );
@@ -292,15 +332,8 @@ export default function AskCubeProposalCard({
             <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: accent }}>{d.category}</Text>
           </View>
         )}
-        {!!d.alertCall && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Clock size={12} color={colors.textSecondary} />
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-              📞 {d.alertCallLeadMinutes ? `${d.alertCallLeadMinutes} min before` : 'On time'}
-            </Text>
-          </View>
-        )}
       </View>
+      <ReminderPicker leadMinutes={d.alertCallLeadMinutes} hasReminder={!!d.alertCall} accent={accent} colors={colors} onChange={onChangeReminder} />
       {Actions}
     </View>
   );

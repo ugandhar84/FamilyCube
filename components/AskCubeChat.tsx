@@ -284,6 +284,22 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
     }));
   };
 
+  // The reminder chip on a proposal card was previously read-only display —
+  // whatever lead time the AI picked (often "On time"/0, since the prompt
+  // deliberately doesn't invent one unasked) had no way to be adjusted
+  // before confirming, so getting a 15/30-min reminder meant discarding and
+  // re-typing a more specific request. Lets the user tap a lead-time chip
+  // to edit the still-pending proposal's own data in place.
+  const updateProposalReminder = (msgId: string, index: number, leadMinutes: number) => {
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msgId || !m.proposals) return m;
+      const nextProposals = m.proposals.map((p, i) =>
+        i === index ? { ...p, data: { ...p.data, alertCall: true, alertCallLeadMinutes: leadMinutes } } : p
+      );
+      return { ...m, proposals: nextProposals };
+    }));
+  };
+
   const createProposal = async (msgId: string, index: number, proposal: AskCubeProposal) => {
     if (proposal.kind === 'meal') {
       setPendingMealCreate({ msgId, index, proposal });
@@ -434,6 +450,11 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                                   onDiscard={() => discardProposal(m.id, i)}
                                   onCreate={() => createProposal(m.id, i, p)}
                                   onExpand={p.kind === 'meal' ? () => setExpandedRecipe({ msgId: m.id, index: i }) : undefined}
+                                  onChangeReminder={
+                                    ['event', 'quest', 'event_reminder'].includes(p.kind)
+                                      ? (leadMinutes: number) => updateProposalReminder(m.id, i, leadMinutes)
+                                      : undefined
+                                  }
                                 />
                               </View>
                             );

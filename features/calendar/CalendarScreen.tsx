@@ -582,7 +582,12 @@ export default function CalendarScreen() {
   // anything else now does nothing.
   const routeLongPress = (ev: FamilyEvent) => {
     if (!isKid) { setEditEv(ev); return; }
-    if (ev.memberId === activeMemberId && ev.approvalPending) setKidEditEv(ev);
+    // A still-unapproved request whose own time has already passed is no
+    // longer something a kid should be able to edit — the parent never
+    // acted on it in time, and it's about to be swept up by the 24hr
+    // stale-cleanup job anyway, so re-editing it here would just recreate
+    // a request nobody's going to see before it's deleted.
+    if (ev.memberId === activeMemberId && ev.approvalPending && !isEventPast(ev.date, ev.time)) setKidEditEv(ev);
   };
 
   const calScrollRef = useRef<ScrollView>(null);

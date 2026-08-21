@@ -546,7 +546,19 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                   // enables Send (silenceReady below) but the mic keeps
                   // listening until the user taps the mic again to stop, or
                   // taps Send to stop-and-send in one step.
-                  if (voice.state === 'listening') { await voice.stop(); return; }
+                  // Tapping mic-to-STOP (as opposed to Send-to-stop-and-send)
+                  // previously discarded the transcript entirely — the box
+                  // fell back to `input`, which nothing had ever set, so the
+                  // just-dictated text visibly vanished. Now it lands in
+                  // `input`, editable with the keyboard, exactly like typing
+                  // it — the user decides from there whether to edit and
+                  // send or clear it.
+                  if (voice.state === 'listening') {
+                    const transcript = voice.liveTranscript;
+                    await voice.stop();
+                    if (transcript.trim()) setInput(transcript);
+                    return;
+                  }
                   await voice.start();
                 }}
                 style={{ width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
@@ -555,20 +567,31 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                   ? <ActivityIndicator size="small" color={colors.danger} />
                   : <Mic size={18} color={colors.textSecondary} />}
               </Pressable>
-              <TextInput
-                value={voice.state === 'listening' ? (voice.liveTranscript || 'Listening…') : input}
-                onChangeText={setInput}
-                placeholder="Ask Cube anything…"
-                placeholderTextColor={colors.placeholder}
-                editable={voice.state !== 'listening'}
-                style={{ flex: 1, fontSize: TYPO.caption,
-                  color: voice.state === 'listening' && !voice.liveTranscript ? colors.textTertiary : colors.textPrimary,
-                  backgroundColor: colors.surface, borderRadius: 20, borderWidth: 1,
-                  borderColor: voice.state === 'listening' ? colors.danger + '60' : colors.borderMed,
-                  paddingHorizontal: 16, paddingVertical: 10 }}
-                onSubmitEditing={() => send(input)}
-                returnKeyType="send"
-              />
+              <View style={{ flex: 1, justifyContent: 'center' }}>
+                <TextInput
+                  value={voice.state === 'listening' ? (voice.liveTranscript || 'Listening…') : input}
+                  onChangeText={setInput}
+                  placeholder="Ask Cube anything…"
+                  placeholderTextColor={colors.placeholder}
+                  editable={voice.state !== 'listening'}
+                  style={{ fontSize: TYPO.caption,
+                    color: voice.state === 'listening' && !voice.liveTranscript ? colors.textTertiary : colors.textPrimary,
+                    backgroundColor: colors.surface, borderRadius: 20, borderWidth: 1,
+                    borderColor: voice.state === 'listening' ? colors.danger + '60' : colors.borderMed,
+                    paddingHorizontal: 16, paddingVertical: 10, paddingRight: input && voice.state !== 'listening' ? 36 : 16 }}
+                  onSubmitEditing={() => send(input)}
+                  returnKeyType="send"
+                />
+                {/* Clear-in-one-tap — a dictated (or typed) message the user
+                    decides not to send shouldn't need manual backspacing. */}
+                {!!input && voice.state !== 'listening' && (
+                  <Pressable onPress={() => setInput('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={{ position: 'absolute', right: 10, width: 20, height: 20, borderRadius: 10,
+                      alignItems: 'center', justifyContent: 'center', backgroundColor: colors.border }}>
+                    <X size={12} color={colors.textSecondary} />
+                  </Pressable>
+                )}
+              </View>
               <Pressable
                 onPress={async () => {
                   if (voice.state === 'listening') {

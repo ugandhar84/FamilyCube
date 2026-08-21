@@ -1196,7 +1196,15 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   // driver for someone else's event stays parent-only).
   const isOwnEventBySenior = isSenior && (event.memberId === activeMemberId || (!event.memberId && !event.memberIds?.length));
   const isParentApproved = !event.approvalPending;
-  const restricted     = isPast || (isKid && isParentApproved); // past or kid approved → read-only
+  // A teen long-pressing a SIBLING's event (not isOwnPending, not
+  // isParent, not isSenior) previously matched no branch here at all —
+  // restricted was isKid-only, so the read-only badge never showed, every
+  // field rendered freely editable, and Save silently built an empty
+  // patch with zero feedback that nothing was actually going to persist
+  // (QA sweep, teen-role audit, High). Read-only now applies the same way
+  // it already does for a kid on a non-own/approved event.
+  const isForeignToTeen = isTeen && !isOwnPending;
+  const restricted     = isPast || (isKid && isParentApproved) || isForeignToTeen; // past, kid approved, or teen viewing someone else's → read-only
 
   // Original requester — if this was a kid request, lock that kid from being removed
   const originalRequesterId = event.helperRequestedBy

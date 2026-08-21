@@ -3,6 +3,7 @@ import { UserCheck, X } from 'lucide-react-native';
 import { fmtTime } from '../hubUtils';
 import { KID } from './kidTheme';
 import { BRAND } from '@/components/FamilyCubeLogo';
+import { eventAssignee } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
 // A driver has been named for a kid's ride request but hasn't tapped
@@ -16,7 +17,10 @@ export function AwaitingDriverBanner({ ev, colors, isDark, onDismiss }: {
   ev: FamilyEvent; colors: any; isDark: boolean;
   onDismiss: (id: string) => void;
 }) {
-  const driverFirst = ev.helper?.split(' ')[0] ?? 'Someone';
+  // Was ev.helper?.split(' ')[0] — undefined for every driverName-based
+  // kid ride request, rendering "Someone" here even after a real driver
+  // was named (QA sweep, kid-role audit, High).
+  const driverFirst = eventAssignee(ev).name?.split(' ')[0] ?? 'Someone';
 
   return (
     <View style={{ paddingHorizontal: 16, marginBottom: 18 }}>

@@ -728,7 +728,7 @@ export default function QuestsScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <AppHeader
         memberName={activeMember?.name}
-        memberRole={activeMember?.role === 'kid' || activeMember?.role === 'teen' ? 'kid' : activeMember?.role === 'senior' ? 'senior' : 'parent'}
+        memberRole={activeMember?.role === 'kid' ? 'kid' : activeMember?.role === 'teen' ? 'teen' : activeMember?.role === 'senior' ? 'senior' : 'parent'}
         notifCount={unreadNotifCount}
         onPersonaPress={undefined}
         onBellPress={() => setNotifPanelOpen(true)}

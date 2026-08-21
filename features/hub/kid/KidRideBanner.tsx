@@ -3,6 +3,7 @@ import { View, Text, Pressable } from 'react-native';
 import { Car, PartyPopper, AlertTriangle, Check, X } from 'lucide-react-native';
 import { fmtTime } from '../hubUtils';
 import { KID } from './kidTheme';
+import { eventAssignee } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 
@@ -51,17 +52,23 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, onCon
   const Icon = confirmed ? Check : isOverdue ? AlertTriangle : rideHere ? PartyPopper : Car;
   const iconColor = confirmed ? MONEY_GREEN : isOverdue ? colors.danger : rideHere ? '#6EE7B7' : MONEY_GREEN;
 
+  // Was ev.helper?.split(' ')[0] everywhere — undefined for every
+  // driverName-based kid ride request (KidRequestModal's own shape), so
+  // this banner literally rendered "undefined is HERE!" for the exact ride
+  // type this session's redesign was built around (QA sweep, kid-role
+  // audit, High). eventAssignee() covers both field pairs.
+  const driverFirst = eventAssignee(ev).name?.split(' ')[0];
   const headline = confirmed
     ? `Pickup confirmed — you're all set`
     : isOverdue
-      ? `${ev.helper?.split(' ')[0] ?? 'Your ride'} hasn't arrived yet`
+      ? `${driverFirst ?? 'Your ride'} hasn't arrived yet`
       : rideHere
-        ? `${ev.helper?.split(' ')[0]} is HERE!`
+        ? `${driverFirst ?? 'Your ride'} is HERE!`
         : rideCountdown <= 15
-          ? `${ev.helper?.split(' ')[0]} arrives in ${rideCountdown} min!`
+          ? `${driverFirst ?? 'Your ride'} arrives in ${rideCountdown} min!`
           : rideCountdown < 60
-            ? `${ev.helper?.split(' ')[0]} picks you up in ${rideCountdown}m`
-            : `${ev.helper?.split(' ')[0]} picks you up at ${fmtTime(ev.time)}`;
+            ? `${driverFirst ?? 'Your ride'} picks you up in ${rideCountdown}m`
+            : `${driverFirst ?? 'Your ride'} picks you up at ${fmtTime(ev.time)}`;
 
   const dismiss = () => { setDismissed(true); onDismiss(ev.id); };
 

@@ -8,6 +8,7 @@ import { KID } from './kidTheme';
 import CelebrationBurst from '@/components/CelebrationBurst';
 import { fmtTime } from '../hubUtils';
 import type { FamilyMember } from '@/store/familyStore';
+import { eventAssignee } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { Quest, QuestCheer } from '@/store/questStore';
 
@@ -68,7 +69,7 @@ export function KidUrgentAlerts({
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: KID.body, fontWeight: '900', color: '#FCA5A5' }}>Driver hasn't arrived!</Text>
-            <Text style={{ fontSize: KID.sub, color: '#F87171' }}>{confirmedRide.helper?.split(' ')[0]} was due at {fmtTime(confirmedRide.time)}</Text>
+            <Text style={{ fontSize: KID.sub, color: '#F87171' }}>{eventAssignee(confirmedRide).name?.split(' ')[0] ?? 'Your ride'} was due at {fmtTime(confirmedRide.time)}</Text>
           </View>
           <View style={{ backgroundColor: '#EF4444', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8 }}>
             <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>{lateNudgeSent[confirmedRide.id] ? 'Sent ✓' : 'Alert!'}</Text>

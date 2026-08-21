@@ -29,7 +29,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { useEventStore, FamilyEvent, EventType, StripMap, isEventSensitive, canViewSensitiveEventDetail, SensitiveEventVisibility } from '@/store/eventStore';
+import { useEventStore, FamilyEvent, EventType, StripMap, StripRow, isEventSensitive, canViewSensitiveEventDetail, SensitiveEventVisibility } from '@/store/eventStore';
 import { supabase } from '@/lib/supabase';
 import AppHeader from '@/components/AppHeader';
 import NotificationPanel from '@/components/NotificationPanel';
@@ -751,20 +751,42 @@ export default function CalendarScreen() {
   // family event's dot regardless of filter — dots used to be entirely
   // unfiltered since stripMap only ever carried date+category.
   const filteredStripMap = useMemo(() => {
-    if (!filterMember) return stripMap;
+    // StripRow is a lightweight {date, category, memberId, helper,
+    // driverName} projection, not a full FamilyEvent — it has no
+    // privacyLevel/rideRequired to run through isEventSensitive/
+    // canViewSensitiveEventDetail directly. Approximates the same rule via
+    // category alone: a Medical or Ride dot for someone else's event is
+    // withheld from a kid/teen sibling, same as the full event is (was
+    // previously unfiltered — the Month grid's dots leaked a sibling's
+    // private Medical appointment or ride request as a category-labeled
+    // dot even though the day-detail card below correctly withheld it, QA
+    // sweep kid-role audit, High).
+    const hideForSibling = (isKid || isTeen) ? (r: StripRow) => {
+      const isOwn = !r.memberId || r.memberId === activeMemberId;
+      if (isOwn) return false;
+      return r.category === 'Medical' || r.category === 'Ride';
+    } : () => false;
+    if (!filterMember && scheduleFilter !== 'mine' && !(isKid || isTeen)) return stripMap;
     const first = filterMemberName?.split(' ')[0];
     const map: StripMap = {};
     for (const r of stripRows) {
-      const matches = !r.memberId
+      if (hideForSibling(r)) continue;
+      const memberMatches = !filterMember || !r.memberId
         || r.memberId === filterMember
         || (filterMemberName && r.helper && (r.helper.includes(filterMemberName) || (first && r.helper.includes(first))))
         || (filterMemberName && r.driverName && (r.driverName.includes(filterMemberName) || (first && r.driverName.includes(first))));
-      if (!matches) continue;
+      if (!memberMatches) continue;
+      // My Schedule / All — same rule dayEvents/scopedRangeEvents apply;
+      // was entirely unapplied here, so Month's dots stayed family-wide
+      // regardless of the toggle (QA sweep, kid-role audit, Critical).
+      const scheduleMatches = isParent || scheduleFilter === 'all'
+        || !r.memberId || r.memberId === activeMemberId;
+      if (!scheduleMatches) continue;
       if (!map[r.date]) map[r.date] = [];
       if (!map[r.date].includes(r.category)) map[r.date].push(r.category);
     }
     return map;
-  }, [stripMap, stripRows, filterMember, filterMemberName]);
+  }, [stripMap, stripRows, filterMember, filterMemberName, scheduleFilter, isKid, isTeen, isParent, activeMemberId]);
 
   // Live QA audit found the busy-block promise (GP sees a stripped
   // placeholder for a sensitive event, not nothing) was never implemented —
@@ -834,6 +856,15 @@ export default function CalendarScreen() {
         (e.helper && (e.helper.includes(activeMemberName) || activeMemberName.includes(e.helper.split(' ')[0]))) ||
         (!e.memberId && !e.memberIds?.length)
       )) &&
+      // My Schedule / All — was missing entirely here, so switching the
+      // toggle in Week/Agenda showed "My Schedule" selected while every
+      // sibling's event stayed fully visible underneath, a false promise of
+      // scoping (QA sweep, kid-role audit, Critical). Same rule dayEvents
+      // already applies.
+      (isParent || scheduleFilter === 'all' ||
+        e.memberId === activeMemberId ||
+        e.memberIds?.includes(activeMemberId ?? '') ||
+        (!e.memberId && !e.memberIds?.length)) &&
       matchesMemberFilter(e) &&
       matchesSearch(e)
     ).map(e => {
@@ -852,7 +883,7 @@ export default function CalendarScreen() {
         helper: undefined, driverName: undefined,
       };
     });
-  }, [rangeEvents, isSenior, isKid, isTeen, isParent, activeMemberName, activeMemberId, filterMember, filterMemberName, searchQuery]);
+  }, [rangeEvents, isSenior, isKid, isTeen, isParent, activeMemberName, activeMemberId, filterMember, filterMemberName, searchQuery, scheduleFilter]);
 
   // Events where senior can volunteer as helper (has a pending/no helper, dated today or future)
   // seniorOpenRides removed — ride volunteering now lives in Hub > Helper Dispatch
@@ -866,7 +897,7 @@ export default function CalendarScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <AppHeader
         memberName={activeMember?.name}
-        memberRole={isKid ? 'kid' : isSenior ? 'senior' : 'parent'}
+        memberRole={isKid ? 'kid' : isTeen ? 'teen' : isSenior ? 'senior' : 'parent'}
         notifCount={unreadNotifCount}
         onPersonaPress={switchMember}
         onBellPress={() => setNotifPanelOpen(true)}

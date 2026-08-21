@@ -5,39 +5,40 @@ import { f } from './styles';
 import { fmtDisplay, fmtTimeDisplay } from './types';
 
 // ─── Kid ride request — one self-contained block ───────────────────────────
-// Everything a kid needs to ask for a ride lives together: the yes/no
-// toggle, drop-off (silently pre-filled to the event's own time — a kid
-// only sees it as something to CONFIRM or ADJUST, never a blank field to
-// fill in), and pickup (the one genuinely different time, since it's when
-// the event ENDS — always its own explicit choice). Previously the toggle
-// lived up near Date & Time while its own drop-off/pickup fields sat far
-// below, past Repeats/Call Reminder/category details — a kid turning the
-// toggle on had to scroll past several unrelated sections to find what it
-// actually revealed (user feedback: "drop off and pickup should be
-// underneath ride needed"). Rendered as one block, directly under the
-// toggle, right above Date & Time.
+// Just the toggle + pickup now. Drop-off used to be its own separate
+// toggle+card here, defaulting to the event's own date/time — but that
+// meant the SAME value showed up twice on screen: once as the event's own
+// "Date & Time" field just below this, once again as a "Drop-off"
+// confirmation card up here. Removed entirely — the top Date & Time field
+// (relabeled by EventFormModal when kidRideNeeded is true) now does double
+// duty AS the drop-off time, with no separate field at all (user
+// feedback: "when they need drop needed we can hide the date field and it
+// becomes the drop off... time"). kidDropoffOn/kidDropoffDate are still
+// kept in state (set true/synced to eventDate by the toggle below) purely
+// because the submit encoding downstream reads them — no UI here for it.
+// Pickup stays fully separate — genuinely a different moment, when the
+// event ENDS, so it's the one real yes/no decision left.
 export function KidRideSection({
   catColor, colors, isDark, eventDate,
   kidRideNeeded, setKidRideNeeded,
-  kidDropoffOn, setKidDropoffOn, kidDropoffDate, setKidDropoffDate,
+  setKidDropoffOn, setKidDropoffDate,
   kidPickupOn, setKidPickupOn, kidPickupDate, setKidPickupDate,
-  showKidDropDate, setShowKidDropDate, showKidDropTime, setShowKidDropTime,
   showKidPickDate, setShowKidPickDate, showKidPickTime, setShowKidPickTime,
 }: {
   catColor: string; colors: any; isDark: boolean; eventDate: Date;
   kidRideNeeded: boolean; setKidRideNeeded: React.Dispatch<React.SetStateAction<boolean>>;
-  kidDropoffOn: boolean; setKidDropoffOn: React.Dispatch<React.SetStateAction<boolean>>;
-  kidDropoffDate: Date | null; setKidDropoffDate: (d: Date | null) => void;
+  setKidDropoffOn: React.Dispatch<React.SetStateAction<boolean>>; setKidDropoffDate: (d: Date | null) => void;
   kidPickupOn: boolean; setKidPickupOn: React.Dispatch<React.SetStateAction<boolean>>;
   kidPickupDate: Date | null; setKidPickupDate: (d: Date | null) => void;
-  showKidDropDate: boolean; setShowKidDropDate: React.Dispatch<React.SetStateAction<boolean>>;
-  showKidDropTime: boolean; setShowKidDropTime: React.Dispatch<React.SetStateAction<boolean>>;
   showKidPickDate: boolean; setShowKidPickDate: React.Dispatch<React.SetStateAction<boolean>>;
   showKidPickTime: boolean; setShowKidPickTime: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   const toggleRide = () => {
     setKidRideNeeded(r => {
       const next = !r;
+      // Drop-off has no UI of its own anymore — it's always "on" and
+      // always equal to the event's own date/time whenever a ride is
+      // needed at all. Only pickup is ever a separate, kid-picked value.
       if (next) { setKidDropoffOn(true); setKidDropoffDate(new Date(eventDate)); }
       else { setKidDropoffOn(false); setKidDropoffDate(null); setKidPickupOn(false); setKidPickupDate(null); }
       return next;
@@ -59,7 +60,7 @@ export function KidRideSection({
             🚗 Ride needed?
           </Text>
           <Text style={{ fontSize: TYPO.label, color: kidRideNeeded ? catColor : colors.textSecondary }}>
-            {kidRideNeeded ? 'Yes — see below' : 'Off · I have my own way there'}
+            {kidRideNeeded ? 'Yes — set the date & time below' : 'Off · I have my own way there'}
           </Text>
         </View>
         <View style={{ width: 44, height: 26, borderRadius: 13,
@@ -73,66 +74,8 @@ export function KidRideSection({
       {kidRideNeeded && (
         <View style={{ gap: 10, marginTop: 10, paddingLeft: 8 }}>
 
-          {/* Drop-off — pre-filled to the event's own time the moment the
-              toggle above turned on, so this reads as a CONFIRMATION
-              ("dropped off at 4:00 PM ✓"), not a field to fill in. Tapping
-              it opens the picker to adjust; the switch is only there for
-              the rarer case a kid needs pickup but genuinely not drop-off
-              (already there, has their own way in). */}
-          <View style={{ borderRadius: 12, borderWidth: 1.5, borderColor: kidDropoffOn ? colors.success + '50' : (isDark ? colors.border : '#E2E8F0'),
-            backgroundColor: kidDropoffOn ? colors.success + '0C' : (isDark ? colors.surface : '#F9FAFB'), overflow: 'hidden' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 10 }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: kidDropoffOn ? colors.success : colors.textPrimary }}>
-                📍 Drop-off
-              </Text>
-              <TouchableOpacity
-                onPress={() => { setKidDropoffOn(d => !d); if (kidDropoffOn) setKidDropoffDate(null); }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <View style={{ width: 40, height: 24, borderRadius: 12,
-                  backgroundColor: kidDropoffOn ? colors.success : (isDark ? '#334155' : '#CBD5E1'),
-                  justifyContent: 'center', paddingHorizontal: 3 }}>
-                  <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: colors.textInverse,
-                    alignSelf: kidDropoffOn ? 'flex-end' : 'flex-start' }} />
-                </View>
-              </TouchableOpacity>
-            </View>
-            {kidDropoffOn && (
-              <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 10, paddingBottom: 10 }}>
-                <TouchableOpacity
-                  onPress={() => { setShowKidDropDate(p => !p); setShowKidDropTime(false); setShowKidPickDate(false); setShowKidPickTime(false); if (!kidDropoffDate) setKidDropoffDate(new Date(eventDate)); }}
-                  style={[f.dateBtn, { flex: 3, borderColor: showKidDropDate ? colors.success : colors.success + '60', backgroundColor: showKidDropDate ? colors.success + '15' : colors.surface }]}>
-                  <Text style={{ fontSize: 13 }}>📅</Text>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidDropDate ? colors.success : colors.textPrimary }}>
-                    {kidDropoffDate ? fmtDisplay(kidDropoffDate) : 'Pick date'}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => { setShowKidDropTime(p => !p); setShowKidDropDate(false); setShowKidPickDate(false); setShowKidPickTime(false); if (!kidDropoffDate) setKidDropoffDate(new Date(eventDate)); }}
-                  style={[f.dateBtn, { flex: 2, borderColor: showKidDropTime ? colors.success : colors.success + '60', backgroundColor: showKidDropTime ? colors.success + '15' : colors.surface }]}>
-                  <Text style={{ fontSize: 13 }}>🕐</Text>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidDropTime ? colors.success : colors.textPrimary }}>
-                    {kidDropoffDate ? fmtTimeDisplay(kidDropoffDate) : 'Time'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-          {kidDropoffOn && (
-            <PickerOverlay
-              showDate={showKidDropDate} showTime={showKidDropTime}
-              value={kidDropoffDate ?? eventDate}
-              onChangeDate={d => { const m = kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate); m.setFullYear(d.getFullYear(), d.getMonth(), d.getDate()); setKidDropoffDate(m); }}
-              onChangeTime={d => { const m = kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setKidDropoffDate(m); }}
-              onDone={() => { setShowKidDropDate(false); setShowKidDropTime(false); }}
-              accentColor={colors.success} colors={colors}
-              dateLabel="📅 Drop-off Date" timeLabel="🕐 Drop-off Time"
-              minimumDate={new Date()}
-            />
-          )}
-
           {/* Pickup — genuinely a different moment (when the event ENDS),
-              so this is the one real yes/no decision left, unlike drop-off
-              above which starts pre-answered. */}
+              so this is the one real yes/no decision a kid makes here. */}
           <View style={{ borderRadius: 12, borderWidth: 1.5, borderColor: kidPickupOn ? '#6366F150' : (isDark ? colors.border : '#E2E8F0'),
             backgroundColor: kidPickupOn ? '#6366F10C' : (isDark ? colors.surface : '#F9FAFB'), overflow: 'hidden' }}>
             <TouchableOpacity
@@ -155,7 +98,7 @@ export function KidRideSection({
             {kidPickupOn && (
               <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 10, paddingBottom: 10 }}>
                 <TouchableOpacity
-                  onPress={() => { setShowKidPickDate(p => !p); setShowKidPickTime(false); setShowKidDropDate(false); setShowKidDropTime(false); if (!kidPickupDate) setKidPickupDate(kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate)); }}
+                  onPress={() => { setShowKidPickDate(p => !p); setShowKidPickTime(false); if (!kidPickupDate) setKidPickupDate(new Date(eventDate)); }}
                   style={[f.dateBtn, { flex: 3, borderColor: showKidPickDate ? '#6366F1' : (kidPickupDate ? '#6366F180' : colors.border), backgroundColor: showKidPickDate ? '#6366F115' : colors.surface }]}>
                   <Text style={{ fontSize: 13 }}>📅</Text>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidPickDate ? '#4F46E5' : (kidPickupDate ? colors.textPrimary : colors.textTertiary) }}>
@@ -163,7 +106,7 @@ export function KidRideSection({
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  onPress={() => { setShowKidPickTime(p => !p); setShowKidPickDate(false); setShowKidDropDate(false); setShowKidDropTime(false); if (!kidPickupDate) setKidPickupDate(kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate)); }}
+                  onPress={() => { setShowKidPickTime(p => !p); setShowKidPickDate(false); if (!kidPickupDate) setKidPickupDate(new Date(eventDate)); }}
                   style={[f.dateBtn, { flex: 2, borderColor: showKidPickTime ? '#6366F1' : (kidPickupDate ? '#6366F180' : colors.border), backgroundColor: showKidPickTime ? '#6366F115' : colors.surface }]}>
                   <Text style={{ fontSize: 13 }}>🕐</Text>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidPickTime ? '#4F46E5' : (kidPickupDate ? colors.textPrimary : colors.textTertiary) }}>
@@ -176,9 +119,9 @@ export function KidRideSection({
           {kidPickupOn && (
             <PickerOverlay
               showDate={showKidPickDate} showTime={showKidPickTime}
-              value={kidPickupDate ?? (kidDropoffDate ?? eventDate)}
-              onChangeDate={d => { const m = kidPickupDate ? new Date(kidPickupDate) : (kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate)); m.setFullYear(d.getFullYear(), d.getMonth(), d.getDate()); setKidPickupDate(m); }}
-              onChangeTime={d => { const m = kidPickupDate ? new Date(kidPickupDate) : (kidDropoffDate ? new Date(kidDropoffDate) : new Date(eventDate)); m.setHours(d.getHours(), d.getMinutes()); setKidPickupDate(m); }}
+              value={kidPickupDate ?? eventDate}
+              onChangeDate={d => { const m = kidPickupDate ? new Date(kidPickupDate) : new Date(eventDate); m.setFullYear(d.getFullYear(), d.getMonth(), d.getDate()); setKidPickupDate(m); }}
+              onChangeTime={d => { const m = kidPickupDate ? new Date(kidPickupDate) : new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setKidPickupDate(m); }}
               onDone={() => { setShowKidPickDate(false); setShowKidPickTime(false); }}
               accentColor="#6366F1" colors={colors}
               dateLabel="📅 Pickup Date" timeLabel="🕐 Pickup Time"
@@ -191,10 +134,9 @@ export function KidRideSection({
               👋 Parent will review &amp; assign a driver
             </Text>
             <Text style={{ fontSize: TYPO.label, color: colors.amber, opacity: 0.8, marginTop: 2 }}>
-              {kidDropoffOn && kidPickupOn ? 'One request for both legs — parent splits it into drop-off + pickup when assigning drivers.' :
-               kidDropoffOn          ? 'A drop-off event will be created for parent to assign.' :
-               kidPickupOn           ? 'A pickup event will be created for parent to assign.' :
-                                      'Turn drop-off or pickup back on above if you do need a ride.'}
+              {kidPickupOn
+                ? 'One request for both legs — parent splits it into drop-off + pickup when assigning drivers.'
+                : 'A drop-off event will be created for parent to assign.'}
             </Text>
           </View>
         </View>

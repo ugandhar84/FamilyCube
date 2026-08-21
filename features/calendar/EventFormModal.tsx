@@ -85,8 +85,6 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
   const [kidPickupOn,      setKidPickupOn]      = useState(false);
   const [kidDropoffDate,   setKidDropoffDate]   = useState<Date | null>(null);
   const [kidPickupDate,    setKidPickupDate]     = useState<Date | null>(null);
-  const [showKidDropDate,  setShowKidDropDate]  = useState(false);
-  const [showKidDropTime,  setShowKidDropTime]  = useState(false);
   const [showKidPickDate,  setShowKidPickDate]  = useState(false);
   const [showKidPickTime,  setShowKidPickTime]  = useState(false);
   // Legacy — kept for submit encoding
@@ -325,7 +323,6 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
     setShowReturnDatePick(false); setShowReturnTimePick(false);
     setKidRideNeeded(false); setKidDropoffOn(false); setKidPickupOn(false);
     setKidDropoffDate(null); setKidPickupDate(null);
-    setShowKidDropDate(false); setShowKidDropTime(false);
     setShowKidPickDate(false); setShowKidPickTime(false);
     setLinkGroceries(false); setGroceryItems([]); setSelectedItemIds(new Set()); setNewGroceryLines([]);
     setFocusedLineIdx(null); setFocusedField(null);
@@ -751,31 +748,33 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               </View>
             )}
 
-            {/* ── Ride needed? + drop-off/pickup (kid only) — the whole
-                thing lives in one block, right above Date & Time, so cause
-                (the toggle) and effect (its own fields) are never split
-                apart by unrelated sections in between. Drop-off silently
-                pre-fills to this event's own date/time the moment the
-                toggle turns on — a kid only ever has to actively pick a
-                SEPARATE time for pickup (when the event ends), the one
-                value that's genuinely different (user feedback: drop-off/
-                pickup should render directly underneath "Ride needed?",
-                not detached near the bottom of the form). */}
+            {/* ── Ride needed? + pickup (kid only) — right above Date &
+                Time, which doubles as the drop-off time whenever ride
+                needed is on (relabeled below, no separate drop-off field
+                at all — see KidRideSection's own comment). Only pickup
+                (when the event ends, a genuinely different moment) is its
+                own explicit choice here. */}
             {isKid && (
               <KidRideSection
                 catColor={catColor} colors={colors} isDark={isDark} eventDate={eventDate}
                 kidRideNeeded={kidRideNeeded} setKidRideNeeded={setKidRideNeeded}
-                kidDropoffOn={kidDropoffOn} setKidDropoffOn={setKidDropoffOn} kidDropoffDate={kidDropoffDate} setKidDropoffDate={setKidDropoffDate}
+                setKidDropoffOn={setKidDropoffOn} setKidDropoffDate={setKidDropoffDate}
                 kidPickupOn={kidPickupOn} setKidPickupOn={setKidPickupOn} kidPickupDate={kidPickupDate} setKidPickupDate={setKidPickupDate}
-                showKidDropDate={showKidDropDate} setShowKidDropDate={setShowKidDropDate}
-                showKidDropTime={showKidDropTime} setShowKidDropTime={setShowKidDropTime}
                 showKidPickDate={showKidPickDate} setShowKidPickDate={setShowKidPickDate}
                 showKidPickTime={showKidPickTime} setShowKidPickTime={setShowKidPickTime}
               />
             )}
 
             {/* ── Date / Time ── */}
-            <Text style={[f.label, { color: colors.textSecondary }]}>Date & Time</Text>
+            {/* When a kid has "Ride needed?" on, this field IS the drop-off
+                time — no separate "Drop-off" field exists anymore (see
+                KidRideSection). Relabeled so that's clear instead of
+                looking like a plain event date with a redundant drop-off
+                confirmation underneath (user feedback: "hide the date
+                field and it becomes the drop off... time"). */}
+            <Text style={[f.label, { color: colors.textSecondary }]}>
+              {isKid && kidRideNeeded ? '📍 Drop-off Date & Time' : 'Date & Time'}
+            </Text>
             <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
               <TouchableOpacity
                 style={[f.dateBtn, { flex: 3, backgroundColor: showDatePick ? catColor + '20' : colors.surface, borderColor: showDatePick ? catColor : colors.border }]}
@@ -803,8 +802,17 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
             <PickerOverlay
               showDate={showDatePick} showTime={showTimePick}
               value={eventDate}
-              onChangeDate={d => { const m = new Date(d); m.setHours(eventDate.getHours(), eventDate.getMinutes()); setEventDate(m); }}
-              onChangeTime={d => { const m = new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setEventDate(m); }}
+              onChangeDate={d => {
+                const m = new Date(d); m.setHours(eventDate.getHours(), eventDate.getMinutes()); setEventDate(m);
+                // Keeps drop-off silently mirroring the event's own
+                // date/time — this field doubles as drop-off for a kid's
+                // ride request, so any edit here must carry through.
+                if (isKid && kidRideNeeded) setKidDropoffDate(m);
+              }}
+              onChangeTime={d => {
+                const m = new Date(eventDate); m.setHours(d.getHours(), d.getMinutes()); setEventDate(m);
+                if (isKid && kidRideNeeded) setKidDropoffDate(m);
+              }}
               onDone={() => { setShowDatePick(false); setShowTimePick(false); }}
               accentColor={catColor} colors={colors}
               minimumDate={new Date()}

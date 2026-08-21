@@ -244,7 +244,17 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   const showBanner     = conflictEvents.length > 0 || urgentRejected.length > 0 ||
                          pendingNoResponse.length > 0 || unassignedUrgent.length > 0;
   const pendingKidRequests = kidRequests.filter(r => {
-    if (r.status !== 'pending') return false;
+    // Coordinated live-DB QA (Round 20, High) — a multi-item grocery/
+    // supplies request transitions to 'partial' the moment any item is
+    // decided while others remain undecided (kidRequestStore.ts's
+    // approveItems/rejectItems). This filter only ever matched 'pending',
+    // so a request with one genuinely still-open item vanished from BOTH
+    // parents' Action Needed the instant the first item was decided — with
+    // no history view on the parent side to ever find it again.
+    // GroceryRequestCard already renders only the still-pending items
+    // within a request regardless of its overall status, so surfacing
+    // 'partial' here is safe — it won't show anything already resolved.
+    if (!['pending', 'partial'].includes(r.status)) return false;
     // Auto-expire checkin requests older than 2 hours
     if (r.type === 'checkin') {
       const ageHours = (Date.now() - new Date(r.requestedAt).getTime()) / 3_600_000;

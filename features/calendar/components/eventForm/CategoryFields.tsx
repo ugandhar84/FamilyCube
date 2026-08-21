@@ -204,47 +204,60 @@ export default function CategoryFields({
                         value={dropLocation} onChangeText={setDropLocation} />
                     </View>
                   </View>
+                  {/* Drive Assignment + return-pickup scheduling are both
+                      parent-only — a kid can't pick who drives them, and
+                      "Return pickup" is a driver-assignment concept that
+                      makes no sense floating with no picker above it.
+                      Previously only the MemberPicker was gated; the
+                      return-pickup block right after it rendered
+                      unconditionally, leaving a kid an orphaned date/time
+                      field with no context (Round 12 follow-up — form
+                      parity check). A kid's own pickup timing already
+                      lives in HelperAssignmentSection's ride-needed
+                      toggle. */}
                   {!isKid && (
-                    <View style={{ marginBottom: 14, gap: 8 }}>
-                      <MemberPicker
-                        label="🚗 Drive Assignment"
-                        selectedIds={driverId ? [driverId] : []}
-                        members={adults}
-                        onToggle={handleDriverSelect}
-                        colors={colors} isDark={isDark} siblings={siblings}
-                      />
-                      {!driverId && (
-                        <TextInput
-                          style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-                          placeholder="Or type a name (e.g. external driver)"
-                          placeholderTextColor={colors.textTertiary}
-                          value={driverName}
-                          onChangeText={t => { setDriverName(t); if (!t) setDriverId(undefined); }}
+                    <>
+                      <View style={{ marginBottom: 14, gap: 8 }}>
+                        <MemberPicker
+                          label="🚗 Drive Assignment"
+                          selectedIds={driverId ? [driverId] : []}
+                          members={adults}
+                          onToggle={handleDriverSelect}
+                          colors={colors} isDark={isDark} siblings={siblings}
                         />
-                      )}
-                    </View>
+                        {!driverId && (
+                          <TextInput
+                            style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
+                            placeholder="Or type a name (e.g. external driver)"
+                            placeholderTextColor={colors.textTertiary}
+                            value={driverName}
+                            onChangeText={t => { setDriverName(t); if (!t) setDriverId(undefined); }}
+                          />
+                        )}
+                      </View>
+                      <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Return pickup (optional)</Text>
+                      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+                        <TouchableOpacity
+                          style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
+                          onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
+                        >
+                          <Text style={{ fontSize: 13 }}>📅</Text>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
+                            {returnDate ? fmtDisplay(returnDate) : 'Return date'}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[f.dateBtn, { flex: 2, backgroundColor: showReturnTimePick ? catColor + '20' : colors.surface, borderColor: showReturnTimePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
+                          onPress={() => { setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
+                        >
+                          <Text style={{ fontSize: 13 }}>🕐</Text>
+                          <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnTimePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
+                            {returnDate ? fmtTimeDisplay(returnDate) : 'Time'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
                   )}
-                  <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Return pickup (optional)</Text>
-                  <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
-                    <TouchableOpacity
-                      style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                      onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
-                    >
-                      <Text style={{ fontSize: 13 }}>📅</Text>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
-                        {returnDate ? fmtDisplay(returnDate) : 'Return date'}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[f.dateBtn, { flex: 2, backgroundColor: showReturnTimePick ? catColor + '20' : colors.surface, borderColor: showReturnTimePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                      onPress={() => { setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
-                    >
-                      <Text style={{ fontSize: 13 }}>🕐</Text>
-                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnTimePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
-                        {returnDate ? fmtTimeDisplay(returnDate) : 'Time'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
                 </>
               )}
             </>

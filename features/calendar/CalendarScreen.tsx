@@ -834,7 +834,25 @@ export default function CalendarScreen() {
           (!e.memberId && !e.memberIds?.length)) &&
         matchesMemberFilter(e) &&
         matchesSearch(e))
-      .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
+      .sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''))
+      // Was missing entirely — unlike scopedRangeEvents (Week/Agenda),
+      // dayEvents only ever included/excluded events, never stripped
+      // detail for the 'busy-block' case. DayEventsSummaryCard (Month
+      // view's day-detail card) has no busy-block handling of its own, so
+      // it always rendered the real title for anything that passed the
+      // include check — a senior who's one of several assignees on a
+      // sensitive event saw full detail here even when every other view
+      // correctly stripped it (QA sweep, grandparent-role audit,
+      // Critical C5).
+      .map(e => {
+        if (sensitiveVisibility(e) !== 'busy-block') return e;
+        return {
+          ...e,
+          title: 'Busy', notes: undefined, location: undefined,
+          doctorName: undefined, subject: undefined, coachName: undefined,
+          helper: undefined, driverName: undefined,
+        };
+      });
   }, [events, selectedDate, filterMember, filterMemberName, scheduleFilter, isSenior, isKid, isTeen, isParent, activeMemberId, activeMemberName, searchQuery]);
 
   // Same RBAC shape as dayEvents but across rangeEvents' multi-date window
@@ -1608,7 +1626,25 @@ export default function CalendarScreen() {
           duplicate accept/decline/reassign UI. */}
       {detailEv && (
         <EventDetailSheet
-          ev={events.find(e => e.id === detailEv.id) ?? detailEv}
+          // Was `events.find(...) ?? detailEv` — events is the raw,
+          // unsanitized day cache, so this silently reintroduced full
+          // title/notes/location/doctorName for a "busy block" a senior
+          // had just been shown as stripped, the moment its id happened to
+          // also be present in that raw array (e.g. selected date
+          // matches, or it was prefetched). Re-applies the same
+          // sensitivity stripping scopedRangeEvents/dayEvents already do,
+          // instead of trusting the raw lookup (QA sweep, grandparent-role
+          // audit, Critical C4).
+          ev={(() => {
+            const fresh = events.find(e => e.id === detailEv.id) ?? detailEv;
+            if (sensitiveVisibility(fresh) !== 'busy-block') return fresh;
+            return {
+              ...fresh,
+              title: 'Busy', notes: undefined, location: undefined,
+              doctorName: undefined, subject: undefined, coachName: undefined,
+              helper: undefined, driverName: undefined,
+            };
+          })()}
           members={members}
           colors={colors} isDark={isDark}
           activeName={activeMemberName}

@@ -79,6 +79,45 @@ function memberIdForAlias(map: AliasMap, alias: string): string | null {
   return null;
 }
 
+// ─── Place aliasing (privacy) ────────────────────────────────────────────
+// get_location's safe_zone_name (a free-text label a parent set up in the
+// GPS tab's geofence editor — "Lincoln Elementary", "Grandma's House",
+// "Dad's Office") is exactly as identifying as a real name, but was being
+// sent to the LLM provider verbatim with no aliasing at all — the only
+// privacy protection get_location actually had was dropping raw lat/lng
+// and the encrypted street address, which the safe-zone label bypassed
+// entirely. Same stable, deterministic, reversible scheme as buildAliasMap:
+// built fresh per request from whatever zone names are actually present in
+// this family's location rows, sorted for determinism. "Home" is kept
+// as-is — it's a relative, non-identifying label every family shares, not
+// a specific place — matching how the manual GPS UI already treats it as
+// the default/fallback zone name.
+type PlaceAliasMap = { toAlias: Map<string, string>; toReal: Map<string, string> };
+
+function buildPlaceAliasMap(zoneNames: (string | null)[]): PlaceAliasMap {
+  const toAlias = new Map<string, string>();
+  const toReal = new Map<string, string>();
+  const distinct = [...new Set(zoneNames.filter((z): z is string => !!z && z !== 'Home'))].sort();
+  distinct.forEach((name, i) => {
+    const alias = `Place ${String.fromCharCode(65 + (i % 26))}${i >= 26 ? Math.floor(i / 26) : ''}`;
+    toAlias.set(name, alias);
+    toReal.set(alias, name);
+  });
+  return { toAlias, toReal };
+}
+
+function placeToAlias(map: PlaceAliasMap, name: string | null): string | null {
+  if (!name) return name;
+  return map.toAlias.get(name) ?? name; // 'Home' (or anything not in the map) passes through unchanged
+}
+
+function aliasToPlace(map: PlaceAliasMap, text: string | null | undefined): string {
+  if (!text) return text ?? '';
+  let out = text;
+  for (const [alias, real] of map.toReal) out = out.split(alias).join(real);
+  return out;
+}
+
 // ─── Tool schema (OpenAI/DeepSeek function-calling shape) ──────────────────
 
 const TOOLS = [
@@ -195,6 +234,23 @@ const TOOLS = [
           },
         },
         required: ['title'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'propose_event_reminder',
+      description: 'Propose adding or changing a call-style reminder on an EXISTING calendar event the user refers to by description (e.g. "remind me 30 min before Alex\'s soccer practice"). Looks the event up by name/member/rough date so it is NOT duplicated as a new event — use this instead of propose_event whenever the user is clearly talking about something already on the calendar rather than asking to schedule something new. Does NOT change anything — returns a proposal the user must confirm.',
+      parameters: {
+        type: 'object',
+        properties: {
+          eventSearch: { type: 'string', description: 'Words to match the existing event\'s title, e.g. "soccer practice"' },
+          memberName:  { type: 'string', description: 'Whose event this is, if named — narrows the search when multiple events could match' },
+          nearDate:    { type: 'string', description: 'YYYY-MM-DD if a rough date/day was implied ("this week", "Tuesday") — omit if not implied, search proceeds from today forward either way' },
+          leadMinutes: { type: 'number', description: 'How many minutes before the event start the reminder should ring (0 = at the exact time). If the user asked for a reminder but didn\'t say how far ahead, use 15.' },
+        },
+        required: ['eventSearch', 'leadMinutes'],
       },
     },
   },
@@ -325,20 +381,38 @@ async function resolveMemberId(supabase: any, familyId: string, name: string, al
   }
   const { data } = await supabase.from('members').select('id, name').eq('family_id', familyId);
   const lower = name.toLowerCase().trim();
-  const match = (data ?? []).find((m: any) => m.name.toLowerCase().includes(lower) || lower.includes(m.name.toLowerCase().split(' ')[0]));
+  // Exact full-name or exact-first-name match only — a plain substring test
+  // in either direction (the old behavior) would match "Ana" against
+  // "Anna" and vice versa, or "Sam" against "Samantha", silently assigning
+  // a proposal to the wrong kid instead of failing to resolve (QA — Ask
+  // Cube audit, High: misspelled/wrong-name requests must not silently
+  // misassign). A real miss should come back null so the caller can flag
+  // "couldn't find that person" instead of guessing.
+  const match = (data ?? []).find((m: any) => {
+    const full = m.name.toLowerCase().trim();
+    const first = full.split(' ')[0];
+    return full === lower || first === lower;
+  });
   return match?.id ?? null;
 }
 
 // Viewer-role scoping — matches HubTimelineSection's belongsToMe: a kid/teen
 // only sees their own events + family-wide (no-assignee) events, never a
-// sibling's personal schedule. Parents/seniors see everything.
-function scopeEventsToViewer(events: any[], viewerRole: string, viewerId: string) {
+// sibling's personal schedule. Parents/seniors see everything. Also counts
+// as "mine" when the viewer is named as the ride helper or driver on the
+// event (helper_name/driver_name are free-text real names, not member ids) —
+// belongsToMe checks these too, and without it a teen who's driving a
+// sibling to practice wouldn't see that ride at all when asking Ask Cube
+// "what's going on this week" (QA — Ask Cube audit).
+function scopeEventsToViewer(events: any[], viewerRole: string, viewerId: string, viewerName: string) {
   if (viewerRole === 'parent' || viewerRole === 'senior') return events;
   return events.filter(e => {
     const hasAssignee = e.member_id || (e.member_ids && e.member_ids.length);
     if (!hasAssignee) return true;
     if (e.member_id === viewerId) return true;
     if (e.member_ids?.includes(viewerId)) return true;
+    if (e.helper_name === viewerName) return true;
+    if (e.driver_name === viewerName) return true;
     return false;
   });
 }
@@ -346,21 +420,23 @@ function scopeEventsToViewer(events: any[], viewerRole: string, viewerId: string
 async function executeTool(
   supabase: any, name: string, args: any,
   familyId: string, viewerId: string, viewerRole: string, viewerName: string,
-  aliasMap: AliasMap, members: { id: string; name: string }[],
+  aliasMap: AliasMap, members: { id: string; name: string }[], placeAliasMap: PlaceAliasMap,
 ) {
   if (name === 'get_schedule') {
     const { data, error } = await supabase.from('calendar_events')
-      .select('title, category, date, start_time, member_id, member_ids, helper_name, helper_status')
+      .select('title, category, date, start_time, member_id, member_ids, helper_name, helper_status, driver_name, driver_status')
       .eq('family_id', familyId)
       .gte('date', args.startDate).lte('date', args.endDate)
       .is('deleted_at', null)
       .order('date').order('start_time');
     if (error) return { error: error.message };
-    const scoped = scopeEventsToViewer(data ?? [], viewerRole, viewerId);
+    const scoped = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);
     return { events: scoped.map((e: any) => ({
       title: e.title, category: e.category, date: e.date, time: e.start_time,
       helper: e.helper_name ? realNameToAlias(aliasMap, members, e.helper_name) : null,
       helperStatus: e.helper_status,
+      driver: e.driver_name ? realNameToAlias(aliasMap, members, e.driver_name) : null,
+      driverStatus: e.driver_status,
     })) };
   }
 
@@ -379,7 +455,14 @@ async function executeTool(
     if (viewerRole !== 'parent' && viewerRole !== 'senior') {
       rows = rows.filter((r: any) => !r.assigned_to_id || r.assigned_to_id === viewerId);
     }
-    return { quests: rows };
+    // assigned_to_id is a raw member id — useless to the model on its own
+    // (it can't say WHO a chore belongs to, e.g. "is anyone overdue" has no
+    // answer without a name). Resolve it to the same alias the rest of the
+    // conversation uses instead of leaking the id or a real name.
+    return { quests: rows.map((r: any) => ({
+      title: r.title, status: r.status, coins: r.coins_reward, dueDate: r.due_date,
+      assignedTo: r.assigned_to_id ? (aliasMap.toAlias.get(r.assigned_to_id) ?? 'Unknown') : null,
+    })) };
   }
 
   if (name === 'get_chore_history') {
@@ -396,12 +479,17 @@ async function executeTool(
     if (viewerRole !== 'parent' && viewerRole !== 'senior') {
       rows = rows.filter((r: any) => !r.assigned_to_id || r.assigned_to_id === viewerId);
     }
-    return { completed: rows };
+    return { completed: rows.map((r: any) => ({
+      title: r.title, status: r.status, coins: r.coins_reward, completedAt: r.completed_at,
+      assignedTo: r.assigned_to_id ? (aliasMap.toAlias.get(r.assigned_to_id) ?? 'Unknown') : null,
+    })) };
   }
 
   if (name === 'get_location') {
     if (viewerRole !== 'parent') return { error: 'Location is only available to parents.' };
-    let query = supabase.from('member_locations').select('member_id, status, address, safe_zone_name, distance_from_home_miles, updated_at').eq('family_id', familyId);
+    // address deliberately not selected — status/safe_zone_name/distance are
+    // the only fields this tool has ever returned to the model.
+    let query = supabase.from('member_locations').select('member_id, status, safe_zone_name, distance_from_home_miles, updated_at').eq('family_id', familyId);
     if (args.memberName) {
       const id = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
       if (id) query = query.eq('member_id', id);
@@ -409,11 +497,15 @@ async function executeTool(
     const { data, error } = await query;
     if (error) return { error: error.message };
     // Only ever aliased status/zone info leaves this function — no raw
-    // lat/lng and no home address, just the derived human-readable status.
+    // lat/lng and no home address, and safe_zone_name (a parent-chosen
+    // label like "Lincoln Elementary" or "Grandma's House" — just as
+    // identifying as a real name) is now aliased too, via the request-level
+    // placeAliasMap so the same "Place A" stays consistent across every
+    // get_location call in this turn.
     return {
       locations: (data ?? []).map((r: any) => ({
         person: aliasMap.toAlias.get(r.member_id) ?? 'Unknown',
-        status: r.status, place: r.safe_zone_name ?? null,
+        status: r.status, place: placeToAlias(placeAliasMap, r.safe_zone_name ?? null),
         distanceFromHomeMiles: r.distance_from_home_miles ?? null,
         updatedAt: r.updated_at,
       })),
@@ -440,9 +532,50 @@ async function executeTool(
     };
   }
 
-  if (name === 'propose_event') {
+  if (name === 'propose_event_reminder') {
     let memberId: string | null = null;
     if (args.memberName) memberId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
+    let query = supabase.from('calendar_events')
+      .select('id, title, category, date, start_time, member_id, member_ids, helper_name, driver_name, alert_call, alert_call_lead_minutes')
+      .eq('family_id', familyId).is('deleted_at', null)
+      .ilike('title', `%${args.eventSearch ?? ''}%`);
+    if (args.nearDate) query = query.gte('date', args.nearDate);
+    else query = query.gte('date', new Date().toISOString().slice(0, 10)); // don't match past events by default
+    if (memberId) query = query.or(`member_id.eq.${memberId},member_ids.cs.{${memberId}}`);
+    const { data, error } = await query.order('date').limit(5);
+    if (error) return { error: error.message };
+    let candidates = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);
+    if (!candidates.length) {
+      return { error: `Couldn't find an upcoming event matching "${args.eventSearch}"${args.memberName ? ` for ${args.memberName}` : ''}. Ask the user for more detail or offer to create a new event instead.` };
+    }
+    if (candidates.length > 1) {
+      return {
+        error: 'Multiple matching events found — ask the user which one they mean before proposing a reminder.',
+        candidates: candidates.map((e: any) => ({ title: e.title, date: e.date, time: e.start_time })),
+      };
+    }
+    const ev = candidates[0];
+    const leadMinutes = typeof args.leadMinutes === 'number' ? args.leadMinutes : 15;
+    return {
+      __proposal: 'event_reminder',
+      eventId: ev.id, title: ev.title, date: ev.date, time: ev.start_time,
+      alertCall: true, alertCallLeadMinutes: leadMinutes,
+    };
+  }
+
+  if (name === 'propose_event') {
+    let memberId: string | null = null;
+    // Distinguish "no name given" (fine — open/unassigned) from "a name was
+    // given but didn't match anyone" (a misspelling or a name that doesn't
+    // exist in this family) — the latter used to fail silently into an
+    // unassigned proposal with no signal at all, so a parent could confirm
+    // a "clean the dishwasher" card meant for a specific kid and it would
+    // quietly land in the open pool instead (QA — Ask Cube audit, High).
+    let unresolvedName: string | null = null;
+    if (args.memberName) {
+      memberId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
+      if (!memberId) unresolvedName = args.memberName;
+    }
     // alertCallLeadMinutes is opt-in — undefined/null means "no reminder
     // requested," matching the manual EventFormModal's own alertCall
     // boolean staying false by default. Only set alertCall true when the
@@ -453,18 +586,24 @@ async function executeTool(
       title: args.title, category: args.category ?? 'Other',
       startAt: args.startAt ?? null, memberId, notes: args.notes ?? null,
       alertCall: alertCallLeadMinutes != null, alertCallLeadMinutes,
+      ...(unresolvedName ? { _unresolvedName: unresolvedName } : {}),
     };
   }
 
   if (name === 'propose_quest') {
     let memberId: string | null = null;
-    if (args.memberName) memberId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
+    let unresolvedName: string | null = null;
+    if (args.memberName) {
+      memberId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
+      if (!memberId) unresolvedName = args.memberName;
+    }
     const alertCallLeadMinutes = typeof args.alertCallLeadMinutes === 'number' ? args.alertCallLeadMinutes : null;
     return {
       __proposal: 'quest',
       title: args.title, coins: args.coins ?? 20, memberId,
       dueDate: args.dueDate ?? null, photoRequired: args.photoRequired ?? false,
       alertCall: alertCallLeadMinutes != null, alertCallLeadMinutes,
+      ...(unresolvedName ? { _unresolvedName: unresolvedName } : {}),
     };
   }
 
@@ -542,11 +681,31 @@ serve(async (req) => {
     const aliasMap = buildAliasMap(allMembers ?? []);
     const viewerAlias = aliasMap.toAlias.get(member.id) ?? member.name;
 
-    // Load or create the conversation
+    // Built once per request, from every safe-zone name currently on file for
+    // this family, so the SAME alias ("Place A") is used consistently across
+    // however many get_location calls happen in this turn's tool loop, and
+    // survives to de-alias the final answer text too. Only parents can ever
+    // reach get_location (see its own role check below), so this query is
+    // skipped entirely for a kid/teen/senior viewer — no location data is
+    // read for them at all, not even to build an alias map.
+    let placeAliasMap: PlaceAliasMap = { toAlias: new Map(), toReal: new Map() };
+    if (member.role === 'parent') {
+      const { data: locRows } = await supabase.from('member_locations')
+        .select('safe_zone_name').eq('family_id', member.family_id);
+      placeAliasMap = buildPlaceAliasMap((locRows ?? []).map((r: any) => r.safe_zone_name));
+    }
+
+    // Load or create the conversation. Title is generated once, here, from
+    // the first user message — cheap and reliable (no extra model call just
+    // for titling) and matches what the history list needs to show a real
+    // label instead of "Untitled"/null. Truncated to a word boundary rather
+    // than a hard character cut so it doesn't end mid-word in the list.
     let conversationId = body.conversationId;
     if (!conversationId) {
+      const rawTitle = body.message.trim().replace(/\s+/g, ' ');
+      const title = rawTitle.length <= 60 ? rawTitle : `${rawTitle.slice(0, 60).replace(/\s+\S*$/, '')}…`;
       const { data: conv, error: convErr } = await supabase.from('ask_cube_conversations')
-        .insert({ family_id: member.family_id, member_id: member.id, title: body.message.slice(0, 60) })
+        .insert({ family_id: member.family_id, member_id: member.id, title: title || 'New chat' })
         .select('id').single();
       if (convErr) return json({ error: convErr.message }, 500);
       conversationId = conv.id;
@@ -578,12 +737,22 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
 - "tonight"/"today"/"tomorrow"/"this weekend" -> resolve to the real day name yourself using today's date, don't ask.
 - No coin amount mentioned for a quest -> use a reasonable default (10-30 based on effort), don't ask.
 - No specific person named -> propose it unassigned/for the open pool rather than asking who.
-- If the user explicitly asks for a reminder/alert/"call me" for an event or chore ("remind me 30 min before",
-  "call me an hour ahead"), set alertCallLeadMinutes to that many minutes on propose_event/propose_quest. If they
-  ask for a reminder but don't say how far ahead, use 15 minutes as a reasonable default. If they say NOTHING about
-  a reminder, leave alertCallLeadMinutes out entirely — do not add one unasked, same as every other field above.
-When the user asks to add/schedule something, use propose_event, propose_quest, propose_grocery_items, or propose_meal
-as appropriate — these only PROPOSE, they do not create anything.
+- If the user explicitly asks for a reminder/alert/"call me" while also describing something brand new that isn't on
+  the calendar yet, set alertCallLeadMinutes to that many minutes on propose_event/propose_quest. If they ask for a
+  reminder but don't say how far ahead, use 15 minutes as a reasonable default. If they say NOTHING about a reminder,
+  leave alertCallLeadMinutes out entirely — do not add one unasked, same as every other field above.
+- If the user asks for a reminder on something that sounds like it's ALREADY on the calendar ("remind me 30 min
+  before X's soccer practice", "call me before the dentist appointment") — this is a reminder on an EXISTING event,
+  NOT a new one. Call propose_event_reminder (never propose_event) so it's matched to the real event instead of
+  silently creating a duplicate. Only fall back to propose_event if propose_event_reminder reports no match and the
+  user then confirms they want a brand-new entry.
+When the user asks to add/schedule something, use propose_event, propose_quest, propose_grocery_items, propose_meal,
+or propose_event_reminder as appropriate — these only PROPOSE, they do not create or change anything.
+If a propose_event/propose_quest tool result includes "_unresolvedName", the person you tried to assign it to
+couldn't be matched to anyone in this family (misspelled, or not a real member) — the draft below was created
+UNASSIGNED/open-pool instead. Say so plainly in your one-sentence reply (e.g. "I couldn't find someone named X, so
+I've left this unassigned — take a look below") rather than staying silent about it; don't just present the card as
+if the assignment worked.
 CRITICAL: after calling a propose_* tool, your reply text must be SHORT — one sentence like "Here's an idea for
 tonight — take a look below" or "I've drafted a few options below, pick one that sounds good." The app already shows
 a rich visual card with the full title/ingredients/details right under your message, so NEVER restate the dish name,
@@ -610,7 +779,7 @@ Keep answers concise and conversational, not a bulleted data dump unless the use
     // Collected across the WHOLE loop, not just the final round — a single
     // turn can call propose_meal several times (a few dish options for the
     // user to pick from), and each one needs its own card client-side.
-    let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal'; data: any }[] = [];
+    let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal' | 'event_reminder'; data: any }[] = [];
     let finalText = '';
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -625,7 +794,7 @@ Keep answers concise and conversational, not a bulleted data dump unless the use
 
         for (const call of reply.tool_calls) {
           const args = JSON.parse(call.function.arguments || '{}');
-          const result = await executeTool(supabase, call.function.name, args, member.family_id, member.id, member.role, member.name, aliasMap, allMembers ?? []);
+          const result = await executeTool(supabase, call.function.name, args, member.family_id, member.id, member.role, member.name, aliasMap, allMembers ?? [], placeAliasMap);
 
           if (result.__proposal) {
             proposals.push({ kind: result.__proposal, data: result });
@@ -654,7 +823,7 @@ Keep answers concise and conversational, not a bulleted data dump unless the use
         ? (proposals.length > 1 ? "I've drafted a few options below — take a look and pick one." : "I've drafted that for you — take a look below and confirm if it looks right.")
         : "Here's what I found — let me know if you'd like more detail.";
     }
-    finalText = aliasToRealName(aliasMap, finalText);
+    finalText = aliasToPlace(placeAliasMap, aliasToRealName(aliasMap, finalText));
 
     await supabase.from('ask_cube_messages').insert({
       conversation_id: conversationId, role: 'assistant', content: finalText,

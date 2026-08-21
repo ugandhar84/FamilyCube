@@ -11,10 +11,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Modal, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Sparkles, X, Send, Mic, ChevronDown } from 'lucide-react-native';
+import { Sparkles, X, Send, Mic, ChevronDown, History, SquarePen, MessageCircle } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
 import { askCube, AskCubeProposal } from '@/lib/askCubeService';
+import AppBottomSheet from '@/components/AppBottomSheet';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
@@ -28,6 +29,25 @@ import AskCubeMessageText from '@/components/AskCubeMessageText';
 import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
 import AskCubeMealDayPicker from '@/components/AskCubeMealDayPicker';
 import type { FamilyMember } from '@/store/familyStore';
+
+// History sheet row timestamp — "Today 5:55 AM" / "Yesterday 5:55 AM" for the
+// last two days, then a short weekday/date for anything older, matching the
+// reference conversation-list style. None of lib/dates.ts's existing
+// helpers cover this "Today/Yesterday + time" shape (they're all plain-date
+// or 24h-window helpers), so it's a small local formatter rather than a
+// wrong-fit reuse.
+function formatConversationTimestamp(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const dayDiff = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (dayDiff === 0) return `Today ${time}`;
+  if (dayDiff === 1) return `Yesterday ${time}`;
+  if (dayDiff > 1 && dayDiff < 7) return `${d.toLocaleDateString('en-US', { weekday: 'long' })} ${time}`;
+  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${time}`;
+}
 
 type ProposalStatus = 'pending' | 'created' | 'discarded';
 
@@ -52,6 +72,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const addEvent = useEventStore(s => s.addEvent);
+  const updateEvent = useEventStore(s => s.updateEvent);
   const { addQuest } = useQuestStore();
   const addGroceryItem = useGroceryStore(s => s.addItem);
   const sendChatMessage = useChatStore(s => s.sendMessage);
@@ -90,36 +111,72 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
   // The user now explicitly taps Send when they're actually done talking.
   const voice = useVoiceDictation();
 
+  // Shared loader — used both to resume the latest thread on open and to
+  // reopen a specific thread picked from the history sheet.
+  const loadConversation = async (id: string) => {
+    setConversationId(id);
+    const rows = await askCube.getMessages(id);
+    setMessages(rows.map(r => {
+      // Legacy rows stored a single proposal object; current rows store
+      // an array — normalize either shape to an array on load.
+      const proposals: AskCubeProposal[] = Array.isArray(r.proposal) ? r.proposal : (r.proposal ? [r.proposal as any] : []);
+      return {
+        id: r.id, role: r.role as 'user' | 'assistant', content: r.content ?? '', timestamp: r.created_at,
+        proposals, proposalStatuses: proposals.map(() => (r.proposal_status as ProposalStatus) ?? 'pending'),
+      };
+    }));
+    // Land on the latest message immediately — no visible scroll
+    // animation on open, same as opening any normal chat app. Content
+    // height isn't settled the instant setMessages flushes, so retry a
+    // couple of times over the next layout passes rather than relying
+    // on a single rAF landing after the ScrollView has measured.
+    setShowScrollToBottom(false);
+    for (const delay of [0, 50, 150]) {
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), delay);
+    }
+  };
+
   // Resume the most recent thread when the sheet opens, instead of always
   // starting fresh — matches the "persist to a real table" decision.
   useEffect(() => {
     if (!visible) return;
     (async () => {
       const latest = await askCube.getLatestConversation(activeMember.id);
-      if (latest) {
-        setConversationId(latest);
-        const rows = await askCube.getMessages(latest);
-        setMessages(rows.map(r => {
-          // Legacy rows stored a single proposal object; current rows store
-          // an array — normalize either shape to an array on load.
-          const proposals: AskCubeProposal[] = Array.isArray(r.proposal) ? r.proposal : (r.proposal ? [r.proposal as any] : []);
-          return {
-            id: r.id, role: r.role as 'user' | 'assistant', content: r.content ?? '', timestamp: r.created_at,
-            proposals, proposalStatuses: proposals.map(() => (r.proposal_status as ProposalStatus) ?? 'pending'),
-          };
-        }));
-        // Land on the latest message immediately — no visible scroll
-        // animation on open, same as opening any normal chat app. Content
-        // height isn't settled the instant setMessages flushes, so retry a
-        // couple of times over the next layout passes rather than relying
-        // on a single rAF landing after the ScrollView has measured.
-        setShowScrollToBottom(false);
-        for (const delay of [0, 50, 150]) {
-          setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), delay);
-        }
-      }
+      if (latest) await loadConversation(latest);
     })();
   }, [visible, activeMember.id]);
+
+  // "New chat" — omit conversationId on the next send() to start a genuinely
+  // fresh thread (askCubeService.startNewConversation()'s documented
+  // pattern), and clear what's currently on screen so the old thread doesn't
+  // linger visually. The old conversation isn't lost — it's still reachable
+  // from the history sheet below.
+  const startNewChat = () => {
+    setConversationId(undefined);
+    setMessages([]);
+    setShowScrollToBottom(false);
+  };
+
+  // History sheet — lists every past conversation for this member, most
+  // recent first, so "New chat" never strands an old thread with no way
+  // back to it.
+  const [historyVisible, setHistoryVisible] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [conversations, setConversations] = useState<{ id: string; title: string | null; updatedAt: string }[]>([]);
+  const openHistory = async () => {
+    setHistoryVisible(true);
+    setHistoryLoading(true);
+    try {
+      setConversations(await askCube.listConversations(activeMember.id));
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+  const openConversationFromHistory = async (id: string) => {
+    setHistoryVisible(false);
+    if (id === conversationId) return; // already showing it
+    await loadConversation(id);
+  };
 
   const send = async (text: string) => {
     const trimmed = text.trim();
@@ -263,6 +320,12 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
           category: it.category ?? 'Other', addedBy: activeMember.id, aiGenerated: true,
         });
       }
+    } else if (proposal.kind === 'event_reminder') {
+      // Targeted patch onto the EXISTING event the edge function already
+      // resolved server-side (propose_event_reminder) — never a new row,
+      // same "only the fields the caller intended" discipline updateEvent's
+      // own partial-patch path documents.
+      updateEvent(d.eventId, { alertCall: true, alertCallLeadMinutes: d.alertCallLeadMinutes ?? 15 });
     }
     markProposalCreated(msgId, index);
   };
@@ -296,6 +359,18 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                 <Text style={{ fontSize: 18, fontWeight: '900', color: colors.textPrimary }}>Ask Cube</Text>
                 <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Ask about the family's schedule or chores</Text>
               </View>
+              <Pressable onPress={openHistory} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: isDark ? '#1E293B' : colors.surface, marginRight: 8 }}>
+                <History size={17} color={colors.textSecondary} />
+              </Pressable>
+              <Pressable onPress={startNewChat} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+                disabled={messages.length === 0 && !conversationId}
+                style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: isDark ? '#1E293B' : colors.surface, marginRight: 8,
+                  opacity: (messages.length === 0 && !conversationId) ? 0.4 : 1 }}>
+                <SquarePen size={17} color={colors.textSecondary} />
+              </Pressable>
               <Pressable onPress={onClose} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
                 style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#1E293B' : colors.surface }}>
                 <X size={18} color={colors.textSecondary} />
@@ -472,6 +547,54 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
           />
         );
       })()}
+
+      <AppBottomSheet
+        visible={historyVisible}
+        onClose={() => setHistoryVisible(false)}
+        title="Chat history"
+        subtitle={conversations.length ? `${conversations.length} conversation${conversations.length !== 1 ? 's' : ''}` : undefined}
+        accentColor={colors.primary}
+        maxHeight="75%"
+      >
+        {historyLoading ? (
+          <View style={{ alignItems: 'center', paddingVertical: 32 }}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+        ) : conversations.length === 0 ? (
+          <View style={{ alignItems: 'center', paddingVertical: 32, gap: 8 }}>
+            <MessageCircle size={28} color={colors.textTertiary} />
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>No past conversations yet</Text>
+            <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>Start chatting with Cube and it'll show up here</Text>
+          </View>
+        ) : (
+          <View style={{ gap: 8 }}>
+            {conversations.map(c => {
+              const isActive = c.id === conversationId;
+              return (
+                <Pressable
+                  key={c.id}
+                  onPress={() => openConversationFromHistory(c.id)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14,
+                    backgroundColor: isActive ? colors.primary + '12' : colors.surface,
+                    borderWidth: isActive ? 1 : 0, borderColor: colors.primary + '40' }}>
+                  <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: colors.primary + '18',
+                    alignItems: 'center', justifyContent: 'center' }}>
+                    <MessageCircle size={15} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text numberOfLines={1} style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>
+                      {c.title?.trim() || 'New chat'}
+                    </Text>
+                    <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 2 }}>
+                      {formatConversationTimestamp(c.updatedAt)}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+      </AppBottomSheet>
 
       <AskCubeMealDayPicker
         visible={!!pendingMealCreate}

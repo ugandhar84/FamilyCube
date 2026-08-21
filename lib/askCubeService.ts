@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 
 export interface AskCubeProposal {
-  kind: 'event' | 'quest' | 'grocery' | 'meal';
+  kind: 'event' | 'quest' | 'grocery' | 'meal' | 'event_reminder';
   data: Record<string, any>;
 }
 
@@ -28,6 +28,20 @@ export const askCube = {
     const { data } = await supabase.from('ask_cube_conversations')
       .select('id').eq('member_id', memberId).order('updated_at', { ascending: false }).limit(1).maybeSingle();
     return data?.id ?? null;
+  },
+
+  // Full history for this member, most-recently-updated first — powers the
+  // conversation history sheet. Scoped by member_id, matching
+  // getLatestConversation above (each person's chat with Cube is their own
+  // thread, not shared family-wide — see the RLS policy comment in
+  // 20260818233000_ask_cube_conversations.sql).
+  async listConversations(memberId: string): Promise<{ id: string; title: string | null; updatedAt: string }[]> {
+    const { data, error } = await supabase.from('ask_cube_conversations')
+      .select('id, title, updated_at')
+      .eq('member_id', memberId)
+      .order('updated_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(r => ({ id: r.id, title: r.title, updatedAt: r.updated_at }));
   },
 
   async getMessages(conversationId: string) {

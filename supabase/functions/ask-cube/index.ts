@@ -446,13 +446,24 @@ async function callGemini(messages: any[], tools: unknown[]) {
   const data = await res.json();
   const candidate = data.candidates?.[0];
   const parts = candidate?.content?.parts ?? [];
-  const fnCall = parts.find((p: any) => p.functionCall);
-  if (fnCall) {
+  // Was .find(...) + a hardcoded single-element tool_calls array — Gemini
+  // can return MULTIPLE functionCall parts in one response (e.g. the
+  // system prompt's own "call get_schedule AND get_quests together, same
+  // turn" instruction for broad questions), and .find() silently dropped
+  // every call after the first. The main loop still eventually got a
+  // correct answer via extra MAX_TOOL_ROUNDS retries, but that's an
+  // accidental safety net, not the intended one-round parallel-call
+  // behavior DeepSeek's tool_calls array already supported natively.
+  // Collect every functionCall part instead, matching that same shape.
+  const fnCalls = parts.filter((p: any) => p.functionCall);
+  if (fnCalls.length) {
     return {
       role: 'assistant',
       content: null,
-      tool_calls: [{ id: `gemini_${Date.now()}`, type: 'function',
-        function: { name: fnCall.functionCall.name, arguments: JSON.stringify(fnCall.functionCall.args ?? {}) } }],
+      tool_calls: fnCalls.map((p: any, i: number) => ({
+        id: `gemini_${Date.now()}_${i}`, type: 'function',
+        function: { name: p.functionCall.name, arguments: JSON.stringify(p.functionCall.args ?? {}) },
+      })),
     };
   }
   const text = parts.map((p: any) => p.text ?? '').join('');
@@ -1233,7 +1244,11 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
   asking. If the day/time was already stated in the same message (as it usually is — "every Thursday at five" has
   everything needed), you already have enough to propose the full recurring event/quest in one shot, reminder
   included if one was asked for — do not ask separately for the day, the time, or whether a reminder is wanted when
-  the user's own message already answered all of it.
+  the user's own message already answered all of it. recurrenceFrequency only supports daily/weekly/monthly — no
+  interval/step (no "every other day", "every 3rd week"). If the user asks for a pattern like that, you cannot
+  express it exactly: say so plainly in your one-sentence reply (e.g. "I can only do daily/weekly/monthly repeats
+  right now, so I set this up as daily — let me know if you'd like it different") rather than silently proposing
+  daily/weekly as if it were what they actually asked for.
 - No specific person named -> propose it unassigned/for the open pool rather than asking who.
 - If the user explicitly asks for a reminder/alert/"call me" while also describing something brand new that isn't on
   the calendar yet, set alertCallLeadMinutes to that many minutes on propose_event/propose_quest. If they ask for a

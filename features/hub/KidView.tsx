@@ -216,9 +216,23 @@ export function KidView({ active, members, colors, isDark, activeTrip }: {
   const gpCoins    = (active as any).gpCoins ?? 0;
   const streak     = (active as any).streak ?? 0;
   const xp         = (active as any).xp ?? 0;
-  const level      = (active as any).level ?? 1;
+  // Was reading a stored `level` column that nothing in the app ever
+  // increments — awardPoints credits xp on every payout but never touches
+  // level, so a kid's XP bar filled, wrapped back to 0%, and repeated
+  // forever with the "Lv N" badge frozen at its seed value, no level-up
+  // moment ever firing (QA sweep, kid-role audit, Medium). Derived purely
+  // from xp instead: level N needs N*100 xp to clear (matching the
+  // existing xpForNext = level*100 progression this screen already
+  // assumed), so cumulative xp to REACH level N is 100*(N-1)*N/2 — solve
+  // for the largest N whose cumulative threshold xp has already cleared.
+  const level = (() => {
+    let n = 1;
+    while (xp >= 100 * n * (n + 1) / 2) n++;
+    return n;
+  })();
+  const xpIntoLevel = xp - 100 * (level - 1) * level / 2;
   const xpForNext  = level * 100;
-  const xpPct      = Math.min((xp % xpForNext) / xpForNext, 1);
+  const xpPct      = Math.min(xpIntoLevel / xpForNext, 1);
   const almostAffordable = rewards.filter(r => !eligibleRewards.find(e => e.id === r.id) && r.cost > 0 && r.cost - mainCoins <= 30 && r.cost - mainCoins > 0);
   const goalReward = (active as any).goalRewardId
     ? rewards.find(r => r.id === (active as any).goalRewardId && r.available)

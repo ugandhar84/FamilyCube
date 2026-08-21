@@ -1336,11 +1336,22 @@ export const useEventStore = create<EventState>((set, get) => ({
 
   updateEventScoped: (id, updates, scope) => {
     if (scope === 'this') {
-      // A single-occurrence edit that touches recurrence-defining fields
-      // (making it its own thing) should detach it from the series rather
-      // than silently leaving a stray seriesId pointing at rows it no
-      // longer resembles — mirrors how team-clone chores are independent
-      // rows sharing only a teamGroupId, not additional constraints.
+      // Deliberately does NOT clear seriesId — every occurrence needs to
+      // stay findable-as-part-of-the-series (extendRecurringSeries,
+      // deleteEventScoped's anchor-promotion, and this function's own
+      // 'following'/'all' branches below all locate occurrences via
+      // `.eq('series_id', ...)`; detaching this row would make it
+      // invisible to a legitimate later bulk edit/delete across the whole
+      // series, and to the anchor-promotion logic if this happened to be
+      // the next occurrence after a deleted anchor). A prior version of
+      // this comment claimed a 'this' edit detaches the row from the
+      // series — that was never actually implemented, and turned out to
+      // be the wrong fix on inspection: it would have broken more than it
+      // fixed. The real, narrower risk this comment used to describe (a
+      // later 'following' assignment sweeping in and overwriting a
+      // one-off 'this'-scoped assignee change on the same series) is real
+      // but rare — flagged here rather than "fixed" with an unverified
+      // change (QA sweep, parent-role audit, Medium M1 — re-assessed).
       get().updateEvent(id, updates);
       return;
     }

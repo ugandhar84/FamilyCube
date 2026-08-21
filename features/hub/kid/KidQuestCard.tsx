@@ -151,12 +151,29 @@ export function KidQuestCard({
               <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>Claim (+{q.coins} 🪙)</Text>
             </Pressable>
           ) : isClaimed ? (
-            <Pressable onPress={() => onStart(q.id)}
-              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                borderRadius: 10, backgroundColor: BRAND.teal, paddingVertical: 13 }}>
-              <Zap size={15} color="#fff" fill="#ffffff30" />
-              <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>Start Quest</Text>
-            </Pressable>
+            // Was Start-only — canDeclinePlain (below) already includes
+            // 'claimed' in its own status check to offer a decline here,
+            // matching the Chores tab's canSubmit/canKidDecline (both true
+            // simultaneously for a claimed quest there), but this branch
+            // order meant isClaimed always won first, making that decline
+            // path dead code — a kid who claimed a pool quest and changed
+            // their mind could back out from the Chores tab but not from
+            // the identical card on the Hub (QA sweep, kid-role audit,
+            // Medium).
+            <>
+              <Pressable onPress={() => onStart(q.id)}
+                style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  borderRadius: 10, backgroundColor: BRAND.teal, paddingVertical: 13 }}>
+                <Zap size={15} color="#fff" fill="#ffffff30" />
+                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>Start Quest</Text>
+              </Pressable>
+              {canDeclinePlain && (
+                <Pressable onPress={() => onDeclineGpQuest(q)}
+                  style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: `${colors.danger}50`, paddingVertical: 13, alignItems: 'center' }}>
+                  <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.danger }}>Can't do this</Text>
+                </Pressable>
+              )}
+            </>
           ) : canDeclinePlain ? (
             <>
               <Pressable onPress={() => onSubmit(q)}

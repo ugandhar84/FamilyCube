@@ -73,6 +73,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const addEvent = useEventStore(s => s.addEvent);
+  const addRecurringEvent = useEventStore(s => s.addRecurringEvent);
   const updateEvent = useEventStore(s => s.updateEvent);
   const { addQuest } = useQuestStore();
   const updateChore = useChoreStore(s => s.updateChore);
@@ -320,22 +321,32 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
     const d = proposal.data;
     if (proposal.kind === 'event') {
       const dt = d.startAt ? new Date(d.startAt) : new Date();
-      addEvent({
-        title: d.title, date: dt.toISOString().slice(0, 10),
-        time: d.startAt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : undefined,
-        type: 'event', category: eventCategoryFromDomain(d.category) ?? d.category ?? 'Other',
+      const time = d.startAt ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}` : undefined;
+      const base = {
+        title: d.title, type: 'event' as const, category: eventCategoryFromDomain(d.category) ?? d.category ?? 'Other',
         allDay: !d.startAt, memberId: d.memberId ?? undefined, notes: d.notes ?? undefined,
         approvalPending: false, conflict: false,
         // Only ever set by the edge function when the user explicitly asked
         // for a reminder (ask-cube/index.ts's system prompt) — mirrors the
         // manual EventFormModal's own opt-in alertCall toggle exactly.
         alertCall: d.alertCall ?? false, alertCallLeadMinutes: d.alertCallLeadMinutes ?? undefined,
-      });
+      };
+      if (d.recurrenceRule?.frequency) {
+        // "every Thursday"-style requests previously had nowhere to go —
+        // propose_event had no recurrence field, so they silently became a
+        // single one-off event. addRecurringEvent materializes the real
+        // series the same way the manual Add Event form's own repeat
+        // toggle does.
+        addRecurringEvent({ ...base, date: dt.toISOString().slice(0, 10), time }, d.recurrenceRule);
+      } else {
+        addEvent({ ...base, date: dt.toISOString().slice(0, 10), time });
+      }
     } else if (proposal.kind === 'quest') {
       addQuest({
         title: d.title, category: 'Other', priority: 'medium',
         coins: d.memberId && members.find(m => m.id === d.memberId)?.role === 'parent' ? 0 : (d.coins ?? 20),
-        xpReward: 15, isPool: !d.memberId, isDaily: false, recurrence: 'once', status: 'todo',
+        xpReward: 15, isPool: !d.memberId, isDaily: false,
+        recurrence: d.recurrenceRule?.frequency ?? 'once', status: 'todo',
         assignedToIds: d.memberId ? [d.memberId] : [], isAdultTask: false,
         dueDate: d.dueDate ?? undefined, dueTime: d.dueTime ?? undefined, photoRequired: d.photoRequired ?? false,
         createdById: activeMember.id,

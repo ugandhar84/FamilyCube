@@ -210,6 +210,14 @@ const TOOLS = [
             type: 'number',
             description: 'If the user wants a call-style reminder for this event, how many minutes before start it should ring (0 = at the exact time). Omit entirely if the user didn\'t ask for a reminder — do not default to one.',
           },
+          recurrenceFrequency: {
+            type: 'string', enum: ['daily', 'weekly', 'monthly'],
+            description: 'Set this whenever the request describes something REPEATING, not a one-off — "every Thursday", "every evening", "every weekday", "each week" all mean this must be set. Omit entirely for a genuinely one-time event.',
+          },
+          recurrenceDays: {
+            type: 'array', items: { type: 'number' },
+            description: 'weekly recurrence only — which weekdays it repeats on, 0=Sunday..6=Saturday (e.g. "every Thursday" -> [4], "every weekday" -> [1,2,3,4,5]). Required if recurrenceFrequency is "weekly".',
+          },
         },
         required: ['title', 'category'],
       },
@@ -232,6 +240,14 @@ const TOOLS = [
           alertCallLeadMinutes: {
             type: 'number',
             description: 'If the user wants a call-style reminder for this chore\'s due time, how many minutes before it should ring (0 = at the exact time). Omit entirely if the user didn\'t ask for a reminder — do not default to one.',
+          },
+          recurrenceFrequency: {
+            type: 'string', enum: ['daily', 'weekly', 'monthly'],
+            description: 'Set this whenever the request describes something REPEATING, not a one-off — "every evening", "every Thursday", "daily", "each week" all mean this must be set. Omit entirely for a genuinely one-time chore.',
+          },
+          recurrenceDays: {
+            type: 'array', items: { type: 'number' },
+            description: 'weekly recurrence only — which weekdays it repeats on, 0=Sunday..6=Saturday. Required if recurrenceFrequency is "weekly".',
           },
         },
         required: ['title'],
@@ -652,11 +668,24 @@ async function executeTool(
     // boolean staying false by default. Only set alertCall true when the
     // model actually returned a lead time, never invent one.
     const alertCallLeadMinutes = typeof args.alertCallLeadMinutes === 'number' ? args.alertCallLeadMinutes : null;
+    // A request phrased as repeating ("every Thursday", "every evening")
+    // previously had nowhere to go — this tool had no recurrence field at
+    // all, so it silently became a single one-off event with no signal to
+    // the user that the "every ___" part was dropped. Only set a rule when
+    // the model actually named a frequency; weekly requires real days.
+    const recurrenceRule = args.recurrenceFrequency
+      ? {
+          frequency: args.recurrenceFrequency,
+          ...(args.recurrenceFrequency === 'weekly' && Array.isArray(args.recurrenceDays) && args.recurrenceDays.length
+            ? { days: args.recurrenceDays } : {}),
+        }
+      : null;
     return {
       __proposal: 'event',
       title: args.title, category: args.category ?? 'Other',
       startAt: args.startAt ?? null, memberId, notes: args.notes ?? null,
       alertCall: alertCallLeadMinutes != null, alertCallLeadMinutes,
+      recurrenceRule,
       ...(unresolvedName ? { _unresolvedName: unresolvedName } : {}),
     };
   }
@@ -673,11 +702,19 @@ async function executeTool(
     // gets dropped rather than written as-is, since dueTime feeds a plain
     // time-of-day column with no format validation of its own downstream.
     const dueTime = typeof args.dueTime === 'string' && /^\d{2}:\d{2}$/.test(args.dueTime) ? args.dueTime : null;
+    const recurrenceRule = args.recurrenceFrequency
+      ? {
+          frequency: args.recurrenceFrequency,
+          ...(args.recurrenceFrequency === 'weekly' && Array.isArray(args.recurrenceDays) && args.recurrenceDays.length
+            ? { days: args.recurrenceDays } : {}),
+        }
+      : null;
     return {
       __proposal: 'quest',
       title: args.title, coins: args.coins ?? 20, memberId,
       dueDate: args.dueDate ?? null, dueTime, photoRequired: args.photoRequired ?? false,
       alertCall: alertCallLeadMinutes != null, alertCallLeadMinutes,
+      recurrenceRule,
       ...(unresolvedName ? { _unresolvedName: unresolvedName } : {}),
     };
   }
@@ -870,6 +907,14 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
 - "tonight"/"today"/"tomorrow" -> resolve to the real date yourself using today's date, don't ask. "this weekend" ->
   see the exact date already given to you above, don't recompute it yourself.
 - No coin amount mentioned for a quest -> use a reasonable default (10-30 based on effort), don't ask.
+- ANY hint of repetition ("every Thursday", "every evening", "daily", "each week", "on weekdays") -> this is a
+  RECURRING event/quest, set recurrenceFrequency (+ recurrenceDays for weekly) on propose_event/propose_quest in the
+  SAME call. Do not create it as one-time and then ask a follow-up question about repeating it — that's exactly the
+  "don't interrogate" rule this whole list exists to prevent, and dropping the recurrence silently is worse than
+  asking. If the day/time was already stated in the same message (as it usually is — "every Thursday at five" has
+  everything needed), you already have enough to propose the full recurring event/quest in one shot, reminder
+  included if one was asked for — do not ask separately for the day, the time, or whether a reminder is wanted when
+  the user's own message already answered all of it.
 - No specific person named -> propose it unassigned/for the open pool rather than asking who.
 - If the user explicitly asks for a reminder/alert/"call me" while also describing something brand new that isn't on
   the calendar yet, set alertCallLeadMinutes to that many minutes on propose_event/propose_quest. If they ask for a

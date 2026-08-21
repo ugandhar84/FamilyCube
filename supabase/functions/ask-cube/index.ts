@@ -167,6 +167,10 @@ const TOOLS = [
           startAt:    { type: 'string', description: 'ISO 8601 date+time' },
           memberName: { type: 'string', description: 'Which family member this is for, if named' },
           notes:      { type: 'string' },
+          alertCallLeadMinutes: {
+            type: 'number',
+            description: 'If the user wants a call-style reminder for this event, how many minutes before start it should ring (0 = at the exact time). Omit entirely if the user didn\'t ask for a reminder — do not default to one.',
+          },
         },
         required: ['title', 'category'],
       },
@@ -185,6 +189,10 @@ const TOOLS = [
           memberName:    { type: 'string', description: 'Who this is assigned to, if named — omit for the open pool' },
           dueDate:       { type: 'string', description: 'YYYY-MM-DD, if a deadline was implied' },
           photoRequired: { type: 'boolean' },
+          alertCallLeadMinutes: {
+            type: 'number',
+            description: 'If the user wants a call-style reminder for this chore\'s due time, how many minutes before it should ring (0 = at the exact time). Omit entirely if the user didn\'t ask for a reminder — do not default to one.',
+          },
         },
         required: ['title'],
       },
@@ -435,20 +443,28 @@ async function executeTool(
   if (name === 'propose_event') {
     let memberId: string | null = null;
     if (args.memberName) memberId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
+    // alertCallLeadMinutes is opt-in — undefined/null means "no reminder
+    // requested," matching the manual EventFormModal's own alertCall
+    // boolean staying false by default. Only set alertCall true when the
+    // model actually returned a lead time, never invent one.
+    const alertCallLeadMinutes = typeof args.alertCallLeadMinutes === 'number' ? args.alertCallLeadMinutes : null;
     return {
       __proposal: 'event',
       title: args.title, category: args.category ?? 'Other',
       startAt: args.startAt ?? null, memberId, notes: args.notes ?? null,
+      alertCall: alertCallLeadMinutes != null, alertCallLeadMinutes,
     };
   }
 
   if (name === 'propose_quest') {
     let memberId: string | null = null;
     if (args.memberName) memberId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
+    const alertCallLeadMinutes = typeof args.alertCallLeadMinutes === 'number' ? args.alertCallLeadMinutes : null;
     return {
       __proposal: 'quest',
       title: args.title, coins: args.coins ?? 20, memberId,
       dueDate: args.dueDate ?? null, photoRequired: args.photoRequired ?? false,
+      alertCall: alertCallLeadMinutes != null, alertCallLeadMinutes,
     };
   }
 
@@ -562,6 +578,10 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
 - "tonight"/"today"/"tomorrow"/"this weekend" -> resolve to the real day name yourself using today's date, don't ask.
 - No coin amount mentioned for a quest -> use a reasonable default (10-30 based on effort), don't ask.
 - No specific person named -> propose it unassigned/for the open pool rather than asking who.
+- If the user explicitly asks for a reminder/alert/"call me" for an event or chore ("remind me 30 min before",
+  "call me an hour ahead"), set alertCallLeadMinutes to that many minutes on propose_event/propose_quest. If they
+  ask for a reminder but don't say how far ahead, use 15 minutes as a reasonable default. If they say NOTHING about
+  a reminder, leave alertCallLeadMinutes out entirely — do not add one unasked, same as every other field above.
 When the user asks to add/schedule something, use propose_event, propose_quest, propose_grocery_items, or propose_meal
 as appropriate — these only PROPOSE, they do not create anything.
 CRITICAL: after calling a propose_* tool, your reply text must be SHORT — one sentence like "Here's an idea for

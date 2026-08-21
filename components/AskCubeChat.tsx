@@ -241,6 +241,10 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
         type: 'event', category: eventCategoryFromDomain(d.category) ?? d.category ?? 'Other',
         allDay: !d.startAt, memberId: d.memberId ?? undefined, notes: d.notes ?? undefined,
         approvalPending: false, conflict: false,
+        // Only ever set by the edge function when the user explicitly asked
+        // for a reminder (ask-cube/index.ts's system prompt) — mirrors the
+        // manual EventFormModal's own opt-in alertCall toggle exactly.
+        alertCall: d.alertCall ?? false, alertCallLeadMinutes: d.alertCallLeadMinutes ?? undefined,
       });
     } else if (proposal.kind === 'quest') {
       addQuest({
@@ -250,6 +254,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
         assignedToIds: d.memberId ? [d.memberId] : [], isAdultTask: false,
         dueDate: d.dueDate ?? undefined, photoRequired: d.photoRequired ?? false,
         createdById: activeMember.id,
+        alertCall: d.alertCall ?? false, alertCallLeadMinutes: d.alertCallLeadMinutes ?? undefined,
       });
     } else if (proposal.kind === 'grocery') {
       for (const it of (d.items ?? [])) {

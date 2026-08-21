@@ -228,6 +228,14 @@ export default function AskCubeProposalCard({
               <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Photo required</Text>
             </View>
           )}
+          {!!d.alertCall && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Clock size={12} color={colors.textSecondary} />
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+                📞 {d.alertCallLeadMinutes ? `${d.alertCallLeadMinutes} min before` : 'On time'}
+              </Text>
+            </View>
+          )}
         </View>
         {Actions}
       </View>
@@ -255,6 +263,14 @@ export default function AskCubeProposalCard({
         {!!d.category && (
           <View style={{ backgroundColor: accent + '16', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
             <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: accent }}>{d.category}</Text>
+          </View>
+        )}
+        {!!d.alertCall && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Clock size={12} color={colors.textSecondary} />
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
+              📞 {d.alertCallLeadMinutes ? `${d.alertCallLeadMinutes} min before` : 'On time'}
+            </Text>
           </View>
         )}
       </View>

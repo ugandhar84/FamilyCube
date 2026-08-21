@@ -142,14 +142,14 @@
 <header>
   <div class="header-inner">
     <div class="eyebrow">Family Cube — Multi-Round QA</div>
-    <h1>Live Database QA: 18 Rounds, Four Incidents</h1>
+    <h1>Live Database QA: 19 Rounds, Four Incidents</h1>
     <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, every family role, and realistic multi-step transitions — plus four production incidents caused or prompted mid-session and resolved same-session, a kid ride-request UX rebuild, a full-app per-role UI audit, a live-database verification pass, and the coordinated cross-role QA methodology (Rounds 15–16) that tracks one unified test family through a long connected scenario with every role checking every surface after every step, closing the structural blind spot that single-role agents could never see.</p>
     <div class="meta-row">
       <span class="meta-chip">Test family <b>dad072b3-...-001</b> — isolated, cleaned up after each round</span>
-      <span class="meta-chip"><b>18</b> QA rounds</span>
-      <span class="meta-chip"><b>82</b> bugs found, 81 fixed, 1 open</span>
+      <span class="meta-chip"><b>19</b> QA rounds</span>
+      <span class="meta-chip"><b>86</b> bugs found, 84 fixed, 2 open</span>
       <span class="meta-chip">2 new features shipped</span>
-      <span class="meta-chip">4 Critical, live-deployed/production bugs closed</span>
+      <span class="meta-chip">5 Critical, live-deployed/production bugs closed</span>
     </div>
   </div>
 </header>
@@ -179,6 +179,7 @@
     <a href="#round16">Round 16</a>
     <a href="#round17">Round 17</a>
     <a href="#round18">Round 18</a>
+    <a href="#round19">Round 19</a>
     <a href="#verdict">Verdict</a>
   </div>
 </nav>
@@ -187,14 +188,14 @@
 
   <section id="summary">
     <div class="sec-label">Overview</div>
-    <h2>What seventeen rounds of live testing found</h2>
-    <p class="sec-desc">Each round used real database writes against an isolated, synthetic test family (one member per role, including maternal and paternal grandparents for side-isolation testing) — not static code reading alone. Rounds 11–14 pair this with an equally thorough source-level audit for UI-level and per-role coverage, Round 14 closes the loop with a dedicated live-DB verification pass, and Rounds 15–17 introduce the coordinated cross-role methodology. Every fix is re-verified in a later round wherever the codebase's own regression pattern allows it.</p>
+    <h2>What nineteen rounds of live testing found</h2>
+    <p class="sec-desc">Each round used real database writes against an isolated, synthetic test family (one member per role, including maternal and paternal grandparents for side-isolation testing) — not static code reading alone. Rounds 11–14 pair this with an equally thorough source-level audit for UI-level and per-role coverage, Round 14 closes the loop with a dedicated live-DB verification pass, and Rounds 15–19 introduce the coordinated cross-role methodology. Every fix is re-verified in a later round wherever the codebase's own regression pattern allows it.</p>
     <div class="stats">
-      <div class="stat crit"><div class="n">11</div><div class="l">Critical bugs closed</div></div>
+      <div class="stat crit"><div class="n">12</div><div class="l">Critical bugs closed</div></div>
       <div class="stat bug"><div class="n">21</div><div class="l">Security/visibility bugs fixed</div></div>
-      <div class="stat warn"><div class="n">49</div><div class="l">Correctness bugs fixed</div></div>
+      <div class="stat warn"><div class="n">52</div><div class="l">Correctness bugs fixed</div></div>
       <div class="stat info"><div class="n">2</div><div class="l">Features shipped</div></div>
-      <div class="stat ok"><div class="n">1</div><div class="l">Open item: photo-proof enforcement</div></div>
+      <div class="stat ok"><div class="n">2</div><div class="l">Open items: photo-proof enforcement, due-soon Hub sort</div></div>
     </div>
   </section>
 
@@ -312,6 +313,11 @@
         <div class="tl-dot round"></div>
         <div class="tl-head"><h3>Round 18 — Chores &amp; Schedule Launch-Readiness Sweep</h3><span class="tl-badge round">Coordinated · All roles, one family · 10 steps</span></div>
         <p>With launch approaching, a focused sweep narrowed to the two core mechanics the user flagged as pre-launch priorities: chores and schedule. Walks through 10 connected steps spanning 3 chains — single-assign chore lifecycle, grandparent-delegated quest with Hub/Quests sync check, decline/reassign cycles with pool updates — plus recurring mechanics independence, cross-system event/chore linking, and bounty flows with coin tracking. Surfaces two bugs, both High severity: a grandparent's own Hub card vanished the moment a parent approved her sponsored quest (while her Quests tab correctly tracked the full lifecycle), and a kid's Hub chore card had zero overdue-badge awareness while the same chore's Quests-tab card flagged it red — same kid, same chore, contradictory pictures on their own two tabs. Both fixed same-session; also flagged one fragile-but-currently-correct coupling in the bounty-slot-count logic for future hardening.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot round"></div>
+        <div class="tl-head"><h3>Round 19 — Badges, Deadline Boundaries &amp; Multi-Slot Bounty Scheduling</h3><span class="tl-badge round">Coordinated · All roles, one family · 8 steps</span></div>
+        <p>Following up on the launch-readiness focus, testing whether badge/notification counts stay in sync with actual state, whether deadline/overdue boundary logic holds after the Round 18 fix, and whether multi-slot bounty chores behave correctly when combined with scheduling and the parent review queue. Surfaces one CRITICAL bug and three others: multi-slot bounty claim submissions never reached the parent's review badge/queue at all (submitBountyClaim never updates the parent chore's status, so pending claims became invisible to the primary "action needed" review surface), multi-slot bounties share a single due date across all claimants with no way to tell whose slot is genuinely late, no "due soon" sort/urgency exists on Hub for any role (open item), and a kid's Hub alert for an imminent unassigned ride never escalated despite both parents correctly escalating it. All three immediate bugs fixed same-session, due-soon sort deferred as lower priority.</p>
       </div>
     </div>
   </section>
@@ -1526,6 +1532,140 @@
     </div>
 
     <p class="sec-desc" style="margin-top: 20px;"><b>Test family details:</b> Single isolated synthetic family (<code class="inline">0e579a8d-a20d-4ba3-9246-126b724b4472</code>, "QA21 Test Family") with 7 real member rows: 2 parents (QA21 Parent-A, QA21 Parent-B), 2 kids (QA21 Kid-1, QA21 Kid-2), 1 teen (QA21 Teen-1), 2 grandparents (QA21 GP-Mat linked to Parent-A, QA21 GP-Pat linked to Parent-B). All rows across <code class="inline">families</code>, <code class="inline">members</code>, <code class="inline">chore_tasks</code>, <code class="inline">calendar_events</code>, and <code class="inline">point_transactions</code> were deleted at the end, with a final verification query confirming zero count across every touched table. Zero point_transactions rows created (coin balances updated directly on <code class="inline">members.main_coins</code> per the session's minimal-writes safety principle). No production data outside the test family was ever touched.</p>
+  </section>
+
+  <section id="round19">
+    <div class="sec-label">Round 19</div>
+    <h2>Badges, Deadline Boundaries &amp; Multi-Slot Bounty Scheduling</h2>
+    <p class="sec-desc">Continuing the launch-readiness chores+schedule focus from Round 18, this round tested whether badge/notification counts stay in sync with actual state, whether deadline/overdue boundary logic holds after the recent KidQuestCard overdue fix (Round 18), and whether multi-slot bounty chores behave correctly when combined with scheduling/deadlines and the parent review queue. One coordinated agent, isolated test family (<code class="inline">b87e4038-3224-4b06-a5b3-9bdddce57ffd</code>), 6 real member rows across every role, real database writes, every step checked against the relevant surfaces.</p>
+
+    <div class="step-card">
+      <div class="step-num">Step 1</div>
+      <div class="step-title">3 pending-approval chores created across Kid-1, Kid-2, Teen-1</div>
+      <div class="step-desc">Three chores, each submitted and awaiting parent review: Kid-1's assigned chore submitted, Kid-2's pool chore claimed and submitted, Teen-1's assigned chore submitted.</div>
+      <div class="step-write">DB: 3 <code class="inline">chore_tasks</code> rows with status = <code class="inline">pending_approval</code></div>
+      <ul class="check-list">
+        <li>Parent-A's badge count in ChoreReviewSection.tsx <span class="badge match">✓ Match</span> — shows exactly 3 pending approvals</li>
+        <li>Parent-B's identical view <span class="badge match">✓ Match</span> — both parents see the same count identically, no per-parent partition</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 2</div>
+      <div class="step-title">Parent-A approves one of the three</div>
+      <div class="step-desc">Parent-A approves Kid-1's chore, which transitions to <code class="inline">approved</code> status.</div>
+      <div class="step-write">DB: one chore_tasks row status → <code class="inline">approved</code></div>
+      <ul class="check-list">
+        <li>Parent-A's badge count immediately drops to 2 <span class="badge match">✓ Match</span> — realtime subscription reflected</li>
+        <li>Parent-B's badge count identically drops to 2 <span class="badge match">✓ Match</span> — shared chores array, same realtime payload</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 3 — Finding (CRITICAL)</div>
+      <div class="step-title">Multi-slot bounty (maxClaimants=2) with two kids' pending submissions</div>
+      <div class="step-desc">A bounty chore created with maxClaimants=2. Kid-1 claims slot 1 and submits; Kid-2 claims slot 2 and submits. Both have real <code class="inline">bounty_claims</code> rows at <code class="inline">pending_approval</code>, but the parent chore's own status stayed <code class="inline">todo</code> the entire time.</div>
+      <div class="step-write">DB: 1 chore_tasks row (status=<code class="inline">todo</code>), 2 bounty_claims rows (status=<code class="inline">pending_approval</code>)</div>
+      <ul class="check-list">
+        <li>Parent-A's badge count <span class="badge mismatch">✗ Mismatch</span> — still shows 2 from Step 1, never rose to 4; the 2 real pending claims are completely invisible</li>
+        <li>ParentReviewDeck.tsx's pendingSubmissions filter <span class="badge mismatch">✗ Mismatch</span> — looks only at parent chore status, never checks bounty_claims; these 2 real claims are unreachable in the primary "action needed" surface</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #1 (CRITICAL severity):</strong> <code class="inline">submitBountyClaim</code> in store/choreStore.ts only ever updates the <code class="inline">bounty_claims</code> row's own status, never touches the parent <code class="inline">chore_tasks</code> row's status. Both <code class="inline">getParentReviewDeck()</code> and <code class="inline">ParentReviewDeck.tsx</code>'s <code class="inline">pendingSubmissions</code> filter exclusively on the parent chore's <code class="inline">status === 'pending_approval'</code>. Result: two kids with real, pending submissions at approval stage are completely invisible to the parent's primary "action needed" review surface — the badge count stayed frozen and the review deck stayed empty. The only way to find these submissions was already knowing to navigate to the Quests tab and manually expand the still-<code class="inline">todo</code>-looking bounty card. Reproduced live with a real test family. Fixed same-session: added a new <code class="inline">BountyClaimReviewCard</code> section to <code class="inline">ParentReviewDeck.tsx</code> that flattens every chore's <code class="inline">pending_approval</code> bounty claims into their own review cards (Approve/Decline wired directly to <code class="inline">approveBountyClaim</code>/<code class="inline">declineBountyClaim</code>), and folded the same count into <code class="inline">ChoreReviewSection.tsx</code>'s badge calculation so both the Hub "Chore Reviews" chip and the full ParentReviewDeck now actually render all pending work. Files: store/choreStore.ts, features/chores/ParentReviewDeck.tsx, features/hub/parent/ChoreReviewSection.tsx.</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 4 — Finding (HIGH)</div>
+      <div class="step-title">Same multi-slot bounty, due date simulated as passed</div>
+      <div class="step-desc">The bounty chore's due date is simulated as 5 days in the past. Both Kid-1 and Kid-2 still have active claims on this chore.</div>
+      <div class="step-write">Simulated date progression, no DB mutation</div>
+      <ul class="check-list">
+        <li>Kid-1's claim card (Quests tab) <span class="badge mismatch">✗ Mismatch</span> — shows "⚠ Overdue" badge with the shared due date</li>
+        <li>Kid-2's claim card (Quests tab, same chore) <span class="badge mismatch">✗ Mismatch</span> — shows identical "⚠ Overdue" badge with the same date, even if Kid-2 had submitted on time</li>
+        <li><code class="inline">bounty_claims</code> schema <span class="badge mismatch">✗ Mismatch</span> — has no due_date column at all; the schema has zero concept of a per-claimant deadline</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #2 (HIGH severity):</strong> The same multi-slot bounty chore has one shared <code class="inline">dueDate</code> on the parent <code class="inline">chore_tasks</code> row, with zero per-claim due-date tracking in <code class="inline">bounty_claims</code>. <code class="inline">QuestCard.tsx</code>'s <code class="inline">isOverdue</code> logic computes once per card from the parent chore's shared date, so BOTH Kid-1's claim card AND Kid-2's claim card show an identical "⚠ Overdue" badge with the same date — even if (for example) Kid-1 had submitted on time and only Kid-2's slot was genuinely late. There's no way to distinguish whose slot is actually overdue, and the schema would need a full per-claim due-date column to support it. User decided the minimal fix before launch: soften the wording so it reads as chore-level status rather than a personal judgment on the claimant. Fixed same-session: on multi-slot bounty cards specifically (<code class="inline">maxClaimants &gt; 1</code>), the overdue badge now reads "⚠ Chore overdue" instead of a specific date, applied identically in <code class="inline">QuestCard.tsx</code> (Quests tab) and <code class="inline">KidQuestCard.tsx</code> (Hub) so both surfaces agree. A full per-claim due-date model remains a known, explicitly-deferred follow-up, not a launch blocker. Files: features/quests/components/QuestCard.tsx, features/hub/kid/KidQuestCard.tsx.</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 5 — Finding (MEDIUM)</div>
+      <div class="step-title">No "due soon" urgency surface on Hub for any role</div>
+      <div class="step-desc">A chore with due date exactly 1 hour away is created and examined across Hub and Quests for all roles.</div>
+      <div class="step-write">DB: new chore_tasks row with dueDate = 1 hour from now</div>
+      <ul class="check-list">
+        <li>Quests tab sort (all roles) <span class="badge match">✓ Match</span> — chore rises to the top, sorted by ascending due date/time; urgency is clear</li>
+        <li>Hub sort (all roles) <span class="badge mismatch">✗ Mismatch</span> — no sort at all; chore appears in arbitrary order with zero visual urgency treatment</li>
+        <li>Parent chore-overview sort <span class="badge match">✓ Match</span> — consistent between Parent-A and Parent-B (sorted by createdAt descending), but no due-date urgency concept</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #3 (MEDIUM severity, open item):</strong> No "due soon" surface exists on Hub for any role. A chore due in 1 hour rises to the top of the Quests tab (active sort by due date) but appears in arbitrary order on Hub with no visual urgency treatment on either surface. Both parents' own chore-overview sort is consistent with each other (sorted by createdAt descending) but has no due-date urgency concept anywhere. Reported as a cosmetic/ordering gap rather than a structural bug — the Quests tab's sort proves the data is available. Not fixed this round (lower priority than the Step 3 CRITICAL and Step 4 HIGH bugs above) — noted as an open item for a future pass.</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 6 — Finding (MEDIUM, now FIXED)</div>
+      <div class="step-title">Kid's own Hub alert for imminent unassigned ride</div>
+      <div class="step-desc">An unassigned ride is simulated as 90 minutes away (under the 2-hour escalation threshold). Parent-A's Hub correctly escalates it as urgent (danger-red "Urgent: Still no driver"). Kid-1's own Hub alert is checked for the same urgency signal.</div>
+      <div class="step-write">Simulated date, event driverStatus=<code class="inline">open</code>, hoursUntilEvent &lt; 2</div>
+      <ul class="check-list">
+        <li>Parent-A's Hub (<code class="inline">ParentView.tsx:unassignedUrgent</code>) <span class="badge match">✓ Match</span> — shows escalated danger-red alert for rides under 2 hours</li>
+        <li>Parent-B's Hub <span class="badge match">✓ Match</span> — shared events array, identical escalation for both parents</li>
+        <li>Kid-1's own Hub alert (<code class="inline">KidUrgentAlerts:pendingRides</code>) <span class="badge mismatch">✗ Mismatch</span> — rendered flat amber "Waiting on driver…" with no escalation, same icon/color/copy regardless of time to event</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding #4 (MEDIUM severity):</strong> Parent's Hub correctly escalates an unassigned ride once <code class="inline">hoursUntilEvent &lt; 2</code> via <code class="inline">ParentView.tsx:unassignedUrgent</code>, with identical escalation for both Parent-A and Parent-B (shared events array). But the assigned kid's own Hub alert (<code class="inline">KidUrgentAlerts:pendingRides</code>) rendered every "waiting on driver" ride identically regardless of how close it was — a ride 90 minutes out looked exactly the same as one due next month, with the same flat amber "Waiting on driver…" copy. The kid whose own ride was getting dangerously close had zero urgency signal, while both parents watching the same ride correctly saw it escalate. Fixed same-session: the kid's alert now escalates its icon/color/copy (danger-red "Still no driver — getting close!") once the same <code class="inline">hoursUntilEvent &lt; 2</code> threshold the parent's Hub already uses is crossed, so the kid's own urgency signal now matches what both parents see. File: features/hub/kid/KidUrgentAlerts.tsx.</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 7</div>
+      <div class="step-title">Midnight-boundary and start-of-today due-date edge cases</div>
+      <div class="step-desc">Specific re-test of midnight and start-of-today boundary conditions to verify Round 18's KidQuestCard overdue fix didn't introduce any divergence against QuestCard's logic.</div>
+      <div class="step-write">Simulated dates: dueDate exactly at today's 00:00, dueDate at yesterday's 23:59</div>
+      <ul class="check-list">
+        <li>QuestCard.tsx isOverdue <span class="badge match">✓ Match</span> — uses date-only compare via parseLocalDate, ignores time-of-day</li>
+        <li>KidQuestCard.tsx isOverdue <span class="badge match">✓ Match</span> — shares exact same isOverdue definition and parseLocalDate utility; no divergence possible by construction</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 8</div>
+      <div class="step-title">Single-claimant (non-bounty) overdue logic baseline</div>
+      <div class="step-desc">A regular (non-bounty) overdue chore is re-verified as a baseline — confirming the underlying boundary math is sound on its own.</div>
+      <div class="step-write">DB: chore_tasks row, status=<code class="inline">todo</code>, dueDate in past</div>
+      <ul class="check-list">
+        <li>Regular overdue chore on Hub + Quests <span class="badge match">✓ Match</span> — both surfaces show identical red overdue badge; the Step 4 bug is specifically about the shared due-date source under multi-slot claims, not the underlying boundary math itself</li>
+      </ul>
+    </div>
+
+    <div class="table-scroll" style="margin-top: 24px;">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev crit">CRITICAL</span></td>
+            <td>Multi-slot bounty claim submissions never reached the parent's review badge/queue at all — <code class="inline">submitBountyClaim</code> only ever updates the bounty_claims row's own status, never touches the parent chore_tasks.status. Both <code class="inline">getParentReviewDeck()</code> and <code class="inline">ParentReviewDeck.tsx</code>'s pendingSubmissions filter exclusively on the parent chore's status, so pending claims are completely invisible to the primary "action needed" review surface, leaving the badge count frozen and the deck empty.</td>
+            <td><code class="inline">store/choreStore.ts:submitBountyClaim</code>, <code class="inline">features/chores/ParentReviewDeck.tsx</code>, <code class="inline">features/hub/parent/ChoreReviewSection.tsx</code></td>
+            <td><span class="status-fixed">✓ Fixed — new BountyClaimReviewCard section added to ParentReviewDeck.tsx that flattens every chore's pending_approval bounty_claims into their own review cards (Approve/Decline wired directly); badge count now includes pending claims</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>Multi-slot bounty chores share one due date across all claimants with no per-claim due_date column, so an overdue chore shows an identical badge to every claimant — there's no way to tell whose slot is actually late, and the badge text implies personal lateness rather than chore-level status.</td>
+            <td><code class="inline">features/quests/components/QuestCard.tsx</code>, <code class="inline">features/hub/kid/KidQuestCard.tsx</code></td>
+            <td><span class="status-fixed">✓ Fixed (minimal, by user decision) — badge now reads "Chore overdue" on multi-slot cards instead of a specific date; full per-claim due-date model deferred as a known follow-up, not launch-blocking</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>No "due soon" sort/urgency surface exists on Hub for any role — a chore due in 1 hour rises to the top of the Quests tab but appears in arbitrary order on Hub with zero visual urgency treatment.</td>
+            <td><code class="inline">features/hub/KidView.tsx</code>, <code class="inline">store/choreStore.ts:getParentQuestPool</code></td>
+            <td>Reported, not fixed this round — open item, lower priority than the structural bugs above</td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td>Kid's own Hub had no urgency escalation for a close unassigned ride — unlike both parents' Hub which correctly escalates under the same 2-hour threshold, the kid saw flat amber "Waiting on driver…" with no escalation regardless of time-to-event.</td>
+            <td><code class="inline">features/hub/kid/KidUrgentAlerts.tsx</code></td>
+            <td><span class="status-fixed">✓ Fixed — alert now escalates icon/color/copy under the same 2hr threshold ParentView.tsx already uses</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="sec-desc" style="margin-top: 20px;"><b>Test family details:</b> Single isolated synthetic family (<code class="inline">b87e4038-3224-4b06-a5b3-9bdddce57ffd</code>, "QA23 Test Family") with 6 real member rows: 2 parents (QA23-Parent-A, QA23-Parent-B), 2 kids (QA23-Kid-1, QA23-Kid-2), 1 teen (QA23-Teen-1), 1 grandparent (QA23-GP-Mat, <code class="inline">linked_parent_id</code> = Parent-A). All rows across <code class="inline">families</code>, <code class="inline">members</code>, <code class="inline">chore_tasks</code>, <code class="inline">calendar_events</code>, <code class="inline">bounty_claims</code>, and <code class="inline">point_transactions</code> were deleted at the end, with a final verification query confirming zero count across every touched table. No production data outside the test family was ever touched.</p>
   </section>
 
   <section id="verdict">

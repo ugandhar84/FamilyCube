@@ -139,6 +139,37 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'get_schedule_conflicts',
+      description: 'Find scheduling conflicts (double-bookings) in a date range — the same person or the same helper/driver assigned to two events less than 30 minutes apart. Use for "any conflicts today/this week", "is anyone double-booked".',
+      parameters: {
+        type: 'object',
+        properties: {
+          startDate: { type: 'string', description: 'YYYY-MM-DD, inclusive' },
+          endDate:   { type: 'string', description: 'YYYY-MM-DD, inclusive' },
+        },
+        required: ['startDate', 'endDate'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_free_time',
+      description: 'Check who in the family has nothing scheduled at/around a specific date and time, or find a family member\'s open windows on a given day. Use for "who\'s free Saturday afternoon", "is anyone available at 3pm Tuesday", "when is Alex free tomorrow".',
+      parameters: {
+        type: 'object',
+        properties: {
+          date: { type: 'string', description: 'YYYY-MM-DD to check' },
+          time: { type: 'string', description: 'HH:MM 24-hour, if a specific time was asked about — omit to just list the day\'s free gaps between events for everyone' },
+          memberName: { type: 'string', description: 'Check just this one person\'s availability — omit to check everyone' },
+        },
+        required: ['date'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'get_quests',
       description: 'Get quest/chore state, optionally filtered by status or member. Use for "what chores are pending", "is anyone overdue", "what has X done".',
       parameters: {
@@ -496,6 +527,98 @@ async function executeTool(
       driver: e.driver_name ? realNameToAlias(aliasMap, members, e.driver_name) : null,
       driverStatus: e.driver_status,
     })) };
+  }
+
+  if (name === 'get_schedule_conflicts') {
+    const { data, error } = await supabase.from('calendar_events')
+      .select('id, title, category, date, start_time, member_id, helper_name, helper_status')
+      .eq('family_id', familyId)
+      .gte('date', args.startDate).lte('date', args.endDate)
+      .is('deleted_at', null).not('start_time', 'is', null)
+      .order('date').order('start_time');
+    if (error) return { error: error.message };
+    const scoped = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);
+    // Same <30-min overlap window and two conflict classes (same person
+    // double-booked; same helper/driver assigned twice) ParentView.tsx's
+    // own client-side Hub banner already uses — ported here rather than
+    // reimplemented differently, so Ask Cube's answer always agrees with
+    // what the Hub itself would flag.
+    const minutesBetween = (t1: string, t2: string) => {
+      const [h1, m1] = t1.split(':').map(Number);
+      const [h2, m2] = t2.split(':').map(Number);
+      return Math.abs((h1 * 60 + m1) - (h2 * 60 + m2));
+    };
+    const conflicts: { eventA: string; eventB: string; date: string; reason: string }[] = [];
+    const byDate = new Map<string, any[]>();
+    for (const e of scoped) {
+      if (!byDate.has(e.date)) byDate.set(e.date, []);
+      byDate.get(e.date)!.push(e);
+    }
+    for (const [date, dayEvents] of byDate) {
+      for (let i = 0; i < dayEvents.length; i++) {
+        for (let j = i + 1; j < dayEvents.length; j++) {
+          const a = dayEvents[i], b = dayEvents[j];
+          if (minutesBetween(a.start_time, b.start_time) >= 30) continue;
+          if (a.member_id && a.member_id === b.member_id) {
+            conflicts.push({
+              eventA: realNameToAlias(aliasMap, members, a.title), eventB: realNameToAlias(aliasMap, members, b.title),
+              date, reason: `${aliasMap.toAlias.get(a.member_id) ?? 'Someone'} is double-booked`,
+            });
+          } else if (a.helper_name && a.helper_name === b.helper_name && a.helper_status !== 'rejected' && b.helper_status !== 'rejected') {
+            conflicts.push({
+              eventA: realNameToAlias(aliasMap, members, a.title), eventB: realNameToAlias(aliasMap, members, b.title),
+              date, reason: `${realNameToAlias(aliasMap, members, a.helper_name)} is assigned to both`,
+            });
+          }
+        }
+      }
+    }
+    return { conflicts };
+  }
+
+  if (name === 'get_free_time') {
+    const { data, error } = await supabase.from('calendar_events')
+      .select('title, date, start_time, end_time, member_id, member_ids')
+      .eq('family_id', familyId).eq('date', args.date)
+      .is('deleted_at', null).not('start_time', 'is', null)
+      .order('start_time');
+    if (error) return { error: error.message };
+    const scoped = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);
+    let targetId: string | null = null;
+    if (args.memberName) {
+      targetId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
+      if (!targetId) return { error: `Couldn't find a family member named "${args.memberName}".` };
+    }
+    const relevant = targetId
+      ? scoped.filter((e: any) => e.member_id === targetId || e.member_ids?.includes(targetId))
+      : scoped;
+    if (args.time) {
+      // "Is X free at 3pm" — busy only if an event's [start, end) window
+      // actually covers that instant, not just "something's on that day."
+      const askedMinutes = (() => { const [h, m] = args.time.split(':').map(Number); return h * 60 + m; })();
+      const toMinutes = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+      const busyWith = relevant.filter((e: any) => {
+        const start = toMinutes(e.start_time);
+        const end = e.end_time ? toMinutes(e.end_time) : start + 60; // no end_time on file -> assume 1hr block
+        return askedMinutes >= start && askedMinutes < end;
+      });
+      return {
+        checkedTime: args.time,
+        busy: busyWith.map((e: any) => ({
+          person: e.member_id ? (aliasMap.toAlias.get(e.member_id) ?? 'Someone') : 'Family',
+          title: realNameToAlias(aliasMap, members, e.title),
+        })),
+      };
+    }
+    // No specific time — list the day's busy blocks so the model can reason
+    // about gaps between them itself, rather than this function guessing
+    // what counts as a "usable" free window.
+    return {
+      busyBlocks: relevant.map((e: any) => ({
+        person: e.member_id ? (aliasMap.toAlias.get(e.member_id) ?? 'Someone') : 'Family',
+        title: realNameToAlias(aliasMap, members, e.title), start: e.start_time, end: e.end_time,
+      })),
+    };
   }
 
   if (name === 'get_quests') {
@@ -880,6 +1003,14 @@ serve(async (req) => {
     };
     if (!body.memberId || !body.message?.trim()) return json({ error: 'memberId and message required' }, 400);
 
+    // Deliberately logs the RAW user message and memberId, not the aliased
+    // version — this is server-side Deno function log output (Supabase
+    // dashboard/CLI only, never sent to the LLM provider or the client),
+    // so it's fine for debugging to see real content here. Never log
+    // anything AFTER aliasing is applied as if it were the raw input, and
+    // never let this log line leak into any response sent back to a client.
+    console.log('[ask-cube] request', { memberId: body.memberId, conversationId: body.conversationId ?? '(new)', message: body.message });
+
     const { data: member } = await supabase.from('members').select('id, name, role, family_id, timezone').eq('id', body.memberId).single();
     if (!member) return json({ error: 'Member not found' }, 404);
 
@@ -1083,7 +1214,13 @@ plausible-sounding but made-up answer.`;
 
         for (const call of reply.tool_calls) {
           const args = JSON.parse(call.function.arguments || '{}');
+          // Logged post-alias — args/result at this point are already in the
+          // model's own alias space (Person A, Place A, etc.), matching
+          // exactly what the model itself sent/received, which is the
+          // useful thing to see when debugging "why did it answer this way."
+          console.log('[ask-cube] tool_call', { round, name: call.function.name, args });
           const result = await executeTool(supabase, call.function.name, args, member.family_id, member.id, member.role, member.name, aliasMap, allMembers ?? [], placeAliasMap, today);
+          console.log('[ask-cube] tool_result', { round, name: call.function.name, result });
 
           if (result.__proposal) {
             proposals.push({ kind: result.__proposal, data: result });
@@ -1120,8 +1257,15 @@ plausible-sounding but made-up answer.`;
     });
     await supabase.from('ask_cube_conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
 
+    // finalText here is already de-aliased back to real names/places — this
+    // is genuinely what the client receives, useful for confirming the
+    // alias round-trip actually worked and didn't leave a stray "Person A"
+    // in the visible reply.
+    console.log('[ask-cube] response', { conversationId, answer: finalText, proposalCount: proposals.length });
+
     return json({ conversationId, answer: finalText, proposals });
   } catch (e: any) {
+    console.log('[ask-cube] error', { message: e?.message });
     return json({ error: e?.message ?? 'Internal error' }, 500);
   }
 });

@@ -21,15 +21,20 @@
  *      the request afterward has the full form for any of that.
  *   3. Do you need a lift? — ONE question, four plain-language cards
  *      (Take me there / Bring me home / Both ways / I'm all set), not two
- *      nested toggles. Selecting one submits immediately.
+ *      nested toggles. "Take me there"/"I'm all set" submit immediately;
+ *      "Bring me home"/"Both ways" ask one more question (pickup time, and
+ *      for both-ways, same-day vs a different day) before submitting.
  *
- * Deliberately asks for NO pickup time — a kid rarely knows precisely when
- * practice ends, and QA Round 12 Finding C-2 is exactly the bug class that
- * produces (a picker a kid never opens, silently dropping the whole leg).
- * The parent fills in pickup time with a one-tap stepper when they review
- * the request (RideRequestCard/RideRequiredEventCard's PickupTimeStepper),
- * pre-filled at drop-off + 90 minutes — a better input, from someone with
- * better information, at the moment they're already deciding the ride.
+ * "Bring me home" and "Both ways" both ask for a real pickup TIME (and, for
+ * both-ways, optionally a different pickup DATE — sleepaway trip, multi-day
+ * camp) right after the ride-choice card, pre-filled at drop-off + 90
+ * minutes as a starting guess a kid can adjust. Earlier drafts deliberately
+ * left this to the parent's own +90min stepper at approval time (see
+ * PickupTimeStepper in RideRequestCard/RideRequiredEventCard) on the theory
+ * that a kid rarely knows precisely when practice ends — reversed on
+ * explicit product direction: a kid's own answer beats a parent's blind
+ * guess, and the stepper still exists as a one-tap adjustment if plans
+ * change before the ride is confirmed.
  *
  * Fixes a real, previously-shipping bug in the same pass: the old kid path
  * never set `rideRequired: true`, so a kid's Sports/Study/etc ride request
@@ -41,8 +46,8 @@
  * here is what actually fixes that, not just a copy/layout change.
  */
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Modal, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
-import { Mic, ChevronLeft, X, Check } from 'lucide-react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Modal, KeyboardAvoidingView, Platform, ActivityIndicator, Switch } from 'react-native';
+import { Mic, ChevronLeft, X, Check, Phone } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
@@ -79,39 +84,68 @@ function guessCategoryFromDomain(domain: string | undefined, title: string): Eve
   return 'Event';
 }
 
-export function KidRequestModal({ visible, onClose, activeMemberId }: {
+export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }: {
   visible: boolean; onClose: () => void; activeMemberId: string;
+  // A kid long-pressing their own still-pending request previously fell
+  // through to the shared adult EditEventModal — the same form this whole
+  // component exists to replace, dead isKid branches and all (long-press
+  // was wired unconditionally for every role, with no gate at all). Now
+  // routed back into this component instead, in edit mode: seeds state
+  // from the existing event, lands on Step 2 for review, and writes via
+  // updateEvent instead of addEvent on submit. Only ever offered for a
+  // kid's own event while it's still approvalPending — once a parent has
+  // acted on it, editing goes through the parent's own surfaces instead.
+  editEvent?: FamilyEvent;
 }) {
   const { colors, isDark } = useTheme();
-  const { addEvent } = useEventStore();
+  const { addEvent, updateEvent } = useEventStore();
   const members = useFamilyStore(s => s.members);
   const active = members.find(m => m.id === activeMemberId);
   const parentNames = members.filter(m => m.role === 'parent').map(m => m.name.split(' ')[0]);
+  const isEditing = !!editEvent;
 
-  const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [category, setCategory] = useState<EventCategory | null>(null);
-  const [title, setTitle] = useState('');
+  const [step, setStep] = useState<1 | 2 | 3>(editEvent ? 2 : 1);
+  const [category, setCategory] = useState<EventCategory | null>((editEvent?.category as EventCategory) ?? null);
+  const [title, setTitle] = useState(editEvent?.title ?? '');
   const [eventDate, setEventDate] = useState<Date>(() => {
+    if (editEvent) {
+      const [y, mo, d] = editEvent.date.split('-').map(Number);
+      const dt = new Date(y, mo - 1, d);
+      if (editEvent.time) { const [h, mi] = editEvent.time.split(':').map(Number); dt.setHours(h, mi); }
+      return dt;
+    }
     const d = new Date(); const m = d.getMinutes();
     d.setMinutes(m < 30 ? 30 : 0, 0, 0); if (m >= 30) d.setHours(d.getHours() + 1);
     return d;
   });
   const [showDatePick, setShowDatePick] = useState(false);
   const [showTimePick, setShowTimePick] = useState(false);
-  const [location, setLocation] = useState('');
-  const [notes, setNotes] = useState('');
+  const [location, setLocation] = useState(editEvent?.location ?? '');
+  const [notes, setNotes] = useState(editEvent?.notes ?? '');
+  // Call-style reminder (rings via CallKit at event time, 5, or 10 min
+  // before) — full infrastructure already exists (alertCall/
+  // alertCallLeadMinutes on FamilyEvent, used by the adult form) but was
+  // never exposed here, so a kid had no way to turn it on for their own
+  // request. Kept to one toggle, no lead-time picker — defaults to
+  // on-time, matching the kid-form's "one clear answer" philosophy rather
+  // than the adult form's 3-way picker.
+  const [alertCall, setAlertCall] = useState(editEvent?.alertCall ?? false);
   const [rideChoice, setRideChoice] = useState<RideChoice | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
-  // "Both ways" needs one more answer before it can submit: same day (the
-  // common case — practice ends, someone picks you up a couple hours
-  // later) vs a different day (sleepaway trip, multi-day camp) — the app
-  // previously just assumed same-day, silently losing a multi-day pickup
-  // date entirely. Only asked for 'both', since a single-leg request has
-  // no second date to place.
+  // "Bring me home" and "Both ways" both need a pickup TIME before they can
+  // submit — previously left entirely to the parent to guess (+90min
+  // stepper at approval time), but a kid usually DOES know roughly when
+  // practice/class ends, and a real answer beats a guess. "Both ways" also
+  // needs a same-day-vs-different-day answer first (sleepaway trip, multi-
+  // day camp) — the app previously just assumed same-day, silently losing
+  // a multi-day pickup date entirely.
   const [askingPickupDay, setAskingPickupDay] = useState(false);
+  const [askingPickupTime, setAskingPickupTime] = useState(false);
   const [pickupDate, setPickupDate] = useState<Date | null>(null);
+  const [pickupTime, setPickupTime] = useState<Date | null>(null);
   const [showPickupDatePick, setShowPickupDatePick] = useState(false);
+  const [showPickupTimePick, setShowPickupTimePick] = useState(true);
 
   // ── Mic / voice intake — in the header, not a separate chooser screen ──
   // Live transcript shown inline, right where the mic was tapped, so the
@@ -131,9 +165,12 @@ export function KidRequestModal({ visible, onClose, activeMemberId }: {
   });
 
   const reset = () => {
+    if (editEvent) return; // editing closes via onClose directly, no blank-state flash needed
     setStep(1); setCategory(null); setTitle(''); setLocation(''); setNotes('');
     setRideChoice(null); setDone(false); setMicOpen(false); voice.cancel();
-    setAskingPickupDay(false); setPickupDate(null); setShowPickupDatePick(false);
+    setAskingPickupDay(false); setAskingPickupTime(false);
+    setPickupDate(null); setPickupTime(null); setShowPickupDatePick(false);
+    setAlertCall(false);
   };
   const close = () => { reset(); onClose(); };
 
@@ -147,14 +184,47 @@ export function KidRequestModal({ visible, onClose, activeMemberId }: {
     setRideChoice(choice);
 
     // Same RIDE: encoding parseRideMeta (features/hub/parent/rideLegs.ts)
-    // already decodes — deliberately NEVER includes a TIME for a kid (see
-    // PickupTimeStepper for where the parent fills that in), but DOES
-    // carry a pickup DATE when the kid said "different day" — parseRideMeta
-    // reads `RIDE:both:YYYY-MM-DDTHH:MM`, so a bare date-only pickup uses a
-    // placeholder time here that PickupTimeStepper overwrites regardless.
+    // already decodes. The kid now supplies a real pickup TIME whenever
+    // there's a pickup leg ('pickup' or 'both') — a real answer beats the
+    // parent's old +90min guess (PickupTimeStepper is now an adjustment,
+    // not the primary source). Falls back to the unknown-time sentinel
+    // only if somehow no time was captured (shouldn't happen — the picker
+    // pre-fills a default the moment its screen opens).
+    const pickupDateStr = pickupDate ? localDateStr(pickupDate) : localDateStr(eventDate);
+    const pickupTimeStr = pickupTime ? fmtTimeVal(pickupTime) : undefined;
     const returnTime = choice === 'both'
-      ? (pickupDate ? `RIDE:both:${localDateStr(pickupDate)}T${RIDE_PICKUP_TIME_UNKNOWN}` : 'RIDE:both')
-      : choice === 'dropoff' ? 'RIDE:dropoff' : choice === 'pickup' ? 'RIDE:pickup' : undefined;
+      ? `RIDE:both:${pickupDateStr}T${pickupTimeStr ?? RIDE_PICKUP_TIME_UNKNOWN}`
+      : choice === 'pickup'
+        ? `RIDE:pickup:${pickupDateStr}T${pickupTimeStr ?? RIDE_PICKUP_TIME_UNKNOWN}`
+        : choice === 'dropoff' ? 'RIDE:dropoff' : undefined;
+
+    if (isEditing && editEvent) {
+      // A parent may have already acted (driverName/driverStatus set) by
+      // the time a kid comes back to tweak wording — this only re-touches
+      // fields the kid actually controls (title/when/where/notes/ride
+      // choice); it deliberately does NOT reset an already-confirmed
+      // driver back to pending just because the kid re-saved the form.
+      const rideFieldsChanged = editEvent.rideRequired !== (choice !== 'none') || editEvent.returnTime !== returnTime;
+      updateEvent(editEvent.id, {
+        title: title.trim(),
+        date: localDateStr(eventDate),
+        time: fmtTimeVal(eventDate),
+        category,
+        location: location.trim() || undefined,
+        notes: notes.trim() || undefined,
+        returnTime,
+        rideRequired: choice !== 'none',
+        alertCall,
+        alertCallLeadMinutes: 0,
+        ...(rideFieldsChanged && !editEvent.driverName
+          ? { driverStatus: choice !== 'none' ? 'pending' as const : undefined }
+          : {}),
+      });
+      setSubmitting(false);
+      setDone(true);
+      setTimeout(close, 1200);
+      return;
+    }
 
     const eventInput: Omit<FamilyEvent, 'id'> = {
       title: title.trim(),
@@ -171,6 +241,8 @@ export function KidRequestModal({ visible, onClose, activeMemberId }: {
       approvalPending: true,
       conflict: false,
       color: accentColor,
+      alertCall,
+      alertCallLeadMinutes: 0,
       // The actual D5 fix — every kid ride request now correctly flags
       // rideRequired, routing it to RideRequiredEventCard (which reads
       // driverName/driverStatus) instead of RideRequestCard (which reads
@@ -201,6 +273,11 @@ export function KidRequestModal({ visible, onClose, activeMemberId }: {
               <TouchableOpacity
                 onPress={() => {
                   if (done) return;
+                  if (askingPickupTime) {
+                    setAskingPickupTime(false);
+                    if (rideChoice === 'both') setAskingPickupDay(true);
+                    return;
+                  }
                   if (askingPickupDay) { setAskingPickupDay(false); setPickupDate(null); setShowPickupDatePick(false); return; }
                   if (step > 1) setStep((step - 1) as 1 | 2);
                   else close();
@@ -391,6 +468,18 @@ export function KidRequestModal({ visible, onClose, activeMemberId }: {
                       />
                     </View>
 
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                      backgroundColor: isDark ? colors.surface : '#F9FAFB', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                        <Phone size={16} color={alertCall ? accentColor : colors.textTertiary} />
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>Call to remind me</Text>
+                      </View>
+                      <Switch value={alertCall} onValueChange={setAlertCall}
+                        trackColor={{ false: colors.border, true: accentColor + '80' }}
+                        thumbColor={alertCall ? accentColor : colors.textTertiary}
+                      />
+                    </View>
+
                     <TouchableOpacity
                       disabled={!canSubmitStep2}
                       onPress={() => setStep(3)}
@@ -414,7 +503,16 @@ export function KidRequestModal({ visible, onClose, activeMemberId }: {
                       { key: 'none'    as const, icon: '🚶',   label: "No, I'm all set", sub: undefined },
                     ].map(opt => (
                       <TouchableOpacity key={opt.key} disabled={submitting}
-                        onPress={() => opt.key === 'both' ? setAskingPickupDay(true) : submit(opt.key)}
+                        onPress={() => {
+                          setRideChoice(opt.key);
+                          if (opt.key === 'both') { setAskingPickupDay(true); return; }
+                          if (opt.key === 'pickup') {
+                            if (!pickupTime) { const d = new Date(eventDate); d.setMinutes(d.getMinutes() + 90); setPickupTime(d); }
+                            setAskingPickupTime(true);
+                            return;
+                          }
+                          submit(opt.key);
+                        }}
                         style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 16,
                           backgroundColor: isDark ? colors.surface : '#F9FAFB', borderWidth: 1.5, borderColor: colors.border }}>
                         <Text style={{ fontSize: 22 }}>{opt.icon}</Text>
@@ -447,16 +545,20 @@ export function KidRequestModal({ visible, onClose, activeMemberId }: {
                       When's the pickup? 📅
                     </Text>
 
-                    <TouchableOpacity disabled={submitting} onPress={() => submit('both')}
+                    <TouchableOpacity
+                      onPress={() => {
+                        setPickupDate(null);
+                        if (!pickupTime) { const d = new Date(eventDate); d.setMinutes(d.getMinutes() + 90); setPickupTime(d); }
+                        setAskingPickupDay(false); setAskingPickupTime(true);
+                      }}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 16,
                         backgroundColor: isDark ? colors.surface : '#F9FAFB', borderWidth: 1.5,
                         borderColor: !pickupDate ? accentColor : colors.border }}>
                       <Text style={{ fontSize: 22 }}>🔁</Text>
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>Same day</Text>
-                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>A parent will pick a pickup time</Text>
+                        <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 1 }}>Next, what time?</Text>
                       </View>
-                      {submitting && !pickupDate && <ActivityIndicator color={accentColor} />}
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -484,12 +586,62 @@ export function KidRequestModal({ visible, onClose, activeMemberId }: {
                     />
 
                     {pickupDate && !showPickupDatePick && (
-                      <TouchableOpacity disabled={submitting} onPress={() => submit('both')}
+                      <TouchableOpacity onPress={() => {
+                        if (!pickupTime) { const d = new Date(pickupDate); d.setHours(9, 0); setPickupTime(d); }
+                        setAskingPickupDay(false); setAskingPickupTime(true);
+                      }}
                         style={{ backgroundColor: accentColor, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
-                        {submitting ? <ActivityIndicator color="#fff" /> :
-                          <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Confirm pickup day →</Text>}
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Next: pick a time →</Text>
                       </TouchableOpacity>
                     )}
+                  </View>
+                )}
+
+                {step === 3 && askingPickupTime && (
+                  <View style={{ gap: 14 }}>
+                    <Text style={{ fontSize: TYPO.title, fontWeight: '900', color: colors.textPrimary, textAlign: 'center', marginBottom: 4 }}>
+                      What time's the pickup? 🕐
+                    </Text>
+                    <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, textAlign: 'center', marginBottom: 4 }}>
+                      {pickupDate ? `On ${fmtDisplay(pickupDate)}` : 'A parent can adjust this later if plans change'}
+                    </Text>
+
+                    <TouchableOpacity
+                      style={[f.dateBtn, { alignSelf: 'center', paddingHorizontal: 28, backgroundColor: accentColor + '14', borderColor: accentColor }]}
+                      onPress={() => setShowPickupTimePick(true)}>
+                      <Text style={{ fontSize: 16 }}>🕐</Text>
+                      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: accentColor }}>
+                        {pickupTime ? fmtTimeDisplay(pickupTime) : 'Set time'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <PickerOverlay
+                      showDate={false} showTime={showPickupTimePick}
+                      value={pickupTime ?? eventDate}
+                      onChangeDate={() => {}}
+                      onChangeTime={d => { const m = new Date(pickupTime ?? eventDate); m.setHours(d.getHours(), d.getMinutes()); setPickupTime(m); }}
+                      onDone={() => setShowPickupTimePick(false)}
+                      accentColor={accentColor} colors={colors}
+                    />
+
+                    <View>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
+                        Anything else? (optional)
+                      </Text>
+                      <TextInput
+                        style={[f.input, f.multiInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
+                        placeholder="e.g. Practice finishes at 11"
+                        placeholderTextColor={colors.textTertiary}
+                        value={notes} onChangeText={t => setNotes(t.slice(0, 200))}
+                        multiline numberOfLines={2} textAlignVertical="top"
+                      />
+                    </View>
+
+                    <TouchableOpacity disabled={submitting || !rideChoice} onPress={() => rideChoice && submit(rideChoice)}
+                      style={{ backgroundColor: accentColor, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
+                      {submitting ? <ActivityIndicator color="#fff" /> :
+                        <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>{isEditing ? 'Save changes' : 'Send request'}</Text>}
+                    </TouchableOpacity>
                   </View>
                 )}
               </ScrollView>

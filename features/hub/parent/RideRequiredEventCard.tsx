@@ -84,7 +84,14 @@ export function RideRequiredEventCard({ ev, active, colors, isDark, updateEvent,
               {ev.title}
             </Text>
             <Text style={{ fontSize: TYPO.label, color: colors.warning, opacity: 0.8 }}>
-              {ev.time ? fmtTime(ev.time) : 'time TBD'}{ev.location ? ` · ${ev.location}` : ''}
+              {/* isPickup-only's relevant time IS the pickup time (in
+                  returnTimeStr, from the kid's own time picker), not
+                  ev.time (the underlying activity's start) — previously
+                  only shown for isBothWays, so a pickup-only card's summary
+                  line showed the activity's start time and never the
+                  actual pickup time a parent needs to plan around. */}
+              {isPickup && returnTimeStr ? `Pickup · ${returnTimeStr}` : ev.time ? fmtTime(ev.time) : 'time TBD'}
+              {ev.location ? ` · ${ev.location}` : ''}
               {isBothWays && returnTimeStr ? ` · pickup ${returnTimeStr}` : ''}
             </Text>
           </View>

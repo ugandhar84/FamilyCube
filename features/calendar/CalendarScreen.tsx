@@ -567,6 +567,23 @@ export default function CalendarScreen() {
   } | undefined>(undefined);
   const [showAskHelp,   setShowAskHelp]   = useState(false);
   const [editEv,        setEditEv]        = useState<FamilyEvent | null>(null);
+  // A kid editing their OWN still-pending request goes through
+  // KidRequestModal (in edit mode) instead of the adult EditEventModal —
+  // separate state so the two never fight over which sheet is open.
+  const [kidEditEv,      setKidEditEv]     = useState<FamilyEvent | null>(null);
+
+  // Every long-press call site below used to route unconditionally to
+  // setEditEv — a kid long-pressing ANY event (their own pending request,
+  // a sibling's event, an already-approved event) landed in the full adult
+  // edit form, dead isKid branches and all, with no gate at all (the exact
+  // form KidRequestModal was built to replace). Once a parent has approved
+  // a kid's request, per the established rule, only a parent manages
+  // further changes (time/driver/recurrence/delete) — a kid long-pressing
+  // anything else now does nothing.
+  const routeLongPress = (ev: FamilyEvent) => {
+    if (!isKid) { setEditEv(ev); return; }
+    if (ev.memberId === activeMemberId && ev.approvalPending) setKidEditEv(ev);
+  };
 
   const calScrollRef = useRef<ScrollView>(null);
 
@@ -1060,7 +1077,7 @@ export default function CalendarScreen() {
               members={members}
               colors={colors} isDark={isDark}
               onSelectEvent={(ev) => setDetailEv(ev)}
-              onLongPressEvent={(ev) => setEditEv(ev)}
+              onLongPressEvent={(ev) => routeLongPress(ev)}
               onNavigateWeek={(delta) => setWeekCursor(prev => addDays(prev, delta * 7))}
               // showAdd opens the parent/senior EventFormAdd modal — a kid
               // now reaching WeekView (widened from !isKid) should use
@@ -1084,7 +1101,7 @@ export default function CalendarScreen() {
                 members={members}
                 colors={colors} isDark={isDark}
                 onSelectEvent={(ev) => setDetailEv(ev)}
-                onLongPressEvent={(ev) => setEditEv(ev)}
+                onLongPressEvent={(ev) => routeLongPress(ev)}
                 isViewerParent={isParent}
               />
             )}
@@ -1127,7 +1144,7 @@ export default function CalendarScreen() {
               members={members}
               colors={colors} isDark={isDark}
               onSelectEvent={(ev) => setDetailEv(ev)}
-              onLongPressEvent={(ev) => setEditEv(ev)}
+              onLongPressEvent={(ev) => routeLongPress(ev)}
             />
           </View>
         ) : viewMode === 'day' && canUseFullCalendarToolbar ? (
@@ -1218,7 +1235,7 @@ export default function CalendarScreen() {
                 members={members}
                 colors={colors} isDark={isDark}
                 onSelect={(ev) => setDetailEv(ev)}
-                onLongPressEvent={(ev) => setEditEv(ev)}
+                onLongPressEvent={(ev) => routeLongPress(ev)}
                 onAddAtTime={() => setShowAdd(true)}
               />
             </ScrollView>
@@ -1297,7 +1314,7 @@ export default function CalendarScreen() {
                     <TouchableOpacity
                       activeOpacity={0.78}
                       onPress={() => setDetailEv(ev)}
-                      onLongPress={() => setEditEv(ev)}
+                      onLongPress={() => routeLongPress(ev)}
                       style={{
                         flex: 1, marginBottom: isLast ? 0 : 8, position: 'relative', overflow: 'hidden',
                         backgroundColor: cardBg, borderRadius: 16,
@@ -1442,7 +1459,7 @@ export default function CalendarScreen() {
                     <SwipeableEventCard
                       canDelete={canDelete}
                       onDelete={handleEvDelete}
-                      onLongPress={() => setEditEv(ev)}
+                      onLongPress={() => routeLongPress(ev)}
                       onPress={() => setDetailEv(ev)}
                     >
                       <EventCardTimeline
@@ -1459,7 +1476,7 @@ export default function CalendarScreen() {
                         isKid={isKid}
                         canApproveRequest={!!canApproveRequest}
                         onPress={() => setDetailEv(ev)}
-                        onLongPress={() => setEditEv(ev)}
+                        onLongPress={() => routeLongPress(ev)}
                         onAssignMember={(memberId) => updateEvent(ev.id, { memberId })}
                         onApprove={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'pending' })}
                         canDelete={canDelete}
@@ -1510,6 +1527,16 @@ export default function CalendarScreen() {
         activeMemberId={activeMember?.id ?? ''}
         onClose={() => setShowAskHelp(false)}
       />
+      {/* Kid editing their own still-pending request — see routeLongPress
+          above for the gating (own event, approvalPending only). */}
+      {kidEditEv && (
+        <KidRequestModal
+          visible
+          activeMemberId={activeMember?.id ?? ''}
+          editEvent={kidEditEv}
+          onClose={() => setKidEditEv(null)}
+        />
+      )}
 
       {/* Header "+ Event" button opens the Speak it/Type it chooser first —
           the contextual entry points (tap an empty day/time slot) still go

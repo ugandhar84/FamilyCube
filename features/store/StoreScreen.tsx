@@ -323,7 +323,7 @@ function PerkModal({ visible, editing, colors, onClose, onSave }: {
 export default function StoreScreen({ hideHeader = false }: { hideHeader?: boolean }) {
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, loaded, loadFromStorage, deductCoins, awardCoins } = useFamilyStore();
-  const { rewards, redemptions, loadFromStorage: loadRewards, addReward, updateReward, deleteReward, redeemReward } = useRewardStore();
+  const { rewards, redemptions, loadFromStorage: loadRewards, addReward, updateReward, deleteReward, redeemReward, approveRedemption, rejectRedemption } = useRewardStore();
   const pointsToFiatRatio = useChoreStore(s => s.householdSettings.pointsToFiatRatio);
 
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
@@ -534,6 +534,55 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
             isDark={isDark}
           />
         )}
+
+        {/* ── Pending Approvals ── a reward with requiresApproval:true
+            created a real, fully-implemented Redemption record (pending →
+            approved/rejected, with coin refund on reject) — approveRedemption/
+            rejectRedemption were both correct and DB-synced, but NO call site
+            anywhere in the app ever invoked either: a kid's "requires
+            approval" redemption was permanently stuck in Pending forever,
+            with zero UI for a parent, on either device, to actually decide
+            it (QA sweep, parent-role audit, Critical C1). */}
+        {isParent && (() => {
+          const pending = redemptions.filter(r => r.status === 'pending');
+          if (pending.length === 0) return null;
+          return (
+            <View style={{ paddingHorizontal: 12, marginBottom: 4 }}>
+              <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 10 }}>
+                Pending Approvals ({pending.length})
+              </Text>
+              <View style={{ gap: 8 }}>
+                {pending.map(rd => {
+                  const reward = rewards.find(r => r.id === rd.rewardId);
+                  const kid = members.find(m => m.id === rd.memberId);
+                  return (
+                    <View key={rd.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
+                      backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border,
+                      paddingHorizontal: 12, paddingVertical: 10 }}>
+                      <Text style={{ fontSize: 22 }}>{reward?.emoji ?? '🎁'}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
+                          {reward?.title ?? 'Perk'}
+                        </Text>
+                        <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 1 }}>
+                          {kid?.name.split(' ')[0] ?? 'A kid'} · {rd.deductedCoins} 🪙
+                        </Text>
+                      </View>
+                      <Pressable onPress={() => rejectRedemption(rd.id, activeMemberId ?? '')}
+                        style={{ padding: 8, borderRadius: 10, backgroundColor: colors.danger + '18' }}>
+                        <Ionicons name="close" size={16} color={colors.danger} />
+                      </Pressable>
+                      <Pressable onPress={() => approveRedemption(rd.id, activeMemberId ?? '')}
+                        style={{ padding: 8, borderRadius: 10, backgroundColor: colors.teal + '18' }}>
+                        <Ionicons name="checkmark" size={16} color={colors.teal} />
+                      </Pressable>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          );
+        })()}
 
         {/* ── Kids' Piggy Banks & Wishlists ── parent-only at-a-glance view
             of every kid/teen's balance and their closest wishlist goal —

@@ -285,6 +285,12 @@ export const useRewardStore = create<RewardState>((set, get) => ({
   approveRedemption: (id, approverId, note) => {
     const now = new Date().toISOString();
     const rd = get().redemptions.find(r => r.id === id);
+    // Was missing a status guard (unlike cancelRedemption, which already
+    // checks status === 'pending') — a co-parent approving/declining a
+    // redemption their partner already acted on moments earlier, from a
+    // stale pre-realtime-update card, could double-refund or contradict an
+    // already-fulfilled decision (QA sweep, parent-role audit, Medium M2).
+    if (!rd || rd.status !== 'pending') return;
     const nextRd = get().redemptions.map(r =>
       r.id === id ? { ...r, status: 'approved' as RedemptionStatus, approvedBy: approverId, note, respondedAt: now } : r
     );
@@ -317,7 +323,10 @@ export const useRewardStore = create<RewardState>((set, get) => ({
     // stock-limited reward's rejection notification was silently skipped.
     const now = new Date().toISOString();
     const rd = get().redemptions.find(r => r.id === id);
-    if (!rd) return;
+    // Same status guard as approveRedemption above — without it a
+    // co-parent could refund coins for a redemption already approved (or
+    // already rejected) on another device.
+    if (!rd || rd.status !== 'pending') return;
     const nextRd = get().redemptions.map(r =>
       r.id === id ? { ...r, status: 'rejected' as RedemptionStatus, rejectedBy: rejectorId, note, respondedAt: now } : r
     );

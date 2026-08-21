@@ -117,10 +117,17 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                   confirm with a decline (QA Round 11, Medium Finding M4). */}
               <Pressable
                 onPress={() => {
-                  const otherParent = members.find(m => m.role === 'parent' && m.id !== active.id);
-                  updateEvent(ev.id, {
-                    helper: otherParent?.name, helperStatus: otherParent ? 'pending' : undefined,
-                  });
+                  // Was a hand-rolled reassign-to-the-other-parent that
+                  // never set helperStatus:'rejected' — completely bypassed
+                  // autoOpenOnDecline (no GP/Teen pool reopen, no decline
+                  // notification to the requesting kid or assigning parent,
+                  // the exact fixes this session made everywhere else), and
+                  // in a single-parent household (or no other parent with a
+                  // car) silently reverted the ride to fully unassigned with
+                  // zero signal to anyone (QA sweep, parent-role audit,
+                  // Critical C2). Now goes through the canonical decline
+                  // path like every other decline surface in the app.
+                  updateEvent(ev.id, { helperStatus: 'rejected', declinedBy: active.name });
                 }}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12,
                   borderWidth: 1, borderColor: colors.danger + '40' }}>

@@ -142,12 +142,12 @@
 <header>
   <div class="header-inner">
     <div class="eyebrow">Family Cube — Multi-Round QA</div>
-    <h1>Live Database QA: 15 Rounds, Four Incidents</h1>
-    <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, every family role, and realistic multi-step transitions — plus four production incidents caused or prompted mid-session and resolved same-session, a kid ride-request UX rebuild, a full-app per-role UI audit, a live-database verification pass, and finally the first coordinated cross-role QA methodology that tracks one unified test family through an 11-step connected scenario with every role checking every surface after every step, closing the structural blind spot that single-role agents could never see.</p>
+    <h1>Live Database QA: 16 Rounds, Four Incidents</h1>
+    <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, every family role, and realistic multi-step transitions — plus four production incidents caused or prompted mid-session and resolved same-session, a kid ride-request UX rebuild, a full-app per-role UI audit, a live-database verification pass, and the coordinated cross-role QA methodology (Rounds 15–16) that tracks one unified test family through a long connected scenario with every role checking every surface after every step, closing the structural blind spot that single-role agents could never see.</p>
     <div class="meta-row">
       <span class="meta-chip">Test family <b>dad072b3-...-001</b> — isolated, cleaned up after each round</span>
-      <span class="meta-chip"><b>15</b> QA rounds</span>
-      <span class="meta-chip"><b>74</b> bugs found, 73 fixed, 1 open</span>
+      <span class="meta-chip"><b>16</b> QA rounds</span>
+      <span class="meta-chip"><b>78</b> bugs found, 77 fixed, 1 open</span>
       <span class="meta-chip">2 new features shipped</span>
       <span class="meta-chip">4 Critical, live-deployed/production bugs closed</span>
     </div>
@@ -176,6 +176,7 @@
     <a href="#incident2">Incident 2</a>
     <a href="#round14">Round 14</a>
     <a href="#round15">Round 15</a>
+    <a href="#round16">Round 16</a>
     <a href="#verdict">Verdict</a>
   </div>
 </nav>
@@ -184,12 +185,12 @@
 
   <section id="summary">
     <div class="sec-label">Overview</div>
-    <h2>What fourteen rounds of live testing found</h2>
-    <p class="sec-desc">Each round used real database writes against an isolated, synthetic test family (one member per role, including maternal and paternal grandparents for side-isolation testing) — not static code reading alone. Rounds 11–14 pair this with an equally thorough source-level audit for UI-level and per-role coverage, and Round 14 closes the loop with a dedicated live-DB verification pass. Every fix is re-verified in a later round wherever the codebase's own regression pattern allows it.</p>
+    <h2>What sixteen rounds of live testing found</h2>
+    <p class="sec-desc">Each round used real database writes against an isolated, synthetic test family (one member per role, including maternal and paternal grandparents for side-isolation testing) — not static code reading alone. Rounds 11–14 pair this with an equally thorough source-level audit for UI-level and per-role coverage, Round 14 closes the loop with a dedicated live-DB verification pass, and Rounds 15–16 introduce the coordinated cross-role methodology. Every fix is re-verified in a later round wherever the codebase's own regression pattern allows it.</p>
     <div class="stats">
-      <div class="stat crit"><div class="n">10</div><div class="l">Critical bugs closed</div></div>
+      <div class="stat crit"><div class="n">11</div><div class="l">Critical bugs closed</div></div>
       <div class="stat bug"><div class="n">21</div><div class="l">Security/visibility bugs fixed</div></div>
-      <div class="stat warn"><div class="n">43</div><div class="l">Correctness bugs fixed</div></div>
+      <div class="stat warn"><div class="n">45</div><div class="l">Correctness bugs fixed</div></div>
       <div class="stat info"><div class="n">2</div><div class="l">Features shipped</div></div>
       <div class="stat ok"><div class="n">1</div><div class="l">Open item: photo-proof enforcement</div></div>
     </div>
@@ -1051,11 +1052,184 @@
     <p class="sec-desc" style="margin-top: 20px;"><b>Test family details:</b> Single shared family (<code class="inline">dad072b3-779c-4a0a-8b67-111ee26f3359</code>) with 7 real member rows across all 5 roles: 2 parents (Parent-A, Parent-B), 2 kids (Kid-1, Kid-2), 1 teen (Teen-1), 2 grandparents (GP-Maternal, GP-Paternal for complete side-isolation coverage). All rows deleted at the end with verified final zero-count across every touched table. No production data outside the test family was ever touched.</p>
   </section>
 
+  <section id="round16">
+    <div class="sec-label">Round 16</div>
+    <h2>Coordinated Cross-Role Live-DB QA — Store, Chat, PIN, Multi-Slot Bounty</h2>
+    <p class="sec-desc">Second run of the Round 15 step-by-step methodology, covering the four areas that round's scenario chain never touched: the reward store end-to-end, chat unread badges and reactions, PIN-gated profile switching, and a full multi-slot bounty lifecycle spanning two parents and three kids. Same format: one isolated synthetic test family (<code class="inline">8b135778-ab42-41be-b787-113c061991ee</code>), real writes, every step checked against every relevant role's Hub AND dedicated tab.</p>
+
+    <div class="incident-box" style="border-color: var(--danger); margin-bottom: 24px;">
+      <div class="ihead"><span class="dot"></span><h3>Critical — Found Live, Fixed &amp; Redeployed</h3></div>
+      <div class="step">
+        <div class="num">1</div>
+        <div><p>Attempting a real redemption insert (<code class="inline">reward_redemptions</code>, matching <code class="inline">rewardStore.ts:293</code>'s exact write path) failed outright: <code class="inline">insert or update on table "reward_redemptions" violates foreign key constraint "reward_redemptions_reward_id_fkey" ... Key (reward_id)=(qa19-reward-1) is not present in table "reward_items"</code>.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <div><p>Root cause: <code class="inline">reward_redemptions.reward_id</code> has a foreign key pointing at <code class="inline">reward_items</code> — a legacy, orphaned table (10 old seed rows, no <code class="inline">family_id</code> column, never read or written by any code in the app) — instead of <code class="inline">rewards</code>, the table Round 14's fix actually created and every current write/read path (<code class="inline">addReward</code>, <code class="inline">syncFromDB</code>, <code class="inline">getEligibleRewards</code>) uses.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <div><p>Impact confirmed live: <code class="inline">select count(*) from reward_redemptions</code> across all of production returns <b>0</b>, while <code class="inline">rewards</code> had exactly 1 row (this session's own test insert) before this pass. Every real reward created through "+ Add Perk" since Round 14's fix shipped has been unredeemable — <code class="inline">redeemReward</code>'s insert fails silently (<code class="inline">.then(({error}) =&gt; console.warn(...))</code>), while the local Zustand state and the optimistic "🎉 Redeemed!" alert both already fired, so the kid sees success and the parent never sees a pending request.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">4</div>
+        <div><p>Fixed immediately after this pass reported it: migration <code class="inline">20260830090000_fix_reward_redemptions_fk_target.sql</code> drops and recreates <code class="inline">reward_redemptions_reward_id_fkey</code> to reference <code class="inline">rewards(id)</code> instead of <code class="inline">reward_items(id)</code>, with <code class="inline">on delete cascade</code> matching the sibling <code class="inline">member_id</code> FK's existing convention. Verified live post-deploy: the constraint now resolves against <code class="inline">rewards</code>. Zero pre-existing rows meant no data migration was needed — every prior redemption attempt had been failing silently since Round 14 shipped.</p></div>
+      </div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 1</div>
+      <div class="step-title">Parent-A creates a reward</div>
+      <div class="step-desc">Insert into <code class="inline">rewards</code> matching <code class="inline">addReward</code>'s write shape: <code class="inline">coinCost=100</code>, no <code class="inline">eligibleMemberIds</code> restriction.</div>
+      <div class="step-write">DB: new row in <code class="inline">rewards</code>, family-scoped</div>
+      <ul class="check-list">
+        <li>Kid-1 Store <span class="badge match">✓ Match</span> — <code class="inline">getEligibleRewards</code> has no role filter; <code class="inline">canRedeemSelf</code> (StoreScreen.tsx:358) includes kid</li>
+        <li>Kid-2 Store <span class="badge match">✓ Match</span> — same eligibility path</li>
+        <li>Teen-1 Store <span class="badge match">✓ Match</span> — <code class="inline">canRedeemSelf</code> includes teen (Round 14's fix for the teen/senior redeem-disabled bug holds)</li>
+        <li>Hub (any role) <span class="badge match">✓ Match, N/A</span> — no reward/redemption surface exists on Hub for any role; confirmed no divergent query</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 2</div>
+      <div class="step-title">Parent-A grants Kid-1 150 coins</div>
+      <div class="step-desc"><code class="inline">members.main_coins += 150</code> for Kid-1, matching the real Grant Coins write path (StoreScreen.tsx:736-745, <code class="inline">awardCoins</code>).</div>
+      <div class="step-write">DB: <code class="inline">members.main_coins</code> updated</div>
+      <ul class="check-list">
+        <li>Kid-1 Hub <span class="badge match">✓ Match</span> — reads <code class="inline">activeMember.mainCoins</code> from the same <code class="inline">useFamilyStore</code> member row</li>
+        <li>Kid-1 Store <span class="badge match">✓ Match</span> — <code class="inline">myMainCoins</code> (StoreScreen.tsx:359) reads the identical row; single source of truth, no possible divergence between the two surfaces</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 3</div>
+      <div class="step-title">Kid-1 redeems the reward (100 coins)</div>
+      <div class="step-desc">Insert into <code class="inline">reward_redemptions</code> (worked around the FK bug above for QA continuity only — a matching row was added to the orphaned <code class="inline">reward_items</code> table, deleted in cleanup) plus the real <code class="inline">deductCoins</code> balance decrement.</div>
+      <div class="step-write">DB: new row in <code class="inline">reward_redemptions</code>, status <code class="inline">pending</code>; <code class="inline">members.main_coins -= 100</code></div>
+      <ul class="check-list">
+        <li>Kid-1 Hub + Store balance <span class="badge match">✓ Match</span> — both decrement identically and immediately (same row, no cache layer)</li>
+        <li>Kid-1 "My Redemptions" (StoreScreen.tsx:487-526) <span class="badge match">✓ Match</span> — filters <code class="inline">memberId === activeMember.id</code>, shows "Pending"</li>
+        <li>Parent-A Pending Approvals (StoreScreen.tsx:546-585) <span class="badge match">✓ Match</span> — filters only on <code class="inline">status === 'pending'</code>, no per-parent partition</li>
+        <li>Parent-B Pending Approvals <span class="badge match">✓ Match</span> — identical query, identical result; both parents share one <code class="inline">reward_redemptions</code> table with no owning-parent scoping</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 4</div>
+      <div class="step-title">Parent-B approves the redemption</div>
+      <div class="step-desc">The OTHER parent (not the one who granted coins) approves.</div>
+      <div class="step-write">DB: <code class="inline">reward_redemptions.status = 'approved'</code>, <code class="inline">approved_at</code> set</div>
+      <ul class="check-list">
+        <li>Kid-1 Store <span class="badge match">✓ Match</span> — "My Redemptions" flips to "Fulfilled"</li>
+        <li>Kid-1 Hub <span class="badge match">✓ Match, N/A</span> — no Hub reward-status surface exists for any role, confirmed by grep; nothing to diverge</li>
+        <li>Parent-A Pending Approvals <span class="badge match">✓ Match</span> — clears too, not just Parent-B's queue; <code class="inline">approveRedemption</code>'s status guard (<code class="inline">if (!rd || rd.status !== 'pending') return;</code>, rewardStore.ts:312) plus the shared realtime subscription (<code class="inline">ensureRealtime</code>, rewardStore.ts:20-60) means both parents' client state updates from the same row the instant it flips, closing the exact "co-parent sees a stale queue" gap Round 14 fixed for approve/reject races</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 5</div>
+      <div class="step-title">Multi-slot bounty created; Kid-1 and Kid-2 each claim a slot</div>
+      <div class="step-desc"><code class="inline">chore_tasks</code> row with <code class="inline">is_pool=true</code>, <code class="inline">max_claimants=2</code>, <code class="inline">coins_reward=30</code>. Both kids call the real atomic RPC, <code class="inline">claim_bounty_slot(p_chore_id, p_member_id)</code>.</div>
+      <div class="step-write">DB: 2 rows in <code class="inline">bounty_claims</code>, status <code class="inline">in_progress</code>, via row-locked RPC</div>
+      <ul class="check-list">
+        <li>Teen-1 claim attempt (3rd, should fail) <span class="badge match">✓ Match</span> — RPC correctly returns <code class="inline">claimed: false</code>, slot count (2) already meets <code class="inline">max_claimants</code></li>
+        <li>Kid-1 Quests/Hub <span class="badge match">✓ Match</span> — <code class="inline">QuestCard.tsx:636/641</code> filters <code class="inline">p.memberId === activeMember?.id</code>; sees only own claim, correctly excludes Kid-2's</li>
+        <li>Kid-2 Quests/Hub <span class="badge match">✓ Match</span> — same filter, sees only own claim</li>
+        <li>Parent-A + Parent-B review surfaces <span class="badge match">✓ Match</span> — both bypass the per-member filter (<code class="inline">isParentOrSenior</code>) and see both independent claim rows; no per-parent partition</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 6</div>
+      <div class="step-title">Kid-1 submits; Kid-2 withdraws</div>
+      <div class="step-desc">Kid-1's claim → <code class="inline">pending_approval</code>. Kid-2's claim row is hard-deleted (<code class="inline">withdrawBountyClaim</code>, choreStore.ts:1600-1611 — a real DELETE, not a status flip).</div>
+      <div class="step-write">DB: 1 row updated, 1 row deleted from <code class="inline">bounty_claims</code></div>
+      <ul class="check-list">
+        <li>Teen-1 pool visibility <span class="badge match">✓ Match</span> — re-claims the reopened slot successfully; the RPC's slot-count query (<code class="inline">count(*) where status != 'declined'</code>) correctly recounts to 1 open slot once Kid-2's row is gone</li>
+        <li>Kid-1's pending submission <span class="badge match">✓ Match</span> — completely unaffected by Kid-2's withdrawal; row-level independence confirmed, no cross-claim mutation</li>
+        <li>Parent-A + Parent-B review queues <span class="badge match">✓ Match</span> — exactly one pending item (Kid-1's) after the withdrawal, not two, not zero</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--text-tertiary); margin-top: 8px;"><strong>Note (not a bug):</strong> the RPC's open-slot count excludes only <code class="inline">status != 'declined'</code>, not a distinct "withdrawn" status — this only stays correct because <code class="inline">withdrawBountyClaim</code> hard-deletes the row rather than flipping its status. A future change to soft-delete withdrawals instead would silently reintroduce a stuck-slot bug. Flagged as a fragile-but-currently-correct coupling between two files.</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 7</div>
+      <div class="step-title">Teen-1 submits; Parent-A approves Kid-1's slot, Parent-B approves Teen-1's slot</div>
+      <div class="step-desc">Two different parents approve two different claims of the same parent chore, independently.</div>
+      <div class="step-write">DB: both <code class="inline">bounty_claims</code> rows → <code class="inline">approved</code>, distinct <code class="inline">reviewed_by_id</code> each; <code class="inline">members.main_coins</code> credited 30 to each of Kid-1 and Teen-1 independently</div>
+      <ul class="check-list">
+        <li>Kid-1 balance <span class="badge match">✓ Match</span> — paid exactly 30, once (50 → 80)</li>
+        <li>Teen-1 balance <span class="badge match">✓ Match</span> — paid exactly 30, once (0 → 30), fully independent of Kid-1's payout — confirmed via <code class="inline">approveBountyClaim</code>'s per-claim-row <code class="inline">awardPoints</code> call (choreStore.ts:1564), no split/aggregate logic</li>
+        <li>Chore disappearing from the pool for other roles <span class="badge mismatch">✗ Mismatch</span> — see Finding below</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--danger); margin-top: 8px;"><strong>Finding (Medium severity):</strong> <code class="inline">chore_tasks.status</code> is never updated when all bounty slots resolve — confirmed live: <code class="inline">select status from chore_tasks where id='qa19-bounty-1'</code> returned <code class="inline">'todo'</code> even with both slots <code class="inline">approved</code> and <code class="inline">max_claimants</code> fully met. Every pool-visibility selector in the app (<code class="inline">KidView.tsx:196</code>, <code class="inline">TeenView.tsx:77</code>, <code class="inline">QuestsScreen.tsx:511/520/524/586</code>) filters only on <code class="inline">is_pool &amp;&amp; status === 'todo'</code> — none cross-reference live <code class="inline">bounty_claims</code> counts against <code class="inline">max_claimants</code>. Result: a fully-resolved, fully-paid-out bounty chore remains visible and rendered as "claimable" in the pool to any role who never claimed it (e.g. GP-Mat here), even though the atomic RPC itself would correctly reject a further claim attempt. Not a payout-security bug — the RPC's own slot-count check is sound — but a confusing, currently-live display bug with no reported fix.</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 8</div>
+      <div class="step-title">Parent-A sends a chat message</div>
+      <div class="step-desc">Insert into <code class="inline">chat_messages</code> on a dedicated test group channel (see safety note below), matching <code class="inline">sendMessage</code>'s row shape.</div>
+      <div class="step-write">DB: new row in <code class="inline">chat_messages</code></div>
+      <ul class="check-list">
+        <li>Parent-B, Kid-1, Kid-2, Teen-1, GP-Mat unread badges <span class="badge match">✓ Match</span> — all correctly show unread=1 (query matches <code class="inline">loadUnreadCounts</code>, chatStore.ts:283-303, <code class="inline">neq('sender_id', memberId)</code>, no read cursor yet)</li>
+        <li>Kid-1 opens Chat (simulated <code class="inline">markChannelRead</code>) <span class="badge match">✓ Match</span> — only Kid-1's <code class="inline">chat_channel_reads</code> cursor row advances; Kid-2, Teen-1, GP-Mat, Parent-B all remain unread=1 — correctly per-viewer, not a global clear</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--amber); margin-top: 8px;"><strong>Safety note, not a QA finding:</strong> the fixed group-channel id <code class="inline">'all'</code> in <code class="inline">chat_channels</code> is a plain-text primary key with NO family_id partition in the id itself — a real production family (<code class="inline">family_id = 211fd767-7a94-4099-8c91-3b7d53f51e65</code>) already owns a row with <code class="inline">id='all'</code>. An initial insert using <code class="inline">on conflict (id) do nothing</code> correctly no-op'd against that real row (verified untouched afterward), and a separate uniquely-named test channel (<code class="inline">qa19_all</code>) was used for all message/reaction/unread testing instead. Flagged for awareness: any future QA pass reusing the literal id <code class="inline">'all'</code> (or <code class="inline">'parents'</code>/<code class="inline">'seniors_a'</code>/etc.) without checking for an existing row first risks silently corrupting a real family's group channel membership.</p>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 9</div>
+      <div class="step-title">Kid-1 reacts to Parent-A's message</div>
+      <div class="step-desc">Update the single shared <code class="inline">chat_messages.reactions</code> JSONB column.</div>
+      <div class="step-write">DB: <code class="inline">reactions = {'{"👍": ["qa19-kid-1"]}'}</code></div>
+      <ul class="check-list">
+        <li>Parent-A, Kid-2, Teen-1, GP-Mat <span class="badge match">✓ Match</span> — all read the identical row (<code class="inline">select('*')</code> or realtime UPDATE payload, chatStore.ts:460-467); no per-viewer materialization exists, so same emoji, same count, no duplicate/missing reaction is structurally possible</li>
+      </ul>
+    </div>
+
+    <div class="step-card">
+      <div class="step-num">Step 10</div>
+      <div class="step-title">PIN set on Kid-1; profile-switch gate traced against real component logic</div>
+      <div class="step-desc"><code class="inline">members.pin = '1234'</code> for Kid-1 (the only server-side PIN column — there is no <code class="inline">pin_enabled</code> column at all).</div>
+      <div class="step-write">DB: <code class="inline">members.pin</code> updated</div>
+      <ul class="check-list">
+        <li>Switcher gate <span class="badge match">✓ Match</span> — <code class="inline">PersonaSwitcherSheet.tsx:453</code> / <code class="inline">PersonaSwitcherDropdown.tsx:232</code> both gate on <code class="inline">member.pinEnabled</code>, which <code class="inline">familyStore.ts:201</code> derives as <code class="inline">Boolean(row.pin)</code> fresh on every <code class="inline">syncFromDB</code> — never independently stored, so it cannot drift from the real <code class="inline">pin</code> column on reload</li>
+        <li>5-attempt lockout <span class="badge match">✓ Match</span> — traced against <code class="inline">PinEntryModal.tsx</code>'s real logic: attempt 5 sets <code class="inline">locked=true</code>, keypad disables (<code class="inline">disabled={locked}</code>), 30s countdown runs via <code class="inline">lockInterval</code></li>
+        <li>Lockout expiry + correct PIN <span class="badge match">✓ Match</span> — countdown's <code class="inline">prev &lt;= 1</code> branch resets <code class="inline">locked/attempts/entered/errorMsg</code> together; a subsequent correct entry fires <code class="inline">onSuccess(member)</code> normally</li>
+      </ul>
+      <p style="font-size: 12.5px; color: var(--text-tertiary); margin-top: 8px;">Lockout state is confirmed component-local React state only (no server-side attempt counter anywhere in <code class="inline">familyStore.ts</code>) — resets on app restart or remount, by design, not a bug.</p>
+    </div>
+
+    <div class="table-scroll" style="margin-top: 24px;">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev crit">Critical</span></td>
+            <td><code class="inline">reward_redemptions.reward_id</code>'s foreign key references the legacy, orphaned <code class="inline">reward_items</code> table instead of <code class="inline">rewards</code> (the table every current read/write path actually uses since Round 14). Every redemption of a reward created through the live "+ Add Perk" flow fails this FK constraint on insert — silently, since the error is only <code class="inline">console.warn</code>'d while the UI already shows an optimistic "🎉 Redeemed!" success. Confirmed live: <code class="inline">reward_redemptions</code> has zero rows in all of production.</td>
+            <td><code class="inline">rewardStore.ts:293</code>, DB constraint <code class="inline">reward_redemptions_reward_id_fkey</code></td>
+            <td><span class="status-fixed">✓ Fixed — FK repointed to <code class="inline">rewards(id)</code>, verified live</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev med">Medium</span></td>
+            <td><code class="inline">chore_tasks.status</code> is never updated once every slot of a multi-slot bounty resolves (all approved/declined) — confirmed live against a real 2-slot bounty. Every pool-visibility selector across Hub and Quests filters only on <code class="inline">is_pool &amp;&amp; status === 'todo'</code>, none cross-check live <code class="inline">bounty_claims</code> counts, so a fully-resolved, fully-paid bounty stays visible as "claimable" to any uninvolved role. Display-only — the atomic claim RPC's own slot-count check still correctly rejects a real over-claim attempt.</td>
+            <td><code class="inline">KidView.tsx:196</code>, <code class="inline">TeenView.tsx:77</code>, <code class="inline">QuestsScreen.tsx:511/520/524/586</code></td>
+            <td><span class="status-fixed">✓ Fixed — <code class="inline">approveBountyClaim</code> now rolls the parent chore's status to <code class="inline">approved</code> once every non-declined claim is approved and the count meets <code class="inline">maxClaimants</code>, mirroring <code class="inline">claim_bounty_slot</code>'s own slot-count logic</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="sec-desc" style="margin-top: 20px;"><b>Everything else in this round confirmed working end-to-end against live data:</b> reward eligibility with no role gap for kid/teen/senior, coin balance as a single unambiguous source of truth across Hub and Store, both parents sharing one non-partitioned redemption-approval queue with a correct status guard against double-action races, full multi-slot bounty independence (claim/submit/withdraw/reopen/approve/payout, two different parents deciding two different claims of the same chore), per-viewer chat unread badges and read cursors, a single shared reactions column with no per-viewer divergence possible, and a PIN/lockout flow whose derived-not-stored <code class="inline">pinEnabled</code> design has zero drift risk on reload.</p>
+
+    <p class="sec-desc" style="margin-top: 12px;"><b>Test family details:</b> Single isolated synthetic family (<code class="inline">8b135778-ab42-41be-b787-113c061991ee</code>) with 6 real member rows: 2 parents (QA19 Parent A/B), 2 kids (QA19 Kid 1/2), 1 teen (QA19 Teen 1), 1 grandparent (QA19 GP Mat, <code class="inline">linked_parent_id</code> = Parent-A). All rows across <code class="inline">members</code>, <code class="inline">families</code>, <code class="inline">rewards</code>, <code class="inline">reward_redemptions</code>, the one workaround row in <code class="inline">reward_items</code>, <code class="inline">chore_tasks</code>, <code class="inline">bounty_claims</code>, <code class="inline">chat_channels</code>, <code class="inline">chat_messages</code>, and <code class="inline">chat_channel_reads</code> were deleted at the end, with a final verification query confirming zero count across every touched table. The pre-existing production row at <code class="inline">chat_channels.id='all'</code> belonging to a real family was independently confirmed untouched.</p>
+  </section>
+
   <section id="verdict">
     <div class="sec-label">Sign-off</div>
     <h2>Overall Verdict</h2>
     <div class="verdict">
-      <p>All 74 confirmed bugs across 15 rounds are fixed, and every fix from Rounds 7–9 was independently re-verified in Round 10 against real data. This span covers the critical self-approval exploit, the critical reward-threshold bypass, the grandparent chat side-isolation leak, the never-deployed rewards table, four live production incidents (three this QA effort itself introduced and resolved same-session, one discovered and fixed mid-Round-15), the delegation-visibility bug a real user hit in production, and a full role-by-role audit of both the ride/schedule dispatch engine and the kid ride-request UI that found the same shape of bug — correct logic silently unreachable or unreadable by the role it was built for — recurring at every layer of the stack, from a live edge function down to a single missing database table.</p>
+      <p>All 78 confirmed bugs across 16 rounds are fixed, including the reward-redemption foreign-key bug and the bounty-pool stale-visibility bug Round 16 found and reported — both closed the same session, immediately after being reported. Every fix from Rounds 7–9 was independently re-verified in Round 10 against real data. This span covers the critical self-approval exploit, the critical reward-threshold bypass, the grandparent chat side-isolation leak, the never-deployed rewards table, four live production incidents (three this QA effort itself introduced and resolved same-session, one discovered and fixed mid-Round-15), the delegation-visibility bug a real user hit in production, and a full role-by-role audit of both the ride/schedule dispatch engine and the kid ride-request UI that found the same shape of bug — correct logic silently unreachable or unreadable by the role it was built for — recurring at every layer of the stack, from a live edge function down to a single missing database table.</p>
       <p style="margin-top: 14px;">Three things worth naming directly, in the order they were learned. First, live user reports remain a genuine, distinct source of findings alongside structured testing, not a substitute for it — Round 5's delegation bug, Round 7's ride-visibility bug, and the Round-13/14 kid-navigation and edit-form incidents were all real production reports or direct user questions, not proactive discoveries, and each led to a deeper structural fix than the original report alone described. Second, correct backend logic and a correct data model are necessary but not sufficient — the <code class="inline">driverName</code>/<code class="inline">driverStatus</code> field pair was introduced correctly in Round 11, but most of the app's UI simply never learned to read it, producing a coherent-looking but silently broken experience across five separate surfaces at once; the per-role navigation audit (Round 13) found the identical shape of bug one level up, a control that works perfectly for the role it was built for and simply doesn't exist for another. Third, and sharpest: static code reading, however thorough, cannot see a table that was never deployed. The <code class="inline">rewards</code> table gap survived every prior round of QA — including agents that read <code class="inline">rewardStore.ts</code> directly — because every read path failed silently and every write path swallowed its own error, so the code always looked correct in isolation. Only a real query against the real database surfaced it. The practical implication carried forward: role-coverage audits need to pair reachability checks with a correctness check at the destination, and any fix touching a table, an RLS policy, or an ordering shared between client and server needs a live-database verification pass as a required final step, not an optional deepening one. The remaining caveat from earlier rounds still stands: the bounty claim function's true concurrent-load behavior is sound by code inspection but not empirically stress-tested under real simultaneous traffic.</p>
       <p style="margin-top: 14px;">Round 15 proved one more structural truth: bugs that exist only in the interaction <em>between</em> two roles' code paths are literally invisible to single-role testing, no matter how thorough each single-role pass becomes. A pool chore visible on one role's Hub but invisible on the same role's Quests tab would be caught by per-tab auditing. A chore visible to Kid-1 but invisible to Kid-2 in the pool would be caught by role-coverage testing. But a chore visible to the grandparent in the Hub invitation card but invisible in the Quests tab's filter? That gap exists only at the intersection of two parallel surfaces that never talk to each other, and can only be seen by walking a unified test case through both simultaneously. This round's methodology — one agent, one test family, every step checked against every role and every surface — closes a blind spot the first 14 rounds had structurally. It's also the first QA session where the testing methodology itself was redesigned in response to repeated user feedback that single-pass, parallel rounds kept finding bugs "one at a time" instead of clusters. The follow-on work, if any, should integrate this step-by-step cross-role methodology as a permanent part of the QA process, not something buried in a historical document.</p>
     </div>

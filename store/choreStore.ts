@@ -1562,6 +1562,24 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // Each claim pays out fully and independently — same "no split" model
     // team-clone quests already use (1.7, deliberate/unchanged this session).
     if (pts > 0) get().awardPoints(childId, choreId, pts, chore.xpReward);
+
+    // Coordinated live-DB QA (Round 16) found chore_tasks.status never
+    // rolled up when every slot resolved — claim_bounty_slot's own cap
+    // check (status != 'declined') is the real source of truth for "how
+    // many slots are filled," so mirror it here: once every non-declined
+    // claim is approved and the count meets maxClaimants, the parent
+    // chore is done and every isPool && status==='todo' visibility filter
+    // (KidView, TeenView, QuestsScreen) should stop showing it as claimable.
+    const claimsAfter = (chore.claims ?? []).map(cl => cl.memberId === childId ? { ...cl, status: 'approved' as const } : cl);
+    const filledClaims = claimsAfter.filter(cl => cl.status !== 'declined');
+    const allSlotsResolved = chore.maxClaimants != null
+      && filledClaims.length >= chore.maxClaimants
+      && filledClaims.every(cl => cl.status === 'approved');
+    if (allSlotsResolved) {
+      set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'approved' } : c) }));
+      supabase.from('chore_tasks').update({ status: 'approved' }).eq('id', choreId)
+        .then(({ error }) => { if (error) console.warn('[choreStore] approveBountyClaim slot-rollup status update failed', error.message); });
+    }
   },
 
   declineBountyClaim: (choreId, childId, reviewerId, reason) => {

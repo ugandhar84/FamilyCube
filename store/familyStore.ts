@@ -135,6 +135,11 @@ interface FamilyState {
   removeMember: (id: string) => Promise<void>;
   awardCoins: (memberId: string, amount: number, wallet: 'mainCoins' | 'gpCoins') => void;
   deductCoins: (memberId: string, amount: number, wallet: 'mainCoins' | 'gpCoins') => void;
+  // Reverses an earlier award (e.g. a teen dropping a ride after being
+  // paid for claiming it) — unlike deductCoins, always takes effect, up to
+  // whatever balance is actually there, and never rolls back. See
+  // clawbackCoins's own comment for why deductCoins is wrong for this.
+  clawbackCoins: (memberId: string, amount: number, wallet: 'mainCoins' | 'gpCoins') => void;
   setMemberPin: (id: string, pin: string | null) => Promise<void>;
   loadFromStorage: () => Promise<void>;
   syncFromDB: () => Promise<void>;
@@ -465,6 +470,29 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
           AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(get().members));
         }
       });
+  },
+
+  // deductCoins' .gte(column, amount) guard exists to stop a genuine RACE
+  // (two simultaneous spends double-counting one balance) — but a clawback
+  // (reversing a payout already spent elsewhere, e.g. a teen dropping a
+  // ride after spending its coins in the Store) is not a race: the balance
+  // legitimately can't cover the full amount, and deductCoins' race guard
+  // treated that identically to "lost the race," silently rolling back to
+  // ZERO deduction and letting the teen keep the full payout for a ride
+  // they backed out of (QA sweep, teen-role audit, Critical). This clamps
+  // to 0 instead of refusing — takes whatever's left, never rolls back.
+  clawbackCoins: (memberId, amount, wallet) => {
+    const before = get().members.find(m => m.id === memberId);
+    const priorValue = before?.[wallet] ?? 0;
+    const nextValue = Math.max(0, priorValue - amount);
+    const next = get().members.map(m =>
+      m.id === memberId ? { ...m, [wallet]: nextValue } : m
+    );
+    set({ members: next });
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    const column = wallet === 'mainCoins' ? 'main_coins' : 'gp_coins';
+    supabase.from('members').update({ [column]: nextValue }).eq('id', memberId)
+      .then(({ error }) => { if (error) console.warn('[familyStore] clawbackCoins', error.message); });
   },
 
   setMemberPin: async (id, pin) => {

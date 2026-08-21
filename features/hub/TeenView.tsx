@@ -61,7 +61,7 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
   const { items: groceryItems, load: loadGrocery } = useGroceryStore();
   const familyId = (active as any).familyId ?? 'family-1';
   useEffect(() => { loadGrocery(familyId); }, [familyId]);
-  const { updateMember, awardCoins, deductCoins } = useFamilyStore();
+  const { updateMember, awardCoins, clawbackCoins } = useFamilyStore();
   const { sendRequest, requests, cancelRequest, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
   const sendMessage = useChatStore(s => s.sendMessage);
   const today = localToday();
@@ -183,7 +183,12 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
     const ev = upcomingEvents.find(e => e.id === evId);
     const a = ev ? eventAssignee(ev) : undefined;
     const paidCoins = ev?.rideCoins ?? rideEarnings;
-    if (a?.name === active.name && paidCoins > 0) deductCoins(active.id, paidCoins, 'mainCoins');
+    // clawbackCoins, not deductCoins — dropping a ride after the payout has
+    // already been (partly) spent elsewhere is a legitimate clawback, not
+    // a race; deductCoins' race guard would silently refuse the whole
+    // deduction and let the teen keep the coins in exactly that case (QA
+    // sweep, teen-role audit, Critical).
+    if (a?.name === active.name && paidCoins > 0) clawbackCoins(active.id, paidCoins, 'mainCoins');
     const isDriverPair = ev?.driverName === active.name || (ev?.rideRequired && ev.category !== 'Ride');
     updateEvent(evId, isDriverPair
       ? { driverStatus: 'rejected', declinedBy: active.name }

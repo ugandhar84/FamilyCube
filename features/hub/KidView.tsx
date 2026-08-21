@@ -136,15 +136,6 @@ export function KidView({ active, members, colors, isDark, activeTrip }: {
   const myEvents    = visibleEvents.filter(e => (e.memberId === active.id || e.memberIds?.includes(active.id) || !e.memberId) && e.category !== 'Work');
   const todayEvents = myEvents.filter(e => e.date === today).sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
 
-  // Confirmed ride today — QA sweep Critical Finding C3: these 5 filters
-  // were all helper/helperStatus-only, so a kid's OWN ride request (which
-  // now always writes driverName/driverStatus via KidRequestModal's
-  // rideRequired:true fix) never showed up in any of the kid's own status
-  // banners — "awaiting driver," "confirmed," or "declined" all silently
-  // stayed invisible for the exact request type this kid actually creates.
-  const confirmedRide = todayEvents.find(e => { const a = eventAssignee(e); return a.name && a.status === 'confirmed'; });
-  const rideCountdown = useCountdown(confirmedRide?.date, confirmedRide?.time);
-
   // Multi-day feed — previously awaitingDriverRide/myDeclinedRides only
   // ever looked at todayEvents, so a driver named (or declining) for a
   // ride tomorrow gave the kid zero signal until the morning of, same
@@ -154,6 +145,19 @@ export function KidView({ active, members, colors, isDark, activeTrip }: {
   const myUpcomingEvents = kidUpcomingEvents.filter(e =>
     (e.memberId === active.id || e.memberIds?.includes(active.id) || !e.memberId) && e.category !== 'Work' &&
     (!isEventSensitive(e) || canViewSensitiveEventDetail(e, 'kid', active.id, active.name)));
+
+  // Confirmed ride — QA sweep Critical Finding C3: these 5 filters were all
+  // helper/helperStatus-only, so a kid's OWN ride request (which now always
+  // writes driverName/driverStatus via KidRequestModal's rideRequired:true
+  // fix) never showed up in any of the kid's own status banners — "awaiting
+  // driver," "confirmed," or "declined" all silently stayed invisible for
+  // the exact request type this kid actually creates.
+  // Was todayEvents-only (Coordinated cross-role QA round, Bug #2, High) —
+  // a ride confirmed for tomorrow showed correctly on the Schedule tab but
+  // produced zero Hub banner, unlike awaitingDriverRide/myDeclinedRides
+  // below which already read from the multi-day feed.
+  const confirmedRide = myUpcomingEvents.find(e => { if (e.date < today) return false; const a = eventAssignee(e); return a.name && a.status === 'confirmed'; });
+  const rideCountdown = useCountdown(confirmedRide?.date, confirmedRide?.time);
 
   // A driver has been named but hasn't confirmed yet — the gap between
   // "nobody's looked at my request" (myPendingRides below, already

@@ -492,7 +492,10 @@ export default function QuestsScreen() {
       list = list.filter(q =>
         (myId ? isAssignedTo(q, myId) : false) ||
         (q.questType === 'grandparent_quest' && q.sponsorUserId === myId) ||
-        (q.isAdultTask && q.inviteGrandparents === true)
+        // Matches SeniorView's Hub `gpInvitations` filter exactly (no
+        // isAdultTask requirement there) — a GP-invited pool chore must be
+        // reachable from the dedicated Quests tab too, not just the Hub card.
+        (q.inviteGrandparents === true && q.status === 'todo' && !q.sponsorUserId)
       );
     }
 

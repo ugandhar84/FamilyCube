@@ -732,7 +732,7 @@ export default function CalendarScreen() {
   // INCLUDE a busy-block event (rather than drop it) and EventCard can
   // render the stripped variant instead of full detail.
   const sensitiveVisibility = (e: FamilyEvent): SensitiveEventVisibility =>
-    !isEventSensitive(e) ? 'full' : canViewSensitiveEventDetail(e, isSenior ? 'senior' : isKid ? 'kid' : isTeen ? 'teen' : isParent ? 'parent' : undefined, activeMemberId ?? undefined);
+    !isEventSensitive(e) ? 'full' : canViewSensitiveEventDetail(e, isSenior ? 'senior' : isKid ? 'kid' : isTeen ? 'teen' : isParent ? 'parent' : undefined, activeMemberId ?? undefined, activeMemberName);
 
   // Filtered events for selected day
   const dayEvents = useMemo(() => {

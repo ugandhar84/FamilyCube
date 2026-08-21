@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { router } from 'expo-router';
-import { ChevronUp, ChevronDown, Trophy } from 'lucide-react-native';
+import { ChevronUp, ChevronDown, Trophy, Coins } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { KID } from './kidTheme';
 import { KidQuestCard } from './KidQuestCard';
@@ -48,9 +48,9 @@ export function MyQuestsSection({
   const overflow = combined.length - visible.length;
 
   return (
-    <View style={{ paddingHorizontal: 16 }}>
+    <View style={{ paddingHorizontal: 16, marginBottom: 18 }}>
       <View style={{ borderRadius: 20, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
-        backgroundColor: colors.card, overflow: 'hidden', marginBottom: 16 }}>
+        backgroundColor: colors.card, overflow: 'hidden' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 }}>
           <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: BRAND.purple + '20', alignItems: 'center', justifyContent: 'center' }}>
             <Trophy size={20} color={BRAND.purple} />
@@ -61,6 +61,12 @@ export function MyQuestsSection({
               {combined.length > 0 && (
                 <View style={{ backgroundColor: BRAND.purple, borderRadius: 10, minWidth: 22, paddingHorizontal: 7, paddingVertical: 3, alignItems: 'center' }}>
                   <Text style={{ fontSize: KID.tiny, fontWeight: '900', color: '#fff' }}>{combined.length}</Text>
+                </View>
+              )}
+              {poolQuests.length > 0 && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: BRAND.amber, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 3 }}>
+                  <Coins size={11} color="#fff" />
+                  <Text style={{ fontSize: KID.tiny, fontWeight: '900', color: '#fff' }}>{poolQuests.length}</Text>
                 </View>
               )}
             </View>

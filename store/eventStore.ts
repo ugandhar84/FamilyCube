@@ -177,13 +177,25 @@ export function isEventSensitive(e: Pick<FamilyEvent, 'privacyLevel' | 'category
 export type SensitiveEventVisibility = 'full' | 'busy-block' | 'hidden';
 
 export function canViewSensitiveEventDetail(
-  e: Pick<FamilyEvent, 'memberId' | 'memberIds' | 'sharedWithGPForCare'>,
+  e: Pick<FamilyEvent, 'memberId' | 'memberIds' | 'sharedWithGPForCare' | 'helper' | 'driverName'>,
   viewerRole: 'parent' | 'kid' | 'teen' | 'senior' | undefined,
   viewerId: string | undefined,
+  // Needed to match helper/driverName (display-name fields, not ids)
+  // against the viewer — optional so existing call sites that only pass
+  // an id still compile; those simply don't get the assignee carve-out.
+  viewerName?: string,
 ): SensitiveEventVisibility {
   if (viewerRole === 'parent') return 'full'; // both legal guardians always see full detail
   const isSubject = !!viewerId && (e.memberId === viewerId || !!e.memberIds?.includes(viewerId));
   if (isSubject) return 'full'; // never hidden from the person it's about
+  // The person actually asked to drive/help must see what they're driving
+  // TO — this predicate previously only ever considered the event's
+  // SUBJECT, never who was assigned to it, so a GP asked to drive a
+  // grandchild to a Medical appointment got a mystery busy-block with no
+  // address, same class of gap the parent_only_quest fix closed for
+  // chores earlier this session (QA Round 9, Medium Finding 5).
+  const isAssignee = !!viewerName && (e.helper === viewerName || e.driverName === viewerName);
+  if (isAssignee) return 'full';
   if (viewerRole === 'senior') return e.sharedWithGPForCare ? 'full' : 'busy-block'; // GP: busy-block unless explicitly shared
   return 'hidden'; // sibling kid/teen: hidden entirely, no busy-block
 }
@@ -1163,7 +1175,35 @@ export const useEventStore = create<EventState>((set, get) => ({
   },
 
   deleteEventScoped: (id, scope) => {
-    if (scope === 'this') { get().deleteEvent(id); return; }
+    if (scope === 'this') {
+      // Deleting just the ANCHOR occurrence used to silently end the whole
+      // series — recurrenceRule lives ONLY on the anchor row, and both
+      // extendRecurringSeries and CalendarScreen's auto-extend sweep can
+      // only find a live series by querying is_series_anchor=true. With no
+      // promotion, the other occurrences stayed independently intact (they
+      // don't reference the anchor for anything at read time) but the
+      // series silently stopped generating new future rows once the
+      // rolling RECURRENCE_WINDOW_DAYS horizon was reached — no error, no
+      // signal, just quietly ending months later (QA Round 7, finding B3).
+      const target = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
+      if (target?.isSeriesAnchor && target.seriesId && target.recurrenceRule) {
+        supabase.from('calendar_events')
+          .select('id, date')
+          .eq('series_id', target.seriesId)
+          .neq('id', id)
+          .is('deleted_at', null)
+          .order('date', { ascending: true })
+          .limit(1)
+          .then(({ data }) => {
+            const heir = data?.[0];
+            if (heir) get().updateEvent(heir.id, { isSeriesAnchor: true, recurrenceRule: target.recurrenceRule });
+            get().deleteEvent(id);
+          });
+        return;
+      }
+      get().deleteEvent(id);
+      return;
+    }
     const target = get().dayEvents.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
     if (!target?.seriesId) { get().deleteEvent(id); return; }
 

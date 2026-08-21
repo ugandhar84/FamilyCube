@@ -144,10 +144,15 @@ serve(async (req) => {
     // members.family_id is uuid; the family_id this function receives is
     // whatever the caller's own table stores it as (text, per chore_tasks/
     // calendar_events/errands convention) — compare as text on both sides.
-    // members.role is stored as 'grandparent'/'teen' in the DB (the app
-    // translates senior <-> grandparent client-side in familyStore.fromRow/
-    // toRow; 'teen' matches as-is) — this function queries the DB directly,
-    // so it matches the stored values.
+    // members.role is stored as 'grandparent'/'teenager' in the DB (the app
+    // translates senior <-> grandparent AND teen <-> teenager client-side in
+    // familyStore.fromRow/toRow — 'teen' does NOT match as-is, contrary to
+    // what this comment used to claim) — this function queries the DB
+    // directly, so it must match the stored values. Previously this used
+    // 'teen', which never matched any real row — teens were silently never
+    // candidates for ANY assignment, on every category, regardless of
+    // teen_eligible (QA Round 9, Medium Finding 6 — verified live, a teen
+    // never appeared as a candidate even on a teen_eligible transport run).
     //
     // Which roles are even candidates depends on the category's eligibility
     // switches: needs_parent means ONLY parents are considered (hard filter
@@ -158,7 +163,7 @@ serve(async (req) => {
     const eligibleRoles = needsParent
       ? ['parent']
       : teenEligible
-        ? ['parent', 'grandparent', 'teen']
+        ? ['parent', 'grandparent', 'teenager']
         : ['parent', 'grandparent'];
 
     const { data: members, error: memErr } = await supabase
@@ -340,11 +345,18 @@ serve(async (req) => {
           const weekEnd = new Date(weekStart);
           weekEnd.setDate(weekEnd.getDate() + 7);
           const weekEndStr = weekEnd.toISOString().slice(0, 10);
+          // member_id is the ride's SUBJECT (the kid needing the ride), not
+          // who's driving it — a GP is essentially never the subject of a
+          // ride, so this count was always 0 and the cap never fired (QA
+          // Round 9, High Finding 3 — verified live with a GP already at 2
+          // confirmed rides against cap=1, still ranked top candidate,
+          // uncapped). helper_name is where a confirmed driver's name
+          // actually lands (see eventStore.ts's own row mapping).
           const { count: ridesThisWeek } = await supabase
             .from('calendar_events')
             .select('id', { count: 'exact', head: true })
             .eq('family_id', familyId)
-            .eq('member_id', c.id)
+            .eq('helper_name', c.name)
             .eq('helper_status', 'confirmed')
             .gte('date', weekStartStr)
             .lt('date', weekEndStr);
@@ -526,8 +538,16 @@ serve(async (req) => {
       // ── 9. If AUTO, actually assign it and log to responsibility_history ───
       if (decisionType === 'auto' && selectedMemberId) {
         const table = taskType === 'chore' ? 'chore_tasks' : taskType === 'event' ? 'calendar_events' : 'errands';
+        // calendar_events has no "helper" column — the real column is
+        // helper_name (confirmed against information_schema; eventStore.ts
+        // maps it the same way). This silently failed every AUTO write on
+        // targetField:'helper' while still recording a responsibility_history
+        // row claiming the assignment succeeded (QA Round 9, Critical
+        // Finding 2 — reproduced live: update was a no-op, decision +
+        // history rows still landed, poisoning the fairness/effort-debt
+        // ledger with an assignment that never actually happened).
         const assigneeColumn =
-          targetField === 'helper' ? 'helper' :
+          targetField === 'helper' ? 'helper_name' :
           targetField === 'driver' ? 'driver_name' :
           taskType === 'event' ? 'member_id' : 'assigned_to_id';
         // 'helper'/'driver' store a display name on calendar_events
@@ -544,7 +564,13 @@ serve(async (req) => {
         };
         if (targetField === 'helper') updatePatch.helper_status = 'confirmed';
         if (targetField === 'driver') { updatePatch.driver_status = 'confirmed'; updatePatch.ride_required = true; }
-        await supabase.from(table).update(updatePatch).eq('id', taskId);
+        const { error: updateErr } = await supabase.from(table).update(updatePatch).eq('id', taskId);
+        // The write's own error was previously discarded, so a failed
+        // assignment (wrong column, RLS denial, etc) still fell through to
+        // recording a responsibility_history row claiming success — a
+        // split-brain audit trail the fairness engine then trusted. Never
+        // write history for an assignment that didn't actually land.
+        if (updateErr) throw updateErr;
 
         await supabase.from('responsibility_history').insert({
           family_id: familyId,

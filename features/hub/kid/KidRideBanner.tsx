@@ -66,7 +66,7 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, onCon
   const dismiss = () => { setDismissed(true); onDismiss(ev.id); };
 
   return (
-    <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+    <View style={{ paddingHorizontal: 16, marginBottom: 18 }}>
       <View style={{ borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
         backgroundColor: confirmed ? (isDark ? '#0F2A20' : '#ECFDF5') : isOverdue ? '#7C2D12' : rideHere ? '#064E3B' : (isDark ? '#0F2A20' : '#ECFDF5'),
         borderWidth: 1.5, borderColor: confirmed ? `${MONEY_GREEN}50` : isOverdue ? colors.danger : rideHere ? MONEY_GREEN : `${MONEY_GREEN}50` }}>

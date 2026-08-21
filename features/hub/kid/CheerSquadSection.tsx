@@ -19,12 +19,15 @@ export function CheerSquadSection({ cheerable, siblingKids, colors, isDark, onCh
   if (cheerable.length === 0) return null;
 
   return (
-    <View style={{ paddingHorizontal: 16, marginBottom: 16 }}>
+    <View style={{ paddingHorizontal: 16, marginBottom: 18 }}>
       <View style={{ borderRadius: 18, backgroundColor: colors.card,
         borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', padding: 14, gap: 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <PartyPopper size={17} color={MONEY_GREEN} />
           <Text style={{ fontSize: KID.body, fontWeight: '900', color: colors.textPrimary }}>Cheer Squad</Text>
+          <View style={{ backgroundColor: MONEY_GREEN, borderRadius: 10, minWidth: 20, paddingHorizontal: 6, paddingVertical: 2, alignItems: 'center' }}>
+            <Text style={{ fontSize: KID.tiny, fontWeight: '900', color: '#fff' }}>{cheerable.length}</Text>
+          </View>
         </View>
         {cheerable.map(q => {
           const sib = siblingKids.find(s => s.id === q.assignedToId);

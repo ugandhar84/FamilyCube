@@ -8,7 +8,6 @@ import { OthersAdultQuestCard } from './backlog/OthersAdultQuestCard';
 import { DirectPendingCard } from './backlog/DirectPendingCard';
 import { OutgoingPendingCard } from './backlog/OutgoingPendingCard';
 import { LockedAssignmentCard } from './backlog/LockedAssignmentCard';
-import { AcceptedQuestCard } from './backlog/AcceptedQuestCard';
 import { PoolQuestCard } from './backlog/PoolQuestCard';
 import { HelperEventCard } from './backlog/HelperEventCard';
 import type { FamilyMember } from '@/store/familyStore';
@@ -18,20 +17,21 @@ import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 
 export function HouseholdBacklogSection({
   active, members, colors, isDark,
-  questPool, myAdultQuests, othersAdultQuests, myDirectPending, myLockedItems, myAccepted, myOutgoingPending, myHelperEvents,
+  questPool, myAdultQuests, othersAdultQuests, myDirectPending, myLockedItems, myOutgoingPending, myHelperEvents,
   systemBIds, parentAssignments,
-  updateQuest, updateEvent, completeParentQuest, respondToParentQuest, cancelLockedAssignment, recallParentQuest, appreciationPing, handlePullTask,
+  updateQuest, updateEvent, updateEventScoped, completeParentQuest, respondToParentQuest, cancelLockedAssignment, recallParentQuest, appreciationPing, handlePullTask,
   onAddTask, onDelegate, onRespond,
 }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
   questPool: (ChoreTask & { _isQuestRow?: boolean })[];
   myAdultQuests: Quest[]; othersAdultQuests: Quest[];
-  myDirectPending: ParentQuestAssignment[]; myLockedItems: ParentQuestAssignment[]; myAccepted: ParentQuestAssignment[];
+  myDirectPending: ParentQuestAssignment[]; myLockedItems: ParentQuestAssignment[];
   myOutgoingPending: ParentQuestAssignment[];
   myHelperEvents: FamilyEvent[];
   systemBIds: Set<string>; parentAssignments: ParentQuestAssignment[];
   updateQuest: (id: string, patch: Partial<Quest>) => void;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+  updateEventScoped?: (id: string, patch: Partial<FamilyEvent>, scope: 'this' | 'following' | 'all') => void;
   completeParentQuest: (assignmentId: string, completedBy: string) => void;
   respondToParentQuest: (id: string, response: { action: 'ACCEPT' }) => void;
   cancelLockedAssignment: (assignmentId: string) => void;
@@ -55,7 +55,7 @@ export function HouseholdBacklogSection({
   const allChores = useChoreStore(s => s.chores);
 
   const myPendingCount = questPool.length + myAdultQuests.length + myHelperEvents.length
-    + myDirectPending.length + myAccepted.length + myLockedItems.length + myOutgoingPending.length;
+    + myDirectPending.length + myLockedItems.length + myOutgoingPending.length;
 
   const badgeCount = questPool.length + myAdultQuests.length + othersAdultQuests.length + myHelperEvents.length
     + myDirectPending.length + myLockedItems.length + myOutgoingPending.length;
@@ -63,8 +63,14 @@ export function HouseholdBacklogSection({
     !systemBIds.has(c.id) &&
     !parentAssignments.find(a => a.choreId === c.id && a.status !== 'COMPLETED' && a.status !== 'DECLINED')
   );
-  const isEmpty = questPool.length === 0 && myDirectPending.length === 0 && myAccepted.length === 0
-    && myHelperEvents.length === 0 && myLockedItems.length === 0 && myOutgoingPending.length === 0;
+  // Was missing othersAdultQuests and myAdultQuests from this sum — the
+  // "🎉 Backlog is clear" empty state rendered directly underneath a real
+  // card (e.g. "Assigned to others" showing a live delegation with Nudge/
+  // Reclaim actions) whenever every OTHER tracked list happened to be
+  // empty, even though the section visibly had content.
+  const isEmpty = questPool.length === 0 && myDirectPending.length === 0
+    && myHelperEvents.length === 0 && myLockedItems.length === 0 && myOutgoingPending.length === 0
+    && othersAdultQuests.length === 0 && myAdultQuests.length === 0;
 
   // Soonest due date first within a group — undated items sort last so
   // something with a deadline never gets buried under whatever loaded first.
@@ -81,7 +87,11 @@ export function HouseholdBacklogSection({
         subtitle="pull what you can handle"
         accent={colors.warning}
         badge={badgeCount} badgeLabel="Active" badgeColor={colors.warning}
-        collapsible defaultExpanded={myPendingCount > 1}
+        // Was `> 1` — a section with exactly ONE pending item (a single
+        // delegation, a single claimable task) stayed collapsed by
+        // default, requiring an extra tap to see the one thing actually
+        // worth seeing. Any real content is worth expanding for.
+        collapsible defaultExpanded={myPendingCount > 0}
         colors={colors} isDark={isDark}>
         <View style={{ gap: 8 }}>
             {myAdultQuests.length > 0 && (
@@ -125,7 +135,7 @@ export function HouseholdBacklogSection({
                   const chore = allChores.find(c => c.id === a.choreId);
                   if (!chore) return null;
                   return (
-                    <OutgoingPendingCard key={a.id} a={a} chore={chore} members={members} colors={colors} isDark={isDark}
+                    <OutgoingPendingCard key={a.id} a={a} chore={chore} members={members} active={active} colors={colors} isDark={isDark}
                       onRecall={a.status === 'PENDING' ? () => recallParentQuest(a.id, active.id) : undefined} />
                   );
                 })}
@@ -139,15 +149,6 @@ export function HouseholdBacklogSection({
                 <LockedAssignmentCard key={a.id} a={a} chore={chore} active={active} members={members}
                   colors={colors} isDark={isDark} onDelegate={onDelegate}
                   cancelLockedAssignment={cancelLockedAssignment} />
-              );
-            })}
-
-            {myAccepted.map(a => {
-              const chore = allChores.find(c => c.id === a.choreId);
-              if (!chore) return null;
-              return (
-                <AcceptedQuestCard key={a.id} a={a} chore={chore} active={active} members={members} colors={colors} isDark={isDark}
-                  completeParentQuest={completeParentQuest} appreciationPing={appreciationPing} />
               );
             })}
 
@@ -171,7 +172,7 @@ export function HouseholdBacklogSection({
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.parent }}>You're the driver / helper</Text>
                 </View>
                 {myHelperEvents.map(ev => (
-                  <HelperEventCard key={ev.id} ev={ev} members={members} active={active} colors={colors} isDark={isDark} updateEvent={updateEvent} />
+                  <HelperEventCard key={ev.id} ev={ev} members={members} active={active} colors={colors} isDark={isDark} updateEvent={updateEvent} updateEventScoped={updateEventScoped} />
                 ))}
               </View>
             )}

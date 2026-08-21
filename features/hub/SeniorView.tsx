@@ -276,10 +276,16 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     withinDriveWindow(e)
   );
 
-  // Rides this senior has already claimed (confirmed helper)
+  // Rides this senior has already claimed (confirmed helper) — exact name
+  // match. The previous fuzzy includes()-based match let two grandparents
+  // sharing a first name/honorific ("Grandma Mary" / "Mary Johnson", or
+  // both literally named the same first token) collide: each saw the
+  // OTHER's claimed ride as their own, including a working "Can't Make It"
+  // decline button on a ride that was never theirs (QA Round 9, High
+  // Finding 4 — reproduced live, both directions matched true).
   const myClaimedRides = upcomingEvents.filter(e =>
     e.isOpenToGrandparents &&
-    e.helper && (e.helper.includes(active.name) || active.name.includes(e.helper.split(' ')[0])) &&
+    e.helper === active.name &&
     e.helperStatus === 'confirmed'
   );
   // Weekly cap counts everything claimed this week, past included; the list
@@ -405,13 +411,21 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     setShowCreateQuestModal(false);
   };
 
-  const myDrivingToday = events.filter(e =>
-    e.date === today && e.helper === active.name &&
+  // Both widened from `events` (today-only, single-day cache) to
+  // `upcomingEvents` (multi-day live feed) — a GP asked to drive tomorrow
+  // (or any day within the window) had literally no "please confirm"
+  // surface until the morning of, since `events` never contained it and
+  // myClaimedRides/openRides right above already correctly use
+  // upcomingEvents for the exact same reason (QA Round 9, Medium Finding
+  // 7 — verified live with a future-dated pending assignment invisible
+  // under the old `date === today` + `events` combination).
+  const myDrivingToday = upcomingEvents.filter(e =>
+    e.helper === active.name &&
     e.helperStatus === 'confirmed' && !isWorkEvent(e) && !isPastEvent(e)
   );
   // Assigned to me but I haven't replied yet — not Work events
-  const myPendingAssignments = events.filter(e =>
-    e.date === today && e.helper === active.name &&
+  const myPendingAssignments = upcomingEvents.filter(e =>
+    e.helper === active.name &&
     e.helperStatus === 'pending' && !e.approvalPending && !isWorkEvent(e) && !isPastEvent(e)
   );
   // Spec 2.4: a kid/teen's still-pending request (approvalPending === true)
@@ -435,7 +449,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     // exclude unless truly shared, unlike the Day/Week/Agenda calendar
     // views (CalendarScreen.tsx), which now correctly show a busy-block
     // placeholder for an already-scheduled event instead of hiding it.
-    (!isEventSensitive(e) || canViewSensitiveEventDetail(e, 'senior', active.id) === 'full')
+    (!isEventSensitive(e) || canViewSensitiveEventDetail(e, 'senior', active.id, active.name) === 'full')
   );
   // Urgent pending: I still haven't replied and < 1 hr to go
   const urgentPending = myPendingAssignments.filter(e =>
@@ -455,7 +469,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     if (e.helper === active.name) return false;      // already assigned to me
     if (e.approvalPending) return false;             // kid-initiated, parent hasn't approved
     // Scenarios 2.6/5.5 — same sensitive-event gate as openRequests above.
-    if (isEventSensitive(e) && canViewSensitiveEventDetail(e, 'senior', active.id) !== 'full') return false;
+    if (isEventSensitive(e) && canViewSensitiveEventDetail(e, 'senior', active.id, active.name) !== 'full') return false;
     const hrs = hoursUntilEvent(e.date, e.time);
     if (hrs < 0 || hrs > 4) return false;            // only 0–4 hr window
     // Don't offer if I'd create a driver conflict with my confirmed drives

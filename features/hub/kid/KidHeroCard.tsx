@@ -34,7 +34,7 @@ export function KidHeroCard({
   const goalMet = doneToday >= questGoal;
 
   return (
-    <View style={{ paddingHorizontal: 16, marginBottom: 14 }}>
+    <View style={{ paddingHorizontal: 16, marginBottom: 18 }}>
       <LinearGradient
         colors={isDark ? HERO_GRADIENT_DARK : HERO_GRADIENT_LIGHT}
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}

@@ -5,6 +5,7 @@ import { SectionCard } from '../hubComponents';
 import { decodeRideLate, SUPPLIES_PREFIX } from '../KidModals';
 import { InlineReplyCard } from './InlineReplyCard';
 import { RideRequestCard } from './RideRequestCard';
+import { RideRequiredEventCard } from './RideRequiredEventCard';
 import { QuestApprovalCard } from './QuestApprovalCard';
 import { RideLateAlertCard } from './RideLateAlertCard';
 import { ServiceRequestCard } from './ServiceRequestCard';
@@ -82,14 +83,15 @@ function CheckinRow({ req, kidName, colors, isDark, active, approveRequest }: {
 }
 
 export function ActionNeededSection({
-  actionCount, pendingRequests, awaitingApproval, pendingKidRequests, events,
+  actionCount, pendingRequests, pendingRideRequiredEvents, awaitingApproval, pendingKidRequests, events,
   active, members, allNames, colors, isDark,
-  updateEvent, addEvent, approveQuest, declineQuest,
+  updateEvent, addEvent, updateEventScoped, approveQuest, declineQuest,
   approveRequest, declineRequest, toggleGPWelcome, approveItemsAndSync, rejectItems,
   approveQuestProposal, declineQuestProposal,
 }: {
   actionCount: number;
   pendingRequests: FamilyEvent[];
+  pendingRideRequiredEvents?: FamilyEvent[];
   awaitingApproval: Quest[];
   pendingKidRequests: any[];
   events: FamilyEvent[];
@@ -97,6 +99,7 @@ export function ActionNeededSection({
   colors: any; isDark: boolean;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
   addEvent: (ev: Omit<FamilyEvent, 'id'>) => string;
+  updateEventScoped?: (id: string, patch: Partial<FamilyEvent>, scope: 'this' | 'following' | 'all') => void;
   approveQuest: (id: string, by: string) => void;
   declineQuest: (id: string, by: string, reason: string) => void;
   approveRequest: (id: string, by: string, note?: string) => void;
@@ -120,13 +123,53 @@ export function ActionNeededSection({
   // Ride requests: a driver hasn't been assigned yet. Severity climbs as the
   // event approaches — same "how much runway is left" logic AlertBanner
   // already uses elsewhere in ParentView, applied here per-card.
-  for (const ev of pendingRequests) {
+  //
+  // A recurring ride series (e.g. "Pickup from chess club" every Mon/Wed/Fri)
+  // previously materialized every future occurrence with no driver, and
+  // EACH ONE showed up here as its own separate unassigned-ride card —
+  // 12 weeks out meant a dozen near-identical cards demanding the same
+  // decision over and over. Now only the single soonest occurrence per
+  // series surfaces; RideRequestCard's own assignment actions use
+  // updateEventScoped('following') to carry the chosen driver forward to
+  // every later occurrence in the same series, so deciding once is enough.
+  const seenSeries = new Set<string>();
+  const dedupBySeries = (evs: FamilyEvent[]) => [...evs]
+    .sort((a, b) => `${a.date}${a.time ?? ''}`.localeCompare(`${b.date}${b.time ?? ''}`))
+    .filter(ev => {
+      if (!ev.seriesId) return true;
+      if (seenSeries.has(ev.seriesId)) return false;
+      seenSeries.add(ev.seriesId);
+      return true;
+    });
+  // Shared `seenSeries` set across BOTH lists — a series can only ever be
+  // one or the other (a Ride-category event never also carries
+  // rideRequired), but sharing the set keeps the dedup pass a single
+  // consistent operation instead of two independently-correct-looking
+  // halves that happen to never collide today.
+  const dedupedPendingRequests = dedupBySeries(pendingRequests);
+  const dedupedRideRequiredEvents = dedupBySeries(pendingRideRequiredEvents ?? []);
+  for (const ev of dedupedPendingRequests) {
     const age = ageMinutes(ev.date ? `${ev.date}T${ev.time ?? '00:00'}` : undefined);
     ranked.push({
       key: `ride-${ev.id}`, age,
       severity: 'soon', score: SEVERITY.soon,
       node: <RideRequestCard key={ev.id} ev={ev} active={active} members={members} colors={colors} isDark={isDark}
-        updateEvent={updateEvent} addEvent={addEvent} />,
+        updateEvent={updateEvent} addEvent={addEvent} updateEventScoped={updateEventScoped} />,
+    });
+  }
+
+  // Non-Ride events with their own rideRequired flag (e.g. "Cricket match"
+  // needing a driver) — same Action Needed surface, same series-dedup/
+  // carry-forward treatment as a real Ride event now gets, instead of
+  // being invisible here entirely and only ever showing up buried in the
+  // day's Schedule/Agenda list.
+  for (const ev of dedupedRideRequiredEvents) {
+    const age = ageMinutes(ev.date ? `${ev.date}T${ev.time ?? '00:00'}` : undefined);
+    ranked.push({
+      key: `ride-required-${ev.id}`, age,
+      severity: 'soon', score: SEVERITY.soon,
+      node: <RideRequiredEventCard key={ev.id} ev={ev} active={active} colors={colors} isDark={isDark}
+        updateEvent={updateEvent} updateEventScoped={updateEventScoped} />,
     });
   }
 

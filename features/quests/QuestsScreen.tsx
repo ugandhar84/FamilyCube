@@ -93,6 +93,7 @@ export default function QuestsScreen() {
   const chores             = useChoreStore(s => s.chores);
   const respondToParentQuest = useChoreStore(s => s.respondToParentQuest);
   const cancelLockedAssignment = useChoreStore(s => s.cancelLockedAssignment);
+  const recallParentQuest = useChoreStore(s => s.recallParentQuest);
   const addParentQuest = useChoreStore(s => s.addParentQuest);
   const getMyDirectPending = useChoreStore(s => s.getMyDirectPending);
   const getMyLockedItems   = useChoreStore(s => s.getMyLockedItems);
@@ -109,13 +110,23 @@ export default function QuestsScreen() {
   // delegated task made it show correctly on the Hub but effectively
   // actionless (and for the assigner, silently unreadable) in this tab.
   const completeParentQuest = useChoreStore(s => s.completeParentQuest);
+  // A chore can carry a stale assignedToId while a NEWER System-A
+  // delegation (parentAssignments row) is actually live/pending on someone
+  // else — DelegateSheet's reassign flow creates a fresh PENDING row
+  // without touching assignedToId. Without excluding these, the PREVIOUS
+  // assignee kept showing up here with Nudge/Reclaim actions even after
+  // they'd already reassigned the task away (same bug, same fix, as
+  // ParentView.tsx's Household Backlog — see its comment for the full
+  // repro). getActiveAssignmentChoreIds() below is used elsewhere in this
+  // file for the same "has a live System-A row" purpose.
+  const myAdultQuestsAssignmentIds = getActiveAssignmentChoreIds();
   const myAdultQuests = isParent && activeMember ? quests.filter(q =>
     !['done', 'approved', 'archived', 'cancelled', 'completed'].includes(q.status) &&
-    q.isAdultTask && q.assignedToId === activeMember.id
+    q.isAdultTask && q.assignedToId === activeMember.id && !myAdultQuestsAssignmentIds.has(q.id)
   ) : [];
   const othersAdultQuests = isParent && activeMember ? quests.filter(q =>
     !['done', 'approved', 'archived', 'cancelled', 'completed'].includes(q.status) &&
-    q.isAdultTask && q.assignedToId && q.assignedToId !== activeMember.id
+    q.isAdultTask && q.assignedToId && q.assignedToId !== activeMember.id && !myAdultQuestsAssignmentIds.has(q.id)
   ) : [];
   const adultQuestCardIds = new Set([...myAdultQuests, ...othersAdultQuests].map(q => q.id));
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
@@ -934,7 +945,8 @@ export default function QuestsScreen() {
                 const chore = chores.find(c => c.id === a.choreId);
                 if (!chore) return null;
                 return (
-                  <OutgoingPendingCard key={a.id} a={a} chore={chore} members={members} colors={colors} isDark={isDark} />
+                  <OutgoingPendingCard key={a.id} a={a} chore={chore} members={members} active={activeMember!} colors={colors} isDark={isDark}
+                    onRecall={a.status === 'PENDING' ? () => recallParentQuest(a.id, activeMember!.id) : undefined} />
                 );
               })}
 

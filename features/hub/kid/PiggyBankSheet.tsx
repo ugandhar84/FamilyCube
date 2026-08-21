@@ -1,4 +1,5 @@
-import { View, Text } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
+import { router } from 'expo-router';
 import { PiggyBank, Star, Target, CheckCircle2, Flame, Zap, Lightbulb, Receipt } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { KID } from './kidTheme';
@@ -59,7 +60,7 @@ function RecentActivityList({ colors, isDark, memberId }: { colors: any; isDark:
 }
 
 export function PiggyBankSheet({
-  visible, onClose, colors, isDark, mainCoins, gpCoins, almostAffordable, doneToday, streak, level, memberId,
+  visible, onClose, colors, isDark, mainCoins, gpCoins, almostAffordable, doneToday, streak, level, memberId, goalReward,
 }: {
   visible: boolean; onClose: () => void; colors: any; isDark: boolean;
   mainCoins: number; gpCoins: number; almostAffordable: Reward[];
@@ -68,6 +69,10 @@ export function PiggyBankSheet({
   // so existing call sites that haven't been updated yet don't break; the
   // section simply doesn't render without it.
   memberId?: string;
+  // The kid's own explicitly-chosen goal (set via "Set as My Goal" in the
+  // Store) — takes priority over the auto-derived "Almost there" list below,
+  // since a picked goal is a real signal the kid cares about, not a guess.
+  goalReward?: Reward;
 }) {
   return (
     <AppBottomSheet
@@ -108,7 +113,32 @@ export function PiggyBankSheet({
           </View>
         </View>
 
-        {almostAffordable.length > 0 && (
+        {goalReward && (() => {
+          const remaining = Math.max(goalReward.cost - mainCoins, 0);
+          const pct = Math.min(mainCoins / goalReward.cost, 1);
+          return (
+            <Pressable onPress={() => { onClose(); router.push('/(tabs)/store' as any); }}
+              style={{ borderRadius: 14, padding: 13, backgroundColor: BRAND.purple + '10', borderWidth: 1.5, borderColor: BRAND.purple + '50', gap: 9 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Target size={14} color={BRAND.purple} />
+                <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: BRAND.purple }}>My Goal</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.textPrimary, flex: 1 }} numberOfLines={1}>
+                  {goalReward.emoji} {goalReward.title}
+                </Text>
+                <Text style={{ fontSize: KID.tiny, fontWeight: '700', color: BRAND.purple }}>
+                  {remaining > 0 ? `${remaining} more 🪙` : 'Ready! 🎉'}
+                </Text>
+              </View>
+              <View style={{ height: 8, borderRadius: 4, backgroundColor: isDark ? colors.surface : '#F1F5F9', overflow: 'hidden' }}>
+                <View style={{ height: 8, borderRadius: 4, width: `${Math.round(pct * 100)}%` as any, backgroundColor: BRAND.purple }} />
+              </View>
+            </Pressable>
+          );
+        })()}
+
+        {!goalReward && almostAffordable.length > 0 && (
           <View style={{ borderRadius: 14, padding: 13, backgroundColor: colors.card, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', gap: 9 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Target size={14} color={colors.textPrimary} />

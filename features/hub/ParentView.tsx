@@ -17,7 +17,6 @@ import { useChoreStore } from '@/store/choreStore';
 import type { ChoreTask } from '@/store/choreStore';
 
 import { ParentQuickActions } from './parent/ParentQuickActions';
-import { HouseholdSnapshotCard } from './parent/HouseholdSnapshotCard';
 import { TemporaryApproverCard } from './parent/TemporaryApproverCard';
 import { FamilyRadarSection } from './parent/FamilyRadarSection';
 import { EnRouteBanner } from './parent/EnRouteBanner';
@@ -42,7 +41,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   onUpdateEta?: (etaMinutes: number) => void;
 }) {
   const { quests, approveQuest, declineQuest, updateQuest } = useQuestStore();
-  const { events, updateEvent, addEvent }  = useEventStore();
+  const { events, updateEvent, addEvent, updateEventScoped }  = useEventStore();
   const { items: groceryItems, load: loadGrocery, addItem: addGroceryItem } = useGroceryStore();
   const { requests: kidRequests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests,
           approveRequest, declineRequest, approveItems, rejectItems, toggleGPWelcome } = useKidRequestStore();
@@ -57,7 +56,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     approveTeenReward, adjustTeenReward, declineTeenReward,
     acceptGPOffer, declineGPOffer,
     flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal,
-    getMyDirectPending, getMyLockedItems, getMyAccepted, getMyOutgoingPending, getActiveAssignmentChoreIds,
+    getMyDirectPending, getMyLockedItems, getMyOutgoingPending, getActiveAssignmentChoreIds,
     loadFromStorage: loadChores, syncFromDB: syncChores,
   } = useChoreStore();
   const pendingReviews = getParentReviewDeck();
@@ -101,6 +100,20 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
 
   const pendingRequests  = events.filter(e =>
     e.approvalPending && !isWorkEvent(e) && hoursUntilEvent(e.date, e.time) >= 0
+  );
+  // A non-Ride event (Sports/Study/Medical/etc) with its own "needs a ride"
+  // toggle (rideRequired) previously had NO presence in Action Needed at
+  // all — only category:'Ride' events fed pendingRequests above. A parent
+  // had to notice it buried in the day's Schedule/Agenda instead, and each
+  // materialized occurrence of a recurring rideRequired series showed its
+  // own separate "no driver" indicator there with no way to decide once.
+  // This treats "still needs a driver" the same way regardless of which
+  // field pair the event uses (helper/helperStatus for Ride,
+  // driverName/driverStatus for rideRequired) — both feed the same Action
+  // Needed surface and the same series-dedup/carry-forward behavior.
+  const pendingRideRequiredEvents = events.filter(e =>
+    e.rideRequired && !e.approvalPending && !isWorkEvent(e) && hoursUntilEvent(e.date, e.time) >= 0
+    && (!e.driverName || e.driverStatus === 'pending')
   );
   // pending_approval and pending_grandparent_approval both collapse to the
   // same client-side status (choreAdapter's choreStatusToQuestStatus) — a
@@ -235,7 +248,16 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     ['ride', 'tutor', 'cheer'].includes(r.type) &&
     !r.assignedHelper
   );
-  const actionCount = pendingRequests.length + pendingKidRequests.length;
+  // Matches ActionNeededSection's own series dedup (only the soonest
+  // occurrence of a recurring ride series renders as a card there) — this
+  // badge count must agree with what's actually shown, or the "12 pending"
+  // badge and a list of 1 card look like a bug on their own. Both
+  // pendingRequests (Ride category) and pendingRideRequiredEvents (any
+  // other category's own ride need) go through the same series collapse.
+  const allPendingRides = [...pendingRequests, ...pendingRideRequiredEvents];
+  const dedupedSeriesCount = new Set(allPendingRides.filter(e => e.seriesId).map(e => e.seriesId)).size;
+  const seriesOverflowCount = allPendingRides.filter(e => e.seriesId).length - dedupedSeriesCount;
+  const actionCount = allPendingRides.length - seriesOverflowCount + pendingKidRequests.length;
 
   const familyId = (active as any).familyId ?? 'family-1';
 
@@ -318,20 +340,30 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     return false;
   });
 
+  // A chore/quest can carry a stale System-B assignedToId while a NEWER
+  // System-A delegation (parent_quest_assignments row) is actually live and
+  // pending on someone else — DelegateSheet's reassign flow creates a fresh
+  // PENDING System-A row without ever touching the old assignedToId (see
+  // its onPress handler, which calls addParentQuest, not updateChore/
+  // updateQuest, for any non-quest-row chore). Without this exclusion, the
+  // PREVIOUS assignee kept showing up in othersAdultQuests/myAdultQuests
+  // with Nudge/Reclaim actions — even after they'd already reassigned it
+  // away and the new assignee had a live, unanswered Accept/Decline card
+  // waiting for them via System A. getActiveAssignmentChoreIds() (below)
+  // is the same "has a live System-A row" check the pool below already
+  // uses to avoid double-listing a chore; applying it here too makes
+  // System A the single source of truth once a delegation is actually in
+  // flight, instead of the two systems disagreeing about who a chore is
+  // "really" assigned to.
+  const activeAssignmentChoreIds = getActiveAssignmentChoreIds();
+  const adultQuestsNoLiveAssignment = adultQuests.filter(q => !activeAssignmentChoreIds.has(q.id));
+
   // Split adult quests: mine (assigned to me), others' (assigned to someone else), unassigned (pool)
-  const myAdultQuests       = adultQuests.filter(q => q.assignedToId === active.id);
-  const othersAdultQuests   = adultQuests.filter(q => q.assignedToId && q.assignedToId !== active.id);
-  const unassignedAdultQ    = adultQuests.filter(q => !q.assignedToId);
+  const myAdultQuests       = adultQuestsNoLiveAssignment.filter(q => q.assignedToId === active.id);
+  const othersAdultQuests   = adultQuestsNoLiveAssignment.filter(q => q.assignedToId && q.assignedToId !== active.id);
+  const unassignedAdultQ    = adultQuestsNoLiveAssignment.filter(q => !q.assignedToId);
 
   const choreIds         = new Set(chorePool.map(c => c.id));
-  // A chore with ANY live System-A assignment row — PENDING, SNOOZED,
-  // ACCEPTED, or locked/PARKED — must never also show up in the open pool
-  // with "Take it/Delegate" actions. It used to only exclude locked chores,
-  // which let anyone "Take It" out from under a pending DIRECT assignment:
-  // the original assignee could then tap Accept later and silently
-  // reassign the chore back to themselves, clobbering whoever just grabbed
-  // it, since the two systems never checked each other.
-  const activeAssignmentChoreIds = getActiveAssignmentChoreIds();
   // Pool = unassigned adult quests + chore-based pool (no duplicates)
   const questPool        = [
     ...chorePool.filter(c => !activeAssignmentChoreIds.has(c.id)),
@@ -354,7 +386,14 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // snooze-expiry or bounce rules now only has to happen in one place.
   const myDirectPending   = getMyDirectPending(active.id);
   const myLockedItems     = getMyLockedItems(active.id);
-  const myAccepted        = getMyAccepted(active.id);
+  // getMyAccepted/AcceptedQuestCard removed — respondToParentQuest's ACCEPT
+  // branch always syncs chore_tasks.assigned_to_id in the same action that
+  // sets the assignment's status to ACCEPTED, so the "accepted but
+  // assignedToId still unset" state getMyAccepted filtered for can never
+  // actually occur; it was permanently dead code. MyAdultQuestCard
+  // (System B, rendered via myAdultQuests below) is the real, reachable
+  // card for an accepted delegation — confirmed via live QA to render
+  // with the correct Done/Reassign/Nudge-back actions.
   const myOutgoingPending = getMyOutgoingPending(active.id);
   // Calendar events where this parent is the assigned helper/driver — show in HB.
   // Backlog is for things still needing action: once confirmed, it's a settled
@@ -441,11 +480,12 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       <ActionNeededSection
         actionCount={actionCount}
         pendingRequests={pendingRequests}
+        pendingRideRequiredEvents={pendingRideRequiredEvents}
         awaitingApproval={[]}
         pendingKidRequests={pendingKidRequests}
         events={events}
         active={active} members={members} allNames={allNames} colors={colors} isDark={isDark}
-        updateEvent={updateEvent} addEvent={addEvent}
+        updateEvent={updateEvent} addEvent={addEvent} updateEventScoped={updateEventScoped}
         approveQuest={approveQuest} declineQuest={declineQuest}
         approveRequest={approveRequest} declineRequest={declineRequest}
         toggleGPWelcome={toggleGPWelcome}
@@ -458,10 +498,10 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
       <HouseholdBacklogSection
         active={active} members={members} colors={colors} isDark={isDark}
         questPool={questPool} myAdultQuests={myAdultQuests} othersAdultQuests={othersAdultQuests}
-        myDirectPending={myDirectPending} myLockedItems={myLockedItems} myAccepted={myAccepted}
+        myDirectPending={myDirectPending} myLockedItems={myLockedItems}
         myOutgoingPending={myOutgoingPending}
         myHelperEvents={myHelperEvents} systemBIds={systemBIds} parentAssignments={parentAssignments}
-        updateQuest={updateQuest} updateEvent={updateEvent}
+        updateQuest={updateQuest} updateEvent={updateEvent} updateEventScoped={updateEventScoped}
         completeParentQuest={completeParentQuest} respondToParentQuest={respondToParentQuest}
         cancelLockedAssignment={cancelLockedAssignment} recallParentQuest={recallParentQuest}
         appreciationPing={appreciationPing} handlePullTask={handlePullTask}
@@ -515,14 +555,9 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         <FamilyRadarSection members={members} colors={colors} isDark={isDark} />
       </View>
 
-      <View style={pad}>
-        <HouseholdSnapshotCard
-          colors={colors} isDark={isDark}
-          reviewedToday={reviewedToday} avgStreak={avgStreak}
-          pendingCashOutsCount={pendingCashOuts.length}
-          leaderboardKids={leaderboardKids} allNames={allNames}
-        />
-      </View>
+      {/* Family Leaderboard (HouseholdSnapshotCard) hidden from the Hub per
+          explicit request — component/data left fully intact, just not
+          rendered, so this is a one-line revert if it's ever wanted back. */}
 
       {/* Scenarios 9.2/9.3 — temporary-approver / caregiver-mode grants. */}
       <View style={pad}>

@@ -599,11 +599,13 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
               <View style={{ flex: 1, marginRight: 12 }}>
                 <Text style={[f.title, { color: colors.textPrimary }]}>
-                  {isKid ? '🙋 Request Help' : '+ New Event'}
+                  {isKid ? '🙋 Request Help' : isSenior ? '🤝 Ask for Help' : '+ New Event'}
                 </Text>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: catColor }}>
                   {isKid
                     ? 'Your request goes to a parent for approval'
+                    : isSenior
+                    ? 'Let the family know what you need'
                     : `${catEmoji} ${category} — ${isParent ? 'full access' : 'senior view'}`}
                 </Text>
               </View>

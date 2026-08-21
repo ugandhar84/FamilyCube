@@ -18,6 +18,7 @@ import {
   StyleSheet, Alert, Pressable, Modal, KeyboardAvoidingView, Platform, Keyboard,
 } from 'react-native';
 import AppBottomSheet from '@/components/AppBottomSheet';
+import { CheckCircle2, XCircle, Clock3, MessageCircle } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
@@ -634,7 +635,7 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
   const statusBg = (s: string) =>
     s === 'approved' ? '#10B98115' : s === 'rejected' || s === 'declined' ? '#EF444415' : s === 'partial' ? BRAND.amber + '15' : '#94A3B815';
 
-  const itemStatusIcon = (s: string) => s === 'approved' ? '✅' : s === 'rejected' ? '❌' : '⏳';
+  const ItemStatusIcon = (s: string) => s === 'approved' ? CheckCircle2 : s === 'rejected' ? XCircle : Clock3;
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggle = (id: string) => setExpanded(prev => {
@@ -750,7 +751,7 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
                           {isExpanded ? '▲' : '▼'}
                         </Text>
                       )}
-                      {req.status === 'pending' && (
+                      {req.status === 'pending' && !req.respondedAt && (
                         <TouchableOpacity
                           onPress={() => Alert.alert('Remove request?', 'This will delete your request.', [
                             { text: 'Cancel', style: 'cancel' },
@@ -768,7 +769,9 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
                   {req.respondedAt && (req.respondedBy || req.parentNote) && (
                     <View style={{ borderTopWidth: 1, borderTopColor: statusColor(req.status) + '30', paddingHorizontal: 12, paddingTop: 10, paddingBottom: 8 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: isDark ? colors.surface : '#fff', borderRadius: 10, padding: 10, borderLeftWidth: 3, borderLeftColor: statusColor(req.status) }}>
-                        <Text style={{ fontSize: 18, marginTop: 1 }}>{req.status === 'approved' ? '✅' : req.status === 'declined' ? '❌' : '💬'}</Text>
+                        {(() => { const ReplyStatusIcon = req.status === 'approved' ? CheckCircle2 : req.status === 'declined' ? XCircle : MessageCircle; return (
+                          <ReplyStatusIcon size={18} color={statusColor(req.status)} style={{ marginTop: 1 }} />
+                        ); })()}
                         <View style={{ flex: 1 }}>
                           <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: statusColor(req.status), marginBottom: 2 }}>
                             Parent Reply {req.respondedBy && `· ${memberName(req.respondedBy)}`}
@@ -795,7 +798,9 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
                           borderRadius: 10, backgroundColor: isDark ? colors.surface : '#fff',
                           borderWidth: 1, borderColor: statusColor(item.status) + '40',
                         }}>
-                          <Text style={{ fontSize: 18, marginTop: 1 }}>{itemStatusIcon(item.status)}</Text>
+                          {(() => { const StatusIcon = ItemStatusIcon(item.status); return (
+                            <StatusIcon size={18} color={statusColor(item.status)} style={{ marginTop: 1 }} />
+                          ); })()}
                           <View style={{ flex: 1 }}>
                             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>
                               {item.emoji ? `${item.emoji} ` : ''}{item.name}

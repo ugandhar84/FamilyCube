@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { View, Text, Pressable, Alert } from 'react-native';
-import { ChevronUp, ChevronDown, Clock, Undo2 } from 'lucide-react-native';
+import { ChevronUp, ChevronDown, Clock, Undo2, MessageCircle } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
+import { useChatStore } from '@/store/chatStore';
 import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 
@@ -10,13 +11,24 @@ import type { FamilyMember } from '@/store/familyStore';
 // can always take a still-open delegation back, per spec 1.3/6.5; once
 // bounced/accepted there's a live negotiation or commitment in progress,
 // so recall isn't offered (reassign via DelegateSheet is the equivalent
-// action for those states).
-export function OutgoingPendingCard({ a, chore, members, colors, isDark, onRecall }: {
-  a: ParentQuestAssignment; chore: ChoreTask; members: FamilyMember[]; colors: any; isDark: boolean;
+// action for those states). Also gets a Nudge action — every other
+// "someone else is holding this up" card in the app (OthersAdultQuestCard,
+// MyAdultQuestCard's own nudge-back) already has one; this was the one
+// place a delegator was told who they're waiting on with no way to
+// actually remind that person, noticed while confirming today's
+// reassignment-visibility fix looked right in the app.
+export function OutgoingPendingCard({ a, chore, members, active, colors, isDark, onRecall }: {
+  a: ParentQuestAssignment; chore: ChoreTask; members: FamilyMember[]; active: FamilyMember; colors: any; isDark: boolean;
   onRecall?: () => void;
 }) {
   const [isExp, setExp] = useState(false);
   const assignee = members.find(m => m.id === a.assignedTo);
+
+  const sendNudge = () => {
+    const msg = `👋 Hey ${assignee?.name?.split(' ')[0] ?? 'there'}, just a nudge — "${chore.title}" is still waiting on you. Need any help?`;
+    useChatStore.getState().sendMessage(a.assignedTo, active.id, msg);
+    Alert.alert('Nudge sent!', `A reminder was sent directly to ${assignee?.name ?? 'them'}.`);
+  };
   const isSnoozed = a.status === 'SNOOZED' && a.snoozeUntil && a.snoozeUntil > new Date().toISOString();
   const isBounced = a.status === 'PARKED';
 
@@ -50,23 +62,31 @@ export function OutgoingPendingCard({ a, chore, members, colors, isDark, onRecal
         {isExp ? <ChevronUp size={14} color={colors.textTertiary} /> : <ChevronDown size={14} color={colors.textTertiary} />}
       </Pressable>
       {isExp && chore.description && (
-        <View style={{ borderTopWidth: 1, borderTopColor: colors.border, padding: 12, paddingBottom: onRecall ? 0 : 12 }}>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.border, padding: 12, paddingBottom: !isSnoozed ? 0 : 12 }}>
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{chore.description}</Text>
         </View>
       )}
-      {onRecall && (
-        <View style={{ paddingHorizontal: 12, paddingBottom: 12, paddingTop: isExp && chore.description ? 8 : 0 }}>
-          <Pressable
-            onPress={() => Alert.alert(
-              'Take this back?',
-              `"${chore.title}" will be un-delegated and assigned back to you. ${assignee?.name?.split(' ')[0] ?? 'They'} will be notified.`,
-              [{ text: 'Cancel', style: 'cancel' }, { text: 'Recall', onPress: onRecall }],
-            )}
-            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-              borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingVertical: 8 }}>
-            <Undo2 size={13} color={colors.textSecondary} />
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Recall</Text>
+      {!isSnoozed && (
+        <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12, paddingTop: isExp && chore.description ? 8 : 0 }}>
+          <Pressable onPress={sendNudge}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+              borderRadius: 10, borderWidth: 1, borderColor: colors.warning + '60', paddingVertical: 8 }}>
+            <MessageCircle size={13} color={colors.warning} />
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.warning }}>Nudge</Text>
           </Pressable>
+          {onRecall && (
+            <Pressable
+              onPress={() => Alert.alert(
+                'Take this back?',
+                `"${chore.title}" will be un-delegated and assigned back to you. ${assignee?.name?.split(' ')[0] ?? 'They'} will be notified.`,
+                [{ text: 'Cancel', style: 'cancel' }, { text: 'Recall', onPress: onRecall }],
+              )}
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingVertical: 8 }}>
+              <Undo2 size={13} color={colors.textSecondary} />
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Recall</Text>
+            </Pressable>
+          )}
         </View>
       )}
     </View>

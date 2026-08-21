@@ -801,7 +801,6 @@ interface ChoreState {
   getActiveAssignmentChoreIds: () => Set<string>;
   getMyDirectPending: (memberId: string) => ParentQuestAssignment[];
   getMyLockedItems:   (memberId: string) => ParentQuestAssignment[];
-  getMyAccepted:      (memberId: string) => ParentQuestAssignment[];
   getMyOutgoingPending: (memberId: string) => ParentQuestAssignment[];
 }
 
@@ -891,9 +890,15 @@ function ensureRealtime(
         const state = getState();
         if (eventType === 'INSERT') {
           const chore = choreFromRow(newRow);
-          // Hide parent-only quests from non-parents
+          // Hide parent-only quests from non-parents — except a senior who
+          // is themselves the assignee of THIS specific parent_only_quest
+          // (addParentQuest's adult-to-adult delegation flow can hand one
+          // to a GP; blocking it here would silently drop their own
+          // delegated quest the instant it arrived over realtime).
           const role = getActiveMemberRole();
-          if (chore.isPrivateParent && role !== 'parent') return;
+          const activeId = (() => { try { const { useFamilyStore } = require('@/store/familyStore'); return useFamilyStore.getState().activeMemberId; } catch { return null; } })();
+          const isMyOwnParentOnlyQuest = role === 'senior' && chore.assignedToId === activeId;
+          if (chore.isPrivateParent && role !== 'parent' && !isMyOwnParentOnlyQuest) return;
           // Skip if already added optimistically by addChore
           if (state.chores.some(c => c.id === chore.id)) return;
           setState({ chores: [chore, ...state.chores] });
@@ -903,9 +908,13 @@ function ensureRealtime(
           // that transitions INTO parent_only_quest after a non-parent
           // device already has the row cached must not have that update
           // applied locally; drop the pre-existing row instead of leaving
-          // a private task's live field changes visible to a kid/senior.
+          // a private task's live field changes visible to a kid/senior —
+          // UNLESS that senior is themselves the quest's assignee (same
+          // adult-to-adult delegation exception as the INSERT branch).
           const role = getActiveMemberRole();
-          if (chore.isPrivateParent && role !== 'parent') {
+          const activeId = (() => { try { const { useFamilyStore } = require('@/store/familyStore'); return useFamilyStore.getState().activeMemberId; } catch { return null; } })();
+          const isMyOwnParentOnlyQuest = role === 'senior' && chore.assignedToId === activeId;
+          if (chore.isPrivateParent && role !== 'parent' && !isMyOwnParentOnlyQuest) {
             setState({ chores: state.chores.filter(c => c.id !== chore.id) });
             return;
           }
@@ -1013,7 +1022,22 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         .eq('family_id', familyId)
         .order('created_at', { ascending: false });
 
-      if (role !== 'parent') {
+      // parent_only_quest used to mean "parents only, full stop" — but
+      // addParentQuest's adult-to-adult delegation flow now lets a
+      // grandparent be the assignee/assigner of one of these too (a parent
+      // can hand a quest to a GP, a GP to a parent or another GP). A
+      // senior's own delegated quest must still reach them, or converting
+      // it to parent_only_quest on delegation (see addParentQuest) would
+      // silently make it invisible to the very person it was just handed
+      // to. Kids/teens stay fully excluded from parent_only_quest, same as
+      // before. A senior gets ONLY the parent_only_quest rows where they're
+      // specifically the assignee — not blanket visibility into every
+      // parent-only task in the family, which parent_only_quest's own name
+      // still implies should stay parent-scoped by default.
+      if (role === 'senior') {
+        const activeId = (() => { try { const { useFamilyStore } = require('@/store/familyStore'); return useFamilyStore.getState().activeMemberId; } catch { return null; } })();
+        choreQuery = choreQuery.or(`category_type.neq.parent_only_quest,assigned_to_id.eq.${activeId}`);
+      } else if (role !== 'parent') {
         choreQuery = choreQuery.neq('category_type', 'parent_only_quest');
       }
 
@@ -3125,17 +3149,46 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       console.warn(`[choreStore] addParentQuest ABORTED — no chore found with id=${choreId}`);
       return null;
     }
-    // Household Backlog's pool mixes real parent_only_quest chores with
-    // shopping-type quests (both flagged isAdultTask upstream and rendered as
-    // pseudo parent_only_quest rows) — this guard only accepted the former,
-    // so "Take It" silently no-op'd for every grocery run.
-    if (!['parent_only_quest', 'shopping'].includes(chore.categoryType)) {
-      console.warn(`[choreStore] addParentQuest ABORTED — chore "${chore.title}" has categoryType="${chore.categoryType}", not parent_only_quest/shopping`);
+    // Was hard-gated to parent_only_quest/shopping only — a parent could
+    // delegate a grocery run to their co-parent but not, say, a citizenship
+    // task or a bounty they'd claimed themselves and now want to hand off.
+    // The actual safety property this guard needs to enforce isn't "which
+    // category," it's "both people are adults" — grandparents are welcome
+    // on both sides of this handoff too (a parent can hand a quest to a
+    // GP, a GP can hand one to a parent or another GP), not just parents —
+    // this is an adult-to-adult Accept/Decline flow, not a general
+    // reassignment tool for a kid's chore. DelegateSheet's own member
+    // picker currently only offers parent-role members (a separate UI
+    // gap, not fixed here); this is the real authorization boundary.
+    const ADULT_ROLES = new Set(['parent', 'senior']);
+    const byMember = (() => { try { const { useFamilyStore } = require('./familyStore'); return useFamilyStore.getState().members.find((m: any) => m.id === assignedBy); } catch { return null; } })();
+    const toMember = (() => { try { const { useFamilyStore } = require('./familyStore'); return useFamilyStore.getState().members.find((m: any) => m.id === (assignedTo ?? assignedBy)); } catch { return null; } })();
+    if (!ADULT_ROLES.has(byMember?.role) || !ADULT_ROLES.has(toMember?.role)) {
+      console.warn(`[choreStore] addParentQuest ABORTED — this is an adult-to-adult handoff; assignedBy role=${byMember?.role}, assignedTo role=${toMember?.role}`);
       return null;
     }
 
     const now = new Date().toISOString();
     const finalAssignedTo = assignedTo ?? assignedBy;
+
+    // Per explicit product decision: once a chore is handed parent-to-
+    // parent through this flow, it becomes a real parent_only_quest going
+    // forward — hidden from kid/GP visibility the same as any other
+    // parent-only task, regardless of what category it started as (a
+    // citizenship task, a bounty a parent had claimed themselves, etc.).
+    // This isn't just "route it through the same mechanism" — the
+    // category label itself changes, permanently, not only for this one
+    // delegation cycle.
+    if (chore.categoryType !== 'parent_only_quest') {
+      console.log(`[choreStore] addParentQuest → converting chore ${choreId} categoryType from "${chore.categoryType}" to "parent_only_quest" (parent-to-parent handoff)`);
+      // isPrivateParent set explicitly alongside categoryType — choreFromRow
+      // (the DB→local mapper) always re-derives it live from category_type
+      // on every sync, but updateChore's own local set() is a plain shallow
+      // merge with no such re-derivation, so without this the in-memory
+      // state would keep showing the chore as kid/GP-visible until the
+      // next full syncFromDB happened to run.
+      get().updateChore(choreId, { categoryType: 'parent_only_quest', isPrivateParent: true } as any);
+    }
 
     // Only one assignment should ever be "live" per chore — a reassign or a
     // repeat delegate tap used to just pile another PENDING row on top of
@@ -3206,6 +3259,26 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (mode === 'PULL') {
       console.log(`[choreStore] addParentQuest → assignment ${assignment.id} created (ACCEPTED); syncing chore ${choreId} → assignedToId=${finalAssignedTo} status=in_progress`);
       get().updateChore(choreId, { assignedToId: finalAssignedTo, status: 'in_progress' });
+    } else if (chore.assignedToId) {
+      // A RE-delegation (DelegateSheet reassigning a chore that was already
+      // assigned to someone via a PRIOR cycle) left the chore's own
+      // assignedToId pointing at the OLD assignee — the comment above ("DIRECT
+      // stays unassigned until accepted") only actually held for a chore
+      // delegated for the first time out of the pool, which starts with no
+      // assignedToId at all. Real repro: chore assigned to Parent A, Parent A
+      // re-delegates to Parent B via DelegateSheet → a new PENDING assignment
+      // is created here, but assignedToId stays "Parent A." Every read path
+      // keyed on "does this chore have a live System-A row" (getMyDirectPending/
+      // getMyOutgoingPending/getMyLockedItems/getMyAccepted's systemBIds guard)
+      // then EXCLUDES it, thinking System B still owns it — while System B's
+      // own cards (othersAdultQuests etc.) ALSO now exclude it once a live
+      // System-A row exists. The chore fell into the gap between both systems
+      // and rendered nowhere. Clearing the stale assignedToId here restores
+      // the invariant the comment above already assumed: unassigned-on-chore
+      // means "System A owns this right now," full stop, whether this is the
+      // chore's first delegation or its fifth.
+      console.log(`[choreStore] addParentQuest → assignment ${assignment.id} created (PENDING); clearing stale assignedToId=${chore.assignedToId} on chore ${choreId} so System A is the sole owner until accepted`);
+      get().updateChore(choreId, { assignedToId: undefined });
     } else {
       console.log(`[choreStore] addParentQuest → assignment ${assignment.id} created (PENDING); chore ${choreId} left unassigned until accepted`);
     }
@@ -3820,10 +3893,26 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // reassign write — those all bypass parentAssignments and would leave a
   // stale row pointing at the original assignee, who could then Accept it
   // later and clobber whoever grabbed it in the meantime.
+  // Live QA audit found: once an assignment is ACCEPTED/IN_PROGRESS, this
+  // function used to still count it as "actively negotiating" (only
+  // COMPLETED/DECLINED were treated as done) — but respondToParentQuest's
+  // ACCEPT branch ALSO syncs chore_tasks.assigned_to_id at that exact
+  // moment, meaning System B (myAdultQuests/othersAdultQuests, keyed off
+  // assignedToId) is now the correct, authoritative display owner. With
+  // BOTH systems still claiming "the other one owns this," the chore was
+  // excluded from getMyAccepted (its own systemBIds guard, since
+  // assignedToId is now set) AND from myAdultQuests/othersAdultQuests
+  // (this function still listed it as "active"), and rendered nowhere —
+  // the same "vanishes from the UI" symptom as the original reassignment
+  // bug, on a different transition. The negotiation (what THIS function
+  // is meant to track) ends the moment a decision is made — ACCEPTED/
+  // IN_PROGRESS/PARKED-resolved states are handoff-complete, not still-
+  // pending; only genuinely undecided states (PENDING/PARKED-awaiting-
+  // response/SNOOZED) should keep a chore out of System B's cards.
   getActiveAssignmentChoreIds: () => {
-    const terminal = new Set(['COMPLETED', 'DECLINED']);
+    const stillNegotiating = new Set(['PENDING', 'PARKED', 'SNOOZED']);
     return new Set(
-      get().parentAssignments.filter(a => !terminal.has(a.status)).map(a => a.choreId)
+      get().parentAssignments.filter(a => stillNegotiating.has(a.status)).map(a => a.choreId)
     );
   },
 
@@ -3848,12 +3937,13 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     );
   },
 
-  getMyAccepted: (memberId) => {
-    const systemBIds = new Set(get().chores.filter(c => !!c.assignedToId).map(c => c.id));
-    return get().parentAssignments.filter(a =>
-      a.assignedTo === memberId && (a.status === 'ACCEPTED' || a.status === 'IN_PROGRESS') && !systemBIds.has(a.choreId)
-    );
-  },
+  // getMyAccepted removed — respondToParentQuest's ACCEPT branch always
+  // syncs chore_tasks.assigned_to_id in the same action that sets an
+  // assignment's status to ACCEPTED, so the "accepted but assignedToId
+  // still unset" state this filtered for could never actually occur; it
+  // was permanently dead code (and so was AcceptedQuestCard, its one
+  // consumer). MyAdultQuestCard (System B) is the real, reachable card for
+  // an accepted delegation.
 
   // A delegation the current member sent out and is still waiting on —
   // previously the assigner had NO visibility into their own PENDING/

@@ -51,10 +51,18 @@ function parseRideMeta(encoded: string | undefined, fallbackDate?: string) {
   return { isBothWays, isDropoff, isPickup, pickupDate, pickupTime, pickupLabel: pickupTime ? fmtTime(pickupTime) : undefined };
 }
 
-export function RideRequestCard({ ev, active, members, colors, isDark, updateEvent, addEvent }: {
+export function RideRequestCard({ ev, active, members, colors, isDark, updateEvent, addEvent, updateEventScoped }: {
   ev: FamilyEvent; active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
   addEvent: (ev: Omit<FamilyEvent, 'id'>) => string;
+  // A recurring ride series previously required assigning a driver
+  // separately on EVERY materialized occurrence — the anchor got a helper,
+  // every future occurrence stayed stuck on "No driver assigned" forever.
+  // Assigning here now carries the SAME driver forward to every future
+  // occurrence in the series via updateEventScoped('following'), so one
+  // assignment covers the whole recurring ride, not just today's instance.
+  // Optional so any other call site that hasn't been updated still compiles.
+  updateEventScoped?: (id: string, patch: Partial<FamilyEvent>, scope: 'this' | 'following' | 'all') => void;
 }) {
   const familyId = (active as any).familyId as string | undefined;
 
@@ -69,7 +77,15 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
   // removes the manual path.
   const tryAutoDispatchToGrandparent = (eventId: string) => {
     if (!familyId) return;
-    applyAssignment({ taskId: eventId, taskType: 'event', familyId, category: 'transport' })
+    // targetField was missing entirely — the engine's default ('assignee')
+    // resolves to calendar_events.member_id for taskType:'event', which is
+    // the RIDE'S SUBJECT (the kid needing the ride), not the driver. Every
+    // zero-touch AUTO dispatch was silently overwriting who the ride was
+    // FOR with the winning grandparent's id (QA Round 9, Critical Finding 1
+    // — reproduced live, confirmed the corrupted member_id then wrongly
+    // excluded that GP from a later, unrelated dispatch via a phantom
+    // calendar conflict).
+    applyAssignment({ taskId: eventId, taskType: 'event', familyId, category: 'transport', targetField: 'helper' })
       .then(res => {
         if (res?.decisionType !== 'auto' || !res.selectedMemberId) return;
         const winner = members.find(m => m.id === res.selectedMemberId);
@@ -91,10 +107,17 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
   // Open to ALL helpers (GP + teen) — first to claim wins, unless the engine
   // is confident enough to zero-touch dispatch it to a GP right away.
   const openToHelpers = (rideCoins?: number) => {
-    updateEvent(ev.id, {
+    const patch = {
       approvalPending: false, helperStatus: undefined, returnTime: undefined,
       isOpenToGrandparents: true, isOpenToTeens: true, rideCoins,
-    });
+    };
+    // Only the anchor occurrence gets opened to helpers here — future
+    // occurrences aren't touched, since "open to whoever claims it" isn't a
+    // fixed assignment worth forcing onto every future date the way a
+    // confirmed named driver is. A parent who wants recurring open-to-help
+    // can reopen each occurrence, or the auto-dispatched GP pick below will
+    // naturally repeat if the same GP keeps claiming it.
+    updateEvent(ev.id, patch);
     tryAutoDispatchToGrandparent(ev.id);
   };
 
@@ -213,7 +236,11 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
       ) : (
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable
-            onPress={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'confirmed', helper: active.name, returnTime: undefined })}
+            onPress={() => {
+              const patch = { approvalPending: false, helperStatus: 'confirmed' as const, helper: active.name, returnTime: undefined };
+              if (ev.seriesId && updateEventScoped) updateEventScoped(ev.id, patch, 'following');
+              else updateEvent(ev.id, patch);
+            }}
             style={{ flex: 1, backgroundColor: DROPOFF_GREEN, paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
             <Car size={14} color="#fff" />
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>

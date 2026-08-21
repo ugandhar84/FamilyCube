@@ -22,6 +22,7 @@ import { PickupRadarStatus } from './hubComponents';
 
 import { KidHeroCard } from './kid/KidHeroCard';
 import { KidRideBanner } from './kid/KidRideBanner';
+import { AwaitingDriverBanner } from './kid/AwaitingDriverBanner';
 import { KidUrgentAlerts } from './kid/KidUrgentAlerts';
 import { KidCheckinRow } from './kid/KidCheckinRow';
 import { KidActionRow } from './kid/KidActionRow';
@@ -54,10 +55,9 @@ function useCountdown(date?: string, time?: string) {
 }
 
 // ─── Main KidView ──────────────────────────────────────────────────────────────
-export function KidView({ active, members, colors, isDark, onHelpRequest, activeTrip }: {
+export function KidView({ active, members, colors, isDark, activeTrip }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
-  onHelpRequest: () => void;
   // Family-wide Pick-up Radar state, synced from tripStore — shown here
   // read-only (driver controls the ETA/Pickup Done) so a kid can see the
   // same live trip progress the driver's own Hub shows.
@@ -125,13 +125,21 @@ export function KidView({ active, members, colors, isDark, onHelpRequest, active
   // 5.4's "no scheduling dependency by default" for siblings). Own events
   // (this kid IS the subject) always pass through unaffected.
   const visibleEvents = events.filter(e =>
-    !isEventSensitive(e) || canViewSensitiveEventDetail(e, 'kid', active.id));
+    !isEventSensitive(e) || canViewSensitiveEventDetail(e, 'kid', active.id, active.name));
   const myEvents    = visibleEvents.filter(e => (e.memberId === active.id || !e.memberId) && e.category !== 'Work');
   const todayEvents = myEvents.filter(e => e.date === today).sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''));
 
   // Confirmed ride today
   const confirmedRide = todayEvents.find(e => e.helper && e.helperStatus === 'confirmed');
   const rideCountdown = useCountdown(confirmedRide?.date, confirmedRide?.time);
+
+  // A driver has been named but hasn't confirmed yet — the gap between
+  // "nobody's looked at my request" (myPendingRides below, already
+  // surfaced) and "confirmed, ride is happening" (confirmedRide above).
+  // Previously invisible: a kid whose parent assigned a specific driver
+  // had zero indication anyone had even acted on their request until that
+  // driver tapped confirm, sometimes hours or days later.
+  const awaitingDriverRide = todayEvents.find(e => e.helper && e.helperStatus === 'pending');
 
   // Next upcoming event (any, for countdown on hero if no ride)
   const nextEvent = todayEvents.find(e => hoursUntilEvent(e.date, e.time) > 0 && e.helperStatus !== 'rejected');
@@ -140,8 +148,15 @@ export function KidView({ active, members, colors, isDark, onHelpRequest, active
   const myDeclinedRides = todayEvents.filter(e =>
     e.helperStatus === 'rejected' && !e.approvalPending && hoursUntilEvent(e.date, e.time) >= -1
   );
+  // A kid can name a preferred helper right when creating the ride request
+  // (EventFormModal sets both approvalPending=true AND helper/helperStatus
+  // in the same insert) — without excluding e.helper here, that single
+  // event matched BOTH this "nobody's looked at it yet" filter AND
+  // awaitingDriverRide/confirmedRide below at once, rendering two
+  // contradictory banners simultaneously (QA Round 7, finding B2). Once a
+  // helper is named, the other filters own communicating status.
   const myPendingRides  = events.filter(e =>
-    e.memberId === active.id && e.approvalPending && e.date >= today
+    e.memberId === active.id && e.approvalPending && !e.helper && e.date >= today
   );
 
   const myRequests = requests.filter(r => r.fromMemberId === active.id && r.status !== 'cancelled');
@@ -189,6 +204,9 @@ export function KidView({ active, members, colors, isDark, onHelpRequest, active
   const xpForNext  = level * 100;
   const xpPct      = Math.min((xp % xpForNext) / xpForNext, 1);
   const almostAffordable = rewards.filter(r => !eligibleRewards.find(e => e.id === r.id) && r.cost > 0 && r.cost - mainCoins <= 30 && r.cost - mainCoins > 0);
+  const goalReward = (active as any).goalRewardId
+    ? rewards.find(r => r.id === (active as any).goalRewardId && r.available)
+    : undefined;
 
   const sendCheckin = (type: 'home' | 'ready' | 'late') => {
     const messages: Record<string, { detail: string; chatMsg: string; emoji: string }> = {
@@ -289,6 +307,19 @@ export function KidView({ active, members, colors, isDark, onHelpRequest, active
         />
       )}
 
+      {/* No confirmed ride yet, but a driver HAS been named and just
+          hasn't tapped confirm — distinct from myPendingRides in
+          KidUrgentAlerts ("nobody's looked at this yet"). Without this, a
+          kid whose parent assigned Grandpa as driver had no way to know
+          that had even happened until Grandpa confirmed, sometimes not
+          until the day of. */}
+      {!confirmedRide && awaitingDriverRide && !dismissedRideIds.has(`awaiting-${awaitingDriverRide.id}`) && (
+        <AwaitingDriverBanner
+          ev={awaitingDriverRide} colors={colors} isDark={isDark}
+          onDismiss={(id) => setDismissedRideIds(prev => new Set([...prev, id]))}
+        />
+      )}
+
       {activeTrip && <PickupRadarStatus colors={colors} isDark={isDark} activeTrip={activeTrip} />}
 
       <KidCheckinRow colors={colors} onCheckin={sendCheckin} />
@@ -353,7 +384,7 @@ export function KidView({ active, members, colors, isDark, onHelpRequest, active
       <KidRequestHistoryModal visible={historyModal} onClose={() => setHistoryModal(false)} active={active} />
       <PiggyBankSheet
         visible={piggyBankModal} onClose={() => setPiggyBankModal(false)} colors={colors} isDark={isDark}
-        mainCoins={mainCoins} gpCoins={gpCoins} almostAffordable={almostAffordable}
+        mainCoins={mainCoins} gpCoins={gpCoins} almostAffordable={almostAffordable} goalReward={goalReward}
         doneToday={doneToday} streak={streak} level={level} memberId={active.id}
       />
       <AddEventModal visible={addEventModal} onClose={() => setAddEventModal(false)} activeMemberId={active.id} />

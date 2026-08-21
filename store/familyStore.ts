@@ -48,7 +48,7 @@ function ensureRealtime(
         if (eventType === 'INSERT') {
           const member = fromRow(newRow);
           if (state.members.some(m => m.id === member.id)) return;
-          setState({ members: [...state.members, member] });
+          setState({ members: dedupeMembers([...state.members, member]) });
         } else if (eventType === 'UPDATE') {
           setState({
             members: state.members.map(m =>
@@ -142,6 +142,19 @@ interface FamilyState {
 
 const STORAGE_KEY = '@familycube_members_v4';
 const ACTIVE_KEY  = '@familycube_active_member';
+
+// Every write path into `members` funnels through here — a duplicate id
+// (e.g. a realtime INSERT racing a syncFromDB() overwrite from a different
+// caller, since ChildChoreBoard.tsx and ParentReviewDeck.tsx both trigger
+// their own syncFromDB() independently of familyStore's own load) crashes
+// React with "two children with the same key" wherever members are
+// rendered in a keyed list (ChatScreen's avatar cluster, etc). Last one
+// wins on id collision.
+function dedupeMembers(members: FamilyMember[]): FamilyMember[] {
+  const byId = new Map<string, FamilyMember>();
+  for (const m of members) byId.set(m.id, m);
+  return [...byId.values()];
+}
 
 // Seed data for demo / first launch (IDs match questStore seeds)
 const SEED_MEMBERS: FamilyMember[] = [
@@ -245,8 +258,9 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   setFamilyName: (name) => set({ familyName: name }),
 
   setMembers: (members) => {
-    set({ members });
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(members));
+    const deduped = dedupeMembers(members);
+    set({ members: deduped });
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(deduped));
   },
 
   setActiveMember: (id) => {
@@ -268,7 +282,7 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       .single();
     if (error || !data) { console.warn('[familyStore] addMember:', error?.message); return; }
     const added = fromRow(data);
-    const next = [...get().members, added];
+    const next = dedupeMembers([...get().members, added]);
     set({ members: next });
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   },
@@ -492,12 +506,22 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
 
   syncFromDB: async () => {
     try {
+      // Scope by the family we already know about (from cache or a prior
+      // sync) so this doesn't fetch every family in the database — RLS
+      // already prevents another family's rows from actually coming back,
+      // but an unscoped fetch here still meant every syncFromDB() call
+      // (there are 3 independent call sites: ChildChoreBoard.tsx,
+      // ParentReviewDeck.tsx, and familyStore's own loadFromStorage) pulled
+      // the caller's own family over and over with no query-level bound.
+      const knownFamilyId = get().members.find(m => m.familyId)?.familyId;
       const [activeId, { data, error }] = await Promise.all([
         AsyncStorage.getItem(ACTIVE_KEY),
-        supabase.from('members').select('*').order('created_at'),
+        knownFamilyId
+          ? supabase.from('members').select('*').eq('family_id', knownFamilyId).order('created_at')
+          : supabase.from('members').select('*').order('created_at'),
       ]);
       if (error || !data) return;
-      const members = data.map(fromRow);
+      const members = dedupeMembers(data.map(fromRow));
       set({
         members,
         activeMemberId: applyActive(members, activeId, get().activeMemberId),

@@ -30,7 +30,10 @@ export function CheerSquadSection({
           ? 'Nothing new today'
           : `${kidsCheerable.length} finished a chore today`}
         badge={kidsCheerable.length || undefined} badgeColor={BRAND.teal}
-        collapsible defaultExpanded={false}
+        // Was always collapsed, even with real cheer-worthy completions
+        // waiting — same "actionable content hidden by default" fix
+        // applied across every Hub section this pass.
+        collapsible defaultExpanded={kidsCheerable.length > 0}
         colors={colors} isDark={isDark}>
         {kidsCheerable.length === 0 ? (
           <View style={{ alignItems: 'center', paddingVertical: 20, gap: 8 }}>

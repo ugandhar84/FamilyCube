@@ -13,7 +13,7 @@ import { useTripStore } from '@/store/tripStore';
 import AppHeader from '@/components/AppHeader';
 import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
-import HelpRequestModal from '@/components/HelpRequestModal';
+import { AddEventModal } from '@/features/calendar/EventFormModal';
 import FlyerScannerModal from '@/components/FlyerScannerModal';
 import PinEntryModal from '@/components/PinEntryModal';
 import type { FamilyMember } from '@/store/familyStore';
@@ -184,7 +184,6 @@ export default function HubScreen() {
         {isKid && (
           <KidView
             active={active} members={members} colors={colors} isDark={isDark}
-            onHelpRequest={() => setHelpModal(true)}
             activeTrip={activeTripView}
           />
         )}
@@ -206,7 +205,18 @@ export default function HubScreen() {
 
       <GlobalCelebration />
 
-      <HelpRequestModal visible={helpModalVisible} onClose={() => setHelpModal(false)} />
+      {/* GP's "Ask" button (Lend a Hand card) now opens the SAME event form
+          Parent Hub uses — previously a separate, entirely different
+          component (HelpRequestModal/useHelpStore) that wrote to a
+          different table nothing else in the app read, so a GP's help
+          request was invisible to Action Needed, the ride-visibility
+          fixes, series propagation, everything. AddEventModal already had
+          full isSenior support (role-gated category list, Medical/Work/
+          Event/Other) built in and just wasn't wired up here — this is the
+          one missing connection, not new logic. Kid Hub already made this
+          exact switch previously (KidView's own onHelpRequest prop is now
+          dead/unused for the same reason). */}
+      <AddEventModal visible={helpModalVisible} onClose={() => setHelpModal(false)} activeMemberId={activeMemberId ?? ''} />
       <FlyerScannerModal visible={flyerVisible} onClose={() => setFlyerVisible(false)} />
       {/* Senior Hub's own En Route flow still uses the picker modal — it has
           no linked-ride concept like Parent Hub's Pick-up Radar does. */}

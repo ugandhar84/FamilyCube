@@ -19,7 +19,7 @@ export function KidLeaderboard({ activeId, kids, colors, isDark }: {
   if (kids.length <= 1) return null;
 
   return (
-    <View style={{ paddingHorizontal: 16, marginBottom: 16 }}>
+    <View style={{ paddingHorizontal: 16, marginBottom: 18 }}>
       <View style={{ borderRadius: 18, backgroundColor: colors.card,
         borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', padding: 14, gap: 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

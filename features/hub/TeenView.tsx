@@ -22,6 +22,7 @@ import { DeclineQuestSheet } from './kid/DeclineQuestSheet';
 import { SubmitProofSheet } from './kid/SubmitProofSheet';
 import { HubTimelineSection } from './HubTimelineSection';
 import { HubGreetingHeader } from './HubGreetingHeader';
+import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
 import { PickupRadarStatus } from './hubComponents';
 import { TeenTile } from './teen/TeenTile';
 import { TeenTileSheet } from './teen/TeenTileSheet';
@@ -42,17 +43,25 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
   activeTrip?: { kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; etaMinutes: number; startedAtMs?: number } | null;
 }) {
   const { events, updateEvent } = useEventStore();
+  const familyIdForRides = (active as any).familyId as string | undefined;
+  // eventStore's `events` is a single-day cache tied to whatever date the
+  // Calendar tab last selected — a pickup/ride pool scoped to it silently
+  // dropped every open ride not dated "today" (QA Round 8). Same fix
+  // SeniorView.tsx already uses for its own dispatch cards, applied here
+  // for the teen's ride pool specifically — openPickups/myPickups below use
+  // this instead of the single-day `events`.
+  const { events: upcomingEvents } = useUpcomingOpenEvents(familyIdForRides);
   // Scenarios 2.6/5.4/5.5 — a sensitive/private/Medical event about a
   // sibling is hidden from this teen entirely (never even a busy block).
   // Own events pass through unaffected.
   const visibleEvents = events.filter(e =>
-    !isEventSensitive(e) || canViewSensitiveEventDetail(e, 'teen', active.id));
+    !isEventSensitive(e) || canViewSensitiveEventDetail(e, 'teen', active.id, active.name));
   const { quests, submitQuest, claimQuest } = useQuestStore();
   const { startGrandparentQuest, declineGrandparentQuest } = useChoreStore();
   const { items: groceryItems, load: loadGrocery } = useGroceryStore();
   const familyId = (active as any).familyId ?? 'family-1';
   useEffect(() => { loadGrocery(familyId); }, [familyId]);
-  const { updateMember, awardCoins } = useFamilyStore();
+  const { updateMember, awardCoins, deductCoins } = useFamilyStore();
   const { sendRequest, requests, cancelRequest, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
   const sendMessage = useChatStore(s => s.sendMessage);
   const today = localToday();
@@ -85,18 +94,39 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
   const rideEarnings = active.rideEarningsPerRun ?? 50;
   const toggleCar = () => updateMember(active.id, { hasCar: !hasCar });
 
-  const openPickups = events.filter(e => e.isOpenToTeens && e.helperStatus !== 'confirmed' && e.date >= today);
-  const myPickups = events.filter(e =>
-    e.helper && (e.helper.includes(active.name) || active.name.includes(e.helper.split(' ')[0])) &&
-    e.helperStatus === 'confirmed' && e.date >= today
+  // A dropped ride previously left helper/helperStatus:'rejected' set,
+  // which openPickups' own `!== 'confirmed'` check re-admitted as
+  // claimable — but claimHelperSlot's conditional write only ever matches
+  // a still-NULL status, so it silently could never actually be reclaimed
+  // by anyone. Excluding 'rejected' here keeps a dropped ride out of the
+  // pool until dropPickup (below) actually clears the stale helper fields.
+  // A parent naming this teen directly as driver (helper=teen's name,
+  // helperStatus='pending') is a DIRECT assignment, not something the teen
+  // claimed from the open pool — previously invisible everywhere: not in
+  // openPickups (not isOpenToTeens), not in myPickups (not yet confirmed),
+  // and HubTimelineSection only surfaces today-dated events, so a future
+  // assignment had literally no UI anywhere telling the teen it existed
+  // (QA Round 8, "no teen surface for you've been asked to drive").
+  const myPendingAssignments = upcomingEvents.filter(e =>
+    e.helper === active.name && e.helperStatus === 'pending' && !e.approvalPending && e.date >= today
+  );
+  const openPickups = upcomingEvents.filter(e => e.isOpenToTeens && e.helperStatus !== 'confirmed' && e.helperStatus !== 'rejected' && e.date >= today);
+  // Exact name match — the previous fuzzy includes()-based match ("Sam"
+  // vs. "Sam Wilson") could show a DIFFERENT member's confirmed ride as
+  // this teen's own the moment two names happened to share a first name.
+  const myPickups = upcomingEvents.filter(e =>
+    e.helper === active.name && e.helperStatus === 'confirmed' && e.date >= today
   );
   const [passedPickups, setPassedPickups] = useState<string[]>([]);
   const urgentPickups = openPickups.filter(e => !passedPickups.includes(e.id) &&
     hoursUntilEvent(e.date, e.time) >= 0 && hoursUntilEvent(e.date, e.time) < 1);
-  const openPickupCount = openPickups.filter(e => !passedPickups.includes(e.id)).length;
+  // A direct assignment awaiting confirmation is at least as urgent as an
+  // open pickup up for grabs — it's already on this teen specifically —
+  // so it counts toward the same "Rides" tile badge.
+  const openPickupCount = openPickups.filter(e => !passedPickups.includes(e.id)).length + myPendingAssignments.length;
 
   const claimPickup = (evId: string) => {
-    const ev = events.find(e => e.id === evId);
+    const ev = upcomingEvents.find(e => e.id === evId);
     const coins = ev?.rideCoins ?? rideEarnings;
     // Race-safe: any teen who has this pool open could tap "I'll take it"
     // on the same isOpenToTeens pickup within the same round-trip window —
@@ -114,8 +144,35 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
   // A claimed run had no way to back out once confirmed — same rejected-state
   // flow the parent-facing sheet uses, so Parent Hub's own urgency banner
   // (<4hr window) picks it up automatically once it's close enough to matter.
+  //
+  // Two bugs fixed here (QA Round 8, finding "coins kept on abandoned ride"):
+  // 1. claimPickup pays coins the moment a claim WINS the race, but dropping
+  //    afterward never reversed that payout — a teen could claim, get paid,
+  //    then immediately drop and keep the coins for a ride they never drove.
+  // 2. Leaving `helper`/`helperStatus:'rejected'` set made the ride a
+  //    phantom claimable: openPickups' old filter re-showed it (status
+  //    isn't 'confirmed'), but claimHelperSlot's conditional write only
+  //    matches a still-NULL status column, so nobody could actually claim
+  //    it again. Clearing helper/helperStatus back to unset makes the pool
+  //    truly reopen instead of dead-ending.
   const dropPickup = (evId: string) => {
-    updateEvent(evId, { helperStatus: 'rejected', declinedBy: active.name });
+    const ev = upcomingEvents.find(e => e.id === evId);
+    const paidCoins = ev?.rideCoins ?? rideEarnings;
+    if (ev?.helper === active.name && paidCoins > 0) deductCoins(active.id, paidCoins, 'mainCoins');
+    updateEvent(evId, {
+      helper: undefined, helperStatus: undefined,
+      isOpenToGrandparents: true, isOpenToTeens: true,
+      declinedBy: active.name,
+    });
+  };
+
+  // Confirming a direct assignment settles it — no coins change hands here
+  // (a pending assignment was never paid; payout for a directly-assigned
+  // ride, unlike a claimed one, isn't tracked anywhere yet — same gap
+  // rideCoins already has on the claim path, left as-is rather than
+  // invented here without a clear source of truth for the amount).
+  const confirmAssignment = (evId: string) => {
+    updateEvent(evId, { helperStatus: 'confirmed' });
   };
 
   // ── Tutoring / sibling help ───────────────────────────────────────────────────
@@ -253,8 +310,8 @@ export function TeenView({ active, members, colors, isDark, activeTrip }: {
         title="Rides" accentColor={BRAND.amber} colors={colors} isDark={isDark}>
         <TeenCarDispatchSection
           hasCar={hasCar} onToggleCar={toggleCar}
-          openPickups={openPickups} myPickups={myPickups} passedPickups={passedPickups}
-          onPass={(id) => setPassedPickups(p => [...p, id])} onClaim={claimPickup} onDrop={dropPickup}
+          openPickups={openPickups} myPickups={myPickups} myPendingAssignments={myPendingAssignments} passedPickups={passedPickups}
+          onPass={(id) => setPassedPickups(p => [...p, id])} onClaim={claimPickup} onDrop={dropPickup} onConfirmAssignment={confirmAssignment}
           rideEarnings={rideEarnings} members={members} colors={colors} isDark={isDark}
         />
       </TeenTileSheet>

@@ -172,7 +172,9 @@ export function TodayView({
         subtitle={now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
         accent={colors.primary}
         badge={upcoming.length} badgeLabel={upcoming.length === 1 ? 'Event' : 'Events'} badgeColor={colors.primary}
-        collapsible defaultExpanded={todayEvents.length > 1}
+        // Was `> 1` — same "a single real item stays hidden by default"
+        // fix applied consistently across every Hub section this pass.
+        collapsible defaultExpanded={todayEvents.length > 0}
         colors={colors} isDark={isDark}>
         <View style={{ gap: 8 }}>
           {/* Read-only — the other parent's work blocks, just enough to

@@ -502,7 +502,9 @@ export function ChoreReviewSection({
         subtitle={badgeCount === 0 ? 'All caught up' : undefined}
         accent={colors.parent}
         badge={badgeCount} badgeLabel="Pending" badgeColor={colors.parent}
-        collapsible defaultExpanded={badgeCount > 1}
+        // Was `> 1` — same "one real item still stays hidden by default"
+        // gap as Household Backlog's own threshold, fixed the same way.
+        collapsible defaultExpanded={badgeCount > 0}
         colors={colors} isDark={isDark}>
           <View style={{ gap: 8 }}>
             {teenRewardPending.length > 0 && (
@@ -614,6 +616,19 @@ export function ChoreReviewSection({
             )}
 
             <ParentReviewDeck parent={active} members={members} colors={colors} isDark={isDark} />
+
+            {/* Matches Household Backlog's own empty state (icon + centered
+                caption) — was just a bare "All caught up" header subtitle
+                with nothing in the body, unlike every other section's
+                empty state in this Hub. */}
+            {badgeCount === 0 && (
+              <View style={{ alignItems: 'center', paddingVertical: 12, gap: 4 }}>
+                <CheckCircle2 size={18} color={colors.textTertiary} />
+                <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center' }}>
+                  No submissions to review
+                </Text>
+              </View>
+            )}
           </View>
       </SectionCard>
     </View>

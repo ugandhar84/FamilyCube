@@ -10,7 +10,7 @@ const REWARDS_PINK = '#EC4899';
 
 export function KidMoreRow({ onPiggyBank, onHistory }: { onPiggyBank: () => void; onHistory: () => void }) {
   return (
-    <View style={{ paddingHorizontal: 16, marginBottom: 16 }}>
+    <View style={{ paddingHorizontal: 16, marginBottom: 18 }}>
       <View style={{ flexDirection: 'row', gap: 10 }}>
         {([
           { Icon: PiggyBank,     label: 'Piggy Bank',    color: BRAND.amber,  bg: BRAND.amber + '15',  onPress: onPiggyBank },

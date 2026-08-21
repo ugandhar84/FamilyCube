@@ -7,7 +7,7 @@ export function KidActionRow({ colors, isDark, onAskParent, onNeedRide }: {
   colors: any; isDark: boolean; onAskParent: () => void; onNeedRide: () => void;
 }) {
   return (
-    <View style={{ paddingHorizontal: 16, flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+    <View style={{ paddingHorizontal: 16, flexDirection: 'row', gap: 10, marginBottom: 18 }}>
       <Pressable onPress={onAskParent}
         style={{ flex: 1, borderRadius: 18, paddingVertical: 18, alignItems: 'center', gap: 7,
           backgroundColor: BRAND.purple, shadowColor: BRAND.purple, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 6 }}>

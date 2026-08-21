@@ -133,8 +133,8 @@
     <p class="subhead">Real writes against an isolated test family, across every chore/quest type, every event/schedule type, and realistic multi-step transitions — plus a production chat outage caused and resolved mid-session.</p>
     <div class="meta-row">
       <span class="meta-chip">Test family <b>aaaaaaaa-...-001</b> — isolated, cleaned up after each round</span>
-      <span class="meta-chip"><b>4</b> QA rounds</span>
-      <span class="meta-chip"><b>14</b> bugs found, all fixed</span>
+      <span class="meta-chip"><b>5</b> QA rounds</span>
+      <span class="meta-chip"><b>20</b> bugs found, all fixed</span>
       <span class="meta-chip">1 new feature shipped</span>
     </div>
   </div>
@@ -150,6 +150,7 @@
     <a href="#round3">Round 3</a>
     <a href="#feature">Bounty Feature</a>
     <a href="#round4">Round 4</a>
+    <a href="#round5">Round 5</a>
     <a href="#verdict">Verdict</a>
   </div>
 </nav>
@@ -162,8 +163,8 @@
     <p class="sec-desc">Each round used real database writes against an isolated, synthetic test family (one member per role, including maternal and paternal grandparents for side-isolation testing) — not static code reading. Every fix was re-verified in a later round.</p>
     <div class="stats">
       <div class="stat crit"><div class="n">1</div><div class="l">Critical exploit closed</div></div>
-      <div class="stat bug"><div class="n">4</div><div class="l">Security/race bugs fixed</div></div>
-      <div class="stat warn"><div class="n">9</div><div class="l">Correctness bugs fixed</div></div>
+      <div class="stat bug"><div class="n">6</div><div class="l">Security/visibility bugs fixed</div></div>
+      <div class="stat warn"><div class="n">13</div><div class="l">Correctness bugs fixed</div></div>
       <div class="stat info"><div class="n">1</div><div class="l">Feature shipped (multi-slot bounty)</div></div>
       <div class="stat ok"><div class="n">0</div><div class="l">Open issues at sign-off</div></div>
     </div>
@@ -208,6 +209,11 @@
         <div class="tl-dot round"></div>
         <div class="tl-head"><h3>Round 4 — Final verification</h3><span class="tl-badge round">Regression · New feature</span></div>
         <p>Re-confirms every round-3 fix, then puts the new bounty feature through adversarial testing: slot-fullness, duplicate-claim rejection, independent per-claimant payout, decline paths. One minor audit-trail gap found and fixed.</p>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot incident"></div>
+        <div class="tl-head"><h3>Round 5 — Delegation visibility, from a real report</h3><span class="tl-badge incident">User-reported</span></div>
+        <p>A real user report — not a proactive test — surfaces a re-delegated chore vanishing from both parents' screens. Traced to two independent gaps between two parallel ownership systems; QA agent verifies the fix and independently surfaces a second, related disappearance at the acceptance step. Both fixed, extended to grandparents per follow-up decision, then a manual pass across every card in the flow finds a Nudge action missing, an empty-state bug, five Hub sections defaulting to collapsed with real content inside, and one now-unreachable card removed as dead code.</p>
       </div>
     </div>
   </section>
@@ -390,11 +396,68 @@
     <p class="sec-desc" style="margin-top: 16px;">Every other test passed: 2-slot bounty fills correctly and rejects a 3rd claim, a freed slot can be immediately reclaimed, a duplicate claim by the same kid is rejected, and one claimant's submit/approve/payout is fully independent of another's — confirmed by an actual coin-balance change traced through the real payout path.</p>
   </section>
 
+  <section id="round5">
+    <div class="sec-label">Round 5</div>
+    <h2>Delegation-Visibility Incident: A Real User Report</h2>
+    <p class="sec-desc">Triggered by a live user report ("re-delegated a chore, it completely disappeared from both parents' screens") rather than a proactive audit — traced to two independent gaps in how two parallel ownership systems handed a chore off between each other, both fixed, both re-verified against live data, then extended per follow-up product decisions.</p>
+
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>Re-delegating an already-assigned chore created a new pending assignment but never cleared the chore's own stale assignee field — the two ownership systems (a live delegation record vs. the chore's own assignee field) disagreed about who owned it, and every visibility check excluded it from both, so it rendered nowhere for either parent.</td>
+            <td><code class="inline">addParentQuest</code></td>
+            <td><span class="status-fixed">✓ Fixed — stale field cleared on every re-delegation</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev high">High</span></td>
+            <td>A second, distinct disappearance: the moment a delegation was <em>accepted</em> (not just re-delegated), the same two-system disagreement recurred from the opposite direction — the assignment-tracking system still considered it "in progress" at the exact moment the chore's own assignee field also became the authoritative source, so both systems deferred to each other and nothing rendered. Same symptom, different trigger, found by the QA agent while verifying the first fix.</td>
+            <td><code class="inline">getActiveAssignmentChoreIds</code></td>
+            <td><span class="status-fixed">✓ Fixed — only genuinely undecided states now count as "still negotiating"</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev low">Low</span></td>
+            <td>The "waiting on response" card an assigning parent sees had a Recall button but no way to actually remind the other party — every comparable "someone else is holding this up" card elsewhere in the app already had one.</td>
+            <td><code class="inline">OutgoingPendingCard</code></td>
+            <td><span class="status-fixed">✓ Fixed — Nudge added, both render call sites</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev low">Low</span></td>
+            <td>The Household Backlog's "🎉 Backlog is clear" empty-state celebration could render directly underneath a real, active card — its completeness check omitted two of the lists the section actually displays.</td>
+            <td><code class="inline">HouseholdBacklogSection</code></td>
+            <td><span class="status-fixed">✓ Fixed</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev low">Low</span></td>
+            <td>Multiple Hub sections defaulted to collapsed unless they had <em>more than one</em> pending item — a section with exactly one real, actionable card stayed hidden behind a tap. Swept across every section using the same pattern, not just the one first reported.</td>
+            <td>5 Hub sections</td>
+            <td><span class="status-fixed">✓ Fixed — now expands on any real content</span></td>
+          </tr>
+          <tr>
+            <td><span class="sev low">Low</span></td>
+            <td>Dead code found while auditing action buttons across every card in this flow: a card and its backing query could no longer ever match anything, once the fix above made the chore's own assignee field the sole source of truth immediately upon acceptance — the query's "accepted but not yet handed off" condition became permanently unreachable.</td>
+            <td><code class="inline">AcceptedQuestCard</code>, <code class="inline">getMyAccepted</code></td>
+            <td><span class="status-fixed">✓ Removed — the correct card already covers this state</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="feature-card" style="margin-top: 20px;">
+      <h3>Scope widened per product decision</h3>
+      <p>Two follow-up decisions extended this flow beyond the original parent-to-parent bug: any chore category can now be delegated this way (previously limited to two specific categories), and grandparents can now send and receive these delegations too, not just parents — with a matching visibility carve-out so a grandparent sees their own delegated item without gaining blanket visibility into every other parent-only task in the family.</p>
+    </div>
+
+    <p class="sec-desc" style="margin-top: 20px;"><b>QA verification: 8 of 8 tests passed.</b> The exact reported bug (re-delegation → clear stale field → accept → correct single-owner visibility) was traced through every consuming list with zero duplication and zero disappearance. Recall, reassignment notifications, and stale-submission-data cleanup were all independently re-confirmed working end-to-end against real writes, not just present in source.</p>
+  </section>
+
   <section id="verdict">
     <div class="sec-label">Sign-off</div>
     <h2>Overall Verdict</h2>
     <div class="verdict">
-      <p>All 14 confirmed bugs across 4 rounds are fixed and re-verified in a later round — including the critical self-approval exploit, the critical reward-threshold bypass, and the live chat outage this QA effort itself introduced and then resolved within the same session. The core concurrency-safety pattern (row-locked atomic claims) has now been applied consistently across pool quests, GP offers, helper/driver slots, and the new multi-slot bounty feature, and has held up correctly under repeated adversarial re-testing in every round. The one remaining caveat is the bounty claim function's true concurrent-load behavior — sound by code inspection (a standard row-lock pattern already proven correct elsewhere in this codebase) but not empirically stress-tested under real simultaneous traffic, which would be the natural next step before treating it as fully proven.</p>
+      <p>All 20 confirmed bugs across 5 rounds are fixed and re-verified in a later round — including the critical self-approval exploit, the critical reward-threshold bypass, the live chat outage this QA effort itself introduced and then resolved within the same session, and the delegation-visibility bug a real user actually hit in production. The core concurrency-safety pattern (row-locked atomic claims) has now been applied consistently across pool quests, GP offers, helper/driver slots, and the new multi-slot bounty feature, and has held up correctly under repeated adversarial re-testing in every round. Round 5 also validated something worth naming directly: proactive QA found and fixed real bugs before they were noticed, but the delegation-visibility issue only surfaced once someone actually used the feature — a reminder that live user reports remain a genuine, distinct source of findings alongside structured testing, not a substitute for it. The one remaining caveat is the bounty claim function's true concurrent-load behavior — sound by code inspection (a standard row-lock pattern already proven correct elsewhere in this codebase) but not empirically stress-tested under real simultaneous traffic, which would be the natural next step before treating it as fully proven.</p>
     </div>
   </section>
 

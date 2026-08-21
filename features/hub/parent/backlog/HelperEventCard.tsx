@@ -17,9 +17,12 @@ const PENDING_AMBER = '#D97706';
 
 // A calendar event where this parent is the driver/helper and hasn't
 // confirmed yet — take it over from a co-parent, or confirm your own slot.
-export function HelperEventCard({ ev, members, active, colors, isDark, updateEvent }: {
+export function HelperEventCard({ ev, members, active, colors, isDark, updateEvent, updateEventScoped }: {
   ev: FamilyEvent; members: FamilyMember[]; active: FamilyMember; colors: any; isDark: boolean;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
+  // Optional so any call site that hasn't been updated still compiles —
+  // when omitted, both actions below just fall back to a single-row update.
+  updateEventScoped?: (id: string, patch: Partial<FamilyEvent>, scope: 'this' | 'following' | 'all') => void;
 }) {
   const CatIcon = ev.category === 'Sports' ? Medal : ev.category === 'Medical' ? HeartPulse : ev.category === 'Study' ? BookOpen : ev.category === 'Ride' ? Car : Calendar;
   const kidName = members.find(m => m.id === ev.memberId)?.name.split(' ')[0] ?? '';
@@ -72,6 +75,10 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                   [
                     { text: 'Cancel', style: 'cancel' },
                     { text: "Yes, I'll do it", onPress: () => {
+                      // A one-off take-over ("I'll cover THIS one") stays
+                      // scoped to this occurrence only — it must not
+                      // silently take over every future occurrence of a
+                      // recurring series away from its regular driver.
                       updateEvent(ev.id, { helper: active.name, helperStatus: 'confirmed' });
                       const msg = `✅ ${active.name.split(' ')[0]} has taken over "${ev.title}" — you're off the hook.`;
                       useChatStore.getState().sendMessage('all', active.id, msg);
@@ -87,7 +94,16 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
           )}
           {ev.helper === active.name && (
             <Pressable
-              onPress={() => updateEvent(ev.id, { helperStatus: 'confirmed' })}
+              onPress={() => {
+                // Confirming yourself as the already-named driver IS the
+                // "yes, I'm your driver going forward" moment — propagate
+                // to future occurrences, same as RideRequestCard's own
+                // "I'll Drive". Distinct from "Take Over" above, which is a
+                // one-time favor for just this occurrence.
+                const patch = { helperStatus: 'confirmed' as const };
+                if (ev.seriesId && updateEventScoped) updateEventScoped(ev.id, patch, 'following');
+                else updateEvent(ev.id, patch);
+              }}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: `${CONFIRMED_GREEN}20`, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12,
                 borderWidth: 1, borderColor: `${CONFIRMED_GREEN}40` }}>
               <CheckCircle2 size={12} color={CONFIRMED_GREEN} />

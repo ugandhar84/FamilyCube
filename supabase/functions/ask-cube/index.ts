@@ -241,17 +241,25 @@ const TOOLS = [
   {
     type: 'function',
     function: {
-      name: 'propose_event_reminder',
-      description: 'Propose adding or changing a call-style reminder on an EXISTING calendar event the user refers to by description (e.g. "remind me 30 min before Alex\'s soccer practice"). Looks the event up by name/member/rough date so it is NOT duplicated as a new event — use this instead of propose_event whenever the user is clearly talking about something already on the calendar rather than asking to schedule something new. Does NOT change anything — returns a proposal the user must confirm.',
+      name: 'propose_update',
+      description: 'Propose a change to an ALREADY-EXISTING event or chore the user refers to by description (e.g. "add a note to the soccer practice", "change the dishwasher chore\'s coins to 30", "move Alex\'s dentist reminder to 30 min before", "the trash chore — make it due Thursday instead"). Looks the record up by title/member/rough date so it is NOT duplicated as a new item — use this instead of propose_event/propose_quest whenever the user is clearly talking about something already created rather than asking to add something new. This also covers reminder-only changes (was a separate tool before — no longer). Does NOT change anything itself — returns a proposal the user must confirm. Only include the fields the user actually asked to change; never invent changes to fields they did not mention.',
       parameters: {
         type: 'object',
         properties: {
-          eventSearch: { type: 'string', description: 'Words to match the existing event\'s title, e.g. "soccer practice"' },
-          memberName:  { type: 'string', description: 'Whose event this is, if named — narrows the search when multiple events could match' },
-          nearDate:    { type: 'string', description: 'YYYY-MM-DD if a rough date/day was implied ("this week", "Tuesday") — omit if not implied, search proceeds from today forward either way' },
-          leadMinutes: { type: 'number', description: 'How many minutes before the event start the reminder should ring (0 = at the exact time). If the user asked for a reminder but didn\'t say how far ahead, use 15.' },
+          targetType:   { type: 'string', enum: ['event', 'chore'], description: 'Which table to search — infer from context (e.g. "soccer practice"/"appointment" is an event, "dishwasher chore"/"trash duty" is a chore). Ask the user only if genuinely ambiguous.' },
+          targetSearch: { type: 'string', description: 'Words to match the existing record\'s title, e.g. "soccer practice" or "dishwasher"' },
+          memberName:   { type: 'string', description: 'Whose event/chore this is, if named — narrows the search when multiple records could match' },
+          nearDate:     { type: 'string', description: 'YYYY-MM-DD if a rough date/day was implied ("this week", "Tuesday") — omit if not implied, search proceeds from today forward either way' },
+          title:        { type: 'string', description: 'New title, only if the user asked to rename it' },
+          date:         { type: 'string', description: 'Event only — new date, YYYY-MM-DD, only if the user asked to reschedule it' },
+          time:         { type: 'string', description: 'Event only — new start time, HH:MM 24-hour, only if the user asked to change the time' },
+          dueDate:      { type: 'string', description: 'Chore only — new due date, YYYY-MM-DD, only if the user asked to change when it\'s due' },
+          dueTime:      { type: 'string', description: 'Chore only — new due time, HH:MM 24-hour, only if the user asked to change it' },
+          notes:        { type: 'string', description: 'New notes/description text, only if the user asked to add or change a note — for a chore this is its description field' },
+          coins:        { type: 'number', description: 'Chore only — new coin reward, only if the user asked to change it' },
+          leadMinutes:  { type: 'number', description: 'New call-reminder lead time in minutes before start/due time (0 = at the exact time), only if the user asked to set/change a reminder. If they asked for a reminder but did not say how far ahead, use 15.' },
         },
-        required: ['eventSearch', 'leadMinutes'],
+        required: ['targetType', 'targetSearch'],
       },
     },
   },
@@ -433,7 +441,11 @@ async function executeTool(
     if (error) return { error: error.message };
     const scoped = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);
     return { events: scoped.map((e: any) => ({
-      title: e.title, category: e.category, date: e.date, time: e.start_time,
+      // A parent-written title/notes can freely contain a real name
+      // ("Take Sarah to Dr. Patel") — realNameToAlias scrubs it the same
+      // way memberName/helper/driver already were, closing a gap where
+      // free-text fields bypassed the aliasing scheme entirely.
+      title: realNameToAlias(aliasMap, members, e.title), category: e.category, date: e.date, time: e.start_time,
       helper: e.helper_name ? realNameToAlias(aliasMap, members, e.helper_name) : null,
       helperStatus: e.helper_status,
       driver: e.driver_name ? realNameToAlias(aliasMap, members, e.driver_name) : null,
@@ -461,7 +473,7 @@ async function executeTool(
     // answer without a name). Resolve it to the same alias the rest of the
     // conversation uses instead of leaking the id or a real name.
     return { quests: rows.map((r: any) => ({
-      title: r.title, status: r.status, coins: r.coins_reward, dueDate: r.due_date,
+      title: realNameToAlias(aliasMap, members, r.title), status: r.status, coins: r.coins_reward, dueDate: r.due_date,
       assignedTo: r.assigned_to_id ? (aliasMap.toAlias.get(r.assigned_to_id) ?? 'Unknown') : null,
     })) };
   }
@@ -481,7 +493,7 @@ async function executeTool(
       rows = rows.filter((r: any) => !r.assigned_to_id || r.assigned_to_id === viewerId);
     }
     return { completed: rows.map((r: any) => ({
-      title: r.title, status: r.status, coins: r.coins_reward, completedAt: r.completed_at,
+      title: realNameToAlias(aliasMap, members, r.title), status: r.status, coins: r.coins_reward, completedAt: r.completed_at,
       assignedTo: r.assigned_to_id ? (aliasMap.toAlias.get(r.assigned_to_id) ?? 'Unknown') : null,
     })) };
   }
@@ -533,13 +545,62 @@ async function executeTool(
     };
   }
 
-  if (name === 'propose_event_reminder') {
+  if (name === 'propose_update') {
     let memberId: string | null = null;
     if (args.memberName) memberId = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
+    const search = args.targetSearch ?? '';
+
+    if (args.targetType === 'chore') {
+      let query = supabase.from('chore_tasks')
+        .select('id, title, status, coins_reward, due_date, due_time, assigned_to_id, description, alert_call, alert_call_lead_minutes')
+        .eq('family_id', familyId)
+        .ilike('title', `%${search}%`);
+      if (memberId) query = query.eq('assigned_to_id', memberId);
+      const { data, error } = await query.limit(5);
+      if (error) return { error: error.message };
+      let candidates = data ?? [];
+      if (viewerRole !== 'parent' && viewerRole !== 'senior') {
+        candidates = candidates.filter((r: any) => !r.assigned_to_id || r.assigned_to_id === viewerId);
+      }
+      if (!candidates.length) {
+        return { error: `Couldn't find a chore matching "${search}"${args.memberName ? ` for ${args.memberName}` : ''}. Tell the user plainly that nothing matched — don't guess or update something unrelated.` };
+      }
+      if (candidates.length > 1) {
+        return {
+          error: 'Multiple matching chores found — ask the user which one they mean before proposing an update. Do not guess.',
+          candidates: candidates.map((c: any) => ({ title: realNameToAlias(aliasMap, members, c.title), dueDate: c.due_date, assignedTo: c.assigned_to_id ? (aliasMap.toAlias.get(c.assigned_to_id) ?? 'Unknown') : null })),
+        };
+      }
+      const chore = candidates[0];
+      // Only ever include a field the model actually supplied a value for —
+      // an omitted field means "not asked to change," never "clear it."
+      const changes: Record<string, any> = {};
+      if (typeof args.title === 'string') changes.title = args.title;
+      if (typeof args.dueDate === 'string') changes.dueDate = args.dueDate;
+      if (typeof args.dueTime === 'string' && /^\d{2}:\d{2}$/.test(args.dueTime)) changes.dueTime = args.dueTime;
+      if (typeof args.notes === 'string') changes.description = args.notes;
+      // ChoreTask's real field is coinsReward (store/choreStore.ts), not
+      // "coins" — updateChore's DB patch builder keys off `'coinsReward' in
+      // updates` via plain `in` checks, so a mismatched key here would
+      // silently no-op the write with no error at all.
+      if (typeof args.coins === 'number') changes.coinsReward = args.coins;
+      if (typeof args.leadMinutes === 'number') { changes.alertCall = true; changes.alertCallLeadMinutes = args.leadMinutes; }
+      if (!Object.keys(changes).length) {
+        return { error: 'No actual field changes were specified — ask the user what they want changed about this chore.' };
+      }
+      return {
+        __proposal: 'update_chore',
+        choreId: chore.id, title: realNameToAlias(aliasMap, members, chore.title), status: chore.status,
+        currentDueDate: chore.due_date, currentDueTime: chore.due_time, currentCoins: chore.coins_reward,
+        changes,
+      };
+    }
+
+    // targetType === 'event' (default)
     let query = supabase.from('calendar_events')
-      .select('id, title, category, date, start_time, member_id, member_ids, helper_name, driver_name, alert_call, alert_call_lead_minutes')
+      .select('id, title, category, date, start_time, member_id, member_ids, helper_name, driver_name, alert_call, alert_call_lead_minutes, notes')
       .eq('family_id', familyId).is('deleted_at', null)
-      .ilike('title', `%${args.eventSearch ?? ''}%`);
+      .ilike('title', `%${search}%`);
     if (args.nearDate) query = query.gte('date', args.nearDate);
     else query = query.gte('date', new Date().toISOString().slice(0, 10)); // don't match past events by default
     if (memberId) query = query.or(`member_id.eq.${memberId},member_ids.cs.{${memberId}}`);
@@ -547,20 +608,28 @@ async function executeTool(
     if (error) return { error: error.message };
     let candidates = scopeEventsToViewer(data ?? [], viewerRole, viewerId, viewerName);
     if (!candidates.length) {
-      return { error: `Couldn't find an upcoming event matching "${args.eventSearch}"${args.memberName ? ` for ${args.memberName}` : ''}. Ask the user for more detail or offer to create a new event instead.` };
+      return { error: `Couldn't find an upcoming event matching "${search}"${args.memberName ? ` for ${args.memberName}` : ''}. Tell the user plainly that nothing matched — don't guess or update something unrelated. Offer to create a new event instead if that seems to be what they actually want.` };
     }
     if (candidates.length > 1) {
       return {
-        error: 'Multiple matching events found — ask the user which one they mean before proposing a reminder.',
-        candidates: candidates.map((e: any) => ({ title: e.title, date: e.date, time: e.start_time })),
+        error: 'Multiple matching events found — ask the user which one they mean before proposing an update. Do not guess.',
+        candidates: candidates.map((e: any) => ({ title: realNameToAlias(aliasMap, members, e.title), date: e.date, time: e.start_time })),
       };
     }
     const ev = candidates[0];
-    const leadMinutes = typeof args.leadMinutes === 'number' ? args.leadMinutes : 15;
+    const changes: Record<string, any> = {};
+    if (typeof args.title === 'string') changes.title = args.title;
+    if (typeof args.date === 'string') changes.date = args.date;
+    if (typeof args.time === 'string') changes.time = args.time;
+    if (typeof args.notes === 'string') changes.notes = args.notes;
+    if (typeof args.leadMinutes === 'number') { changes.alertCall = true; changes.alertCallLeadMinutes = args.leadMinutes; }
+    if (!Object.keys(changes).length) {
+      return { error: 'No actual field changes were specified — ask the user what they want changed about this event.' };
+    }
     return {
-      __proposal: 'event_reminder',
-      eventId: ev.id, title: ev.title, date: ev.date, time: ev.start_time,
-      alertCall: true, alertCallLeadMinutes: leadMinutes,
+      __proposal: 'update_event',
+      eventId: ev.id, title: realNameToAlias(aliasMap, members, ev.title), date: ev.date, time: ev.start_time,
+      changes,
     };
   }
 
@@ -772,13 +841,20 @@ a Q&A. Only ask a clarifying question first if the request is genuinely ambiguou
   the calendar yet, set alertCallLeadMinutes to that many minutes on propose_event/propose_quest. If they ask for a
   reminder but don't say how far ahead, use 15 minutes as a reasonable default. If they say NOTHING about a reminder,
   leave alertCallLeadMinutes out entirely — do not add one unasked, same as every other field above.
-- If the user asks for a reminder on something that sounds like it's ALREADY on the calendar ("remind me 30 min
-  before X's soccer practice", "call me before the dentist appointment") — this is a reminder on an EXISTING event,
-  NOT a new one. Call propose_event_reminder (never propose_event) so it's matched to the real event instead of
-  silently creating a duplicate. Only fall back to propose_event if propose_event_reminder reports no match and the
-  user then confirms they want a brand-new entry.
-When the user asks to add/schedule something, use propose_event, propose_quest, propose_grocery_items, propose_meal,
-or propose_event_reminder as appropriate — these only PROPOSE, they do not create or change anything.
+- If the user's request is about something that sounds like it ALREADY EXISTS — a reminder on it ("remind me 30 min
+  before X's soccer practice"), a note/detail added to it ("add a note to the soccer practice — bring cleats"), or a
+  change to one of its fields ("change the dishwasher chore's coins to 30", "move the trash chore to Thursday
+  instead") — this is an UPDATE to an existing event/chore, NOT a new one. Call propose_update (never propose_event
+  or propose_quest) so it's matched to the real record instead of silently creating a duplicate. Set targetType to
+  'event' or 'chore' based on what kind of thing is being described (infer it — a practice/appointment/ride is an
+  event, a chore/quest-sounding task is a chore; ask the user only if genuinely ambiguous). Only include the specific
+  field(s) the user actually asked to change in the call — never fill in other fields "while you're at it." If
+  propose_update reports no match at all, tell the user plainly that you couldn't find it — don't guess or silently
+  update something else, and don't create a new item unless they then confirm that's actually what they want. If it
+  reports multiple matches, ask the user which one they mean before calling propose_update again.
+When the user asks to add/schedule something NEW, use propose_event, propose_quest, propose_grocery_items, or
+propose_meal as appropriate. When they're referring to something that already exists, use propose_update. These only
+PROPOSE, they do not create or change anything themselves.
 If a propose_event/propose_quest tool result includes "_unresolvedName", the person you tried to assign it to
 couldn't be matched to anyone in this family (misspelled, or not a real member) — the draft below was created
 UNASSIGNED/open-pool instead. Say so plainly in your one-sentence reply (e.g. "I couldn't find someone named X, so
@@ -810,7 +886,7 @@ Keep answers concise and conversational, not a bulleted data dump unless the use
     // Collected across the WHOLE loop, not just the final round — a single
     // turn can call propose_meal several times (a few dish options for the
     // user to pick from), and each one needs its own card client-side.
-    let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal' | 'event_reminder'; data: any }[] = [];
+    let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore'; data: any }[] = [];
     let finalText = '';
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {

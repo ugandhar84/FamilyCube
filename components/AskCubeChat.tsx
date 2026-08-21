@@ -19,6 +19,7 @@ import AppBottomSheet from '@/components/AppBottomSheet';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
+import { useChoreStore } from '@/store/choreStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
@@ -74,6 +75,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
   const addEvent = useEventStore(s => s.addEvent);
   const updateEvent = useEventStore(s => s.updateEvent);
   const { addQuest } = useQuestStore();
+  const updateChore = useChoreStore(s => s.updateChore);
   const addGroceryItem = useGroceryStore(s => s.addItem);
   const sendChatMessage = useChatStore(s => s.sendMessage);
 
@@ -293,9 +295,19 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
   const updateProposalReminder = (msgId: string, index: number, leadMinutes: number) => {
     setMessages(prev => prev.map(m => {
       if (m.id !== msgId || !m.proposals) return m;
-      const nextProposals = m.proposals.map((p, i) =>
-        i === index ? { ...p, data: { ...p.data, alertCall: true, alertCallLeadMinutes: leadMinutes } } : p
-      );
+      const nextProposals = m.proposals.map((p, i) => {
+        if (i !== index) return p;
+        // update_event/update_chore proposals carry their field changes
+        // nested under `changes` (matching the exact partial patch that
+        // will be sent to updateEvent/updateChore on confirm) rather than
+        // top-level — editing the picker here has to write into that same
+        // nested shape so createProposal's `updateEvent(id, d.changes)` /
+        // `updateChore(id, d.changes)` actually picks up the edit.
+        if (p.kind === 'update_event' || p.kind === 'update_chore') {
+          return { ...p, data: { ...p.data, changes: { ...p.data.changes, alertCall: true, alertCallLeadMinutes: leadMinutes } } };
+        }
+        return { ...p, data: { ...p.data, alertCall: true, alertCallLeadMinutes: leadMinutes } };
+      });
       return { ...m, proposals: nextProposals };
     }));
   };
@@ -336,12 +348,21 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
           category: it.category ?? 'Other', addedBy: activeMember.id, aiGenerated: true,
         });
       }
-    } else if (proposal.kind === 'event_reminder') {
+    } else if (proposal.kind === 'update_event') {
       // Targeted patch onto the EXISTING event the edge function already
-      // resolved server-side (propose_event_reminder) — never a new row,
-      // same "only the fields the caller intended" discipline updateEvent's
-      // own partial-patch path documents.
-      updateEvent(d.eventId, { alertCall: true, alertCallLeadMinutes: d.alertCallLeadMinutes ?? 15 });
+      // resolved server-side (propose_update) — never a new row, and only
+      // the fields actually proposed as changed (d.changes), same "only the
+      // fields the caller intended" discipline updateEvent's own
+      // partial-patch path (toRowPartial) documents. Never spread the whole
+      // proposal — that would risk overwriting fields the user never asked
+      // to touch with the found record's OTHER unrelated current values.
+      updateEvent(d.eventId, d.changes ?? {});
+    } else if (proposal.kind === 'update_chore') {
+      // Same discipline for chores — updateChore's own DB patch builder
+      // (store/choreStore.ts) already only writes columns present in the
+      // updates object via `in` checks, so passing exactly d.changes here
+      // (nothing more) keeps every untouched field on the real row intact.
+      updateChore(d.choreId, d.changes ?? {});
     }
     markProposalCreated(msgId, index);
   };
@@ -451,7 +472,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                                   onCreate={() => createProposal(m.id, i, p)}
                                   onExpand={p.kind === 'meal' ? () => setExpandedRecipe({ msgId: m.id, index: i }) : undefined}
                                   onChangeReminder={
-                                    ['event', 'quest', 'event_reminder'].includes(p.kind)
+                                    ['event', 'quest', 'update_event', 'update_chore'].includes(p.kind)
                                       ? (leadMinutes: number) => updateProposalReminder(m.id, i, leadMinutes)
                                       : undefined
                                   }

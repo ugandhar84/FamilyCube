@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 
 export interface AskCubeProposal {
-  kind: 'event' | 'quest' | 'grocery' | 'meal' | 'event_reminder';
+  kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore';
   data: Record<string, any>;
 }
 

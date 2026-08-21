@@ -32,12 +32,34 @@ export function MealHero({ imageUrl, emoji, accent, height }: { imageUrl?: strin
 }
 
 const KIND_META: Record<AskCubeProposal['kind'], { label: string; icon: any; accent: string }> = {
-  event:          { label: 'Event draft',    icon: Calendar,      accent: 'primary' },
-  quest:          { label: 'Quest draft',    icon: ClipboardList, accent: 'kid' },
-  grocery:        { label: 'Grocery draft',  icon: ShoppingCart,  accent: 'teal' },
-  meal:           { label: 'Meal draft',     icon: ChefHat,       accent: 'amber' },
-  event_reminder: { label: 'Reminder draft', icon: Clock,         accent: 'primary' },
+  event:        { label: 'Event draft',   icon: Calendar,      accent: 'primary' },
+  quest:        { label: 'Quest draft',   icon: ClipboardList, accent: 'kid' },
+  grocery:      { label: 'Grocery draft', icon: ShoppingCart,  accent: 'teal' },
+  meal:         { label: 'Meal draft',    icon: ChefHat,       accent: 'amber' },
+  update_event: { label: 'Update draft',  icon: Clock,         accent: 'primary' },
+  update_chore: { label: 'Update draft',  icon: Clock,         accent: 'kid' },
 };
+
+// Human-readable label per changeable field, shared by both update_event and
+// update_chore cards — keeps "what's actually changing" legible regardless
+// of which fields happen to be present, instead of a raw key/value dump.
+const CHANGE_FIELD_LABEL: Record<string, string> = {
+  title: 'Title',
+  date: 'Date',
+  time: 'Time',
+  dueDate: 'Due date',
+  dueTime: 'Due time',
+  notes: 'Note',
+  description: 'Note',
+  coinsReward: 'Coins',
+  alertCallLeadMinutes: 'Reminder',
+};
+
+function formatChangeValue(field: string, value: any): string {
+  if (field === 'alertCallLeadMinutes') return value === 0 ? 'On time' : `${value} min before`;
+  if (field === 'coinsReward') return `${value} coins`;
+  return String(value);
+}
 
 function memberName(members: FamilyMember[], id?: string | null) {
   return id ? members.find(m => m.id === id)?.name : undefined;
@@ -169,7 +191,7 @@ export default function AskCubeProposalCard({
         style={{ flex: 2, borderRadius: 10, paddingVertical: 9, alignItems: 'center', backgroundColor: accent }}>
         <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>
           {proposal.kind === 'grocery' ? `Add ${d.items?.length ?? ''} item${d.items?.length === 1 ? '' : 's'}`
-            : proposal.kind === 'event_reminder' ? 'Set reminder' : 'Create'}
+            : (proposal.kind === 'update_event' || proposal.kind === 'update_chore') ? 'Confirm update' : 'Create'}
         </Text>
       </Pressable>
     </View>
@@ -291,19 +313,41 @@ export default function AskCubeProposalCard({
     );
   }
 
-  if (proposal.kind === 'event_reminder') {
+  if (proposal.kind === 'update_event' || proposal.kind === 'update_chore') {
+    const changes: Record<string, any> = d.changes ?? {};
+    const changeEntries = Object.entries(changes).filter(([k]) => k !== 'alertCall' && k !== 'alertCallLeadMinutes');
+    const isChore = proposal.kind === 'update_chore';
     return (
       <View style={cardBase}>
         {Header}
         <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{d.title}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          {!!d.date && (
-            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-              {new Date(`${d.date}T${d.time ?? '00:00'}`).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-            </Text>
-          )}
-        </View>
-        <ReminderPicker leadMinutes={d.alertCallLeadMinutes} hasReminder accent={accent} colors={colors} onChange={onChangeReminder} />
+        {!isChore && !!d.date && (
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: -4 }}>
+            Currently {new Date(`${d.date}T${d.time ?? '00:00'}`).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+          </Text>
+        )}
+        {isChore && !!d.currentDueDate && (
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: -4 }}>
+            Currently due {d.currentDueDate}{d.currentDueTime ? ` · ${d.currentDueTime}` : ''}
+          </Text>
+        )}
+        {!!changeEntries.length && (
+          <View style={{ gap: 6 }}>
+            {changeEntries.map(([field, value]) => (
+              <View key={field} style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
+                backgroundColor: colors.surface, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: accent }} />
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>
+                  {CHANGE_FIELD_LABEL[field] ?? field}:
+                </Text>
+                <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '600', color: colors.textPrimary }} numberOfLines={2}>
+                  {formatChangeValue(field, value)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+        <ReminderPicker leadMinutes={changes.alertCallLeadMinutes} hasReminder={!!changes.alertCall} accent={accent} colors={colors} onChange={onChangeReminder} />
         {Actions}
       </View>
     );

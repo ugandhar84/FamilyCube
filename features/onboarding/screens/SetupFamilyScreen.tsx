@@ -2,7 +2,7 @@
  * SetupFamilyScreen — Parent creates the family, sets their own profile + PIN,
  * then gets the invite code to share with family members.
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, ActivityIndicator, Alert, Dimensions, KeyboardAvoidingView, Platform, Share,
@@ -137,6 +137,48 @@ export default function SetupFamilyScreen() {
   const [inviteCode, setInviteCode] = useState('');
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState('');
+  // Reaching this screen at all is only supposed to mean "this auth
+  // account has never set up a family" — but a redirect glitch (a stale
+  // profiles.onboarding_completed read, or any future routing bug) could
+  // land an account HERE that already owns a real family. Without this
+  // check, tapping through would silently insert a second `families` row
+  // and a second `members` row under the same auth_user_id — the real
+  // family becomes an orphaned duplicate the person can no longer reach.
+  // Checked once on mount before any input is even shown; while it's
+  // running the create-family form stays hidden behind a spinner so
+  // there's no window to tap "Create" before the check resolves.
+  const [checkingExisting, setCheckingExisting] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setCheckingExisting(false); return; }
+        const { data: existing, error: checkErr } = await supabase
+          .from('members')
+          .select('id')
+          .eq('auth_user_id', user.id)
+          .limit(1)
+          .maybeSingle();
+        if (checkErr) {
+          console.warn('[SetupFamilyScreen] existing-family check failed', checkErr.message);
+          setCheckingExisting(false);
+          return;
+        }
+        if (existing) {
+          // Already has a family under this auth account — load the real
+          // one instead of ever showing the create-family form, and skip
+          // straight into the app.
+          await useFamilyStore.getState().syncFromDB();
+          router.replace('/(tabs)');
+          return;
+        }
+      } catch (e: any) {
+        console.warn('[SetupFamilyScreen] existing-family check exception', e?.message);
+      }
+      setCheckingExisting(false);
+    })();
+  }, []);
 
   const setMembers   = useFamilyStore(s => s.setMembers);
   const setActiveMem = useFamilyStore(s => s.setActiveMember);
@@ -161,6 +203,23 @@ export default function SetupFamilyScreen() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not signed in');
+
+      // Re-check right before writing — the mount-time check above closes
+      // the common case, but this is the actual point of no return (the
+      // families/members inserts below), so it's worth one more guard
+      // immediately before it rather than trusting a check that ran
+      // however long ago the screen mounted.
+      const { data: existing } = await supabase
+        .from('members')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .limit(1)
+        .maybeSingle();
+      if (existing) {
+        await useFamilyStore.getState().syncFromDB();
+        router.replace('/(tabs)');
+        return;
+      }
 
       const expoPushToken = await registerForPushNotifications().catch(() => null);
 
@@ -237,6 +296,14 @@ export default function SetupFamilyScreen() {
   };
 
   const card = colors.card ?? colors.surface;
+
+  if (checkingExisting) {
+    return (
+      <View style={[s.root, { backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator color="#9261C7" size="large" />
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>

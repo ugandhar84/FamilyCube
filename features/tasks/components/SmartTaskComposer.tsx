@@ -189,6 +189,14 @@ export default function SmartTaskComposer({
   const [dropLocation, setDropLocation] = useState('');
   const [returnTime, setReturnTime] = useState('');
   const [showReturnTime, setShowReturnTime] = useState(false);
+  // GP/Teen Welcome — same pool-opening toggles the full Ride form
+  // (CategoryFields.tsx's Ride branch) already offers, surfaced here so a
+  // parent doesn't have to leave the quick composer to open a ride to the
+  // GP/teen-driver pool. Off by default, same as the full form — never
+  // silently defaulted on.
+  const [openToGrandparents, setOpenToGrandparents] = useState(false);
+  const [openToTeens, setOpenToTeens] = useState(false);
+  const [rideCoinsTeen, setRideCoinsTeen] = useState('');
 
   const [suggestion, setSuggestion] = useState<AssignmentSuggestion | null>(null);
   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
@@ -202,6 +210,7 @@ export default function SmartTaskComposer({
     setTitle(''); setForMemberIds([]); setCategory(undefined);
     setCoinsStr('20'); setPhotoRequired(false);
     setPickupLocation(''); setDropLocation(''); setReturnTime(''); setShowReturnTime(false);
+    setOpenToGrandparents(false); setOpenToTeens(false); setRideCoinsTeen('');
     setTouchedRecurrence(false); setRecurFreq('once'); setRecurDays([]); setRecurDayOfMonth(undefined);
     setTouchedWhen(false); setWhenDate(null); setShowWhenPicker(false); setShowReturnPicker(false);
     setHelperId(undefined); setTouchedHelper(false);
@@ -370,6 +379,8 @@ export default function SmartTaskComposer({
   const catMeta = category ? CATEGORIES.find(c => c.key === category) : undefined;
   const kidMembers = members.filter(m => m.role === 'kid' || m.role === 'teen');
   const isGroceryCategory = !isEvent && (category === 'Errand' || category === 'Shopping');
+  const viewerRole = members.find(m => m.id === activeMemberId)?.role;
+  const isViewerParentOrSenior = viewerRole === 'parent' || viewerRole === 'senior';
 
   useEffect(() => {
     if (!linkGroceries || !familyId) return;
@@ -389,6 +400,16 @@ export default function SmartTaskComposer({
     if (!detected) return;
     const finalTitle = (title || detected.title).trim();
     if (!finalTitle) return;
+    // No real active member yet (mid profile-switch, store still
+    // hydrating) — addEvent/addQuest read the family/member id fresh off
+    // the store at insert time, so creating now would either send an empty
+    // createdById or resolve to the wrong family server-side and get
+    // rejected by RLS ("new row violates row-level security policy").
+    // Bail out instead of firing a doomed insert.
+    if (!activeMemberId) {
+      setVoiceError("Still loading your profile — try again in a moment.");
+      return;
+    }
 
     // Recurring EVENTS need addRecurringEvent's series-materialization,
     // not this composer's plain addEvent call — hand off to the full form
@@ -448,6 +469,11 @@ export default function SmartTaskComposer({
           ...(pickupLocation.trim() ? { pickupLocation: pickupLocation.trim() } : {}),
           ...(dropLocation.trim() ? { dropLocation: dropLocation.trim() } : {}),
           ...(returnTime.trim() ? { returnTime: returnTime.trim() } : {}),
+          ...(isViewerParentOrSenior ? {
+            isOpenToGrandparents: openToGrandparents,
+            isOpenToTeens: openToTeens,
+            ...(openToTeens && rideCoinsTeen.trim() ? { rideCoins: parseInt(rideCoinsTeen, 10) || undefined } : {}),
+          } : {}),
         } : {}),
         ...(alertCall && dt ? { alertCall: true, alertCallLeadMinutes } : {}),
       });
@@ -828,6 +854,73 @@ export default function SmartTaskComposer({
                   onToggle={(id) => { setHelperId(prev => prev === id ? undefined : id); setTouchedHelper(true); }}
                   colors={colors} isDark={isDark} siblings={[]}
                 />
+              </View>
+            )}
+
+            {/* GP/Teen Welcome — Ride only, same pool-opening toggles the
+                full form's Ride branch offers (CategoryFields.tsx). Opens
+                the ride to the grandparent/teen-driver pool alongside
+                whoever's picked above, instead of only that one person. */}
+            {isEvent && category === 'Ride' && isViewerParentOrSenior && (
+              <View style={{ gap: 8 }}>
+                <Pressable onPress={() => setOpenToGrandparents(v => !v)}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                    paddingVertical: 11, paddingHorizontal: 14, borderRadius: RADIUS.md,
+                    borderWidth: 1.5,
+                    borderColor: openToGrandparents ? colors.warning : colors.border,
+                    backgroundColor: openToGrandparents ? (isDark ? '#2D1800' : colors.warningLight) : (isDark ? colors.surface : colors.inputBg) }}>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: openToGrandparents ? '#92400E' : colors.textPrimary }}>
+                      👴👵 Grandparents Welcome
+                    </Text>
+                    <Text style={{ fontSize: TYPO.label, color: openToGrandparents ? '#B45309' : colors.textSecondary }}>
+                      {openToGrandparents ? 'GPs can claim this ride or pass, no pressure' : 'Off · only visible to parents'}
+                    </Text>
+                  </View>
+                  <View style={{ width: 44, height: 26, borderRadius: 13,
+                    backgroundColor: openToGrandparents ? colors.warning : (isDark ? '#334155' : '#CBD5E1'),
+                    justifyContent: 'center', paddingHorizontal: 3 }}>
+                    <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
+                      alignSelf: openToGrandparents ? 'flex-end' : 'flex-start' }} />
+                  </View>
+                </Pressable>
+
+                {kidMembers.some(m => m.role === 'teen') && (
+                  <Pressable onPress={() => setOpenToTeens(v => !v)}
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                      paddingVertical: 11, paddingHorizontal: 14, borderRadius: RADIUS.md,
+                      borderWidth: 1.5,
+                      borderColor: openToTeens ? '#6366F1' : colors.border,
+                      backgroundColor: openToTeens ? (isDark ? '#1E1B4B' : '#EEF2FF') : (isDark ? colors.surface : colors.inputBg) }}>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: openToTeens ? '#3730A3' : colors.textPrimary }}>
+                        🚗 Teen Driver Welcome
+                      </Text>
+                      <Text style={{ fontSize: TYPO.label, color: openToTeens ? '#4338CA' : colors.textSecondary }}>
+                        {openToTeens ? 'Teen can drive · set coins below' : 'Off · teen driver not offered'}
+                      </Text>
+                    </View>
+                    <View style={{ width: 44, height: 26, borderRadius: 13,
+                      backgroundColor: openToTeens ? '#6366F1' : (isDark ? '#334155' : '#CBD5E1'),
+                      justifyContent: 'center', paddingHorizontal: 3 }}>
+                      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff',
+                        alignSelf: openToTeens ? 'flex-end' : 'flex-start' }} />
+                    </View>
+                  </Pressable>
+                )}
+                {openToTeens && kidMembers.some(m => m.role === 'teen') && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, flex: 1 }}>🪙 Coins for teen driver</Text>
+                    <TextInput
+                      style={{ width: 80, textAlign: 'center', fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary,
+                        backgroundColor: isDark ? colors.surface : colors.inputBg, borderRadius: RADIUS.md,
+                        paddingHorizontal: 10, paddingVertical: 10, borderWidth: 1, borderColor: '#6366F1' }}
+                      keyboardType="numeric" maxLength={4}
+                      placeholder="0" placeholderTextColor={colors.textTertiary}
+                      value={rideCoinsTeen} onChangeText={setRideCoinsTeen}
+                    />
+                  </View>
+                )}
               </View>
             )}
 

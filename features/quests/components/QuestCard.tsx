@@ -59,6 +59,15 @@ export function QuestCard({
   updateQuest, deleteQuest, setEditTarget, setDelegateTarget, setProofPhotoViewerUri,
 }: Props) {
   const assignee = members.find(m => m.id === q.assignedToId);
+  // Persisted (chore_tasks.gp_withdrawn_ids), per-GP "no guilt" pass on a
+  // GP-welcome invite. Deliberately DB-backed, not local component state —
+  // it must survive reload and must be per-grandparent (a household with
+  // two GPs shouldn't have one GP's Pass hide the invite from the other).
+  // Once passed, the button flips to "🔄 Reconsider?" instead of the card
+  // disappearing — it stays reconsiderable until the chore is actually
+  // claimed by someone, at which point canGpClaimPool goes false anyway
+  // (assignedToId gets set) and this whole block stops rendering.
+  const gpAlreadyPassed = isSenior && !!myId && (q.gpWithdrawnIds ?? []).includes(myId);
   const isPoolCard = q.isPool && q.status === 'todo';
   // 'in_progress' is what an ACCEPTED System-A assignment sets the chore to
   // (see respondToParentQuest's ACCEPT branch in choreStore.ts) — without
@@ -92,6 +101,28 @@ export function QuestCard({
   // System A negotiation either.
   const canAcceptGp = isKidOrTeen && !!myId && isAssignedTo(q, myId) &&
     choreData?.categoryType === 'grandparent_quest' && choreData?.status === 'todo';
+  // A plain household chore a parent toggled "GP Welcome" on — inviteGrandparents
+  // true, but isPool is false (it's a regular todo chore made GP-visible,
+  // NOT a kid bounty-pool item, and NOT questType==='grandparent_quest',
+  // which is a separate GP-sponsored-quest flow with its own "I'll take it
+  // 👴" button below). Live debug confirmed this: status='todo', isPool=
+  // false, inviteGrandparents=true. Matches SeniorView's Hub gpInvitations
+  // filter exactly (status==='todo' && !assignedToId, no isPool check) —
+  // QuestsScreen's senior filter already makes this card visible on the
+  // Chores tab, but nothing here gave it an action button, so it rendered
+  // with "Not started" and an empty action strip.
+  const canGpClaimPool = isSenior && q.status === 'todo' && !!q.inviteGrandparents && !q.assignedToId;
+  // Once a GP claims a GP-Welcome chore (canGpClaimPool above → in_progress,
+  // assignedToId = that GP), there was previously no action button for
+  // them at all — canSubmit is isKidOrTeen-only, and the "Done · Submit"
+  // button further down is questType==='grandparent_quest'-only, neither
+  // of which covers this case. "Done" self-completes with no approval gate
+  // (trusted adult, matches submitGPErrandReceipt's no-receipt branch
+  // shape) and no coin payout (adults don't earn coins for their own
+  // chores, same precedent QuestApprovalCard.tsx documents for parents).
+  // "Backout" releases it back to the open pool for any GP to claim again.
+  const canGpDone = isSenior && !!myId && q.assignedToId === myId
+    && !!q.inviteGrandparents && (q.status === 'todo' || q.status === 'in_progress');
   // Approve/Decline: parent or senior, quest in review
   const canApprove = isParentOrSenior && isReview;
   // Reopen: parent or senior, quest was declined
@@ -121,7 +152,7 @@ export function QuestCard({
   // otherwise-inert card would show a bare empty divider bar
   // without this gate.
   const hasActionStripContent =
-    canClaim || canAcceptGp ||
+    canClaim || canAcceptGp || canGpClaimPool || canGpDone ||
     (canSubmit && !canAcceptGp && q.participants.length <= 1) ||
     canResubmit || canKidDecline ||
     (canApprove && q.participants.length <= 1) ||
@@ -843,12 +874,17 @@ export function QuestCard({
             chore. Parents/seniors still see the status badge
             below (claimant count), just no claim action. */}
 
-        {/* Parent/Senior view of open bounty — show claimant count vs cap */}
-        {isPoolCard && isParentOrSenior && (
+        {/* Parent/Senior view of open bounty — show claimant count vs cap.
+            Hidden for a GP who already has their own I'd Love To Help /
+            Reconsider? button below (canGpClaimPool) — that button already
+            conveys the open/waiting state directly, so a redundant
+            "Waiting for a grandparent to claim" badge above it was just
+            noise for exactly the person it was talking about. */}
+        {isPoolCard && isParentOrSenior && !canGpClaimPool && (
           <View style={[s.paidBadge, { backgroundColor: colors.warningLight, borderColor: BRAND.amber + '50' }]}>
             <Text style={[s.paidText, { color: BRAND.amber }]}>
               {q.participants.length === 0
-                ? 'Waiting for a kid to claim'
+                ? (q.inviteGrandparents ? 'Waiting for a grandparent to claim' : 'Waiting for a kid to claim')
                 : q.maxClaimants && q.participants.length >= q.maxClaimants
                   ? `Full — ${q.participants.length}/${q.maxClaimants} claimed`
                   : `${q.participants.length} claimed${q.maxClaimants ? ` · ${q.maxClaimants - q.participants.length} spots left` : ''}`}
@@ -882,6 +918,98 @@ export function QuestCard({
               onPress={() => setDelegateTarget({ id: q.id, title: q.title })}
             >
               <Text style={[s.actionBtnText, { color: BRAND.amber }]}>📤 Delegate</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {/* GP (senior): claim a plain household chore a parent flagged
+            "GP Welcome" — see canGpClaimPool above. Pass sits alongside it,
+            matching the Hub's QuestInvitationsSection Accept/Pass pair, but
+            persisted to gp_withdrawn_ids (not local state) so it survives
+            reload and flips this GP's own button to "🔄 Reconsider?" instead
+            of hiding the card — it stays reconsiderable until someone
+            actually claims the chore. */}
+        {canGpClaimPool && (
+          <>
+            <TouchableOpacity
+              style={[s.actionBtn, { backgroundColor: BRAND.amber + '18', borderWidth: 1.5, borderColor: BRAND.amber + '60', flex: 2 }]}
+              onPress={() => {
+                console.log(`[UserAction] screen=Chores role=senior member=${activeMember?.name} tapped "${gpAlreadyPassed ? 'Reconsider?' : "I'd Love To Help"}" on "${q.title}" (id=${q.id}) → updateQuest(assignedToId${gpAlreadyPassed ? ', gpWithdrawnIds' : ''}) [features/quests/components/QuestCard.tsx:918]`);
+                Alert.alert(
+                  'Help With This?',
+                  `Take on "${q.title}"?`,
+                  [{ text: 'Cancel', style: 'cancel' }, {
+                    text: "❤️ I'd Love To Help",
+                    onPress: () => {
+                      // Explicit status:'in_progress' — this chore may carry
+                      // a stale gp_offer_pending/gpOfferById from an earlier,
+                      // unrelated GP-offer flow on the same row (live-repro'd:
+                      // a chore reset to unassigned via direct DB edit kept
+                      // its old status, so claiming it here landed on the
+                      // parent-review Redo/Approve UI instead of this GP's
+                      // own claim/submit card). Don't rely on the row's prior
+                      // state being clean — set it explicitly.
+                      useChoreStore.getState().updateChore(q.id, { gpOfferById: undefined } as any);
+                      updateQuest(q.id, {
+                        assignedToId: activeMember?.id, isPool: false, status: 'in_progress',
+                        gpWithdrawnIds: (q.gpWithdrawnIds ?? []).filter(id => id !== myId),
+                      }, activeMember?.id);
+                    },
+                  }]
+                );
+              }}
+            >
+              <Text style={[s.actionBtnText, { color: BRAND.amber }]}>
+                {gpAlreadyPassed ? '🔄 Reconsider?' : "❤️ I'd Love To Help"}
+              </Text>
+            </TouchableOpacity>
+            {!gpAlreadyPassed && (
+              <TouchableOpacity
+                style={[s.actionBtn, { borderWidth: 1.5, borderColor: colors.border, backgroundColor: 'transparent', flex: 1 }]}
+                onPress={() => {
+                  console.log(`[UserAction] screen=Chores role=senior member=${activeMember?.name} tapped "Pass" on "${q.title}" (id=${q.id}) → updateQuest(gpWithdrawnIds) [features/quests/components/QuestCard.tsx:948]`);
+                  updateQuest(q.id, { gpWithdrawnIds: [...(q.gpWithdrawnIds ?? []), myId].filter((v, i, a): v is string => !!v && a.indexOf(v) === i) }, activeMember?.id);
+                }}
+              >
+                <Text style={[s.actionBtnText, { color: colors.textTertiary }]}>Pass</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+
+        {/* GP (senior): Done / Backout on a GP-Welcome chore they've
+            claimed — see canGpDone above. Done self-completes (no approval
+            gate, no coin payout); Backout releases it back to the open
+            pool, same as if they'd never claimed it. */}
+        {canGpDone && (
+          <>
+            <TouchableOpacity
+              style={[s.actionBtn, { borderWidth: 1.5, borderColor: colors.danger + '60', backgroundColor: 'transparent', flex: 1 }]}
+              onPress={() => {
+                console.log(`[UserAction] screen=Chores role=senior member=${activeMember?.name} tapped "Backout" on "${q.title}" (id=${q.id}) [features/quests/components/QuestCard.tsx:996]`);
+                Alert.alert(
+                  'Give This Back?',
+                  `"${q.title}" will go back to the open pool for any grandparent to pick up.`,
+                  [{ text: 'Cancel', style: 'cancel' }, {
+                    text: 'Backout', style: 'destructive',
+                    onPress: () => {
+                      console.log(`[UserAction] screen=Chores role=senior member=${activeMember?.name} confirmed "Backout" on "${q.title}" (id=${q.id}) → backoutGpWelcomeChore [features/quests/components/QuestCard.tsx:1005]`);
+                      useChoreStore.getState().backoutGpWelcomeChore(q.id, myId!);
+                    },
+                  }]
+                );
+              }}
+            >
+              <Text style={[s.actionBtnText, { color: colors.danger }]}>Backout</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.actionBtn, { backgroundColor: colors.success, flex: 2 }]}
+              onPress={() => {
+                console.log(`[UserAction] screen=Chores role=senior member=${activeMember?.name} tapped "Done" on "${q.title}" (id=${q.id}) → completeGpWelcomeChore [features/quests/components/QuestCard.tsx:1017]`);
+                useChoreStore.getState().completeGpWelcomeChore(q.id, myId!);
+              }}
+            >
+              <Text style={[s.actionBtnText, { color: colors.textInverse }]}>Done</Text>
             </TouchableOpacity>
           </>
         )}

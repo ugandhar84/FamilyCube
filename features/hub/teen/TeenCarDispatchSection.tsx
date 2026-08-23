@@ -24,10 +24,11 @@ export function TeenCarDispatchSection({
   rideEarnings: number; members: FamilyMember[]; colors: any; isDark: boolean;
 }) {
   const openVisible = openPickups.filter(e => !passedPickups.includes(e.id));
+  console.log(`[UserAction] FILTER screen=Hub role=teen list=openPickups totalSource=${openPickups.length} afterFilter=${openVisible.length} [features/hub/teen/TeenCarDispatchSection.tsx:26]`);
 
   return (
     <View style={{ gap: 12 }}>
-      <Pressable onPress={onToggleCar}
+      <Pressable onPress={() => { console.log(`[UserAction] FORM screen=Hub role=teen toggled "I Have a Car" on "TeenCarDispatchSection" newValue=${!hasCar} [features/hub/teen/TeenCarDispatchSection.tsx:30]`); onToggleCar(); }}
         style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
           paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14,
           backgroundColor: hasCar ? (isDark ? '#1a1000' : '#FFFBEB') : (isDark ? colors.surface : '#F8FAFC'),
@@ -82,13 +83,13 @@ export function TeenCarDispatchSection({
                   </View>
                 </View>
                 <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: BRAND.purple + '30' }}>
-                  <Pressable onPress={() => onConfirmAssignment?.(ev.id)}
+                  <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=teen tapped "Confirm" on "You Were Asked to Drive: ${ev.title}" (id=${ev.id}) → onConfirmAssignment [features/hub/teen/TeenCarDispatchSection.tsx:85]`); onConfirmAssignment?.(ev.id); }}
                     style={({ pressed }) => ({ flex: 2, paddingVertical: 12, alignItems: 'center',
                       backgroundColor: BRAND.purple, opacity: pressed ? 0.8 : 1 })}>
                     <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Confirm</Text>
                   </Pressable>
                   <View style={{ width: 1, backgroundColor: BRAND.purple + '30' }} />
-                  <Pressable onPress={() => onDrop(ev.id)}
+                  <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=teen tapped "Can't" on "You Were Asked to Drive: ${ev.title}" (id=${ev.id}) → onDrop [features/hub/teen/TeenCarDispatchSection.tsx:91]`); onDrop(ev.id); }}
                     style={({ pressed }) => ({ flex: 1, paddingVertical: 12, alignItems: 'center', opacity: pressed ? 0.7 : 1 })}>
                     <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.danger }}>Can't</Text>
                   </Pressable>
@@ -129,7 +130,7 @@ export function TeenCarDispatchSection({
                   </View>
                   <Text style={{ fontSize: TYPO.micro, fontWeight: '900', color: BRAND.teal }}>Confirmed</Text>
                 </View>
-                <Pressable onPress={() => onDrop(ev.id)}
+                <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=teen tapped "Can't Make It" on "My Confirmed Runs: ${ev.title}" (id=${ev.id}) → onDrop [features/hub/teen/TeenCarDispatchSection.tsx:132]`); onDrop(ev.id); }}
                   style={{ borderTopWidth: 1, borderTopColor: BRAND.teal + '25', paddingVertical: 9, alignItems: 'center' }}>
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.danger }}>Can't Make It</Text>
                 </Pressable>
@@ -180,7 +181,7 @@ export function TeenCarDispatchSection({
                   )}
                 </View>
                 <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: isDark ? BRAND.amber + '30' : '#FDE68A' }}>
-                  <Pressable onPress={() => onClaim(ev.id)}
+                  <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=teen tapped "I Got This" on "open pickup: ${ev.title}" (id=${ev.id}) → onClaim [features/hub/teen/TeenCarDispatchSection.tsx:183]`); onClaim(ev.id); }}
                     style={({ pressed }) => ({ flex: 2, paddingVertical: 13, alignItems: 'center', gap: 1,
                       backgroundColor: BRAND.amber, opacity: pressed ? 0.8 : 1 })}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -192,7 +193,7 @@ export function TeenCarDispatchSection({
                     </Text>
                   </Pressable>
                   <View style={{ width: 1, backgroundColor: isDark ? BRAND.amber + '30' : '#FDE68A' }} />
-                  <Pressable onPress={() => onPass(ev.id)}
+                  <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=teen tapped "Pass" on "open pickup: ${ev.title}" (id=${ev.id}) → onPass [features/hub/teen/TeenCarDispatchSection.tsx:195]`); onPass(ev.id); }}
                     style={({ pressed }) => ({ flex: 1, paddingVertical: 13, alignItems: 'center', gap: 1, opacity: pressed ? 0.7 : 1 })}>
                     <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Pass</Text>
                     <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>no pressure</Text>

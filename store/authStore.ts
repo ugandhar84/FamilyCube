@@ -81,12 +81,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (get().profile?.id === uid && Date.now() - _profileFetchedAt < PROFILE_TTL_MS) return;
     const promise = (async () => {
     // Try to read the existing profile first
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('profiles')
       .select(PROFILE_COLS)
       .eq('id', uid)
       .maybeSingle();
-    if (error) { console.warn('[authStore] fetchProfile select error:', error.message); return; }
+    if (error) {
+      console.warn('[authStore] fetchProfile select error:', error.message);
+      // A single missing/renamed column (schema drift between this client
+      // build and the live DB) previously failed the WHOLE select and left
+      // `profile` null forever with no fallback — any screen/gate reading
+      // onboarding_completed/terms_accepted off this store then had nothing
+      // to route on. Retry with only the columns app/_layout.tsx's own
+      // routing gate actually needs, so a drifted optional column (like the
+      // missing ai_mood_consent case this was written for) can't take down
+      // profile loading entirely.
+      const retry = await supabase
+        .from('profiles')
+        .select('id, full_name, handle, onboarding_completed, terms_accepted, deleted_at')
+        .eq('id', uid)
+        .maybeSingle();
+      if (retry.error || !retry.data) {
+        console.warn('[authStore] fetchProfile fallback select also failed:', retry.error?.message);
+        return;
+      }
+      set({ profile: retry.data as UserProfile });
+      _profileFetchedAt = Date.now();
+      return;
+    }
     if (data) {
       set({ profile: data as UserProfile });
       _profileFetchedAt = Date.now();

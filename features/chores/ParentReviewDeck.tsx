@@ -524,9 +524,18 @@ interface ParentReviewDeckProps {
   members: FamilyMember[];
   colors: any;
   isDark: boolean;
+  // ChoreReviewSection renders its own single empty state for the whole
+  // section (covering every sub-list, not just this deck's) — without this,
+  // that empty state and this deck's own "All caught up" stacked whenever
+  // both had nothing, showing two near-identical empty messages at once.
+  hideEmptyState?: boolean;
+  // Reports this deck's own totalCount up to the parent so ChoreReviewSection
+  // can fold cash-out requests (only tracked in here, via getPendingCashOuts)
+  // into its own hasContent/empty-state decision instead of guessing.
+  onContentCountChange?: (count: number) => void;
 }
 
-export function ParentReviewDeck({ parent, members, colors, isDark }: ParentReviewDeckProps) {
+export function ParentReviewDeck({ parent, members, colors, isDark, hideEmptyState, onContentCountChange }: ParentReviewDeckProps) {
   const {
     approveChore, requestRedo, acceptGPOffer, declineGPOffer,
     approveBountyClaim, declineBountyClaim,
@@ -572,7 +581,10 @@ export function ParentReviewDeck({ parent, members, colors, isDark }: ParentRevi
 
   const totalCount = pendingSubmissions.length + pendingCashOuts.length + gpOffersPending.length + pendingBountyClaims.length;
 
+  useEffect(() => { onContentCountChange?.(totalCount); }, [totalCount]);
+
   if (totalCount === 0) {
+    if (hideEmptyState) return null;
     // Matches HouseholdBacklogSection's empty state — compact single-line
     // treatment, not a large heading+subtext box, so every Hub section's
     // "nothing here" moment reads the same.

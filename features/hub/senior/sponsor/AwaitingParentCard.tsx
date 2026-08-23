@@ -10,10 +10,12 @@ const AWAITING_AMBER = '#F59E0B';
 
 // My quests pending the parent safety gate — still cancellable since nobody
 // has acted on them yet.
-export function AwaitingParentCard({ quests, colors, isDark }: {
+export function AwaitingParentCard({ quests, colors, isDark, active }: {
   quests: ChoreTask[]; colors: any; isDark: boolean;
+  active?: { name: string };
 }) {
   if (!quests.length) return null;
+  const actorName = active?.name ?? 'senior';
 
   return (
     <View style={{ gap: 8, marginBottom: 12 }}>
@@ -33,12 +35,12 @@ export function AwaitingParentCard({ quests, colors, isDark }: {
             <Text style={{ fontSize: GP.tiny, fontWeight: '800', color: '#92400E' }}>Pending</Text>
           </View>
           {/* Still their own quest, nobody's acted on it yet — safe to pull back. */}
-          <Pressable onPress={() => Alert.alert(
+          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "X cancel" on "${c.title}" (id=${c.id}) [features/hub/senior/sponsor/AwaitingParentCard.tsx:36]`); Alert.alert(
             'Cancel this chore?',
             `"${c.title}" will be removed before a parent even reviews it.`,
             [{ text: 'Keep it', style: 'cancel' },
-             { text: 'Cancel Chore', style: 'destructive', onPress: () => useChoreStore.getState().deleteChore(c.id) }],
-          )}
+             { text: 'Cancel Chore', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} confirmed "Cancel Chore" on "${c.title}" (id=${c.id}) → deleteChore [features/hub/senior/sponsor/AwaitingParentCard.tsx:40]`); useChoreStore.getState().deleteChore(c.id); } }],
+          ); }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <X size={16} color={colors.danger} />
           </Pressable>

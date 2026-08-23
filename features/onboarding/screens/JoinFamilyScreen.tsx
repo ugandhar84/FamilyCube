@@ -12,9 +12,10 @@ import { router } from 'expo-router';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
-import { useFamilyStore } from '@/store/familyStore';
+import { useFamilyStore, RELATIONSHIPS_BY_ROLE, type MemberRole } from '@/store/familyStore';
 import { registerForPushNotifications } from '@/lib/notifications';
-import Svg, { Circle, Path, Rect, G, Polygon, Ellipse } from 'react-native-svg';
+import { AnimatedCubeMark } from '@/components/FamilyCubeLogo';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 
@@ -28,38 +29,44 @@ const ROLES   = [
 
 type Step = 'code' | 'profile' | 'pin' | 'confirm';
 
-// ─── Step SVGs ────────────────────────────────────────────────────────────────
-function CodeSvg() {
+// ─── Invite-code step icon — an envelope holding a key, since this step is
+// literally "someone handed you a key to their family." Teal (CONNECT).
+function InviteCodeSvg() {
   return (
-    <Svg width="90" height="90" viewBox="0 0 90 90">
-      <Circle cx="45" cy="45" r="45" fill="#E8F5E9" />
-      <Rect x="20" y="30" width="50" height="36" rx="7" fill="#10B981" />
-      <Rect x="28" y="40" width="10" height="10" rx="3" fill="#fff" />
-      <Rect x="40" y="40" width="10" height="10" rx="3" fill="#fff" />
-      <Rect x="52" y="40" width="10" height="10" rx="3" fill="#fff" />
-      <Rect x="28" y="53" width="34" height="4" rx="2" fill="rgba(255,255,255,0.4)" />
+    <Svg width="88" height="88" viewBox="0 0 88 88">
+      <Circle cx="44" cy="44" r="44" fill="#D6F5F1" />
+      <Path d="M20 32 h48 a4 4 0 0 1 4 4 v20 a4 4 0 0 1 -4 4 h-48 a4 4 0 0 1 -4 -4 v-20 a4 4 0 0 1 4 -4 Z" fill="#00BBA4" />
+      <Path d="M18 34 L44 52 L70 34" stroke="#D6F5F1" strokeWidth="3.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <Circle cx="44" cy="26" r="8" fill="#F5A623" />
+      <Rect x="42" y="26" width="10" height="4" rx="2" fill="#F5A623" />
+      <Circle cx="44" cy="26" r="3.4" fill="#D6F5F1" />
     </Svg>
   );
 }
 
+// ─── PIN step icon — a padlock in brand purple, matched to the app's own
+// PIN-entry treatment (components/PinEntryModal.tsx) rather than a generic lock.
+function PinLockSvg() {
+  return (
+    <Svg width="88" height="88" viewBox="0 0 88 88">
+      <Circle cx="44" cy="44" r="44" fill="#F0E8FA" />
+      <Path d="M31 40 V32 a13 13 0 0 1 26 0 v8" stroke="#9261C7" strokeWidth="5" fill="none" strokeLinecap="round" />
+      <Rect x="21" y="40" width="46" height="30" rx="8" fill="#9261C7" />
+      <Circle cx="38" cy="55" r="3.4" fill="#fff" />
+      <Circle cx="50" cy="55" r="3.4" fill="#fff" opacity="0.5" />
+      <Circle cx="44" cy="55" r="3.4" fill="#fff" opacity="0.8" />
+    </Svg>
+  );
+}
+
+// ─── Profile-step avatar preview — reflects the picker's live avatar/color,
+// not a static icon.
 function ProfileSvg({ avatar, color }: { avatar: string; color: string }) {
   return (
     <View style={{ alignItems: 'center', justifyContent: 'center', width: 90, height: 90,
       borderRadius: 45, backgroundColor: color + '22', borderWidth: 3, borderColor: color }}>
       <Text style={{ fontSize: 44 }}>{avatar}</Text>
     </View>
-  );
-}
-
-function PinSvg() {
-  return (
-    <Svg width="90" height="90" viewBox="0 0 90 90">
-      <Circle cx="45" cy="45" r="45" fill="#F0E8FA" />
-      <Rect x="22" y="42" width="46" height="30" rx="7" fill="#9261C7" />
-      <Path d="M32 42 V34 A13 13 0 0 1 58 34 V42" stroke="#9261C7" strokeWidth="5" fill="none" strokeLinecap="round" />
-      <Circle cx="45" cy="57" r="5" fill="#fff" opacity="0.9" />
-      <Rect x="43" y="57" width="4" height="7" rx="2" fill="#fff" opacity="0.6" />
-    </Svg>
   );
 }
 
@@ -86,6 +93,12 @@ export default function JoinFamilyScreen() {
   const [avatar, setAvatar]     = useState('🧒');
   const [color, setColor]       = useState('#9261C7');
   const [role, setRole]         = useState<string>('kid');
+  // Purely descriptive (shown on the family tree/roster card, same as
+  // RosterTab's own relationship editor) — never a permission gate, role
+  // alone drives that. Reset whenever role changes so a stale pick from a
+  // different role's option list (e.g. "Mother" left over from Parent)
+  // can't silently carry over to Kid.
+  const [relationship, setRelationship] = useState<string | undefined>(undefined);
   const [pin, setPin]           = useState('');
   const [pinConfirm, setPinConfirm] = useState('');
   const [loading, setLoading]   = useState(false);
@@ -97,12 +110,25 @@ export default function JoinFamilyScreen() {
 
   // ── Step 1: Validate code ────────────────────────────────────────────────────
   const handleCodeNext = () => {
-    if (code.trim().length !== 6) { setError('Enter the 6-digit code'); return; }
+    // 8 chars (3-letter family-name prefix + 5 random alphanumeric), but
+    // don't hard-require exact length client-side — join-family's own
+    // lookup is the real check, and codes generated before this format
+    // change are still valid 6-digit ones until they expire (7-day TTL), so
+    // an exact-length gate here would wrongly block someone using an older
+    // code they were already given.
+    if (code.trim().length < 6) { setError('Enter your invite code'); return; }
     setError('');
     setStep('profile');
   };
 
   // ── Step 2: Profile complete ─────────────────────────────────────────────────
+  // Deliberately minimal — name/role/relationship/avatar/color only. Photo
+  // and date of birth are collected AFTER joining, via a one-time
+  // "Complete your profile" prompt (features/onboarding/screens/
+  // CompleteProfileScreen.tsx) — not blockers on the way into the app at
+  // all, per explicit product decision: someone joining a family shouldn't
+  // have to hand over a birth date and a photo before they've even seen
+  // what they're joining.
   const handleProfileNext = () => {
     if (!name.trim()) { setError('Enter your name'); return; }
     setError('');
@@ -118,14 +144,25 @@ export default function JoinFamilyScreen() {
     try {
       const expoPushToken = await registerForPushNotifications().catch(() => null);
 
-      // This device already has a real Supabase Auth session (app/_layout.tsx
-      // gates onboarding on it) — pass its access token so join-family can
-      // stamp auth_user_id on the new member row. Without this, the member
-      // row has no auth_user_id and every RLS-gated write they make (or that
-      // gets made on their behalf) fails silently. See migration
-      // 20260818192700 for why this is the actual identity RLS checks.
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not signed in');
+      // This device needs SOME Supabase Auth session — pass its access
+      // token so join-family can stamp auth_user_id on the new member row.
+      // Without this, the member row has no auth_user_id and every RLS-
+      // gated write they make (or that gets made on their behalf) fails
+      // silently. See migration 20260818192700 for why this is the actual
+      // identity RLS checks.
+      //
+      // Normally LoginScreen's "Enter your invite code" link already starts
+      // an anonymous session before routing here — this is a defense-in-
+      // depth fallback for anyone who reaches this screen another way (deep
+      // link, etc). Anonymous, not the founding parent's session: this
+      // device gets its OWN distinct auth_user_id, never shared with
+      // whoever generated the code.
+      let { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        const { data: anonData, error: anonErr } = await supabase.auth.signInAnonymously();
+        if (anonErr || !anonData.session) throw new Error('Could not start a session on this device.');
+        session = anonData.session;
+      }
 
       const res = await fetch(
         `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/join-family`,
@@ -148,8 +185,12 @@ export default function JoinFamilyScreen() {
 
       setFamilyName(data.familyName);
 
-      // Save PIN on the member row
-      await supabase.from('members').update({ pin }).eq('id', data.memberId);
+      // Save PIN and relationship — join-family itself doesn't accept
+      // relationship, same pattern PIN already used: set locally right
+      // after the row exists rather than threading one more field through
+      // the edge function. Photo + DOB are intentionally NOT collected
+      // here — see CompleteProfileScreen, shown once after this flow ends.
+      await supabase.from('members').update({ pin, relationship: relationship ?? null }).eq('id', data.memberId);
 
       // Load member into familyStore and set active
       const member = {
@@ -172,6 +213,7 @@ export default function JoinFamilyScreen() {
         title:           'Explorer',
         questsCompleted: 0,
         questsPending:   0,
+        relationship:    relationship,
       };
       setMembers([member]);
       setActiveMem(member.id);
@@ -205,26 +247,27 @@ export default function JoinFamilyScreen() {
             {/* ── STEP 1: Enter Code ─────────────────────────────────────────── */}
             {step === 'code' && (
               <View style={s.center}>
-                <CodeSvg />
+                <InviteCodeSvg />
                 <Text style={[s.title, { color: colors.textPrimary }]}>Enter Invite Code</Text>
                 <Text style={[s.subtitle, { color: colors.textSecondary }]}>
-                  Ask a parent for the 6-digit code shown in their Family Settings.
+                  Ask a parent for the invite code shown in their Family Settings.
                 </Text>
                 <TextInput
-                  style={[s.codeInput, { color: colors.textPrimary, backgroundColor: card, borderColor: code.length === 6 ? '#10B981' : colors.border ?? '#E0E0E0' }]}
+                  style={[s.codeInput, { color: colors.textPrimary, backgroundColor: card, borderColor: code.length >= 8 ? '#10B981' : colors.border ?? '#E0E0E0', letterSpacing: 3 }]}
                   value={code}
-                  onChangeText={t => { setCode(t.replace(/\D/g, '').slice(0, 6)); setError(''); }}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  placeholder="— — — — — —"
+                  onChangeText={t => { setCode(t.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)); setError(''); }}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={8}
+                  placeholder="ABC12345"
                   placeholderTextColor={colors.textSecondary}
                   textAlign="center"
                 />
                 {error ? <Text style={s.error}>{error}</Text> : null}
                 <TouchableOpacity
-                  style={[s.btn, { backgroundColor: code.length === 6 ? '#10B981' : '#ccc' }]}
+                  style={[s.btn, { backgroundColor: code.length >= 6 ? '#10B981' : '#ccc' }]}
                   onPress={handleCodeNext}
-                  disabled={code.length !== 6}
+                  disabled={code.length < 6}
                 >
                   <Text style={s.btnText}>Continue</Text>
                 </TouchableOpacity>
@@ -257,7 +300,7 @@ export default function JoinFamilyScreen() {
                     <TouchableOpacity
                       key={r.value}
                       style={[s.roleCard, { backgroundColor: card, borderColor: role === r.value ? '#9261C7' : colors.border ?? '#E0E0E0', borderWidth: role === r.value ? 2 : 1 }]}
-                      onPress={() => setRole(r.value)}
+                      onPress={() => { setRole(r.value); setRelationship(undefined); }}
                     >
                       <Text style={{ fontSize: 22 }}>{r.emoji}</Text>
                       <Text style={[s.roleLabel, { color: colors.textPrimary }]}>{r.label}</Text>
@@ -265,6 +308,35 @@ export default function JoinFamilyScreen() {
                     </TouchableOpacity>
                   ))}
                 </View>
+
+                {/* Relationship — purely descriptive, scoped to options that
+                    make sense for the role just picked above (same list
+                    RosterTab's own editor uses, so a member's relationship
+                    reads the same whether it was set here or edited later
+                    in Family Settings). */}
+                {(() => {
+                  const relRole: MemberRole = role === 'grandparent' ? 'senior' : role === 'parent' ? 'parent' : 'kid';
+                  const options = RELATIONSHIPS_BY_ROLE[relRole] ?? [];
+                  if (options.length === 0) return null;
+                  return (
+                    <>
+                      <Text style={[s.label, { color: colors.textSecondary }]}>Relationship <Text style={{ fontWeight: '400' }}>(optional)</Text></Text>
+                      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                        {options.map(opt => {
+                          const picked = relationship === opt;
+                          return (
+                            <TouchableOpacity key={opt} onPress={() => setRelationship(picked ? undefined : opt)}
+                              style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, borderWidth: 1.5,
+                                backgroundColor: picked ? '#9261C7' : card,
+                                borderColor: picked ? '#9261C7' : colors.border ?? '#E0E0E0' }}>
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: picked ? '#fff' : colors.textSecondary }}>{opt}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </>
+                  );
+                })()}
 
                 {/* Avatar */}
                 <Text style={[s.label, { color: colors.textSecondary }]}>Pick an avatar</Text>
@@ -302,7 +374,7 @@ export default function JoinFamilyScreen() {
             {/* ── STEP 3: Set PIN ────────────────────────────────────────────── */}
             {step === 'pin' && (
               <View style={s.center}>
-                <PinSvg />
+                <PinLockSvg />
                 <Text style={[s.title, { color: colors.textPrimary }]}>Set Your PIN</Text>
                 <Text style={[s.subtitle, { color: colors.textSecondary }]}>
                   Your 4-digit PIN protects your profile when switching members on a shared device.
@@ -336,7 +408,8 @@ export default function JoinFamilyScreen() {
             {/* ── CONFIRM ────────────────────────────────────────────────────── */}
             {step === 'confirm' && (
               <View style={s.center}>
-                <Text style={{ fontSize: 72, marginBottom: 12 }}>🎉</Text>
+                <AnimatedCubeMark size={90} />
+                <Text style={{ fontSize: 36, marginTop: -8, marginBottom: 4 }}>🎉</Text>
                 <Text style={[s.title, { color: colors.textPrimary }]}>You're in!</Text>
                 <Text style={[s.subtitle, { color: colors.textSecondary }]}>
                   Welcome to <Text style={{ color: '#9261C7', fontWeight: '700' }}>{familyName}</Text>!{'\n'}
@@ -344,7 +417,7 @@ export default function JoinFamilyScreen() {
                 </Text>
                 <TouchableOpacity
                   style={[s.btn, { backgroundColor: '#9261C7', marginTop: 32 }]}
-                  onPress={() => router.replace('/(tabs)')}
+                  onPress={() => router.replace('/onboarding/complete-profile')}
                 >
                   <Text style={s.btnText}>Let's Go →</Text>
                 </TouchableOpacity>

@@ -26,8 +26,10 @@ function AlertRow({ Icon, accent, colors, isDark, title, detail, onPress, onDism
   onPress?: () => void; onDismiss: () => void;
 }) {
   const Wrapper = onPress ? Pressable : View;
+  const handlePress = onPress ? () => { console.log(`[UserAction] screen=Hub role=kid tapped "${title}" on "KidUrgentAlerts row" [features/hub/kid/KidUrgentAlerts.tsx:28]`); onPress(); } : undefined;
+  const handleDismiss = () => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "KidUrgentAlerts row: ${title}" [features/hub/kid/KidUrgentAlerts.tsx:39]`); onDismiss(); };
   return (
-    <Wrapper onPress={onPress} style={{ borderRadius: 16, backgroundColor: isDark ? colors.card : accent + '08',
+    <Wrapper onPress={handlePress} style={{ borderRadius: 16, backgroundColor: isDark ? colors.card : accent + '08',
       borderWidth: 1.5, borderColor: accent + '35', padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
       <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: accent + '20', alignItems: 'center', justifyContent: 'center' }}>
         <Icon size={17} color={accent} fill={accent} fillOpacity={0.15} />
@@ -36,7 +38,7 @@ function AlertRow({ Icon, accent, colors, isDark, title, detail, onPress, onDism
         <Text style={{ fontSize: KID.body, fontWeight: '900', color: accent }}>{title}</Text>
         <Text style={{ fontSize: KID.sub, color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>{detail}</Text>
       </View>
-      <Pressable onPress={onDismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+      <Pressable onPress={handleDismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
         <X size={16} color={colors.textTertiary} />
       </Pressable>
     </Wrapper>
@@ -61,7 +63,7 @@ export function KidUrgentAlerts({
   return (
     <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 4 }}>
       {confirmedRide && rideCountdown !== null && rideCountdown < -5 && (
-        <Pressable onPress={() => onSendDriverLate(confirmedRide)}
+        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "Alert!" on "Driver hasn't arrived" (id=${confirmedRide.id}) → onSendDriverLate [features/hub/kid/KidUrgentAlerts.tsx:66]`); onSendDriverLate(confirmedRide); }}
           style={{ borderRadius: 16, backgroundColor: '#450A0A', borderWidth: 2, borderColor: '#EF4444',
             padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#EF444430', alignItems: 'center', justifyContent: 'center' }}>
@@ -77,14 +79,20 @@ export function KidUrgentAlerts({
         </Pressable>
       )}
 
-      {declinedRides.filter(ev => !dismissedIds.has(`ride-${ev.id}`)).map(ev => (
-        <AlertRow key={ev.id} Icon={Car} accent={colors.danger} colors={colors} isDark={isDark}
-          title={`No driver — ${ev.title}`}
-          detail={ev.declinedBy ? `${ev.declinedBy} can't make it` : 'Your parent is finding someone'}
-          onDismiss={() => onDismiss(`ride-${ev.id}`)} />
-      ))}
+      {(() => {
+        const filteredDeclinedRides = declinedRides.filter(ev => !dismissedIds.has(`ride-${ev.id}`));
+        console.log(`[UserAction] FILTER screen=Hub role=kid list=declinedRides totalSource=${declinedRides.length} afterFilter=${filteredDeclinedRides.length} [features/hub/kid/KidUrgentAlerts.tsx:83]`);
+        return filteredDeclinedRides.map(ev => (
+          <AlertRow key={ev.id} Icon={Car} accent={colors.danger} colors={colors} isDark={isDark}
+            title={`No driver — ${ev.title}`}
+            detail={ev.declinedBy ? `${ev.declinedBy} can't make it` : 'Your parent is finding someone'}
+            onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "No driver — ${ev.title}" (id=ride-${ev.id}) → onDismiss [features/hub/kid/KidUrgentAlerts.tsx:88]`); onDismiss(`ride-${ev.id}`); }} />
+        ));
+      })()}
 
-      {pendingRides.filter(ev => !dismissedIds.has(`pending-${ev.id}`)).map(ev => {
+      {(() => { const filteredPendingRides = pendingRides.filter(ev => !dismissedIds.has(`pending-${ev.id}`));
+      console.log(`[UserAction] FILTER screen=Hub role=kid list=pendingRides totalSource=${pendingRides.length} afterFilter=${filteredPendingRides.length} [features/hub/kid/KidUrgentAlerts.tsx:92]`);
+      return filteredPendingRides.map(ev => {
         // Parent's own Hub escalates an unassigned ride once it's <2hr away
         // (ParentView.tsx's unassignedUrgent) — this alert rendered every
         // pending ride identically regardless of how soon it was, so the
@@ -96,28 +104,34 @@ export function KidUrgentAlerts({
           <AlertRow key={ev.id} Icon={isUrgent ? AlertTriangle : Clock} accent={isUrgent ? colors.danger : BRAND.amber} colors={colors} isDark={isDark}
             title={isUrgent ? 'Still no driver — getting close!' : 'Waiting on driver…'}
             detail={`${ev.title} · ${fmtTime(ev.time)}`}
-            onDismiss={() => onDismiss(`pending-${ev.id}`)} />
+            onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "Waiting on driver" (id=pending-${ev.id}) → onDismiss [features/hub/kid/KidUrgentAlerts.tsx:107]`); onDismiss(`pending-${ev.id}`); }} />
         );
-      })}
+      }); })()}
 
-      {declinedQuests.filter(q => !dismissedIds.has(`quest-${q.id}`)).map(q => {
+      {(() => { const filteredDeclinedQuests = declinedQuests.filter(q => !dismissedIds.has(`quest-${q.id}`));
+      console.log(`[UserAction] FILTER screen=Hub role=kid list=declinedQuests totalSource=${declinedQuests.length} afterFilter=${filteredDeclinedQuests.length} [features/hub/kid/KidUrgentAlerts.tsx:112]`);
+      return filteredDeclinedQuests.map(q => {
         const note = q.history?.slice().reverse().find((h: any) => h.action === 'declined')?.note;
         return (
           <AlertRow key={q.id} Icon={RotateCcw} accent={BRAND.purple} colors={colors} isDark={isDark}
             title="Quest sent back" detail={note ? `"${note}"` : q.title}
-            onPress={() => { router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); onDismiss(`quest-${q.id}`); }}
-            onDismiss={() => onDismiss(`quest-${q.id}`)} />
+            onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "Quest sent back" on "${q.title}" (id=${q.id}) → navigate to /(tabs)/quests [features/hub/kid/KidUrgentAlerts.tsx:117]`); router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); onDismiss(`quest-${q.id}`); }}
+            onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "Quest sent back: ${q.title}" (id=quest-${q.id}) → onDismiss [features/hub/kid/KidUrgentAlerts.tsx:118]`); onDismiss(`quest-${q.id}`); }} />
         );
-      })}
+      }); })()}
 
-      {approvedQuests.filter(q => !dismissedIds.has(`quest-approved-${q.id}`)).map(q => (
+      {(() => { const filteredApprovedQuests = approvedQuests.filter(q => !dismissedIds.has(`quest-approved-${q.id}`));
+      console.log(`[UserAction] FILTER screen=Hub role=kid list=approvedQuests totalSource=${approvedQuests.length} afterFilter=${filteredApprovedQuests.length} [features/hub/kid/KidUrgentAlerts.tsx:123]`);
+      return filteredApprovedQuests.map(q => (
         <AlertRow key={`approved-${q.id}`} Icon={PartyPopper} accent={MONEY_GREEN} colors={colors} isDark={isDark}
           title="Quest approved!" detail={`${q.title} · +${q.coins} coins`}
-          onPress={() => { router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); onDismiss(`quest-approved-${q.id}`); }}
-          onDismiss={() => onDismiss(`quest-approved-${q.id}`)} />
-      ))}
+          onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "Quest approved!" on "${q.title}" (id=${q.id}) → navigate to /(tabs)/quests [features/hub/kid/KidUrgentAlerts.tsx:126]`); router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); onDismiss(`quest-approved-${q.id}`); }}
+          onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "Quest approved!: ${q.title}" (id=quest-approved-${q.id}) → onDismiss [features/hub/kid/KidUrgentAlerts.tsx:127]`); onDismiss(`quest-approved-${q.id}`); }} />
+      )); })()}
 
-      {cheersForMe.filter(({ quest, cheer }) => !dismissedIds.has(`cheer-${quest.id}-${cheer.memberId}`)).map(({ quest, cheer }) => {
+      {(() => { const filteredCheersForMe = cheersForMe.filter(({ quest, cheer }) => !dismissedIds.has(`cheer-${quest.id}-${cheer.memberId}`));
+      console.log(`[UserAction] FILTER screen=Hub role=kid list=cheersForMe totalSource=${cheersForMe.length} afterFilter=${filteredCheersForMe.length} [features/hub/kid/KidUrgentAlerts.tsx:130]`);
+      return filteredCheersForMe.map(({ quest, cheer }) => {
         const cheerer = members.find(m => m.id === cheer.memberId);
         const key = `cheer-${quest.id}-${cheer.memberId}`;
         return (
@@ -126,10 +140,10 @@ export function KidUrgentAlerts({
             <AlertRow Icon={PartyPopper} accent={BRAND.purple} colors={colors} isDark={isDark}
               title={`${cheerer?.name?.split(' ')[0] ?? 'Someone'} cheered for you!`}
               detail={`${quest.title}${cheer.coins ? ` · +${cheer.coins} bonus 🪙` : ''}`}
-              onDismiss={() => onDismiss(key)} />
+              onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "cheered for you: ${quest.title}" (id=${key}) → onDismiss [features/hub/kid/KidUrgentAlerts.tsx:139]`); onDismiss(key); }} />
           </View>
         );
-      })}
+      }); })()}
 
       {recentReplies.map(r => {
         const approved = r.status === 'approved';
@@ -163,7 +177,7 @@ export function KidUrgentAlerts({
                 <Text style={{ fontSize: KID.sub, color: accent, fontStyle: 'italic', marginTop: 4 }}>Parent: "{r.parentNote}"</Text>
               ) : null}
             </View>
-            <Pressable onPress={() => onDismiss(r.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "${label} — ${typeLabel}" (id=${r.id}) → onDismiss [features/hub/kid/KidUrgentAlerts.tsx:180]`); onDismiss(r.id); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <X size={16} color={colors.textTertiary} />
             </Pressable>
           </View>

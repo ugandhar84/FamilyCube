@@ -30,19 +30,23 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
   const isGPOpen   = !!(choreData?.openToGP ?? (q as any).openToGP);
 
   const sendNudge = () => {
+    console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Nudge" on "${q.title}" assigned to ${assignee?.name ?? 'partner'} (id=${q.id}) → sendMessage [features/hub/parent/backlog/OthersAdultQuestCard.tsx:32]`);
     const msg = `👋 Hey ${assignee?.name?.split(' ')[0] ?? 'partner'}, just a nudge — "${q.title}" is still open. Need any help?`;
     useChatStore.getState().sendMessage(assignee?.id ?? 'all', active.id, msg);
     Alert.alert('Nudge sent!', `A reminder was sent directly to ${assignee?.name ?? 'your partner'}.`);
   };
 
-  const reclaim = () => Alert.alert(
+  const reclaim = () => {
+    console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Reclaim" on "${q.title}" assigned to ${assignee?.name ?? 'partner'} (id=${q.id}) [features/hub/parent/backlog/OthersAdultQuestCard.tsx:38]`);
+    Alert.alert(
     'Reclaim task',
     `Reassign "${q.title}" to yourself?`,
     [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Reclaim', onPress: () => updateQuest(q.id, { assignedToId: active.id }) },
+      { text: 'Reclaim', onPress: () => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Reclaim" on "${q.title}" (id=${q.id}) → updateQuest(assignedToId) [features/hub/parent/backlog/OthersAdultQuestCard.tsx:43]`); updateQuest(q.id, { assignedToId: active.id }); } },
     ]
   );
+  };
 
   return (
     <View style={{
@@ -52,7 +56,7 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
       shadowOpacity: isDark ? 0.4 : 1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
       elevation: isDark ? 3 : 2,
     }}>
-      <Pressable onPress={() => hasDetail && setExp(e => !e)} onLongPress={onLongPress}
+      <Pressable onPress={() => { if (hasDetail) { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "${isExp ? 'Collapse' : 'Expand'}" on "${q.title}" (id=${q.id}) [features/hub/parent/backlog/OthersAdultQuestCard.tsx:55]`); setExp(e => !e); } }} onLongPress={onLongPress}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingBottom: 8 }}>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -120,7 +124,7 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
       )}
 
       {si?.length > 0 && (
-        <Pressable onPress={() => useChoreStore.getState().updateChore(q.id, { openToGP: !isGPOpen })}
+        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "${isGPOpen ? 'GP Welcome' : 'Offer to GP'}" on "${q.title}" (id=${q.id}) → updateChore(openToGP) [features/hub/parent/backlog/OthersAdultQuestCard.tsx:123]`); useChoreStore.getState().updateChore(q.id, { openToGP: !isGPOpen }); }}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 7,
             marginHorizontal: 12, marginBottom: 6, padding: 8, borderRadius: 10,
             backgroundColor: isGPOpen ? (isDark ? '#14291a' : '#DCFCE7') : (isDark ? colors.surface2 : '#F8FAFC'),
@@ -135,7 +139,7 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
       )}
 
       <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12, paddingTop: 4 }}>
-        <Pressable onPress={sendNudge}
+        <Pressable onPress={sendNudge} /* logging inside sendNudge() */
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
             backgroundColor: isDark ? colors.warning + '18' : colors.warningLight,
             borderWidth: 1.5, borderColor: colors.warning + '60',
@@ -143,7 +147,7 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
           <MessageCircle size={13} color={colors.warning} />
           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warning }}>Nudge</Text>
         </Pressable>
-        <Pressable onPress={reclaim}
+        <Pressable onPress={reclaim} /* logging inside reclaim() */
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
             backgroundColor: colors.primary + '18',
             borderWidth: 1.5, borderColor: colors.primary + '50',

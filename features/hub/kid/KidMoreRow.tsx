@@ -18,7 +18,7 @@ export function KidMoreRow({ onPiggyBank, onHistory }: { onPiggyBank: () => void
           { Icon: ClipboardList, label: 'My Requests',   color: BRAND.purple, bg: BRAND.purple + '12', onPress: onHistory },
           { Icon: Calendar,      label: 'Full Calendar', color: BRAND.teal,   bg: BRAND.teal + '12',   onPress: () => router.push('/(tabs)/calendar') },
         ] as const).map(({ Icon, label, color, bg, onPress }) => (
-          <Pressable key={label} onPress={onPress}
+          <Pressable key={label} onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "${label}" on "KidMoreRow" [features/hub/kid/KidMoreRow.tsx:21]`); onPress(); }}
             style={{ flex: 1, borderRadius: 16, paddingVertical: 15, alignItems: 'center', gap: 6,
               backgroundColor: bg, borderWidth: 1, borderColor: color + '30' }}>
             <Icon size={22} color={color} />

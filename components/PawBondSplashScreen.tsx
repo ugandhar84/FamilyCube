@@ -1,56 +1,20 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Appearance } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useTheme } from '@/lib/ThemeContext';
 import Animated, {
   useSharedValue, useAnimatedStyle,
   withTiming, withSpring, withRepeat, withSequence, withDelay,
   Easing,
 } from 'react-native-reanimated';
-import Svg, { Ellipse, Polyline } from 'react-native-svg';
+import Svg, { Polyline, Path } from 'react-native-svg';
+import { AnimatedCubeMark } from './FamilyCubeLogo';
 
 const AMBER = '#FFB347';
-const TEAL  = '#1DC8BC';
-
-// Captured at module load time — always correct before any React render
-const INITIAL_IS_DARK = Appearance.getColorScheme() === 'dark';
 
 // Fixed sizes — same on every device/ratio
-const MARK = 120;
+const MARK = 100;
 const EKG_W = 320;
 const EKG_H = 34;
-
-// ── Paw mark ─────────────────────────────────────────────────────────────────
-function PawMark({ isDark }: { isDark: boolean }) {
-  const toe   = 'white';
-  const pad   = isDark ? 'rgba(29,200,188,0.28)' : 'rgba(255,255,255,0.92)';
-  const padStroke = isDark ? 'rgba(255,255,255,0.82)' : 'none';
-
-  return (
-    <Svg width={MARK} height={MARK} viewBox="0 0 100 100">
-      {/* Toe beans — ellipses rotated at their own centre */}
-      <Ellipse cx={19} cy={34} rx={8} ry={10} fill={toe} transform="rotate(-20,19,34)" />
-      <Ellipse cx={36} cy={25} rx={8} ry={10} fill={toe} transform="rotate(-6,36,25)"  />
-      <Ellipse cx={64} cy={25} rx={8} ry={10} fill={toe} transform="rotate(6,64,25)"   />
-      <Ellipse cx={81} cy={34} rx={8} ry={10} fill={toe} transform="rotate(20,81,34)"  />
-      {/* Main pad */}
-      <Ellipse cx={50} cy={67} rx={20} ry={18}
-        fill={pad}
-        stroke={padStroke}
-        strokeWidth={isDark ? 2 : 0}
-      />
-      {/* Amber EKG line through pad */}
-      <Polyline
-        points="6,67 26,67 32,51 38,82 43,58 49,67 94,67"
-        fill="none"
-        stroke={AMBER}
-        strokeWidth={4.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
 
 // ── EKG pulse strip — fixed 320 pt period, clipped to 260 pt window ──────────
 function PulseStrip() {
@@ -98,23 +62,33 @@ function PulseStrip() {
   );
 }
 
-// ── Animated loading dot ──────────────────────────────────────────────────────
-function Dot({ delay }: { delay: number }) {
-  const scale = useSharedValue(0.4);
-  const op    = useSharedValue(0.3);
+// ── Animated loading icons — house / checklist / heart, one per brand
+// pillar (Connect · Organize · Care) instead of three generic dots ─────────
+const LOADING_ICON_PATHS: Record<'home' | 'tasks' | 'heart', string[]> = {
+  // House — Connect
+  home:  ['M3 10.5L12 3l9 7.5', 'M5 9.5V20a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V9.5'],
+  // Checklist — Organize
+  tasks: ['M4 6h2M4 12h2M4 18h2', 'M9 6h11M9 12h11M9 18h11'],
+  // Heart — Care
+  heart: ['M12 20s-7-4.5-9.5-9A5 5 0 0112 5a5 5 0 019.5 6c-2.5 4.5-9.5 9-9.5 9z'],
+};
+
+function LoadingIcon({ kind, delay }: { kind: 'home' | 'tasks' | 'heart'; delay: number }) {
+  const scale = useSharedValue(0.5);
+  const op    = useSharedValue(0.35);
   useEffect(() => {
     scale.value = withDelay(delay, withRepeat(
       withSequence(
-        withSpring(1, { damping: 6, stiffness: 300 }),
-        withTiming(0.4, { duration: 380, easing: Easing.in(Easing.quad) }),
-        withDelay(80, withTiming(0.4, { duration: 1 })),
+        withSpring(1, { damping: 7, stiffness: 260 }),
+        withTiming(0.5, { duration: 420, easing: Easing.in(Easing.quad) }),
+        withDelay(160, withTiming(0.5, { duration: 1 })),
       ), -1, false,
     ));
     op.value = withDelay(delay, withRepeat(
       withSequence(
-        withTiming(1, { duration: 180 }),
-        withTiming(0.3, { duration: 380 }),
-        withDelay(80, withTiming(0.3, { duration: 1 })),
+        withTiming(1, { duration: 220 }),
+        withTiming(0.35, { duration: 420 }),
+        withDelay(160, withTiming(0.35, { duration: 1 })),
       ), -1, false,
     ));
   }, []);
@@ -122,13 +96,21 @@ function Dot({ delay }: { delay: number }) {
     transform: [{ scale: scale.value }],
     opacity: op.value,
   }));
-  return <Animated.View style={[s.dot, style]} />;
+  return (
+    <Animated.View style={style}>
+      <Svg width={18} height={18} viewBox="0 0 24 24">
+        {LOADING_ICON_PATHS[kind].map((d, i) => (
+          <Path key={i} d={d}
+            fill={kind === 'heart' ? 'rgba(255,255,255,0.85)' : 'none'}
+            stroke="rgba(255,255,255,0.85)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+        ))}
+      </Svg>
+    </Animated.View>
+  );
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
 export default function PawBondSplashScreen() {
-  const { isDark } = useTheme();
-
   // Always use the dark gradient — splash is 2s, no theme-flashing risk,
   // and dark looks premium on both light and dark devices.
   const gradientColors: [string, string, string] = ['#2A0A5E', '#150D50', '#051C1A'];
@@ -170,23 +152,22 @@ export default function PawBondSplashScreen() {
       end={{ x: 0.85, y: 1 }}
       style={s.root}
     >
-      {/* Soft glow behind mark */}
-      <View style={s.glow} />
-
-      {/* Paw mark — fixed container, no stretch */}
+      {/* Cube mark — fixed container, no stretch. No glow/spotlight behind
+          it (removed per explicit request) — the cube's own gradient faces
+          already read clearly against the dark backdrop. */}
       <Animated.View style={[s.markWrap, markStyle]}>
-        <PawMark isDark={isDark} />
+        <AnimatedCubeMark size={MARK} />
       </Animated.View>
 
       {/* Wordmark */}
       <Animated.View style={[s.nameRow, nameStyle]}>
-        <Text style={s.namePaw}>Paw</Text>
-        <Text style={s.nameBond}>Bond</Text>
+        <Text style={s.nameFamily}>Family</Text>
+        <Text style={s.nameCube}>Cube</Text>
       </Animated.View>
 
       {/* Tagline */}
       <Animated.Text style={[s.tagline, tagStyle]}>
-        Your Pet's Best Bond
+        Connect · Organize · Care · Grow
       </Animated.Text>
 
       {/* EKG pulse */}
@@ -196,9 +177,9 @@ export default function PawBondSplashScreen() {
 
       {/* Loading dots */}
       <Animated.View style={[s.dots, dotsStyle]}>
-        <Dot delay={0}   />
-        <Dot delay={180} />
-        <Dot delay={360} />
+        <LoadingIcon kind="home"  delay={0}   />
+        <LoadingIcon kind="tasks" delay={180} />
+        <LoadingIcon kind="heart" delay={360} />
       </Animated.View>
     </LinearGradient>
   );
@@ -210,18 +191,9 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  glow: {
-    position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    top: '32%',
-    alignSelf: 'center',
-  },
   markWrap: {
     width: MARK,
-    height: MARK,
+    height: MARK * 1.18,
     alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
@@ -236,17 +208,17 @@ const s = StyleSheet.create({
     alignItems: 'baseline',
     marginBottom: 10,
   },
-  namePaw: {
-    fontSize: 48,
+  nameFamily: {
+    fontSize: 40,
     fontWeight: '800',
     color: 'white',
-    letterSpacing: -1.5,
+    letterSpacing: -1,
   },
-  nameBond: {
-    fontSize: 48,
+  nameCube: {
+    fontSize: 40,
     fontWeight: '200',
     color: 'rgba(255,255,255,0.88)',
-    letterSpacing: -1.5,
+    letterSpacing: -1,
   },
   tagline: {
     fontSize: 12,
@@ -267,12 +239,6 @@ const s = StyleSheet.create({
   dots: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.75)',
+    gap: 16,
   },
 });

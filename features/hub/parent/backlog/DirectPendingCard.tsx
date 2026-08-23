@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { ChevronUp, ChevronDown, Check, MessageCircle } from 'lucide-react-native';
+import { ChevronUp, ChevronDown, Check, MessageCircle, Hand } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
@@ -31,7 +31,7 @@ export function DirectPendingCard({ a, chore, members, colors, isDark, respondTo
       shadowOpacity: isDark ? 0.4 : 1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
       elevation: isDark ? 3 : 2,
     }}>
-      <Pressable onPress={() => setExp(e => !e)}
+      <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent tapped "${isExp ? 'Collapse' : 'Expand'}" on "${chore.title}" (id=${a.id}) [features/hub/parent/backlog/DirectPendingCard.tsx:34]`); setExp(e => !e); }}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, paddingBottom: 8 }}>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{chore.title}</Text>
@@ -53,6 +53,7 @@ export function DirectPendingCard({ a, chore, members, colors, isDark, respondTo
       </Pressable>
       <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
         <Pressable onPress={() => {
+          console.log(`[UserAction] screen=Hub role=parent tapped "Accept" on "${chore.title}" from ${assigner?.name ?? 'partner'} (id=${a.id}) → respondToParentQuest [features/hub/parent/backlog/DirectPendingCard.tsx:55]`);
           respondToParentQuest(a.id, { action: 'ACCEPT' });
           // System A never notifies the assigner of Accept/Decline/Complete
           // on its own (respondToParentQuest has no sendMessage call) — the
@@ -66,7 +67,7 @@ export function DirectPendingCard({ a, chore, members, colors, isDark, respondTo
           <Check size={14} color="#fff" />
           <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Accept</Text>
         </Pressable>
-        <Pressable onPress={() => onRespond(a.id, chore.title, a.assignedBy, a.assignedTo)}
+        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent tapped "Respond" on "${chore.title}" from ${assigner?.name ?? 'partner'} (id=${a.id}) → onRespond [features/hub/parent/backlog/DirectPendingCard.tsx:69]`); onRespond(a.id, chore.title, a.assignedBy, a.assignedTo); }}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
             borderWidth: 1.5, borderColor: colors.warning + '60',
             borderRadius: 10, paddingVertical: 8 }}>
@@ -74,6 +75,21 @@ export function DirectPendingCard({ a, chore, members, colors, isDark, respondTo
           <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.warning }}>Respond</Text>
         </Pressable>
       </View>
+      {/* Quick "saw it, will get to it" ping — separate from Accept (which
+          also flips the assignment to ACCEPTED). Lets the assignee let the
+          assigner know they're on it without committing to the formal
+          accept/status change yet, mirroring MyAdultQuestCard's own
+          "Let X know you're on it" nudge for the already-accepted case. */}
+      <Pressable onPress={() => {
+        console.log(`[UserAction] screen=Hub role=parent tapped "I'm on it" on "${chore.title}" from ${assigner?.name ?? 'partner'} (id=${a.id}) → sendMessage [features/hub/parent/backlog/DirectPendingCard.tsx:97]`);
+        useChatStore.getState().sendMessage(a.assignedBy, a.assignedTo,
+          `👋 ${assignee?.name?.split(' ')[0] ?? 'They'} saw "${chore.title}" — on it!`);
+      }}
+        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+          marginHorizontal: 12, marginBottom: 12, paddingVertical: 8, borderRadius: 10 }}>
+        <Hand size={12} color={colors.textTertiary} />
+        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>Let {assigner?.name?.split(' ')[0] ?? 'them'} know you're on it</Text>
+      </Pressable>
       {isExp && chore.description && (
         <View style={{ borderTopWidth: 1, borderTopColor: colors.warning + '30', padding: 12 }}>
           <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{chore.description}</Text>

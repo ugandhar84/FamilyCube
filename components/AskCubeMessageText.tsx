@@ -14,7 +14,9 @@ import { TYPO } from '@/constants/theme';
 const URGENT_WORDS = /\b(?:overdue|today|due now|asap)\b/i;
 const SOON_WORDS = /\b(?:tomorrow|due soon|this weekend|tonight)\b/i;
 
-type Token = { text: string; bold: boolean };
+export interface AskCubeChoreRefLike { id: string; title: string }
+
+type Token = { text: string; bold: boolean; choreId?: string };
 
 function tokenizeBold(text: string): Token[] {
   const parts: Token[] = [];
@@ -28,6 +30,31 @@ function tokenizeBold(text: string): Token[] {
   }
   if (last < text.length) parts.push({ text: text.slice(last), bold: false });
   return parts;
+}
+
+// Splits each bold/plain token further wherever a known chore title occurs
+// verbatim, tagging that piece with the chore's id so renderLine can make it
+// tappable. Longest title first, so one chore's title being a substring of
+// another's ("Clean Bathroom" vs "Clean Bathroom Upstairs") never steals a
+// shorter match out from under the longer, more specific one.
+function splitOnChoreTitles(tokens: Token[], chores: AskCubeChoreRefLike[]): Token[] {
+  if (!chores.length) return tokens;
+  const sorted = [...chores].sort((a, b) => b.title.length - a.title.length);
+  let result = tokens;
+  for (const chore of sorted) {
+    if (!chore.title.trim()) continue;
+    const next: Token[] = [];
+    for (const tok of result) {
+      if (tok.choreId || !tok.text.includes(chore.title)) { next.push(tok); continue; }
+      const segments = tok.text.split(chore.title);
+      segments.forEach((seg, i) => {
+        if (seg) next.push({ text: seg, bold: tok.bold });
+        if (i < segments.length - 1) next.push({ text: chore.title, bold: tok.bold, choreId: chore.id });
+      });
+    }
+    result = next;
+  }
+  return result;
 }
 
 // Splits a token's text into word-ish chunks (keeping whitespace attached)
@@ -52,11 +79,23 @@ function renderWithUrgency(text: string, bold: boolean, keyPrefix: string, color
   });
 }
 
-function renderLine(line: string, lineKey: string, color: string, urgentColor: string, soonColor: string) {
+function renderLine(
+  line: string, lineKey: string, color: string, urgentColor: string, soonColor: string,
+  chores: AskCubeChoreRefLike[], linkColor: string, onChorePress?: (choreId: string) => void,
+) {
   const bulletMatch = /^\s*[-•]\s+(.*)$/.exec(line);
   const body = bulletMatch ? bulletMatch[1] : line;
-  const tokens = tokenizeBold(body);
-  const inline = tokens.map((t, i) => renderWithUrgency(t.text, t.bold, `${lineKey}-${i}`, color, urgentColor, soonColor));
+  const tokens = splitOnChoreTitles(tokenizeBold(body), chores);
+  const inline = tokens.map((t, i) => t.choreId
+    ? (
+      <Text
+        key={`${lineKey}-${i}`}
+        onPress={onChorePress ? () => onChorePress(t.choreId!) : undefined}
+        style={{ fontWeight: t.bold ? '800' : '700', color: linkColor, textDecorationLine: 'underline' }}>
+        {t.text}
+      </Text>
+    )
+    : renderWithUrgency(t.text, t.bold, `${lineKey}-${i}`, color, urgentColor, soonColor));
 
   // A line that's entirely one bold "**Label:**" token reads as a section
   // header, not running text — give it a touch more top space and slightly
@@ -81,10 +120,17 @@ function renderLine(line: string, lineKey: string, color: string, urgentColor: s
   );
 }
 
-export default function AskCubeMessageText({ content, color, urgentColor, soonColor }: {
+export default function AskCubeMessageText({ content, color, urgentColor, soonColor, chores, linkColor, onChorePress }: {
   content: string; color: string; urgentColor: string; soonColor: string;
+  // Chores this reply mentions by title — each occurrence in the text
+  // becomes a tap-through link to that chore. Omit (or pass none) to render
+  // exactly as before, e.g. HealthAiAssistant's use of this same component.
+  chores?: AskCubeChoreRefLike[];
+  linkColor?: string;
+  onChorePress?: (choreId: string) => void;
 }) {
   const lines = content.split('\n');
+  const choreList = chores ?? [];
   return (
     <View style={{ gap: 2 }}>
       {lines.map((line, i) => {
@@ -92,7 +138,7 @@ export default function AskCubeMessageText({ content, color, urgentColor, soonCo
         // Strip a leading "**Label:**" heading line into its own bold row
         // with a touch more spacing, since the model uses these as section
         // headers ("**Schedule:**", "**Chores:**").
-        return renderLine(line, `line-${i}`, color, urgentColor, soonColor);
+        return renderLine(line, `line-${i}`, color, urgentColor, soonColor, choreList, linkColor ?? color, onChorePress);
       })}
     </View>
   );

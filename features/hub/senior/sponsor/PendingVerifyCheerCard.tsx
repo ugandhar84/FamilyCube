@@ -35,7 +35,7 @@ function rowMeta(status: string, colors: any) {
 export function PendingVerifyCheerCard({
   pendingGpApproval, allChores, kids, allNames, colors, isDark,
   cheerSticker, setCheerSticker,
-  onApproveAndCheer, onRequestRedo, members,
+  onApproveAndCheer, onRequestRedo, members, active,
 }: {
   pendingGpApproval: ChoreTask[]; allChores: ChoreTask[];
   kids: FamilyMember[]; allNames: string[]; colors: any; isDark: boolean;
@@ -43,21 +43,26 @@ export function PendingVerifyCheerCard({
   onApproveAndCheer: (choreId: string) => void;
   onRequestRedo: (choreId: string, reason: string) => void;
   members?: FamilyMember[];
+  active?: { name: string };
 }) {
   if (pendingGpApproval.length === 0) return null;
+  const actorName = active?.name ?? 'senior';
 
   const insets = useSafeAreaInsets();
   const [lightboxUri, setLightboxUri] = useState<string | null>(null);
 
-  const promptRedo = (choreId: string, title: string, kidName: string) => Alert.prompt(
+  const promptRedo = (choreId: string, title: string, kidName: string) => {
+    console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "Redo" (RotateCcw icon) on "${title}" (id=${choreId}) [features/hub/senior/sponsor/PendingVerifyCheerCard.tsx:52]`);
+    Alert.prompt(
     'Ask for a redo?',
     `Let ${kidName} know why "${title}" needs another try.`,
     [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Request Redo', style: 'destructive', onPress: (reason?: string) => onRequestRedo(choreId, reason?.trim() || 'Needs another try') },
+      { text: 'Request Redo', style: 'destructive', onPress: (reason?: string) => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} confirmed "Request Redo" on "${title}" (id=${choreId}) → onRequestRedo [features/hub/senior/sponsor/PendingVerifyCheerCard.tsx:57]`); onRequestRedo(choreId, reason?.trim() || 'Needs another try'); } },
     ],
     'plain-text',
   );
+  };
 
   // A team quest clones one chore per kid — reviewing them as N separate
   // full cards repeats the same title/points/sticker chrome N times. Render
@@ -80,7 +85,7 @@ export function PendingVerifyCheerCard({
       {/* Sticker picker */}
       <View style={{ flexDirection: 'row', gap: 6 }}>
         {CHEER_STICKERS.map(s => (
-          <Pressable key={s} onPress={() => setCheerSticker(s)}
+          <Pressable key={s} onPress={() => { console.log(`[UserAction] FORM screen=Hub role=senior member=${actorName} selected "${s}" for "Cheer sticker" on "Verify & Cheer" [features/hub/senior/sponsor/PendingVerifyCheerCard.tsx:83]`); setCheerSticker(s); }}
             style={{ flex: 1, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
               borderWidth: 1.5,
               borderColor: cheerSticker === s ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
@@ -131,7 +136,7 @@ export function PendingVerifyCheerCard({
                       backgroundColor: isDark ? colors.surface : '#fff',
                       borderWidth: 1, borderColor: meta.color + '30' }}>
                       {member.submissionPhotoUrl ? (
-                        <Pressable onPress={() => setLightboxUri(member.submissionPhotoUrl!)}>
+                        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped photo thumbnail on "${chore.title}" for ${kid?.name ?? 'kid'} (id=${member.id}) → setLightboxUri [features/hub/senior/sponsor/PendingVerifyCheerCard.tsx:134]`); setLightboxUri(member.submissionPhotoUrl!); }}>
                           <Image source={{ uri: member.submissionPhotoUrl }}
                             style={{ width: 44, height: 44, borderRadius: 10 }} resizeMode="cover" />
                         </Pressable>
@@ -163,7 +168,7 @@ export function PendingVerifyCheerCard({
                               borderWidth: 1.5, borderColor: colors.danger + '60' }}>
                             <RotateCcw size={13} color={colors.danger} />
                           </Pressable>
-                          <Pressable onPress={() => onApproveAndCheer(member.id)}
+                          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "${cheerSticker} Approve" (per-kid) on "${chore.title}" for ${kid?.name ?? 'kid'} (id=${member.id}) → onApproveAndCheer [features/hub/senior/sponsor/PendingVerifyCheerCard.tsx:166]`); onApproveAndCheer(member.id); }}
                             style={{ backgroundColor: BRAND.teal, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 }}>
                             <Text style={{ fontSize: GP.tiny, fontWeight: '900', color: '#fff' }}>{cheerSticker} Approve</Text>
                           </Pressable>
@@ -205,7 +210,7 @@ export function PendingVerifyCheerCard({
                       borderRadius: 12, borderWidth: 1.5, borderColor: colors.danger + '60' }}>
                     <RotateCcw size={16} color={colors.danger} />
                   </Pressable>
-                  <Pressable onPress={() => onApproveAndCheer(chore.id)}
+                  <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "APPROVE & CHEER" on "${chore.title}" (id=${chore.id}) → onApproveAndCheer [features/hub/senior/sponsor/PendingVerifyCheerCard.tsx:208]`); onApproveAndCheer(chore.id); }}
                     style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                       backgroundColor: BRAND.teal, borderRadius: 12, paddingVertical: 13, paddingHorizontal: 6 }}>
                     <Text style={{ fontSize: 18 }}>{cheerSticker}</Text>
@@ -224,10 +229,10 @@ export function PendingVerifyCheerCard({
       {/* Full-screen photo lightbox — the thumbnail is the only way a GP
           can inspect proof before deciding approve vs. redo, so it needs
           to actually enlarge, not just sit there at 44x44. */}
-      <Modal visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
-        <Pressable style={{ flex: 1, backgroundColor: '#000' }} onPress={() => setLightboxUri(null)}>
+      <Modal visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped device-back on photo lightbox → setLightboxUri(null) [features/hub/senior/sponsor/PendingVerifyCheerCard.tsx:227]`); setLightboxUri(null); }}>
+        <Pressable style={{ flex: 1, backgroundColor: '#000' }} onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped outside photo lightbox → setLightboxUri(null) [features/hub/senior/sponsor/PendingVerifyCheerCard.tsx:228]`); setLightboxUri(null); }}>
           <View style={{ position: 'absolute', top: insets.top + 8, right: 16, zIndex: 10 }}>
-            <Pressable onPress={() => setLightboxUri(null)}
+            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "X close" on photo lightbox → setLightboxUri(null) [features/hub/senior/sponsor/PendingVerifyCheerCard.tsx:230]`); setLightboxUri(null); }}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' }}>
               <X size={20} color="#fff" />

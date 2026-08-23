@@ -27,7 +27,7 @@ export function InlineReplyCard({ req, kidName, isPermission, isQuestion, isMedi
 
   return (
     <View style={{ borderRadius: 16, borderWidth: 1.5, borderColor: accent + '40', backgroundColor: isDark ? colors.card : accent + '06', overflow: 'hidden' }}>
-      <Pressable onPress={() => setExpanded(e => !e)}
+      <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${kidName} tapped "${expanded ? 'Collapse' : 'Expand'}" on "${typeLabel}" request (id=${req.id ?? 'n/a'}) [features/hub/parent/InlineReplyCard.tsx:30]`); setExpanded(e => !e); }}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12 }}>
         <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: accent + '20', alignItems: 'center', justifyContent: 'center' }}>
           <TypeIcon size={16} color={accent} />
@@ -67,6 +67,7 @@ export function InlineReplyCard({ req, kidName, isPermission, isQuestion, isMedi
               placeholderTextColor={colors.textTertiary}
               value={reply}
               onChangeText={setReply}
+              onBlur={() => { console.log(`[UserAction] FORM screen=Hub role=parent member=${kidName} field="reply" on "${typeLabel}" request (id=${req.id ?? 'n/a'}) newValue=${reply} [features/hub/parent/InlineReplyCard.tsx:69]`); }}
               multiline
               textAlignVertical="top"
             />
@@ -74,7 +75,7 @@ export function InlineReplyCard({ req, kidName, isPermission, isQuestion, isMedi
 
           <View style={{ flexDirection: 'row', gap: 8, padding: 14 }}>
             <Pressable
-              onPress={() => onApprove(reply.trim())}
+              onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${kidName} tapped "${isPermission ? 'Allow' : isMedical ? 'Acknowledged' : 'Reply'}" on "${typeLabel}" request (id=${req.id ?? 'n/a'}) → onApprove [features/hub/parent/InlineReplyCard.tsx:77]`); onApprove(reply.trim()); }}
               disabled={!canSubmit}
               style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                 backgroundColor: canSubmit ? MONEY_GREEN : (isDark ? '#374151' : '#D1D5DB'),
@@ -85,7 +86,7 @@ export function InlineReplyCard({ req, kidName, isPermission, isQuestion, isMedi
               </Text>
             </Pressable>
             <Pressable
-              onPress={() => onDecline(reply.trim())}
+              onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${kidName} tapped "${isPermission ? 'No' : 'Dismiss'}" on "${typeLabel}" request (id=${req.id ?? 'n/a'}) → onDecline [features/hub/parent/InlineReplyCard.tsx:88]`); onDecline(reply.trim()); }}
               style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                 backgroundColor: isDark ? `${colors.danger}20` : colors.dangerLight,
                 borderWidth: 1.5, borderColor: `${colors.danger}30`,

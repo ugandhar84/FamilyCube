@@ -12,6 +12,7 @@ export function SavingsMatchModal({
   matchValue, setMatchValue,
   maxMonthly, setMaxMonthly,
   onSave,
+  active,
 }: {
   visible: boolean; onClose: () => void;
   kids: FamilyMember[]; colors: any; isDark: boolean;
@@ -23,7 +24,9 @@ export function SavingsMatchModal({
   // grandparent-role audit, Low L1).
   maxMonthly: string; setMaxMonthly: (v: string) => void;
   onSave: () => void;
+  active?: { name: string };
 }) {
+  const actorName = active?.name ?? 'senior';
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: '#00000060' }} onPress={onClose} />
@@ -37,7 +40,7 @@ export function SavingsMatchModal({
           <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>For grandchild</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {kids.map(k => (
-              <Pressable key={k.id} onPress={() => setMatchKidId(k.id)}
+              <Pressable key={k.id} onPress={() => { console.log(`[UserAction] FORM screen=Hub role=senior member=${actorName} selected "${k.name.split(' ')[0]}" for "For grandchild" on "Set Up Savings Match" modal [features/hub/senior/SavingsMatchModal.tsx:40]`); setMatchKidId(k.id); }}
                 style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5,
                   borderColor: matchKidId === k.id ? BRAND.purple : colors.border,
                   backgroundColor: matchKidId === k.id ? BRAND.purple + '15' : 'transparent' }}>
@@ -51,7 +54,7 @@ export function SavingsMatchModal({
         {/* Match type */}
         <View style={{ flexDirection: 'row', gap: 10 }}>
           {(['FIXED_PERCENTAGE', 'FIXED_AMOUNT'] as const).map(t => (
-            <Pressable key={t} onPress={() => setMatchType(t)}
+            <Pressable key={t} onPress={() => { console.log(`[UserAction] FORM screen=Hub role=senior member=${actorName} selected "${t === 'FIXED_PERCENTAGE' ? '% Match' : 'Fixed Amount'}" for "Match type" on "Set Up Savings Match" modal [features/hub/senior/SavingsMatchModal.tsx:54]`); setMatchType(t); }}
               style={{ flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: 'center', borderWidth: 1.5,
                 borderColor: matchType === t ? BRAND.purple : colors.border,
                 backgroundColor: matchType === t ? BRAND.purple + '12' : 'transparent' }}>
@@ -69,6 +72,7 @@ export function SavingsMatchModal({
             keyboardType="numeric"
             value={matchValue}
             onChangeText={setMatchValue}
+            onBlur={() => console.log(`[UserAction] FORM screen=Hub role=senior member=${actorName} field="Match value" on "Set Up Savings Match" modal newValue=${matchValue} [features/hub/senior/SavingsMatchModal.tsx:71]`)}
           />
           <Text style={{ fontSize: GP.body, color: colors.textSecondary }}>
             {matchType === 'FIXED_PERCENTAGE' ? '% of each earn' : 'pts per earn'}
@@ -84,6 +88,7 @@ export function SavingsMatchModal({
               keyboardType="numeric"
               value={maxMonthly}
               onChangeText={setMaxMonthly}
+              onBlur={() => console.log(`[UserAction] FORM screen=Hub role=senior member=${actorName} field="Monthly cap" on "Set Up Savings Match" modal newValue=${maxMonthly} [features/hub/senior/SavingsMatchModal.tsx:86]`)}
               placeholder="500"
               placeholderTextColor={colors.textTertiary}
             />
@@ -91,11 +96,11 @@ export function SavingsMatchModal({
           </View>
         </View>
         <View style={{ flexDirection: 'row', gap: 10 }}>
-          <Pressable onPress={onClose}
+          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "Cancel" on "Set Up Savings Match" modal → onClose [features/hub/senior/SavingsMatchModal.tsx:94]`); onClose(); }}
             style={{ flex: 1, alignItems: 'center', paddingVertical: 13, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border }}>
             <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
           </Pressable>
-          <Pressable onPress={onSave}
+          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "Save Match Rule" on "Set Up Savings Match" modal (kidId=${matchKidId}, type=${matchType}, value=${matchValue}, cap=${maxMonthly}) → onSave [features/hub/senior/SavingsMatchModal.tsx:98]`); onSave(); }}
             style={{ flex: 2, alignItems: 'center', paddingVertical: 13, borderRadius: 14,
               backgroundColor: matchKidId ? BRAND.purple : (isDark ? '#374151' : '#D1D5DB') }}>
             <Text style={{ fontSize: GP.body, fontWeight: '900', color: '#fff' }}>Save Match Rule</Text>

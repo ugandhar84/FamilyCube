@@ -23,6 +23,7 @@ export function HouseholdSnapshotCard({
   leaderboardKids: FamilyMember[]; allNames: string[];
 }) {
   const medals = ['🥇', '🥈', '🥉'];
+  console.log(`[UserAction] FILTER screen=Hub role=parent list=HouseholdSnapshotCard.leaderboardKids totalSource=${leaderboardKids.length} afterFilter=${leaderboardKids.length} [features/hub/parent/HouseholdSnapshotCard.tsx:26]`);
 
   return (
     <SectionCard

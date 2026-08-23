@@ -11,8 +11,10 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useChoreStore } from '@/store/choreStore';
 import type { ChoreTask } from '@/store/choreStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
+import { useQuestStore } from '@/store/choreAdapter';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { useChatStore } from '@/store/chatStore';
+import { supabase } from '@/lib/supabase';
 import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
 import type { FamilyMember } from '@/store/familyStore';
 import { localToday, isWorkEvent, hoursUntilEvent, useCountdown } from './hubUtils';
@@ -32,8 +34,14 @@ import { CreateQuestModal } from './senior/CreateQuestModal';
 import { MySponsoredQuestsSection } from './senior/MySponsoredQuestsSection';
 import { ReceiptSubmissionModal } from './senior/ReceiptSubmissionModal';
 import { FamilyMemoriesCard } from './senior/FamilyMemoriesCard';
-import { PickupRadarStatus } from './hubComponents';
+import { SectionCard, PickupRadarStatus } from './hubComponents';
 import { KidRideBanner } from './kid/KidRideBanner';
+import { DirectPendingCard } from './parent/backlog/DirectPendingCard';
+import { OutgoingPendingCard } from './parent/backlog/OutgoingPendingCard';
+import { LockedAssignmentCard } from './parent/backlog/LockedAssignmentCard';
+import { PushbackSheet } from './parent/PushbackSheet';
+import { DelegateSheet } from './parent/DelegateSheet';
+import { UserCheck } from 'lucide-react-native';
 
 export function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute, activeTrips }: {
   active: FamilyMember; members: FamilyMember[];
@@ -42,7 +50,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   onEnRoute: () => void;
   // Family-wide Pick-up Radar state, synced from tripStore — read-only
   // here. Every concurrently active trip is shown, not just one.
-  activeTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
+  activeTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; pickupMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
 }) {
   const { events, updateEvent } = useEventStore();
   const sendMessage = useChatStore(s => s.sendMessage);
@@ -65,20 +73,65 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const {
     chores, updateChore, grandparentMatches, grandparentApproveAndCheer, requestGrandparentRedo, createGrandparentQuest,
     addGrandparentMatch, claimGPErrand, withdrawGPOffer, submitGPErrandReceipt, cheerChore,
+    // A grandparent can be directly assigned a parent_only_quest by a
+    // parent (or hand one off themselves) via addParentQuest's adult-to-
+    // adult delegation — ADULT_ROLES includes 'senior' there — but this
+    // Hub had zero rendering path for the resulting pending Accept/Respond
+    // card. QuestsScreen.tsx used to have the same gap (fixed alongside
+    // this) since its selectors were hard-gated to isParent. Reusing the
+    // exact same cards/selectors ParentView's Household Backlog uses keeps
+    // this in sync with any future change to the snooze/bounce rules.
+    getMyDirectPending, getMyLockedItems, getMyOutgoingPending,
+    respondToParentQuest, cancelLockedAssignment, recallParentQuest, addParentQuest,
   } = useChoreStore();
+  const { updateQuest } = useQuestStore();
+  const [pushbackSheet, setPushbackSheet] = useState<{ assignmentId: string; choreTitle: string; assignedBy: string; assignedTo: string } | null>(null);
+  const [delegateSheet, setDelegateSheet] = useState<{ choreId: string; choreTitle: string } | null>(null);
+  const myDirectPending   = getMyDirectPending(active.id);
+  const myLockedItems     = getMyLockedItems(active.id);
+  const myOutgoingPending = getMyOutgoingPending(active.id);
+  // Detailed per-action trail — who tapped what, on which chore/event, and
+  // what store call it triggered — pairs with choreStore's own
+  // "[choreStore] → DB update/insert" lines so a full action is traceable
+  // end to end from one console. Grep "[UserAction]".
+  const logAction = (action: string, storeCall: string, opts?: { targetTitle?: string; targetId?: string; at?: string }) => {
+    console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "${action}"${opts?.targetTitle ? ` on "${opts.targetTitle}"` : ''}${opts?.targetId ? ` (id=${opts.targetId})` : ''} → ${storeCall}${opts?.at ? ` [features/hub/SeniorView.tsx:${opts.at}]` : ''}`);
+  };
   const { requests: kidRequests, assignRequest, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
   const gpWelcomeRequests = kidRequests.filter(r =>
     r.openToGP && r.status === 'approved' && !r.assignedHelper
   );
-  // Partner chores flagged openToGP — GP can buy supplies + scan receipt
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=gpWelcomeRequests totalSource=${kidRequests.length} afterFilter=${gpWelcomeRequests.length}`);
+  // Partner chores flagged openToGP — GP can buy supplies + scan receipt.
+  // Bug (found via live-DB testing): 'in_progress' alone doesn't mean
+  // still-open — it's also the status a chore lands in the MOMENT another
+  // GP claims it (claimGPErrand's real work-in-progress state after
+  // gp_offer_pending is accepted). Every uninvolved GP's Hub kept showing
+  // that already-claimed chore as a live "I'd Love To Help" invitation
+  // (QuestInvitationsSection has no claimed-by check of its own) — tapping
+  // it silently no-ops (claimGPErrand's own status==='todo' guard blocks
+  // it), but the stale card stayed there looking actionable regardless.
+  // 'todo' with no assignee is the only genuinely-still-open state.
+  // updateChore now writes inviteGrandparents whenever openToGP is set (see
+  // its own comment on that mirroring) — the two flags are effectively the
+  // same "open to grandparents" state on one chore. Without excluding
+  // inviteGrandparents here, a chore toggled via "GP Welcome" (PoolQuestCard/
+  // OthersAdultQuestCard) rendered in BOTH this "family could use a hand"
+  // list AND QuestInvitationsSection's gpInvitations list below — the same
+  // chore showing as two separate cards in this Hub. QuestInvitationsSection
+  // is the fuller UI (Accept + Pass), so it wins; this list only picks up
+  // the (now effectively unreachable, but safe to keep as a guard) case of
+  // openToGP without inviteGrandparents.
   const gpWelcomeChores = chores.filter(c =>
-    (c as any).openToGP && (c.status === 'todo' || c.status === 'in_progress')
+    (c as any).openToGP && !c.inviteGrandparents && c.status === 'todo' && !c.assignedToId
   );
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=gpWelcomeChores totalSource=${chores.length} afterFilter=${gpWelcomeChores.length}`);
   // Scenario 1.6 — offers THIS GP made that are still waiting on a parent
   // to Accept/Decline (see claimGPErrand/PendingOffersSection).
   const myPendingOffers = chores.filter(c =>
     c.status === 'gp_offer_pending' && c.gpOfferById === active.id
   );
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=myPendingOffers totalSource=${chores.length} afterFilter=${myPendingOffers.length}`);
 
   const kids    = members.filter(m => m.role === 'kid');
   const allNames = members.map(m => m.name);
@@ -101,6 +154,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     const when = c.approvedAt ?? c.reviewedAt ?? c.createdAt;
     return withinLast24h(when);
   });
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=kidsCheerable totalSource=${chores.length} afterFilter=${kidsCheerable.length} [features/hub/SeniorView.tsx:132]`);
 
   const [sosActive, setSosActive]   = useState(false);
   const [declineId,  setDeclineId]  = useState<string | null>(null);
@@ -133,6 +187,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   }, [active.id]);
 
   const toggleMed = useCallback(async (id: string) => {
+    logAction('Toggle Medication', 'AsyncStorage.setItem(medsTaken) [local only, no DB write]', { targetId: id, at: '177' });
     const next = (prev: Record<string, boolean>) => ({ ...prev, [id]: !prev[id] });
     setMedsTaken(prev => {
       const updated = next(prev);
@@ -164,6 +219,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   }, [MEDS_KEY, MEDS_TAKEN_KEY]);
 
   const pendingGpApproval = chores.filter(c => c.status === 'pending_grandparent_approval' && c.sponsorUserId === active.id);
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=pendingGpApproval totalSource=${chores.length} afterFilter=${pendingGpApproval.length} [features/hub/SeniorView.tsx:210]`);
   const [cheerSticker, setCheerSticker] = useState('⭐');
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [matchKidId, setMatchKidId] = useState('');
@@ -191,6 +247,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     c.status === 'pending_parent_approval' &&
     c.sponsorUserId === active.id
   );
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=myPendingSponsoredQuests totalSource=${chores.length} afterFilter=${myPendingSponsoredQuests.length} [features/hub/SeniorView.tsx:234]`);
 
   // Coordinated live-DB QA (launch-readiness round) found a sponsored quest
   // vanished from the GP's own Hub the instant a parent approved it — the
@@ -205,6 +262,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     c.sponsorUserId === active.id &&
     ['todo', 'in_progress', 'pending_approval', 'redo_requested'].includes(c.status)
   );
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=mySponsoredQuestsInProgress totalSource=${chores.length} afterFilter=${mySponsoredQuestsInProgress.length} [features/hub/SeniorView.tsx:248]`);
 
   const openEditSponsoredQuest = (c: ChoreTask) => {
     setEditingQuestId(c.id);
@@ -222,6 +280,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const [receiptPhotoUri,  setReceiptPhotoUri]  = useState<string | null>(null);
   const [receiptAmountStr, setReceiptAmountStr] = useState('');
   const [receiptNote,      setReceiptNote]      = useState('');
+  const [isSubmittingReceipt, setIsSubmittingReceipt] = useState(false);
 
   const openReceiptModal = (choreId: string) => {
     setReceiptChoreId(choreId);
@@ -245,11 +304,36 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     if (!result.canceled && result.assets[0]) setReceiptPhotoUri(result.assets[0].uri);
   };
 
-  const handleSubmitReceipt = () => {
+  const handleSubmitReceipt = async () => {
     if (!receiptChoreId) return;
+    logAction('Submit Receipt', `submitGPErrandReceipt(${receiptChoreId})`, { targetId: receiptChoreId, at: '290' });
+
+    // Same local-URI-only bug as QuestsScreen's proof photos — the image
+    // picker only returns a device-local file, which never resolves once a
+    // parent opens the receipt on a different device. Upload it first.
+    let receiptPhotoUrl: string | undefined;
+    if (receiptPhotoUri) {
+      setIsSubmittingReceipt(true);
+      try {
+        const familyId = (active as any).familyId;
+        const path = `chore-proofs/${familyId ?? 'unknown'}/receipt-${receiptChoreId}-${Date.now()}.jpg`;
+        const blob = await (await fetch(receiptPhotoUri)).blob();
+        const { error: upErr } = await supabase.storage.from('family-media').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage.from('family-media').getPublicUrl(path);
+        receiptPhotoUrl = urlData.publicUrl;
+      } catch (e) {
+        console.warn('[SeniorView] receipt photo upload failed', e);
+        setIsSubmittingReceipt(false);
+        Alert.alert('Upload failed', "Couldn't upload the receipt photo — check your connection and try again.");
+        return;
+      }
+      setIsSubmittingReceipt(false);
+    }
+
     const amount = parseFloat(receiptAmountStr);
     submitGPErrandReceipt(receiptChoreId, {
-      receiptPhotoUrl: receiptPhotoUri ?? undefined,
+      receiptPhotoUrl,
       receiptAmount:   isNaN(amount) ? undefined : amount,
       receiptNote:     receiptNote.trim() || undefined,
     });
@@ -263,6 +347,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     c.status === 'in_progress' &&
     c.assignedToId === active.id
   );
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=myActiveErrands totalSource=${chores.length} afterFilter=${myActiveErrands.length} [features/hub/SeniorView.tsx:303]`);
 
   // Coordinated live-DB QA (GP receipt round) found this GP's own Hub
   // dropped an errand entirely the moment she submitted its receipt — no
@@ -277,6 +362,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     c.assignedToId === active.id &&
     (!!c.receiptPhotoUrl || c.receiptAmount != null || !!c.receiptNote)
   );
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=myErrandsAwaitingReview totalSource=${chores.length} afterFilter=${myErrandsAwaitingReview.length} [features/hub/SeniorView.tsx:323]`);
 
   // ── Helper Dispatch / Availability (persisted in FamilyMember) ──────────────
   const cheerleaderMode  = active.gpCheerleaderMode  ?? false;
@@ -298,7 +384,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const gpInvitations = chores.filter(c =>
     c.inviteGrandparents && c.status === 'todo' && !c.sponsorUserId
   );
-  const [passedInvitations, setPassedInvitations] = useState<string[]>([]);
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=gpInvitations totalSource=${chores.length} afterFilter=${gpInvitations.length} [features/hub/SeniorView.tsx:347]`);
 
   // Checks whether an event falls inside the GP's configured drive window
   const withinDriveWindow = useCallback((ev: typeof events[0]): boolean => {
@@ -345,6 +431,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     !isPastEvent(e) &&
     withinDriveWindow(e)
   );
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=openRides totalSource=${upcomingEvents.length} afterFilter=${openRides.length} [features/hub/SeniorView.tsx:391]`);
 
   // Rides this senior has already claimed (confirmed helper) — exact name
   // match. The previous fuzzy includes()-based match let two grandparents
@@ -358,6 +445,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     const a = eventAssignee(e);
     return a.name === active.name && a.status === 'confirmed';
   });
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=myClaimedRides totalSource=${upcomingEvents.length} afterFilter=${myClaimedRides.length} [features/hub/SeniorView.tsx:407]`);
   // Weekly cap counts everything claimed this week, past included; the list
   // shown in dispatch only carries what's still ahead.
   const upcomingClaimedRides = myClaimedRides.filter(e => !isPastEvent(e));
@@ -404,6 +492,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   }, [events, members, today]);
 
   const handleClaimRide = (evId: string) => {
+    logAction("I'll Drive", `claimHelperSlot(${evId})`, { targetId: evId, at: '450' });
     if (atWeeklyCap) {
       Alert.alert('Weekly cap reached', `You've set a limit of ${weeklyRideCap} rides/week. Update your availability settings to take more.`);
       return;
@@ -438,21 +527,25 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   };
 
   const handlePassRide = (evId: string) => {
+    logAction('Pass (ride)', `updateEvent(${evId}, {grandparentPassedIds})`, { targetId: evId, at: '484' });
     const ev = events.find(e => e.id === evId);
     if (!ev) return;
     updateEvent(evId, { grandparentPassedIds: [...(ev.grandparentPassedIds ?? []), active.id] });
   };
 
   const handleApproveAndCheer = (choreId: string) => {
+    logAction('Approve & Cheer', `grandparentApproveAndCheer(${choreId})`, { targetId: choreId, at: '490' });
     grandparentApproveAndCheer(choreId, active.id, cheerSticker);
   };
 
   const handleRequestGpRedo = (choreId: string, reason: string) => {
+    logAction('Request Redo', `requestGrandparentRedo(${choreId})`, { targetId: choreId, at: '494' });
     requestGrandparentRedo(choreId, active.id, reason);
   };
 
   const handleSaveMatch = () => {
     if (!matchKidId) return;
+    logAction('Save Savings Match', `addGrandparentMatch(childId=${matchKidId})`, { at: '498' });
     addGrandparentMatch({
       familyId:        (active as any).familyId ?? 'family-1',
       grandparentId:   active.id,
@@ -472,6 +565,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       // Only reachable while the quest is still pending_parent_approval
       // (openEditSponsoredQuest only offers this for quests in that state) —
       // a parent hasn't acted on it yet, so the GP can freely revise it.
+      logAction('Save Sponsored Quest (edit)', `updateChore(${editingQuestId})`, { targetId: editingQuestId, targetTitle: newQuestTitle.trim(), at: '518' });
       updateChore(editingQuestId, {
         title:              newQuestTitle.trim(),
         description:        newQuestDesc.trim() || undefined,
@@ -482,6 +576,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       });
       setEditingQuestId(null);
     } else {
+      logAction('Create Sponsored Quest', `createGrandparentQuest(title=${newQuestTitle.trim()})`, { targetTitle: newQuestTitle.trim(), at: '518' });
       createGrandparentQuest({
         title:         newQuestTitle.trim(),
         description:   newQuestDesc.trim() || undefined,
@@ -522,11 +617,13 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     const a = eventAssignee(e);
     return a.name === active.name && a.status === 'confirmed' && !isWorkEvent(e) && !isPastEvent(e);
   });
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=myDrivingToday totalSource=${upcomingEvents.length} afterFilter=${myDrivingToday.length} [features/hub/SeniorView.tsx:581]`);
   // Assigned to me but I haven't replied yet — not Work events
   const myPendingAssignments = upcomingEvents.filter(e => {
     const a = eventAssignee(e);
     return a.name === active.name && a.status === 'pending' && !e.approvalPending && !isWorkEvent(e) && !isPastEvent(e);
   });
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=myPendingAssignments totalSource=${upcomingEvents.length} afterFilter=${myPendingAssignments.length} [features/hub/SeniorView.tsx:586]`);
   // Spec 2.4: a kid/teen's still-pending request (approvalPending === true)
   // has not been reviewed by a parent yet — GP should not see it as an
   // actionable "family needs a hand" item at all, let alone be able to
@@ -550,6 +647,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     // placeholder for an already-scheduled event instead of hiding it.
     (!isEventSensitive(e) || canViewSensitiveEventDetail(e, 'senior', active.id, active.name) === 'full')
   );
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=openRequests totalSource=${events.length} afterFilter=${openRequests.length} [features/hub/SeniorView.tsx:606]`);
   // Confirmed ride where THIS grandparent is being picked up (the ride's
   // subject/rider — e.g. a parent or another family member driving them
   // somewhere), not one they're driving. Scoped to memberId/memberIds so
@@ -577,6 +675,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // mirrors KidView's confirmPickup exactly, scoped to this GP as rider.
   const confirmPickup = (ev: typeof events[0]) => {
     if (ev.pickupConfirmedAt) return;
+    logAction('Confirm Pickup', `updateEvent(${ev.id}, {pickupConfirmedAt})`, { targetId: ev.id, targetTitle: ev.title, at: '630' });
     updateEvent(ev.id, { pickupConfirmedAt: new Date().toISOString(), pickupConfirmedBy: active.id });
     sendMessage('all', active.id, `✅ ${active.name.split(' ')[0]} confirmed pickup for "${ev.title}" — all good!`);
   };
@@ -585,6 +684,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const urgentPending = myPendingAssignments.filter(e =>
     hoursUntilEvent(e.date, e.time) < 1 && hoursUntilEvent(e.date, e.time) >= 0
   );
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=urgentPending totalSource=${myPendingAssignments.length} afterFilter=${urgentPending.length} [features/hub/SeniorView.tsx:637]`);
 
   // GP volunteer pool: someone else is assigned (pending, not me) within 0–4 hrs
   // Exclude events where I'm already confirmed as driver within 30 min (would create a conflict)
@@ -610,6 +710,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     }
     return true;
   });
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=volunteerPool totalSource=${events.length} afterFilter=${volunteerPool.length} [features/hub/SeniorView.tsx:660]`);
 
   // Driving Duty was a separate section from Helper Dispatch but drew from the
   // same events, so the same ride could show twice under different framing.
@@ -639,16 +740,27 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // session (Household Backlog, Chore Reviews, My Chores).
   const hasDispatchItems = (
     dedupOpenRides.length > 0 ||
-    gpInvitations.filter(c => !passedInvitations.includes(c.id)).length > 0 ||
+    gpInvitations.filter(c => !(c.gpWithdrawnIds ?? []).includes(active.id)).length > 0 ||
     driveAlerts > 0 ||
     myPendingOffers.length > 0 ||
     myActiveErrands.length > 0 ||
     myErrandsAwaitingReview.length > 0
   ) && !cheerleaderMode;
-  useEffect(() => { if (hasDispatchItems) setHelperDispatchExpanded(true); }, []);
+  // Bug (live-repro'd): empty deps meant this only ever checked
+  // hasDispatchItems ONCE, at the exact moment of first mount — but chores
+  // load asynchronously from choreStore, so on a fresh reload this effect
+  // frequently fired before any chores had arrived, saw hasDispatchItems
+  // as false, and never ran again (empty deps array). The badge count
+  // above recomputes reactively as chores load in, so it correctly showed
+  // "1" moments later — but helperDispatchExpanded was already
+  // permanently stuck false, hiding the actual invitation card behind a
+  // badge that said something was there. Re-run whenever hasDispatchItems
+  // actually changes, and only ever auto-expand (never auto-collapse
+  // something the GP deliberately closed).
+  useEffect(() => { if (hasDispatchItems) setHelperDispatchExpanded(true); }, [hasDispatchItems]);
 
   const dispatchBadgeCount = dedupOpenRides.length
-    + gpInvitations.filter(c => !passedInvitations.includes(c.id)).length
+    + gpInvitations.filter(c => !(c.gpWithdrawnIds ?? []).includes(active.id)).length
     + driveAlerts
     + myPendingOffers.length
     + myActiveErrands.length
@@ -656,6 +768,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
 
   const handleSendBonus = () => {
     if (!gpKid) return;
+    logAction('Send Bonus', `awardCoins(${gpKid.id}, ${gpAmount}, gpCoins)`, { targetId: gpKid.id, targetTitle: gpKid.name, at: '719' });
     awardCoins(gpKid.id, gpAmount, 'gpCoins');
     setGpSent(true);
     setTimeout(() => { setGpSent(false); setGpKid(null); setGpNote(''); }, 2500);
@@ -697,7 +810,14 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         />
       )}
 
-      {activeTrips?.map(trip => (
+      {/* Bug (reported live): a GP saw every family trip, including rides
+          they had zero involvement in — HubScreen passes the full
+          family-wide tripViews list to every non-parent view, which is
+          correct for kids/teens (the ride is often about/for them) but
+          not for a grandparent watching an unrelated parent's pickup. A
+          GP only needs to see a trip where they're actually the driver or
+          the one being picked up. */}
+      {activeTrips?.filter(trip => trip.driverMemberId === active.id || trip.pickupMemberId === active.id).map(trip => (
         <PickupRadarStatus key={trip.tripId} colors={colors} isDark={isDark} activeTrip={trip} />
       ))}
 
@@ -712,7 +832,49 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         updateEvent={updateEvent} onEnRoute={onEnRoute}
       />
 
-      <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={removeMed} colors={colors} isDark={isDark} />
+      <MedicationsCard meds={meds} medsTaken={medsTaken} toggleMed={toggleMed} onAddMed={addMed} onRemoveMed={removeMed} colors={colors} isDark={isDark} active={active} />
+
+      {/* A parent (or this GP themselves) directly assigned a task via
+          addParentQuest — same Accept/Respond, Nudge-back, and locked-item
+          cards a parent's Household Backlog shows, since this is the exact
+          same underlying System-A flow, just previously unreachable from
+          the senior Hub. */}
+      {(myDirectPending.length > 0 || myOutgoingPending.length > 0 || myLockedItems.length > 0) && (
+        <SectionCard
+          icon={<UserCheck size={16} color={colors.primary} />}
+          title="Assigned To You"
+          badge={myDirectPending.length + myOutgoingPending.length + myLockedItems.length}
+          colors={colors} isDark={isDark}
+        >
+          {myDirectPending.map(a => {
+            const chore = chores.find(c => c.id === a.choreId);
+            if (!chore) return null;
+            return (
+              <DirectPendingCard key={a.id} a={a} chore={chore} members={members} colors={colors} isDark={isDark}
+                respondToParentQuest={respondToParentQuest}
+                onRespond={(assignmentId, choreTitle, assignedBy, assignedTo) => setPushbackSheet({ assignmentId, choreTitle, assignedBy, assignedTo })} />
+            );
+          })}
+          {myOutgoingPending.map(a => {
+            const chore = chores.find(c => c.id === a.choreId);
+            if (!chore) return null;
+            return (
+              <OutgoingPendingCard key={a.id} a={a} chore={chore} members={members} active={active} colors={colors} isDark={isDark}
+                onRecall={a.status === 'PENDING' ? () => { logAction('Recall', `recallParentQuest(${a.id})`, { targetId: a.choreId, targetTitle: chore.title, at: '828' }); recallParentQuest(a.id, active.id); } : undefined} />
+            );
+          })}
+          {myLockedItems.map(a => {
+            const chore = chores.find(c => c.id === a.choreId);
+            if (!chore) return null;
+            return (
+              <LockedAssignmentCard key={a.id} a={a} chore={chore} active={active} members={members}
+                colors={colors} isDark={isDark}
+                onDelegate={(choreId, choreTitle) => setDelegateSheet({ choreId, choreTitle })}
+                cancelLockedAssignment={(assignmentId) => { logAction('Cancel Locked Assignment', `cancelLockedAssignment(${assignmentId})`, { targetId: chore.id, targetTitle: chore.title, at: '838' }); cancelLockedAssignment(assignmentId); }} />
+            );
+          })}
+        </SectionCard>
+      )}
 
       {/* ══ HELP OUT ══ */}
       <GroupBand label="Help Out" color={BRAND.amber} colors={colors} />
@@ -728,16 +890,17 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         availSettingsOpen={availSettingsOpen} setAvailSettingsOpen={setAvailSettingsOpen}
         hasDispatchItems={hasDispatchItems} dispatchBadgeCount={dispatchBadgeCount}
         openRides={dedupOpenRides} gpInvitations={gpInvitations}
-        passedInvitations={passedInvitations} setPassedInvitations={setPassedInvitations}
         myActiveErrands={myActiveErrands} onOpenReceiptModal={openReceiptModal}
-        onMarkDoneNoReceipt={(choreId) => submitGPErrandReceipt(choreId, {})}
+        onMarkDoneNoReceipt={(choreId) => { logAction('Mark Done (no receipt)', `submitGPErrandReceipt(${choreId}, {})`, { targetId: choreId, at: '860' }); submitGPErrandReceipt(choreId, {}); }}
+        onBackoutErrand={(choreId) => { logAction('Backout', `backoutGpWelcomeChore(${choreId})`, { targetId: choreId, at: '869' }); useChoreStore.getState().backoutGpWelcomeChore(choreId, active.id); }}
         myErrandsAwaitingReview={myErrandsAwaitingReview}
-        myPendingOffers={myPendingOffers} onWithdrawOffer={(choreId) => withdrawGPOffer(choreId, active.id)}
+        myPendingOffers={myPendingOffers} onWithdrawOffer={(choreId) => { logAction('Withdraw Offer', `withdrawGPOffer(${choreId})`, { targetId: choreId, at: '862' }); withdrawGPOffer(choreId, active.id); }}
         openRequests={dedupOpenRequests} gpWelcomeRequests={gpWelcomeRequests}
         gpWelcomeChores={gpWelcomeChores} volunteerPool={dedupVolunteerPool}
         active={active} members={members} allNames={allNames} colors={colors} isDark={isDark}
-        updateEvent={updateEvent} updateChore={updateChore} assignRequest={assignRequest}
-        claimGPErrand={claimGPErrand}
+        updateEvent={updateEvent} updateChore={updateChore}
+        assignRequest={(id, helperId) => { logAction('Assign Request (accept)', `assignRequest(${id}, ${helperId})`, { targetId: id, at: '866' }); assignRequest(id, helperId); }}
+        claimGPErrand={(choreId, gpMemberId) => { logAction('Claim GP Errand', `claimGPErrand(${choreId}, ${gpMemberId})`, { targetId: choreId, at: '867' }); claimGPErrand(choreId, gpMemberId); }}
         onClaimRide={handleClaimRide} onPassRide={handlePassRide} onHelpRequest={onHelpRequest}
       />
 
@@ -745,6 +908,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         quests={myPendingSponsoredQuests} inProgressQuests={mySponsoredQuestsInProgress}
         colors={colors} isDark={isDark}
         onEdit={openEditSponsoredQuest}
+        active={active}
       />
 
       {/* ══ MY GRANDKIDS ══ */}
@@ -762,6 +926,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         gpNote={gpNote} setGpNote={setGpNote}
         gpSent={gpSent}
         onSend={handleSendBonus}
+        active={active}
       />
 
       {/* Perks — a senior's own Store redemption (canRedeemSelf, "My
@@ -772,7 +937,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           this is the same pattern every other senior feature already uses
           — a Hub card that opens the screen directly (QA sweep,
           grandparent-role audit, Critical C2). */}
-      <Pressable onPress={() => router.push('/(tabs)/store' as any)}
+      <Pressable onPress={() => { logAction('Perks (navigate to Store)', "router.push('/(tabs)/store') [navigation only, no DB write]", { at: '903' }); router.push('/(tabs)/store' as any); }}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
           backgroundColor: isDark ? colors.card : '#fff', borderRadius: 16,
           borderWidth: 1, borderColor: colors.border, padding: 14 }}>
@@ -807,6 +972,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         matchValue={matchValue} setMatchValue={setMatchValue}
         maxMonthly={maxMonthly} setMaxMonthly={setMaxMonthly}
         onSave={handleSaveMatch}
+        active={active}
       />
 
       <CreateQuestModal
@@ -830,6 +996,25 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         receiptNote={receiptNote} setReceiptNote={setReceiptNote}
         onTakePhoto={takeReceiptPhoto} onPickFromGallery={pickReceiptFromGallery}
         onSubmit={handleSubmitReceipt}
+        isSubmitting={isSubmittingReceipt}
+        active={active}
+      />
+
+      <PushbackSheet
+        target={pushbackSheet} colors={colors} isDark={isDark}
+        onClose={() => setPushbackSheet(null)}
+        respondToParentQuest={respondToParentQuest}
+      />
+
+      {/* questPool intentionally empty here — a locked assignment being
+          re-delegated is always a real chore_tasks row (never a
+          quest-pool _isQuestRow), so DelegateSheet's addParentQuest
+          branch is the only one this ever exercises from SeniorView. */}
+      <DelegateSheet
+        target={delegateSheet} questPool={[]} members={members} active={active} colors={colors} isDark={isDark}
+        onClose={() => setDelegateSheet(null)}
+        updateQuest={updateQuest}
+        addParentQuest={addParentQuest}
       />
 
       {/* ══ MEMORIES ══ */}

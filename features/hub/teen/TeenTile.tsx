@@ -10,7 +10,7 @@ export function TeenTile({ label, sublabel, Icon, accent, badge, onPress, colors
   onPress: () => void; colors: any; isDark: boolean;
 }) {
   return (
-    <Pressable onPress={onPress}
+    <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=teen tapped "${label}" on "TeenTile" → onPress [features/hub/teen/TeenTile.tsx:13]`); onPress(); }}
       style={({ pressed }) => ({
         flexBasis: '48%', flexGrow: 1,
         borderRadius: 18, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',

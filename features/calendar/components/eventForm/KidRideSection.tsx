@@ -49,7 +49,7 @@ export function KidRideSection({
     <View style={{ marginBottom: 14 }}>
       {/* ── Ride needed? ── */}
       <TouchableOpacity
-        onPress={toggleRide}
+        onPress={() => { console.log(`[UserAction] FORM screen=Schedule toggled "Ride needed?" on KidRideSection newValue=${!kidRideNeeded} [features/calendar/components/eventForm/KidRideSection.tsx:52]`); toggleRide(); }}
         activeOpacity={0.8}
         style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
           paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
@@ -79,7 +79,7 @@ export function KidRideSection({
           <View style={{ borderRadius: 12, borderWidth: 1.5, borderColor: kidPickupOn ? '#6366F150' : (isDark ? colors.border : '#E2E8F0'),
             backgroundColor: kidPickupOn ? '#6366F10C' : (isDark ? colors.surface : '#F9FAFB'), overflow: 'hidden' }}>
             <TouchableOpacity
-              onPress={() => { setKidPickupOn(p => !p); if (kidPickupOn) setKidPickupDate(null); }}
+              onPress={() => { console.log(`[UserAction] FORM screen=Schedule toggled "Pickup needed" on KidRideSection newValue=${!kidPickupOn} [features/calendar/components/eventForm/KidRideSection.tsx:82]`); setKidPickupOn(p => !p); if (kidPickupOn) setKidPickupDate(null); }}
               activeOpacity={0.8}
               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 10 }}>
               <View style={{ flex: 1, gap: 1 }}>
@@ -98,7 +98,7 @@ export function KidRideSection({
             {kidPickupOn && (
               <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 10, paddingBottom: 10 }}>
                 <TouchableOpacity
-                  onPress={() => { setShowKidPickDate(p => !p); setShowKidPickTime(false); if (!kidPickupDate) setKidPickupDate(new Date(eventDate)); }}
+                  onPress={() => { console.log(`[UserAction] screen=Schedule tapped "Pickup date" field on KidRideSection [features/calendar/components/eventForm/KidRideSection.tsx:101]`); setShowKidPickDate(p => !p); setShowKidPickTime(false); if (!kidPickupDate) setKidPickupDate(new Date(eventDate)); }}
                   style={[f.dateBtn, { flex: 3, borderColor: showKidPickDate ? '#6366F1' : (kidPickupDate ? '#6366F180' : colors.border), backgroundColor: showKidPickDate ? '#6366F115' : colors.surface }]}>
                   <Text style={{ fontSize: 13 }}>📅</Text>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidPickDate ? '#4F46E5' : (kidPickupDate ? colors.textPrimary : colors.textTertiary) }}>
@@ -106,7 +106,7 @@ export function KidRideSection({
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  onPress={() => { setShowKidPickTime(p => !p); setShowKidPickDate(false); if (!kidPickupDate) setKidPickupDate(new Date(eventDate)); }}
+                  onPress={() => { console.log(`[UserAction] screen=Schedule tapped "Pickup time" field on KidRideSection [features/calendar/components/eventForm/KidRideSection.tsx:109]`); setShowKidPickTime(p => !p); setShowKidPickDate(false); if (!kidPickupDate) setKidPickupDate(new Date(eventDate)); }}
                   style={[f.dateBtn, { flex: 2, borderColor: showKidPickTime ? '#6366F1' : (kidPickupDate ? '#6366F180' : colors.border), backgroundColor: showKidPickTime ? '#6366F115' : colors.surface }]}>
                   <Text style={{ fontSize: 13 }}>🕐</Text>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showKidPickTime ? '#4F46E5' : (kidPickupDate ? colors.textPrimary : colors.textTertiary) }}>

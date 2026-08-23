@@ -8,13 +8,13 @@ export function KidActionRow({ colors, isDark, onAskParent, onNeedRide }: {
 }) {
   return (
     <View style={{ paddingHorizontal: 16, flexDirection: 'row', gap: 10, marginBottom: 18 }}>
-      <Pressable onPress={onAskParent}
+      <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "Ask Parent" on "KidActionRow" [features/hub/kid/KidActionRow.tsx:11]`); onAskParent(); }}
         style={{ flex: 1, borderRadius: 18, paddingVertical: 18, alignItems: 'center', gap: 7,
           backgroundColor: BRAND.purple, shadowColor: BRAND.purple, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 6 }}>
         <MessageCircle size={26} color="#fff" fill="#ffffff30" />
         <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>Ask Parent</Text>
       </Pressable>
-      <Pressable onPress={onNeedRide}
+      <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "Need a Ride?" on "KidActionRow" [features/hub/kid/KidActionRow.tsx:17]`); onNeedRide(); }}
         style={{ flex: 1, borderRadius: 18, paddingVertical: 18, alignItems: 'center', gap: 7,
           backgroundColor: isDark ? colors.card : '#fff',
           borderWidth: 2, borderColor: BRAND.teal + '60',

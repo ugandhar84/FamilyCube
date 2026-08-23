@@ -7,6 +7,14 @@
 // instead — no JS involved there).
 import { Platform } from 'react-native';
 
+// Hermes has no built-in WebCrypto (no global `crypto` object at all) —
+// lib/chatCrypto.ts's crypto.subtle / crypto.getRandomValues / crypto.
+// randomUUID calls throw "crypto doesn't exist" without this. Must run
+// before any other module (including expo-router's own tree) evaluates,
+// since several stores/screens read chatCrypto functions at import time.
+import { install } from 'react-native-quick-crypto';
+install();
+
 if (Platform.OS === 'android') {
   try {
     // v22+ modular API — getMessaging()/setBackgroundMessageHandler() as

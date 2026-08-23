@@ -29,10 +29,10 @@ export function PickupTimeStepper({ value, onChange, accentColor, colors }: {
           {fmtTime(value)}
         </Text>
         <View style={{ gap: 1 }}>
-          <Pressable onPress={() => step(15)} hitSlop={{ top: 4, bottom: 2, left: 6, right: 6 }}>
+          <Pressable onPress={() => { console.log(`[UserAction] FORM screen=Hub role=parent selected "+15 min" for "Pickup Time Stepper" currentValue=${value} [features/hub/parent/PickupTimeStepper.tsx:32]`); step(15); }} hitSlop={{ top: 4, bottom: 2, left: 6, right: 6 }}>
             <ChevronUp size={12} color={accentColor} />
           </Pressable>
-          <Pressable onPress={() => step(-15)} hitSlop={{ top: 2, bottom: 4, left: 6, right: 6 }}>
+          <Pressable onPress={() => { console.log(`[UserAction] FORM screen=Hub role=parent selected "-15 min" for "Pickup Time Stepper" currentValue=${value} [features/hub/parent/PickupTimeStepper.tsx:35]`); step(-15); }} hitSlop={{ top: 2, bottom: 4, left: 6, right: 6 }}>
             <ChevronDown size={12} color={accentColor} />
           </Pressable>
         </View>

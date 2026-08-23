@@ -21,10 +21,12 @@ const STATUS_LABEL: Record<string, string> = {
 // out of "Awaiting Parent Review" and the GP's Hub had nothing tracking it
 // at all, even though the same GP's own Quests tab kept showing its live
 // status the whole time.
-export function MySponsoredQuestsSection({ quests, inProgressQuests = [], colors, isDark, onEdit }: {
+export function MySponsoredQuestsSection({ quests, inProgressQuests = [], colors, isDark, onEdit, active }: {
   quests: ChoreTask[]; inProgressQuests?: ChoreTask[]; colors: any; isDark: boolean;
   onEdit: (c: ChoreTask) => void;
+  active?: { name: string };
 }) {
+  const actorName = active?.name ?? 'senior';
   if (quests.length === 0 && inProgressQuests.length === 0) return null;
 
   return (
@@ -56,7 +58,7 @@ export function MySponsoredQuestsSection({ quests, inProgressQuests = [], colors
                   {c.basePoints} pts · waiting on a parent
                 </Text>
               </View>
-              <Pressable onPress={() => onEdit(c)}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "Edit" on "${c.title}" (id=${c.id}) → onEdit [features/hub/senior/MySponsoredQuestsSection.tsx:59]`); onEdit(c); }}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
                   borderRadius: 10, borderWidth: 1.5, borderColor: BRAND.purple,
                   paddingHorizontal: 10, paddingVertical: 7 }}>

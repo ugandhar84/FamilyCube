@@ -60,7 +60,7 @@ export function LocationLink({ addr, color, fontSize = 13, iconSize = 12, fontWe
   addr: string; color: string; fontSize?: number; iconSize?: number; fontWeight?: string;
 }) {
   return (
-    <TouchableOpacity onPress={() => openInMaps(addr)} activeOpacity={0.7}
+    <TouchableOpacity onPress={() => { console.log(`[UserAction] screen=Schedule tapped "location link" addr="${addr}" → openInMaps [features/calendar/components/EventCard.tsx:63]`); openInMaps(addr); }} activeOpacity={0.7}
       style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
       <View style={{ width: iconSize + 8, height: iconSize + 8, borderRadius: (iconSize + 8) / 2,
         backgroundColor: color, alignItems: 'center', justifyContent: 'center' }}>

@@ -1,6 +1,6 @@
 /**
  * SetupFamilyScreen — Parent creates the family, sets their own profile + PIN,
- * then gets the 6-digit invite code to share with family members.
+ * then gets the invite code to share with family members.
  */
 import { useState } from 'react';
 import {
@@ -14,7 +14,8 @@ import { TYPO } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
 import { registerForPushNotifications } from '@/lib/notifications';
-import Svg, { Circle, Path, Rect, Polygon, Ellipse, G } from 'react-native-svg';
+import { AnimatedCubeMark } from '@/components/FamilyCubeLogo';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 
@@ -23,15 +24,32 @@ const COLORS  = ['#9261C7','#10B981','#F59E0B','#EF4444','#3B82F6','#EC4899','#1
 
 type Step = 'family' | 'profile' | 'pin' | 'code';
 
-function FamilySvg() {
+// ─── Family-creation step icon — a house with a "+" being planted, since this
+// step is literally "start a new family space from scratch."
+function NewFamilySvg() {
   return (
-    <Svg width="90" height="90" viewBox="0 0 90 90">
-      <Circle cx="45" cy="45" r="45" fill="#F0E8FA" />
-      <Polygon points="25,52 45,28 65,52" fill="#9261C7" />
-      <Rect x="30" y="52" width="30" height="24" rx="3" fill="#C4A0EC" />
-      <Rect x="39" y="62" width="12" height="14" rx="3" fill="#9261C7" />
-      <Rect x="31" y="55" width="8" height="7" rx="2" fill="#F0E8FA" />
-      <Rect x="51" y="55" width="8" height="7" rx="2" fill="#F0E8FA" />
+    <Svg width="88" height="88" viewBox="0 0 88 88">
+      <Circle cx="44" cy="44" r="44" fill="#F0E8FA" />
+      <Path d="M44 20 L68 40 H60 V64 H28 V40 H20 Z" fill="#9261C7" />
+      <Rect x="38" y="48" width="12" height="16" rx="2" fill="#F0E8FA" />
+      <Circle cx="60" cy="26" r="11" fill="#F5A623" />
+      <Rect x="55" y="24.5" width="10" height="3" rx="1.5" fill="#fff" />
+      <Rect x="58.5" y="21" width="3" height="10" rx="1.5" fill="#fff" />
+    </Svg>
+  );
+}
+
+// ─── PIN step icon — a padlock in brand purple, matched to the app's own
+// PIN-entry treatment (components/PinEntryModal.tsx).
+function PinLockSvg() {
+  return (
+    <Svg width="88" height="88" viewBox="0 0 88 88">
+      <Circle cx="44" cy="44" r="44" fill="#F0E8FA" />
+      <Path d="M31 40 V32 a13 13 0 0 1 26 0 v8" stroke="#9261C7" strokeWidth="5" fill="none" strokeLinecap="round" />
+      <Rect x="21" y="40" width="46" height="30" rx="8" fill="#9261C7" />
+      <Circle cx="38" cy="55" r="3.4" fill="#fff" />
+      <Circle cx="50" cy="55" r="3.4" fill="#fff" opacity="0.5" />
+      <Circle cx="44" cy="55" r="3.4" fill="#fff" opacity="0.8" />
     </Svg>
   );
 }
@@ -177,9 +195,13 @@ export default function SetupFamilyScreen() {
       // 3. Generate invite code via edge function
       const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
       const anonKey     = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+      const { data: { session } } = await supabase.auth.getSession();
       const codeRes = await fetch(`${supabaseUrl}/functions/v1/generate-invite-code`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': anonKey },
+        headers: {
+          'Content-Type': 'application/json', 'apikey': anonKey,
+          ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ familyId: family.id, memberId }),
       });
       const codeData = await codeRes.json();
@@ -237,7 +259,7 @@ export default function SetupFamilyScreen() {
             {/* ── STEP 1: Family + name ──────────────────────────────────────── */}
             {step === 'family' && (
               <View style={s.center}>
-                <FamilySvg />
+                <NewFamilySvg />
                 <Text style={[s.title, { color: colors.textPrimary }]}>Create Your Family</Text>
                 <Text style={[s.subtitle, { color: colors.textSecondary }]}>
                   Set up your family space. You'll get a code to invite everyone else.
@@ -302,7 +324,7 @@ export default function SetupFamilyScreen() {
             {/* ── STEP 3: PIN ────────────────────────────────────────────────── */}
             {step === 'pin' && (
               <View style={s.center}>
-                <Text style={{ fontSize: 64, marginBottom: 4 }}>🔐</Text>
+                <PinLockSvg />
                 <Text style={[s.title, { color: colors.textPrimary }]}>Set Your PIN</Text>
                 <Text style={[s.subtitle, { color: colors.textSecondary }]}>
                   A 4-digit PIN lets you switch profiles securely on any device.
@@ -329,7 +351,7 @@ export default function SetupFamilyScreen() {
             {/* ── STEP 4: Invite code ────────────────────────────────────────── */}
             {step === 'code' && (
               <View style={s.center}>
-                <Text style={{ fontSize: 64, marginBottom: 8 }}>🎉</Text>
+                <AnimatedCubeMark size={84} />
                 <Text style={[s.title, { color: colors.textPrimary }]}>Family Created!</Text>
                 <Text style={[s.subtitle, { color: colors.textSecondary }]}>
                   Share this code with your family members.{'\n'}They enter it when they first open the app.
@@ -338,7 +360,7 @@ export default function SetupFamilyScreen() {
                 <TouchableOpacity style={[s.btn, { backgroundColor: '#9261C7', marginTop: 24 }]} onPress={handleShare}>
                   <Text style={s.btnText}>📤 Share Code</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[s.btn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#9261C7', marginTop: 10 }]} onPress={() => router.replace('/(tabs)')}>
+                <TouchableOpacity style={[s.btn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#9261C7', marginTop: 10 }]} onPress={() => router.replace('/onboarding/complete-profile')}>
                   <Text style={[s.btnText, { color: '#9261C7' }]}>Enter App →</Text>
                 </TouchableOpacity>
                 <Text style={[{ color: colors.textSecondary, fontSize: 12, marginTop: 16, textAlign: 'center' }]}>

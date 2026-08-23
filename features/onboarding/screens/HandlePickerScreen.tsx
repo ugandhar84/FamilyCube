@@ -9,7 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/ThemeContext';
-import PawBondLogo from '@/components/PawBondLogo';
+import { AnimatedCubeMark } from '@/components/FamilyCubeLogo';
 import { RADIUS, SPACING , TYPO } from '@/constants/theme';
 
 const HANDLE_RE = /^[a-z0-9_]{3,24}$/;
@@ -113,7 +113,7 @@ export default function HandlePickerScreen() {
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             style={s.hero}
           >
-            <PawBondLogo size={64} animated isDark={isDark} />
+            <AnimatedCubeMark size={64} />
             <Text style={s.heroTitle}>Choose your handle</Text>
             <Text style={s.heroSub}>
               {firstName ? `Hi ${firstName}! ` : ''}Pick a unique @handle — how others find and tag you.

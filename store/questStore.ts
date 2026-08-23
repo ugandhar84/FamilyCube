@@ -150,6 +150,7 @@ export interface Quest {
 
   isAdultTask:      boolean;  // true = only visible to parent/senior; hidden from kids/grandparents
   inviteGrandparents?: boolean; // true = grandparents can also see/claim this adult task
+  gpWithdrawnIds?:   string[]; // memberIds of grandparents who Passed on this GP invitation
 
   // Spec §2 / §8: parent-only quest extensions
   questType:        QuestType;

@@ -9,12 +9,13 @@
  * chat turn once the user stops speaking.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Modal, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { Modal, View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { Sparkles, X, Send, Mic, ChevronDown, History, SquarePen, MessageCircle } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
-import { askCube, AskCubeProposal } from '@/lib/askCubeService';
+import { askCube, AskCubeProposal, AskCubeChoreRef } from '@/lib/askCubeService';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { useEventStore } from '@/store/eventStore';
@@ -63,6 +64,10 @@ interface ChatMessage {
   // so picking one doesn't affect the others' cards.
   proposals?: AskCubeProposal[];
   proposalStatuses?: ProposalStatus[];
+  // Chores this reply names by title — lets AskCubeMessageText turn each
+  // occurrence of the title into a tap-through link to that chore on the
+  // Chores tab, instead of the title just sitting there as plain text.
+  chores?: AskCubeChoreRef[];
 }
 
 export default function AskCubeChat({ visible, onClose, activeMember, members }: {
@@ -116,6 +121,16 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
   // The user now explicitly taps Send when they're actually done talking.
   const voice = useVoiceDictation();
 
+  // start() fails silently into state:'error' with no UI ever reading
+  // voice.error — from the user's side that looks identical to the mic
+  // button simply doing nothing on tap (permission denied, native module
+  // unavailable, etc.). Surface it so every tap produces visible feedback.
+  useEffect(() => {
+    if (voice.state === 'error') {
+      Alert.alert('Voice input unavailable', voice.error ?? 'Could not start the microphone.');
+    }
+  }, [voice.state, voice.error]);
+
   // Shared loader — used both to resume the latest thread on open and to
   // reopen a specific thread picked from the history sheet.
   const loadConversation = async (id: string) => {
@@ -128,6 +143,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
       return {
         id: r.id, role: r.role as 'user' | 'assistant', content: r.content ?? '', timestamp: r.created_at,
         proposals, proposalStatuses: proposals.map(() => (r.proposal_status as ProposalStatus) ?? 'pending'),
+        chores: Array.isArray((r as any).chore_refs) ? (r as any).chore_refs : undefined,
       };
     }));
     // Land on the latest message immediately — no visible scroll
@@ -221,6 +237,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
       setMessages(prev => [...prev, {
         id: msgId, role: 'assistant', content: '', timestamp: new Date().toISOString(),
         proposals, proposalStatuses: proposals.map(() => 'pending' as ProposalStatus),
+        chores: res.chores ?? [],
       }]);
       setSending(false);
       let i = 0;
@@ -490,7 +507,14 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                     {m.role === 'user' ? (
                       <Text style={{ fontSize: TYPO.body, color: '#fff', lineHeight: 22 }}>{m.content}</Text>
                     ) : (
-                      <AskCubeMessageText content={m.content} color={colors.textPrimary} urgentColor={colors.danger} soonColor={colors.amber} />
+                      <AskCubeMessageText
+                        content={m.content} color={colors.textPrimary} urgentColor={colors.danger} soonColor={colors.amber}
+                        chores={m.chores} linkColor={colors.primary}
+                        onChorePress={(choreId) => {
+                          onClose();
+                          router.push({ pathname: '/(tabs)/quests', params: { questId: choreId } } as any);
+                        }}
+                      />
                     )}
                   </View>
                   {m.timestamp && (

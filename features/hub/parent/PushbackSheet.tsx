@@ -23,6 +23,7 @@ export function PushbackSheet({ target, colors, isDark, onClose, respondToParent
 
   const handle = (action: 'SNOOZE' | 'BLOCKER' | 'TRADE' | 'DISCUSS' | 'DECLINE') => {
     if (!target) return;
+    console.log(`[UserAction] screen=Hub role=parent tapped "${action}" on "${target.choreTitle}" (id=${target.assignmentId}) → respondToParentQuest [features/hub/parent/PushbackSheet.tsx:26]`);
     respondToParentQuest(target.assignmentId, { action, details: detail.trim() || undefined });
     // System A never notifies the assigner of a Decline on its own
     // (respondToParentQuest has no sendMessage call) — without this the
@@ -37,7 +38,10 @@ export function PushbackSheet({ target, colors, isDark, onClose, respondToParent
     onClose();
   };
 
-  const dismiss = () => { Keyboard.dismiss(); setDetail(''); onClose(); };
+  const dismiss = () => {
+    console.log(`[UserAction] screen=Hub role=parent tapped "Dismiss" on PushbackSheet for "${target?.choreTitle ?? ''}" (id=${target?.assignmentId ?? 'n/a'}) [features/hub/parent/PushbackSheet.tsx:40]`);
+    Keyboard.dismiss(); setDetail(''); onClose();
+  };
 
   return (
     <Modal visible={!!target} transparent animationType="slide" onRequestClose={dismiss}>
@@ -84,6 +88,7 @@ export function PushbackSheet({ target, colors, isDark, onClose, respondToParent
           placeholderTextColor={colors.textTertiary}
           value={detail}
           onChangeText={setDetail}
+          onBlur={() => { console.log(`[UserAction] FORM screen=Hub role=parent field="detail" on PushbackSheet for "${target?.choreTitle ?? ''}" (id=${target?.assignmentId ?? 'n/a'}) newValue=${detail} [features/hub/parent/PushbackSheet.tsx:87]`); }}
           multiline
         />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
@@ -94,7 +99,7 @@ export function PushbackSheet({ target, colors, isDark, onClose, respondToParent
             { action: 'DISCUSS', label: 'Discuss later', Icon: MessageCircle, color: colors.parent },
             { action: 'DECLINE', label: "Can't do it",   Icon: XCircle,      color: colors.textTertiary },
           ] as const).map(({ action, label, Icon, color }) => (
-            <Pressable key={action} onPress={() => handle(action)}
+            <Pressable key={action} onPress={() => { console.log(`[UserAction] FORM screen=Hub role=parent selected "${label}" for "Pushback Action" on "${target?.choreTitle ?? ''}" (id=${target?.assignmentId ?? 'n/a'}) [features/hub/parent/PushbackSheet.tsx:97]`); handle(action); }}
               style={{
                 flex: 1, minWidth: '45%', borderRadius: 14, paddingVertical: 14,
                 alignItems: 'center', gap: 5, borderWidth: 1.5,

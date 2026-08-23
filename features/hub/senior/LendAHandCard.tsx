@@ -31,8 +31,8 @@ export function LendAHandCard({
   helperDispatchExpanded, setHelperDispatchExpanded,
   availSettingsOpen, setAvailSettingsOpen,
   hasDispatchItems, dispatchBadgeCount,
-  openRides, gpInvitations, passedInvitations, setPassedInvitations,
-  myActiveErrands, onOpenReceiptModal, onMarkDoneNoReceipt,
+  openRides, gpInvitations,
+  myActiveErrands, onOpenReceiptModal, onMarkDoneNoReceipt, onBackoutErrand,
   myErrandsAwaitingReview,
   myPendingOffers, onWithdrawOffer,
   openRequests, gpWelcomeRequests, gpWelcomeChores, volunteerPool,
@@ -50,8 +50,8 @@ export function LendAHandCard({
   availSettingsOpen: boolean; setAvailSettingsOpen: (fn: (prev: boolean) => boolean) => void;
   hasDispatchItems: boolean; dispatchBadgeCount: number;
   openRides: FamilyEvent[]; gpInvitations: ChoreTask[];
-  passedInvitations: string[]; setPassedInvitations: (fn: (prev: string[]) => string[]) => void;
   myActiveErrands: ChoreTask[]; onOpenReceiptModal: (choreId: string) => void; onMarkDoneNoReceipt: (choreId: string) => void;
+  onBackoutErrand: (choreId: string) => void;
   myErrandsAwaitingReview: ChoreTask[];
   myPendingOffers: ChoreTask[]; onWithdrawOffer: (choreId: string) => void;
   openRequests: FamilyEvent[]; gpWelcomeRequests: KidRequest[]; gpWelcomeChores: ChoreTask[]; volunteerPool: FamilyEvent[];
@@ -74,7 +74,7 @@ export function LendAHandCard({
       }}>
         {/* Header — tap to expand/collapse the dispatch list */}
         <Pressable
-          onPress={() => setHelperDispatchExpanded(v => !v)}
+          onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Lend a Hand header" (expand/collapse) → setHelperDispatchExpanded [features/hub/senior/LendAHandCard.tsx:77]`); setHelperDispatchExpanded(v => !v); }}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, paddingBottom: 12 }}>
           <View style={{ width: 40, height: 40, borderRadius: 20,
             backgroundColor: DISPATCH_AMBER + '20', alignItems: 'center', justifyContent: 'center' }}>
@@ -108,14 +108,14 @@ export function LendAHandCard({
           </View>
           {/* GP can raise their own request here — the standalone Help Queue
               section was removed, this is the one entry point left. */}
-          <Pressable onPress={(e) => { e.stopPropagation(); onHelpRequest(); }}
+          <Pressable onPress={(e) => { e.stopPropagation(); console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Ask" on "Lend a Hand" → onHelpRequest [features/hub/senior/LendAHandCard.tsx:111]`); onHelpRequest(); }}
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
               backgroundColor: BRAND.amber, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9 }}>
             <Hand size={14} color="#fff" />
             <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>Ask</Text>
           </Pressable>
-          <Pressable onPress={(e) => { e.stopPropagation(); setAvailSettingsOpen(o => !o); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Pressable onPress={(e) => { e.stopPropagation(); console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Availability Settings toggle" on "Lend a Hand" → setAvailSettingsOpen [features/hub/senior/LendAHandCard.tsx:118]`); setAvailSettingsOpen(o => !o); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             {availSettingsOpen ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
           </Pressable>
         </Pressable>
@@ -127,7 +127,7 @@ export function LendAHandCard({
             borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0', gap: 14 }}>
 
             {/* Cheerleader Mode toggle */}
-            <Pressable onPress={() => setCheerleaderMode(m => !m)}
+            <Pressable onPress={() => { console.log(`[UserAction] FORM screen=Hub role=senior member=${active.name} toggled "Cheerleader Mode" on "Lend a Hand" → setCheerleaderMode [features/hub/senior/LendAHandCard.tsx:130]`); setCheerleaderMode(m => !m); }}
               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                 padding: 12, borderRadius: 12, borderWidth: 1.5,
                 borderColor: cheerleaderMode ? BRAND.purple : (isDark ? colors.border : '#E2E8F0'),
@@ -162,9 +162,9 @@ export function LendAHandCard({
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     {DAY_LABELS.map((d, i) => (
                       <Pressable key={i}
-                        onPress={() => setDriveWindowDays(prev =>
+                        onPress={() => { console.log(`[UserAction] FORM screen=Hub role=senior member=${active.name} selected "${d}" for "Drive Days" on "Lend a Hand" [features/hub/senior/LendAHandCard.tsx:165]`); setDriveWindowDays(prev =>
                           prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]
-                        )}
+                        ); }}
                         style={{ flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center',
                           borderWidth: 1.5,
                           borderColor: driveWindowDays.includes(i) ? DISPATCH_AMBER : (isDark ? colors.border : '#E2E8F0'),
@@ -188,6 +188,7 @@ export function LendAHandCard({
                         borderColor: isDark ? colors.border : '#E2E8F0',
                         backgroundColor: isDark ? colors.card : '#fff' }}
                       value={driveWindowStart} onChangeText={setDriveWindowStart}
+                      onBlur={() => console.log(`[UserAction] FORM screen=Hub role=senior member=${active.name} field="Available Hours start" on "Lend a Hand" newValue=${driveWindowStart} [features/hub/senior/LendAHandCard.tsx:191]`)}
                       placeholder="14:00" placeholderTextColor={colors.textTertiary}
                     />
                     <Text style={{ fontSize: GP.sub, color: colors.textTertiary, fontWeight: '700' }}>to</Text>
@@ -197,6 +198,7 @@ export function LendAHandCard({
                         borderColor: isDark ? colors.border : '#E2E8F0',
                         backgroundColor: isDark ? colors.card : '#fff' }}
                       value={driveWindowEnd} onChangeText={setDriveWindowEnd}
+                      onBlur={() => console.log(`[UserAction] FORM screen=Hub role=senior member=${active.name} field="Available Hours end" on "Lend a Hand" newValue=${driveWindowEnd} [features/hub/senior/LendAHandCard.tsx:200]`)}
                       placeholder="17:30" placeholderTextColor={colors.textTertiary}
                     />
                   </View>
@@ -209,7 +211,7 @@ export function LendAHandCard({
                   </Text>
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     {[1, 2, 3, 4, 5].map(n => (
-                      <Pressable key={n} onPress={() => setWeeklyRideCap(n)}
+                      <Pressable key={n} onPress={() => { console.log(`[UserAction] FORM screen=Hub role=senior member=${active.name} selected "${n}" for "Max Rides / Week" on "Lend a Hand" [features/hub/senior/LendAHandCard.tsx:212]`); setWeeklyRideCap(n); }}
                         style={{ flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center',
                           borderWidth: 1.5,
                           borderColor: weeklyRideCap === n ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
@@ -229,16 +231,15 @@ export function LendAHandCard({
         {helperDispatchExpanded && <>
           {!cheerleaderMode && (
             <OpenRideRequestsList openRides={openRides} members={members} atWeeklyCap={atWeeklyCap}
-              onClaim={onClaimRide} onPass={onPassRide} colors={colors} isDark={isDark} />
+              onClaim={onClaimRide} onPass={onPassRide} colors={colors} isDark={isDark} active={active} />
           )}
 
           {!cheerleaderMode && (
-            <QuestInvitationsSection invitations={gpInvitations} passedInvitations={passedInvitations}
-              setPassedInvitations={setPassedInvitations} active={active} members={members}
+            <QuestInvitationsSection invitations={gpInvitations} active={active} members={members}
               colors={colors} isDark={isDark} claimGPErrand={claimGPErrand} />
           )}
 
-          <ActiveErrandsSection errands={myActiveErrands} onOpenReceiptModal={onOpenReceiptModal} onMarkDoneNoReceipt={onMarkDoneNoReceipt} colors={colors} isDark={isDark} />
+          <ActiveErrandsSection errands={myActiveErrands} onOpenReceiptModal={onOpenReceiptModal} onMarkDoneNoReceipt={onMarkDoneNoReceipt} onBackout={onBackoutErrand} colors={colors} isDark={isDark} />
           <ErrandsAwaitingReviewSection errands={myErrandsAwaitingReview} colors={colors} isDark={isDark} />
 
           <PendingOffersSection offers={myPendingOffers} onWithdraw={onWithdrawOffer} colors={colors} isDark={isDark} />

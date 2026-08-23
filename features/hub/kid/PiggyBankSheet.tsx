@@ -117,7 +117,7 @@ export function PiggyBankSheet({
           const remaining = Math.max(goalReward.cost - mainCoins, 0);
           const pct = Math.min(mainCoins / goalReward.cost, 1);
           return (
-            <Pressable onPress={() => { onClose(); router.push('/(tabs)/store' as any); }}
+            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${memberId} tapped "My Goal" on "PiggyBankSheet" (id=${goalReward.id}) → navigate to /(tabs)/store [features/hub/kid/PiggyBankSheet.tsx:120]`); onClose(); router.push('/(tabs)/store' as any); }}
               style={{ borderRadius: 14, padding: 13, backgroundColor: BRAND.purple + '10', borderWidth: 1.5, borderColor: BRAND.purple + '50', gap: 9 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Target size={14} color={BRAND.purple} />

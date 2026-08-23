@@ -682,7 +682,7 @@ async function executeTool(
   }
 
   if (name === 'get_quests') {
-    let query = supabase.from('chore_tasks').select('title, status, coins_reward, due_date, assigned_to_id').eq('family_id', familyId);
+    let query = supabase.from('chore_tasks').select('id, title, status, coins_reward, due_date, assigned_to_id').eq('family_id', familyId);
     if (args.status && args.status !== 'any') query = query.eq('status', args.status);
     if (args.memberName) {
       const id = await resolveMemberId(supabase, familyId, args.memberName, aliasMap);
@@ -700,14 +700,23 @@ async function executeTool(
     // (it can't say WHO a chore belongs to, e.g. "is anyone overdue" has no
     // answer without a name). Resolve it to the same alias the rest of the
     // conversation uses instead of leaking the id or a real name.
-    return { quests: rows.map((r: any) => ({
-      title: realNameToAlias(aliasMap, members, r.title), status: r.status, coins: r.coins_reward, dueDate: r.due_date,
-      assignedTo: r.assigned_to_id ? (aliasMap.toAlias.get(r.assigned_to_id) ?? 'Unknown') : null,
-    })) };
+    // __choreRefs carries the real (id, title) pairs back to the OUTER loop
+    // only — stripped before the result is stringified for the model (see
+    // its JSON.stringify call site) so the model itself never sees a raw
+    // chore id, same boundary the alias system already enforces for names.
+    // The client uses these to turn a chore's title, wherever it appears in
+    // the model's own reply text, into a tap-through link to that chore.
+    return {
+      quests: rows.map((r: any) => ({
+        title: realNameToAlias(aliasMap, members, r.title), status: r.status, coins: r.coins_reward, dueDate: r.due_date,
+        assignedTo: r.assigned_to_id ? (aliasMap.toAlias.get(r.assigned_to_id) ?? 'Unknown') : null,
+      })),
+      __choreRefs: rows.map((r: any) => ({ id: r.id, title: r.title })),
+    };
   }
 
   if (name === 'get_chore_history') {
-    let query = supabase.from('chore_tasks').select('title, status, coins_reward, completed_at, assigned_to_id')
+    let query = supabase.from('chore_tasks').select('id, title, status, coins_reward, completed_at, assigned_to_id')
       .eq('family_id', familyId).in('status', ['completed', 'auto_approved'])
       .gte('completed_at', args.startDate).lte('completed_at', args.endDate + 'T23:59:59');
     if (args.memberName) {
@@ -720,10 +729,13 @@ async function executeTool(
     if (viewerRole !== 'parent' && viewerRole !== 'senior') {
       rows = rows.filter((r: any) => !r.assigned_to_id || r.assigned_to_id === viewerId);
     }
-    return { completed: rows.map((r: any) => ({
-      title: realNameToAlias(aliasMap, members, r.title), status: r.status, coins: r.coins_reward, completedAt: r.completed_at,
-      assignedTo: r.assigned_to_id ? (aliasMap.toAlias.get(r.assigned_to_id) ?? 'Unknown') : null,
-    })) };
+    return {
+      completed: rows.map((r: any) => ({
+        title: realNameToAlias(aliasMap, members, r.title), status: r.status, coins: r.coins_reward, completedAt: r.completed_at,
+        assignedTo: r.assigned_to_id ? (aliasMap.toAlias.get(r.assigned_to_id) ?? 'Unknown') : null,
+      })),
+      __choreRefs: rows.map((r: any) => ({ id: r.id, title: r.title })),
+    };
   }
 
   if (name === 'get_location') {
@@ -1312,6 +1324,10 @@ same conversation.`;
     // turn can call propose_meal several times (a few dish options for the
     // user to pick from), and each one needs its own card client-side.
     let proposals: { kind: 'event' | 'quest' | 'grocery' | 'meal' | 'update_event' | 'update_chore'; data: any }[] = [];
+    // Deduped by id across every get_quests/get_chore_history call this
+    // turn — used client-side only, to linkify a chore's title wherever it
+    // appears in the model's reply text. Never sent to the model itself.
+    const choreRefsMap = new Map<string, { id: string; title: string }>();
     let finalText = '';
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -1337,8 +1353,15 @@ same conversation.`;
           if (result.__proposal) {
             proposals.push({ kind: result.__proposal, data: result });
           }
+          if (Array.isArray(result.__choreRefs)) {
+            for (const ref of result.__choreRefs) choreRefsMap.set(ref.id, ref);
+          }
+          // __choreRefs must never reach the model — it carries raw chore
+          // ids, the exact thing the alias system exists to keep out of the
+          // model's context. Strip it before stringifying for messages/log.
+          const { __choreRefs, ...modelResult } = result as any;
 
-          const resultStr = JSON.stringify(result);
+          const resultStr = JSON.stringify(modelResult);
           messages.push({ role: 'tool', tool_call_id: call.id, name: call.function.name, content: resultStr });
           await supabase.from('ask_cube_messages').insert({
             conversation_id: conversationId, role: 'tool', tool_call_id: call.id, tool_name: call.function.name,
@@ -1363,9 +1386,16 @@ same conversation.`;
     }
     finalText = aliasToPlace(placeAliasMap, aliasToRealName(aliasMap, finalText));
 
+    // Only keep refs for chores the reply text actually names — a turn can
+    // call get_quests broadly (e.g. "what's overdue") and pull back rows
+    // that never make it into the final sentence; linking those too would
+    // just make unrelated titles elsewhere in a long reply clickable.
+    const choreRefs = [...choreRefsMap.values()].filter(r => finalText.includes(r.title));
+
     await supabase.from('ask_cube_messages').insert({
       conversation_id: conversationId, role: 'assistant', content: finalText,
       proposal: proposals.length ? proposals : null, proposal_status: proposals.length ? 'pending' : null,
+      chore_refs: choreRefs.length ? choreRefs : null,
     });
     await supabase.from('ask_cube_conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
 
@@ -1375,7 +1405,7 @@ same conversation.`;
     // in the visible reply.
     console.log('[ask-cube] response', { conversationId, answer: finalText, proposalCount: proposals.length });
 
-    return json({ conversationId, answer: finalText, proposals });
+    return json({ conversationId, answer: finalText, proposals, chores: choreRefs });
   } catch (e: any) {
     console.log('[ask-cube] error', { message: e?.message });
     return json({ error: e?.message ?? 'Internal error' }, 500);

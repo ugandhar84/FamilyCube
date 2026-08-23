@@ -138,6 +138,12 @@ export interface ChoreTask {
   // is who is doing the work," which isn't true yet for a pending offer.
   // Cleared on accept/decline/withdraw.
   gpOfferById?: string;
+  // Grandparents who tapped "Pass" on this chore's open GP invitation
+  // (inviteGrandparents/openToGP) — persisted so Pass survives reload and
+  // is per-GP (a household with two grandparents shouldn't have one GP's
+  // Pass hide the invite from the other). Cleared implicitly once the
+  // chore is actually assigned (assignedToId set) or reopened to the pool.
+  gpWithdrawnIds?: string[];
   // GP receipt reimbursement
   receiptPhotoUrl?: string;
   receiptAmount?: number;       // in dollars/currency units (not points)
@@ -168,6 +174,11 @@ export interface ChoreTask {
   // visible audit note" requirement.
   reversedAt?: string;
   reversedById?: string;
+  // Per-parent dismiss for the Hub's "Recently Approved" list — a parent who's
+  // already seen an approval can clear it from their own view without hiding
+  // it from a co-parent who hasn't looked yet, and without cutting short the
+  // 7-day dispute window itself. See acknowledgeRecentApproval.
+  reviewAckIds?: string[];
 
   // Multi-slot bounty claiming — a bounty with maxClaimants > 1 lets that
   // many kids each independently claim/work/submit/get paid for their own
@@ -205,7 +216,13 @@ export interface ChoreCheer {
 
 export interface RecurrenceRule {
   frequency: 'once' | 'daily' | 'weekly' | 'monthly' | 'rotating' | 'first_come';
-  days?: number[];              // e.g. [1,3,5] for Mon/Wed/Fri
+  days?: number[];              // e.g. [1,3,5] for Mon/Wed/Fri — 'weekly' only
+  // 'monthly' only — 1-28, or 31 as shorthand for "last day of the month"
+  // (never 29/30 — a fixed 29th/30th/31st silently vanishes or shifts in
+  // shorter months; "last day" is the one value guaranteed to exist every
+  // month). Absent = implicit "whatever day-of-month it was first approved
+  // on", the pre-existing behavior before this field existed.
+  dayOfMonth?: number;
   siblingIds?: string[];        // For rotating assignments
   rotationCycleDays?: number;
   durationDays?: number;        // For bounty expiry
@@ -555,6 +572,8 @@ function choreFromRow(row: any): ChoreTask {
     shoppingStore:           row.shopping_store ?? undefined,
     shoppingBudget:          row.shopping_budget != null ? Number(row.shopping_budget) : undefined,
     openToGP:                row.open_to_gp ?? false,
+    gpWithdrawnIds:          Array.isArray(row.gp_withdrawn_ids) ? row.gp_withdrawn_ids : undefined,
+    reviewAckIds:            Array.isArray(row.review_ack_ids) ? row.review_ack_ids : undefined,
     isDisabled:              row.is_disabled ?? false,
     rewardPendingReview:     row.reward_pending_review ?? false,
     gpOfferById:             row.gp_offer_by_id ?? undefined,
@@ -654,12 +673,45 @@ function localDateStr(d: Date): string {
 // it was last approved. Daily → tomorrow; weekly/monthly → the same
 // weekday/day-of-month one period out. 'rotating'/'first_come' have no
 // fixed cadence here — they're reassigned by other flows, not this clock.
-function nextDueDate(fromISO: string, frequency: RecurrenceRule['frequency']): string | null {
+// `days` (0=Sun..6=Sat) only applies to 'weekly' — a chore recurring on
+// specific days (e.g. Mon/Wed/Fri) previously always jumped exactly +7 days
+// from whenever it was last approved regardless of which days were picked,
+// so "every Mon/Wed/Fri" behaved identically to "every 7 days from
+// whenever I happened to approve it" — the picked days were saved but never
+// actually consulted. Finds the next of the selected weekdays strictly
+// after fromISO, wrapping into the following week if none remain this one.
+function nextDueDate(fromISO: string, frequency: RecurrenceRule['frequency'], days?: number[], dayOfMonth?: number): string | null {
   const d = new Date(fromISO);
-  if (frequency === 'daily') d.setDate(d.getDate() + 1);
-  else if (frequency === 'weekly') d.setDate(d.getDate() + 7);
-  else if (frequency === 'monthly') d.setMonth(d.getMonth() + 1);
-  else return null;
+  if (frequency === 'daily') { d.setDate(d.getDate() + 1); return localDateStr(d); }
+  if (frequency === 'monthly') {
+    d.setMonth(d.getMonth() + 1);
+    if (dayOfMonth && dayOfMonth >= 1 && dayOfMonth <= 31) {
+      // Land on day 1 first, THEN set the target day — setting a day that
+      // doesn't exist in the current month (e.g. day 31 while still sitting
+      // on a 30-day month before the month rolls) overflows into the month
+      // after next instead of clamping, which silently skips a whole cycle.
+      d.setDate(1);
+      const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      // 31 is this app's "last day of the month" shorthand (see
+      // RecurrenceRule.dayOfMonth) — clamp any target beyond what the
+      // month actually has, so "31" in February lands on the 28th/29th
+      // instead of rolling into March.
+      d.setDate(Math.min(dayOfMonth, daysInMonth));
+    }
+    return localDateStr(d);
+  }
+  if (frequency !== 'weekly') return null;
+  if (!days || days.length === 0) { d.setDate(d.getDate() + 7); return localDateStr(d); }
+  const sorted = [...new Set(days)].filter(n => n >= 0 && n <= 6).sort((a, b) => a - b);
+  if (sorted.length === 0) { d.setDate(d.getDate() + 7); return localDateStr(d); }
+  for (let add = 1; add <= 7; add++) {
+    const candidate = new Date(d);
+    candidate.setDate(candidate.getDate() + add);
+    if (sorted.includes(candidate.getDay())) return localDateStr(candidate);
+  }
+  // Unreachable (every weekday 0-6 spans at most 7 days out), but keeps the
+  // function total rather than implicitly returning undefined.
+  d.setDate(d.getDate() + 7);
   return localDateStr(d);
 }
 
@@ -735,6 +787,14 @@ interface ChoreState {
   withdrawGPOffer:         (choreId: string, gpMemberId: string) => void;
   submitGPErrandReceipt:   (choreId: string, opts: { receiptPhotoUrl?: string; receiptAmount?: number; receiptNote?: string }) => void;
   acknowledgeGPReimbursement: (choreId: string) => void;
+  // GP-Welcome pool (canGpClaimPool in QuestCard.tsx — a plain
+  // inviteGrandparents chore a GP claimed directly via "I'd Love To Help",
+  // NOT the sponsored claimGPErrand offer-pending flow above). No approval
+  // gate and no coin payout — a GP is a trusted adult helping out, same
+  // "adults don't earn coins for their own chores" precedent
+  // QuestApprovalCard.tsx already documents for parents.
+  completeGpWelcomeChore:  (choreId: string, gpMemberId: string) => void;
+  backoutGpWelcomeChore:   (choreId: string, gpMemberId: string) => void;
 
   // ── Scenarios 9.2/9.3 — temporary-approver / caregiver-mode ──────────────
   // Single source of truth for "is this member currently allowed to
@@ -776,6 +836,13 @@ interface ChoreState {
   // standByApproval: the approving parent dismisses a flag/reversal request
   // without reversing — clears disputeStatus, no financial effect.
   standByApproval:           (choreId: string, byParentId: string) => void;
+  // acknowledgeRecentApproval: a parent clears one chore from their own
+  // "Recently Approved" Hub list. Per-viewer (adds byParentId to
+  // reviewAckIds) so it doesn't cut short the 7-day dispute window for a
+  // co-parent who hasn't seen it yet — see recentlyApproved's filter in
+  // ChoreReviewSection.tsx, which excludes any chore the viewer already
+  // acknowledged.
+  acknowledgeRecentApproval: (choreId: string, byParentId: string) => void;
   // requestApprovalReversal: if householdSettings.allowUnilateralReversal is
   // true, executes the clawback immediately (still leaves a full audit
   // trail). Otherwise sets disputeStatus: 'reversal_requested' and waits for
@@ -1354,6 +1421,42 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         }
       }
     }
+    // Live-repro'd bug: EditQuestModal's restricted ("Adjust") reassign
+    // writes assignedToId straight to System B, but a chore can already
+    // have a live System-A parent_quest_assignments row (PENDING/ACCEPTED/
+    // SNOOZED/PARKED) pointing at a DIFFERENT person — e.g. from an
+    // earlier DelegateSheet handoff or GP-welcome claim. Without closing
+    // that stale row out, QuestsScreen's activeAssignmentChoreIds
+    // exclusion keeps rendering the chore via DirectPendingCard addressed
+    // to the OLD (System-A) assignee, so the reassignment silently
+    // "doesn't move" from the user's perspective even though this write
+    // succeeded. addParentQuest already supersedes stale System-A rows
+    // when creating a NEW one (see its own staleOpen comment) — this is
+    // the missing mirror case: any direct System-B assignedToId change
+    // must supersede a stale System-A row too, not just a fresh System-A
+    // assignment superseding a previous one.
+    if ('assignedToId' in rawUpdates) {
+      const newAssignee = (rawUpdates as any).assignedToId;
+      const existing = prevChore;
+      if (existing && newAssignee !== existing.assignedToId) {
+        const staleOpen = get().parentAssignments.filter(a =>
+          a.choreId === id && !a.isLocked &&
+          ['PENDING', 'ACCEPTED', 'SNOOZED', 'PARKED'].includes(a.status)
+        );
+        if (staleOpen.length > 0) {
+          const now = new Date().toISOString();
+          console.log(`[choreStore] updateChore reassign → superseding ${staleOpen.length} stale System-A assignment(s) on chore ${id}`);
+          set(s => ({
+            parentAssignments: s.parentAssignments.map(a =>
+              staleOpen.some(x => x.id === a.id) ? { ...a, status: 'COMPLETED', updatedAt: now } : a
+            ),
+          }));
+          for (const a of staleOpen) {
+            dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now });
+          }
+        }
+      }
+    }
     // openToGP (the "Offer to GP" toggle in OthersAdultQuestCard/
     // PoolQuestCard/DelegateSheet) and inviteGrandparents (the separate
     // "Invite Grandparents?" toggle in Add/EditQuestModal, and what
@@ -1408,6 +1511,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('shoppingStore'        in updates) patch.shopping_store             = updates.shoppingStore;
     if ('shoppingBudget'       in updates) patch.shopping_budget            = updates.shoppingBudget;
     if ('openToGP'    in (updates as any)) patch.open_to_gp                = (updates as any).openToGP;
+    if ('gpWithdrawnIds' in (updates as any)) patch.gp_withdrawn_ids       = (updates as any).gpWithdrawnIds ?? [];
+    if ('reviewAckIds' in (updates as any)) patch.review_ack_ids          = (updates as any).reviewAckIds ?? [];
     if ('isDisabled'  in (updates as any)) patch.is_disabled               = (updates as any).isDisabled;
     if ('rewardPendingReview' in (updates as any)) patch.reward_pending_review = (updates as any).rewardPendingReview;
     if ('gpOfferById'   in (updates as any)) patch.gp_offer_by_id             = (updates as any).gpOfferById ?? null;
@@ -2189,6 +2294,57 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     get().updateChore(choreId, { receiptReimbursedAt: new Date().toISOString() });
   },
 
+  // GP-Welcome pool completion (QuestCard.tsx's canGpClaimPool card, Chores
+  // tab). Deliberately separate from submitGPErrandReceipt above rather
+  // than reusing its no-receipt branch — that function pays coins to the
+  // assignee (correct for its own two callers, the Hub's receipt-submission
+  // flow), but a GP completing a plain household chore they picked up
+  // should NOT earn coins, same "adults don't earn coins for their own
+  // chores" precedent QuestApprovalCard.tsx documents for parents. No
+  // approval gate — the GP is a trusted adult, this is a self-completion,
+  // not a submission awaiting review.
+  completeGpWelcomeChore: (choreId, gpMemberId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.assignedToId !== gpMemberId) return;
+    if (!['todo', 'in_progress'].includes(chore.status)) return;
+
+    const now = new Date().toISOString();
+    get().updateChore(choreId, {
+      status:      'auto_approved',
+      approvedAt:  now,
+      reviewedAt:  now,
+      submittedAt: now,
+    });
+
+    try {
+      const { useFamilyStore } = require('./familyStore');
+      const { useChatStore } = require('./chatStore');
+      const gp = useFamilyStore.getState().members.find((m: any) => m.id === gpMemberId);
+      const parents = useFamilyStore.getState().members.filter((m: any) => m.role === 'parent');
+      for (const parent of parents) {
+        useChatStore.getState().sendMessage(parent.id, gpMemberId,
+          `✅ ${gp?.name?.split(' ')[0] ?? 'A grandparent'} finished "${chore.title}" — all done!`);
+      }
+    } catch (e) {
+      console.warn('[choreStore] completeGpWelcomeChore notification failed', e);
+    }
+  },
+
+  // The claiming GP giving the chore back before finishing — releases it
+  // to the open pool exactly as if they'd never claimed it (any GP,
+  // including this one, can claim it again). Mirrors declineGrandparentQuest's
+  // "release, don't punish" shape rather than treating a change of mind as
+  // a failure.
+  backoutGpWelcomeChore: (choreId, gpMemberId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.assignedToId !== gpMemberId) return;
+    if (!['todo', 'in_progress'].includes(chore.status)) return;
+
+    get().updateChore(choreId, {
+      status: 'todo', assignedToId: undefined, isPool: true,
+    });
+  },
+
   // ─────────────────────────────────────────────────────────────────────────
   // PARENT REVIEW
   // ─────────────────────────────────────────────────────────────────────────
@@ -2696,6 +2852,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
   },
 
+  acknowledgeRecentApproval: (choreId, byParentId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore) return;
+    if ((chore.reviewAckIds ?? []).includes(byParentId)) return;
+
+    get().updateChore(choreId, {
+      reviewAckIds: [...(chore.reviewAckIds ?? []), byParentId],
+    } as any);
+  },
+
   // The actual clawback — a real negative payout, same shape as
   // denyCashOut's gpCoins refund (awardPoints with a negative amount),
   // generalized to whichever wallet the original payout used. Only ever
@@ -2821,7 +2987,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       c.recurrenceRule?.frequency && c.recurrenceRule.frequency !== 'once' &&
       c.approvedAt &&
       (() => {
-        const next = nextDueDate(c.approvedAt!, c.recurrenceRule.frequency);
+        const next = nextDueDate(c.approvedAt!, c.recurrenceRule.frequency, c.recurrenceRule.days, c.recurrenceRule.dayOfMonth);
         return next !== null && today >= next;
       })(),
     );
@@ -2868,7 +3034,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       // before they'd had any real chance at the new cycle. Advance it here
       // to the new cycle's own due date, same nextDueDate() calc used to
       // decide this chore was even due for reset in the first place.
-      const newDueDate = nextDueDate(now, chore.recurrenceRule!.frequency) ?? undefined;
+      const newDueDate = nextDueDate(now, chore.recurrenceRule!.frequency, chore.recurrenceRule!.days, chore.recurrenceRule!.dayOfMonth) ?? undefined;
       get().updateChore(chore.id, {
         status:             'todo',
         assignedToId:       preserveAssignee ? chore.assignedToId : undefined,
@@ -3343,6 +3509,25 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       for (const a of staleOpen) {
         dbUpdate('parent_quest_assignments', a.id, { status: 'COMPLETED', updated_at: now });
       }
+    }
+
+    // Bug (live-repro'd): a chore can carry a stale System-B assignedToId
+    // from an earlier, unrelated flow (e.g. a grandparent claiming a
+    // GP-welcome invite via updateQuest) — addParentQuest never touched it,
+    // so starting a fresh DIRECT delegation here left BOTH systems "live"
+    // for the same chore at once. getMyDirectPending's own systemBIds
+    // check (added to avoid double-listing a chore already answered via
+    // System B) then excluded it there BECAUSE assignedToId was set, while
+    // ParentView/QuestsScreen's activeAssignmentChoreIds excluded it from
+    // the System-B "my adult quests" list BECAUSE a live PENDING System-A
+    // row now existed — the chore satisfied both exclusions simultaneously
+    // and disappeared from every screen. A DIRECT delegation means "needs
+    // the new assignee's Accept/Decline," which isn't true yet — clear the
+    // stale System-B assignedToId so only the new PENDING assignment is
+    // "live," matching the "only one assignment should ever be live"
+    // guarantee above, but across both systems instead of just within A.
+    if (mode === 'DIRECT' && chore.assignedToId) {
+      get().updateChore(choreId, { assignedToId: undefined, isPool: chore.isPool ?? false } as any);
     }
 
     // PULL mode: person self-claims from backlog (assignedTo = themselves)

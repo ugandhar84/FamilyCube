@@ -15,10 +15,14 @@ import type { ChoreTask } from '@/store/choreStore';
 // no-money path: it calls submitGPErrandReceipt with no receipt fields,
 // which now auto-completes and pays out instantly instead of routing to
 // pending_approval (see choreStore.ts's submitGPErrandReceipt).
-export function ActiveErrandsSection({ errands, onOpenReceiptModal, onMarkDoneNoReceipt, colors, isDark }: {
+export function ActiveErrandsSection({ errands, onOpenReceiptModal, onMarkDoneNoReceipt, onBackout, colors, isDark }: {
   errands: ChoreTask[];
   onOpenReceiptModal: (choreId: string) => void;
   onMarkDoneNoReceipt: (choreId: string) => void;
+  // Gives the chore back to the open pool before finishing — same
+  // backoutGpWelcomeChore QuestCard.tsx's Chores-tab card uses, so a GP who
+  // changes their mind isn't stuck with only the two "done" paths.
+  onBackout: (choreId: string) => void;
   colors: any; isDark: boolean;
 }) {
   if (errands.length === 0) return null;
@@ -68,6 +72,14 @@ export function ActiveErrandsSection({ errands, onOpenReceiptModal, onMarkDoneNo
                 borderWidth: 1.5, borderColor: BRAND.teal + '50' }}>
               <Text style={{ fontSize: GP.sub, fontWeight: '800', color: BRAND.teal }}>
                 Just Done — No Receipt Needed
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => onBackout(c.id)}
+              style={{ borderRadius: 12, paddingVertical: 9, alignItems: 'center',
+                borderWidth: 1.5, borderColor: colors.danger + '50' }}>
+              <Text style={{ fontSize: GP.tiny, fontWeight: '700', color: colors.danger }}>
+                Backout — give it back
               </Text>
             </Pressable>
           </View>

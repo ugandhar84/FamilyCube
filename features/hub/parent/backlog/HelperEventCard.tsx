@@ -56,7 +56,7 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
         {ev.dropLocation ? ` → ${ev.dropLocation}` : ev.location ? ` → ${ev.location}` : ''}
       </Text>
       {ev.notes ? (
-        <Pressable onPress={() => setNotesExpanded(v => !v)}
+        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "${notesExpanded ? 'Collapse' : 'Expand'} notes" on "${ev.title}" (id=${ev.id}) [features/hub/parent/backlog/HelperEventCard.tsx:59]`); setNotesExpanded(v => !v); }}
           style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginLeft: 24 }}>
           <StickyNote size={10} color={colors.textTertiary} style={{ marginTop: 2 }} />
           <Text style={{ flex: 1, fontSize: TYPO.micro, color: colors.textTertiary }} numberOfLines={notesExpanded ? undefined : 1}>
@@ -69,12 +69,14 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
           {ev.helper !== active.name && (
             <Pressable
               onPress={() => {
+                console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Take Over" on "${ev.title}" from ${ev.helper} (id=${ev.id}) [features/hub/parent/backlog/HelperEventCard.tsx:72]`);
                 Alert.alert(
                   'Take Over',
                   `Reassign this from ${ev.helper} to yourself?`,
                   [
                     { text: 'Cancel', style: 'cancel' },
                     { text: "Yes, I'll do it", onPress: () => {
+                      console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Take Over" on "${ev.title}" from ${ev.helper} (id=${ev.id}) → updateEvent(helper/helperStatus) [features/hub/parent/backlog/HelperEventCard.tsx:77]`);
                       // A one-off take-over ("I'll cover THIS one") stays
                       // scoped to this occurrence only — it must not
                       // silently take over every future occurrence of a
@@ -96,6 +98,7 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
             <>
               <Pressable
                 onPress={() => {
+                  console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Confirm I'll do it" on "${ev.title}" (id=${ev.id}) → updateEvent(helperStatus=confirmed) [features/hub/parent/backlog/HelperEventCard.tsx:98]`);
                   // Confirming yourself as the already-named driver IS the
                   // "yes, I'm your driver going forward" moment — propagate
                   // to future occurrences, same as RideRequestCard's own
@@ -117,6 +120,7 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                   confirm with a decline (QA Round 11, Medium Finding M4). */}
               <Pressable
                 onPress={() => {
+                  console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Can't" on "${ev.title}" (id=${ev.id}) → updateEvent(helperStatus=rejected) [features/hub/parent/backlog/HelperEventCard.tsx:119]`);
                   // Was a hand-rolled reassign-to-the-other-parent that
                   // never set helperStatus:'rejected' — completely bypassed
                   // autoOpenOnDecline (no GP/Teen pool reopen, no decline

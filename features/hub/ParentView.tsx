@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { TYPO } from '@/constants/theme';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useEventStore, eventAssignee } from '@/store/eventStore';
 import { useGroceryStore } from '@/store/groceryStore';
@@ -8,7 +10,6 @@ import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { AddQuestModal } from '@/features/quests/QuestsScreen';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
-import AddIntakeChooser from '@/components/AddIntakeChooser';
 import type { FamilyMember } from '@/store/familyStore';
 import { AlertBanner, PickupRadarStatus } from './hubComponents';
 import { localToday, hoursUntilEvent, isWorkEvent, minutesBetween } from './hubUtils';
@@ -62,6 +63,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     approveTeenReward, adjustTeenReward, declineTeenReward,
     acceptGPOffer, declineGPOffer,
     flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal,
+    acknowledgeRecentApproval,
     getMyDirectPending, getMyLockedItems, getMyOutgoingPending, getActiveAssignmentChoreIds,
     loadFromStorage: loadChores, syncFromDB: syncChores,
   } = useChoreStore();
@@ -73,7 +75,6 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // (matching the existing pet-appointment voice flow) — HouseholdBacklog's
   // own "add task" trigger below still opens the manual quest form directly,
   // since that's a narrower, already-scoped-to-backlog action.
-  const [addChooser, setAddChooser] = useState<'event' | 'quest' | null>(null);
   // "Adjust in full form" handoff from VoiceIntakeReviewSheet — seeds
   // whichever manual modal opens next with the AI-extracted fields.
   const [addPrefill, setAddPrefill] = useState<{
@@ -545,16 +546,27 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         />
       )}
 
+      {/* Entry point for the new persistent Family Settings screen — invite
+          members by email or share the join code, anytime (not just once
+          during onboarding). */}
+      <Pressable
+        onPress={() => router.push('/family-settings' as any)}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-end',
+          marginHorizontal: 16, marginBottom: 8 }}>
+        <Ionicons name="people" size={13} color={colors.textTertiary} />
+        <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary }}>Family Settings</Text>
+      </Pressable>
+
       <ParentQuickActions colors={colors} isDark={isDark} groceryCount={groceryItems.length} onScanFlyer={onScanFlyer}
-        onAddQuest={() => setAddChooser('quest')} onAddEvent={() => setAddChooser('event')} />
+        onAddQuest={() => setShowAddTask(true)} onAddEvent={() => setShowAddEvent(true)} />
 
       <TodayView
         colors={colors}
         isDark={isDark}
         activeMember={active}
         members={members}
-        onAddQuest={() => setAddChooser('quest')}
-        onAddEvent={() => setAddChooser('event')}
+        onAddQuest={() => setShowAddTask(true)}
+        onAddEvent={() => setShowAddEvent(true)}
         onAddGrocery={() => router.push('/(tabs)/grocery' as any)}
         conflictReasons={conflictReasons}
         otherParentsWorkToday={otherParentsWorkToday}
@@ -608,6 +620,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         standByApproval={standByApproval}
         requestApprovalReversal={requestApprovalReversal}
         coSignReversal={coSignReversal}
+        acknowledgeRecentApproval={acknowledgeRecentApproval}
       />
 
       {/* Only the driver gets editable controls (ETA slider, Pickup Done) —
@@ -697,24 +710,6 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
           startAt: addPrefill.startAt,
           notes: addPrefill.notes,
         } : undefined}
-      />
-
-      {/* "Add Event"/"New Quest" quick actions open this chooser first
-          (Speak it / Type it) instead of jumping straight to the manual
-          form — matching the existing pet-appointment voice flow. */}
-      <AddIntakeChooser
-        visible={addChooser !== null}
-        kind={addChooser ?? 'event'}
-        members={members}
-        activeMemberId={active.id}
-        onClose={() => setAddChooser(null)}
-        onTypeManually={(prefill) => {
-          const kind = addChooser;
-          setAddChooser(null);
-          setAddPrefill(prefill);
-          if (kind === 'quest') setShowAddTask(true);
-          else setShowAddEvent(true);
-        }}
       />
 
       <DelegateSheet

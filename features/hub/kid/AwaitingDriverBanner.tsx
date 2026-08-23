@@ -38,7 +38,7 @@ export function AwaitingDriverBanner({ ev, colors, isDark, onDismiss }: {
             {ev.title} · {fmtTime(ev.time)} · waiting for {driverFirst} to confirm
           </Text>
         </View>
-        <Pressable onPress={() => onDismiss(`awaiting-${ev.id}`)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "AwaitingDriverBanner" (id=${ev.id}) → onDismiss("awaiting-${ev.id}") [features/hub/kid/AwaitingDriverBanner.tsx:41]`); onDismiss(`awaiting-${ev.id}`); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <X size={18} color={colors.textTertiary} />
         </Pressable>
       </View>

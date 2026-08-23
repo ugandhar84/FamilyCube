@@ -33,13 +33,19 @@ export function FamilyNeedsHandSection({
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
   updateChore: (id: string, patch: Partial<ChoreTask>) => void;
   assignRequest: (id: string, memberId: string) => void;
-  // Scenario 1.6 — "I'll Handle It" now offers instead of claiming outright;
-  // routes through the same claimGPErrand gate QuestInvitationsSection uses,
-  // rather than writing assignedToId/status directly.
+  // Per explicit product decision, GP-Welcome claims direct — no
+  // parent-approval offer gate (that's Flow 3's separate claimGPErrand
+  // mechanism, still used by the sponsored-errand offer flow elsewhere).
+  // This matches QuestCard.tsx's canGpClaimPool "I'd Love To Help" on the
+  // Chores tab, which was reconciled to the same direct-claim behavior.
   claimGPErrand: (choreId: string, gpMemberId: string) => void;
 }) {
   if (openRequests.length === 0 && gpWelcomeRequests.length === 0 &&
       gpWelcomeChores.length === 0 && volunteerPool.length === 0) return null;
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=FamilyNeedsHandSection.openRequests totalSource=${openRequests.length} afterFilter=${openRequests.length} [features/hub/senior/FamilyNeedsHandSection.tsx:44]`);
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=FamilyNeedsHandSection.gpWelcomeRequests totalSource=${gpWelcomeRequests.length} afterFilter=${gpWelcomeRequests.length} [features/hub/senior/FamilyNeedsHandSection.tsx:44]`);
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=FamilyNeedsHandSection.gpWelcomeChores totalSource=${gpWelcomeChores.length} afterFilter=${gpWelcomeChores.length} [features/hub/senior/FamilyNeedsHandSection.tsx:44]`);
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=FamilyNeedsHandSection.volunteerPool totalSource=${volunteerPool.length} afterFilter=${volunteerPool.length} [features/hub/senior/FamilyNeedsHandSection.tsx:44]`);
 
   return (
     <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
@@ -77,13 +83,14 @@ export function FamilyNeedsHandSection({
                 // still unset) makes sure only the actual first-to-land
                 // claim sticks, rather than both devices' optimistic state
                 // showing themselves as the confirmed helper.
+                console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "I'll Drive" on "${ev.title}" (id=${ev.id}) → claimHelperSlot [features/hub/senior/FamilyNeedsHandSection.tsx:80]`);
                 useEventStore.getState().claimHelperSlot(ev.id, 'helper', active.name, { approvalPending: false });
               }}
                 style={{ flex: 1, backgroundColor: BRAND.purple, paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                 <Car size={14} color="#fff" />
                 <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
               </Pressable>
-              <Pressable onPress={() => updateEvent(ev.id, { approvalPending: false })}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Pass" on "${ev.title}" (id=${ev.id}) → updateEvent(approvalPending=false) [features/hub/senior/FamilyNeedsHandSection.tsx:86]`); updateEvent(ev.id, { approvalPending: false }); }}
                 style={{ flex: 1, backgroundColor: colors.danger + '20', borderWidth: 1, borderColor: colors.danger + '40', borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
                 <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.danger }}>Pass</Text>
               </Pressable>
@@ -122,12 +129,12 @@ export function FamilyNeedsHandSection({
               </View>
             )}
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Pressable onPress={() => { assignRequest(req.id, active.id); }}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "I'll Help" on "${req.detail}" (id=${req.id}) → assignRequest [features/hub/senior/FamilyNeedsHandSection.tsx:125]`); assignRequest(req.id, active.id); }}
                 style={{ flex: 1, backgroundColor: GP_WELCOME_GREEN, paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                 <Hand size={14} color="#fff" />
                 <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Help</Text>
               </Pressable>
-              <Pressable onPress={() => {/* just close/ignore — GP passes */ }}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Pass" on "${req.detail}" (id=${req.id}) — no-op (GP passes) [features/hub/senior/FamilyNeedsHandSection.tsx:130]`); /* just close/ignore — GP passes */ }}
                 style={{ flex: 1, backgroundColor: colors.danger + '20', borderWidth: 1, borderColor: colors.danger + '40', borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
                 <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.danger }}>Pass</Text>
               </Pressable>
@@ -167,7 +174,10 @@ export function FamilyNeedsHandSection({
               </View>
             )}
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Pressable onPress={() => claimGPErrand(c.id, active.id)}
+              <Pressable onPress={() => {
+                console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "I'll Handle It" on "${c.title}" (id=${c.id}) → updateChore(assignedToId, status:in_progress) [features/hub/senior/FamilyNeedsHandSection.tsx:170]`);
+                updateChore(c.id, { assignedToId: active.id, status: 'in_progress', isPool: false } as any);
+              }}
                 style={{ flex: 1, backgroundColor: GP_WELCOME_GREEN, paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                 <Hand size={14} color="#fff" />
                 <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Handle It</Text>
@@ -216,7 +226,8 @@ export function FamilyNeedsHandSection({
               </Text>
             </View>
             <Pressable
-              onPress={() =>
+              onPress={() => {
+                console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "I'll Step In — Confirm Drive" on "${ev.title}" (id=${ev.id}) [features/hub/senior/FamilyNeedsHandSection.tsx:219]`);
                 Alert.alert(
                   'Step In as Driver?',
                   `You'll replace ${ev.helper} and be confirmed immediately. ${ev.helper} will be notified they're off the hook.`,
@@ -224,14 +235,17 @@ export function FamilyNeedsHandSection({
                     { text: 'Cancel', style: 'cancel' },
                     {
                       text: "Yes, I'll Drive",
-                      onPress: () => updateEvent(ev.id, {
-                        helper: active.name,
-                        helperStatus: 'confirmed',
-                      }),
+                      onPress: () => {
+                        console.log(`[UserAction] screen=Hub role=senior member=${active.name} confirmed "Yes, I'll Drive" on "${ev.title}" (id=${ev.id}) → updateEvent(helper=${active.name}, helperStatus=confirmed) [features/hub/senior/FamilyNeedsHandSection.tsx:227]`);
+                        updateEvent(ev.id, {
+                          helper: active.name,
+                          helperStatus: 'confirmed',
+                        });
+                      },
                     },
                   ]
-                )
-              }
+                );
+              }}
               style={{ backgroundColor: BRAND.teal, borderRadius: 12, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
               <Car size={15} color="#fff" />
               <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Step In — Confirm Drive</Text>

@@ -25,6 +25,8 @@ import {
 } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/ThemeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, FamilyEvent, EventType, HelperStatus } from '@/store/eventStore';
 import { useGroceryStore } from '@/store/groceryStore';
@@ -50,9 +52,11 @@ export type { EventCategory } from './components/eventForm/types';
 import { fetchCustomSuggestions, recordCustomSuggestion, fetchCustomCategories, CustomCategory } from '@/lib/familyCustomCategories';
 import {
   lookupCategoryDefaultsByLooseLabel, resolveDomainFromLooseLabel, fetchSubcategoriesForDomain,
-  applyAssignment, type ResponsibilityCategory, type AssignmentSuggestion,
+  applyAssignment, eventCategoryFromDomain, type ResponsibilityCategory, type AssignmentSuggestion,
 } from '@/lib/responsibilityCategories';
 import AssignmentSuggestionCard from './components/eventForm/AssignmentSuggestionCard';
+import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
+import { familyAi } from '@/lib/familyAiService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // AddEventModal
@@ -65,16 +69,34 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
   prefill?: { title?: string; category?: EventCategory; memberId?: string; startAt?: string; notes?: string };
 }) {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const { addEvent, updateEvent } = useEventStore();
   const members = useFamilyStore(s => s.members);
   const { pastStores: cachedStores, pastItemNames: cachedItemNames, appendToCache } = useGroceryStore();
   const siblings = members.map(m => m.name);
+
+  // ── Stepper ──────────────────────────────────────────────────────────────
+  // Same redesign as AddQuestModal: one long flat scroll → a small paged
+  // flow, same fields/state/submit logic, purely a layout change. Fixed
+  // 4-step list (unlike AddQuestModal's conditional grocery step) — every
+  // event category shares the same What/When/Who/Review shape here, so
+  // there's no category that skips a whole step the way chores' non-
+  // Errand/Shopping categories skip the grocery step.
+  const [step, setStep] = useState(0);
+  const stepIds = ['what', 'when', 'assign', 'review'] as const;
+  type StepId = typeof stepIds[number];
+  const currentStepId: StepId = stepIds[Math.min(step, stepIds.length - 1)];
+  const stepTitles: Record<StepId, string> = {
+    what: 'What is it?', when: 'When is it?', assign: 'Who & details', review: 'Review',
+  };
 
   const activeMember = members.find(m => m.id === activeMemberId);
   const isParent  = activeMember?.role === 'parent';
   const isSenior  = activeMember?.role === 'senior';
   const isKid     = activeMember?.role === 'kid';
   const isTeen    = activeMember?.role === 'teen';
+  const roleLabel = isParent ? 'parent' : isSenior ? 'senior' : isTeen ? 'teen' : isKid ? 'kid' : 'unknown';
+  const activeMemberName = activeMember?.name ?? '';
 
   // Kids can request Sports / Study / Event / Birthday / Other, with optional ride flag
 
@@ -186,6 +208,54 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
   const [focusedField,       setFocusedField]       = useState<'name' | 'store' | null>(null);
 
   const familyId = activeMember?.familyId ?? '';
+
+  // Voice → AI prefill, Step 1 only. Same interaction shape as Ask Cube's
+  // mic: tap to record, the live transcript lands in an editable text box,
+  // the user reviews/edits it, and only an explicit tap on "Send" fires the
+  // AI call — never automatic on speech-end. useVoiceDictation is the same
+  // plain transcribe-only hook Ask Cube itself uses (no AI involved in the
+  // capture step); only the final transcript TEXT the user approved is ever
+  // sent to extractResponsibility, never audio.
+  const voice = useVoiceDictation();
+  const [voiceDraft, setVoiceDraft] = useState('');
+  const [isPrefilling, setIsPrefilling] = useState(false);
+
+  const applyVoiceTranscript = async (transcript: string) => {
+    const trimmed = transcript.trim();
+    if (!trimmed) return;
+    setIsPrefilling(true);
+    try {
+      const result = await familyAi.extractResponsibility(trimmed, members.map(m => ({ id: m.id, name: m.name })));
+      const task = result.task;
+      if (!task) {
+        Alert.alert("Couldn't quite catch that", 'Try again, or type it in below.');
+        return;
+      }
+      setTitle(task.title);
+      if (task.requirements?.length) setNotes(task.requirements.join('. ').slice(0, 200));
+      if (task.startAt) {
+        const d = new Date(task.startAt);
+        if (!isNaN(d.getTime())) setEventDate(d);
+      }
+      if (task.forMemberName) {
+        const match = members.find(m => m.name.toLowerCase() === task.forMemberName!.toLowerCase());
+        if (match) setMemberIds([match.id]);
+      }
+      // Unlike AddQuestModal's category mapping (which only maps a handful
+      // of unambiguous domains), events already have a dedicated, complete
+      // domain->EventCategory table (eventCategoryFromDomain) built for
+      // exactly this kind of voice/text intake — safe to apply whenever it
+      // resolves to something real.
+      const mappedCategory = eventCategoryFromDomain(task.category);
+      if (mappedCategory) setCategory(mappedCategory as EventCategory);
+      setVoiceDraft('');
+      voice.reset();
+    } catch (e: any) {
+      Alert.alert('Something went wrong', e?.message ?? "Couldn't process that — try again, or type it in below.");
+    } finally {
+      setIsPrefilling(false);
+    }
+  };
 
   useEffect(() => {
     if (!familyId) return;
@@ -316,6 +386,9 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
     setLinkGroceries(false); setGroceryItems([]); setSelectedItemIds(new Set()); setNewGroceryLines([]);
     setFocusedLineIdx(null); setFocusedField(null);
     setOpenToGrandparents(false); setOpenToTeens(false); setRideCoinsTeen(''); setGpTeenToggledByUser(false);
+    setStep(0);
+    voice.reset();
+    setVoiceDraft('');
   };
 
   // ── Validation ─────────────────────────────────────────────────────────────
@@ -610,7 +683,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                 </Text>
               </View>
               <TouchableOpacity
-                onPress={() => { reset(); onClose(); }}
+                onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Close" on AddEventModal [features/calendar/EventFormModal.tsx:613]`); reset(); onClose(); }}
                 hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
                 style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}
               >
@@ -618,12 +691,37 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               </TouchableOpacity>
             </View>
 
+            {/* ── Step progress — dots for the 4-step flow, Back arrow once
+                past step 1. Same pattern as AddQuestModal's stepper. ── */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              {step > 0 && (
+                <TouchableOpacity onPress={() => setStep(s => s - 1)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="chevron-back" size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+              <View style={{ flexDirection: 'row', gap: 6, flex: 1 }}>
+                {stepIds.map((id, i) => (
+                  <View key={id} style={{
+                    flex: 1, height: 4, borderRadius: 2,
+                    backgroundColor: i <= step ? catColor : (isDark ? colors.border : '#E2E8F0'),
+                  }} />
+                ))}
+              </View>
+              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary }}>
+                {step + 1}/{stepIds.length}
+              </Text>
+            </View>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: catColor, marginBottom: 10, marginTop: -6 }}>
+              {stepTitles[currentStepId]}
+            </Text>
+
             {/* ── Scrollable form fields (category included) ── */}
             <ScrollView
               keyboardShouldPersistTaps="always"
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 48 }}
+              contentContainerStyle={{ paddingBottom: currentStepId === 'review' ? Math.max(48, insets.bottom + 32) : 48 }}
             >
+            {currentStepId === 'what' && <>
             {/* ── Category selector ── */}
             <Text style={[f.label, { color: colors.textSecondary, marginBottom: 6 }]}>Category</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
@@ -633,7 +731,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                   return (
                     <TouchableOpacity
                       key={c.key}
-                      onPress={() => { setCategory(c.key); setTitle(''); }}
+                      onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${c.label}" for "category" [features/calendar/EventFormModal.tsx:636]`); setCategory(c.key); setTitle(''); }}
                       style={{
                         borderRadius: 16, borderWidth: 2, paddingHorizontal: 12, paddingVertical: 8,
                         alignItems: 'center', gap: 3, minWidth: 64,
@@ -664,7 +762,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                       return (
                         <TouchableOpacity
                           key={sc.id}
-                          onPress={() => setSubcategoryId(active ? null : sc.id)}
+                          onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${sc.subcategoryLabel}" for "subcategory" [features/calendar/EventFormModal.tsx:667]`); setSubcategoryId(active ? null : sc.id); }}
                           style={{
                             borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 7,
                             backgroundColor: active ? catColor + '18' : (isDark ? colors.surface : colors.inputBg),
@@ -701,9 +799,100 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               value={title}
               onChangeText={setTitle}
               onFocus={() => setTitleFocused(true)}
-              onBlur={() => setTitleFocused(false)}
+              onBlur={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} field="Title" on "AddEventModal" newValue=${title} [features/calendar/EventFormModal.tsx:704]`); setTitleFocused(false); }}
               returnKeyType="next"
             />
+
+            {/* Voice → AI prefill — same interaction as Ask Cube's mic and
+                AddQuestModal's own: tap to record, the transcript lands in
+                an editable box once you stop talking, and only an explicit
+                "Send" tap sends it to the AI — never automatic on speech-
+                end. Speech-to-text happens entirely on-device; only the
+                transcript TEXT you approve is ever sent, never audio. */}
+            {voice.state !== 'listening' && !voiceDraft && (
+              <TouchableOpacity
+                onPress={() => voice.start()}
+                disabled={isPrefilling}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -6, marginBottom: 12,
+                  borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 13, paddingVertical: 11,
+                  borderColor: catColor + '45',
+                  backgroundColor: isDark ? catColor + '1c' : '#F8F5FF',
+                }}
+              >
+                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: catColor + '22', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="mic" size={13} color={catColor} />
+                </View>
+                <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: catColor }} numberOfLines={1}>
+                  🎙️ Or just say it — Cube will fill this in
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {(voice.state === 'listening' || voiceDraft) && (
+              <View style={{ marginTop: -6, marginBottom: 12, borderRadius: 14, borderWidth: 1.5,
+                borderColor: voice.state === 'listening' ? colors.danger + '60' : catColor + '45',
+                backgroundColor: voice.state === 'listening' ? colors.danger + '08' : (isDark ? catColor + '1c' : '#F8F5FF'),
+                padding: 12, gap: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (voice.state === 'listening') {
+                        const transcript = voice.liveTranscript;
+                        voice.stop();
+                        if (transcript.trim()) setVoiceDraft(transcript);
+                        return;
+                      }
+                      voice.start();
+                    }}
+                    style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: voice.state === 'listening' ? colors.danger + '30' : catColor + '22' }}>
+                    {voice.state === 'listening'
+                      ? <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.danger }} />
+                      : <Ionicons name="mic" size={13} color={catColor} />}
+                  </TouchableOpacity>
+                  <Text style={{ flex: 1, fontSize: TYPO.micro, fontWeight: '700', color: voice.state === 'listening' ? colors.danger : colors.textTertiary }}>
+                    {voice.state === 'listening' ? 'Listening… tap to stop' : 'Review and edit, then send'}
+                  </Text>
+                </View>
+                <TextInput
+                  value={voice.state === 'listening' ? (voice.liveTranscript || '') : voiceDraft}
+                  onChangeText={setVoiceDraft}
+                  editable={voice.state !== 'listening' && !isPrefilling}
+                  placeholder="Listening…"
+                  placeholderTextColor={colors.textTertiary}
+                  multiline
+                  style={{ fontSize: TYPO.body, color: colors.textPrimary, minHeight: 44, textAlignVertical: 'top' }}
+                />
+                {voice.state !== 'listening' && (
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity
+                      onPress={() => { setVoiceDraft(''); voice.reset(); }}
+                      disabled={isPrefilling}
+                      style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10,
+                        borderWidth: 1, borderColor: colors.border }}>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Discard</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => applyVoiceTranscript(voiceDraft)}
+                      disabled={isPrefilling || !voiceDraft.trim()}
+                      style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        paddingVertical: 9, borderRadius: 10,
+                        backgroundColor: !voiceDraft.trim() || isPrefilling ? colors.border : catColor }}>
+                      {isPrefilling
+                        ? <ActivityIndicator size="small" color={colors.textInverse} />
+                        : <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: !voiceDraft.trim() ? colors.textTertiary : colors.textInverse }}>Send</Text>}
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            )}
+            {voice.state === 'error' && voice.error && (
+              <Text style={{ fontSize: TYPO.micro, color: colors.danger, marginTop: -8, marginBottom: 12 }}>
+                {voice.error}
+              </Text>
+            )}
+
             {/* Suggestions */}
             {suggestions.length > 0 && (
               <View style={{ marginTop: -8, marginBottom: 14 }}>
@@ -717,7 +906,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                       return (
                         <TouchableOpacity
                           key={i}
-                          onPress={() => selected ? setTitle('') : applySuggestion(s)}
+                          onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${s.title}" for "title suggestion" [features/calendar/EventFormModal.tsx:720]`); selected ? setTitle('') : applySuggestion(s); }}
                           style={[f.suggPill, {
                             flexDirection: 'row', alignItems: 'center',
                             backgroundColor: selected ? catColor + '20' : (isDark ? colors.surface : colors.inputBg),
@@ -736,7 +925,9 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                 </ScrollView>
               </View>
             )}
+            </>}
 
+            {currentStepId === 'when' && <>
             {/* ── Ride needed? + pickup (kid only) — right above Date &
                 Time, which doubles as the drop-off time whenever ride
                 needed is on (relabeled below, no separate drop-off field
@@ -767,7 +958,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
             <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
               <TouchableOpacity
                 style={[f.dateBtn, { flex: 3, backgroundColor: showDatePick ? catColor + '20' : colors.surface, borderColor: showDatePick ? catColor : colors.border }]}
-                onPress={() => { setShowDatePick(p => !p); setShowTimePick(false); }}
+                onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Date" field on AddEventModal [features/calendar/EventFormModal.tsx:770]`); setShowDatePick(p => !p); setShowTimePick(false); }}
               >
                 <Text style={{ fontSize: 13 }}>📅</Text>
                 <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showDatePick ? catColor : colors.textPrimary }}>
@@ -777,7 +968,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               {!allDay && (
                 <TouchableOpacity
                   style={[f.dateBtn, { flex: 2, backgroundColor: showTimePick ? catColor + '20' : colors.surface, borderColor: showTimePick ? catColor : colors.border }]}
-                  onPress={() => { setShowTimePick(p => !p); setShowDatePick(false); }}
+                  onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Time" field on AddEventModal [features/calendar/EventFormModal.tsx:780]`); setShowTimePick(p => !p); setShowDatePick(false); }}
                 >
                   <Text style={{ fontSize: 13 }}>🕐</Text>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showTimePick ? catColor : colors.textPrimary }}>
@@ -811,7 +1002,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingHorizontal: 4 }}>
               <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>All day</Text>
               <Switch
-                value={allDay} onValueChange={setAllDay}
+                value={allDay} onValueChange={(v) => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "All day" on AddEventModal newValue=${v} [features/calendar/EventFormModal.tsx:814]`); setAllDay(v); }}
                 trackColor={{ false: colors.border, true: catColor + '80' }}
                 thumbColor={allDay ? catColor : colors.textTertiary}
               />
@@ -833,7 +1024,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                   { key: 'monthly' as const, label: 'Monthly' },
                 ]).map(({ key, label }) => (
                   <TouchableOpacity key={key}
-                    onPress={() => setRepeatFreq(key)}
+                    onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${label}" for "repeats" [features/calendar/EventFormModal.tsx:836]`); setRepeatFreq(key); }}
                     style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, paddingVertical: 8, alignItems: 'center',
                       borderColor: repeatFreq === key ? catColor : colors.border,
                       backgroundColor: repeatFreq === key ? catColor + '20' : 'transparent' }}>
@@ -849,7 +1040,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                     const active = repeatDays.includes(dow);
                     return (
                       <TouchableOpacity key={dow}
-                        onPress={() => setRepeatDays(days => active ? days.filter(d => d !== dow) : [...days, dow].sort())}
+                        onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected weekday "${label}" (dow=${dow}) for "repeat days" newValue=${!active} [features/calendar/EventFormModal.tsx:852]`); setRepeatDays(days => active ? days.filter(d => d !== dow) : [...days, dow].sort()); }}
                         style={{ flex: 1, borderRadius: 8, borderWidth: 1.5, paddingVertical: 8, alignItems: 'center',
                           borderColor: active ? catColor : colors.border,
                           backgroundColor: active ? catColor : 'transparent' }}>
@@ -862,7 +1053,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
 
               {repeatFreq !== 'none' && (
                 <TouchableOpacity
-                  onPress={() => setShowRepeatEndDatePick(p => !p)}
+                  onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Repeat end date" field on AddEventModal [features/calendar/EventFormModal.tsx:865]`); setShowRepeatEndDatePick(p => !p); }}
                   style={[f.dateBtn, { marginTop: 8, backgroundColor: showRepeatEndDatePick ? catColor + '20' : colors.surface, borderColor: showRepeatEndDatePick ? catColor : colors.border }]}>
                   <Text style={{ fontSize: 13 }}>🏁</Text>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
@@ -889,7 +1080,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: alertCall ? 8 : 16, paddingHorizontal: 4 }}>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>📞 Call to remind</Text>
                   <Switch
-                    value={alertCall} onValueChange={setAlertCall}
+                    value={alertCall} onValueChange={(v) => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Call to remind" on AddEventModal newValue=${v} [features/calendar/EventFormModal.tsx:892]`); setAlertCall(v); }}
                     trackColor={{ false: colors.border, true: catColor + '80' }}
                     thumbColor={alertCall ? catColor : colors.textTertiary}
                   />
@@ -897,7 +1088,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                 {alertCall && (
                   <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16, paddingHorizontal: 4 }}>
                     {[0, 10, 15, 30].map(mins => (
-                      <TouchableOpacity key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
+                      <TouchableOpacity key={mins} onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${mins} min" for "call reminder lead time" [features/calendar/EventFormModal.tsx:900]`); setAlertCallLeadMinutes(mins); }}
                         style={[f.dateBtn, { flex: 1, backgroundColor: alertCallLeadMinutes === mins ? catColor + '20' : colors.surface, borderColor: alertCallLeadMinutes === mins ? catColor : colors.border }]}>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: alertCallLeadMinutes === mins ? catColor : colors.textPrimary }}>
                           {mins === 0 ? 'On time' : `${mins} min before`}
@@ -908,7 +1099,9 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                 )}
               </>
             )}
+            </>}
 
+            {currentStepId === 'assign' && <>
             <CategoryFields
               category={category} catColor={catColor} colors={colors} isDark={isDark} siblings={siblings} adults={adults} isKid={isKid}
               apptType={apptType} setApptType={setApptType} doctorName={doctorName} setDoctorName={setDoctorName}
@@ -960,7 +1153,9 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                 onToggle={id => setMemberIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}
                 onSelectAll={() => {
                   const allIds = forMembers.map(m => m.id);
-                  setMemberIds(memberIds.length === forMembers.length ? [] : allIds);
+                  const willSelectAll = memberIds.length !== forMembers.length;
+                  console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "${willSelectAll ? 'All' : 'Deselect all'}" for "For member picker" [features/calendar/EventFormModal.tsx:963]`);
+                  setMemberIds(willSelectAll ? allIds : []);
                 }}
                 colors={colors} isDark={isDark} siblings={siblings}
               />
@@ -981,7 +1176,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
             {/* ── Grandparents Welcome toggle (parents only, non-Ride — Ride has inline toggles) ── */}
             {!isKid && !isTeen && category !== 'Ride' && (
               <TouchableOpacity
-                onPress={() => { setGpTeenToggledByUser(true); setOpenToGrandparents(g => !g); }}
+                onPress={() => { const v = !openToGrandparents; console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Grandparents Welcome" on AddEventModal newValue=${v} [features/calendar/EventFormModal.tsx:984]`); setGpTeenToggledByUser(true); setOpenToGrandparents(v); }}
                 activeOpacity={0.8}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, marginBottom: 14,
@@ -1016,7 +1211,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                 for a medical appointment) ── */}
             {!isKid && !isTeen && category !== 'Ride' && category !== 'Medical' && members.some(m => m.role === 'teen') && (
               <TouchableOpacity
-                onPress={() => { setGpTeenToggledByUser(true); setOpenToTeens(t => !t); }}
+                onPress={() => { const v = !openToTeens; console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Teens Welcome" on AddEventModal newValue=${v} [features/calendar/EventFormModal.tsx:1019]`); setGpTeenToggledByUser(true); setOpenToTeens(v); }}
                 activeOpacity={0.8}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingVertical: 12, paddingHorizontal: 14, borderRadius: 16, marginBottom: 14,
@@ -1052,7 +1247,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                 treated as sensitive independent of this toggle (5.5). */}
             {!isKid && category !== 'Medical' && (
               <TouchableOpacity
-                onPress={() => setIsPrivateTag(v => !v)}
+                onPress={() => { const v = !isPrivateTag; console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Mark as private" on AddEventModal newValue=${v} [features/calendar/EventFormModal.tsx:1055]`); setIsPrivateTag(v); }}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingHorizontal: 4, marginBottom: 16 }}>
                 <View style={{ flex: 1, marginRight: 12 }}>
@@ -1066,7 +1261,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                   </Text>
                 </View>
                 <Switch
-                  value={isPrivateTag} onValueChange={setIsPrivateTag}
+                  value={isPrivateTag} onValueChange={(v) => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Mark as private" (switch) on AddEventModal newValue=${v} [features/calendar/EventFormModal.tsx:1069]`); setIsPrivateTag(v); }}
                   trackColor={{ false: colors.border, true: catColor + '80' }}
                   thumbColor={isPrivateTag ? catColor : colors.textTertiary}
                 />
@@ -1078,7 +1273,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                 the ordinary mandatory-event Acknowledge pattern. */}
             {isParent && (
               <TouchableOpacity
-                onPress={() => setIsOptionalRsvp(v => !v)}
+                onPress={() => { const v = !isOptionalRsvp; console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Optional — collect RSVPs" on AddEventModal newValue=${v} [features/calendar/EventFormModal.tsx:1081]`); setIsOptionalRsvp(v); }}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingHorizontal: 4, marginBottom: 16 }}>
                 <View style={{ flex: 1, marginRight: 12 }}>
@@ -1090,45 +1285,118 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                   </Text>
                 </View>
                 <Switch
-                  value={isOptionalRsvp} onValueChange={setIsOptionalRsvp}
+                  value={isOptionalRsvp} onValueChange={(v) => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Optional — collect RSVPs" (switch) on AddEventModal newValue=${v} [features/calendar/EventFormModal.tsx:1093]`); setIsOptionalRsvp(v); }}
                   trackColor={{ false: colors.border, true: catColor + '80' }}
                   thumbColor={isOptionalRsvp ? catColor : colors.textTertiary}
                 />
               </TouchableOpacity>
             )}
+            </>}
 
-            {/* ── Notes ── */}
-            <Text style={[f.label, { color: colors.textSecondary, marginTop: 4 }]}>📝 Notes (optional)</Text>
-            <TextInput
-              style={[f.input, f.multiInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
-              placeholder={isKid ? 'Any message for parents? (e.g. please pick me up early)' : 'Any details, instructions, or reminders…'}
-              placeholderTextColor={colors.textTertiary}
-              value={notes} onChangeText={t => setNotes(t.slice(0, 200))}
-              multiline numberOfLines={3} textAlignVertical="top"
-            />
-            <Text style={{ fontSize: TYPO.micro, color: notes.length > 180 ? colors.danger : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 16 }}>
-              {notes.length}/200
-            </Text>
+            {currentStepId === 'review' && (() => {
+              const forNames = memberIds.map(id => members.find(m => m.id === id)).filter(Boolean).map(m => m!.id === activeMemberId ? 'Me' : m!.name.split(' ')[0]);
+              const whoLabel = isKid ? 'You (pending approval)' : forNames.length ? forNames.join(', ') : 'Nobody yet';
+              const recurLabel = repeatFreq === 'none' ? 'One-time'
+                : repeatFreq === 'daily' ? 'Daily'
+                : repeatFreq === 'weekly' ? `Weekly${repeatDays.length ? ` · ${repeatDays.map(d => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]).join('/')}` : ''}`
+                : 'Monthly';
+              return (
+                <View style={{ gap: 10 }}>
+                  <View style={{ borderRadius: 16, borderWidth: 1.5, borderColor: isDark ? colors.border : '#E2E8F0', backgroundColor: isDark ? colors.surface : '#F8FAFC', padding: 14, gap: 10 }}>
+                    <View>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Event</Text>
+                      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary, marginTop: 2 }} numberOfLines={2}>
+                        {finalTitle || '—'}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 16 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Who</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {whoLabel}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>When</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {fmtDisplay(eventDate)}{!allDay ? ` · ${fmtTimeDisplay(eventDate)}` : ' · All day'}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 16 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Category</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {catEmoji} {category}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Repeats</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {recurLabel}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
 
-            {/* Was a 3rd near-identical "a parent will review this" note —
-                the header subtitle already sets this expectation up front,
-                and HelperAssignmentSection's own note (shown only when
-                Ride needed is on) already explains the driver-assignment
-                specifics. Repeating it a third time right before Submit
-                added length without adding information. */}
+                  {/* ── Notes — kept on the Review step (not "What") since
+                      it reads as final context right before creating,
+                      matching how a parent scans a summary before
+                      committing. Was a 3rd near-identical "a parent will
+                      review this" note here too — the header subtitle
+                      already sets that expectation up front, and
+                      HelperAssignmentSection's own note (shown only when
+                      Ride needed is on) already explains the driver-
+                      assignment specifics, so repeating it a third time
+                      added length without adding information. */}
+                  <Text style={[f.label, { color: colors.textSecondary, marginTop: 4 }]}>📝 Notes (optional)</Text>
+                  <TextInput
+                    style={[f.input, f.multiInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
+                    placeholder={isKid ? 'Any message for parents? (e.g. please pick me up early)' : 'Any details, instructions, or reminders…'}
+                    placeholderTextColor={colors.textTertiary}
+                    value={notes} onChangeText={t => setNotes(t.slice(0, 200))}
+                    onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} field="Notes" on "AddEventModal" newValue=${notes} [features/calendar/EventFormModal.tsx:1106]`)}
+                    multiline numberOfLines={3} textAlignVertical="top"
+                  />
+                  <Text style={{ fontSize: TYPO.micro, color: notes.length > 180 ? colors.danger : colors.textTertiary, textAlign: 'right', marginTop: -8 }}>
+                    {notes.length}/200
+                  </Text>
 
-            {/* ── Submit ── */}
-            <TouchableOpacity
-              style={[f.submitBtn, { backgroundColor: canSubmit && !saving ? catColor : colors.border, opacity: saving ? 0.7 : 1 }]}
-              onPress={submit} disabled={!canSubmit || saving}
-            >
-              {saving
-                ? <ActivityIndicator color={colors.textInverse} size="small" />
-                : <Text style={{ color: colors.textInverse, fontSize: TYPO.caption, fontWeight: '900' }}>
-                    {isKid ? 'Send Request to Parent 🙋' : `Add to Family Schedule ${catEmoji}`}
-                  </Text>}
-            </TouchableOpacity>
-          </ScrollView>
+                  {!canSubmit && (
+                    <Text style={{ fontSize: TYPO.label, color: colors.danger, textAlign: 'center' }}>
+                      Add a title on the first step.
+                    </Text>
+                  )}
+
+                  <TouchableOpacity
+                    style={[f.submitBtn, { backgroundColor: canSubmit && !saving ? catColor : colors.border, opacity: saving ? 0.7 : 1 }]}
+                    onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "${isKid ? 'Send Request to Parent' : 'Add to Family Schedule'}" title="${finalTitle}" category=${category} → submit/addEvent [features/calendar/EventFormModal.tsx:1123]`); submit(); }} disabled={!canSubmit || saving}
+                  >
+                    {saving
+                      ? <ActivityIndicator color={colors.textInverse} size="small" />
+                      : <Text style={{ color: colors.textInverse, fontSize: TYPO.caption, fontWeight: '900' }}>
+                          {isKid ? 'Send Request to Parent 🙋' : `Add to Family Schedule ${catEmoji}`}
+                        </Text>}
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
+
+            </ScrollView>
+
+            {/* ── Footer nav — Next on every step but the last, which shows
+                the Create/Send button above instead, inside the scroll, so
+                its disabled-reason stays attached to the summary. ── */}
+            {currentStepId !== 'review' && (
+              <View style={{ paddingTop: 10, paddingBottom: Math.max(16, insets.bottom + 8) }}>
+                <TouchableOpacity
+                  style={[f.submitBtn, { backgroundColor: catColor }]}
+                  onPress={() => setStep(s => Math.min(s + 1, stepIds.length - 1))}
+                >
+                  <Text style={{ color: colors.textInverse, fontSize: TYPO.caption, fontWeight: '900' }}>Next</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -1167,6 +1435,8 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   // branch below (not isParent, not isKid/isTeen's isOwnPending) and Save
   // silently built an empty patch — nothing they typed ever persisted.
   const isSenior = activeMember?.role === 'senior';
+  const editRoleLabel = isParent ? 'parent' : isSenior ? 'senior' : isTeen ? 'teen' : isKid ? 'kid' : 'unknown';
+  const editActiveMemberName = activeMember?.name ?? '';
   const isPast   = (() => {
     if (!event.date) return false;
     // Local calendar date, not UTC — toISOString() can already read as
@@ -1396,15 +1666,16 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
 
   const handleDelete = () => {
     if (restricted) return; // blocked in UI
+    console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} tapped "Delete" (X) on "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1844]`);
     if (event.seriesId) {
       Alert.alert(
         'Repeating Event',
         `Delete just this occurrence of "${event.title}", or the whole series?`,
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Just this one', style: 'destructive', onPress: () => { onDelete?.('this'); onClose(); } },
-          { text: 'This and following', style: 'destructive', onPress: () => { onDelete?.('following'); onClose(); } },
-          { text: 'All events', style: 'destructive', onPress: () => { onDelete?.('all'); onClose(); } },
+          { text: 'Just this one', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} confirmed "Just this one" delete on "${event.title}" (id=${event.id}) → onDelete('this') [features/calendar/EventFormModal.tsx:1412]`); onDelete?.('this'); onClose(); } },
+          { text: 'This and following', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} confirmed "This and following" delete on "${event.title}" (id=${event.id}) → onDelete('following') [features/calendar/EventFormModal.tsx:1413]`); onDelete?.('following'); onClose(); } },
+          { text: 'All events', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} confirmed "All events" delete on "${event.title}" (id=${event.id}) → onDelete('all') [features/calendar/EventFormModal.tsx:1414]`); onDelete?.('all'); onClose(); } },
         ],
       );
       return;
@@ -1416,7 +1687,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
         : `Remove "${event.title}" from the family schedule?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: isOwnPending ? 'Withdraw' : 'Delete', style: 'destructive', onPress: () => { onDelete?.(); onClose(); } },
+        { text: isOwnPending ? 'Withdraw' : 'Delete', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} confirmed "${isOwnPending ? 'Withdraw' : 'Delete'}" on "${event.title}" (id=${event.id}) → onDelete() [features/calendar/EventFormModal.tsx:1426]`); onDelete?.(); onClose(); } },
       ]
     );
   };
@@ -1443,7 +1714,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   {event.date}{event.time ? ` · ${event.time}` : ''}{event.location ? ` · ${event.location}` : ''}
                 </Text>
               </View>
-              <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              <TouchableOpacity onPress={() => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} tapped "Close" on EditEventModal for "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1453]`); onClose(); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
                 <X c={colors.textSecondary} size={14} />
               </TouchableOpacity>
@@ -1519,7 +1790,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   <View style={{ flexDirection: 'row', gap: 10 }}>
                     <TouchableOpacity
                       style={[f.dateBtn, { flex: 3, backgroundColor: showEditDatePick ? catColor + '20' : colors.surface, borderColor: showEditDatePick ? catColor : colors.border }]}
-                      onPress={() => { setShowEditDatePick(p => !p); setShowEditTimePick(false); }}
+                      onPress={() => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} tapped "Date" field on EditEventModal for "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1522]`); setShowEditDatePick(p => !p); setShowEditTimePick(false); }}
                     >
                       <Text style={{ fontSize: 13 }}>📅</Text>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showEditDatePick ? catColor : colors.textPrimary }}>
@@ -1529,7 +1800,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     {!event.allDay && (
                       <TouchableOpacity
                         style={[f.dateBtn, { flex: 2, backgroundColor: showEditTimePick ? catColor + '20' : colors.surface, borderColor: showEditTimePick ? catColor : colors.border }]}
-                        onPress={() => { setShowEditTimePick(p => !p); setShowEditDatePick(false); }}
+                        onPress={() => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} tapped "Time" field on EditEventModal for "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1532]`); setShowEditTimePick(p => !p); setShowEditDatePick(false); }}
                       >
                         <Text style={{ fontSize: 13 }}>🕐</Text>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showEditTimePick ? catColor : colors.textPrimary }}>
@@ -1568,6 +1839,8 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     members={['Medical', 'Sports', 'Study', 'Ride'].includes(event.category ?? '') ? kids : members}
                     onToggle={id => {
                       if (lockedMemberIds.includes(id)) return; // locked kid cannot be removed
+                      const m = members.find(x => x.id === id);
+                      console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} selected "${m?.name}" (id=${id}) for "Change who it's for" on "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1569]`);
                       setEditMemberIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
                     }}
                     onSelectAll={() => {
@@ -1576,6 +1849,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                       const pool = ['Medical', 'Sports', 'Study', 'Ride'].includes(event.category ?? '') ? kids : members;
                       // Select all but preserve locked kids
                       const allIds = pool.map(m => m.id);
+                      console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} tapped "All/Deselect all" for "Change who it's for" on "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1579]`);
                       setEditMemberIds(editMemberIds.length === pool.length ? lockedMemberIds : allIds);
                     }}
                     colors={colors} isDark={isDark} siblings={siblings}
@@ -1605,7 +1879,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     }
                     selectedIds={helperId ? [helperId] : []}
                     members={adults}
-                    onToggle={handleHelperSelect}
+                    onToggle={(id) => { const m = members.find(x => x.id === id); console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} selected "${m?.name}" (id=${id}) for "reassign helper" on "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1608]`); handleHelperSelect(id); }}
                     colors={colors} isDark={isDark} siblings={siblings}
                   />
                   {!helperId && (
@@ -1615,6 +1889,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                       placeholderTextColor={colors.textTertiary}
                       value={helperName}
                       onChangeText={t => setHelperName(t)}
+                      onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} field="Helper name" on "${event.title}" (id=${event.id}) newValue=${helperName} [features/calendar/EventFormModal.tsx:1617]`)}
                     />
                   )}
                 </View>
@@ -1633,7 +1908,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     </Text>
                   </View>
                   <TouchableOpacity
-                    onPress={() => setEditRideRequired(v => !v)}
+                    onPress={() => { const v = !editRideRequired; console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} toggled "Ride Needed?" on "${event.title}" (id=${event.id}) newValue=${v} [features/calendar/EventFormModal.tsx:1636]`); setEditRideRequired(v); }}
                     activeOpacity={0.8}
                     style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                       paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
@@ -1661,7 +1936,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                         label="🚗 Drive Assignment"
                         selectedIds={editDriverId ? [editDriverId] : []}
                         members={adults}
-                        onToggle={handleDriverSelect}
+                        onToggle={(id) => { const m = members.find(x => x.id === id); console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} selected "${m?.name}" (id=${id}) for "Drive Assignment" on "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1664]`); handleDriverSelect(id); }}
                         colors={colors} isDark={isDark} siblings={siblings}
                       />
                       {!editDriverId && (
@@ -1671,6 +1946,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                           placeholderTextColor={colors.textTertiary}
                           value={editDriverName}
                           onChangeText={setEditDriverName}
+                          onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} field="Driver name" on "${event.title}" (id=${event.id}) newValue=${editDriverName} [features/calendar/EventFormModal.tsx:1673]`)}
                         />
                       )}
                     </View>
@@ -1686,7 +1962,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
               {isParent && !isPast && event.category !== 'Ride' && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 10 }}>
                   <TouchableOpacity
-                    onPress={() => setEditGPOpen(g => !g)}
+                    onPress={() => { const v = !editGPOpen; console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} toggled "Grandparents Welcome" on "${event.title}" (id=${event.id}) newValue=${v} [features/calendar/EventFormModal.tsx:1689]`); setEditGPOpen(v); }}
                     activeOpacity={0.8}
                     style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                       paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
@@ -1715,7 +1991,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
 
                   {event.category !== 'Medical' && members.some(m => m.role === 'teen') && (
                     <TouchableOpacity
-                      onPress={() => setEditTeenOpen(t => !t)}
+                      onPress={() => { const v = !editTeenOpen; console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} toggled "Teens Welcome" on "${event.title}" (id=${event.id}) newValue=${v} [features/calendar/EventFormModal.tsx:1718]`); setEditTeenOpen(v); }}
                       activeOpacity={0.8}
                       style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                         paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14, borderWidth: 1.5,
@@ -1748,6 +2024,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                         keyboardType="numeric" maxLength={4}
                         placeholder="0" placeholderTextColor={colors.textTertiary}
                         value={editRideCoins} onChangeText={setEditRideCoins}
+                        onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} field="Coins for teen driver" on "${event.title}" (id=${event.id}) newValue=${editRideCoins} [features/calendar/EventFormModal.tsx:1762]`)}
                       />
                     </View>
                   )}
@@ -1761,7 +2038,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>📞 Call to remind</Text>
                     <Switch
-                      value={alertCall} onValueChange={setAlertCall}
+                      value={alertCall} onValueChange={(v) => { console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} toggled "Call to remind" on "${event.title}" (id=${event.id}) newValue=${v} [features/calendar/EventFormModal.tsx:1777]`); setAlertCall(v); }}
                       trackColor={{ false: colors.border, true: colors.primary + '80' }}
                       thumbColor={alertCall ? colors.primary : colors.textTertiary}
                     />
@@ -1769,7 +2046,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   {alertCall && (
                     <View style={{ flexDirection: 'row', gap: 8 }}>
                       {[0, 10, 15, 30].map(mins => (
-                        <TouchableOpacity key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
+                        <TouchableOpacity key={mins} onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} selected "${mins} min" for "call reminder lead time" on "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1785]`); setAlertCallLeadMinutes(mins); }}
                           style={[f.dateBtn, { flex: 1, backgroundColor: alertCallLeadMinutes === mins ? colors.primary + '20' : colors.surface, borderColor: alertCallLeadMinutes === mins ? colors.primary : colors.border }]}>
                           <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: alertCallLeadMinutes === mins ? colors.primary : colors.textPrimary }}>
                             {mins === 0 ? 'On time' : `${mins} min before`}
@@ -1786,7 +2063,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   sensitive regardless — see isEventSensitive). */}
               {!restricted && isParent && event.category !== 'Medical' && (
                 <TouchableOpacity
-                  onPress={() => setIsPrivateTag(v => !v)}
+                  onPress={() => { const v = !isPrivateTag; console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} toggled "Mark as private" on "${event.title}" (id=${event.id}) newValue=${v} [features/calendar/EventFormModal.tsx:1802]`); setIsPrivateTag(v); }}
                   style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                   <View style={{ flex: 1, marginRight: 12 }}>
                     <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>🔒 Mark as private</Text>
@@ -1795,7 +2072,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     </Text>
                   </View>
                   <Switch
-                    value={isPrivateTag} onValueChange={setIsPrivateTag}
+                    value={isPrivateTag} onValueChange={(v) => { console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} toggled "Mark as private" (switch) on "${event.title}" (id=${event.id}) newValue=${v} [features/calendar/EventFormModal.tsx:1811]`); setIsPrivateTag(v); }}
                     trackColor={{ false: colors.border, true: colors.primary + '80' }}
                     thumbColor={isPrivateTag ? colors.primary : colors.textTertiary}
                   />
@@ -1816,6 +2093,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                     placeholder="Add or update notes…"
                     placeholderTextColor={colors.textTertiary}
                     value={notes} onChangeText={t => setNotes(t.slice(0, 200))}
+                    onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} field="Notes" on "${event.title}" (id=${event.id}) newValue=${notes} [features/calendar/EventFormModal.tsx:1831]`)}
                     multiline numberOfLines={3} textAlignVertical="top"
                   />
                 </View>
@@ -1832,13 +2110,13 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                   </TouchableOpacity>
                 )}
                 {(!restricted || (isPast && isParent)) && (
-                  <TouchableOpacity style={[f.submitBtn, { flex: 1, opacity: saving ? 0.7 : 1 }]} onPress={save} disabled={saving}>
+                  <TouchableOpacity style={[f.submitBtn, { flex: 1, opacity: saving ? 0.7 : 1 }]} onPress={() => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} tapped "${restricted ? 'Save Note' : 'Save Changes'}" on "${event.title}" (id=${event.id}) → save [features/calendar/EventFormModal.tsx:1850]`); save(); }} disabled={saving}>
                     {saving ? <ActivityIndicator color={colors.textInverse} size="small" />
                       : <Text style={{ color: colors.textInverse, fontSize: TYPO.caption, fontWeight: '900' }}>{restricted ? 'Save Note' : 'Save Changes'}</Text>}
                   </TouchableOpacity>
                 )}
                 {restricted && !(isPast && isParent) && (
-                  <TouchableOpacity style={[f.submitBtn, { flex: 1, backgroundColor: colors.surface }]} onPress={onClose}>
+                  <TouchableOpacity style={[f.submitBtn, { flex: 1, backgroundColor: colors.surface }]} onPress={() => { console.log(`[UserAction] screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} tapped "Close" (footer) on "${event.title}" (id=${event.id}) [features/calendar/EventFormModal.tsx:1856]`); onClose(); }}>
                     <Text style={{ color: colors.textSecondary, fontSize: TYPO.caption, fontWeight: '700' }}>Close</Text>
                   </TouchableOpacity>
                 )}

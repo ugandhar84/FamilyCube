@@ -4,7 +4,7 @@ import Slider from '@react-native-community/slider';
 import { Navigation, Car, MapPin, X } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
-import { decryptMessage } from '@/lib/chatCrypto';
+import { decryptLocationText } from '@/lib/locationCrypto';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { SectionCard } from '../hubComponents';
 import { fmtTime } from '../hubUtils';
@@ -70,7 +70,7 @@ export function EnRouteBanner({ colors, isDark, members, activeMemberId, onDispa
         .select('address, lat, lng').eq('member_id', driverMemberId).maybeSingle();
       if (cancelled) return;
       if (!data || data.lat == null || data.lng == null) { setDriverAddress(null); return; }
-      setDriverAddress(data.address ? await decryptMessage(data.address) : null);
+      setDriverAddress(data.address ? await decryptLocationText(driverMemberId, data.address) : null);
     };
     loadDriverLocation();
     // Randomized suffix — same Strict-Mode double-subscribe fix already

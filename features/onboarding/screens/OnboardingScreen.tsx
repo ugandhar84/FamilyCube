@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from 'react';
 import { registerForPushNotifications } from '@/shared/services/notifications.service';
 import {
   View, Text, StyleSheet, TouchableOpacity, Dimensions,
-  ScrollView, StatusBar, Image,
+  ScrollView, StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,141 +17,88 @@ import { TYPO } from '@/constants/theme';
 
 const { width, height } = Dimensions.get('window');
 
-// ─── Slide data ───────────────────────────────────────────────────────────────
-// ── Onboarding images ─────────────────────────────────────────────────────────
-// Replace each placeholder with your AI-generated 3D cartoon image.
-// Style guide for generation: warm Pixar/chibi 3D render, soft lighting,
-// intimate human-pet bond, vibrant but not garish. Portrait crop (9:16).
-// Drop the new PNG into assets/onboarding/ — no other code change needed.
-const IMG = {
-  // "3D cartoon child hugging dog/cat tightly, eyes closed, warm golden sunlight,
-  //  soft bokeh background, Pixar style, ultra detailed, emotional"
-  welcome:    require('../../../assets/onboarding/welcome.png'),
-
-  // "3D cartoon golden retriever looking up at owner with huge trusting eyes,
-  //  paw gently resting on owner's hand, soft clinic light, Pixar style"
-  health:     require('../../../assets/onboarding/health.jpeg'),
-
-  // "3D cartoon dog sitting alone by a front door, looking out hopefully,
-  //  soft morning light through window, warm tones, Pixar style, emotional"
-  reminders:  require('../../../assets/onboarding/reminders.jpeg'),
-
-  // "3D cartoon worried pet parent reading a vet document, small dog on lap
-  //  looking up reassuringly, warm lamp light, Pixar style, cozy but emotional"
-  records:    require('../../../assets/onboarding/records.jpeg'),
-
-  // "3D cartoon group of joyful people with their pets in a sunlit park,
-  //  dogs and cats, laughter, sense of belonging, Pixar style, warm afternoon"
-  community:  require('../../../assets/onboarding/community.jpeg'),
-
-  // "3D cartoon two dogs running freely through a flower field, pure unbridled
-  //  joy, blurred background, golden hour light, Pixar style, vibrant"
-  playdates:  require('../../../assets/onboarding/playdates.jpeg'),
-
-  // "3D cartoon cat/dog and owner sitting face to face, eye to eye, deep
-  //  connection, quiet moment, soft evening light, Pixar style, heartwarming"
-  mood:       require('../../../assets/onboarding/mood.jpeg'),
-
-  // "3D cartoon pet parent and dog walking together toward a glowing golden
-  //  sunset on a path, silhouette style but warm 3D, Pixar style, hopeful"
-  getstarted: require('../../../assets/onboarding/getstarted.jpeg'),
-};
-
+// ─── Slide data — one per real Family Cube feature (see the 7-tab layout in
+// CLAUDE.md), illustrated with our own SVG scenes (OnboardingIllos.tsx)
+// instead of stock photography.
 const SLIDES = [
   {
     key: 'welcome',
     illustration: IlloWelcome,
-    image: IMG.welcome,
-    gradientColors: ['#B39DDB', '#D1C4F5'] as [string, string],
-    chip: 'For the love of your pet',
-    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#4527A0',
-    title: 'They only get\none life with you.',
-    sub: 'Every wag, every purr, every quiet moment — you are their whole world. Make it count.',
-    btnColor: '#7C5CBF',
-    btnLabel: "I'm ready",
+    gradientColors: ['#9261C7', '#C4A0EC'] as [string, string],
+    chip: 'CONNECT · ORGANIZE · CARE · GROW',
+    title: 'One family.\nOne cube.',
+    sub: 'Everyone in your household — parents, kids, teens, grandparents — in one place, sharing one home base.',
+    btnColor: '#9261C7',
+    btnLabel: "Let's go",
   },
   {
-    key: 'health',
+    key: 'quests',
     illustration: IlloHealth,
-    image: IMG.health,
-    gradientColors: ['#4DB6AC', '#80CBC4'] as [string, string],
-    chip: 'Their health, in your hands',
-    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#00695C',
-    title: 'They trust you\nwith their life.',
-    sub: 'They cannot tell you when something hurts. Vet visits, vaccines, daily health — never miss a thing.',
-    btnColor: '#14B8A6',
+    gradientColors: ['#F5A623', '#FCD34D'] as [string, string],
+    chip: 'Quests',
+    title: 'Chores become\nquests worth doing.',
+    sub: 'Assign, claim, and approve chores together. Every completed quest earns real coins toward real rewards.',
+    btnColor: '#F5A623',
     btnLabel: 'Next',
   },
   {
-    key: 'reminders',
+    key: 'schedule',
     illustration: IlloReminders,
-    image: IMG.reminders,
-    gradientColors: ['#FF8A65', '#FFAB91'] as [string, string],
-    chip: 'Never let them down',
-    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#BF360C',
-    title: 'They cannot\nremind you. But you can.',
-    sub: 'A missed pill, a forgotten shot — they never blame you. But you will always remember how it felt.',
-    btnColor: '#F4511E',
+    gradientColors: ['#3B82F6', '#93C5FD'] as [string, string],
+    chip: 'Schedule',
+    title: 'Never miss\nwhat matters.',
+    sub: 'One shared calendar for practices, pickups, and appointments — everyone sees the same day.',
+    btnColor: '#3B82F6',
     btnLabel: 'Next',
   },
   {
-    key: 'aihealth',
+    key: 'chat',
     illustration: IlloAIHealth,
-    image: IMG.records,
-    gradientColors: ['#9575CD', '#B39DDB'] as [string, string],
-    chip: 'Understand everything',
-    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#4527A0',
-    title: 'What did the vet\nactually say?',
-    sub: 'Snap your report. AI reads every result, every medication — and tells you exactly what it means.',
-    btnColor: '#7C5CBF',
+    gradientColors: ['#F04E98', '#F9A8D4'] as [string, string],
+    chip: 'Chat',
+    title: 'Talk like\na family again.',
+    sub: 'A group chat just for your household — reactions, photos, and no strangers scrolling past.',
+    btnColor: '#F04E98',
     btnLabel: 'Next',
   },
   {
-    key: 'social',
+    key: 'gps',
     illustration: IlloSocial,
-    image: IMG.community,
-    gradientColors: ['#FF7043', '#FF8A65'] as [string, string],
-    chip: 'You are not alone',
-    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#BF360C',
-    title: 'This love is too big\nto carry alone.',
-    sub: 'Share the joy, the worry, the milestones — with a community of pet parents who truly understand.',
-    btnColor: '#FF5722',
+    gradientColors: ['#00BBA4', '#5EEAD4'] as [string, string],
+    chip: 'GPS',
+    title: 'Know they\nmade it home.',
+    sub: 'See where everyone is on one family map — peace of mind without checking in every ten minutes.',
+    btnColor: '#00BBA4',
     btnLabel: 'Next',
   },
   {
-    key: 'playdates',
+    key: 'store',
     illustration: IlloPlaydates,
-    image: IMG.playdates,
-    gradientColors: ['#FFA726', '#FFB74D'] as [string, string],
-    chip: 'Pure joy',
-    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#E65100',
-    title: 'Watch them run.\nWatch them shine.',
-    sub: 'The happiest version of your pet needs a friend too. Find them nearby, safely, in seconds.',
-    btnColor: '#FF8C55',
+    gradientColors: ['#FCD34D', '#F5A623'] as [string, string],
+    chip: 'Store',
+    title: 'Coins earned.\nRewards claimed.',
+    sub: 'Kids cash in quest coins for real rewards parents set — screen time, treats, or something bigger.',
+    btnColor: '#F5A623',
     btnLabel: 'Next',
   },
   {
-    key: 'ai',
+    key: 'askcube',
     illustration: IlloAI,
-    image: IMG.mood,
-    gradientColors: ['#26A69A', '#4DB6AC'] as [string, string],
-    chip: 'They speak. Now listen.',
-    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#004D40',
-    title: 'They have been\ntelling you all along.',
-    sub: 'One photo. AI reads their mood, their feelings — so you always know how they truly are inside.',
-    btnColor: '#14B8A6',
+    gradientColors: ['#9261C7', '#B98EDB'] as [string, string],
+    chip: 'Ask Cube',
+    title: 'Your family\'s\nsmart assistant.',
+    sub: 'Ask Cube helps schedule events, assign chores, and answer "what\'s happening today?" in seconds.',
+    btnColor: '#9261C7',
     btnLabel: 'Next',
   },
   {
     key: 'getstarted',
     illustration: IlloGetStarted,
-    image: IMG.getstarted,
-    gradientColors: ['#7E57C2', '#9575CD'] as [string, string],
-    chip: 'Begin the journey',
-    chipBg: 'rgba(255,255,255,0.9)', chipTxt: '#4527A0',
-    title: 'They gave you\ntheir whole heart.',
-    sub: '30 seconds to start. A lifetime of being the pet parent they always believed you were.',
-    btnColor: '#7C5CBF',
+    gradientColors: ['#9261C7', '#F04E98'] as [string, string],
+    chip: 'Ready when you are',
+    title: 'Let\'s build your\nfamily cube.',
+    sub: '30 seconds to create your family or join one — then everyone\'s in the same place.',
+    btnColor: '#9261C7',
     btnLabel: 'Begin',
   },
 ];
@@ -191,7 +138,7 @@ export default function OnboardingScreen() {
     <View style={s.root}>
       <StatusBar barStyle="light-content" />
 
-      {/* ── Full-bleed images — each fills the whole screen ── */}
+      {/* ── Full-bleed illustration scenes — each fills the whole screen ── */}
       <ScrollView
         ref={illoScrollRef}
         horizontal pagingEnabled
@@ -211,25 +158,12 @@ export default function OnboardingScreen() {
           const Illo = sl.illustration;
           return (
             <View key={sl.key} style={{ width, height }}>
-              {sl.image
-                ? (
-                  /* Explicit width + natural aspect-ratio height anchored to top:
-                     no side cropping, no head cropping, image starts at top and
-                     extends downward — only the very bottom (behind text) is off-screen */
-                  <Image
-                    source={sl.image}
-                    style={{ position: 'absolute', top: 0, left: 0, width, height: width * (1024 / 472) }}
-                  />
-                )
-                : (
-                  <LinearGradient colors={sl.gradientColors} style={StyleSheet.absoluteFillObject}>
-                    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 }}>
-                      <Illo isDark={false} />
-                    </View>
-                  </LinearGradient>
-                )
-              }
-              {/* Gradient: starts at bottom of image zone, fades down to text area */}
+              <LinearGradient colors={sl.gradientColors} style={StyleSheet.absoluteFillObject}>
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 }}>
+                  <Illo isDark={false} />
+                </View>
+              </LinearGradient>
+              {/* Gradient: starts at bottom of illustration zone, fades down to text area */}
               <LinearGradient
                 colors={['transparent', 'rgba(0,0,0,0.10)', 'rgba(0,0,0,0.65)', 'rgba(0,0,0,0.92)']}
                 locations={[0, 0.35, 0.68, 1]}

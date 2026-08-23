@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, Image, Modal,
-  KeyboardAvoidingView, ScrollView, Platform, Keyboard, StyleSheet,
+  KeyboardAvoidingView, ScrollView, Platform, Keyboard, StyleSheet, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -17,6 +17,7 @@ interface Props {
   setSubmissionPhotoUri: (v: string | null) => void;
   selectProofPhoto: (fromCamera: boolean) => void;
   submitWithProof: () => void;
+  isUploadingProof?: boolean;
   proofPhotoViewerUri: string | null;
   setProofPhotoViewerUri: (v: string | null) => void;
   colors: any;
@@ -26,7 +27,7 @@ interface Props {
 // Submit-proof bottom sheet + full-screen photo viewer modal.
 export function SubmitQuestSheet({
   submitTarget, closeSubmitSheet, submissionNote, setSubmissionNote,
-  submissionPhotoUri, setSubmissionPhotoUri, selectProofPhoto, submitWithProof,
+  submissionPhotoUri, setSubmissionPhotoUri, selectProofPhoto, submitWithProof, isUploadingProof,
   proofPhotoViewerUri, setProofPhotoViewerUri, colors, isDark,
 }: Props) {
   const dismiss = () => { Keyboard.dismiss(); closeSubmitSheet(); };
@@ -125,11 +126,13 @@ export function SubmitQuestSheet({
               <View style={{ padding: 16, paddingBottom: 28, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }}>
                 <TouchableOpacity
                   onPress={submitWithProof}
-                  disabled={submitTarget?.photoRequired && !submissionPhotoUri}
-                  style={{ alignItems: 'center', borderRadius: 14, paddingVertical: 14,
-                    backgroundColor: submitTarget?.photoRequired && !submissionPhotoUri ? colors.border : BRAND.purple }}>
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: submitTarget?.photoRequired && !submissionPhotoUri ? colors.textTertiary : '#fff' }}>
-                    Submit for review
+                  disabled={(submitTarget?.photoRequired && !submissionPhotoUri) || isUploadingProof}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    borderRadius: 14, paddingVertical: 14,
+                    backgroundColor: (submitTarget?.photoRequired && !submissionPhotoUri) || isUploadingProof ? colors.border : BRAND.purple }}>
+                  {isUploadingProof && <ActivityIndicator color={colors.textTertiary} size="small" />}
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: (submitTarget?.photoRequired && !submissionPhotoUri) || isUploadingProof ? colors.textTertiary : '#fff' }}>
+                    {isUploadingProof ? 'Uploading photo…' : 'Submit for review'}
                   </Text>
                 </TouchableOpacity>
               </View>

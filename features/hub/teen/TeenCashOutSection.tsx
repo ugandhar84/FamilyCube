@@ -41,7 +41,7 @@ export function TeenCashOutSection({ balance, onRequest, colors, isDark }: {
       </Text>
       <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
         {CASH_METHODS.map(({ label, Icon }) => (
-          <Pressable key={label} onPress={() => setCashMethod(label)}
+          <Pressable key={label} onPress={() => { console.log(`[UserAction] FORM screen=Hub role=teen selected "${label}" for "cash-out method" on "TeenCashOutSection" [features/hub/teen/TeenCashOutSection.tsx:44]`); setCashMethod(label); }}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1.5,
               borderColor: cashMethod === label ? BRAND.amber : colors.border,
               backgroundColor: cashMethod === label ? BRAND.amber + '18' : 'transparent' }}>
@@ -57,12 +57,13 @@ export function TeenCashOutSection({ balance, onRequest, colors, isDark }: {
           placeholderTextColor={colors.textTertiary}
           value={cashAmount}
           onChangeText={setCashAmount}
+          onBlur={() => { console.log(`[UserAction] FORM screen=Hub role=teen field="cash-out amount" on "TeenCashOutSection" newValue=${cashAmount} [features/hub/teen/TeenCashOutSection.tsx:61]`); }}
           keyboardType="decimal-pad"
           style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 12,
             padding: 10, fontSize: TYPO.body, color: colors.textPrimary,
             backgroundColor: isDark ? colors.surface : '#F8FAFC' }}
         />
-        <Pressable onPress={submit} disabled={overBalance || requestedAmount <= 0}
+        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=teen tapped "Request" on "TeenCashOutSection" amount=${cashAmount} method=${cashMethod} → onRequest [features/hub/teen/TeenCashOutSection.tsx:65]`); submit(); }} disabled={overBalance || requestedAmount <= 0}
           style={({ pressed }) => ({ backgroundColor: (overBalance || requestedAmount <= 0) ? colors.border : BRAND.amber,
             borderRadius: 12, paddingHorizontal: 16, justifyContent: 'center', opacity: pressed ? 0.8 : 1 })}>
           <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: (overBalance || requestedAmount <= 0) ? colors.textTertiary : '#fff' }}>Request</Text>

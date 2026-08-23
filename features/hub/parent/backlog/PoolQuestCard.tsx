@@ -58,7 +58,7 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
       shadowOpacity: isDisabled ? 0 : (isDark ? 0.4 : 1), shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
       elevation: isDisabled ? 0 : (isDark ? 3 : 2),
     }}>
-      <Pressable onPress={() => hasDetail && setExp(e => !e)}
+      <Pressable onPress={() => { if (hasDetail) { console.log(`[UserAction] screen=Hub role=parent tapped "${isExp ? 'Collapse' : 'Expand'}" on "${chore.title}" (id=${chore.id}) [features/hub/parent/backlog/PoolQuestCard.tsx:61]`); setExp(e => !e); } }}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, paddingBottom: 8 }}>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: TYPO.caption, fontWeight: '600', color: colors.textPrimary }}>{chore.title}</Text>
@@ -94,7 +94,7 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
             </View>
           ) : null}
         </View>
-        <Pressable onPress={() => { const { updateChore } = useChoreStore.getState(); updateChore(chore.id, { isDisabled: !isDisabled }); }}
+        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent tapped "${isDisabled ? 'Enable' : 'Disable'}" on "${chore.title}" (id=${chore.id}) → updateChore(isDisabled) [features/hub/parent/backlog/PoolQuestCard.tsx:97]`); const { updateChore } = useChoreStore.getState(); updateChore(chore.id, { isDisabled: !isDisabled }); }}
           style={{ padding: 6 }}>
           {isDisabled ? <Lock size={15} color={colors.textTertiary} /> : <CheckCircle2 size={15} color={MONEY_GREEN} />}
         </Pressable>
@@ -104,6 +104,7 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
       {!isDisabled && (
         <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
           <Pressable onPress={() => {
+              console.log(`[UserAction] screen=Hub role=parent tapped "Take It" on "${chore.title}" (id=${chore.id}) → onTakeIt [features/hub/parent/backlog/PoolQuestCard.tsx:106]`);
               // Clear the stale decline marker the moment it's re-actioned —
               // otherwise "declined by X" would keep showing on this same
               // record forever even after someone else picked it up.
@@ -116,6 +117,7 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
             <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Take It</Text>
           </Pressable>
           <Pressable onPress={() => {
+              console.log(`[UserAction] screen=Hub role=parent tapped "Delegate" on "${chore.title}" (id=${chore.id}) → onDelegate [features/hub/parent/backlog/PoolQuestCard.tsx:118]`);
               if (declineNote) useChoreStore.getState().updateChore(chore.id, { rejectionReason: undefined, declinedAt: undefined } as any);
               onDelegate(chore.id, chore.title);
             }}
@@ -127,12 +129,12 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
           </Pressable>
           {declineNote && (
             <Pressable
-              onPress={() => Alert.alert(
+              onPress={() => { console.log(`[UserAction] screen=Hub role=parent tapped "Cancel Task" icon on "${chore.title}" (id=${chore.id}) [features/hub/parent/backlog/PoolQuestCard.tsx:130]`); Alert.alert(
                 'Cancel this task?',
                 `"${chore.title}" was declined and will be permanently removed.`,
                 [{ text: 'Keep it', style: 'cancel' },
-                 { text: 'Cancel Task', style: 'destructive', onPress: () => useChoreStore.getState().deleteChore(chore.id) }],
-              )}
+                 { text: 'Cancel Task', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Hub role=parent confirmed "Cancel Task" on "${chore.title}" (id=${chore.id}) → deleteChore [features/hub/parent/backlog/PoolQuestCard.tsx:134]`); useChoreStore.getState().deleteChore(chore.id); } }],
+              ); }}
               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
                 borderWidth: 1.5, borderColor: colors.danger + '80',
                 borderRadius: 10, paddingVertical: 7, paddingHorizontal: 10 }}>
@@ -175,6 +177,7 @@ export function PoolQuestCard({ chore, members, colors, isDark, onTakeIt, onDele
           {(chore as any).shoppingItems?.length > 0 && (
             <Pressable
               onPress={() => {
+                console.log(`[UserAction] screen=Hub role=parent tapped "GP Welcome" toggle on "${chore.title}" (id=${chore.id}) newValue=${!(chore as any).openToGP} → updateChore(openToGP) [features/hub/parent/backlog/PoolQuestCard.tsx:178]`);
                 const { updateChore } = useChoreStore.getState();
                 updateChore(chore.id, { openToGP: !(chore as any).openToGP } as any);
               }}

@@ -30,7 +30,7 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
       visible={!!target}
       onClose={() => { setNote(''); onClose(); }}
       title={`Delegate: ${target?.choreTitle ?? ''}`}
-      subtitle="Assign to a parent"
+      subtitle="Assign to a parent or grandparent"
       accentColor={colors.parent}
       minHeight="40%"
       maxHeight="70%">
@@ -49,7 +49,7 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
           }}
         />
         <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
-          {members.filter(m => m.role === 'parent').map(m => (
+          {members.filter(m => m.role === 'parent' || m.role === 'senior').map(m => (
             <Pressable key={m.id} onPress={() => {
               if (!target) return;
               // A task mid-negotiation (locked/pending) that gets

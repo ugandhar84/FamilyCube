@@ -14,9 +14,12 @@
  * faces read as genuinely distinct colors at a glance. Amber stays in use
  * elsewhere (kid-role accent, warning states) — just not on this cube.
  */
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text } from 'react-native';
 import Svg, { Path, Defs, LinearGradient, Stop, Circle, Rect } from 'react-native-svg';
+import Animated, {
+  useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming, withDelay, withSpring, Easing,
+} from 'react-native-reanimated';
 
 // Mirrors constants/colors.ts's light-mode Kinfolk palette — kept as a
 // plain literal (not theme-aware) for the many call sites that reach for
@@ -200,6 +203,53 @@ export function IconCubeMark({ size = 100 }: { size?: number }) {
         fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth={1.5}
       />
     </Svg>
+  );
+}
+
+// ── AnimatedCubeMark — dice-roll → settle → gentle pulse loop ────────────────
+// Originally lived inline in AppHeader.tsx (removed from the header itself
+// when that redesign chose to lead with persona identity instead — see
+// AppHeader.tsx's own comment), but the animation itself was never wired up
+// anywhere afterward. Promoted here as a shared, reusable mark for splash/
+// loading/auth screens, where a static cube reads as dead on load.
+export function AnimatedCubeMark({ size = 100 }: { size?: number }) {
+  const rotate = useSharedValue(-360);
+  const scale  = useSharedValue(0.4);
+  const op     = useSharedValue(0);
+
+  useEffect(() => {
+    op.value = withTiming(1, { duration: 200 });
+    // Roll → pause 8s → snap back → roll again, forever
+    rotate.value = withRepeat(
+      withSequence(
+        withTiming(0,    { duration: 500, easing: Easing.out(Easing.cubic) }),
+        withDelay(8000, withTiming(-360, { duration: 1 })),
+      ),
+      -1, false,
+    );
+    // Scale: spring in, then soft pulse loop
+    scale.value = withSequence(
+      withSpring(1, { damping: 8, stiffness: 180 }),
+      withDelay(200, withRepeat(
+        withSequence(
+          withTiming(1.08, { duration: 600, easing: Easing.inOut(Easing.sin) }),
+          withTiming(1,    { duration: 600, easing: Easing.inOut(Easing.sin) }),
+          withDelay(1800, withTiming(1, { duration: 1 })),
+        ),
+        -1, false,
+      )),
+    );
+  }, []);
+
+  const aStyle = useAnimatedStyle(() => ({
+    opacity: op.value,
+    transform: [{ rotate: `${rotate.value}deg` }, { scale: scale.value }],
+  }));
+
+  return (
+    <Animated.View style={aStyle}>
+      <IconCubeMark size={size} />
+    </Animated.View>
   );
 }
 

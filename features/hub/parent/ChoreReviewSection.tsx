@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, Text, Pressable, Alert, TextInput } from 'react-native';
-import { ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins, Camera, MessageCircle, Coins, X, Hand } from 'lucide-react-native';
+import { ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins, Camera, MessageCircle, Coins, X, Hand, PartyPopper } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
 import { useChatStore } from '@/store/chatStore';
@@ -308,12 +308,13 @@ function TeenRewardReviewCard({ c, members, colors, isDark, active, approveTeenR
 //  - not disputed yet, viewer isn't the original approver → Flag / Request Reversal
 //  - disputeStatus 'flagged', viewer IS the original approver → Discuss (chat) / Stand By Approval
 //  - disputeStatus 'reversal_requested', viewer IS the original approver → Co-Sign Reversal / Stand By Approval
-function DisputeApprovalCard({ c, members, colors, isDark, active, flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal }: {
+function DisputeApprovalCard({ c, members, colors, isDark, active, flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal, acknowledgeRecentApproval }: {
   c: ChoreTask; members: FamilyMember[]; colors: any; isDark: boolean; active: FamilyMember;
   flagApprovalForDiscussion: (choreId: string, byParentId: string, note?: string) => void;
   standByApproval: (choreId: string, byParentId: string) => void;
   requestApprovalReversal: (choreId: string, byParentId: string, reason: string) => void;
   coSignReversal: (choreId: string, coSigningParentId: string) => void;
+  acknowledgeRecentApproval?: (choreId: string, byParentId: string) => void;
 }) {
   const kid = members.find(m => m.id === c.assignedToId);
   const approver = members.find(m => m.id === c.reviewedById);
@@ -389,9 +390,32 @@ function DisputeApprovalCard({ c, members, colors, isDark, active, flagApprovalF
     );
   }
 
-  // Not disputed yet — offer to flag or request reversal (never available
-  // on your own approval).
-  if (isOriginalApprover) return null;
+  // Not disputed yet. The original approver has nothing to flag/reverse on
+  // their own approval, but still gets a Dismiss so their own "Recently
+  // Approved" list doesn't keep showing chores they already know about.
+  if (isOriginalApprover) {
+    if (!acknowledgeRecentApproval) return null;
+    return (
+      <View style={{ borderRadius: 14, padding: 12, gap: 8,
+        backgroundColor: isDark ? colors.surface : '#F8FAFC', borderWidth: 1, borderColor: colors.border }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Coins size={14} color={colors.textTertiary} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
+            <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+              {kid?.name.split(' ')[0] ?? 'Kid'} earned {totalCoins} coins · approved by you
+            </Text>
+          </View>
+          <Pressable onPress={() => acknowledgeRecentApproval(c.id, active.id)}
+            hitSlop={8}
+            style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+              backgroundColor: isDark ? colors.card : '#EEF2F7' }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary }}>Dismiss</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={{ borderRadius: 14, padding: 12, gap: 8,
@@ -404,6 +428,14 @@ function DisputeApprovalCard({ c, members, colors, isDark, active, flagApprovalF
             Approved by {approver?.name.split(' ')[0] ?? 'a parent'} · {kid?.name.split(' ')[0] ?? 'kid'} earned {totalCoins} coins
           </Text>
         </View>
+        {acknowledgeRecentApproval && (
+          <Pressable onPress={() => acknowledgeRecentApproval(c.id, active.id)}
+            hitSlop={8}
+            style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+              backgroundColor: isDark ? colors.card : '#EEF2F7' }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary }}>Dismiss</Text>
+          </Pressable>
+        )}
       </View>
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <Pressable
@@ -446,6 +478,7 @@ export function ChoreReviewSection({
   approveTeenReward, adjustTeenReward, declineTeenReward,
   acceptGPOffer, declineGPOffer,
   flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal,
+  acknowledgeRecentApproval,
 }: {
   active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
   chores: ChoreTask[]; pendingReviewsCount: number;
@@ -461,6 +494,7 @@ export function ChoreReviewSection({
   standByApproval?: (choreId: string, byParentId: string) => void;
   requestApprovalReversal?: (choreId: string, byParentId: string, reason: string) => void;
   coSignReversal?: (choreId: string, coSigningParentId: string) => void;
+  acknowledgeRecentApproval?: (choreId: string, byParentId: string) => void;
 }) {
   const gpPending = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval');
   const gpDeclined = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'declined');
@@ -485,9 +519,13 @@ export function ChoreReviewSection({
   const recentlyApproved = chores.filter(c => {
     if (!['approved', 'auto_approved'].includes(c.status) && !c.disputeStatus) return false;
     if (!c.reviewedById) return false;
+    // A live dispute always stays visible, even to the viewer who dismissed
+    // it earlier — dismissing isn't a way to duck an active Flag/Reversal
+    // conversation, only to clear a settled approval you've already seen.
+    if (c.disputeStatus) return true;
+    if ((c.reviewAckIds ?? []).includes(active.id)) return false;
     const t = c.approvedAt ? new Date(c.approvedAt).getTime() : 0;
-    const isRecent = t > 0 && (Date.now() - t) < 7 * 24 * 3600_000;
-    return isRecent || !!c.disputeStatus; // a live dispute stays visible past the 7-day window too
+    return t > 0 && (Date.now() - t) < 7 * 24 * 3600_000;
   });
   const disputeBadgeCount = recentlyApproved.filter(c =>
     c.disputeStatus === 'reversal_requested' && c.reviewedById === active.id,
@@ -509,7 +547,12 @@ export function ChoreReviewSection({
   // those still had genuine content while badgeCount stayed 0, defaulting
   // to collapsed even though there was something to see. Same pattern
   // Household Backlog's own defaultExpanded fix addressed.
-  const hasContent = badgeCount > 0 || gpDeclined.length > 0 || gpAwaitingSponsor.length > 0 || recentlyApproved.length > 0;
+  // ParentReviewDeck's own totalCount includes cash-out requests, which
+  // aren't tracked anywhere in this section's own filters — reported back
+  // via onContentCountChange so the empty state doesn't fire while the deck
+  // still has a cash-out card visible underneath it.
+  const [deckContentCount, setDeckContentCount] = useState(0);
+  const hasContent = badgeCount > 0 || gpDeclined.length > 0 || gpAwaitingSponsor.length > 0 || recentlyApproved.length > 0 || deckContentCount > 0;
 
   return (
     <View style={{ paddingHorizontal: 16 }}>
@@ -627,22 +670,27 @@ export function ChoreReviewSection({
                 {recentlyApproved.map(c => (
                   <DisputeApprovalCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
                     flagApprovalForDiscussion={flagApprovalForDiscussion} standByApproval={standByApproval}
-                    requestApprovalReversal={requestApprovalReversal} coSignReversal={coSignReversal} />
+                    requestApprovalReversal={requestApprovalReversal} coSignReversal={coSignReversal}
+                    acknowledgeRecentApproval={acknowledgeRecentApproval} />
                 ))}
               </View>
             )}
 
-            <ParentReviewDeck parent={active} members={members} colors={colors} isDark={isDark} />
+            <ParentReviewDeck parent={active} members={members} colors={colors} isDark={isDark} hideEmptyState
+              onContentCountChange={setDeckContentCount} />
 
-            {/* Matches Household Backlog's own empty state (icon + centered
-                caption) — was just a bare "All caught up" header subtitle
-                with nothing in the body, unlike every other section's
-                empty state in this Hub. */}
-            {badgeCount === 0 && (
+            {/* Single empty state for the whole section — was previously
+                duplicated with ParentReviewDeck's own "All caught up" (now
+                suppressed via hideEmptyState above), which showed two
+                near-identical empty messages stacked whenever both had
+                nothing. Gated on hasContent (not just badgeCount === 0) so
+                it stays hidden if any informational-only sub-list (turned
+                down, awaiting sponsor, recently approved) has real content. */}
+            {!hasContent && (
               <View style={{ alignItems: 'center', paddingVertical: 12, gap: 4 }}>
-                <CheckCircle2 size={18} color={colors.textTertiary} />
+                <PartyPopper size={18} color={colors.textTertiary} />
                 <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center' }}>
-                  No submissions to review
+                  Reviews are clear
                 </Text>
               </View>
             )}

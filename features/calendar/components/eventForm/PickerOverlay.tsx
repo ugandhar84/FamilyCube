@@ -33,7 +33,7 @@ export default function PickerOverlay({
             <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>
               {showDate ? dateLabel : timeLabel}
             </Text>
-            <TouchableOpacity onPress={onDone}>
+            <TouchableOpacity onPress={() => { console.log(`[UserAction] screen=Schedule tapped "Done" on PickerOverlay label="${showDate ? dateLabel : timeLabel}" [features/calendar/components/eventForm/PickerOverlay.tsx:36]`); onDone(); }}>
               <Text style={{ color: accentColor, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
             </TouchableOpacity>
           </View>
@@ -41,7 +41,7 @@ export default function PickerOverlay({
             <DateTimePicker
               value={value} mode="date" display="spinner"
               minimumDate={minimumDate}
-              onChange={(_, d) => { if (d) onChangeDate(d); }}
+              onChange={(_, d) => { if (d) { console.log(`[UserAction] FORM screen=Schedule selected date=${d.toISOString()} for "${dateLabel}" on PickerOverlay [features/calendar/components/eventForm/PickerOverlay.tsx:44]`); onChangeDate(d); } }}
               textColor={colors.textPrimary}
               style={{ height: 180, width: '100%' }}
             />
@@ -50,7 +50,7 @@ export default function PickerOverlay({
             <DateTimePicker
               value={value} mode="time" display="spinner"
               is24Hour={false}
-              onChange={(_, d) => { if (d) onChangeTime(d); }}
+              onChange={(_, d) => { if (d) { console.log(`[UserAction] FORM screen=Schedule selected time=${d.toISOString()} for "${timeLabel}" on PickerOverlay [features/calendar/components/eventForm/PickerOverlay.tsx:53]`); onChangeTime(d); } }}
               textColor={colors.textPrimary}
               style={{ height: 180, width: '100%' }}
             />

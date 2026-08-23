@@ -11,7 +11,7 @@ export default function Chip({ label, active, color, onPress, small }: {
   const { colors, isDark } = useTheme();
   return (
     <TouchableOpacity
-      onPress={onPress}
+      onPress={() => { console.log(`[UserAction] FORM screen=Schedule selected "${label}" for "chip" newValue=${!active} [features/calendar/components/eventForm/Chip.tsx:14]`); onPress(); }}
       style={{
         borderRadius: 20, borderWidth: 1.5, paddingHorizontal: small ? 10 : 12, paddingVertical: small ? 5 : 7,
         backgroundColor: active ? color + '20' : (isDark ? colors.surface : colors.inputBg),

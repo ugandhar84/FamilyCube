@@ -13,7 +13,7 @@ const RIDE_AMBER = '#F59E0B';
 // obligation. Rides GP already owns live in Today (YourRidesSection) instead.
 export function OpenRideRequestsList({
   openRides, members, atWeeklyCap,
-  onClaim, onPass, colors, isDark,
+  onClaim, onPass, colors, isDark, active,
 }: {
   openRides: FamilyEvent[];
   members: FamilyMember[];
@@ -21,8 +21,10 @@ export function OpenRideRequestsList({
   onClaim: (evId: string) => void;
   onPass: (evId: string) => void;
   colors: any; isDark: boolean;
+  active?: { name: string };
 }) {
   if (openRides.length === 0) return null;
+  const actorName = active?.name ?? 'senior';
 
   return (
     <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
@@ -83,7 +85,7 @@ export function OpenRideRequestsList({
             {/* Action buttons */}
             <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: isDark ? '#854D0E30' : '#FDE68A' }}>
               <Pressable
-                onPress={() => onClaim(ev.id)}
+                onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "I'll Drive" on "${ev.title}" (id=${ev.id}) → onClaim [features/hub/senior/OpenRideRequestsList.tsx:86]`); onClaim(ev.id); }}
                 disabled={atWeeklyCap}
                 style={{ flex: 2, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', gap: 2,
                   backgroundColor: atWeeklyCap ? (isDark ? '#374151' : '#E5E7EB') : RIDE_AMBER }}>
@@ -100,7 +102,7 @@ export function OpenRideRequestsList({
               </Pressable>
               <View style={{ width: 1, backgroundColor: isDark ? '#854D0E30' : '#FDE68A' }} />
               <Pressable
-                onPress={() => onPass(ev.id)}
+                onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "Pass" on "${ev.title}" (id=${ev.id}) → onPass [features/hub/senior/OpenRideRequestsList.tsx:103]`); onPass(ev.id); }}
                 style={{ flex: 1, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', gap: 2 }}>
                 <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textSecondary }}>
                   Pass

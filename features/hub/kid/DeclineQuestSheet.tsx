@@ -54,7 +54,7 @@ export function DeclineQuestSheet({ target, active, members, colors, isDark, onC
                 ) : null}
               </View>
               <Pressable
-                onPress={dismiss}
+                onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "close" on "DeclineQuestSheet" (id=${target?.id}) [features/hub/kid/DeclineQuestSheet.tsx:57]`); dismiss(); }}
                 hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
                 style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
                   backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
@@ -72,7 +72,7 @@ export function DeclineQuestSheet({ target, active, members, colors, isDark, onC
                 </Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                   {PRESETS.map(preset => (
-                    <Pressable key={preset} onPress={() => setNote(preset)}
+                    <Pressable key={preset} onPress={() => { console.log(`[UserAction] FORM screen=Hub role=kid member=${active.name} selected "${preset}" for "decline reason preset" on "${target?.title}" (id=${target?.id}) [features/hub/kid/DeclineQuestSheet.tsx:75]`); setNote(preset); }}
                       style={{ borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8,
                         backgroundColor: note === preset ? colors.danger : (isDark ? colors.surface : '#FEF2F2'),
                         borderWidth: 1.5, borderColor: note === preset ? colors.danger : `${colors.danger}30` }}>
@@ -83,6 +83,7 @@ export function DeclineQuestSheet({ target, active, members, colors, isDark, onC
                 <View style={{ borderRadius: 12, borderWidth: 1.5, borderColor: isDark ? colors.border : '#E8E8F0',
                   backgroundColor: isDark ? colors.surface : '#FAFAFA', paddingHorizontal: 12, paddingVertical: 10 }}>
                   <TextInput value={note} onChangeText={setNote}
+                    onBlur={() => { console.log(`[UserAction] FORM screen=Hub role=kid member=${active.name} field="decline reason" on "${target?.title}" (id=${target?.id}) newValue=${note} [features/hub/kid/DeclineQuestSheet.tsx:88]`); }}
                     placeholder="Add your own reason…" placeholderTextColor={colors.textTertiary}
                     style={{ fontSize: KID.body, color: colors.textPrimary, minHeight: 44 }} multiline />
                 </View>
@@ -91,6 +92,7 @@ export function DeclineQuestSheet({ target, active, members, colors, isDark, onC
                   onPress={() => {
                     if (!target) return;
                     const finalNote = note.trim();
+                    console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "Send it back" on "${target.title}" (id=${target.id}) reason="${finalNote}" [features/hub/kid/DeclineQuestSheet.tsx:91]`);
                     const chore = useChoreStore.getState().chores.find(c => c.id === target.id);
                     if (chore?.categoryType === 'grandparent_quest') {
                       // declineGrandparentQuest now sends the sponsor DM

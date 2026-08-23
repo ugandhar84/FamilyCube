@@ -32,9 +32,13 @@ export function YourRidesSection({
 }) {
   if (myPendingAssignments.length === 0 && myDrivingToday.length === 0 && myClaimedRides.length === 0) return null;
 
-  const beginDecline = (evId: string) => { setDeclineId(evId); setDeclineText(''); };
-  const cancelDecline = () => setDeclineId(null);
+  const beginDecline = (evId: string) => {
+    console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Decline" on ride (id=${evId}) → beginDecline (opens DeclineReasonPanel) [features/hub/senior/YourRidesSection.tsx:35]`);
+    setDeclineId(evId); setDeclineText('');
+  };
+  const cancelDecline = () => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Cancel" on decline panel (id=${declineId}) → setDeclineId(null) [features/hub/senior/YourRidesSection.tsx:36]`); setDeclineId(null); };
   const confirmDecline = (ev: FamilyEvent) => {
+    console.log(`[UserAction] screen=Hub role=senior member=${active.name} confirmed decline reason on "${ev.title}" (id=${ev.id}) → updateEvent(helperStatus=rejected, declinedBy=${active.name}) [features/hub/senior/YourRidesSection.tsx:38]`);
     updateEvent(ev.id, { helperStatus: 'rejected', declinedBy: active.name, declineReason: declineText.trim() });
     setDeclineId(null); setDeclineText('');
   };
@@ -79,7 +83,7 @@ export function YourRidesSection({
                   </View>
                 )}
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable onPress={() => updateEvent(ev.id, { helperStatus: 'confirmed' })}
+                  <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Accept Drive" on "${ev.title}" (id=${ev.id}) → updateEvent(helperStatus=confirmed) [features/hub/senior/YourRidesSection.tsx:82]`); updateEvent(ev.id, { helperStatus: 'confirmed' }); }}
                     style={{ flex: 1, backgroundColor: MONEY_GREEN, borderRadius: 12, paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                     <Car size={14} color="#fff" />
                     <Text style={{ fontSize: GP.body, fontWeight: '700', color: '#fff' }}>Accept Drive</Text>
@@ -119,7 +123,7 @@ export function YourRidesSection({
                   </View>
                 )}
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable onPress={onEnRoute} style={{ flex: 1, backgroundColor: MONEY_GREEN, borderRadius: 12, paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                  <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "I'm En Route" on "${ev.title}" (id=${ev.id}) → onEnRoute [features/hub/senior/YourRidesSection.tsx:122]`); onEnRoute(); }} style={{ flex: 1, backgroundColor: MONEY_GREEN, borderRadius: 12, paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                     <Car size={14} color="#fff" />
                     <Text style={{ fontSize: GP.body, fontWeight: '700', color: '#fff' }}>I'm En Route</Text>
                   </Pressable>

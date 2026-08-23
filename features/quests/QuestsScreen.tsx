@@ -24,7 +24,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '@/lib/ThemeContext';
 import { useLocalSearchParams } from 'expo-router';
-import AddIntakeChooser from '@/components/AddIntakeChooser';
 import { useFamilyStore } from '@/store/familyStore';
 // questStore commented out — chores system is the single source of truth
 // import { useQuestStore } from '@/store/questStore';
@@ -38,6 +37,7 @@ import { TYPO } from '@/constants/theme';
 import { todayLocal, parseLocalDate, withinLast24h, parseTimeInput } from '@/lib/dates';
 import { useChatStore } from '@/store/chatStore';
 import { useChoreStore } from '@/store/choreStore';
+import { supabase } from '@/lib/supabase';
 import { AiEngineBanner, AiTool } from './components/AiEngineBanner';
 import { QuestFilters, TabStatus } from './components/QuestFilters';
 import { QuestSearchBar, type DateRange } from './components/QuestSearchBar';
@@ -164,7 +164,6 @@ export default function QuestsScreen() {
   const [declineTarget,  setDeclineTarget]  = useState<{ id: string; title: string; memberId?: string } | null>(null);
   const [editTarget,     setEditTarget]     = useState<Quest | null>(null);
   const [showAddModal,   setShowAddModal]   = useState(false);
-  const [showAddChooser, setShowAddChooser] = useState(false);
   const [addPrefill, setAddPrefill] = useState<{
     title: string; category?: string; memberId?: string; startAt?: string;
     notes?: string; coins?: number; photoRequired?: boolean;
@@ -211,6 +210,7 @@ export default function QuestsScreen() {
   const [submissionPhotoUri, setSubmissionPhotoUri] = useState<string | null>(null);
   const [submissionNote, setSubmissionNote] = useState('');
   const [proofPhotoViewerUri, setProofPhotoViewerUri] = useState<string | null>(null);
+  const [isUploadingProof, setIsUploadingProof] = useState(false);
 
   const closeSubmitSheet = () => {
     setSubmitTarget(null);
@@ -238,14 +238,42 @@ export default function QuestsScreen() {
     if (!result.canceled && result.assets[0]) setSubmissionPhotoUri(result.assets[0].uri);
   };
 
-  const submitWithProof = () => {
+  const submitWithProof = async () => {
     if (!submitTarget) return;
     if (submitTarget.photoRequired && !submissionPhotoUri) {
       Alert.alert('📸 Photo required', 'Add a photo before submitting this chore for review.');
       return;
     }
+
+    // The image picker only ever hands back a local device URI (file://,
+    // ph://…) — storing that directly as proof means the photo only ever
+    // renders on the submitting device, in the same app session. A parent
+    // reviewing on their own phone, or the same kid opening the app again
+    // after the OS evicts its cache, gets a broken image. Upload to the
+    // same family-media bucket ReceiptScanSheet.tsx already uses for proof
+    // photos, and submit the resulting public URL instead.
+    let photoUrl: string | undefined;
+    if (submissionPhotoUri) {
+      setIsUploadingProof(true);
+      try {
+        const familyId = activeMember?.familyId;
+        const path = `chore-proofs/${familyId ?? 'unknown'}/${submitTarget.id}-${Date.now()}.jpg`;
+        const blob = await (await fetch(submissionPhotoUri)).blob();
+        const { error: upErr } = await supabase.storage.from('family-media').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+        if (upErr) throw upErr;
+        const { data: urlData } = supabase.storage.from('family-media').getPublicUrl(path);
+        photoUrl = urlData.publicUrl;
+      } catch (e) {
+        console.warn('[QuestsScreen] proof photo upload failed', e);
+        setIsUploadingProof(false);
+        Alert.alert('Upload failed', "Couldn't upload the photo — check your connection and try again.");
+        return;
+      }
+      setIsUploadingProof(false);
+    }
+
     const ok = submitQuest(submitTarget.id, {
-      photoUrl: submissionPhotoUri ?? undefined,
+      photoUrl,
       note: submissionNote.trim() || undefined,
     }, activeMemberId ?? undefined);
     if (!ok) {
@@ -776,7 +804,7 @@ export default function QuestsScreen() {
               parent (broad autonomy; only 1.13's reward co-sign threshold
               gates a high-value payout, not creation itself). */}
           {(isParent || isTeen) && (
-            <TouchableOpacity onPress={() => setShowAddChooser(true)}
+            <TouchableOpacity onPress={() => setShowAddModal(true)}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
                 paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
                 backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
@@ -1031,6 +1059,7 @@ export default function QuestsScreen() {
         setSubmissionPhotoUri={setSubmissionPhotoUri}
         selectProofPhoto={selectProofPhoto}
         submitWithProof={submitWithProof}
+        isUploadingProof={isUploadingProof}
         proofPhotoViewerUri={proofPhotoViewerUri}
         setProofPhotoViewerUri={setProofPhotoViewerUri}
         colors={colors}
@@ -1049,23 +1078,6 @@ export default function QuestsScreen() {
             photoRequired: addPrefill.photoRequired,
             dueDate: addPrefill.startAt ? addPrefill.startAt.slice(0, 10) : undefined,
           } : undefined}
-        />
-      )}
-
-      {/* "+" Quest button opens the Speak it/Type it chooser first, matching
-          the Hub's own quick-action entry point. */}
-      {(isParent || isTeen) && (
-        <AddIntakeChooser
-          visible={showAddChooser}
-          kind="quest"
-          members={members}
-          activeMemberId={activeMember?.id ?? ''}
-          onClose={() => setShowAddChooser(false)}
-          onTypeManually={(prefill) => {
-            setShowAddChooser(false);
-            setAddPrefill(prefill);
-            setShowAddModal(true);
-          }}
         />
       )}
 

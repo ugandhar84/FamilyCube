@@ -23,6 +23,7 @@ export default function AssignmentSuggestionCard({
     <View style={{ marginBottom: 14 }}>
       <TouchableOpacity
         onPress={async () => {
+          console.log(`[UserAction] screen=Schedule tapped "Who would this go to?" category=${category} subcategoryId=${subcategoryId ?? 'none'} on AssignmentSuggestionCard [features/calendar/components/eventForm/AssignmentSuggestionCard.tsx:25]`);
           setLoadingSuggestion(true);
           setAssignmentSuggestion(null);
           const result = await previewAssignment({

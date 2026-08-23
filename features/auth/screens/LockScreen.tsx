@@ -6,7 +6,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/ThemeContext';
-import PawBondLogo from '@/components/PawBondLogo';
+import { AnimatedCubeMark } from '@/components/FamilyCubeLogo';
 import {
   getBiometricLabel,
   authenticateWithBiometricsDetailed,
@@ -91,8 +91,8 @@ export default function LockScreen() {
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
       <View style={s.center}>
-        <PawBondLogo size={96} animated isDark={isDark} />
-        <Text style={[s.title, { color: colors.textPrimary }]}>PawBond</Text>
+        <AnimatedCubeMark size={96} />
+        <Text style={[s.title, { color: colors.textPrimary }]}>Family Cube</Text>
         <Text style={[s.sub, { color: colors.textSecondary }]}>Locked for your security</Text>
 
         <TouchableOpacity

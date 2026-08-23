@@ -13,10 +13,10 @@ export function ParentQuickActions({ colors, isDark, groceryCount, onScanFlyer, 
   // Kinfolk mock: each capsule gets its own soft-tinted background matching
   // the section it deep-links to — not one solid tile + three identical greys.
   const tiles = [
-    { key: 'scan', label: 'Scan Flyer', icon: Sparkles, tint: colors.accent, onPress: onScanFlyer },
-    { key: 'quest', label: 'New Chore', icon: ShieldCheck, tint: colors.parent, onPress: onAddQuest },
-    { key: 'event', label: 'Add Event', icon: CalendarPlus, tint: colors.kid, onPress: onAddEvent },
-    { key: 'grocery', label: groceryCount > 0 ? `${groceryCount} items` : 'Grocery', icon: ShoppingCart, tint: colors.primary, onPress: () => router.push('/(tabs)/grocery' as any) },
+    { key: 'scan', label: 'Scan Flyer', icon: Sparkles, tint: colors.accent, onPress: () => { console.log(`[UserAction] screen=Hub role=parent tapped "Scan Flyer" quick action → onScanFlyer [features/hub/parent/ParentQuickActions.tsx:16]`); onScanFlyer(); } },
+    { key: 'quest', label: 'New Chore', icon: ShieldCheck, tint: colors.parent, onPress: () => { console.log(`[UserAction] screen=Hub role=parent tapped "New Chore" quick action → onAddQuest [features/hub/parent/ParentQuickActions.tsx:17]`); onAddQuest(); } },
+    { key: 'event', label: 'Add Event', icon: CalendarPlus, tint: colors.kid, onPress: () => { console.log(`[UserAction] screen=Hub role=parent tapped "Add Event" quick action → onAddEvent [features/hub/parent/ParentQuickActions.tsx:18]`); onAddEvent(); } },
+    { key: 'grocery', label: groceryCount > 0 ? `${groceryCount} items` : 'Grocery', icon: ShoppingCart, tint: colors.primary, onPress: () => { console.log(`[UserAction] screen=Hub role=parent tapped "Grocery" quick action (count=${groceryCount}) → router.push /(tabs)/grocery [features/hub/parent/ParentQuickActions.tsx:19]`); router.push('/(tabs)/grocery' as any); } },
   ];
 
   return (

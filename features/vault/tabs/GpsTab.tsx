@@ -13,7 +13,7 @@ import MapView, { Marker, PROVIDER_DEFAULT, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Radio, MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
-import { encryptMessage, decryptMessage } from '@/lib/chatCrypto';
+import { encryptLocationText, decryptLocationText } from '@/lib/locationCrypto';
 import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
 import { startBackgroundLocationTracking, stopBackgroundLocationTracking, isBackgroundLocationTracking, setBackgroundLocationMemberId, setBackgroundLocationFamilyId, isBackgroundLocationSupported } from '@/lib/locationTracking';
@@ -90,8 +90,8 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
         const m = members.find(mb => mb.id === loc.member_id);
         return {
           ...loc,
-          address: loc.address ? await decryptMessage(loc.address) : loc.address,
-          street: loc.street ? await decryptMessage(loc.street) : loc.street,
+          address: loc.address ? await decryptLocationText(loc.member_id, loc.address) : loc.address,
+          street: loc.street ? await decryptLocationText(loc.member_id, loc.street) : loc.street,
           name: m?.name ?? loc.member_id, role: m?.role ?? 'parent',
         };
       }));
@@ -203,7 +203,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
     setUpdatingId(memberId);
     setOpenPicker(null);
     const statusText = STATUS_LABELS[status];
-    const encStatusText = await encryptMessage(statusText);
+    const encStatusText = await encryptLocationText(memberId, familyId, statusText);
     const { error } = await supabase.from('member_locations').upsert({
       member_id: memberId, family_id: familyId, status, status_text: statusText,
       last_updated: new Date().toISOString(),
@@ -276,8 +276,8 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
       const shareExact = shareExactOverride ?? loc0?.share_exact_address ?? false;
       const address = shareExact ? preciseAddress : coarseAddress;
       const now = new Date().toISOString();
-      const encAddress = await encryptMessage(address);
-      const encNeighborhood = await encryptMessage(neighborhood);
+      const encAddress = await encryptLocationText(memberId, familyId, address);
+      const encNeighborhood = await encryptLocationText(memberId, familyId, neighborhood);
       console.log('[GpsTab] refreshMyLocation upserting', { memberId, familyId, lat, lng, shareExact });
       const { error: upsertErr } = await supabase.from('member_locations').upsert({
         member_id: memberId, family_id: familyId, lat, lng, address: encAddress,
@@ -316,7 +316,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
       .gte('recorded_at', startOfDay.toISOString())
       .order('recorded_at', { ascending: false });
     const decrypted = await Promise.all((data ?? []).map(async h => ({
-      ...h, address: h.address ? await decryptMessage(h.address) : h.address,
+      ...h, address: h.address ? await decryptLocationText(memberId, h.address) : h.address,
     })));
     setHistory(decrypted);
     setHistoryLoading(false);

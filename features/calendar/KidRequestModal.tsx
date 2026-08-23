@@ -103,6 +103,8 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
   const active = members.find(m => m.id === activeMemberId);
   const parentNames = members.filter(m => m.role === 'parent').map(m => m.name.split(' ')[0]);
   const isEditing = !!editEvent;
+  const roleLabel = active?.role ?? 'unknown';
+  const activeMemberName = active?.name ?? '';
 
   const [step, setStep] = useState<1 | 2 | 3>(editEvent ? 2 : 1);
   const [category, setCategory] = useState<EventCategory | null>((editEvent?.category as EventCategory) ?? null);
@@ -307,6 +309,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
               <TouchableOpacity
                 onPress={() => {
+                  console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "back" on KidRequestModal step=${step} askingPickupTime=${askingPickupTime} [features/calendar/KidRequestModal.tsx:311]`);
                   if (done) return;
                   if (askingPickupTime) { setAskingPickupTime(false); return; }
                   if (step > 1) setStep((step - 1) as 1 | 2);
@@ -326,13 +329,13 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                   screen (explicit user preference). Available on every
                   step; parsing always lands the kid on Step 2 to review. */}
               <TouchableOpacity
-                onPress={() => { setMicOpen(true); voice.start(); }}
+                onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "mic" on KidRequestModal [features/calendar/KidRequestModal.tsx:331]`); setMicOpen(true); voice.start(); }}
                 hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
                 style={{ padding: 6, marginRight: 4, borderRadius: 16,
                   backgroundColor: micOpen ? BRAND.purple + '20' : 'transparent' }}>
                 <Mic size={20} color={micOpen ? BRAND.purple : colors.textSecondary} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={close} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={{ padding: 4 }}>
+              <TouchableOpacity onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Close" on KidRequestModal [features/calendar/KidRequestModal.tsx:337]`); close(); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={{ padding: 4 }}>
                 <X size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -365,12 +368,12 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                 )}
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   {voice.state === 'listening' && (
-                    <TouchableOpacity onPress={() => voice.stop()}
+                    <TouchableOpacity onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Done Speaking" on KidRequestModal mic transcript [features/calendar/KidRequestModal.tsx:368]`); voice.stop(); }}
                       style={{ flex: 1, backgroundColor: BRAND.purple, borderRadius: 12, paddingVertical: 10, alignItems: 'center' }}>
                       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Done Speaking</Text>
                     </TouchableOpacity>
                   )}
-                  <TouchableOpacity onPress={() => { voice.cancel(); setMicOpen(false); }}
+                  <TouchableOpacity onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Cancel" on KidRequestModal mic transcript [features/calendar/KidRequestModal.tsx:373]`); voice.cancel(); setMicOpen(false); }}
                     style={{ flex: voice.state === 'listening' ? undefined : 1, paddingVertical: 10, paddingHorizontal: 16,
                       borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: 'center' }}>
                     <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
@@ -401,7 +404,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                     </Text>
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                       {KID_CATEGORIES.map(c => (
-                        <TouchableOpacity key={c.key} onPress={() => { setCategory(c.key); setStep(2); }}
+                        <TouchableOpacity key={c.key} onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${c.label}" for "what do you need" on KidRequestModal [features/calendar/KidRequestModal.tsx:404]`); setCategory(c.key); setStep(2); }}
                           style={{ width: '47%', alignItems: 'center', gap: 6, paddingVertical: 22, borderRadius: 18,
                             backgroundColor: c.color + '14', borderWidth: 2, borderColor: c.color + '40' }}>
                           <Text style={{ fontSize: 32 }}>{c.emoji}</Text>
@@ -410,7 +413,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                         </TouchableOpacity>
                       ))}
                     </View>
-                    <TouchableOpacity onPress={() => { setCategory(OTHER_CATEGORY.key); setStep(2); }}
+                    <TouchableOpacity onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${OTHER_CATEGORY.label}" for "what do you need" on KidRequestModal [features/calendar/KidRequestModal.tsx:413]`); setCategory(OTHER_CATEGORY.key); setStep(2); }}
                       style={{ alignItems: 'center', paddingVertical: 16, borderRadius: 16,
                         backgroundColor: OTHER_CATEGORY.color + '12', borderWidth: 2, borderColor: OTHER_CATEGORY.color + '30',
                         flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
@@ -422,7 +425,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
 
                 {step === 2 && catMeta && (
                   <View style={{ gap: 16 }}>
-                    <TouchableOpacity onPress={() => setStep(1)}
+                    <TouchableOpacity onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Change" category chip on KidRequestModal → back to Step 1 [features/calendar/KidRequestModal.tsx:425]`); setStep(1); }}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start',
                         backgroundColor: accentColor + '14', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 }}>
                       <Text style={{ fontSize: 16 }}>{catMeta.emoji}</Text>
@@ -438,12 +441,13 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                         placeholder="e.g. Cricket practice"
                         placeholderTextColor={colors.textTertiary}
                         value={title} onChangeText={setTitle} returnKeyType="next"
+                        onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} field="What is it" on "KidRequestModal" newValue=${title} [features/calendar/KidRequestModal.tsx:440]`)}
                       />
                       {category && category !== 'Other' && SUGGESTIONS[category]?.length > 0 && (
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
                           <View style={{ flexDirection: 'row', gap: 8 }}>
                             {SUGGESTIONS[category].slice(0, 4).map((s: { title: string; hint: string }, i: number) => (
-                              <TouchableOpacity key={i} onPress={() => setTitle(s.title)}
+                              <TouchableOpacity key={i} onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${s.title}" for "title suggestion" on KidRequestModal [features/calendar/KidRequestModal.tsx:446]`); setTitle(s.title); }}
                                 style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16,
                                   backgroundColor: title === s.title ? accentColor + '20' : (isDark ? colors.surface : colors.inputBg),
                                   borderWidth: 1.5, borderColor: title === s.title ? accentColor : colors.border }}>
@@ -462,7 +466,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                       <View style={{ flexDirection: 'row', gap: 10 }}>
                         <TouchableOpacity
                           style={[f.dateBtn, { flex: 3, backgroundColor: showDatePick ? accentColor + '20' : colors.surface, borderColor: showDatePick ? accentColor : colors.border }]}
-                          onPress={() => { setShowDatePick(p => !p); setShowTimePick(false); }}>
+                          onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Date" field on KidRequestModal [features/calendar/KidRequestModal.tsx:465]`); setShowDatePick(p => !p); setShowTimePick(false); }}>
                           <Text style={{ fontSize: 13 }}>📅</Text>
                           <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showDatePick ? accentColor : colors.textPrimary }}>
                             {fmtDisplay(eventDate)}
@@ -470,7 +474,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[f.dateBtn, { flex: 2, backgroundColor: showTimePick ? accentColor + '20' : colors.surface, borderColor: showTimePick ? accentColor : colors.border }]}
-                          onPress={() => { setShowTimePick(p => !p); setShowDatePick(false); }}>
+                          onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Time" field on KidRequestModal [features/calendar/KidRequestModal.tsx:473]`); setShowTimePick(p => !p); setShowDatePick(false); }}>
                           <Text style={{ fontSize: 13 }}>🕐</Text>
                           <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showTimePick ? accentColor : colors.textPrimary }}>
                             {fmtTimeDisplay(eventDate)}
@@ -495,6 +499,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                         placeholder="e.g. Riverside Park"
                         placeholderTextColor={colors.textTertiary}
                         value={location} onChangeText={setLocation}
+                        onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} field="Where" on "KidRequestModal" newValue=${location} [features/calendar/KidRequestModal.tsx:497]`)}
                       />
                     </View>
 
@@ -508,7 +513,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                             const isOn = withSiblings.includes(sib.id);
                             return (
                               <TouchableOpacity key={sib.id}
-                                onPress={() => setWithSiblings(prev => isOn ? prev.filter(id => id !== sib.id) : [...prev, sib.id])}
+                                onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${sib.name}" (id=${sib.id}) for "going with a sibling" on KidRequestModal newValue=${!isOn} [features/calendar/KidRequestModal.tsx:511]`); setWithSiblings(prev => isOn ? prev.filter(id => id !== sib.id) : [...prev, sib.id]); }}
                                 style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8,
                                   borderRadius: 999, borderWidth: 1.5,
                                   backgroundColor: isOn ? accentColor : (isDark ? colors.surface : '#F9FAFB'),
@@ -529,7 +534,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                         <Phone size={16} color={alertCall ? accentColor : colors.textTertiary} />
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>Call to remind me</Text>
                       </View>
-                      <Switch value={alertCall} onValueChange={setAlertCall}
+                      <Switch value={alertCall} onValueChange={(v) => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Call to remind me" on KidRequestModal newValue=${v} [features/calendar/KidRequestModal.tsx:532]`); setAlertCall(v); }}
                         trackColor={{ false: colors.border, true: accentColor + '80' }}
                         thumbColor={alertCall ? accentColor : colors.textTertiary}
                       />
@@ -537,7 +542,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
 
                     <TouchableOpacity
                       disabled={!canSubmitStep2}
-                      onPress={() => setStep(3)}
+                      onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Next" on KidRequestModal Step 2 → Step 3 [features/calendar/KidRequestModal.tsx:540]`); setStep(3); }}
                       style={{ backgroundColor: canSubmitStep2 ? accentColor : colors.border, borderRadius: 14,
                         paddingVertical: 14, alignItems: 'center' }}>
                       <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>Next →</Text>
@@ -554,9 +559,10 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                     {isEditing && editEvent && (
                       <TouchableOpacity
                         onPress={() => {
+                          console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Withdraw this request" on "${editEvent.title}" (id=${editEvent.id}) [features/calendar/KidRequestModal.tsx:556]`);
                           Alert.alert('Withdraw Request', `Withdraw "${editEvent.title}"?`, [
                             { text: 'Cancel', style: 'cancel' },
-                            { text: 'Withdraw', style: 'destructive', onPress: () => { deleteEvent(editEvent.id); close(); } },
+                            { text: 'Withdraw', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} confirmed "Withdraw" on "${editEvent.title}" (id=${editEvent.id}) → deleteEvent [features/calendar/KidRequestModal.tsx:559]`); deleteEvent(editEvent.id); close(); } },
                           ]);
                         }}
                         style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 }}>
@@ -594,6 +600,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                       return (
                       <TouchableOpacity key={opt.key} disabled={submitting}
                         onPress={() => {
+                          console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${opt.label}" for "ride choice" on KidRequestModal [features/calendar/KidRequestModal.tsx:596]`);
                           setRideChoice(opt.key);
                           if (opt.key === 'pickup' || opt.key === 'both') {
                             if (!pickupTime) { const d = new Date(eventDate); d.setMinutes(d.getMinutes() + 90); setPickupTime(d); }
@@ -601,6 +608,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                             setAskingPickupTime(true);
                             return;
                           }
+                          console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "${opt.label}" → submit(${opt.key}) [features/calendar/KidRequestModal.tsx:604]`);
                           submit(opt.key);
                         }}
                         style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 16,
@@ -627,6 +635,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                         placeholder="e.g. Practice finishes at 11"
                         placeholderTextColor={colors.textTertiary}
                         value={notes} onChangeText={t => setNotes(t.slice(0, 200))}
+                        onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} field="Anything else" on "KidRequestModal Step 3" newValue=${notes} [features/calendar/KidRequestModal.tsx:637]`)}
                         multiline numberOfLines={2} textAlignVertical="top"
                       />
                     </View>
@@ -647,7 +656,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                     {rideChoice === 'both' && (
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         <TouchableOpacity
-                          onPress={() => setPickupDate(null)}
+                          onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "Same day" for "pickup day" on KidRequestModal [features/calendar/KidRequestModal.tsx:658]`); setPickupDate(null); }}
                           style={{ flex: 1, alignItems: 'center', padding: 12, borderRadius: 14,
                             backgroundColor: !pickupDate ? accentColor + '14' : (isDark ? colors.surface : '#F9FAFB'),
                             borderWidth: 1.5, borderColor: !pickupDate ? accentColor : colors.border }}>
@@ -655,7 +664,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                           <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary, marginTop: 2 }}>Same day</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          onPress={() => { if (!pickupDate) { setPickupDate(eventDate); setShowPickupDatePick(true); } else setShowPickupDatePick(true); }}
+                          onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "Different day" for "pickup day" on KidRequestModal [features/calendar/KidRequestModal.tsx:666]`); if (!pickupDate) { setPickupDate(eventDate); setShowPickupDatePick(true); } else setShowPickupDatePick(true); }}
                           style={{ flex: 1, alignItems: 'center', padding: 12, borderRadius: 14,
                             backgroundColor: pickupDate ? accentColor + '14' : (isDark ? colors.surface : '#F9FAFB'),
                             borderWidth: 1.5, borderColor: pickupDate ? accentColor : colors.border }}>
@@ -684,7 +693,7 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
 
                     <TouchableOpacity
                       style={[f.dateBtn, { alignSelf: 'center', paddingHorizontal: 28, backgroundColor: accentColor + '14', borderColor: accentColor }]}
-                      onPress={() => setShowPickupTimePick(true)}>
+                      onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Set time" (pickup) on KidRequestModal [features/calendar/KidRequestModal.tsx:695]`); setShowPickupTimePick(true); }}>
                       <Text style={{ fontSize: 16 }}>🕐</Text>
                       <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: accentColor }}>
                         {pickupTime ? fmtTimeDisplay(pickupTime) : 'Set time'}
@@ -709,11 +718,12 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
                         placeholder="e.g. Practice finishes at 11"
                         placeholderTextColor={colors.textTertiary}
                         value={notes} onChangeText={t => setNotes(t.slice(0, 200))}
+                        onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} field="Anything else" on "KidRequestModal Step 3 pickup" newValue=${notes} [features/calendar/KidRequestModal.tsx:719]`)}
                         multiline numberOfLines={2} textAlignVertical="top"
                       />
                     </View>
 
-                    <TouchableOpacity disabled={submitting || !rideChoice} onPress={() => rideChoice && submit(rideChoice)}
+                    <TouchableOpacity disabled={submitting || !rideChoice} onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "${isEditing ? 'Save changes' : 'Send request'}" on KidRequestModal rideChoice=${rideChoice} [features/calendar/KidRequestModal.tsx:724]`); rideChoice && submit(rideChoice); }}
                       style={{ backgroundColor: accentColor, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}>
                       {submitting ? <ActivityIndicator color="#fff" /> :
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>{isEditing ? 'Save changes' : 'Send request'}</Text>}

@@ -29,6 +29,7 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
 
   const handleApprove = () => {
     const coins = parseInt(coinOffer, 10);
+    console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Approve" on "${typeLabel}" for ${kidName} (id=${req.id}) coinOffer=${coinOffer || 0} → approveRequest [features/hub/parent/ServiceRequestCard.tsx:90]`);
     if (canOfferCoins && coins > 0) {
       awardCoins(req.fromMemberId, coins, 'mainCoins');
       approveRequest(req.id, active.id, `+${coins} coins for helping!`);
@@ -57,7 +58,7 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
           ) : null}
         </View>
       </View>
-      <Pressable onPress={() => toggleGPWelcome(req.id, !isGPOpen)}
+      <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "${isGPOpen ? 'GP Welcome' : 'Offer to GP'}" on "${typeLabel}" for ${kidName} (id=${req.id}) → toggleGPWelcome [features/hub/parent/ServiceRequestCard.tsx:60]`); toggleGPWelcome(req.id, !isGPOpen); }}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
           marginHorizontal: 12, marginBottom: 8, padding: 8, borderRadius: 10,
           backgroundColor: isGPOpen ? (isDark ? '#14291a' : '#DCFCE7') : (isDark ? colors.surface2 : '#F1F5F9'),
@@ -78,6 +79,7 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
           <TextInput
             value={coinOffer}
             onChangeText={t => setCoinOffer(t.replace(/[^0-9]/g, ''))}
+            onBlur={() => { console.log(`[UserAction] FORM screen=Hub role=parent member=${active.name} field="coinOffer" on "${typeLabel}" for ${kidName} (id=${req.id}) newValue=${coinOffer} [features/hub/parent/ServiceRequestCard.tsx:80]`); }}
             keyboardType="number-pad"
             placeholder="0"
             placeholderTextColor={colors.textTertiary}
@@ -97,6 +99,7 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
         </Pressable>
         <Pressable
           onPress={() => {
+            console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Decline" on "${typeLabel}" for ${kidName} (id=${req.id}) [features/hub/parent/ServiceRequestCard.tsx:99]`);
             Alert.prompt(
               'Decline Request',
               `Add a note for ${kidName} — why can't this happen?`,
@@ -104,6 +107,7 @@ export function ServiceRequestCard({ req, kidName, active, colors, isDark, appro
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Send & Decline', style: 'destructive', onPress: (note: string | undefined) => {
                   const finalNote = note?.trim() || undefined;
+                  console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Decline" on "${typeLabel}" for ${kidName} (id=${req.id}) → declineRequest [features/hub/parent/ServiceRequestCard.tsx:106]`);
                   declineRequest(req.id, active.id, finalNote);
                   const msg = `❌ ${active.name.split(' ')[0]} declined your ${req.type} request: "${req.detail}"${finalNote ? `\n📝 "${finalNote}"` : ''}`;
                   useChatStore.getState().sendMessage('all', active.id, msg);

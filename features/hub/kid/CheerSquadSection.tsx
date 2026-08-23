@@ -43,7 +43,7 @@ export function CheerSquadSection({ cheerable, siblingKids, colors, isDark, onCh
                   <Text style={{ fontSize: KID.tiny, color: MONEY_GREEN }}>{sib?.name?.split(' ')[0] ?? 'They'} finished it!</Text>
                 </View>
               </View>
-              <Pressable onPress={() => onCheer(q.id)}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "Cheer" on "${q.title}" (id=${q.id}) → onCheer("${q.id}") [features/hub/kid/CheerSquadSection.tsx:46]`); onCheer(q.id); }}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: MONEY_GREEN }}>
                 <PartyPopper size={13} color="#fff" />
                 <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: '#fff' }}>Cheer</Text>

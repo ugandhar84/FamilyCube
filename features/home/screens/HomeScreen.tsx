@@ -17,7 +17,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@/lib/ThemeContext';
 import { SPACING, RADIUS, TYPO} from '@/constants/theme';
 import { MOOD_DAYS } from '@/lib/homeUtils';
-import PetleyLogo from '@/components/PawBondLogo';
+import { CubeMark } from '@/components/FamilyCubeLogo';
 import PawBondSplashScreen from '@/components/PawBondSplashScreen';
 import { useFeatureFlag } from '@/lib/hooks/useAppSettings';
 import { type PartnerCategory } from '@/lib/discovery';
@@ -616,7 +616,7 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={s.appBar}>
           <View style={s.petleyLogoBox}>
-            <PetleyLogo size={44} animated isDark={isDark} />
+            <CubeMark size={44} />
           </View>
           <View style={s.greetWrap}>
             <Text style={s.greetWord}>{greetingWord()} 👋</Text>

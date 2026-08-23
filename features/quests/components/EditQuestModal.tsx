@@ -137,13 +137,30 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
 
     let patch: Partial<Quest>;
     if (locked) {
-      // Restricted: only due date + reassign allowed — never touch coins/title
+      // Restricted: everything full-edit sends EXCEPT due date/time and
+      // description — those two stay untouched (never sent) once a chore
+      // is claimed/in-progress, per explicit product decision. Title,
+      // coins, category, difficulty, photoRequired, recurrence, the
+      // Assign-To picker, and the Adult-Only/Invite-Grandparents toggles
+      // ARE all adjustable here. See reassigningAdultTask above for why a
+      // real System-A negotiation is used instead of a bare assignedToId
+      // write when reassigning an adult task to a co-parent/GP.
+      if (!title.trim()) { setSaving(false); return; }
       patch = {
-        dueDate: localDateStr(dueDate),
-        dueTime: fmtTimeLabel(dueDate),
+        title: title.trim(),
+        coins: parseInt(coins) || quest.coins,
+        bonusCoins: parseInt(bonusCoins) || 0,
+        category,
+        difficulty: difficulty || undefined,
         assignedToId: reassigningAdultTask ? quest.assignedToId : (!isPool && assignIds.length === 1 ? assignIds[0] : undefined),
         assignedToIds: !isPool && assignIds.length > 1 ? assignIds : [],
+        isPool: isPool || assignIds.length === 0,
+        photoRequired: photoReq,
+        isAdultTask,
+        inviteGrandparents: inviteGrandparent,
+        recurrence: routineFreq,
         alertCall, alertCallLeadMinutes,
+        linkedEventId,
       };
     } else {
       if (!title.trim()) { setSaving(false); return; }
@@ -159,7 +176,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
         isPool: isPool || assignIds.length === 0,
         photoRequired: photoReq,
         isAdultTask,
-        inviteGrandparents: inviteGrandparent || undefined,
+        inviteGrandparents: inviteGrandparent,
         dueDate: localDateStr(dueDate),
         dueTime: fmtTimeLabel(dueDate),
         recurrence: routineFreq,
@@ -195,7 +212,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                   {locked ? 'Adjust Chore' : 'Edit Chore'}
                 </Text>
                 <Text style={{ fontSize: 13, fontWeight: '700', marginTop: 2, color: colors.primary ?? BRAND.purple }}>
-                  {locked ? 'Reassign or adjust coins' : 'Edit title, assignment & more'}
+                  {locked ? 'Edit everything except due date & description' : 'Edit title, assignment & more'}
                 </Text>
               </View>
               <TouchableOpacity
@@ -217,46 +234,52 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
               contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
               showsVerticalScrollIndicator={false}>
 
-              {/* Title */}
+              {/* Title — editable in both modes; only due date/time and
+                  description stay locked once a chore is claimed/in-progress. */}
               <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
+              <TextInput
+                style={[aq.input, { color: colors.textPrimary, borderColor: title.trim() ? colors.border : '#EF444480', backgroundColor: colors.surface }]}
+                value={title} onChangeText={setTitle} returnKeyType="next"
+                placeholder="e.g. Wash the dishes, Take out trash…" placeholderTextColor={colors.textTertiary}
+              />
+              {editSuggestions.length > 0 && (
+                <View style={{ marginTop: -6, marginBottom: 12 }}>
+                  <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginBottom: 8, fontWeight: '700', letterSpacing: 0.4 }}>
+                    {title.trim() ? 'Matching suggestions' : 'Quick picks — tap to fill'}
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {editSuggestions.map((s, i) => (
+                        <TouchableOpacity key={i}
+                          style={[aq.suggPill, {
+                            backgroundColor: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple + '25' : colors.surface,
+                            borderColor: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple : colors.border,
+                          }]}
+                          onPress={() => applyEditSuggestion(s)}>
+                          <Text style={{ fontSize: TYPO.micro, color: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple : colors.textSecondary, fontWeight: '700' }} numberOfLines={1}>{s.title}</Text>
+                          <Text style={{ fontSize: TYPO.micro, color: BRAND.amber, fontWeight: '700', marginLeft: 5 }}>+{s.coins}🪙</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* Description — stays read-only once claimed/in-progress
+                  (never sent from the locked patch), per explicit product
+                  decision. */}
+              <Text style={[aq.label, { color: colors.textSecondary }]}>
+                Description {!locked && '*'}{'  '}<Text style={{ fontWeight: '400', color: colors.textTertiary }}>what needs to be done</Text>
+              </Text>
               {locked ? (
                 <View style={{ padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 12,
                   borderColor: isDark ? '#1E293B' : '#E2E8F0', backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }}>
-                  <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: colors.textPrimary }}>{quest.title}</Text>
-                  {quest.description ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 4 }}>{quest.description}</Text> : null}
+                  <Text style={{ fontSize: TYPO.label, color: quest.description ? colors.textPrimary : colors.textTertiary }}>
+                    {quest.description || 'No description'}
+                  </Text>
                 </View>
               ) : (
                 <>
-                  <TextInput
-                    style={[aq.input, { color: colors.textPrimary, borderColor: title.trim() ? colors.border : '#EF444480', backgroundColor: colors.surface }]}
-                    value={title} onChangeText={setTitle} returnKeyType="next"
-                    placeholder="e.g. Wash the dishes, Take out trash…" placeholderTextColor={colors.textTertiary}
-                  />
-                  {editSuggestions.length > 0 && (
-                    <View style={{ marginTop: -6, marginBottom: 12 }}>
-                      <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginBottom: 8, fontWeight: '700', letterSpacing: 0.4 }}>
-                        {title.trim() ? 'Matching suggestions' : 'Quick picks — tap to fill'}
-                      </Text>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always">
-                        <View style={{ flexDirection: 'row', gap: 8 }}>
-                          {editSuggestions.map((s, i) => (
-                            <TouchableOpacity key={i}
-                              style={[aq.suggPill, {
-                                backgroundColor: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple + '25' : colors.surface,
-                                borderColor: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple : colors.border,
-                              }]}
-                              onPress={() => applyEditSuggestion(s)}>
-                              <Text style={{ fontSize: TYPO.micro, color: title.toLowerCase() === s.title.toLowerCase() ? BRAND.purple : colors.textSecondary, fontWeight: '700' }} numberOfLines={1}>{s.title}</Text>
-                              <Text style={{ fontSize: TYPO.micro, color: BRAND.amber, fontWeight: '700', marginLeft: 5 }}>+{s.coins}🪙</Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </ScrollView>
-                    </View>
-                  )}
-                  <Text style={[aq.label, { color: colors.textSecondary }]}>
-                    Description *{'  '}<Text style={{ fontWeight: '400', color: colors.textTertiary }}>what needs to be done</Text>
-                  </Text>
                   <TextInput
                     style={[aq.input, aq.descInput, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface }]}
                     value={desc} onChangeText={t => setDesc(t.slice(0, 150))}
@@ -269,58 +292,44 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                 </>
               )}
 
-              {/* Coins + Bonus — locked once quest is claimed */}
+              {/* Coins + Bonus — editable in both modes */}
               {!isAdultTask && (
               <View style={{ flexDirection: 'row', gap: 12, marginBottom: 14 }}>
                 <View style={{ flex: 1 }}>
                   <Text style={[aq.label, { color: colors.textSecondary }]}>Coins 🪙</Text>
-                  {locked ? (
-                    <View style={{ padding: 12, borderRadius: 12, borderWidth: 1, backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: isDark ? '#1E293B' : '#E2E8F0', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>{coins}</Text>
-                      <Text style={{ fontSize: TYPO.label }}>🪙</Text>
-                      <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginLeft: 4 }}>locked — task claimed</Text>
-                    </View>
-                  ) : (
-                    <TextInput
-                      style={[aq.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface, marginBottom: 0 }]}
-                      keyboardType="number-pad" value={coins} onChangeText={setCoins}
-                    />
-                  )}
+                  <TextInput
+                    style={[aq.input, { color: colors.textPrimary, borderColor: colors.border, backgroundColor: colors.surface, marginBottom: 0 }]}
+                    keyboardType="number-pad" value={coins} onChangeText={setCoins}
+                  />
                 </View>
-                {!locked && (
-                  <View style={{ width: 90 }}>
-                    <Text style={[aq.label, { color: colors.textSecondary }]}>Bonus 🎉</Text>
-                    <TextInput
-                      style={[aq.input, { color: colors.textPrimary, borderColor: bonusCoins ? BRAND.amber : colors.border, backgroundColor: colors.surface, marginBottom: 0 }]}
-                      keyboardType="number-pad" placeholder="+coins" placeholderTextColor={colors.textTertiary}
-                      value={bonusCoins} onChangeText={t => setBonusCoins(t.replace(/[^0-9]/g, ''))}
-                    />
-                  </View>
-                )}
+                <View style={{ width: 90 }}>
+                  <Text style={[aq.label, { color: colors.textSecondary }]}>Bonus 🎉</Text>
+                  <TextInput
+                    style={[aq.input, { color: colors.textPrimary, borderColor: bonusCoins ? BRAND.amber : colors.border, backgroundColor: colors.surface, marginBottom: 0 }]}
+                    keyboardType="number-pad" placeholder="+coins" placeholderTextColor={colors.textTertiary}
+                    value={bonusCoins} onChangeText={t => setBonusCoins(t.replace(/[^0-9]/g, ''))}
+                  />
+                </View>
               </View>
               )}
 
-              {/* Category */}
-              {!locked && (
-                <>
-                  <Text style={[aq.label, { color: colors.textSecondary }]}>Category</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-                    <View style={{ flexDirection: 'row', gap: 6 }}>
-                      {ALL_CATEGORIES.map(c => (
-                        <TouchableOpacity key={c}
-                          style={[aq.catChip, { borderColor: pillBdr, backgroundColor: pillBg },
-                            category === c && { backgroundColor: BRAND.purple, borderColor: BRAND.purple }]}
-                          onPress={() => setCategory(c)}>
-                          <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '700', color: category === c ? '#fff' : colors.textSecondary }}>{c}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </ScrollView>
-                </>
-              )}
+              {/* Category — editable in both modes */}
+              <Text style={[aq.label, { color: colors.textSecondary }]}>Category</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {ALL_CATEGORIES.map(c => (
+                    <TouchableOpacity key={c}
+                      style={[aq.catChip, { borderColor: pillBdr, backgroundColor: pillBg },
+                        category === c && { backgroundColor: BRAND.purple, borderColor: BRAND.purple }]}
+                      onPress={() => setCategory(c)}>
+                      <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '700', color: category === c ? '#fff' : colors.textSecondary }}>{c}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
 
               {/* ── Optional subcategory refinement (Responsibility Engine taxonomy) ── */}
-              {!locked && subcategoryOptions.length > 0 && (
+              {subcategoryOptions.length > 0 && (
                 <View style={{ marginBottom: 14, marginTop: -6 }}>
                   <Text style={[aq.label, { color: colors.textSecondary, marginBottom: 6 }]}>
                     Specifically… <Text style={{ color: colors.textTertiary, fontWeight: '600' }}>(optional)</Text>
@@ -352,7 +361,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                    directly from the category; kid tasks call
                    process-kid-chore-assignment against the real chore row
                    (only possible in edit mode, not in AddQuestModal). ── */}
-              {!locked && familyId && (
+              {familyId && (
                 <View style={{ marginBottom: 14 }}>
                   <TouchableOpacity
                     onPress={async () => {
@@ -469,7 +478,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
 
               {/* Linked event (spec 8.2) — optional tie to an upcoming
                   calendar event this quest logistically supports. */}
-              {!locked && (() => {
+              {(() => {
                 const upcomingEvents = useEventStore.getState().events
                   .filter(e => e.date >= localDateStr(new Date()))
                   .sort((a, b) => (a.date + (a.time ?? '')).localeCompare(b.date + (b.time ?? '')))
@@ -553,10 +562,9 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                   { key: 'weekly',  label: '🗓 Weekly' },
                   { key: 'monthly', label: '📆 Monthly' },
                 ] as const).map(({ key, label }) => (
-                  <TouchableOpacity key={key} disabled={locked}
+                  <TouchableOpacity key={key}
                     onPress={() => setRoutineFreq(key)}
                     style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, paddingVertical: 8, alignItems: 'center',
-                      opacity: locked && routineFreq !== key ? 0.4 : 1,
                       borderColor: routineFreq === key ? BRAND.purple : colors.border,
                       backgroundColor: routineFreq === key ? BRAND.purple + '18' : 'transparent' }}>
                     <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '800',
@@ -564,7 +572,7 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                   </TouchableOpacity>
                 ))}
               </View>
-              {!locked && routineFreq !== (quest.recurrence ?? 'once') && (
+              {routineFreq !== (quest.recurrence ?? 'once') && (
                 <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: -8, marginBottom: 14 }}>
                   {routineFreq === 'once'
                     ? "This turns off repeating — future occurrences won't be generated."

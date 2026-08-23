@@ -78,14 +78,14 @@ export function RideLateAlertCard({ req, rideLate, kidName, ev, active, colors, 
       </View>
 
       <View style={{ flexDirection: 'row', gap: 8 }}>
-        <Pressable onPress={() => resolve(
+        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "I'm on my way" on "${rideLate.title}" (id=${req.id}) → resolve/approveRequest [features/hub/parent/RideLateAlertCard.tsx:81]`); resolve(
           "On my way",
-          `🚗 ${active.name.split(' ')[0]} is on the way to ${kidName} for "${rideLate.title}" — hang tight!`)}
+          `🚗 ${active.name.split(' ')[0]} is on the way to ${kidName} for "${rideLate.title}" — hang tight!`); }}
           style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: MONEY_GREEN, borderRadius: 10, paddingVertical: 10 }}>
           <Car size={14} color="#fff" />
           <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>I'm on my way</Text>
         </Pressable>
-        <Pressable onPress={() => router.push('/(tabs)/chat')}
+        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Message" on "${rideLate.title}" (id=${req.id}) → router.push /(tabs)/chat [features/hub/parent/RideLateAlertCard.tsx:88]`); router.push('/(tabs)/chat'); }}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: colors.parent + '60', borderRadius: 10,
             paddingVertical: 10, paddingHorizontal: 14 }}>
           <MessageCircle size={14} color={colors.parent} />
@@ -94,6 +94,7 @@ export function RideLateAlertCard({ req, rideLate, kidName, ev, active, colors, 
       </View>
       {ev && (
         <Pressable onPress={() => {
+          console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Ask someone else to go" on "${rideLate.title}" (id=${req.id}) → updateEvent(openToGrandparents/openToTeens) + resolve [features/hub/parent/RideLateAlertCard.tsx:96]`);
           updateEvent(ev.id, { isOpenToGrandparents: true, isOpenToTeens: true, helperStatus: undefined });
           resolve('Opened to other helpers',
             `🆘 ${kidName} needs a ride for "${rideLate.title}" — can anyone pick this up?`);

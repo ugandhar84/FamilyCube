@@ -16,7 +16,7 @@ import * as Linking from 'expo-linking';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/ThemeContext';
-import PawBondLogo from '@/components/PawBondLogo';
+import { AnimatedCubeMark } from '@/components/FamilyCubeLogo';
 import {
   isBiometricEnabled, isBiometricAvailable, getBiometricLabel,
   authenticateWithBiometricsDetailed, getBiometricSession, clearBiometricSession,
@@ -49,6 +49,17 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Two genuinely different audiences were previously stacked as six
+  // equal-weight options on one long scroll (Face ID, email form, Apple,
+  // Google, forgot-password, sign-up, AND invite-code all competing for
+  // attention) — a kid or grandparent joining with just a code had to
+  // scroll past a whole email/password/OAuth form meant for someone else
+  // entirely to find their actual path. This makes the fork explicit and
+  // upfront: 'choose' shows just the two tiles, 'email' reveals today's
+  // full form unchanged, 'code' jumps straight past any email UI at all.
+  const [mode, setMode] = useState<'choose' | 'email'>('choose');
+  const [startingCode, setStartingCode] = useState(false);
 
   // "Log in with Face ID" — shown when biometric is enabled and we have a saved
   // session token to restore (e.g. after signing out). Same pattern as banking apps.
@@ -268,6 +279,18 @@ export default function LoginScreen() {
 
   const s = makeStyles(colors, isDark);
 
+  const startCodeFlow = async () => {
+    if (startingCode) return;
+    setStartingCode(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      const { error } = await supabase.auth.signInAnonymously();
+      if (error) { setStartingCode(false); showAlert('Could not start', 'Please try again.'); return; }
+    }
+    setStartingCode(false);
+    router.push('/onboarding/join-family');
+  };
+
   return (
     <SafeAreaView style={s.safe}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -275,154 +298,199 @@ export default function LoginScreen() {
 
           {/* Logo */}
           <View style={s.logoWrap}>
-            <PawBondLogo size={100} animated isDark={isDark} />
+            <AnimatedCubeMark size={100} />
             <Text style={s.logoText}>Family Cube</Text>
-            <Text style={s.logoSub}>Every day with them, remembered forever.</Text>
+            <Text style={s.logoSub}>Connect. Organize. Care. Grow.</Text>
           </View>
 
-          {/* Log in with Face ID / Touch ID — restores the saved session */}
-          {bioReady && (
-            <>
-              <TouchableOpacity
-                style={[s.bioBtn, { borderColor: colors.primary }]}
-                onPress={() => biometricLogin()}
-                disabled={bioLoading}
-                activeOpacity={0.85}
-              >
-                {bioLoading ? (
-                  <ActivityIndicator color={colors.primaryText ?? colors.primary} />
-                ) : (
-                  <>
-                    <Ionicons
-                      name={bioLabel === 'Face ID' ? 'scan-outline' : 'finger-print-outline'}
-                      size={20}
-                      color={colors.primaryText ?? colors.primary}
-                    />
-                    <Text style={[s.bioText, { color: colors.primaryText ?? colors.primary }]}>Log in with {bioLabel}</Text>
-                  </>
-                )}
+          {mode === 'choose' && (
+            <View style={{ gap: SPACING.md }}>
+              {/* Log in with Face ID / Touch ID — a returning user's fastest
+                  path, kept visible right on the fork instead of a tap
+                  deeper, since biometric auto-triggers on mount anyway and
+                  this is just the manual fallback for that. */}
+              {bioReady && (
+                <>
+                  <TouchableOpacity
+                    style={[s.bioBtn, { borderColor: colors.primary }]}
+                    onPress={() => biometricLogin()}
+                    disabled={bioLoading}
+                    activeOpacity={0.85}
+                  >
+                    {bioLoading ? (
+                      <ActivityIndicator color={colors.primaryText ?? colors.primary} />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name={bioLabel === 'Face ID' ? 'scan-outline' : 'finger-print-outline'}
+                          size={20}
+                          color={colors.primaryText ?? colors.primary}
+                        />
+                        <Text style={[s.bioText, { color: colors.primaryText ?? colors.primary }]}>Log in with {bioLabel}</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.switchBtn, { marginTop: -SPACING.sm }]}
+                    activeOpacity={0.7}
+                    onPress={() => showAlert(
+                      'Switch account',
+                      'This will remove the saved Face ID session so you can sign in as a different account.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Switch account',
+                          style: 'destructive',
+                          onPress: async () => {
+                            await clearBiometricSession();
+                            setBioReady(false);
+                          },
+                        },
+                      ],
+                    )}
+                  >
+                    <Ionicons name="people-outline" size={14} color={colors.textSecondary} />
+                    <Text style={[s.switchText, { color: colors.textSecondary }]}>Switch account</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {/* The fork — two genuinely different audiences: someone with
+                  their own email/account, vs. someone (often a kid or
+                  grandparent) joining a family that's already set up, who
+                  has neither an email nor a password to enter. */}
+              <TouchableOpacity style={s.choiceCard} activeOpacity={0.85} onPress={() => setMode('email')}>
+                <View style={[s.choiceIcon, { backgroundColor: colors.primary + '18' }]}>
+                  <Ionicons name="mail-outline" size={22} color={colors.primaryText ?? colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.choiceTitle}>I have an account</Text>
+                  <Text style={s.choiceSub}>Sign in with email, Apple, or Google</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
               </TouchableOpacity>
 
-              {/* Switch account — clears saved biometric session so a different
-                  user can sign in with password on this device */}
-              <TouchableOpacity
-                style={s.switchBtn}
-                activeOpacity={0.7}
-                onPress={() => showAlert(
-                  'Switch account',
-                  'This will remove the saved Face ID session so you can sign in as a different account.',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Switch account',
-                      style: 'destructive',
-                      onPress: async () => {
-                        await clearBiometricSession();
-                        setBioReady(false);
-                      },
-                    },
-                  ],
-                )}
-              >
-                <Ionicons name="people-outline" size={14} color={colors.textSecondary} />
-                <Text style={[s.switchText, { color: colors.textSecondary }]}>Switch account</Text>
+              <TouchableOpacity style={s.choiceCard} activeOpacity={0.85} disabled={startingCode} onPress={startCodeFlow}>
+                <View style={[s.choiceIcon, { backgroundColor: colors.amber + '18' }]}>
+                  {startingCode
+                    ? <ActivityIndicator size="small" color={colors.amber} />
+                    : <Ionicons name="key-outline" size={22} color={colors.amber} />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.choiceTitle}>I'm joining a family</Text>
+                  <Text style={s.choiceSub}>Enter the invite code someone gave you — no email needed</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
               </TouchableOpacity>
-            </>
-          )}
 
-          {/* Divider */}
-          <View style={s.dividerRow}>
-            <View style={s.dividerLine} />
-            <Text style={s.dividerText}>{bioReady ? 'or sign in with email' : 'sign in with email'}</Text>
-            <View style={s.dividerLine} />
-          </View>
-
-          {/* Email form */}
-          <View style={s.form}>
-            <Text style={s.label}>Email</Text>
-            <TextInput
-              style={s.input}
-              placeholder="you@email.com"
-              placeholderTextColor={colors.placeholder}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              returnKeyType="next"
-              autoCorrect={false}
-            />
-
-            <Text style={[s.label, { marginTop: SPACING.md }]}>Password</Text>
-            <View style={s.passwordWrap}>
-              <TextInput
-                style={[s.input, { flex: 1, marginBottom: 0, borderRightWidth: 0, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]}
-                placeholder="••••••••"
-                placeholderTextColor={colors.placeholder}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                returnKeyType="done"
-                onSubmitEditing={handleLogin}
-              />
-              <TouchableOpacity style={s.eyeBtn} onPress={() => setShowPassword(!showPassword)}>
-                <Text style={s.eyeText}>{showPassword ? '🙈' : '👁'}</Text>
+              <TouchableOpacity style={[s.linkBtn, { marginTop: SPACING.sm }]} onPress={() => router.push('/(auth)/signup')}>
+                <Text style={s.linkText}>
+                  New here?{'  '}
+                  <Text style={{ color: colors.primaryText ?? colors.primary, fontWeight: '600' }}>Create a family account</Text>
+                </Text>
               </TouchableOpacity>
             </View>
+          )}
 
-            <TouchableOpacity
-              style={[s.btn, loading && { opacity: 0.7 }]}
-              onPress={handleLogin}
-              disabled={loading}
-            >
-              {loading
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={s.btnText}>Sign in</Text>
-              }
-            </TouchableOpacity>
-
-            {/* Apple Sign In — native on iOS, web OAuth on Android */}
-            {isIOS ? (
-              <AppleAuthentication.AppleAuthenticationButton
-                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                buttonStyle={isDark
-                  ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
-                  : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-                cornerRadius={RADIUS.md}
-                style={{ height: 52, marginTop: SPACING.sm }}
-                onPress={handleAppleLogin}
-              />
-            ) : (
-              <TouchableOpacity style={[s.appleBtn, { backgroundColor: isDark ? '#fff' : '#000' }]} onPress={handleAppleLogin} disabled={loading}>
-                <Text style={{ fontSize: TYPO.heading, color: isDark ? '#000' : '#fff' }}></Text>
-                <Text style={[s.appleBtnText, { color: isDark ? '#000' : '#fff' }]}>Sign in with Apple</Text>
+          {mode === 'email' && (
+            <>
+              <TouchableOpacity style={s.backToChoice} onPress={() => setMode('choose')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="chevron-back" size={18} color={colors.textSecondary} />
+                <Text style={s.backToChoiceText}>Back</Text>
               </TouchableOpacity>
-            )}
 
-            {/* Google */}
-            <TouchableOpacity style={s.googleBtn} onPress={handleGoogleLogin} disabled={loading}>
-              <GoogleIcon size={20} />
-              <Text style={s.googleText}>Continue with Google</Text>
-            </TouchableOpacity>
+              <View style={s.form}>
+                <Text style={s.label}>Email</Text>
+                <TextInput
+                  style={s.input}
+                  placeholder="you@email.com"
+                  placeholderTextColor={colors.placeholder}
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  returnKeyType="next"
+                  autoCorrect={false}
+                />
 
-            {/* Forgot + Sign up */}
-            <TouchableOpacity style={s.linkBtn} onPress={() => showAlert('Reset password', 'Check your email for a reset link after we send it.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Send', onPress: async () => {
-              const trimmedEmail = email.trim().toLowerCase();
-              if (!trimmedEmail) { showAlert('Enter your email first'); return; }
-              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) { showAlert('Invalid email', 'Please enter a valid email address.'); return; }
-              const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail);
-              if (error) { showAlert('Could not send reset link', friendlyAuthError(error.message)); return; }
-              showAlert('Sent!', 'Check your inbox for a reset link.');
-            }}])}>
-              <Text style={s.forgotText}>Forgot password?</Text>
-            </TouchableOpacity>
+                <Text style={[s.label, { marginTop: SPACING.md }]}>Password</Text>
+                <View style={s.passwordWrap}>
+                  <TextInput
+                    style={[s.input, { flex: 1, marginBottom: 0, borderRightWidth: 0, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]}
+                    placeholder="••••••••"
+                    placeholderTextColor={colors.placeholder}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    returnKeyType="done"
+                    onSubmitEditing={handleLogin}
+                  />
+                  <TouchableOpacity style={s.eyeBtn} onPress={() => setShowPassword(!showPassword)}>
+                    <Text style={s.eyeText}>{showPassword ? '🙈' : '👁'}</Text>
+                  </TouchableOpacity>
+                </View>
 
-            <TouchableOpacity style={s.linkBtn} onPress={() => router.push('/(auth)/signup')}>
-              <Text style={s.linkText}>
-                No account?{'  '}
-                <Text style={{ color: colors.primaryText ?? colors.primary, fontWeight: '600' }}>Create one free</Text>
-              </Text>
-            </TouchableOpacity>
-          </View>
+                <TouchableOpacity
+                  style={[s.btn, loading && { opacity: 0.7 }]}
+                  onPress={handleLogin}
+                  disabled={loading}
+                >
+                  {loading
+                    ? <ActivityIndicator color="#fff" />
+                    : <Text style={s.btnText}>Sign in</Text>
+                  }
+                </TouchableOpacity>
+
+                <View style={s.dividerRow}>
+                  <View style={s.dividerLine} />
+                  <Text style={s.dividerText}>or</Text>
+                  <View style={s.dividerLine} />
+                </View>
+
+                {/* Apple Sign In — native on iOS, web OAuth on Android */}
+                {isIOS ? (
+                  <AppleAuthentication.AppleAuthenticationButton
+                    buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                    buttonStyle={isDark
+                      ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                      : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                    cornerRadius={RADIUS.md}
+                    style={{ height: 52, marginTop: SPACING.sm }}
+                    onPress={handleAppleLogin}
+                  />
+                ) : (
+                  <TouchableOpacity style={[s.appleBtn, { backgroundColor: isDark ? '#fff' : '#000' }]} onPress={handleAppleLogin} disabled={loading}>
+                    <Text style={{ fontSize: TYPO.heading, color: isDark ? '#000' : '#fff' }}></Text>
+                    <Text style={[s.appleBtnText, { color: isDark ? '#000' : '#fff' }]}>Sign in with Apple</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Google */}
+                <TouchableOpacity style={s.googleBtn} onPress={handleGoogleLogin} disabled={loading}>
+                  <GoogleIcon size={20} />
+                  <Text style={s.googleText}>Continue with Google</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={s.linkBtn} onPress={() => showAlert('Reset password', 'Check your email for a reset link after we send it.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Send', onPress: async () => {
+                  const trimmedEmail = email.trim().toLowerCase();
+                  if (!trimmedEmail) { showAlert('Enter your email first'); return; }
+                  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) { showAlert('Invalid email', 'Please enter a valid email address.'); return; }
+                  const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail);
+                  if (error) { showAlert('Could not send reset link', friendlyAuthError(error.message)); return; }
+                  showAlert('Sent!', 'Check your inbox for a reset link.');
+                }}])}>
+                  <Text style={s.forgotText}>Forgot password?</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={s.linkBtn} onPress={() => router.push('/(auth)/signup')}>
+                  <Text style={s.linkText}>
+                    No account?{'  '}
+                    <Text style={{ color: colors.primaryText ?? colors.primary, fontWeight: '600' }}>Create one free</Text>
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -513,4 +581,22 @@ const makeStyles = (colors: ReturnType<typeof import('@/lib/ThemeContext').useTh
     linkBtn: { marginTop: SPACING.lg, alignItems: 'center' },
     forgotText: { fontSize: TYPO.body, color: colors.primaryText ?? colors.primary, fontWeight: '500' },
     linkText: { fontSize: TYPO.body, color: colors.textSecondary },
+
+    choiceCard: {
+      flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+      borderWidth: 1.5, borderColor: colors.border, borderRadius: RADIUS.lg,
+      backgroundColor: colors.card, padding: SPACING.lg,
+    },
+    choiceIcon: {
+      width: 44, height: 44, borderRadius: RADIUS.md,
+      alignItems: 'center', justifyContent: 'center',
+    },
+    choiceTitle: { fontSize: TYPO.subheading, fontWeight: '700', color: colors.textPrimary },
+    choiceSub: { fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 },
+
+    backToChoice: {
+      flexDirection: 'row', alignItems: 'center', gap: 2,
+      alignSelf: 'flex-start', marginBottom: SPACING.lg,
+    },
+    backToChoiceText: { fontSize: TYPO.body, color: colors.textSecondary, fontWeight: '500' },
   });

@@ -59,7 +59,7 @@ export function KidHeroCard({
               )}
             </View>
           </View>
-          <Pressable onPress={() => router.push('/(tabs)/store' as any)} style={{ alignItems: 'center', gap: 3, flexShrink: 0 }}>
+          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "coin balance" on "KidHeroCard" → navigate to /(tabs)/store [features/hub/kid/KidHeroCard.tsx:62]`); router.push('/(tabs)/store' as any); }} style={{ alignItems: 'center', gap: 3, flexShrink: 0 }}>
             <View style={{ backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
               <Text style={{ fontSize: KID.sub }}>🪙</Text>
               <Text style={{ fontSize: KID.title, fontWeight: '900', color: BRAND.amber }} numberOfLines={1}>{mainCoins}</Text>

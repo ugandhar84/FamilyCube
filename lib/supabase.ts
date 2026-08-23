@@ -40,7 +40,37 @@ function extractLabel(url: string): string {
   }
 }
 
+// This device runs ONE Supabase Auth session shared across every PIN-switch
+// profile in the family (confirmed: switching profiles is local app state
+// only, never a re-login) — so auth.uid() alone can never tell the server
+// which of the family's members is actually "active" right now. RLS
+// functions that resolved "the calling member" via
+// `members WHERE auth_user_id = auth.uid() LIMIT 1` (no ORDER BY) were
+// picking an ARBITRARY one of the shared-session's member rows, not
+// necessarily whoever the app currently has active — silently wrong for
+// role-gated checks (is_chat_channel_participant's parents/seniors_a/b
+// branches) whenever the arbitrary pick's role differed from the real
+// active member's role. This header carries the true active member id on
+// every request so RLS can use it directly instead of guessing — see
+// migration 20260903170000_add_active_member_header_support.sql for the
+// server-side verification (the header is untrusted input: RLS must
+// confirm it actually belongs to auth.uid()'s family before trusting it).
+function getActiveMemberIdHeader(): string | undefined {
+  try {
+    const { useFamilyStore } = require('@/store/familyStore');
+    return useFamilyStore.getState().activeMemberId ?? undefined;
+  } catch {
+    return undefined; // familyStore not loaded yet (e.g. very first app-boot requests)
+  }
+}
+
 const debugFetch: typeof fetch = async (input, init) => {
+  const activeMemberId = getActiveMemberIdHeader();
+  if (activeMemberId) {
+    const headers = new Headers(init?.headers ?? (input as Request)?.headers);
+    headers.set('x-active-member-id', activeMemberId);
+    init = { ...init, headers };
+  }
   const url    = typeof input === 'string' ? input : (input as Request).url;
   const method = init?.method ?? 'GET';
   const label  = extractLabel(url);
@@ -239,6 +269,26 @@ export async function uploadUserAvatar(
   const encoded = await encodeBody('', base64);
   console.log('[uploadUserAvatar] encoded body size:', encoded instanceof ArrayBuffer ? encoded.byteLength : (encoded as Blob).size);
   return uploadToStorage(path, encoded, 'image/jpeg', true);
+}
+
+// ── Household member profile photo ────────────────────────────────────────────
+// Path: chore-proofs/<familyId>/avatars/<memberId>-<timestamp>.jpg — reuses the
+// family-media bucket (not `pets`, the unrelated pet-care app's bucket) that
+// chore/receipt proof photos already upload to successfully this session.
+// Deliberately NOT keyed by session.user.id like uploadUserAvatar — multiple
+// household members (kids, grandparents) commonly share ONE device's auth
+// session, so a session-keyed path would let one sibling's photo silently
+// overwrite another's.
+export async function uploadMemberAvatar(familyId: string, memberId: string, localUri: string): Promise<string> {
+  const path = `chore-proofs/${familyId}/avatars/${memberId}-${Date.now()}.jpg`;
+  const { base64 } = await compressImage(localUri, COMPRESS.avatar);
+  const encoded = await encodeBody('', base64);
+  const bodySize = encoded instanceof ArrayBuffer ? encoded.byteLength : (encoded as Blob).size;
+  if (bodySize === 0) throw new Error('Encoded upload body is 0 bytes — the source file may be empty or unreadable.');
+  const { error } = await supabase.storage.from('family-media').upload(path, encoded, { upsert: false, contentType: 'image/jpeg' });
+  if (error) throw new Error(error.message);
+  const { data } = supabase.storage.from('family-media').getPublicUrl(path);
+  return data.publicUrl;
 }
 
 // ── Feedback screenshot ───────────────────────────────────────────────────────

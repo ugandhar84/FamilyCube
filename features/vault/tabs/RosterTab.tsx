@@ -366,7 +366,11 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
   const { members, activeMemberId, updateMember, removeMember } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const isParent = activeMember?.role === 'parent';
-  const familyId = (members[0] as any)?.familyId ?? '';
+  // Was members[0]?.familyId — assumed the first member in the array shared
+  // the active member's family, which breaks the moment the active member
+  // isn't first (e.g. right after switching profiles). activeMember is
+  // already resolved above; use its own familyId directly.
+  const familyId = activeMember?.familyId ?? '';
 
   const [invites, setInvites]     = useState<Invite[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -388,15 +392,30 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
   useEffect(() => { load(); }, [load]);
 
   const createInvite = async () => {
-    if (!familyId) return;
+    if (!familyId || !activeMemberId) return;
     setCreating(true);
-    const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-    const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
-    const { data } = await supabase.from('family_invites').insert({
-      family_id: familyId, code, status: 'pending', expires_at: expiresAt,
-    }).select().single();
-    if (data) setInvites(prev => [data as Invite, ...prev]);
-    setCreating(false);
+    // Routed through the generate-invite-code edge function — this used to
+    // insert a weak client-generated code (Math.random().toString(36), no
+    // family-name prefix, includes visually-ambiguous chars like 0/O/1/I)
+    // directly into family_invites, bypassing the same security hardening
+    // already applied to the onboarding invite-code path.
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+      const anonKey     = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+      const res = await fetch(`${supabaseUrl}/functions/v1/generate-invite-code`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json', 'apikey': anonKey,
+          ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ familyId, memberId: activeMemberId }),
+      });
+      const json = await res.json();
+      if (json.ok) await load();
+    } finally {
+      setCreating(false);
+    }
   };
 
   const copyCode = (code: string) => {
@@ -406,12 +425,30 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
   };
 
   const revokeInvite = async (id: string) => {
-    await supabase.from('family_invites').update({ status: 'expired' }).eq('id', id);
+    // Was unchecked — a failed update left the invite marked "expired" only
+    // in local state while the DB row stayed 'pending', meaning the code
+    // would silently keep working for anyone who still had it even though
+    // the UI showed it as revoked.
+    const { error } = await supabase.from('family_invites').update({ status: 'expired' }).eq('id', id);
+    if (error) {
+      console.warn('[RosterTab] revokeInvite failed', error.message);
+      Alert.alert("Couldn't revoke code", error.message);
+      return;
+    }
     setInvites(prev => prev.map(i => i.id === id ? { ...i, status: 'expired' } : i));
   };
 
   const savePin = async (memberId: string, pin: string) => {
-    await supabase.from('members').update({ pin }).eq('id', memberId);
+    // Was an unchecked await — a failed write (RLS, network) still fell
+    // through to updateMember() below, so the UI showed "saved" while the
+    // DB kept the old PIN. That member then can't log in with the PIN they
+    // were just told was set, with zero indication anywhere of why.
+    const { error } = await supabase.from('members').update({ pin }).eq('id', memberId);
+    if (error) {
+      console.warn('[RosterTab] savePin failed', error.message);
+      Alert.alert("Couldn't save PIN", error.message);
+      return;
+    }
     updateMember(memberId, { pin });
   };
 

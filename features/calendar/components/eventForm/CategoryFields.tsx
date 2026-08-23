@@ -93,13 +93,15 @@ export default function CategoryFields({
               <Text style={[f.label, { color: colors.textSecondary }]}>🩺 Doctor</Text>
               <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                 placeholder="Dr. Smith" placeholderTextColor={colors.textTertiary}
-                value={doctorName} onChangeText={setDoctorName} />
+                value={doctorName} onChangeText={setDoctorName}
+                onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Doctor" on "CategoryFields(${category})" newValue=${doctorName} [features/calendar/components/eventForm/CategoryFields.tsx:96]`)} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[f.label, { color: colors.textSecondary }]}>📍 Clinic</Text>
               <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                 placeholder="Clinic name" placeholderTextColor={colors.textTertiary}
-                value={clinicLocation} onChangeText={setClinicLocation} />
+                value={clinicLocation} onChangeText={setClinicLocation}
+                onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Clinic" on "CategoryFields(${category})" newValue=${clinicLocation} [features/calendar/components/eventForm/CategoryFields.tsx:102]`)} />
             </View>
           </View>
         </>
@@ -122,20 +124,23 @@ export default function CategoryFields({
               <Text style={[f.label, { color: colors.textSecondary }]}>🏅 Coach</Text>
               <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                 placeholder="Coach Williams" placeholderTextColor={colors.textTertiary}
-                value={coachName} onChangeText={setCoachName} />
+                value={coachName} onChangeText={setCoachName}
+                onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Coach" on "CategoryFields(${category})" newValue=${coachName} [features/calendar/components/eventForm/CategoryFields.tsx:125]`)} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[f.label, { color: colors.textSecondary }]}>📍 Venue</Text>
               <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                 placeholder="Riverside Park" placeholderTextColor={colors.textTertiary}
-                value={venueLocation} onChangeText={setVenueLocation} />
+                value={venueLocation} onChangeText={setVenueLocation}
+                onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Venue" on "CategoryFields(${category})" newValue=${venueLocation} [features/calendar/components/eventForm/CategoryFields.tsx:131]`)} />
             </View>
           </View>
 
           <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
           <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
             placeholder="Home / School" placeholderTextColor={colors.textTertiary}
-            value={pickupLocation} onChangeText={setPickupLocation} />
+            value={pickupLocation} onChangeText={setPickupLocation}
+            onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Pickup from" on "CategoryFields(${category})" newValue=${pickupLocation} [features/calendar/components/eventForm/CategoryFields.tsx:138]`)} />
 
           {/* Kit reminder */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingHorizontal: 4 }}>
@@ -143,7 +148,7 @@ export default function CategoryFields({
               <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>🎒 Kit reminder</Text>
               <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>Notify player to pack gear beforehand</Text>
             </View>
-            <Switch value={kitReminder} onValueChange={setKitReminder}
+            <Switch value={kitReminder} onValueChange={(v) => { console.log(`[UserAction] FORM screen=Schedule toggled "Kit reminder" on CategoryFields(${category}) newValue=${v} [features/calendar/components/eventForm/CategoryFields.tsx:146]`); setKitReminder(v); }}
               trackColor={{ false: colors.border, true: catColor + '80' }}
               thumbColor={kitReminder ? catColor : colors.textTertiary} />
           </View>
@@ -165,12 +170,13 @@ export default function CategoryFields({
           <Text style={[f.label, { color: colors.textSecondary }]}>📚 Tutor name</Text>
           <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
             placeholder="Mr. Kumar" placeholderTextColor={colors.textTertiary}
-            value={tutorName} onChangeText={setTutorName} />
+            value={tutorName} onChangeText={setTutorName}
+            onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Tutor name" on "CategoryFields(${category})" newValue=${tutorName} [features/calendar/components/eventForm/CategoryFields.tsx:168]`)} />
 
           {/* Online toggle */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingHorizontal: 4 }}>
             <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>🖥️ Online session</Text>
-            <Switch value={isOnline} onValueChange={setIsOnline}
+            <Switch value={isOnline} onValueChange={(v) => { console.log(`[UserAction] FORM screen=Schedule toggled "Online session" on CategoryFields(${category}) newValue=${v} [features/calendar/components/eventForm/CategoryFields.tsx:173]`); setIsOnline(v); }}
               trackColor={{ false: colors.border, true: catColor + '80' }}
               thumbColor={isOnline ? catColor : colors.textTertiary} />
           </View>
@@ -179,14 +185,16 @@ export default function CategoryFields({
               <Text style={[f.label, { color: colors.textSecondary }]}>🔗 Meeting link</Text>
               <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                 placeholder="https://zoom.us/j/..." placeholderTextColor={colors.textTertiary}
-                value={meetingUrl} onChangeText={setMeetingUrl} keyboardType="url" autoCapitalize="none" />
+                value={meetingUrl} onChangeText={setMeetingUrl} keyboardType="url" autoCapitalize="none"
+                onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Meeting link" on "CategoryFields(${category})" newValue=${meetingUrl} [features/calendar/components/eventForm/CategoryFields.tsx:182]`)} />
             </>
           ) : (
             <>
               <Text style={[f.label, { color: colors.textSecondary }]}>📍 Location</Text>
               <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                 placeholder="Home / Library" placeholderTextColor={colors.textTertiary}
-                value={venueLocation} onChangeText={setVenueLocation} />
+                value={venueLocation} onChangeText={setVenueLocation}
+                onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Location" on "CategoryFields(${category})" newValue=${venueLocation} [features/calendar/components/eventForm/CategoryFields.tsx:189]`)} />
               {/* External tutor + in-person → show drop & pickup */}
               {!helperId && tutorName.trim().length > 0 && (
                 <>
@@ -195,13 +203,15 @@ export default function CategoryFields({
                       <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
                       <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                         placeholder="Home / School" placeholderTextColor={colors.textTertiary}
-                        value={pickupLocation} onChangeText={setPickupLocation} />
+                        value={pickupLocation} onChangeText={setPickupLocation}
+                        onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Pickup from" on "CategoryFields(${category}) Study" newValue=${pickupLocation} [features/calendar/components/eventForm/CategoryFields.tsx:198]`)} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[f.label, { color: colors.textSecondary }]}>🏁 Drop to</Text>
                       <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                         placeholder="Tutor's place / Library" placeholderTextColor={colors.textTertiary}
-                        value={dropLocation} onChangeText={setDropLocation} />
+                        value={dropLocation} onChangeText={setDropLocation}
+                        onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Drop to" on "CategoryFields(${category}) Study" newValue=${dropLocation} [features/calendar/components/eventForm/CategoryFields.tsx:204]`)} />
                     </View>
                   </View>
                   {/* Drive Assignment + return-pickup scheduling are both
@@ -232,6 +242,7 @@ export default function CategoryFields({
                             placeholderTextColor={colors.textTertiary}
                             value={driverName}
                             onChangeText={t => { setDriverName(t); if (!t) setDriverId(undefined); }}
+                            onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Driver name" on "CategoryFields(${category}) Study" newValue=${driverName} [features/calendar/components/eventForm/CategoryFields.tsx:244]`)}
                           />
                         )}
                       </View>
@@ -239,7 +250,7 @@ export default function CategoryFields({
                       <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
                         <TouchableOpacity
                           style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                          onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
+                          onPress={() => { console.log(`[UserAction] screen=Schedule tapped "Return date" field on CategoryFields(${category}) Study [features/calendar/components/eventForm/CategoryFields.tsx:252]`); setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
                         >
                           <Text style={{ fontSize: 13 }}>📅</Text>
                           <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
@@ -248,7 +259,7 @@ export default function CategoryFields({
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[f.dateBtn, { flex: 2, backgroundColor: showReturnTimePick ? catColor + '20' : colors.surface, borderColor: showReturnTimePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                          onPress={() => { setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
+                          onPress={() => { console.log(`[UserAction] screen=Schedule tapped "Return time" field on CategoryFields(${category}) Study [features/calendar/components/eventForm/CategoryFields.tsx:261]`); setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
                         >
                           <Text style={{ fontSize: 13 }}>🕐</Text>
                           <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnTimePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
@@ -274,21 +285,23 @@ export default function CategoryFields({
               <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
               <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
                 placeholder="Home / School" placeholderTextColor={colors.textTertiary}
-                value={pickupLocation} onChangeText={setPickupLocation} />
+                value={pickupLocation} onChangeText={setPickupLocation}
+                onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Pickup from" on "CategoryFields(${category})" newValue=${pickupLocation} [features/calendar/components/eventForm/CategoryFields.tsx:287]`)} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[f.label, { color: colors.textSecondary }]}>🏁 Drop to</Text>
               <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface,
                 borderColor: dropLocation ? colors.borderMed : colors.warning + '60' }]}
                 placeholder="Chess Club, Oak St" placeholderTextColor={colors.textTertiary}
-                value={dropLocation} onChangeText={setDropLocation} />
+                value={dropLocation} onChangeText={setDropLocation}
+                onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Drop to" on "CategoryFields(${category})" newValue=${dropLocation} [features/calendar/components/eventForm/CategoryFields.tsx:296]`)} />
             </View>
           </View>
           <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Return pickup (optional)</Text>
           <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
             <TouchableOpacity
               style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-              onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
+              onPress={() => { console.log(`[UserAction] screen=Schedule tapped "Return date" field on CategoryFields(${category}) Ride [features/calendar/components/eventForm/CategoryFields.tsx:303]`); setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
             >
               <Text style={{ fontSize: 13 }}>📅</Text>
               <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
@@ -297,7 +310,7 @@ export default function CategoryFields({
             </TouchableOpacity>
             <TouchableOpacity
               style={[f.dateBtn, { flex: 2, backgroundColor: showReturnTimePick ? catColor + '20' : colors.surface, borderColor: showReturnTimePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-              onPress={() => { setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
+              onPress={() => { console.log(`[UserAction] screen=Schedule tapped "Return time" field on CategoryFields(${category}) Ride [features/calendar/components/eventForm/CategoryFields.tsx:312]`); setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
             >
               <Text style={{ fontSize: 13 }}>🕐</Text>
               <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnTimePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
@@ -326,7 +339,7 @@ export default function CategoryFields({
                   separate darker "text on amber tint" shade — so those two stay
                   documented hardcoded hex rather than guessing a mismatched token. */}
               <TouchableOpacity
-                onPress={() => { setGpTeenToggledByUser(true); setOpenToGrandparents(g => !g); }}
+                onPress={() => { const v = !openToGrandparents; console.log(`[UserAction] FORM screen=Schedule toggled "Grandparents Welcome" on CategoryFields(${category}) Ride newValue=${v} [features/calendar/components/eventForm/CategoryFields.tsx:341]`); setGpTeenToggledByUser(true); setOpenToGrandparents(v); }}
                 activeOpacity={0.8}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                   paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14,
@@ -359,7 +372,7 @@ export default function CategoryFields({
                   wrong semantic color onto it. */}
               {members.some(m => m.role === 'teen') && (
                 <TouchableOpacity
-                  onPress={() => { setGpTeenToggledByUser(true); setOpenToTeens(t => !t); }}
+                  onPress={() => { const v = !openToTeens; console.log(`[UserAction] FORM screen=Schedule toggled "Teen Driver Welcome" on CategoryFields(${category}) Ride newValue=${v} [features/calendar/components/eventForm/CategoryFields.tsx:374]`); setGpTeenToggledByUser(true); setOpenToTeens(v); }}
                   activeOpacity={0.8}
                   style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                     paddingVertical: 11, paddingHorizontal: 14, borderRadius: 14,
@@ -391,6 +404,7 @@ export default function CategoryFields({
                     keyboardType="numeric" maxLength={4}
                     placeholder="0" placeholderTextColor={colors.textTertiary}
                     value={rideCoinsTeen} onChangeText={setRideCoinsTeen}
+                    onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Coins for teen driver" on "CategoryFields(${category}) Ride" newValue=${rideCoinsTeen} [features/calendar/components/eventForm/CategoryFields.tsx:405]`)}
                   />
                 </View>
               )}
@@ -409,14 +423,15 @@ export default function CategoryFields({
           <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
             placeholder={category === 'Birthday' ? "Friend's house / venue" : 'Living Room / Park / Restaurant'}
             placeholderTextColor={colors.textTertiary}
-            value={generalLocation} onChangeText={setGeneralLocation} />
+            value={generalLocation} onChangeText={setGeneralLocation}
+            onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Location" on "CategoryFields(${category})" newValue=${generalLocation} [features/calendar/components/eventForm/CategoryFields.tsx:426]`)} />
           {category === 'Birthday' && (
             <>
               <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Return pickup (optional)</Text>
               <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
                 <TouchableOpacity
                   style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                  onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
+                  onPress={() => { console.log(`[UserAction] screen=Schedule tapped "Pickup date" field on CategoryFields(${category}) Birthday [features/calendar/components/eventForm/CategoryFields.tsx:433]`); setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
                 >
                   <Text style={{ fontSize: 13 }}>📅</Text>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
@@ -425,7 +440,7 @@ export default function CategoryFields({
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[f.dateBtn, { flex: 2, backgroundColor: showReturnTimePick ? catColor + '20' : colors.surface, borderColor: showReturnTimePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-                  onPress={() => { setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
+                  onPress={() => { console.log(`[UserAction] screen=Schedule tapped "Pickup time" field on CategoryFields(${category}) Birthday [features/calendar/components/eventForm/CategoryFields.tsx:442]`); setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
                 >
                   <Text style={{ fontSize: 13 }}>🕐</Text>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnTimePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
@@ -445,12 +460,13 @@ export default function CategoryFields({
           <Text style={[f.label, { color: colors.textSecondary }]}>📍 Where</Text>
           <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
             placeholder="Supermarket / Mall / Pharmacy" placeholderTextColor={colors.textTertiary}
-            value={generalLocation} onChangeText={setGeneralLocation} />
+            value={generalLocation} onChangeText={setGeneralLocation}
+            onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Where" on "CategoryFields(${category})" newValue=${generalLocation} [features/calendar/components/eventForm/CategoryFields.tsx:462]`)} />
           <Text style={[f.label, { color: colors.textSecondary }]}>🔁 Expected return (optional)</Text>
           <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
             <TouchableOpacity
               style={[f.dateBtn, { flex: 3, backgroundColor: showReturnDatePick ? catColor + '20' : colors.surface, borderColor: showReturnDatePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-              onPress={() => { setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
+              onPress={() => { console.log(`[UserAction] screen=Schedule tapped "Return date" field on CategoryFields(${category}) Errand [features/calendar/components/eventForm/CategoryFields.tsx:467]`); setShowReturnDatePick(p => !p); setShowReturnTimePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
             >
               <Text style={{ fontSize: 13 }}>📅</Text>
               <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnDatePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
@@ -459,7 +475,7 @@ export default function CategoryFields({
             </TouchableOpacity>
             <TouchableOpacity
               style={[f.dateBtn, { flex: 2, backgroundColor: showReturnTimePick ? catColor + '20' : colors.surface, borderColor: showReturnTimePick ? catColor : (returnDate ? catColor + '80' : colors.border) }]}
-              onPress={() => { setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
+              onPress={() => { console.log(`[UserAction] screen=Schedule tapped "Return time" field on CategoryFields(${category}) Errand [features/calendar/components/eventForm/CategoryFields.tsx:476]`); setShowReturnTimePick(p => !p); setShowReturnDatePick(false); setShowDatePick(false); setShowTimePick(false); if (!returnDate) setReturnDate(new Date(eventDate)); }}
             >
               <Text style={{ fontSize: 13 }}>🕐</Text>
               <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: showReturnTimePick ? catColor : (returnDate ? colors.textPrimary : colors.textTertiary) }}>
@@ -489,7 +505,8 @@ export default function CategoryFields({
           <Text style={[f.label, { color: colors.textSecondary }]}>📍 Location (optional)</Text>
           <TextInput style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
             placeholder="Where is this happening?" placeholderTextColor={colors.textTertiary}
-            value={generalLocation} onChangeText={setGeneralLocation} />
+            value={generalLocation} onChangeText={setGeneralLocation}
+            onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Location" on "CategoryFields(${category}) Other" newValue=${generalLocation} [features/calendar/components/eventForm/CategoryFields.tsx:508]`)} />
         </>
       )}
     </>

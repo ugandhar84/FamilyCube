@@ -6,6 +6,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 // questStore commented out — chores system is the single source of truth
@@ -22,12 +23,14 @@ import { useGroceryStore } from '@/store/groceryStore';
 import { useEventStore } from '@/store/eventStore';
 import { QUEST_SUGGESTIONS, ALL_CATEGORIES, CATEGORY_META, fmtDateLabel, fmtTimeLabel } from './questFormShared';
 import {
-  resolveDomainFromLooseLabel, fetchSubcategoriesForDomain, previewAssignment, applyAssignment,
+  resolveDomainFromLooseLabel, fetchSubcategoriesForDomain, previewAssignment, applyAssignment, questCategoryFromDomain,
   type ResponsibilityCategory, type AssignmentSuggestion,
 } from '@/lib/responsibilityCategories';
 import { AddQuestGrocerySection } from './AddQuestGrocerySection';
 import { AddQuestRecurrenceSection } from './AddQuestRecurrenceSection';
 import { AddQuestAssignSection } from './AddQuestAssignSection';
+import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
+import { familyAi } from '@/lib/familyAiService';
 
 // Word-boundary match, not bare substring containment — "load" must not
 // match inside "unload". A plain .includes() let "Unload the dishwasher"
@@ -78,6 +81,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   prefill?: { title?: string; coins?: number; assignedToId?: string; photoRequired?: boolean; dueDate?: string };
 }) {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const { addQuest, createParticipants } = useQuestStore();
   const members = useFamilyStore(s => s.members);
   const kids    = members.filter(m => m.role === 'kid');
@@ -136,6 +140,14 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   // unconditionally regardless of whether isRoutine/isAdultTask ever showed
   // the picker.
   const [routineFreq,  setRoutineFreq]  = useState<'daily' | 'weekly' | 'monthly' | 'first_come' | 'once'>('once');
+  // Which weekdays a Weekly routine chore recurs on (0=Sun..6=Sat) — same
+  // shape/picker as EventFormModal's repeatDays. Empty = every 7 days from
+  // whenever it was last approved, matching the pre-existing behavior.
+  const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
+  // Which day of the month a Monthly routine chore recurs on (1-28, or 31
+  // as "last day of the month") — undefined = whatever day-of-month it was
+  // first approved on, matching the pre-existing behavior.
+  const [recurrenceDayOfMonth, setRecurrenceDayOfMonth] = useState<number | undefined>(undefined);
 
   // Live QA audit found "shopping is always adult-only" was UI copy/intent
   // only — a kid could be selected as assignee for a shopping run and it
@@ -178,6 +190,14 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   const { pastStores: cachedStores, pastItemNames: cachedItemNames, appendToCache } = useGroceryStore();
   const suggPressing = React.useRef(false);
 
+  // ── Stepper ──────────────────────────────────────────────────────────────
+  // Redesign from one long flat scroll (every field always visible
+  // regardless of chore type) into a small paged flow — same fields, same
+  // state, same submit/validation logic below, purely a layout change. Step
+  // 2 (grocery list) only exists at all for Errand/Shopping categories —
+  // every other chore type sees one fewer step, which is the actual
+  // "context-aware" win: irrelevant steps are skipped, not just collapsed.
+  const [step, setStep] = useState(0);
   const activeMember = members.find(m => m.id === activeMemberId);
   const familyId = activeMember?.familyId ?? '';
   // Scenario 1.5 — a Teen creator gets the same broad self-creation rights
@@ -188,6 +208,66 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   // self-assign-or-leave-in-pool flow AddQuestAssignSection already
   // supports for every non-adult-task quest.
   const creatorIsTeen = activeMember?.role === 'teen';
+
+  // Voice → AI prefill, Step 1 only. Same interaction shape as Ask Cube's
+  // mic: tap to record, the live transcript lands in an editable text box,
+  // the user reviews/edits it, and only an explicit tap on "Send" fires the
+  // AI call — never automatic on speech-end. useVoiceDictation is the same
+  // plain transcribe-only hook Ask Cube itself uses (no AI involved in the
+  // capture step); only the final transcript TEXT the user approved is ever
+  // sent to extractResponsibility, never audio.
+  const voice = useVoiceDictation();
+  const [voiceDraft, setVoiceDraft] = useState('');
+  const [isPrefilling, setIsPrefilling] = useState(false);
+
+  const applyVoiceTranscript = async (transcript: string) => {
+    const trimmed = transcript.trim();
+    if (!trimmed) return;
+    setIsPrefilling(true);
+    try {
+      const result = await familyAi.extractResponsibility(trimmed, members.map(m => ({ id: m.id, name: m.name })));
+      const task = result.task;
+      if (!task) {
+        Alert.alert("Couldn't quite catch that", 'Try again, or type it in below.');
+        return;
+      }
+      // Same guard applySuggestion uses — without it, the title-driven
+      // category-fallback effect below (which resets to 'Other' when
+      // nothing in the suggestion bank matches the new title) would
+      // immediately stomp the category this same update is about to set.
+      suggestionJustApplied.current = true;
+      setTitle(task.title);
+      setTitleTouched(true);
+      if (task.requirements?.length) setDesc(task.requirements.join('. ').slice(0, 150));
+      if (task.startAt) {
+        const d = new Date(task.startAt);
+        if (!isNaN(d.getTime())) setDueDate(d);
+      }
+      if (task.forMemberName) {
+        const match = members.find(m => m.name.toLowerCase() === task.forMemberName!.toLowerCase());
+        if (match) setAssignIds([match.id]);
+      }
+      // extractResponsibility's `category` is a coarse responsibility-engine
+      // domain string (e.g. "household", "errand"), not one of this form's
+      // ~20 QuestCategory options directly — only map it when
+      // questCategoryFromDomain has a confident, unambiguous target (Errand,
+      // School, Finance, Health, Social); a domain like "household" fans out
+      // to too many possible categories to guess one, so it's left for the
+      // title-driven inference (or a manual tap) instead of forcing a
+      // possibly-wrong specific category.
+      const mappedCategory = questCategoryFromDomain(task.category);
+      if (mappedCategory) {
+        setCategory(mappedCategory as QuestCategory);
+        setCategoryTouched(true);
+      }
+      setVoiceDraft('');
+      voice.reset();
+    } catch (e: any) {
+      Alert.alert('Something went wrong', e?.message ?? "Couldn't process that — try again, or type it in below.");
+    } finally {
+      setIsPrefilling(false);
+    }
+  };
 
   useEffect(() => {
     if (!familyId) return;
@@ -213,6 +293,26 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   }, [category]);
 
   const isGroceryCategory = category === 'Errand' || category === 'Shopping';
+
+  // Step list — 'grocery' only exists for Errand/Shopping, so most chores
+  // are a 4-step flow (What, When, Type & Assign, Review) not 5. Recomputed
+  // on every render off category, not memoized — this array is only ever
+  // used to know the current step's id and total count, both cheap.
+  const stepIds = ['what', ...(isGroceryCategory ? ['grocery'] : []), 'when', 'assign', 'review'] as const;
+  type StepId = typeof stepIds[number];
+  const currentStepId: StepId = stepIds[Math.min(step, stepIds.length - 1)];
+  // If the grocery step existed (step index 1) and the category changes away
+  // from Errand/Shopping mid-flow, step index 1 now means 'when' instead —
+  // clamp back to a safe index rather than leaving the user on a step whose
+  // meaning just changed under them.
+  useEffect(() => {
+    setStep(s => Math.min(s, stepIds.length - 1));
+  }, [isGroceryCategory]);
+
+  const stepTitles: Record<StepId, string> = {
+    what: 'What is it?', grocery: 'Shopping list', when: 'When is it due?',
+    assign: 'Who & how', review: 'Review',
+  };
 
   // Coins/bonus only make sense for kids & teens — disable when all assignees are adults
   const assignedToAdultsOnly = assignIds.length > 0 &&
@@ -357,8 +457,11 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
     setShowDatePick(false); setShowTimePick(false);
     setLinkGroceries(false); setGroceryItems([]); setSelectedItemIds(new Set()); setNewGroceryLines([]);
     setFocusedLineIdx(null); setFocusedField(null);
-    setIsRoutine(false); setRoutineType('routine'); setRoutineFreq('once');
+    setIsRoutine(false); setRoutineType('routine'); setRoutineFreq('once'); setRecurrenceDays([]); setRecurrenceDayOfMonth(undefined);
     setInviteGrandparent(false);
+    setStep(0);
+    voice.reset();
+    setVoiceDraft('');
   };
 
   // Coins disabled when: adult task, GP invite, or all assignees are adults
@@ -471,6 +574,8 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
       assignedToIds: isMulti ? assignIds : [],
       isPool: !isAdultTask && (isPool || assignIds.length === 0), isDaily: false,
       recurrence: routineType === 'shopping' ? 'once' : (routineFreq === 'daily' ? 'daily' : routineFreq === 'weekly' ? 'weekly' : routineFreq === 'monthly' ? 'monthly' : 'once'),
+      recurrenceDays: routineFreq === 'weekly' && recurrenceDays.length > 0 ? recurrenceDays : undefined,
+      recurrenceDayOfMonth: routineFreq === 'monthly' ? recurrenceDayOfMonth : undefined,
       status: 'todo',
       dueDate: localDateStr(dueDate),
       dueTime: fmtTimeLabel(dueDate),
@@ -630,13 +735,39 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               </TouchableOpacity>
             </View>
 
+            {/* ── Step progress — dots for the ACTUAL step count for this
+                chore (4 for most, 5 once the grocery step exists), not a
+                fixed number, and a Back arrow once past step 1. */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              {step > 0 && (
+                <TouchableOpacity onPress={() => setStep(s => s - 1)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="chevron-back" size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+              <View style={{ flexDirection: 'row', gap: 6, flex: 1 }}>
+                {stepIds.map((id, i) => (
+                  <View key={id} style={{
+                    flex: 1, height: 4, borderRadius: 2,
+                    backgroundColor: i <= step ? BRAND.purple : (isDark ? colors.border : '#E2E8F0'),
+                  }} />
+                ))}
+              </View>
+              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary }}>
+                {step + 1}/{stepIds.length}
+              </Text>
+            </View>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple, marginBottom: 10, marginTop: -6 }}>
+              {stepTitles[currentStepId]}
+            </Text>
+
             {/* ── Scrollable form fields ── */}
             <ScrollView
               keyboardShouldPersistTaps="always"
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 48 }}
+              contentContainerStyle={{ paddingBottom: currentStepId === 'review' ? Math.max(48, insets.bottom + 32) : 48 }}
             >
 
+            {currentStepId === 'what' && <>
             {/* Title */}
             <Text style={[aq.label, { color: colors.textSecondary }]}>Quest Title *</Text>
             <TextInput
@@ -658,6 +789,97 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               onBlur={() => { setTitleFocused(false); setTitleTouched(true); }}
               returnKeyType="next"
             />
+
+            {/* Voice → AI prefill — same interaction as Ask Cube's mic: tap
+                to record, the transcript lands in an editable box once you
+                stop talking, and only an explicit "Send" tap sends it to
+                the AI — never automatic on speech-end. Speech-to-text
+                happens entirely on-device; only the transcript TEXT you
+                approve is ever sent, never audio. */}
+            {voice.state !== 'listening' && !voiceDraft && (
+              <TouchableOpacity
+                onPress={() => voice.start()}
+                disabled={isPrefilling}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -6, marginBottom: 12,
+                  borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 13, paddingVertical: 11,
+                  borderColor: BRAND.purple + '45',
+                  backgroundColor: isDark ? BRAND.purple + '1c' : '#F8F5FF',
+                }}
+              >
+                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: BRAND.purple + '22', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="mic" size={13} color={BRAND.purple} />
+                </View>
+                <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }} numberOfLines={1}>
+                  🎙️ Or just say it — Cube will fill this in
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {(voice.state === 'listening' || voiceDraft) && (
+              <View style={{ marginTop: -6, marginBottom: 12, borderRadius: 14, borderWidth: 1.5,
+                borderColor: voice.state === 'listening' ? colors.danger + '60' : BRAND.purple + '45',
+                backgroundColor: voice.state === 'listening' ? colors.danger + '08' : (isDark ? BRAND.purple + '1c' : '#F8F5FF'),
+                padding: 12, gap: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (voice.state === 'listening') {
+                        const transcript = voice.liveTranscript;
+                        voice.stop();
+                        if (transcript.trim()) setVoiceDraft(transcript);
+                        return;
+                      }
+                      voice.start();
+                    }}
+                    style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: voice.state === 'listening' ? colors.danger + '30' : BRAND.purple + '22' }}>
+                    {voice.state === 'listening'
+                      ? <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.danger }} />
+                      : <Ionicons name="mic" size={13} color={BRAND.purple} />}
+                  </TouchableOpacity>
+                  <Text style={{ flex: 1, fontSize: TYPO.micro, fontWeight: '700', color: voice.state === 'listening' ? colors.danger : colors.textTertiary }}>
+                    {voice.state === 'listening' ? 'Listening… tap to stop' : 'Review and edit, then send'}
+                  </Text>
+                </View>
+                <TextInput
+                  value={voice.state === 'listening' ? (voice.liveTranscript || '') : voiceDraft}
+                  onChangeText={setVoiceDraft}
+                  editable={voice.state !== 'listening' && !isPrefilling}
+                  placeholder="Listening…"
+                  placeholderTextColor={colors.textTertiary}
+                  multiline
+                  style={{ fontSize: TYPO.body, color: colors.textPrimary, minHeight: 44, textAlignVertical: 'top' }}
+                />
+                {voice.state !== 'listening' && (
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity
+                      onPress={() => { setVoiceDraft(''); voice.reset(); }}
+                      disabled={isPrefilling}
+                      style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10,
+                        borderWidth: 1, borderColor: colors.border }}>
+                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Discard</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => applyVoiceTranscript(voiceDraft)}
+                      disabled={isPrefilling || !voiceDraft.trim()}
+                      style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        paddingVertical: 9, borderRadius: 10,
+                        backgroundColor: !voiceDraft.trim() || isPrefilling ? colors.border : BRAND.purple }}>
+                      {isPrefilling
+                        ? <ActivityIndicator size="small" color="#fff" />
+                        : <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: !voiceDraft.trim() ? colors.textTertiary : '#fff' }}>Send</Text>}
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            )}
+            {voice.state === 'error' && voice.error && (
+              <Text style={{ fontSize: TYPO.micro, color: colors.danger, marginTop: -8, marginBottom: 12 }}>
+                {voice.error}
+              </Text>
+            )}
+
             {/* Dynamic suggestion pills — always visible */}
             {suggestions.length > 0 && (
               <View style={{ marginTop: -6, marginBottom: 12 }}>
@@ -737,6 +959,29 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               </View>
             </ScrollView>
 
+            {/* Description — mandatory, max 150 chars */}
+            <Text style={[aq.label, { color: colors.textSecondary }]}>
+              Description *{'  '}
+              <Text style={{ fontWeight: '400', color: colors.textTertiary }}>what needs to be done</Text>
+            </Text>
+            <TextInput
+              style={[aq.input, aq.descInput, { color: colors.textPrimary,
+                borderColor: (!desc.trim() && descTouched) ? colors.danger : colors.borderMed,
+                backgroundColor: colors.surface }]}
+              placeholder="Describe exactly what's expected so there's no confusion…"
+              placeholderTextColor={colors.textTertiary}
+              value={desc}
+              onChangeText={t => setDesc(t.slice(0, 150))}
+              onBlur={() => setDescTouched(true)}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+            <Text style={{ fontSize: TYPO.micro, color: desc.length > 130 ? colors.danger : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 12 }}>
+              {desc.length}/150
+            </Text>
+            </>}
+
             {/* ── Assignment suggestion — calls the live Responsibility Engine
                  (process-task-assignment) so a parent can see who this would
                  likely go to before saving. Always a dry run.
@@ -747,7 +992,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                  created. Rather than fake a kid-assignment preview this
                  form can't actually produce, the button only appears for
                  isAdultTask, where a real preview is genuinely possible. ── */}
-            {familyId && isAdultTask && assignIds.length === 0 && (
+            {currentStepId === 'assign' && familyId && isAdultTask && assignIds.length === 0 && (
               <View style={{ marginBottom: 14 }}>
                 <TouchableOpacity
                   onPress={async () => {
@@ -814,30 +1059,8 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               </View>
             )}
 
-            {/* Description — mandatory, max 150 chars */}
-            <Text style={[aq.label, { color: colors.textSecondary }]}>
-              Description *{'  '}
-              <Text style={{ fontWeight: '400', color: colors.textTertiary }}>what needs to be done</Text>
-            </Text>
-            <TextInput
-              style={[aq.input, aq.descInput, { color: colors.textPrimary,
-                borderColor: (!desc.trim() && descTouched) ? colors.danger : colors.borderMed,
-                backgroundColor: colors.surface }]}
-              placeholder="Describe exactly what's expected so there's no confusion…"
-              placeholderTextColor={colors.textTertiary}
-              value={desc}
-              onChangeText={t => setDesc(t.slice(0, 150))}
-              onBlur={() => setDescTouched(true)}
-              multiline
-              numberOfLines={3}
-              textAlignVertical="top"
-            />
-            <Text style={{ fontSize: TYPO.micro, color: desc.length > 130 ? colors.danger : colors.textTertiary, textAlign: 'right', marginTop: -8, marginBottom: 12 }}>
-              {desc.length}/150
-            </Text>
-
             {/* ── Grocery list attachment (Errand / Shopping) ── */}
-            {isGroceryCategory && (
+            {currentStepId === 'grocery' && isGroceryCategory && (
               <AddQuestGrocerySection
                 colors={colors} isDark={isDark}
                 linkGroceries={linkGroceries} setLinkGroceries={setLinkGroceries} setGroceryListOpen={setGroceryListOpen}
@@ -851,6 +1074,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               />
             )}
 
+            {currentStepId === 'assign' && <>
             {/* Coins + Bonus + Photo required — one compact row.
                 coinsLocked: citizenship chores are always free — no coin reward */}
             <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
@@ -925,7 +1149,9 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                 ))}
               </View>
             </View>
+            </>}
 
+            {currentStepId === 'when' && <>
             {/* Due Date + Time */}
             <Text style={[aq.label, { color: colors.textSecondary }]}>Due Date & Time</Text>
             <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
@@ -1066,13 +1292,17 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
                 ))}
               </View>
             )}
+            </>}
 
+            {currentStepId === 'assign' && <>
             <AddQuestRecurrenceSection
               colors={colors} isDark={isDark}
               isAdultTask={isAdultTask} toggleAdultTask={toggleAdultTask}
               inviteGrandparent={inviteGrandparent} toggleGPInvite={toggleGPInvite}
               hideAdultToggles={creatorIsTeen}
               routineFreq={routineFreq} setRoutineFreq={setRoutineFreq}
+              recurrenceDays={recurrenceDays} setRecurrenceDays={setRecurrenceDays}
+              recurrenceDayOfMonth={recurrenceDayOfMonth} setRecurrenceDayOfMonth={setRecurrenceDayOfMonth}
               isRoutine={isRoutine} setIsRoutine={setIsRoutine}
               routineType={routineType} setRoutineType={setRoutineType}
               setCoins={setCoins}
@@ -1093,22 +1323,110 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               coins={coins}
               pillBg={pillBg}
             />
+            </>}
 
-            {/* Submit */}
-            <TouchableOpacity
-              style={[aq.submitBtn, { backgroundColor: title.trim() && desc.trim() && categoryTouched ? '#059669' : colors.border, opacity: saving ? 0.6 : 1 }]}
-              onPress={submit} disabled={saving || !title.trim() || !desc.trim() || !categoryTouched}
-            >
-              {saving
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <>
-                    <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>Add Chore to Board</Text>
-                    <Text style={{ color: '#A7F3D0', fontSize: TYPO.label, marginTop: 2 }}>
-                      Due {fmtDateLabel(dueDate)} at {fmtTimeLabel(dueDate)}
+            {currentStepId === 'review' && (() => {
+              const assignee = isPool ? null : members.find(m => m.id === assignIds[0]);
+              const assignedLabel = isPool
+                ? `Open pool${maxClaimants ? ` · up to ${maxClaimants === 0 ? '∞' : maxClaimants} kids` : ''}`
+                : assignIds.length === 0 ? 'Unassigned'
+                : assignIds.length > 1 ? `${assignIds.length} kids`
+                : (assignee?.id === activeMemberId ? 'Me' : assignee?.name ?? '—');
+              const rewardLabel = coinsDisabled ? 'No coins (adult task)'
+                : `${coins || '30'}🪙${bonusCoins && parseInt(bonusCoins) > 0 ? ` + ${bonusCoins} bonus` : ''}`;
+              const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+              const recurLabel = routineFreq === 'once' ? 'One-time'
+                : routineFreq === 'daily' ? 'Daily'
+                : routineFreq === 'weekly' ? `Weekly${recurrenceDays.length ? ` · ${recurrenceDays.map(d => WEEKDAY_LABELS[d]).join('/')}` : ''}`
+                : routineFreq === 'monthly' ? `Monthly${recurrenceDayOfMonth ? ` · ${recurrenceDayOfMonth === 31 ? 'last day' : `the ${recurrenceDayOfMonth}${['th','st','nd','rd'][recurrenceDayOfMonth % 10 > 3 || [11,12,13].includes(recurrenceDayOfMonth % 100) ? 0 : recurrenceDayOfMonth % 10]}`}` : ''}`
+                : 'First come, first served';
+              // Same review-blocking guard the submit button used before —
+              // review is the one step that can't be "reached and skipped
+              // past" the way earlier steps could, since it's also where
+              // the actual create button lives now.
+              const canSubmit = !!title.trim() && !!desc.trim() && categoryTouched;
+              return (
+                <View style={{ gap: 10 }}>
+                  <View style={{ borderRadius: 16, borderWidth: 1.5, borderColor: pillBdr, backgroundColor: isDark ? colors.surface : '#F8FAFC', padding: 14, gap: 10 }}>
+                    <View>
+                      <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Chore</Text>
+                      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary, marginTop: 2 }} numberOfLines={2}>
+                        {title.trim() || '—'}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 16 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Who</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {assignedLabel}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>When</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {fmtDateLabel(dueDate)} · {fmtTimeLabel(dueDate)}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 16 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Reward</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {rewardLabel}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Repeats</Text>
+                        <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary, marginTop: 2 }} numberOfLines={1}>
+                          {recurLabel}
+                        </Text>
+                      </View>
+                    </View>
+                    {!!desc.trim() && (
+                      <View>
+                        <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.6 }}>Description</Text>
+                        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }} numberOfLines={3}>
+                          {desc.trim()}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {!canSubmit && (
+                    <Text style={{ fontSize: TYPO.label, color: colors.danger, textAlign: 'center' }}>
+                      {!title.trim() ? 'Add a title on the first step.'
+                        : !desc.trim() ? 'Add a description on the first step.'
+                        : 'Confirm a category on the first step.'}
                     </Text>
-                  </>}
-            </TouchableOpacity>
+                  )}
+
+                  <TouchableOpacity
+                    style={[aq.submitBtn, { backgroundColor: canSubmit ? '#059669' : colors.border, opacity: saving ? 0.6 : 1 }]}
+                    onPress={submit} disabled={saving || !canSubmit}
+                  >
+                    {saving
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>Add Chore to Board</Text>}
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
+
             </ScrollView>
+
+            {/* ── Footer nav — Next on every step but the last, which shows
+                the Create button above instead (inside the scroll, so its
+                caption/disabled-reason stays attached to the summary). */}
+            {currentStepId !== 'review' && (
+              <View style={{ paddingTop: 10, paddingBottom: Math.max(16, insets.bottom + 8) }}>
+                <TouchableOpacity
+                  style={[aq.submitBtn, { backgroundColor: BRAND.purple }]}
+                  onPress={() => setStep(s => Math.min(s + 1, stepIds.length - 1))}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>Next</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </KeyboardAvoidingView>

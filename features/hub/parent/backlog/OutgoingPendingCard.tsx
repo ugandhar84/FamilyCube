@@ -25,6 +25,7 @@ export function OutgoingPendingCard({ a, chore, members, active, colors, isDark,
   const assignee = members.find(m => m.id === a.assignedTo);
 
   const sendNudge = () => {
+    console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Nudge" on "${chore.title}" waiting on ${assignee?.name ?? 'partner'} (id=${a.id}) → sendMessage [features/hub/parent/backlog/OutgoingPendingCard.tsx:28]`);
     const msg = `👋 Hey ${assignee?.name?.split(' ')[0] ?? 'there'}, just a nudge — "${chore.title}" is still waiting on you. Need any help?`;
     useChatStore.getState().sendMessage(a.assignedTo, active.id, msg);
     Alert.alert('Nudge sent!', `A reminder was sent directly to ${assignee?.name ?? 'them'}.`);
@@ -41,7 +42,7 @@ export function OutgoingPendingCard({ a, chore, members, active, colors, isDark,
       shadowOpacity: isDark ? 0.4 : 1, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
       elevation: isDark ? 3 : 2,
     }}>
-      <Pressable onPress={() => setExp(e => !e)}
+      <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "${isExp ? 'Collapse' : 'Expand'}" on "${chore.title}" (id=${a.id}) [features/hub/parent/backlog/OutgoingPendingCard.tsx:44]`); setExp(e => !e); }}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 }}>
         <Clock size={14} color={colors.textTertiary} />
         <View style={{ flex: 1 }}>
@@ -68,7 +69,7 @@ export function OutgoingPendingCard({ a, chore, members, active, colors, isDark,
       )}
       {!isSnoozed && (
         <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 12, paddingTop: isExp && chore.description ? 8 : 0 }}>
-          <Pressable onPress={sendNudge}
+          <Pressable onPress={sendNudge} /* logging inside sendNudge() */
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
               borderRadius: 10, borderWidth: 1, borderColor: colors.warning + '60', paddingVertical: 8 }}>
             <MessageCircle size={13} color={colors.warning} />
@@ -76,11 +77,11 @@ export function OutgoingPendingCard({ a, chore, members, active, colors, isDark,
           </Pressable>
           {onRecall && (
             <Pressable
-              onPress={() => Alert.alert(
+              onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Recall" on "${chore.title}" from ${assignee?.name ?? 'partner'} (id=${a.id}) [features/hub/parent/backlog/OutgoingPendingCard.tsx:79]`); Alert.alert(
                 'Take this back?',
                 `"${chore.title}" will be un-delegated and assigned back to you. ${assignee?.name?.split(' ')[0] ?? 'They'} will be notified.`,
-                [{ text: 'Cancel', style: 'cancel' }, { text: 'Recall', onPress: onRecall }],
-              )}
+                [{ text: 'Cancel', style: 'cancel' }, { text: 'Recall', onPress: () => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Recall" on "${chore.title}" (id=${a.id}) → onRecall [features/hub/parent/backlog/OutgoingPendingCard.tsx:82]`); onRecall?.(); } }],
+              ); }}
               style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                 borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingVertical: 8 }}>
               <Undo2 size={13} color={colors.textSecondary} />

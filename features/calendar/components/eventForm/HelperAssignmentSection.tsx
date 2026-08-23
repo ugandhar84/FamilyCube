@@ -28,7 +28,7 @@ export default function HelperAssignmentSection({
         }
         selectedIds={helperId ? [helperId] : []}
         members={adults}
-        onToggle={handleHelperSelect}
+        onToggle={(id) => { const m = adults.find((x: any) => x.id === id); console.log(`[UserAction] FORM screen=Schedule selected "${m?.name}" (id=${id}) for helper picker category=${category} on HelperAssignmentSection [features/calendar/components/eventForm/HelperAssignmentSection.tsx:31]`); handleHelperSelect(id); }}
         colors={colors} isDark={isDark} siblings={siblings}
       />
       {/* Manual name entry for external helpers (coaches, escorts, etc.) —
@@ -41,6 +41,7 @@ export default function HelperAssignmentSection({
           placeholderTextColor={colors.textTertiary}
           value={helperName}
           onChangeText={t => { setHelperName(t); if (!t) setHelperId(undefined); }}
+          onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Helper name" on "HelperAssignmentSection category=${category}" newValue=${helperName} [features/calendar/components/eventForm/HelperAssignmentSection.tsx:43]`)}
         />
       )}
     </>

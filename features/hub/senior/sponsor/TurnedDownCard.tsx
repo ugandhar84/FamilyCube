@@ -7,11 +7,13 @@ import type { ChoreTask } from '@/store/choreStore';
 
 // Quests the grandchild turned down — GP sees the reason in their own words
 // and can reopen it to any grandchild.
-export function TurnedDownCard({ quests, members, colors, isDark, updateChore }: {
+export function TurnedDownCard({ quests, members, colors, isDark, updateChore, active }: {
   quests: ChoreTask[]; members: FamilyMember[]; colors: any; isDark: boolean;
   updateChore: (id: string, patch: Partial<ChoreTask>) => void;
+  active?: { name: string };
 }) {
   if (!quests.length) return null;
+  const actorName = active?.name ?? 'senior';
 
   return (
     <View style={{ gap: 8, marginBottom: 12 }}>
@@ -37,10 +39,10 @@ export function TurnedDownCard({ quests, members, colors, isDark, updateChore }:
                 "{c.rejectionReason}"
               </Text>
             ) : null}
-            <Pressable onPress={() => updateChore(c.id, {
+            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "Open it to any grandchild" on "${c.title}" (id=${c.id}) → updateChore(status=todo, isPool=true) [features/hub/senior/sponsor/TurnedDownCard.tsx:40]`); updateChore(c.id, {
               status: 'todo', isPool: true, assignedToId: undefined,
               targetChildIds: [], rejectionReason: undefined,
-            })}
+            }); }}
               style={{ borderRadius: 12, paddingVertical: 13, alignItems: 'center', backgroundColor: BRAND.teal }}>
               <Text style={{ fontSize: GP.sub, fontWeight: '900', color: '#fff' }}>
                 Open it to any grandchild

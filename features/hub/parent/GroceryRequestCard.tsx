@@ -23,7 +23,9 @@ export function GroceryRequestCard({
   approveRequest: (id: string, by: string) => void;
   declineRequest: (id: string, by: string) => void;
 }) {
-  const pendingItems = (req.items ?? []).filter((it: any) => it.status === 'pending');
+  const allItems = req.items ?? [];
+  const pendingItems = allItems.filter((it: any) => it.status === 'pending');
+  console.log(`[UserAction] FILTER screen=Hub role=parent member=${active.id} list=GroceryRequestCard.pendingItems on "${req.detail}" (id=${req.id}) totalSource=${allItems.length} afterFilter=${pendingItems.length} [features/hub/parent/GroceryRequestCard.tsx:27]`);
   const hasItems = (req.items ?? []).length > 0;
   const decodedGrocery = !hasItems && req.detail.startsWith(GROCERY_PREFIX) ? decodeGroceryRequest(req.detail) : null;
   const rawDetailText = !hasItems && !decodedGrocery && req.detail && req.detail !== SUPPLIES_PREFIX && req.detail !== GROCERY_PREFIX
@@ -85,12 +87,12 @@ export function GroceryRequestCard({
                 </View>
                 {item.status === 'pending' ? (
                   <View style={{ flexDirection: 'row', gap: 6 }}>
-                    <Pressable onPress={() => approveItemsAndSync(req.id, [item.id], isSupplies)}
+                    <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.id} tapped "Add" on item "${item.name}" of request "${req.detail}" (id=${req.id}) → approveItemsAndSync [features/hub/parent/GroceryRequestCard.tsx:88]`); approveItemsAndSync(req.id, [item.id], isSupplies); }}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: accent + '20', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
                       <Check size={11} color={accent} />
                       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accent }}>Add</Text>
                     </Pressable>
-                    <Pressable onPress={() => rejectItems(req.id, [item.id], active.id)}
+                    <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.id} tapped "Reject" on item "${item.name}" of request "${req.detail}" (id=${req.id}) → rejectItems [features/hub/parent/GroceryRequestCard.tsx:93]`); rejectItems(req.id, [item.id], active.id); }}
                       style={{ backgroundColor: `${colors.danger}20`, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}>
                       <X size={11} color={colors.danger} />
                     </Pressable>
@@ -108,12 +110,12 @@ export function GroceryRequestCard({
           </View>
           {pendingItems.length > 1 && (
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Pressable onPress={() => approveItemsAndSync(req.id, pendingItems.map((i: any) => i.id), isSupplies)}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.id} tapped "Add All" on "${req.detail}" (id=${req.id}) count=${pendingItems.length} → approveItemsAndSync [features/hub/parent/GroceryRequestCard.tsx:111]`); approveItemsAndSync(req.id, pendingItems.map((i: any) => i.id), isSupplies); }}
                 style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: accent + '15', borderWidth: 1, borderColor: accent + '40', paddingVertical: 8, borderRadius: 10 }}>
                 <Check size={12} color={accent} />
                 <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: accent }}>Add All</Text>
               </Pressable>
-              <Pressable onPress={() => rejectItems(req.id, pendingItems.map((i: any) => i.id), active.id)}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.id} tapped "Reject All" on "${req.detail}" (id=${req.id}) count=${pendingItems.length} → rejectItems [features/hub/parent/GroceryRequestCard.tsx:116]`); rejectItems(req.id, pendingItems.map((i: any) => i.id), active.id); }}
                 style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: `${colors.danger}15`, borderWidth: 1, borderColor: `${colors.danger}30`, paddingVertical: 8, borderRadius: 10 }}>
                 <X size={12} color={colors.danger} />
                 <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.danger }}>Reject All</Text>
@@ -123,13 +125,13 @@ export function GroceryRequestCard({
         </>
       ) : (
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Pressable onPress={() => approveRequest(req.id, active.id)}
+          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.id} tapped "Approve" on "${req.detail}" (id=${req.id}) → approveRequest [features/hub/parent/GroceryRequestCard.tsx:126]`); approveRequest(req.id, active.id); }}
             style={{ flex: 1, backgroundColor: accent, borderRadius: 10,
               paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
             <Check size={14} color="#fff" />
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>Approve</Text>
           </Pressable>
-          <Pressable onPress={() => declineRequest(req.id, active.id)}
+          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.id} tapped "Decline" on "${req.detail}" (id=${req.id}) → declineRequest [features/hub/parent/GroceryRequestCard.tsx:132]`); declineRequest(req.id, active.id); }}
             style={{ flex: 1, backgroundColor: `${colors.danger}15`, borderWidth: 1,
               borderColor: `${colors.danger}40`, borderRadius: 10, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
             <X size={14} color={colors.danger} />

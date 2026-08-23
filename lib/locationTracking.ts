@@ -17,7 +17,7 @@
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Location from 'expo-location';
 import { supabase } from './supabase';
-import { encryptMessage } from './chatCrypto';
+import { encryptLocationText } from './locationCrypto';
 
 export const LOCATION_TASK_NAME = 'family-cube-background-location';
 
@@ -182,13 +182,15 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     }
     if (!isCharging) maybeAlertLowBattery(activeMemberId, batteryLevel);
 
-    // Address/street text is encrypted with the same family AES-256-GCM key
-    // used for chat — lat/lng stay plain (the map needs them live/queryable
-    // to render pins without decrypting every row), but the human-readable
-    // "where" is sensitive the same way a chat message is.
-    const encAddress = await encryptMessage(address);
-    const encStreet  = street ? await encryptMessage(street) : null;
-    const encNeighborhood = await encryptMessage(neighborhood);
+    // Address/street text uses the same per-device envelope as chat when
+    // per_device_e2e is on (see lib/locationCrypto.ts) — falls back to the
+    // legacy shared-family key otherwise. lat/lng stay plain (the map
+    // needs them live/queryable to render pins without decrypting every
+    // row), but the human-readable "where" is sensitive the same way a
+    // chat message is.
+    const encAddress = await encryptLocationText(activeMemberId, lastFamilyId, address);
+    const encStreet  = street ? await encryptLocationText(activeMemberId, lastFamilyId, street) : null;
+    const encNeighborhood = await encryptLocationText(activeMemberId, lastFamilyId, neighborhood);
 
     const now = new Date().toISOString();
     await supabase.from('member_locations').upsert({

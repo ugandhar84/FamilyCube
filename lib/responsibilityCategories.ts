@@ -154,6 +154,26 @@ export function eventCategoryFromDomain(domain: string): string | null {
   return DOMAIN_TO_EVENT_CATEGORY[domain.toLowerCase().trim()] ?? null;
 }
 
+// Reverse of DOMAIN_ALIASES' quest-relevant entries — maps a taxonomy
+// domain slug back to this app's own QuestCategory vocabulary, for voice
+// intake feeding AddQuestModal. 'household' is deliberately ambiguous (it's
+// the reverse target of Kitchen/Room/Yard/Pet/Garage/Bathroom/Laundry/Tech/
+// Garden/Car/Cooking/Creative all at once) — mapped to 'Other' rather than
+// guessing one arbitrarily wrong, since a wrong specific category reads as
+// more broken to a parent than a neutral one they can correct in one tap.
+const DOMAIN_TO_QUEST_CATEGORY: Record<string, string> = {
+  errand:    'Errand',
+  school:    'School',
+  financial: 'Finance',
+  medical:   'Health',
+  social:    'Social',
+};
+
+/** Resolve a taxonomy domain slug (e.g. "errand") back to this app's QuestCategory (e.g. "Errand"). Returns null when the domain has no natural, unambiguous quest-category equivalent — caller should fall back to 'Other' (or leave category inference to the title, as AddQuestModal already does). */
+export function questCategoryFromDomain(domain: string): string | null {
+  return DOMAIN_TO_QUEST_CATEGORY[domain.toLowerCase().trim()] ?? null;
+}
+
 /** Subcategories for one domain, in sort order — feeds the optional subcategory refinement chips. */
 export async function fetchSubcategoriesForDomain(domain: string): Promise<ResponsibilityCategory[]> {
   const grouped = await fetchCategoriesByDomain();

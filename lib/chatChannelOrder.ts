@@ -34,10 +34,25 @@ export async function loadPinnedChannels(memberId: string): Promise<string[]> {
 
 export async function togglePinnedChannel(memberId: string, channelId: string, pin: boolean): Promise<void> {
   if (pin) {
+    // Check-then-insert, not upsert(ignoreDuplicates) — confirmed via
+    // direct testing (store/chatStore.ts's ensureDmChannelRow/
+    // ensureGroupChannelRow) that Supabase's upsert with
+    // ignoreDuplicates:true (Prefer: resolution=ignore-duplicates) fails
+    // RLS's INSERT policy even on a genuinely fresh row with zero
+    // conflict, while an otherwise-identical plain insert succeeds.
+    const { data: existing } = await supabase
+      .from('chat_pinned_channels')
+      .select('member_id')
+      .eq('member_id', memberId)
+      .eq('channel_id', channelId)
+      .maybeSingle();
+    if (existing) return;
     const { error } = await supabase
       .from('chat_pinned_channels')
-      .upsert({ member_id: memberId, channel_id: channelId }, { onConflict: 'member_id,channel_id', ignoreDuplicates: true });
-    if (error) console.warn('[chatChannelOrder] pin failed', error.message);
+      .insert({ member_id: memberId, channel_id: channelId });
+    // A duplicate-key error means another device won the race and pinned
+    // it between our SELECT and INSERT — not a real failure.
+    if (error && error.code !== '23505') console.warn('[chatChannelOrder] pin failed', error.message);
   } else {
     const { error } = await supabase
       .from('chat_pinned_channels')

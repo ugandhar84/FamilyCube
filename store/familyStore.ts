@@ -119,6 +119,17 @@ export interface FamilyMember {
   // them set their own, shown on both their own Piggy Bank sheet and the
   // parent-facing Perks page.
   goalRewardId?: string;
+  // 'YYYY-MM-DD' — collected post-onboarding via CompleteProfileScreen, not
+  // at join time (a brand-new member shouldn't have to hand over a birth
+  // date before they've even seen the app). Optional/nullable indefinitely;
+  // skipping it is a real, supported choice, not a temporary gap.
+  dateOfBirth?: string;
+  // Set once a member has independent auth (accepted a member_invitations
+  // email invite, or joined via invite code on their own anonymous-auth
+  // device) — undefined for a locally-added PIN-only profile riding on
+  // another member's session. Purely informational client-side (e.g. a
+  // "joined via invite" badge); never a permission gate.
+  email?: string;
 }
 
 interface FamilyState {
@@ -209,6 +220,8 @@ function fromRow(row: any): FamilyMember {
     gpWeeklyRideCap:    row.gp_weekly_ride_cap    ?? 2,
     linkedParentId:     row.linked_parent_id ?? undefined,
     goalRewardId:       row.goal_reward_id ?? undefined,
+    email:              row.email ?? undefined,
+    dateOfBirth:        row.date_of_birth ?? undefined,
   };
 }
 
@@ -244,6 +257,7 @@ function toRow(m: FamilyMember) {
     gp_weekly_ride_cap:    m.gpWeeklyRideCap    ?? 2,
     linked_parent_id:      m.linkedParentId ?? null,
     goal_reward_id:        m.goalRewardId ?? null,
+    date_of_birth:         m.dateOfBirth ?? null,
   };
 }
 
@@ -278,11 +292,23 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   },
 
   addMember: async (member) => {
-    // Insert into DB and get back the generated ID
+    // Insert into DB and get back the generated ID. Was previously omitting
+    // family_id/auth_user_id entirely — members_insert's RLS policy
+    // (auth_user_id = auth.uid() OR family_id = current_user_family_id())
+    // then fails outright for any caller whose auth identity isn't already
+    // literally on the inserted row, which this bare insert could never
+    // satisfy — every call silently no-op'd via the error branch below.
+    const active = get().members.find(m => m.id === get().activeMemberId);
+    const { data: { user } } = await supabase.auth.getUser();
     const row = { ...toRow({ ...member, id: '' }), id: undefined };
     const { data, error } = await supabase
       .from('members')
-      .insert([{ name: row.name, role: row.role, avatar: row.avatar, coins: row.coins, xp: row.xp, streak: row.streak, level: row.level }])
+      .insert([{
+        name: row.name, role: row.role, avatar: row.avatar,
+        coins: row.coins, xp: row.xp, streak: row.streak, level: row.level,
+        family_id: active?.familyId ?? null,
+        auth_user_id: user?.id ?? null,
+      }])
       .select()
       .single();
     if (error || !data) { console.warn('[familyStore] addMember:', error?.message); return; }

@@ -142,7 +142,7 @@ export default function FamilyChoiceScreen() {
             <View style={s.cardText}>
               <Text style={[s.cardTitle, { color: colors.textPrimary }]}>Join with Code</Text>
               <Text style={[s.cardDesc, { color: colors.textSecondary }]}>
-                I have a 6-digit code from a parent
+                I have an invite code from a parent
               </Text>
             </View>
             <Text style={s.arrow}>→</Text>

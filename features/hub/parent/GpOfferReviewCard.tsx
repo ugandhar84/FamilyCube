@@ -44,20 +44,20 @@ export function GpOfferReviewCard({ c, members, colors, isDark, active, acceptGP
       ) : null}
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <Pressable
-          onPress={() => Alert.prompt
+          onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Decline" on "${c.title}" (id=${c.id}) [features/hub/parent/GpOfferReviewCard.tsx:47]`); Alert.prompt
             ? Alert.prompt('Decline Offer',
                 `Let ${gp?.name?.split(' ')[0] ?? 'them'} know why (optional) — "${c.title}" goes back to the open pool.`,
                 [
                   { text: 'Cancel', style: 'cancel' },
-                  { text: 'Decline', style: 'destructive', onPress: (reason?: string) => declineGPOffer(c.id, active.id, reason?.trim() || undefined) },
+                  { text: 'Decline', style: 'destructive', onPress: (reason?: string) => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Decline" on "${c.title}" (id=${c.id}) → declineGPOffer [features/hub/parent/GpOfferReviewCard.tsx:52]`); declineGPOffer(c.id, active.id, reason?.trim() || undefined); } },
                 ],
                 'plain-text')
-            : declineGPOffer(c.id, active.id)}
+            : (() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Decline" on "${c.title}" (id=${c.id}) → declineGPOffer [features/hub/parent/GpOfferReviewCard.tsx:55]`); declineGPOffer(c.id, active.id); })(); }}
           style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10,
             borderWidth: 1.5, borderColor: colors.danger + '50' }}>
           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.danger }}>Decline</Text>
         </Pressable>
-        <Pressable onPress={() => acceptGPOffer(c.id, active.id)}
+        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Accept Offer" on "${c.title}" (id=${c.id}) → acceptGPOffer [features/hub/parent/GpOfferReviewCard.tsx:60]`); acceptGPOffer(c.id, active.id); }}
           style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
             paddingVertical: 10, borderRadius: 10, backgroundColor: colors.teal }}>
           <CheckCircle2 size={13} color="#fff" />

@@ -19,7 +19,7 @@ export default function MemberPicker({ label, selectedIds, members, onToggle, on
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <Text style={[f.label, { color: colors.textSecondary }]}>{label}</Text>
         {onSelectAll && members.length > 1 && (
-          <TouchableOpacity onPress={onSelectAll}
+          <TouchableOpacity onPress={() => { console.log(`[UserAction] FORM screen=Schedule tapped "${allSelected ? 'Deselect' : 'Select'} all" for "${label}" on MemberPicker [features/calendar/components/eventForm/MemberPicker.tsx:22]`); onSelectAll(); }}
             style={{ backgroundColor: allSelected ? BRAND.purple + '22' : (isDark ? '#1E293B' : '#F1F5F9'), borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: allSelected ? BRAND.purple : (isDark ? '#334155' : '#E2E8F0') }}>
             <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: allSelected ? BRAND.purple : colors.textTertiary }}>
               {allSelected ? '✓ All' : 'All'}
@@ -35,7 +35,7 @@ export default function MemberPicker({ label, selectedIds, members, onToggle, on
             <TouchableOpacity
               key={m.id}
               style={{ alignItems: 'center', gap: 4, opacity: isLocked ? 1 : 1 }}
-              onPress={() => !isLocked && onToggle(m.id)}
+              onPress={() => { if (isLocked) return; console.log(`[UserAction] FORM screen=Schedule selected "${m.name}" (id=${m.id}) for "${label}" on MemberPicker newValue=${!sel} [features/calendar/components/eventForm/MemberPicker.tsx:38]`); onToggle(m.id); }}
               disabled={isLocked}
             >
               <View style={{ position: 'relative' }}>

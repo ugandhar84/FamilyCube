@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import GoogleIcon from '@/components/GoogleIcon';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useTheme } from '@/lib/ThemeContext';
-import PawBondLogo from '@/components/PawBondLogo';
+import { AnimatedCubeMark } from '@/components/FamilyCubeLogo';
 import { RADIUS, SPACING , TYPO } from '@/constants/theme';
 
 function friendlyAuthError(msg: string): string {
@@ -66,27 +66,54 @@ export default function SignupScreen() {
       return;
     }
     setLoading(true);
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim().toLowerCase(),
-      password,
-      options: {
-        data: {
-          full_name: fullName.trim(),
+    let data: Awaited<ReturnType<typeof supabase.auth.signUp>>['data'] | undefined;
+    let error: Awaited<ReturnType<typeof supabase.auth.signUp>>['error'] | undefined;
+    try {
+      ({ data, error } = await supabase.auth.signUp({
+        email: email.trim().toLowerCase(),
+        password,
+        options: {
+          data: {
+            full_name: fullName.trim(),
+          },
+          emailRedirectTo: 'pawbond://auth/callback',
         },
-        emailRedirectTo: 'pawbond://auth/callback',
-      },
-    });
+      }));
+    } catch (e: any) {
+      // A thrown network/unexpected error here previously left the screen on
+      // its loading state forever with nothing shown — always resolve to a
+      // visible alert and stay on this screen, never a silent stuck/blank
+      // state.
+      setLoading(false);
+      showAlert('Signup failed', friendlyAuthError(e?.message ?? ''));
+      return;
+    }
     setLoading(false);
     if (error) {
       showAlert('Signup failed', friendlyAuthError(error.message));
       return;
     }
-    if (data.user && !data.session) {
+    // Supabase's signUp deliberately does NOT return an error for an
+    // already-registered email (anti-enumeration) — it instead returns a
+    // user object whose identities array is empty. This was previously
+    // unhandled, so a repeat signup fell through to the "auto-confirmed,
+    // let _layout.tsx route it" no-op branch below with no session and no
+    // profile to route on — the actual cause of the reported blank screen.
+    if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      showAlert(
+        'Account already exists',
+        'An account with this email already exists. Try signing in instead.',
+        [{ text: 'Sign in', onPress: () => router.replace('/(auth)/login') }, { text: 'Cancel', style: 'cancel' }]
+      );
+      return;
+    }
+    if (data?.user && !data.session) {
       showAlert(
         'Verify your email',
         'We sent a confirmation link to your email. Click it to activate your account.',
         [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }]
       );
+      return;
     }
     // Auto-confirmed: don't navigate here — _layout.tsx onAuthStateChange will
     // check terms_accepted and route to /onboarding, then through the full flow.
@@ -213,7 +240,7 @@ export default function SignupScreen() {
           </TouchableOpacity>
 
           <View style={s.header}>
-            <PawBondLogo size={80} animated isDark={isDark} />
+            <AnimatedCubeMark size={80} />
             <Text style={s.title}>Create your account</Text>
             <Text style={s.sub}>Start your Family Cube journey today</Text>
           </View>
@@ -308,6 +335,19 @@ export default function SignupScreen() {
               <Text style={s.linkText}>
                 Already have an account?{'  '}
                 <Text style={{ color: colors.primaryText ?? colors.primary, fontWeight: '600' }}>Sign in</Text>
+              </Text>
+            </TouchableOpacity>
+
+            {/* Someone without their own email (a kid or grandparent joining
+                a family someone else set up) doesn't belong on this form at
+                all — sends them back to the login screen's fork, where "I'm
+                joining a family" is the actual first-class path (handles
+                the anonymous-auth join-code flow there, not duplicated
+                here). */}
+            <TouchableOpacity style={s.linkBtn} onPress={() => router.replace('/(auth)/login')}>
+              <Text style={s.linkText}>
+                No email?{'  '}
+                <Text style={{ color: colors.primaryText ?? colors.primary, fontWeight: '600' }}>Join with an invite code instead</Text>
               </Text>
             </TouchableOpacity>
           </View>

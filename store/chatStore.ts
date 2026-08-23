@@ -12,7 +12,10 @@ import { supabase } from '@/lib/supabase';
 import {
   encryptMessage, decryptMessage,
   buildBlindIndex, hashQuery,
+  getDeviceId, encryptForDevices, decryptFromDevice,
 } from '@/lib/chatCrypto';
+import { ensureDeviceRegistered, getFamilyDeviceDirectory } from '@/lib/deviceRegistry';
+import { isFeatureEnabled } from '@/lib/featureFlags';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,6 +53,7 @@ interface DBRow {
   id: string;
   channel_id: string;
   sender_id: string;
+  sender_device_id?: string | null;
   text: string;           // ciphertext stored here
   ciphertext?: string;    // older rows may use this name
   blind_index: string[];
@@ -129,33 +133,134 @@ const _ensuredDmChannels = new Set<string>();
 async function ensureDmChannelRow(channelId: string, memberAId: string, memberBId: string): Promise<void> {
   if (!channelId.startsWith('dm_') || _ensuredDmChannels.has(channelId)) return;
   try {
+    // Check-then-insert, not upsert(ignoreDuplicates) — confirmed via
+    // direct testing that Supabase's upsert with ignoreDuplicates:true
+    // (Prefer: resolution=ignore-duplicates) fails RLS's INSERT policy
+    // even on a genuinely fresh row with zero conflict, while an
+    // otherwise-identical plain insert succeeds. Same root cause already
+    // fixed for ensureGroupChannelRow — applying the same pattern here.
+    const { data: existing } = await supabase.from('chat_channels').select('id').eq('id', channelId).maybeSingle();
+    if (existing) { _ensuredDmChannels.add(channelId); return; }
+
     const { useFamilyStore } = require('./familyStore');
     const members: any[] = useFamilyStore.getState().members;
     const memberA = members.find(m => m.id === memberAId);
     const memberB = members.find(m => m.id === memberBId);
     const familyId = memberA?.familyId ?? memberB?.familyId;
     if (!familyId) return;
-    const { error } = await supabase.from('chat_channels').upsert({
+    const { error } = await supabase.from('chat_channels').insert({
       id: channelId,
       family_id: familyId,
       type: 'direct',
       name: memberB?.name ?? memberA?.name ?? 'Direct Message',
       member_ids: [memberAId, memberBId],
       icon: '💬',
-    }, { onConflict: 'id', ignoreDuplicates: true });
-    if (error) { console.warn('[chatStore] ensureDmChannelRow failed', error.message); return; }
+    });
+    // A duplicate-key error means another device won the race and
+    // created it between our SELECT and INSERT — not a real failure.
+    if (error && error.code !== '23505') { console.warn('[chatStore] ensureDmChannelRow failed', error.message); return; }
     _ensuredDmChannels.add(channelId);
   } catch (e: any) {
     console.warn('[chatStore] ensureDmChannelRow failed', e?.message ?? e);
   }
 }
 
-async function rowToMessage(row: DBRow): Promise<ChatMessage> {
+// chat_channels never had rows for the fixed group channels ('all',
+// 'parents', 'seniors_a', 'seniors_b', 'seniors_all') at all — unlike DMs,
+// which at least had a (broken) row from the old scheme. Every existing
+// send to a group channel was silently failing RLS
+// (chat_messages_insert requires channel_id IN (SELECT id FROM
+// chat_channels WHERE family_id = ...)), confirmed via direct query: none
+// of these ids exist in chat_channels for any family. Visibility for these
+// ids is computed server-side by is_chat_channel_participant() based on
+// role, not a stored member_ids array (unlike DMs), so the row here only
+// needs id/family_id/type/name to exist at all.
+const GROUP_CHANNEL_NAMES: Record<string, string> = {
+  all: '#all-family',
+  parents: '#parents-vault',
+  seniors_a: 'Grandparents',
+  seniors_b: 'Grandparents',
+  seniors_all: '#the-grand-squad',
+};
+const _ensuredGroupChannels = new Set<string>();
+async function ensureGroupChannelRow(channelId: string, senderId: string): Promise<void> {
+  if (!GROUP_CHANNEL_IDS.has(channelId) || _ensuredGroupChannels.has(channelId)) return;
+  try {
+    // Check-then-insert, not upsert(ignoreDuplicates) — an upsert's ON
+    // CONFLICT DO NOTHING still evaluates the INSERT policy's WITH CHECK
+    // on the attempted row before the conflict is resolved, so a plain
+    // upsert kept failing RLS here even when the row already existed and
+    // the "duplicate" would've been silently discarded anyway. Since
+    // chat_channels.id for these fixed ids is a bare global string (not
+    // scoped per-family), a SELECT-first check also avoids re-attempting
+    // the INSERT at all once any device has already created the row.
+    const { data: existing } = await supabase.from('chat_channels').select('id').eq('id', channelId).maybeSingle();
+    if (existing) { _ensuredGroupChannels.add(channelId); return; }
+
+    const { useFamilyStore } = require('./familyStore');
+    const members: any[] = useFamilyStore.getState().members;
+    const sender = members.find(m => m.id === senderId);
+    const familyId = sender?.familyId;
+    if (!familyId) return;
+    const { error } = await supabase.from('chat_channels').insert({
+      id: channelId,
+      family_id: familyId,
+      type: 'group',
+      name: GROUP_CHANNEL_NAMES[channelId] ?? channelId,
+      icon: '💬',
+    });
+    // A duplicate-key error here means another device won the race and
+    // created it between our SELECT and INSERT — not a real failure.
+    if (error && error.code !== '23505') { console.warn('[chatStore] ensureGroupChannelRow failed', error.message); return; }
+    _ensuredGroupChannels.add(channelId);
+  } catch (e: any) {
+    console.warn('[chatStore] ensureGroupChannelRow failed', e?.message ?? e);
+  }
+}
+
+// Device registration/directory lookup moved to lib/deviceRegistry.ts so
+// lib/locationTracking.ts (location's own per-device envelope) can reuse
+// the exact same logic instead of duplicating it. Entirely inert while
+// per_device_e2e is off.
+
+/**
+ * Resolve the plaintext for one message. When per_device_e2e is on and this
+ * device has its own chat_message_keys row for the message, decrypt via the
+ * multi-device envelope (looking up the sender's public key to re-derive
+ * the ECDH shared secret). Otherwise falls back to the legacy single
+ * shared-key decrypt — covers both "flag is off" and "this is an older
+ * message sent before the flag was enabled" without a separate migration.
+ */
+async function resolveMessageText(row: DBRow): Promise<string> {
   const cipher = row.ciphertext ?? row.text ?? '';
+  if (!isFeatureEnabled('per_device_e2e')) return decryptMessage(cipher);
+  try {
+    const deviceId = await getDeviceId();
+    const { data: keyRow } = await supabase
+      .from('chat_message_keys')
+      .select('wrapped_key')
+      .eq('message_id', row.id)
+      .eq('device_id', deviceId)
+      .maybeSingle();
+    if (!keyRow || !row.sender_device_id) return decryptMessage(cipher); // legacy message, no envelope for this device
+    const { data: senderDevice } = await supabase
+      .from('device_keys')
+      .select('public_key')
+      .eq('device_id', row.sender_device_id)
+      .maybeSingle();
+    if (!senderDevice) return decryptMessage(cipher);
+    return decryptFromDevice(cipher, keyRow.wrapped_key, senderDevice.public_key);
+  } catch (e: any) {
+    console.warn('[chatStore] resolveMessageText envelope decrypt failed, falling back', e?.message ?? e);
+    return decryptMessage(cipher);
+  }
+}
+
+async function rowToMessage(row: DBRow): Promise<ChatMessage> {
   return {
     id:            row.id,
     senderId:      row.sender_id,
-    text:          await decryptMessage(cipher),
+    text:          await resolveMessageText(row),
     timestamp:     row.created_at,
     reactions:     row.reactions ?? {},
     imageUri:      row.image_url ?? undefined,
@@ -546,9 +651,42 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // new composite id, so ensure one before writing the message itself.
     if (channelId !== originalChannelArg) {
       await ensureDmChannelRow(channelId, senderId, originalChannelArg);
+    } else {
+      await ensureGroupChannelRow(channelId, senderId);
     }
-    const ciphertext   = await encryptMessage(text);
     const blind_index  = await buildBlindIndex(text);
+
+    // Per-device envelope (feature-flagged, see lib/chatCrypto.ts's design
+    // doc) — encrypt once with a fresh session key, wrap that key once per
+    // recipient device. Falls back to the legacy single shared-key encrypt
+    // when the flag is off, so this is fully inert until explicitly enabled.
+    let ciphertext: string;
+    let senderDeviceId: string | undefined;
+    let wrappedKeysToInsert: { deviceId: string; wrappedKey: string }[] = [];
+    if (isFeatureEnabled('per_device_e2e')) {
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const members: any[] = useFamilyStore.getState().members;
+        const sender = members.find(m => m.id === senderId);
+        const familyId = sender?.familyId;
+        if (familyId) {
+          await ensureDeviceRegistered(familyId, senderId);
+          const directory = await getFamilyDeviceDirectory(familyId);
+          const myDeviceId = await getDeviceId();
+          senderDeviceId = myDeviceId;
+          const envelope = await encryptForDevices(text, directory);
+          ciphertext = envelope.ciphertext;
+          wrappedKeysToInsert = envelope.wrappedKeys;
+        } else {
+          ciphertext = await encryptMessage(text);
+        }
+      } catch (e: any) {
+        console.warn('[chatStore] per-device envelope encrypt failed, falling back to legacy', e?.message ?? e);
+        ciphertext = await encryptMessage(text);
+      }
+    } else {
+      ciphertext = await encryptMessage(text);
+    }
 
     // Generate UUID client-side — don't rely on DB default in case column was added later
     const msgId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -580,6 +718,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         id:          msgId,
         channel_id:  channelId,
         sender_id:   senderId,
+        sender_device_id: senderDeviceId ?? null,
         text:        ciphertext,
         blind_index,
         timestamp:   now,
@@ -597,6 +736,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
       const { error } = await supabase.from('chat_messages').insert(row);
       if (error) throw error;
+      if (wrappedKeysToInsert.length > 0) {
+        const { error: keysError } = await supabase.from('chat_message_keys').insert(
+          wrappedKeysToInsert.map(k => ({ message_id: msgId, device_id: k.deviceId, wrapped_key: k.wrappedKey })),
+        );
+        if (keysError) console.warn('[chatStore] chat_message_keys insert failed', keysError.message);
+      }
       // Fire mention-notify if message contains @mentions
       const mentions = [...(text ?? '').matchAll(/@(\w+)/g)].map(m => m[1]);
       if (mentions.length > 0) {

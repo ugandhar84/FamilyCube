@@ -12,7 +12,7 @@ import { useRouter } from 'expo-router';
 import { Radio, Battery, Zap } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
-import { decryptMessage } from '@/lib/chatCrypto';
+import { decryptLocationText } from '@/lib/locationCrypto';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { SectionCard } from '../hubComponents';
 import type { FamilyMember } from '@/store/familyStore';
@@ -49,7 +49,7 @@ export function FamilyRadarSection({ members, colors, isDark }: {
     const { data } = await supabase.from('member_locations')
       .select('member_id, address, lat, lng, battery_level, is_charging, last_updated');
     const decrypted = await Promise.all((data ?? []).map(async (r: any) => ({
-      ...r, address: r.address ? await decryptMessage(r.address) : r.address,
+      ...r, address: r.address ? await decryptLocationText(r.member_id, r.address) : r.address,
     })));
     setRows(decrypted);
     setLoading(false);

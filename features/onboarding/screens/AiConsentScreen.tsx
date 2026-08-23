@@ -62,7 +62,7 @@ export default function AiConsentScreen() {
             <Text style={s.heroEmoji}>🧠</Text>
             <Text style={s.title}>AI Mood Analysis</Text>
             <Text style={s.subtitle}>
-              PawBond's Mood Scan feature can read your pet's emotional state from photos using AI.
+              Family Cube's Mood Scan feature can read your pet's emotional state from photos using AI.
               Here's exactly how PeopleOnTech LLC handles your data.
             </Text>
           </View>

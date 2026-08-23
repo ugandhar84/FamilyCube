@@ -41,7 +41,6 @@ import { fmtDate, fmtDateShort, fmtTimeParts } from '@/lib/dates';
 import { AddEventModal as EventFormAdd, EditEventModal } from './EventFormModal';
 import { KidRequestModal } from './KidRequestModal';
 import { EventDetailSheet } from '@/features/hub/hubComponents';
-import AddIntakeChooser from '@/components/AddIntakeChooser';
 import { useChatStore } from '@/store/chatStore';
 import { relationalNameByName } from '@/lib/format';
 import { EventCardTimeline, BusyBlockCard, roleStyle, catStyle, LocationLink } from './components/EventCard';
@@ -506,6 +505,7 @@ export default function CalendarScreen() {
   const [selectedDate, setSelectedDate] = useState(toDateStr(new Date()));
   const todayStr = toDateStr(new Date());
   const goToToday = () => {
+    console.log(`[UserAction] screen=Schedule role=${isParent ? 'parent' : isSenior ? 'senior' : isTeen ? 'teen' : isKid ? 'kid' : 'unknown'} member=${activeMemberName} tapped "Today" → selectedDate=${todayStr} [features/calendar/CalendarScreen.tsx:509]`);
     setSelectedDate(todayStr);
     storeSelectDate(todayStr);
     loadStrip(get15Days(todayStr));
@@ -561,7 +561,6 @@ export default function CalendarScreen() {
   // per family member. My Schedule/All is only a kid/teen/senior concept.
   const [scheduleFilter, setScheduleFilter] = useState<'mine' | 'all'>(isParent ? 'all' : 'mine');
   const [showAdd,       setShowAdd]       = useState(false);
-  const [showAddChooser, setShowAddChooser] = useState(false);
   const [addPrefill, setAddPrefill] = useState<{
     title: string; category?: string; memberId?: string; startAt?: string; notes?: string;
   } | undefined>(undefined);
@@ -690,17 +689,22 @@ export default function CalendarScreen() {
   const [showAiPanel,    setShowAiPanel]    = useState(false);
   const [appliedSwaps,   setAppliedSwaps]   = useState<Record<string, boolean>>({});
 
+  const roleLabel = isParent ? 'parent' : isSenior ? 'senior' : isTeen ? 'teen' : isKid ? 'kid' : 'unknown';
+
   const switchMember = () => {
     const idx = members.findIndex(m => m.id === activeMember?.id);
     const next = members[(idx + 1) % members.length];
+    console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped persona avatar → switch active member to "${next?.name}" (id=${next?.id}) [features/calendar/CalendarScreen.tsx:695]`);
     if (next) setActiveMember(next.id);
   };
 
   const runAiScan = async () => {
+    console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "AI Conflict Scan" → runAiScan [features/calendar/CalendarScreen.tsx:701]`);
     setIsAnalyzing(true);
     setShowAiPanel(true);
     const todayStr = toDateStr(new Date());
     const futureEvents = events.filter(e => e.date >= todayStr);
+    console.log(`[UserAction] FILTER screen=Schedule role=${roleLabel} member=${activeMemberName} list=futureEvents(AI scan) totalSource=${events.length} afterFilter=${futureEvents.length} [features/calendar/CalendarScreen.tsx:705]`);
     const result = await detectRealConflicts(futureEvents, members);
     setAiResult(result);
     setIsAnalyzing(false);
@@ -713,6 +717,7 @@ export default function CalendarScreen() {
     // rejected helper", which could patch the wrong event entirely once more
     // than one conflict was in play.
     const targetIds = conflict.eventIds?.length ? conflict.eventIds : [events[0]?.id].filter(Boolean) as string[];
+    console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Apply Swap" on conflict idx=${idx} (eventIds=${targetIds.join(',')}) → updateEvent helper=${conflict.recommendedDriverSwap} [features/calendar/CalendarScreen.tsx:718]`);
     targetIds.forEach(id => {
       updateEvent(id, { helper: conflict.recommendedDriverSwap, helperStatus: 'pending', conflict: false });
     });
@@ -790,6 +795,7 @@ export default function CalendarScreen() {
       if (!map[r.date]) map[r.date] = [];
       if (!map[r.date].includes(r.category)) map[r.date].push(r.category);
     }
+    console.log(`[UserAction] FILTER screen=Schedule role=${roleLabel} member=${activeMemberName} list=filteredStripMap totalSource=${stripRows.length} afterFilter=${Object.keys(map).length} dates [features/calendar/CalendarScreen.tsx:800]`);
     return map;
   }, [stripMap, stripRows, filterMember, filterMemberName, scheduleFilter, isKid, isTeen, isParent, activeMemberId]);
 
@@ -805,7 +811,7 @@ export default function CalendarScreen() {
 
   // Filtered events for selected day
   const dayEvents = useMemo(() => {
-    return events
+    const filtered = events
       .filter(e => e.date === selectedDate &&
         e.category !== 'Holiday' &&
         // Scenarios 2.6/2.10/5.4/5.5 — a sensitive/private/Medical event is
@@ -872,6 +878,8 @@ export default function CalendarScreen() {
           helper: undefined, driverName: undefined,
         };
       });
+    console.log(`[UserAction] FILTER screen=Schedule role=${roleLabel} member=${activeMemberName} list=dayEvents(${selectedDate}) totalSource=${events.length} afterFilter=${filtered.length} scheduleFilter=${scheduleFilter} filterMember=${filterMember ?? 'none'} [features/calendar/CalendarScreen.tsx:883]`);
+    return filtered;
   }, [events, selectedDate, filterMember, filterMemberName, scheduleFilter, isSenior, isKid, isTeen, isParent, activeMemberId, activeMemberName, searchQuery]);
 
   // Same RBAC shape as dayEvents but across rangeEvents' multi-date window
@@ -879,7 +887,7 @@ export default function CalendarScreen() {
   // Family). Kids get full visibility here too — same reasoning as
   // dayEvents above.
   const scopedRangeEvents = useMemo(() => {
-    return rangeEvents.filter(e =>
+    const filtered = rangeEvents.filter(e =>
       e.category !== 'Holiday' &&
       // Same sensitivity gate as dayEvents above.
       sensitiveVisibility(e) !== 'hidden' &&
@@ -924,6 +932,8 @@ export default function CalendarScreen() {
         helper: undefined, driverName: undefined,
       };
     });
+    console.log(`[UserAction] FILTER screen=Schedule role=${roleLabel} member=${activeMemberName} list=scopedRangeEvents totalSource=${rangeEvents.length} afterFilter=${filtered.length} scheduleFilter=${scheduleFilter} filterMember=${filterMember ?? 'none'} [features/calendar/CalendarScreen.tsx:934]`);
+    return filtered;
   }, [rangeEvents, isSenior, isKid, isTeen, isParent, activeMemberName, activeMemberId, filterMember, filterMemberName, searchQuery, scheduleFilter]);
 
   // Events where senior can volunteer as helper (has a pending/no helper, dated today or future)
@@ -969,7 +979,7 @@ export default function CalendarScreen() {
                   {selectedDateLabel}
                 </Text>
                 {selectedDate !== todayStr && (
-                  <TouchableOpacity onPress={goToToday}
+                  <TouchableOpacity onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Today" pill [features/calendar/CalendarScreen.tsx:984]`); goToToday(); }}
                     style={{ borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: BRAND.purple + '15' }}>
                     <Text style={{ fontSize: 11, fontWeight: '800', color: BRAND.purple }}>Today</Text>
                   </TouchableOpacity>
@@ -991,7 +1001,7 @@ export default function CalendarScreen() {
                 aiResult={aiResult}
                 appliedSwaps={appliedSwaps}
                 onRunScan={runAiScan}
-                onClosePanel={() => setShowAiPanel(false)}
+                onClosePanel={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Close" on AI conflict panel [features/calendar/CalendarScreen.tsx:1006]`); setShowAiPanel(false); }}
                 onApplySwap={handleApplySwap}
                 colors={colors} isDark={isDark}
               />
@@ -1001,18 +1011,18 @@ export default function CalendarScreen() {
               <>
                 {/* List view toggle — defaults on for kids */}
                 <TouchableOpacity
-                  onPress={() => setCompact(v => !v)}
+                  onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Compact list view" newValue=${!compact} [features/calendar/CalendarScreen.tsx:1016]`); setCompact(v => !v); }}
                   style={[calCardStyles.headerBtnOutline, { borderColor: compact ? BRAND.purple : colors.border, backgroundColor: compact ? BRAND.purple + '15' : 'transparent' }]}>
                   <I.List c={compact ? BRAND.purple : colors.textTertiary} size={14} />
                 </TouchableOpacity>
-                <TouchableOpacity style={[calCardStyles.headerBtn, { backgroundColor: BRAND.amber }]} onPress={() => setShowAskHelp(true)}>
+                <TouchableOpacity style={[calCardStyles.headerBtn, { backgroundColor: BRAND.amber }]} onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "+ Ask Help" → open KidRequestModal [features/calendar/CalendarScreen.tsx:1020]`); setShowAskHelp(true); }}>
                   <I.HelpCircle c="#0F172A" size={14} />
                   <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>+ Ask Help</Text>
                 </TouchableOpacity>
               </>
             ) : (
               isParentOrSenior && (
-                <TouchableOpacity style={[calCardStyles.headerBtn, { backgroundColor: BRAND.purple }]} onPress={() => setShowAddChooser(true)}>
+                <TouchableOpacity style={[calCardStyles.headerBtn, { backgroundColor: BRAND.purple }]} onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "+ Event" → open AddEventModal [features/calendar/CalendarScreen.tsx:1027]`); setShowAdd(true); }}>
                   <I.Plus c="#fff" size={14} />
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Event</Text>
                 </TouchableOpacity>
@@ -1033,7 +1043,7 @@ export default function CalendarScreen() {
               aiResult={aiResult}
               appliedSwaps={appliedSwaps}
               onRunScan={runAiScan}
-              onClosePanel={() => setShowAiPanel(false)}
+              onClosePanel={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Close" on standalone AI conflict panel [features/calendar/CalendarScreen.tsx:1048]`); setShowAiPanel(false); }}
               onApplySwap={handleApplySwap}
               colors={colors} isDark={isDark}
             />
@@ -1048,7 +1058,7 @@ export default function CalendarScreen() {
               contentContainerStyle={{ paddingHorizontal: 14, gap: 8, paddingTop: 10 }}>
               <TouchableOpacity
                 style={[sc.pill, !filterMember ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple } : { backgroundColor: isDark ? colors.surface : '#F5F4FA', borderColor: isDark ? colors.border : 'rgba(146,97,199,0.2)' }]}
-                onPress={() => setFilterMember(null)}>
+                onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "All Family" for "member filter" [features/calendar/CalendarScreen.tsx:1063]`); setFilterMember(null); }}>
                 <Text style={[sc.pillText, { color: !filterMember ? '#fff' : colors.textSecondary }]}>All Family</Text>
               </TouchableOpacity>
               {members.map(m => {
@@ -1057,7 +1067,7 @@ export default function CalendarScreen() {
                 return (
                   <TouchableOpacity key={m.id}
                     style={[sc.pill, isSel ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple } : { backgroundColor: isDark ? colors.surface : '#F5F4FA', borderColor: isDark ? colors.border : 'rgba(146,97,199,0.2)' }]}
-                    onPress={() => setFilterMember(isSel ? null : m.id)}>
+                    onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${m.name}" (id=${m.id}) for "member filter" newValue=${isSel ? 'cleared' : m.id} [features/calendar/CalendarScreen.tsx:1072]`); setFilterMember(isSel ? null : m.id); }}>
                     <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isSel ? '#fff' : rs.dot }} />
                     <Text style={[sc.pillText, { color: isSel ? '#fff' : colors.textSecondary }]}>{m.name.split(' ')[0]}</Text>
                   </TouchableOpacity>
@@ -1087,7 +1097,7 @@ export default function CalendarScreen() {
                   { key: 'week' as const,   label: 'Week' },
                   { key: 'day' as const,    label: 'Day' },
                 ]).map(v => (
-                  <TouchableOpacity key={v.key} onPress={() => setViewMode(v.key)}
+                  <TouchableOpacity key={v.key} onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${v.label}" for "view mode" [features/calendar/CalendarScreen.tsx:1102]`); setViewMode(v.key); }}
                     style={{
                       flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 9,
                       backgroundColor: viewMode === v.key ? colors.card : 'transparent',
@@ -1114,7 +1124,7 @@ export default function CalendarScreen() {
               backgroundColor: isDark ? colors.surface : '#F1F5F9', borderRadius: 12, padding: 3 }}>
               {([{ key: 'mine', label: 'My Schedule' }, { key: 'all', label: 'All' }] as const).map(t => (
                 <TouchableOpacity key={t.key}
-                  onPress={() => { setScheduleFilter(t.key); if (t.key === 'mine') setFilterMember(null); }}
+                  onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${t.label}" for "schedule scope" [features/calendar/CalendarScreen.tsx:1129]`); setScheduleFilter(t.key); if (t.key === 'mine') setFilterMember(null); }}
                   style={{ flex: 1, borderRadius: 9, paddingVertical: 8, alignItems: 'center',
                     backgroundColor: scheduleFilter === t.key ? BRAND.purple : 'transparent' }}>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '800',
@@ -1132,11 +1142,11 @@ export default function CalendarScreen() {
               selected={selectedDate}
               stripMap={filteredStripMap}
               colors={colors} isDark={isDark}
-              onSelectDay={(d) => { setSelectedDate(d); storeSelectDate(d); }}
-              onChangeMonth={(delta) => setMonthCursor(prev => {
+              onSelectDay={(d) => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected day "${d}" for "month grid" [features/calendar/CalendarScreen.tsx:1147]`); setSelectedDate(d); storeSelectDate(d); }}
+              onChangeMonth={(delta) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped month nav delta=${delta} [features/calendar/CalendarScreen.tsx:1148]`); setMonthCursor(prev => {
                 const next = new Date(prev.getFullYear(), prev.getMonth() + delta, 1);
                 return next;
-              })}
+              }); }}
             />
           </FadeInView>
         )}
@@ -1148,13 +1158,13 @@ export default function CalendarScreen() {
               events={scopedRangeEvents}
               members={members}
               colors={colors} isDark={isDark}
-              onSelectEvent={(ev) => setDetailEv(ev)}
-              onLongPressEvent={(ev) => routeLongPress(ev)}
-              onNavigateWeek={(delta) => setWeekCursor(prev => addDays(prev, delta * 7))}
+              onSelectEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in Week view → open detail sheet [features/calendar/CalendarScreen.tsx:1163]`); setDetailEv(ev); }}
+              onLongPressEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) in Week view → routeLongPress [features/calendar/CalendarScreen.tsx:1164]`); routeLongPress(ev); }}
+              onNavigateWeek={(delta) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped week nav delta=${delta} [features/calendar/CalendarScreen.tsx:1165]`); setWeekCursor(prev => addDays(prev, delta * 7)); }}
               // showAdd opens the parent/senior EventFormAdd modal — a kid
               // now reaching WeekView (widened from !isKid) should use
               // KidRequestModal via "+ Ask Help" instead, not this.
-              onAddDay={isKid ? undefined : (d) => { setSelectedDate(d); storeSelectDate(d); setShowAdd(true); }}
+              onAddDay={isKid ? undefined : (d) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "+" on day "${d}" in Week view → open EventFormAdd [features/calendar/CalendarScreen.tsx:1169]`); setSelectedDate(d); storeSelectDate(d); setShowAdd(true); }}
             />
           </FadeInView>
         )}
@@ -1172,8 +1182,8 @@ export default function CalendarScreen() {
                 events={scopedRangeEvents}
                 members={members}
                 colors={colors} isDark={isDark}
-                onSelectEvent={(ev) => setDetailEv(ev)}
-                onLongPressEvent={(ev) => routeLongPress(ev)}
+                onSelectEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in Agenda view → open detail sheet [features/calendar/CalendarScreen.tsx:1187]`); setDetailEv(ev); }}
+                onLongPressEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) in Agenda view → routeLongPress [features/calendar/CalendarScreen.tsx:1188]`); routeLongPress(ev); }}
                 isViewerParent={isParent}
               />
             )}
@@ -1215,8 +1225,8 @@ export default function CalendarScreen() {
               events={dayEvents}
               members={members}
               colors={colors} isDark={isDark}
-              onSelectEvent={(ev) => setDetailEv(ev)}
-              onLongPressEvent={(ev) => routeLongPress(ev)}
+              onSelectEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in Month day-summary card → open detail sheet [features/calendar/CalendarScreen.tsx:1230]`); setDetailEv(ev); }}
+              onLongPressEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) in Month day-summary card → routeLongPress [features/calendar/CalendarScreen.tsx:1231]`); routeLongPress(ev); }}
             />
           </View>
         ) : viewMode === 'day' && canUseFullCalendarToolbar ? (
@@ -1255,14 +1265,14 @@ export default function CalendarScreen() {
                 backgroundColor: isDark ? colors.card : '#fff', paddingVertical: 8, paddingHorizontal: 14,
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                 shadowColor: '#000', shadowOpacity: isDark ? 0 : 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } }}>
-                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "prev day" (docked bar) → selectedDate=${d} [features/calendar/CalendarScreen.tsx:1270]`); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                   style={{ padding: 6 }}>
                   <I.ChevronLeft c={colors.textSecondary} size={15} />
                 </TouchableOpacity>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: isDark ? colors.textPrimary : '#1E2D6B' }}>
                   {selectedDateLabel}
                 </Text>
-                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "next day" (docked bar) → selectedDate=${d} [features/calendar/CalendarScreen.tsx:1277]`); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                   style={{ padding: 6 }}>
                   <I.ChevronRight c={colors.textSecondary} size={15} />
                 </TouchableOpacity>
@@ -1284,7 +1294,7 @@ export default function CalendarScreen() {
                 style={{ marginHorizontal: 14, borderRadius: 18, borderWidth: 1, borderColor: isDark ? colors.border : '#F1F5F9',
                 backgroundColor: isDark ? colors.card : '#fff', paddingVertical: 10, paddingHorizontal: 14,
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), -1)); console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "prev day" (full header) → selectedDate=${d} [features/calendar/CalendarScreen.tsx:1299]`); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                   style={{ padding: 6 }}>
                   <I.ChevronLeft c={colors.textSecondary} size={16} />
                 </TouchableOpacity>
@@ -1296,7 +1306,7 @@ export default function CalendarScreen() {
                     {dayEvents.filter(ev => ev.category !== 'Holiday').length} Scheduled Activit{dayEvents.filter(ev => ev.category !== 'Holiday').length === 1 ? 'y' : 'ies'}
                   </Text>
                 </View>
-                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
+                <TouchableOpacity onPress={() => { const d = toDateStr(addDays(parseDate(selectedDate), 1)); console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "next day" (full header) → selectedDate=${d} [features/calendar/CalendarScreen.tsx:1311]`); setSelectedDate(d); storeSelectDate(d); loadStrip(get15Days(d)); }}
                   style={{ padding: 6 }}>
                   <I.ChevronRight c={colors.textSecondary} size={16} />
                 </TouchableOpacity>
@@ -1306,9 +1316,9 @@ export default function CalendarScreen() {
                 dayEvents={dayEvents.filter(ev => ev.category !== 'Holiday')}
                 members={members}
                 colors={colors} isDark={isDark}
-                onSelect={(ev) => setDetailEv(ev)}
-                onLongPressEvent={(ev) => routeLongPress(ev)}
-                onAddAtTime={() => setShowAdd(true)}
+                onSelect={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in Day slot view → open detail sheet [features/calendar/CalendarScreen.tsx:1321]`); setDetailEv(ev); }}
+                onLongPressEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) in Day slot view → routeLongPress [features/calendar/CalendarScreen.tsx:1322]`); routeLongPress(ev); }}
+                onAddAtTime={(hourTimeKey) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "+ Tap to add event" at hour=${hourTimeKey} in Day slot view → open EventFormAdd [features/calendar/CalendarScreen.tsx:1323]`); setShowAdd(true); }}
               />
             </ScrollView>
           </View>
@@ -1385,8 +1395,8 @@ export default function CalendarScreen() {
                     ) : (
                     <TouchableOpacity
                       activeOpacity={0.78}
-                      onPress={() => setDetailEv(ev)}
-                      onLongPress={() => routeLongPress(ev)}
+                      onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in compact day timeline → open detail sheet [features/calendar/CalendarScreen.tsx:1400]`); setDetailEv(ev); }}
+                      onLongPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) in compact day timeline → routeLongPress [features/calendar/CalendarScreen.tsx:1401]`); routeLongPress(ev); }}
                       style={{
                         flex: 1, marginBottom: isLast ? 0 : 8, position: 'relative', overflow: 'hidden',
                         backgroundColor: cardBg, borderRadius: 16,
@@ -1493,17 +1503,20 @@ export default function CalendarScreen() {
               // event with no way to cancel it themselves.
               const canDelete    = !isPast && (isParent || ((isKid || isTeen) && !!ev.approvalPending && ev.memberId === activeMemberId));
 
-              const handleEvDelete = () => Alert.alert(
+              const handleEvDelete = () => {
+                console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "${ev.approvalPending ? 'Withdraw' : 'Delete'}" (swipe reveal) on "${ev.title}" (id=${ev.id}) [features/calendar/CalendarScreen.tsx:1508]`);
+                Alert.alert(
                 ev.approvalPending ? 'Withdraw Request' : 'Remove Event',
                 `${ev.approvalPending ? 'Withdraw' : 'Remove'} "${ev.title}"?`,
                 [
                   { text: 'Cancel', style: 'cancel' },
                   { text: ev.approvalPending ? 'Withdraw' : 'Delete', style: 'destructive', onPress: () => {
+                    console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} confirmed "${ev.approvalPending ? 'Withdraw' : 'Delete'}" on "${ev.title}" (id=${ev.id}) → deleteEvent [features/calendar/CalendarScreen.tsx:1513]`);
                     notifyDeleteIfAssigned(ev);
                     deleteEvent(ev.id);
                   }},
                 ]
-              );
+              ); };
 
               return (
                 <View key={ev.id} style={{ flexDirection: 'row', alignItems: 'flex-start', opacity: isPast ? 0.5 : 1 }}>
@@ -1531,8 +1544,8 @@ export default function CalendarScreen() {
                     <SwipeableEventCard
                       canDelete={canDelete}
                       onDelete={handleEvDelete}
-                      onLongPress={() => routeLongPress(ev)}
-                      onPress={() => setDetailEv(ev)}
+                      onLongPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) in full day timeline → routeLongPress [features/calendar/CalendarScreen.tsx:1546]`); routeLongPress(ev); }}
+                      onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in full day timeline → open detail sheet [features/calendar/CalendarScreen.tsx:1547]`); setDetailEv(ev); }}
                     >
                       <EventCardTimeline
                         ev={ev}
@@ -1547,10 +1560,10 @@ export default function CalendarScreen() {
                         isParent={isParent}
                         isKid={isKid}
                         canApproveRequest={!!canApproveRequest}
-                        onPress={() => setDetailEv(ev)}
-                        onLongPress={() => routeLongPress(ev)}
-                        onAssignMember={(memberId) => updateEvent(ev.id, { memberId })}
-                        onApprove={() => updateEvent(ev.id, { approvalPending: false, helperStatus: 'pending' })}
+                        onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) card body → open detail sheet [features/calendar/CalendarScreen.tsx:1562]`); setDetailEv(ev); }}
+                        onLongPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} long-pressed event "${ev.title}" (id=${ev.id}) card body → routeLongPress [features/calendar/CalendarScreen.tsx:1563]`); routeLongPress(ev); }}
+                        onAssignMember={(memberId) => { const m = members.find(x => x.id === memberId); console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${m?.name}" (id=${memberId}) to assign on "${ev.title}" (id=${ev.id}) → updateEvent memberId [features/calendar/CalendarScreen.tsx:1564]`); updateEvent(ev.id, { memberId }); }}
+                        onApprove={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Approve & Assign" on "${ev.title}" (id=${ev.id}) → updateEvent approvalPending=false [features/calendar/CalendarScreen.tsx:1565]`); updateEvent(ev.id, { approvalPending: false, helperStatus: 'pending' }); }}
                         canDelete={canDelete}
                       />
                     </SwipeableEventCard>
@@ -1565,7 +1578,7 @@ export default function CalendarScreen() {
               <TouchableOpacity
                 style={{ marginHorizontal: 14, marginTop: 4, paddingVertical: 12, borderRadius: 16,
                   backgroundColor: isDark ? '#1E293B' : '#F1F5F9', alignItems: 'center' }}
-                onPress={loadMoreDay}
+                onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Load more events" for date=${selectedDate} [features/calendar/CalendarScreen.tsx:1583]`); loadMoreDay(); }}
                 disabled={dayLoading}
               >
                 {dayLoading
@@ -1607,24 +1620,6 @@ export default function CalendarScreen() {
           activeMemberId={activeMember?.id ?? ''}
           editEvent={kidEditEv}
           onClose={() => setKidEditEv(null)}
-        />
-      )}
-
-      {/* Header "+ Event" button opens the Speak it/Type it chooser first —
-          the contextual entry points (tap an empty day/time slot) still go
-          straight to the manual form since the date is already implied. */}
-      {isParentOrSenior && (
-        <AddIntakeChooser
-          visible={showAddChooser}
-          kind="event"
-          members={members}
-          activeMemberId={activeMember?.id ?? ''}
-          onClose={() => setShowAddChooser(false)}
-          onTypeManually={(prefill) => {
-            setShowAddChooser(false);
-            setAddPrefill(prefill);
-            setShowAdd(true);
-          }}
         />
       )}
 
@@ -1673,7 +1668,7 @@ export default function CalendarScreen() {
           activeName={activeMemberName}
           updateEvent={updateEvent}
           onClose={() => setDetailEv(null)}
-          onEditFull={() => { const ev = detailEv; setDetailEv(null); setEditEv(ev); }}
+          onEditFull={() => { const ev = detailEv; console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Edit full details" on "${ev.title}" (id=${ev.id}) → open EditEventModal [features/calendar/CalendarScreen.tsx:1691]`); setDetailEv(null); setEditEv(ev); }}
         />
       )}
     </SafeAreaView>

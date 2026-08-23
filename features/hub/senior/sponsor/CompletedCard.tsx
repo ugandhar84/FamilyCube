@@ -12,11 +12,13 @@ const COMPLETED_GREEN = '#22c55e';
 
 // Sponsored quests that are done and verified. Team quests (shared
 // teamGroupId) render once with all participating kids' avatars stacked.
-export function CompletedCard({ done, allChores, kids, allNames, colors, isDark }: {
+export function CompletedCard({ done, allChores, kids, allNames, colors, isDark, active }: {
   done: ChoreTask[]; allChores: ChoreTask[];
   kids: FamilyMember[]; allNames: string[]; colors: any; isDark: boolean;
+  active?: { name: string };
 }) {
   if (!done.length) return null;
+  const actorName = active?.name ?? 'senior';
 
   const seenTeams = new Set<string>();
   const cards = done.filter(c => {
@@ -25,6 +27,7 @@ export function CompletedCard({ done, allChores, kids, allNames, colors, isDark 
     seenTeams.add(c.teamGroupId);
     return true;
   });
+  console.log(`[UserAction] FILTER screen=Hub role=senior member=${actorName} list=CompletedCard.cards totalSource=${done.length} afterFilter=${cards.length} [features/hub/senior/sponsor/CompletedCard.tsx:27]`);
 
   return (
     <View style={{ gap: 8, marginBottom: 12 }}>

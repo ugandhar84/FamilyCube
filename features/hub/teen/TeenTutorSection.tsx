@@ -46,7 +46,7 @@ export function TeenTutorSection({
                 borderWidth: 1, borderColor: BRAND.purple + '30' }}>
                 <BookOpen size={14} color={BRAND.purple} />
                 <Text style={{ flex: 1, fontSize: TYPO.label, color: colors.textPrimary }} numberOfLines={2}>{r.detail}</Text>
-                <Pressable onPress={() => onCancel(r.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ padding: 4 }}>
+                <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=teen tapped "cancel" on "Waiting on Parent: ${r.detail}" (id=${r.id}) → onCancel [features/hub/teen/TeenTutorSection.tsx:49]`); onCancel(r.id); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ padding: 4 }}>
                   <X size={16} color={colors.textTertiary} />
                 </Pressable>
               </View>
@@ -66,7 +66,7 @@ export function TeenTutorSection({
             <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Who needs help?</Text>
             <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
               {siblings.map(k => (
-                <Pressable key={k.id} onPress={() => setTutorKid(k)}
+                <Pressable key={k.id} onPress={() => { console.log(`[UserAction] FORM screen=Hub role=teen selected "${k.name}" for "tutor sibling" on "TeenTutorSection" (id=${k.id}) [features/hub/teen/TeenTutorSection.tsx:69]`); setTutorKid(k); }}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8,
                     borderRadius: 12, borderWidth: 1.5,
                     borderColor: tutorKid?.id === k.id ? BRAND.purple : colors.border,
@@ -82,6 +82,7 @@ export function TeenTutorSection({
               placeholderTextColor={colors.textTertiary}
               value={tutorSubject}
               onChangeText={setTutorSubject}
+              onBlur={() => { console.log(`[UserAction] FORM screen=Hub role=teen field="tutor subject" on "TeenTutorSection" newValue=${tutorSubject} [features/hub/teen/TeenTutorSection.tsx:84]`); }}
               style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12,
                 padding: 10, fontSize: TYPO.body, color: colors.textPrimary,
                 backgroundColor: isDark ? colors.surface : '#F8FAFC' }}
@@ -91,11 +92,12 @@ export function TeenTutorSection({
               placeholderTextColor={colors.textTertiary}
               value={tutorNote}
               onChangeText={setTutorNote}
+              onBlur={() => { console.log(`[UserAction] FORM screen=Hub role=teen field="tutor note" on "TeenTutorSection" newValue=${tutorNote} [features/hub/teen/TeenTutorSection.tsx:93]`); }}
               style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12,
                 padding: 10, fontSize: TYPO.body, color: colors.textPrimary,
                 backgroundColor: isDark ? colors.surface : '#F8FAFC' }}
             />
-            <Pressable onPress={send}
+            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=teen tapped "Offer Help" on "TeenTutorSection" (id=${tutorKid?.id}) subject="${tutorSubject.trim()}" → onSend [features/hub/teen/TeenTutorSection.tsx:98]`); send(); }}
               style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 12, backgroundColor: BRAND.purple,
                 paddingVertical: 12, opacity: pressed || !tutorKid || !tutorSubject.trim() ? 0.5 : 1 })}>
               <BookOpen size={15} color="#fff" />

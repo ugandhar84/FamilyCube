@@ -171,6 +171,7 @@ export function choreToQuest(c: ChoreTask): Quest {
     // Shopping runs MUST be adult-only (kids never see grocery shopping tasks per spec)
     isAdultTask:      c.isPrivateParent || c.categoryType === 'parent_only_quest' || c.categoryType === 'shopping',
     inviteGrandparents: c.inviteGrandparents ?? false,
+    gpWithdrawnIds:   c.gpWithdrawnIds,
     questType:        categoryTypeToQuestType(c.categoryType),
     assignmentMode:   c.assignedToId ? 'direct' : 'pull',
     bounceCount:      0,
@@ -238,6 +239,15 @@ function questInputToChoreInput(q: Partial<Quest> & Record<string, any>) {
         q.recurrence === 'weekly'  ? 'weekly' :
         q.recurrence === 'monthly' ? 'monthly' : 'once'
       ) as 'once' | 'daily' | 'weekly' | 'monthly',
+      // Which weekdays a 'weekly' chore actually recurs on (0=Sun..6=Sat) —
+      // only meaningful alongside frequency:'weekly'; nextDueDate() in
+      // choreStore.ts falls back to a flat +7 days when this is absent.
+      days: q.recurrence === 'weekly' && (q as any).recurrenceDays?.length ? (q as any).recurrenceDays : undefined,
+      // Which day-of-month a 'monthly' chore recurs on (1-28, or 31 as
+      // "last day of the month") — only meaningful alongside
+      // frequency:'monthly'; absent falls back to whatever day-of-month it
+      // was first approved on, same as before this field existed.
+      dayOfMonth: q.recurrence === 'monthly' && (q as any).recurrenceDayOfMonth ? (q as any).recurrenceDayOfMonth : undefined,
     },
     isPrivateParent:    q.isAdultTask ?? false,
     isPool:             q.isPool ?? false,
@@ -365,6 +375,8 @@ export function useQuestStore() {
           s === 'declined'         ? 'redo_requested' :
           s === 'done'             ? 'approved' : 'todo';
       }
+      if ((updates as any).inviteGrandparents !== undefined) choreUpdates.inviteGrandparents = (updates as any).inviteGrandparents;
+      if ((updates as any).gpWithdrawnIds     !== undefined) choreUpdates.gpWithdrawnIds     = (updates as any).gpWithdrawnIds;
       store.updateChore(id, choreUpdates);
     },
 
@@ -543,6 +555,8 @@ useQuestStore.getState = () => {
           s === 'declined'         ? 'redo_requested' :
           s === 'done'             ? 'approved' : 'todo';
       }
+      if ((updates as any).inviteGrandparents !== undefined) choreUpdates.inviteGrandparents = (updates as any).inviteGrandparents;
+      if ((updates as any).gpWithdrawnIds     !== undefined) choreUpdates.gpWithdrawnIds     = (updates as any).gpWithdrawnIds;
       store.updateChore(id, choreUpdates);
     },
     addQuest:      (q: any) => store.addChore(questInputToChoreInput(q) as any),

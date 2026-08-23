@@ -26,7 +26,7 @@ export function CalendarSearchBar({ query, onQueryChange, colors, isDark }: {
   return (
     <View style={expanded ? { flex: 1, minWidth: 160 } : undefined}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <TouchableOpacity onPress={() => toggleExpanded(!expanded)}
+        <TouchableOpacity onPress={() => { console.log(`[UserAction] screen=Schedule tapped "search icon" on CalendarSearchBar newValue=${!expanded} [features/calendar/components/CalendarSearchBar.tsx:29]`); toggleExpanded(!expanded); }}
           style={{ width: 38, height: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
             borderWidth: 1.5, borderColor: expanded || hasActiveFilter ? colors.primary : colors.border,
             backgroundColor: expanded || hasActiveFilter ? colors.primaryLight : colors.surface }}>
@@ -48,19 +48,20 @@ export function CalendarSearchBar({ query, onQueryChange, colors, isDark }: {
               <TextInput
                 value={query}
                 onChangeText={onQueryChange}
+                onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Search events" on "CalendarSearchBar" newValue=${query} [features/calendar/components/CalendarSearchBar.tsx:50]`)}
                 placeholder="Search events…"
                 placeholderTextColor={colors.textTertiary}
                 autoFocus
                 style={{ flex: 1, fontSize: TYPO.body, color: colors.textPrimary, padding: 0 }}
               />
               {query.length > 0 && (
-                <TouchableOpacity onPress={() => onQueryChange('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <TouchableOpacity onPress={() => { console.log(`[UserAction] screen=Schedule tapped "clear" (inline X) on CalendarSearchBar query="${query}" [features/calendar/components/CalendarSearchBar.tsx:57]`); onQueryChange(''); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                   <X size={15} color={colors.textTertiary} />
                 </TouchableOpacity>
               )}
             </View>
 
-            <TouchableOpacity onPress={() => { onQueryChange(''); toggleExpanded(false); }}
+            <TouchableOpacity onPress={() => { console.log(`[UserAction] screen=Schedule tapped "collapse search" (X) on CalendarSearchBar query="${query}" [features/calendar/components/CalendarSearchBar.tsx:63]`); onQueryChange(''); toggleExpanded(false); }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={{ alignItems: 'center', justifyContent: 'center' }}>
               <X size={18} color={colors.textTertiary} />

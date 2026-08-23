@@ -44,6 +44,7 @@ export function RideRequiredEventCard({ ev, active, colors, isDark, updateEvent,
   // HelperEventCard's Take-Over action instead, which stays scoped to
   // 'this' only.
   const iDrive = () => {
+    console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "I'll Drive" on "${ev.title}" (id=${ev.id}) → updateEvent(driverName/driverStatus) [features/hub/parent/RideRequiredEventCard.tsx:47]`);
     const patch = { driverName: active.name, driverStatus: 'confirmed' as const };
     if (ev.seriesId && updateEventScoped) updateEventScoped(ev.id, patch, 'following');
     else updateEvent(ev.id, patch);
@@ -58,10 +59,12 @@ export function RideRequiredEventCard({ ev, active, colors, isDark, updateEvent,
   // isn't a fixed assignment worth forcing onto every future date, same
   // reasoning RideRequestCard's own openToHelpers already documents.
   const openToHelpers = () => {
+    console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Open to Helpers" on "${ev.title}" (id=${ev.id}) → updateEvent(openToGrandparents/openToTeens) [features/hub/parent/RideRequiredEventCard.tsx:61]`);
     updateEvent(ev.id, { isOpenToGrandparents: true, isOpenToTeens: true, driverName: undefined, driverStatus: undefined });
   };
 
   const forkRide = (selfDrive: boolean) => {
+    console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "${selfDrive ? "I'll Drive" : 'Approve & Split'}" on "${ev.title}" (id=${ev.id}) selfDrive=${selfDrive} → forkRideLegs [features/hub/parent/RideRequiredEventCard.tsx:65]`);
     forkRideLegs({
       ev, selfDrive,
       assigneePatch: (confirmed) => ({

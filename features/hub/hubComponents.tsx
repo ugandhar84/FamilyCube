@@ -23,7 +23,7 @@ import { fmtDateShort } from '@/lib/dates';
 import { relationalNameByName } from '@/lib/format';
 import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
-import { decryptMessage } from '@/lib/chatCrypto';
+import { decryptLocationText } from '@/lib/locationCrypto';
 
 // ─── LiveDot ──────────────────────────────────────────────────────────────────
 // Pulsing dot for "LIVE NOW" indicators — a soft outward ring pulse behind a
@@ -1355,7 +1355,7 @@ export function PickupRadarStatus({ colors, isDark, activeTrip }: {
         .select('address, lat, lng').eq('member_id', driverMemberId).maybeSingle();
       if (cancelled) return;
       if (!data || data.lat == null || data.lng == null) { setDriverAddress(null); return; }
-      setDriverAddress(data.address ? await decryptMessage(data.address) : null);
+      setDriverAddress(data.address ? await decryptLocationText(driverMemberId, data.address) : null);
     };
     loadDriverLocation();
     // Randomized suffix, not just driverMemberId — this component mounts

@@ -56,6 +56,7 @@ export function KidQuestCard({
   // Bounty offered to a shortlist of siblings — each earns the full coins
   // independently; nobody's payout depends on the others finishing.
   const teamMates = q.teamGroupId ? allQuests.filter(t => t.teamGroupId === q.teamGroupId && t.id !== q.id) : [];
+  console.log(`[UserAction] FILTER screen=Hub role=kid member=${active.name} list=teamMates totalSource=${allQuests.length} afterFilter=${teamMates.length} [features/hub/kid/KidQuestCard.tsx:59]`);
 
   // Coordinated live-DB QA (launch-readiness round) found this Hub card had
   // zero due-date awareness at all, while the same chore's Chores-tab
@@ -153,19 +154,19 @@ export function KidQuestCard({
         <View style={{ flexDirection: 'row', gap: 6 }}>
           {isGpTodo ? (
             <>
-              <Pressable onPress={() => onAcceptGpQuest(q.id)}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'll take it" on "${q.title}" (id=${q.id}) → onAcceptGpQuest("${q.id}") [features/hub/kid/KidQuestCard.tsx:156]`); onAcceptGpQuest(q.id); }}
                 style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                   borderRadius: 10, backgroundColor: MONEY_GREEN, paddingVertical: 13 }}>
                 <Sparkles size={15} color="#fff" />
                 <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>I'll take it</Text>
               </Pressable>
-              <Pressable onPress={() => onDeclineGpQuest(q)}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "Decline" on "${q.title}" (id=${q.id}) → onDeclineGpQuest [features/hub/kid/KidQuestCard.tsx:162]`); onDeclineGpQuest(q); }}
                 style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: `${colors.danger}50`, paddingVertical: 13, alignItems: 'center' }}>
                 <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.danger }}>Decline</Text>
               </Pressable>
             </>
           ) : isPool ? (
-            <Pressable onPress={() => onClaim(q.id)}
+            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "Claim" on "${q.title}" (id=${q.id}) → onClaim("${q.id}") [features/hub/kid/KidQuestCard.tsx:168]`); onClaim(q.id); }}
               style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                 borderRadius: 10, backgroundColor: BRAND.purple, paddingVertical: 13 }}>
               <Trophy size={15} color="#fff" />
@@ -182,14 +183,14 @@ export function KidQuestCard({
             // the identical card on the Hub (QA sweep, kid-role audit,
             // Medium).
             <>
-              <Pressable onPress={() => onStart(q.id)}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "Start Quest" on "${q.title}" (id=${q.id}) → onStart("${q.id}") [features/hub/kid/KidQuestCard.tsx:185]`); onStart(q.id); }}
                 style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                   borderRadius: 10, backgroundColor: BRAND.teal, paddingVertical: 13 }}>
                 <Zap size={15} color="#fff" fill="#ffffff30" />
                 <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>Start Quest</Text>
               </Pressable>
               {canDeclinePlain && (
-                <Pressable onPress={() => onDeclineGpQuest(q)}
+                <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "Can't do this" on "${q.title}" (id=${q.id}) → onDeclineGpQuest [features/hub/kid/KidQuestCard.tsx:192]`); onDeclineGpQuest(q); }}
                   style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: `${colors.danger}50`, paddingVertical: 13, alignItems: 'center' }}>
                   <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.danger }}>Can't do this</Text>
                 </Pressable>
@@ -197,7 +198,7 @@ export function KidQuestCard({
             </>
           ) : canDeclinePlain ? (
             <>
-              <Pressable onPress={() => onSubmit(q)}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "${q.photoRequired ? 'Take Photo to Get Paid' : 'Mark Done → Get Paid'}" on "${q.title}" (id=${q.id}) → onSubmit [features/hub/kid/KidQuestCard.tsx:200]`); onSubmit(q); }}
                 style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                   borderRadius: 10, backgroundColor: MONEY_GREEN, paddingVertical: 13 }}>
                 {q.photoRequired ? <Camera size={15} color="#fff" /> : <CheckCircle2 size={15} color="#fff" />}
@@ -205,20 +206,20 @@ export function KidQuestCard({
                   {q.photoRequired ? 'Take Photo to Get Paid' : 'Mark Done → Get Paid'}
                 </Text>
               </Pressable>
-              <Pressable onPress={() => onDeclineGpQuest(q)}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "Can't do this" on "${q.title}" (id=${q.id}) → onDeclineGpQuest [features/hub/kid/KidQuestCard.tsx:208]`); onDeclineGpQuest(q); }}
                 style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: `${colors.danger}50`, paddingVertical: 13, alignItems: 'center' }}>
                 <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.danger }}>Can't do this</Text>
               </Pressable>
             </>
           ) : isDeclined ? (
-            <Pressable onPress={() => onSubmit(q)}
+            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "Revise & Resubmit" on "${q.title}" (id=${q.id}) → onSubmit [features/hub/kid/KidQuestCard.tsx:214]`); onSubmit(q); }}
               style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                 borderRadius: 10, backgroundColor: colors.danger, paddingVertical: 13 }}>
               <RotateCcw size={15} color="#fff" />
               <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>↩ Revise & Resubmit</Text>
             </Pressable>
           ) : (
-            <Pressable onPress={() => onSubmit(q)}
+            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "${q.photoRequired ? 'Take Photo to Get Paid' : 'Mark Done → Get Paid'}" on "${q.title}" (id=${q.id}) → onSubmit [features/hub/kid/KidQuestCard.tsx:221]`); onSubmit(q); }}
               style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
                 borderRadius: 10, backgroundColor: MONEY_GREEN, paddingVertical: 13 }}>
               {q.photoRequired ? <Camera size={15} color="#fff" /> : <CheckCircle2 size={15} color="#fff" />}

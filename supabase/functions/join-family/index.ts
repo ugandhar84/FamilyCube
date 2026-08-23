@@ -51,9 +51,10 @@ serve(async (req) => {
 
     // Caller's own Supabase Auth session — the app only ever calls this
     // function after onboarding's session gate, so this should always be
-    // present. Falls back to null (member joins with no auth_user_id) rather
-    // than hard-failing, so a client that somehow lacks a session still gets
-    // a member row — just one that'll need a backfill later.
+    // present. Every RLS policy in this app checks members.auth_user_id, so
+    // a member row created without one is permanently unusable (every write
+    // it ever makes will silently fail RLS) — hard-fail instead of creating
+    // a row nothing can recover from later.
     const authHeader = req.headers.get('Authorization');
     let callerAuthUserId: string | null = null;
     if (authHeader?.startsWith('Bearer ')) {
@@ -61,6 +62,9 @@ serve(async (req) => {
       const anonClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!);
       const { data: { user } } = await anonClient.auth.getUser(token);
       callerAuthUserId = user?.id ?? null;
+    }
+    if (!callerAuthUserId) {
+      return json({ error: 'Could not verify your session. Please restart the app and try again.' }, 401);
     }
 
     const supabase = createClient(
@@ -101,7 +105,7 @@ serve(async (req) => {
       .insert({
         id:              memberId,
         name:            name.trim(),
-        role:            role === 'grandparent' ? 'grandparent' : role === 'parent' ? 'parent' : 'kid',
+        role:            role === 'grandparent' ? 'grandparent' : role === 'parent' ? 'parent' : role === 'teenager' ? 'teenager' : 'kid',
         avatar:          avatar,
         color:           color ?? '#9261C7',
         family_id:       invite.family_id,

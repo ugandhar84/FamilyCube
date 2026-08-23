@@ -48,6 +48,7 @@ export function MyQuestsSection({
 
   const visible = combined.slice(0, VISIBLE_LIMIT);
   const overflow = combined.length - visible.length;
+  console.log(`[UserAction] FILTER screen=Hub role=kid member=${active.name} list=MyQuestsSection.combined totalSource=${todoQuests.length + inProgressQuests.length + declinedQuests.length + reviewQuests.length + poolQuests.length + cancelledToday.length} afterFilter=${combined.length} visible=${visible.length} overflow=${overflow} [features/hub/kid/MyQuestsSection.tsx:52]`);
 
   return (
     <View style={{ paddingHorizontal: 16, marginBottom: 18 }}>
@@ -57,7 +58,7 @@ export function MyQuestsSection({
           <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: BRAND.purple + '20', alignItems: 'center', justifyContent: 'center' }}>
             <Trophy size={20} color={BRAND.purple} />
           </View>
-          <Pressable onPress={() => setExpanded(e => !e)} style={{ flex: 1 }}>
+          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "${title} header" on "MyQuestsSection" → toggle expanded from ${expanded} to ${!expanded} [features/hub/kid/MyQuestsSection.tsx:60]`); setExpanded(e => !e); }} style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Text style={{ fontSize: KID.title, fontWeight: '800', color: colors.textPrimary }}>{title}</Text>
               {combined.length > 0 && (
@@ -76,10 +77,10 @@ export function MyQuestsSection({
               {combined.length > 0 ? `${combined.length} chore${combined.length !== 1 ? 's' : ''} — what to do first` : 'All caught up'}
             </Text>
           </Pressable>
-          <Pressable onPress={() => router.push('/(tabs)/quests')}>
+          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "All Chores →" on "MyQuestsSection" → navigate to /(tabs)/quests [features/hub/kid/MyQuestsSection.tsx:79]`); router.push('/(tabs)/quests'); }}>
             <Text style={{ fontSize: KID.sub, fontWeight: '700', color: BRAND.purple }}>All Chores →</Text>
           </Pressable>
-          <Pressable onPress={() => setExpanded(e => !e)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "chevron" on "MyQuestsSection" → toggle expanded from ${expanded} to ${!expanded} [features/hub/kid/MyQuestsSection.tsx:82]`); setExpanded(e => !e); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             {expanded ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
           </Pressable>
         </View>
@@ -87,7 +88,7 @@ export function MyQuestsSection({
         {expanded && (
           <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 8 }}>
             {combined.length === 0 ? (
-              <Pressable onPress={() => router.push('/(tabs)/quests')}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "All caught up!" on "MyQuestsSection empty state" → navigate to /(tabs)/quests [features/hub/kid/MyQuestsSection.tsx:90]`); router.push('/(tabs)/quests'); }}
                 style={{ borderRadius: 18, borderWidth: 1.5, borderStyle: 'dashed', borderColor: BRAND.purple + '50',
                   backgroundColor: BRAND.purple + '08', padding: 28, alignItems: 'center', gap: 8 }}>
                 <Trophy size={40} color={BRAND.purple} />
@@ -102,7 +103,7 @@ export function MyQuestsSection({
                 onAcceptGpQuest={onAcceptGpQuest} onDeclineGpQuest={onDeclineGpQuest} />
             ))}
             {overflow > 0 && (
-              <Pressable onPress={() => router.push('/(tabs)/quests')}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "+${overflow} more quests →" on "MyQuestsSection" → navigate to /(tabs)/quests [features/hub/kid/MyQuestsSection.tsx:105]`); router.push('/(tabs)/quests'); }}
                 style={{ borderRadius: 14, backgroundColor: BRAND.purple + '12', borderWidth: 1, borderColor: BRAND.purple + '30',
                   paddingVertical: 13, alignItems: 'center' }}>
                 <Text style={{ fontSize: KID.sub, fontWeight: '800', color: BRAND.purple }}>+{overflow} more quests →</Text>

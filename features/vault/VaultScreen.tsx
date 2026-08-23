@@ -48,16 +48,26 @@ interface Feature {
   roles: MemberRole[];
 }
 
+// 'teen' was previously missing from every entry here — a teen member's
+// Vault/Profile tab filtered FEATURES down to an empty list (visibleFeatures
+// = FEATURES.filter(f => f.roles.includes(role))), i.e. a completely blank
+// tab, despite teen being a fully modeled role with its own hub components
+// (features/hub/teen/*: car dispatch, gas log, tutoring). Given teens here.
+// the same baseline as kid (GPS for their own location/dispatch, Store for
+// reward redemption, Memories, School). 'senior' also picked up GPS/Store —
+// matches their existing sponsor/ride/errand capabilities in
+// features/hub/senior/*, which assume they can see family location and
+// redeem/send rewards.
 const FEATURES: Feature[] = [
-  { id: 'gps',      label: 'Radar',    subtitle: 'Live family locations',   emoji: '📡', Icon: Radio,        accent: '#14B8A6', bg: '#ECFDF5', bgDark: '#0D2E2A', roles: ['parent', 'kid'] },
-  { id: 'school',   label: 'School',   subtitle: 'Timetable · Terms',       emoji: '📚', Icon: BookOpen,     accent: '#9261C7', bg: '#F5F3FF', bgDark: '#1A1030', roles: ['parent', 'kid'] },
-  { id: 'health',   label: 'Health',   subtitle: 'My Active Medications',    emoji: '💊', Icon: Heart,        accent: '#F43F5E', bg: '#FFF1F2', bgDark: '#2D1019', roles: ['parent', 'kid'] },
+  { id: 'gps',      label: 'Radar',    subtitle: 'Live family locations',   emoji: '📡', Icon: Radio,        accent: '#14B8A6', bg: '#ECFDF5', bgDark: '#0D2E2A', roles: ['parent', 'kid', 'teen', 'senior'] },
+  { id: 'school',   label: 'School',   subtitle: 'Timetable · Terms',       emoji: '📚', Icon: BookOpen,     accent: '#9261C7', bg: '#F5F3FF', bgDark: '#1A1030', roles: ['parent', 'kid', 'teen'] },
+  { id: 'health',   label: 'Health',   subtitle: 'My Active Medications',    emoji: '💊', Icon: Heart,        accent: '#F43F5E', bg: '#FFF1F2', bgDark: '#2D1019', roles: ['parent', 'kid', 'teen', 'senior'] },
   { id: 'grocery',  label: 'Grocery',  subtitle: 'Runs · Lists · Receipts', emoji: '🛒', Icon: ShoppingCart, accent: '#10B981', bg: '#ECFDF5', bgDark: '#0D2A1E', roles: ['parent'] },
   { id: 'meals',    label: 'Meals',    subtitle: 'Recipes · Nutrition',     emoji: '🍽️', Icon: ChefHat,      accent: '#F59E0B', bg: '#FFFBEB', bgDark: '#2D2008', roles: ['parent'] },
-  { id: 'memories', label: 'Memories', subtitle: 'Photos · Moments',        emoji: '📸', Icon: ImageIcon,    accent: '#EC4899', bg: '#FDF2F8', bgDark: '#2D0D1F', roles: ['parent', 'kid', 'senior'] },
+  { id: 'memories', label: 'Memories', subtitle: 'Photos · Moments',        emoji: '📸', Icon: ImageIcon,    accent: '#EC4899', bg: '#FDF2F8', bgDark: '#2D0D1F', roles: ['parent', 'kid', 'teen', 'senior'] },
   { id: 'records',  label: 'Records',  subtitle: 'Documents · Files',       emoji: '📁', Icon: FolderOpen,   accent: '#6366F1', bg: '#EEF2FF', bgDark: '#1A1A38', roles: ['parent'] },
   { id: 'roster',   label: 'Roster',   subtitle: 'Members · Roles',         emoji: '👥', Icon: Users,        accent: '#3B82F6', bg: '#EFF6FF', bgDark: '#0D1A2D', roles: ['parent'] },
-  { id: 'store',    label: 'Perks',    subtitle: 'Rewards · Redeem',        emoji: '🎁', Icon: Gift,         accent: '#7C3AED', bg: '#F5F3FF', bgDark: '#1A1030', roles: ['parent', 'kid'] },
+  { id: 'store',    label: 'Perks',    subtitle: 'Rewards · Redeem',        emoji: '🎁', Icon: Gift,         accent: '#7C3AED', bg: '#F5F3FF', bgDark: '#1A1030', roles: ['parent', 'kid', 'teen', 'senior'] },
 ];
 
 // ─── Feature Detail View (inline, bottom nav stays visible) ──────────────────
@@ -241,7 +251,7 @@ export default function VaultScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <AppHeader
         memberName={activeMember?.name?.split(' ')[0] ?? 'Member'}
-        memberRole={role as 'parent' | 'kid' | 'senior'}
+        memberRole={role}
         notifCount={unreadNotifCount}
         onBellPress={() => setNotifPanelOpen(true)}
         onPersonaPress={() => {}}
@@ -258,7 +268,7 @@ export default function VaultScreen() {
             <Text style={{ fontSize: 22, fontWeight: '800', color: colors.textPrimary,
               letterSpacing: -0.3 }}>Apps</Text>
             <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
-              {role === 'senior' ? 'Family Memories' : `${visibleFeatures.length} features`}
+              {`${visibleFeatures.length} features`}
             </Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>

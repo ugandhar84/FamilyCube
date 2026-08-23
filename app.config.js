@@ -203,6 +203,7 @@ const config = {
     "expo-web-browser",
     "@react-native-firebase/app",
     "@react-native-firebase/messaging",
+    "react-native-quick-crypto",
     "./plugins/withCallKeep.js",
     "./plugins/withFirebasePodfileFixes.js",
   ],

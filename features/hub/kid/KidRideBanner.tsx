@@ -70,7 +70,7 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, onCon
             ? `${driverFirst ?? 'Your ride'} picks you up in ${rideCountdown}m`
             : `${driverFirst ?? 'Your ride'} picks you up at ${fmtTime(ev.time)}`;
 
-  const dismiss = () => { setDismissed(true); onDismiss(ev.id); };
+  const dismiss = () => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "dismiss" on "KidRideBanner" (id=${ev.id}) → onDismiss("${ev.id}") [features/hub/kid/KidRideBanner.tsx:73]`); setDismissed(true); onDismiss(ev.id); };
 
   return (
     <View style={{ paddingHorizontal: 16, marginBottom: 18 }}>
@@ -87,7 +87,7 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, onCon
           </Text>
         </View>
         {!confirmed && (rideHere || isOverdue) && (
-          <Pressable onPress={() => onConfirmPickup(ev)}
+          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidRideBanner.tsx:90]`); onConfirmPickup(ev); }}
             style={{ backgroundColor: isOverdue ? colors.danger : MONEY_GREEN, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 7 }}>
             <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>I'm picked up</Text>
           </Pressable>

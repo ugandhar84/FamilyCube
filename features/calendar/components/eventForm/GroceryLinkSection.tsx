@@ -40,7 +40,7 @@ export default function GroceryLinkSection({
         <Text style={[f.label, { color: colors.textSecondary, marginBottom: 0 }]}>🛍️ Attach grocery list</Text>
         <Switch
           value={linkGroceries}
-          onValueChange={setLinkGroceries}
+          onValueChange={(v) => { console.log(`[UserAction] FORM screen=Schedule toggled "Attach grocery list" on GroceryLinkSection newValue=${v} [features/calendar/components/eventForm/GroceryLinkSection.tsx:42]`); setLinkGroceries(v); }}
           trackColor={{ false: colors.border, true: catColor + '80' }}
           thumbColor={linkGroceries ? catColor : colors.textTertiary}
         />
@@ -58,7 +58,9 @@ export default function GroceryLinkSection({
                   From your list
                 </Text>
                 <Pressable onPress={() => {
-                  if (selectedItemIds.size === groceryItems.length) setSelectedItemIds(new Set());
+                  const willDeselect = selectedItemIds.size === groceryItems.length;
+                  console.log(`[UserAction] FORM screen=Schedule tapped "${willDeselect ? 'Deselect all' : 'Select all'}" on GroceryLinkSection [features/calendar/components/eventForm/GroceryLinkSection.tsx:60]`);
+                  if (willDeselect) setSelectedItemIds(new Set());
                   else setSelectedItemIds(new Set(groceryItems.map(i => i.id)));
                 }}>
                   <Text style={{ fontSize: 12, color: catColor, fontWeight: '700' }}>
@@ -82,6 +84,7 @@ export default function GroceryLinkSection({
                       <View key={store} style={{ marginBottom: 10 }}>
                         <Pressable
                           onPress={() => {
+                            console.log(`[UserAction] FORM screen=Schedule tapped store group "${store}" on GroceryLinkSection newValue=${!storeSelected} [features/calendar/components/eventForm/GroceryLinkSection.tsx:84]`);
                             const next = new Set(selectedItemIds);
                             if (storeSelected) items.forEach(i => next.delete(i.id));
                             else items.forEach(i => next.add(i.id));
@@ -111,6 +114,7 @@ export default function GroceryLinkSection({
                             <Pressable
                               key={item.id}
                               onPress={() => {
+                                console.log(`[UserAction] FORM screen=Schedule selected item "${item.name}" (id=${item.id}) on GroceryLinkSection newValue=${!selected} [features/calendar/components/eventForm/GroceryLinkSection.tsx:113]`);
                                 const next = new Set(selectedItemIds);
                                 selected ? next.delete(item.id) : next.add(item.id);
                                 setSelectedItemIds(next);
@@ -143,13 +147,13 @@ export default function GroceryLinkSection({
             <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 }}>
               Add new items
             </Text>
-            <Pressable onPress={() => setNewGroceryLines(prev => [...prev, { name: '', qty: '', store: generalLocation.trim() || '' }])}
+            <Pressable onPress={() => { console.log(`[UserAction] screen=Schedule tapped "+ Add item" on GroceryLinkSection [features/calendar/components/eventForm/GroceryLinkSection.tsx:146]`); setNewGroceryLines(prev => [...prev, { name: '', qty: '', store: generalLocation.trim() || '' }]); }}
               style={{ backgroundColor: catColor, borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10 }}>
               <Text style={{ color: colors.textInverse, fontSize: 12, fontWeight: '700' }}>+ Add item</Text>
             </Pressable>
           </View>
           {newGroceryLines.length === 0 ? (
-            <Pressable onPress={() => setNewGroceryLines([{ name: '', qty: '', store: generalLocation.trim() || '' }])}
+            <Pressable onPress={() => { console.log(`[UserAction] screen=Schedule tapped "+ Tap to add grocery items" on GroceryLinkSection [features/calendar/components/eventForm/GroceryLinkSection.tsx:152]`); setNewGroceryLines([{ name: '', qty: '', store: generalLocation.trim() || '' }]); }}
               style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: catColor + '60', borderRadius: 10,
                 paddingVertical: 12, alignItems: 'center' }}>
               <Text style={{ color: catColor, fontSize: 13 }}>+ Tap to add grocery items</Text>
@@ -177,15 +181,16 @@ export default function GroceryLinkSection({
                       value={line.name}
                       onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, name: v } : l))}
                       onFocus={() => { setFocusedLineIdx(idx); setFocusedField('name'); }}
-                      onBlur={() => { setFocusedLineIdx(null); setFocusedField(null); }}
+                      onBlur={() => { console.log(`[UserAction] FORM screen=Schedule field="Item name" on "GroceryLinkSection line=${idx}" newValue=${line.name} [features/calendar/components/eventForm/GroceryLinkSection.tsx:180]`); setFocusedLineIdx(null); setFocusedField(null); }}
                     />
                     <TextInput
                       style={[f.input, { flex: 1, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed, marginBottom: 0 }]}
                       placeholder="Qty" placeholderTextColor={colors.textTertiary}
                       value={line.qty}
                       onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, qty: v } : l))}
+                      onBlur={() => console.log(`[UserAction] FORM screen=Schedule field="Qty" on "GroceryLinkSection line=${idx}" newValue=${line.qty} [features/calendar/components/eventForm/GroceryLinkSection.tsx:186]`)}
                     />
-                    <Pressable onPress={() => setNewGroceryLines(prev => prev.filter((_, i) => i !== idx))} style={{ padding: 6 }}>
+                    <Pressable onPress={() => { console.log(`[UserAction] screen=Schedule tapped "delete grocery line" idx=${idx} name="${line.name}" on GroceryLinkSection [features/calendar/components/eventForm/GroceryLinkSection.tsx:188]`); setNewGroceryLines(prev => prev.filter((_, i) => i !== idx)); }} style={{ padding: 6 }}>
                       <X c={colors.textTertiary} size={16} />
                     </Pressable>
                   </View>
@@ -193,7 +198,7 @@ export default function GroceryLinkSection({
                   {showNameSuggs && (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" style={{ marginBottom: 4 }}>
                       {nameSuggs.map(s => (
-                        <Pressable key={s} onPress={() => { setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, name: s } : l)); setFocusedField(null); }}
+                        <Pressable key={s} onPress={() => { console.log(`[UserAction] FORM screen=Schedule selected "${s}" for "item name suggestion" on GroceryLinkSection line=${idx} [features/calendar/components/eventForm/GroceryLinkSection.tsx:196]`); setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, name: s } : l)); setFocusedField(null); }}
                           style={{ backgroundColor: catColor + '15', borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10, marginRight: 6, borderWidth: 1, borderColor: catColor + '40' }}>
                           <Text style={{ fontSize: 12, color: catColor, fontWeight: '600' }}>{s}</Text>
                         </Pressable>
@@ -207,13 +212,13 @@ export default function GroceryLinkSection({
                     value={line.store}
                     onChangeText={v => setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, store: v } : l))}
                     onFocus={() => { setFocusedLineIdx(idx); setFocusedField('store'); }}
-                    onBlur={() => { setFocusedLineIdx(null); setFocusedField(null); }}
+                    onBlur={() => { console.log(`[UserAction] FORM screen=Schedule field="Store" on "GroceryLinkSection line=${idx}" newValue=${line.store} [features/calendar/components/eventForm/GroceryLinkSection.tsx:209]`); setFocusedLineIdx(null); setFocusedField(null); }}
                   />
                   {/* Store suggestions */}
                   {showStoreSuggs && (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" style={{ marginTop: 4 }}>
                       {storeSuggs.map(s => (
-                        <Pressable key={s} onPress={() => { setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, store: s } : l)); setFocusedField(null); }}
+                        <Pressable key={s} onPress={() => { console.log(`[UserAction] FORM screen=Schedule selected "${s}" for "store suggestion" on GroceryLinkSection line=${idx} [features/calendar/components/eventForm/GroceryLinkSection.tsx:216]`); setNewGroceryLines(prev => prev.map((l, i) => i === idx ? { ...l, store: s } : l)); setFocusedField(null); }}
                           style={{ backgroundColor: isDark ? '#252540' : '#F3F4F6', borderRadius: 8, paddingVertical: 4, paddingHorizontal: 10, marginRight: 6, borderWidth: 1, borderColor: colors.border }}>
                           <Text style={{ fontSize: 12, color: colors.textPrimary }}>🏪 {s}</Text>
                         </Pressable>

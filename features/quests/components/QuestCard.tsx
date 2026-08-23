@@ -5,7 +5,7 @@ import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import { fmtDateShort, fmtDateTime, parseLocalDate, parseTimeInput } from '@/lib/dates';
-import { useChoreStore } from '@/store/choreStore';
+import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useEventStore } from '@/store/eventStore';
 import type { Quest } from '@/store/questStore';
 import { I } from './icons';
@@ -15,6 +15,8 @@ import { FlashBonusBadge } from './FlashBonusBadge';
 import { QuestStepper } from './QuestStepper';
 import { ParentSelfNoteRow } from './ParentSelfNoteRow';
 import { fmt12h, timeAgo } from './questAiFallbacks';
+import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
+import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 
 interface Props {
   q: Quest;
@@ -37,6 +39,13 @@ interface Props {
   handleClaim: (id: string) => void;
   openSubmitSheet: (quest: Quest) => void;
   setDeclineTarget: (t: { id: string; title: string; memberId?: string } | null) => void;
+  // Kid/teen's own "Can't do this" — separate from setDeclineTarget (which
+  // opens the parent-facing DeclineModal, wrong copy/presets for a kid
+  // declining their own chore: "Decline Quest" / "The chore wasn't done
+  // properly" reads as a parent rejecting a submission, not a kid backing
+  // out). Opens the shared CantMakeItSheet instead, with real outcome
+  // choices (pool/reassign/later/cancel) instead of pool-only.
+  onCantMakeIt?: (chore: ChoreTask) => void;
   approveQuest: (id: string, memberId: string) => void;
   reassignQuest: (id: string, memberId: string, byId: string) => void;
   approveParticipant: (questId: string, memberId: string, byId: string) => void;
@@ -54,7 +63,7 @@ interface Props {
 export function QuestCard({
   q, now, questId, members, colors, isDark, cardBg, cardBord,
   isParent, isSenior, isKid, isKidOrTeen, isParentOrSenior, myId, activeMember,
-  isAssignedTo, isClaiming, handleClaim, openSubmitSheet, setDeclineTarget,
+  isAssignedTo, isClaiming, handleClaim, openSubmitSheet, setDeclineTarget, onCantMakeIt,
   approveQuest, reassignQuest, approveParticipant, reopenParticipant,
   updateQuest, deleteQuest, setEditTarget, setDelegateTarget, setProofPhotoViewerUri,
 }: Props) {
@@ -80,62 +89,31 @@ export function QuestCard({
   const isDeclined = q.status === 'declined';
   const choreData  = useChoreStore.getState().chores.find(c => c.id === q.id);
 
-  // RBAC checks
-  const canClaim   = isKidOrTeen && isPoolCard;
-  // Submit: kid/teen and it's their own quest
-  const canSubmit  = isKidOrTeen && isTodoCard && !!myId && isAssignedTo(q, myId);
-  // A declined chore is represented as redo_requested by the
-  // chore adapter. The assignee can correct it and submit again.
-  const canResubmit = isKidOrTeen && isDeclined && !!myId && isAssignedTo(q, myId);
-  // Kid/teen can refuse a directly-assigned household chore — same flat
-  // "can't do this → back to pool" flow for both, not a negotiation. Teens
-  // used to be excluded entirely (isKid-only), leaving a teen with no way
-  // out of an assigned chore they genuinely can't do except ignoring it or
-  // submitting bad work. The exclusion was meant to keep teens out of
-  // System A's parent-to-parent pushback negotiation (Snooze/Blocker/Trade/
-  // Discuss) — not to remove the same one-tap decline a kid already has.
-  const canKidDecline = isKidOrTeen && isTodoCard && !q.isPool && !!myId && isAssignedTo(q, myId);
-  // GP quest sitting at todo — the kid/teen accepts it before it counts as
-  // started. Was isKid-only for the same reason as canKidDecline above —
-  // widened to match, since accepting/declining a GP-sponsored quest isn't
-  // System A negotiation either.
-  const canAcceptGp = isKidOrTeen && !!myId && isAssignedTo(q, myId) &&
-    choreData?.categoryType === 'grandparent_quest' && choreData?.status === 'todo';
-  // A plain household chore a parent toggled "GP Welcome" on — inviteGrandparents
-  // true, but isPool is false (it's a regular todo chore made GP-visible,
-  // NOT a kid bounty-pool item, and NOT questType==='grandparent_quest',
-  // which is a separate GP-sponsored-quest flow with its own "I'll take it
-  // 👴" button below). Live debug confirmed this: status='todo', isPool=
-  // false, inviteGrandparents=true. Matches SeniorView's Hub gpInvitations
-  // filter exactly (status==='todo' && !assignedToId, no isPool check) —
-  // QuestsScreen's senior filter already makes this card visible on the
-  // Chores tab, but nothing here gave it an action button, so it rendered
-  // with "Not started" and an empty action strip.
-  const canGpClaimPool = isSenior && q.status === 'todo' && !!q.inviteGrandparents && !q.assignedToId;
-  // Once a GP claims a GP-Welcome chore (canGpClaimPool above → in_progress,
-  // assignedToId = that GP), there was previously no action button for
-  // them at all — canSubmit is isKidOrTeen-only, and the "Done · Submit"
-  // button further down is questType==='grandparent_quest'-only, neither
-  // of which covers this case. "Done" self-completes with no approval gate
-  // (trusted adult, matches submitGPErrandReceipt's no-receipt branch
-  // shape) and no coin payout (adults don't earn coins for their own
-  // chores, same precedent QuestApprovalCard.tsx documents for parents).
-  // "Backout" releases it back to the open pool for any GP to claim again.
-  const canGpDone = isSenior && !!myId && q.assignedToId === myId
-    && !!q.inviteGrandparents && (q.status === 'todo' || q.status === 'in_progress');
-  // Approve/Decline: parent or senior, quest in review
-  const canApprove = isParentOrSenior && isReview;
-  // Reopen: parent or senior, quest was declined
-  const canReopen  = isParentOrSenior && isDeclined;
-  // Full edit: unassigned (no one has claimed it yet) — all fields incl. coins
-  const canEditFull       = isParent && (isPoolCard || (q.status === 'todo' && !q.assignedToId));
-  // Restricted edit: quest is claimed/in-progress/pending — due date + reassign only, no coins/title
-  const canEditRestricted = isParent && !isDoneCard && !isDeclined &&
-    (q.status === 'in_progress' || q.status === 'pending_approval' || (q.status === 'todo' && !!q.assignedToId));
-  const canEdit           = isParent && !isDoneCard && !isDeclined;
-  // Delete: parent always; GP too, but only their own sponsorship
-  // and only before it's done — a kid's completed/paid work isn't theirs to erase.
-  const canDelete  = (isParent || (isSenior && q.questType === 'grandparent_quest' && q.sponsorUserId === myId)) && !isDoneCard;
+  // RBAC checks — derived from the one shared source both QuestCard and
+  // Hub's KidQuestCard now call, instead of each hand-rolling its own
+  // version (that drift already caused two documented bugs in KidQuestCard:
+  // an overdue-badge mismatch and a dead decline-branch). See
+  // features/tasks/lib/deriveCardActions.ts for the full rule set/comments —
+  // this is the same logic that used to live inline here, just importable.
+  const isActiveApprover = useTemporaryApproverStore(s => !!myId && s.isActiveApprover(myId));
+  // deriveQuestActions only ever branches on kid-or-teen vs parent vs
+  // senior — never null/unknown — so when none of isParent/isSenior/
+  // isKidOrTeen hold (e.g. no activeMember resolved yet) this intentionally
+  // passes a role that satisfies none of the function's role checks,
+  // matching the original inline consts' behavior of evaluating false in
+  // that same edge case.
+  const {
+    canClaim, canSubmit, canResubmit, canKidDecline, canAcceptGp, canGpClaimPool, canGpDone,
+    canApprove, canReopen, canEditFull, canEditRestricted, canEdit, canDelete,
+  } = deriveQuestActions(
+    q,
+    {
+      id: myId ?? '',
+      role: isParent ? 'parent' : isSenior ? 'senior' : isKidOrTeen ? 'kid' : undefined,
+      isActiveApprover,
+    },
+    { categoryType: choreData?.categoryType, status: choreData?.status },
+  );
 
   // Accent colour by status
   const accentColor =
@@ -838,7 +816,10 @@ export function QuestCard({
         {canKidDecline && (
           <TouchableOpacity
             style={[s.actionBtn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.danger }]}
-            onPress={() => setDeclineTarget({ id: q.id, title: q.title, memberId: undefined })}
+            onPress={() => {
+              if (onCantMakeIt && choreData) onCantMakeIt(choreData);
+              else setDeclineTarget({ id: q.id, title: q.title, memberId: undefined });
+            }}
           >
             <Text style={[s.actionBtnText, { color: colors.danger }]}>{canAcceptGp ? 'Decline' : "Can't do this"}</Text>
           </TouchableOpacity>

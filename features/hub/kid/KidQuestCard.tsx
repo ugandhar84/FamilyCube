@@ -9,6 +9,8 @@ import { CollapsibleCard, QuestLiveness } from '../hubComponents';
 import { BonusCoinBadge } from './BonusCoinBadge';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
+import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
+import { useChoreStore } from '@/store/choreStore';
 
 // Money-green — "approved / bounty" positive accent, distinct from brand
 // teal (used elsewhere in this card for in-progress/claimed state). Not
@@ -43,16 +45,23 @@ export function KidQuestCard({
   const isDeclined = q.status === 'declined';
   const isActionable = ['todo', 'claimed', 'in_progress', 'declined'].includes(q.status);
   const meta = questStatusMeta(q, colors);
-  // A grandparent quest waits on the kid's yes/no before it counts as started.
-  const isGpTodo = q.questType === 'grandparent_quest' && q.status === 'todo' && !isPool;
-  // A plain household chore directly assigned to this kid/teen, not yet
-  // submitted — same flat "can't do this -> back to pool" escape hatch the
-  // Chores tab's QuestCard.tsx canKidDecline already offers, previously
-  // missing here entirely (only isGpTodo got a Decline button in this Hub
-  // card, so a kid/teen with a genuinely-can't-do assigned chore had no
-  // button anywhere in the Hub, only on the separate Chores tab).
-  const canDeclinePlain = !isGpTodo && !isPool
-    && (q.status === 'todo' || q.status === 'in_progress' || q.status === 'claimed');
+  // Button-visibility now comes from the same shared derivation QuestCard.tsx
+  // (the Chores tab's card) calls — this card used to hand-roll its own
+  // isGpTodo/canDeclinePlain here, which is exactly what caused two
+  // documented drift bugs vs. the Chores tab (a dead decline-branch on
+  // claimed chores, an overdue-badge mismatch) — see
+  // features/tasks/lib/deriveCardActions.ts for the full rule set.
+  const choreExtra = useChoreStore(s => {
+    const c = s.chores.find(c => c.id === q.id);
+    return c ? { categoryType: c.categoryType, status: c.status } : undefined;
+  });
+  const { canClaim, canSubmit, canResubmit, canKidDecline, canAcceptGp } = deriveQuestActions(
+    q,
+    { id: active.id, role: active.role },
+    choreExtra,
+  );
+  const isGpTodo = canAcceptGp;
+  const canDeclinePlain = canKidDecline;
   // Bounty offered to a shortlist of siblings — each earns the full coins
   // independently; nobody's payout depends on the others finishing.
   const teamMates = q.teamGroupId ? allQuests.filter(t => t.teamGroupId === q.teamGroupId && t.id !== q.id) : [];

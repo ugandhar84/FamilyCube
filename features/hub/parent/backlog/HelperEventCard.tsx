@@ -5,6 +5,7 @@ import { TYPO } from '@/constants/theme';
 import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
+import { deriveEventActions } from '@/features/tasks/lib/deriveCardActions';
 
 // Confirmed-green — "confirmed" status accent, distinct from brand teal
 // used elsewhere in this card. Not colors.success (which IS brand teal in
@@ -27,6 +28,15 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
   const CatIcon = ev.category === 'Sports' ? Medal : ev.category === 'Medical' ? HeartPulse : ev.category === 'Study' ? BookOpen : ev.category === 'Ride' ? Car : Calendar;
   const kidName = members.find(m => m.id === ev.memberId)?.name.split(' ')[0] ?? '';
   const [notesExpanded, setNotesExpanded] = useState(false);
+  // Button-visibility now comes from the same shared derivation
+  // EventDetailSheet already used (the canonical shared event-action
+  // surface) instead of this card's own hand-rolled ev.helper===active.name
+  // checks — closes the drift class documented below (a past hand-rolled
+  // "Can't" here bypassed the canonical decline path entirely).
+  const { showAssignToMe, showConfirm, showCantMakeIt } = deriveEventActions(
+    ev,
+    { id: active.id, name: active.name, role: active.role, hasCar: active.hasCar },
+  );
 
   return (
     <View style={{ borderRadius: 14, borderWidth: 1,
@@ -66,7 +76,7 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
       ) : null}
       {ev.helperStatus !== 'confirmed' && (
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 6, marginLeft: 24 }}>
-          {ev.helper !== active.name && (
+          {showAssignToMe && (
             <Pressable
               onPress={() => {
                 console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Take Over" on "${ev.title}" from ${ev.helper} (id=${ev.id}) [features/hub/parent/backlog/HelperEventCard.tsx:72]`);
@@ -94,7 +104,7 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
               <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.parent }}>Take Over</Text>
             </Pressable>
           )}
-          {ev.helper === active.name && (
+          {(showConfirm || showCantMakeIt) && (
             <>
               <Pressable
                 onPress={() => {

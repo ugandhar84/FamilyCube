@@ -172,17 +172,6 @@ function dedupeMembers(members: FamilyMember[]): FamilyMember[] {
   return [...byId.values()];
 }
 
-// Seed data for demo / first launch (IDs match questStore seeds)
-const SEED_MEMBERS: FamilyMember[] = [
-  { id: 'parent-1', name: 'Alex (Dad)',  role: 'parent', emoji: '👨', coins: 0,   mainCoins: 0,  gpCoins: 0,  xp: 0,   streak: 3, level: 2, questsCompleted: 5,  questsPending: 1 },
-  { id: 'parent-2', name: 'Priya (Mom)', role: 'parent', emoji: '👩', coins: 0,  mainCoins: 0,  gpCoins: 0,  xp: 0,   streak: 2, level: 2, questsCompleted: 3,  questsPending: 0 },
-  { id: 'kid-1',    name: 'Leo',         role: 'kid',    emoji: '🦁', coins: 108, mainCoins: 108, gpCoins: 45, xp: 320, streak: 4, level: 3, questsCompleted: 12, questsPending: 2 },
-  { id: 'kid-2',    name: 'Maya',        role: 'kid',    emoji: '🌸', coins: 75,  mainCoins: 75,  gpCoins: 30, xp: 210, streak: 2, level: 2, questsCompleted: 8,  questsPending: 1 },
-  { id: 'kid-3',    name: 'Sam',         role: 'kid',    emoji: '👶', coins: 40,  mainCoins: 40,  gpCoins: 20, xp: 90,  streak: 1, level: 1, questsCompleted: 4,  questsPending: 1 },
-  { id: 'teen-1',   name: 'Jordan',       role: 'teen',   emoji: '🎧', coins: 60,  mainCoins: 60,  gpCoins: 0, xp: 180, streak: 3, level: 2, questsCompleted: 6,  questsPending: 1, hasCar: false, rideEarningsPerRun: 50, groceryEarningsPerRun: 30 },
-  { id: 'senior-1', name: 'Grandma Mary', role: 'senior', emoji: '👵', coins: 0, mainCoins: 0,  gpCoins: 0,  xp: 0,   streak: 0, level: 1, questsCompleted: 0,  questsPending: 0 },
-];
-
 // DB row → FamilyMember
 function fromRow(row: any): FamilyMember {
   const isUrl = typeof row.avatar === 'string' && row.avatar.startsWith('http');
@@ -548,13 +537,16 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
         return;
       }
     } catch {}
-    // No cache — try DB, fall back to seed data
+    // No cache — try the real family from the DB. Never fall back to fake
+    // demo data: a sync failure (offline, RLS ambiguity, auth not ready
+    // yet) used to seed AsyncStorage with a hardcoded "Alex (Dad)"/"Sam"/
+    // etc. demo family, which then got read back on every future launch
+    // BEFORE syncFromDB() even ran again — permanently masking the real
+    // family with fake data until the cache was manually cleared. Leaving
+    // members empty on a failed sync is the honest state; the UI should
+    // show a loading/retry state instead of silently substituting fake
+    // people.
     await get().syncFromDB();
-    // If DB returned nothing (offline / empty), use seed members
-    if (get().members.length === 0) {
-      set({ members: SEED_MEMBERS, activeMemberId: SEED_MEMBERS[0].id });
-      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_MEMBERS));
-    }
     set({ loaded: true });
   },
 

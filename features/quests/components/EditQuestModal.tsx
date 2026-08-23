@@ -2,10 +2,9 @@ import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   TextInput, Modal, ActivityIndicator, Alert, Platform,
-  KeyboardAvoidingView, Keyboard, StyleSheet, Switch,
+  KeyboardAvoidingView, Keyboard, StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useChoreStore } from '@/store/choreStore';
@@ -18,6 +17,10 @@ import { localDateStr, parseLocalDate, parseTimeInput } from '@/lib/dates';
 import { I } from './icons';
 import { QUEST_SUGGESTIONS, ALL_CATEGORIES, fmtDateLabel, fmtTimeLabel } from './questFormShared';
 import { aq } from './AddQuestModal';
+// Shared with AddQuestModal / AddEventModal — this file used to hand-
+// duplicate both of these blocks inline.
+import { CallReminderToggle } from '@/features/tasks/components/forms/CallReminderToggle';
+import { DueDateTimePicker } from '@/features/tasks/components/forms/DueDateTimePicker';
 import {
   resolveDomainFromLooseLabel, fetchSubcategoriesForDomain, previewAssignment, previewKidChoreAssignment,
   type ResponsibilityCategory, type AssignmentSuggestion,
@@ -113,14 +116,6 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
     setCategory(s.category);
   };
 
-  const onDateChange = (_: any, selected?: Date) => {
-    setShowDatePick(Platform.OS === 'ios');
-    if (selected) { const d = new Date(selected); d.setHours(dueDate.getHours(), dueDate.getMinutes(), 0, 0); setDueDate(d); }
-  };
-  const onTimeChange = (_: any, selected?: Date) => {
-    setShowTimePick(Platform.OS === 'ios');
-    if (selected) { const d = new Date(dueDate); d.setHours(selected.getHours(), selected.getMinutes(), 0, 0); setDueDate(d); }
-  };
 
   const save = async () => {
     setSaving(true);
@@ -445,36 +440,17 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
                 ))}
               </View>
 
-              {/* Due Date & Time */}
-              <Text style={[aq.label, { color: colors.textSecondary }]}>Due Date & Time</Text>
-              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
-                <TouchableOpacity style={[aq.datePill, { backgroundColor: showDatePick ? BRAND.purple + '20' : pillBg, borderColor: showDatePick ? BRAND.purple : pillBdr }]}
-                  onPress={() => { setShowDatePick(p => !p); setShowTimePick(false); }}>
-                  <Text style={{ fontSize: TYPO.label, marginRight: 4 }}>📅</Text>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showDatePick ? BRAND.purple : colors.textPrimary }}>{fmtDateLabel(dueDate)}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[aq.datePill, { backgroundColor: showTimePick ? BRAND.purple + '20' : pillBg, borderColor: showTimePick ? BRAND.purple : pillBdr }]}
-                  onPress={() => { setShowTimePick(p => !p); setShowDatePick(false); }}>
-                  <Text style={{ fontSize: TYPO.label, marginRight: 4 }}>🕐</Text>
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showTimePick ? BRAND.purple : colors.textPrimary }}>{fmtTimeLabel(dueDate)}</Text>
-                </TouchableOpacity>
-              </View>
-              {(showDatePick || showTimePick) && (
-                <Modal transparent animationType="fade" visible onRequestClose={() => { setShowDatePick(false); setShowTimePick(false); }}>
-                  <TouchableOpacity style={aq.pickerOverlay} activeOpacity={1} onPress={() => { setShowDatePick(false); setShowTimePick(false); }}>
-                    <TouchableOpacity activeOpacity={1} style={[aq.pickerCard, { backgroundColor: colors.card }]}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
-                        <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>{showDatePick ? '📅 Pick a Date' : '🕐 Pick a Time'}</Text>
-                        <TouchableOpacity onPress={() => { setShowDatePick(false); setShowTimePick(false); }}>
-                          <Text style={{ color: BRAND.purple, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
-                        </TouchableOpacity>
-                      </View>
-                      {showDatePick && <DateTimePicker value={dueDate} mode="date" display="spinner" minimumDate={new Date()} onChange={onDateChange} textColor={colors.textPrimary} style={{ height: 180, width: '100%' }} />}
-                      {showTimePick && <DateTimePicker value={dueDate} mode="time" display="spinner" is24Hour={false} onChange={onTimeChange} textColor={colors.textPrimary} style={{ height: 180, width: '100%' }} />}
-                    </TouchableOpacity>
-                  </TouchableOpacity>
-                </Modal>
-              )}
+              {/* Due Date & Time — same shared picker AddQuestModal uses
+                  (see DueDateTimePicker); was a near-byte-identical inline
+                  duplicate of that form's block. */}
+              <DueDateTimePicker
+                value={dueDate} setValue={setDueDate}
+                showDatePick={showDatePick} setShowDatePick={setShowDatePick}
+                showTimePick={showTimePick} setShowTimePick={setShowTimePick}
+                fmtDateLabel={fmtDateLabel} fmtTimeLabel={fmtTimeLabel}
+                accentColor={BRAND.purple} colors={colors} isDark={isDark}
+                pillStyle={aq.datePill} overlayStyle={aq.pickerOverlay} cardStyle={aq.pickerCard}
+              />
 
               {/* Linked event (spec 8.2) — optional tie to an upcoming
                   calendar event this quest logistically supports. */}
@@ -527,29 +503,16 @@ export function EditQuestModal({ quest, activeMemberId, onClose, onSave, onDelet
               })()}
 
               {/* Call-style reminder — allowed even in restricted edit mode,
-                  since it's not a sensitive field like title/coins. */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: alertCall ? 8 : 14 }}>
-                <TouchableOpacity onPress={() => setAlertCall(v => !v)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                  <Ionicons name={alertCall ? 'call' : 'call-outline'} size={18} color={alertCall ? BRAND.purple : colors.textSecondary} />
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>Call to remind</Text>
-                </TouchableOpacity>
-                <Switch value={alertCall} onValueChange={setAlertCall} trackColor={{ true: BRAND.purple }} />
-              </View>
-              {alertCall && (
-                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-                  {[0, 10, 15, 30].map(mins => (
-                    <TouchableOpacity key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
-                      style={[aq.datePill, {
-                        backgroundColor: alertCallLeadMinutes === mins ? BRAND.purple + '20' : pillBg,
-                        borderColor: alertCallLeadMinutes === mins ? BRAND.purple : pillBdr,
-                      }]}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: alertCallLeadMinutes === mins ? BRAND.purple : colors.textPrimary }}>
-                        {mins === 0 ? 'On time' : `${mins} min before`}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
+                  since it's not a sensitive field like title/coins. Shared
+                  with AddQuestModal and the Schedule form (see
+                  CallReminderToggle); this file previously kept its own
+                  byte-identical copy of the block. */}
+              <CallReminderToggle
+                alertCall={alertCall} setAlertCall={setAlertCall}
+                alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
+                accentColor={BRAND.purple} colors={colors} isDark={isDark}
+                variant="icon" pillStyle={aq.datePill}
+              />
 
               {/* Repeats — always shown, even if recurrence was never
                   explicitly set (or was set by accident, e.g. a past form

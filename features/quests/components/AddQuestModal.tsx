@@ -1,12 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  TextInput, Modal, ActivityIndicator, Platform, KeyboardAvoidingView, Switch, Alert,
+  TextInput, Modal, ActivityIndicator, Platform, Alert,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 // questStore commented out — chores system is the single source of truth
@@ -31,6 +29,15 @@ import { AddQuestRecurrenceSection } from './AddQuestRecurrenceSection';
 import { AddQuestAssignSection } from './AddQuestAssignSection';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { familyAi } from '@/lib/familyAiService';
+
+// ─── Shared task-form pieces (features/tasks/components/forms) ────────────────
+// The same stepper shell, voice box, due-date picker and call-reminder
+// toggle AddEventModal uses. Previously this file hand-maintained its own
+// copy of each; see TaskFormShell's header for why that stopped being safe.
+import { TaskFormShell } from '@/features/tasks/components/forms/TaskFormShell';
+import { CallReminderToggle } from '@/features/tasks/components/forms/CallReminderToggle';
+import { DueDateTimePicker } from '@/features/tasks/components/forms/DueDateTimePicker';
+import { VoicePrefillBox } from '@/features/tasks/components/forms/TitleStep';
 
 // Word-boundary match, not bare substring containment — "load" must not
 // match inside "unload". A plain .includes() let "Unload the dishwasher"
@@ -81,7 +88,6 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   prefill?: { title?: string; coins?: number; assignedToId?: string; photoRequired?: boolean; dueDate?: string };
 }) {
   const { colors, isDark } = useTheme();
-  const insets = useSafeAreaInsets();
   const { addQuest, createParticipants } = useQuestStore();
   const members = useFamilyStore(s => s.members);
   const kids    = members.filter(m => m.role === 'kid');
@@ -431,23 +437,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   const [linkedEventId, setLinkedEventId] = useState<string | undefined>(undefined);
   const [showEventPicker, setShowEventPicker] = useState(false);
 
-  const onDateChange = (_: any, selected?: Date) => {
-    setShowDatePick(Platform.OS === 'ios'); // keep open on iOS (inline), close on Android
-    if (selected) {
-      const merged = new Date(selected);
-      merged.setHours(dueDate.getHours(), dueDate.getMinutes(), 0, 0);
-      setDueDate(merged);
-    }
-  };
 
-  const onTimeChange = (_: any, selected?: Date) => {
-    setShowTimePick(Platform.OS === 'ios');
-    if (selected) {
-      const merged = new Date(dueDate);
-      merged.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
-      setDueDate(merged);
-    }
-  };
 
   const reset = () => {
     setTitle(''); setDesc(''); setCoins('30'); setBonusCoins(''); setDifficulty('');
@@ -708,64 +698,17 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
   const pillBdr = isDark ? colors.border  : '#E2E8F0';
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={() => { reset(); onClose(); }}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={aq.backdrop}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { reset(); onClose(); }} />
-          <View style={[aq.sheet, { backgroundColor: colors.card }]}>
-            {/* Drag handle */}
-            <View style={[aq.handle, { backgroundColor: colors.border }]} />
-
-            {/* ── Fixed header ── */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={[aq.title, { color: colors.textPrimary }]}>
-                  {defaultQuestType === 'grandparent_quest' ? '👴 Sponsor a Chore' : 'New Chore'}
-                </Text>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: BRAND.purple }}>
-                  {defaultQuestType === 'grandparent_quest' ? 'Create a special chore for the grandkids' : 'Assign a chore, bounty, or task'}
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => { reset(); onClose(); }}
-                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}
-              >
-                <Ionicons name="close" size={18} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            {/* ── Step progress — dots for the ACTUAL step count for this
-                chore (4 for most, 5 once the grocery step exists), not a
-                fixed number, and a Back arrow once past step 1. */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              {step > 0 && (
-                <TouchableOpacity onPress={() => setStep(s => s - 1)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Ionicons name="chevron-back" size={20} color={colors.textSecondary} />
-                </TouchableOpacity>
-              )}
-              <View style={{ flexDirection: 'row', gap: 6, flex: 1 }}>
-                {stepIds.map((id, i) => (
-                  <View key={id} style={{
-                    flex: 1, height: 4, borderRadius: 2,
-                    backgroundColor: i <= step ? BRAND.purple : (isDark ? colors.border : '#E2E8F0'),
-                  }} />
-                ))}
-              </View>
-              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary }}>
-                {step + 1}/{stepIds.length}
-              </Text>
-            </View>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.purple, marginBottom: 10, marginTop: -6 }}>
-              {stepTitles[currentStepId]}
-            </Text>
-
-            {/* ── Scrollable form fields ── */}
-            <ScrollView
-              keyboardShouldPersistTaps="always"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: currentStepId === 'review' ? Math.max(48, insets.bottom + 32) : 48 }}
-            >
+    <TaskFormShell
+      visible={visible}
+      onClose={() => { reset(); onClose(); }}
+      stepIds={stepIds}
+      stepTitles={stepTitles}
+      step={step}
+      setStep={setStep}
+      accentColor={BRAND.purple}
+      headerTitle={defaultQuestType === 'grandparent_quest' ? '👴 Sponsor a Chore' : 'New Chore'}
+      headerSubtitle={defaultQuestType === 'grandparent_quest' ? 'Create a special chore for the grandkids' : 'Assign a chore, bounty, or task'}
+    >
 
             {currentStepId === 'what' && <>
             {/* Title */}
@@ -790,95 +733,13 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               returnKeyType="next"
             />
 
-            {/* Voice → AI prefill — same interaction as Ask Cube's mic: tap
-                to record, the transcript lands in an editable box once you
-                stop talking, and only an explicit "Send" tap sends it to
-                the AI — never automatic on speech-end. Speech-to-text
-                happens entirely on-device; only the transcript TEXT you
-                approve is ever sent, never audio. */}
-            {voice.state !== 'listening' && !voiceDraft && (
-              <TouchableOpacity
-                onPress={() => voice.start()}
-                disabled={isPrefilling}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -6, marginBottom: 12,
-                  borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 13, paddingVertical: 11,
-                  borderColor: BRAND.purple + '45',
-                  backgroundColor: isDark ? BRAND.purple + '1c' : '#F8F5FF',
-                }}
-              >
-                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: BRAND.purple + '22', alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name="mic" size={13} color={BRAND.purple} />
-                </View>
-                <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }} numberOfLines={1}>
-                  🎙️ Or just say it — Cube will fill this in
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {(voice.state === 'listening' || voiceDraft) && (
-              <View style={{ marginTop: -6, marginBottom: 12, borderRadius: 14, borderWidth: 1.5,
-                borderColor: voice.state === 'listening' ? colors.danger + '60' : BRAND.purple + '45',
-                backgroundColor: voice.state === 'listening' ? colors.danger + '08' : (isDark ? BRAND.purple + '1c' : '#F8F5FF'),
-                padding: 12, gap: 10 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <TouchableOpacity
-                    onPress={() => {
-                      if (voice.state === 'listening') {
-                        const transcript = voice.liveTranscript;
-                        voice.stop();
-                        if (transcript.trim()) setVoiceDraft(transcript);
-                        return;
-                      }
-                      voice.start();
-                    }}
-                    style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: voice.state === 'listening' ? colors.danger + '30' : BRAND.purple + '22' }}>
-                    {voice.state === 'listening'
-                      ? <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.danger }} />
-                      : <Ionicons name="mic" size={13} color={BRAND.purple} />}
-                  </TouchableOpacity>
-                  <Text style={{ flex: 1, fontSize: TYPO.micro, fontWeight: '700', color: voice.state === 'listening' ? colors.danger : colors.textTertiary }}>
-                    {voice.state === 'listening' ? 'Listening… tap to stop' : 'Review and edit, then send'}
-                  </Text>
-                </View>
-                <TextInput
-                  value={voice.state === 'listening' ? (voice.liveTranscript || '') : voiceDraft}
-                  onChangeText={setVoiceDraft}
-                  editable={voice.state !== 'listening' && !isPrefilling}
-                  placeholder="Listening…"
-                  placeholderTextColor={colors.textTertiary}
-                  multiline
-                  style={{ fontSize: TYPO.body, color: colors.textPrimary, minHeight: 44, textAlignVertical: 'top' }}
-                />
-                {voice.state !== 'listening' && (
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <TouchableOpacity
-                      onPress={() => { setVoiceDraft(''); voice.reset(); }}
-                      disabled={isPrefilling}
-                      style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10,
-                        borderWidth: 1, borderColor: colors.border }}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Discard</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => applyVoiceTranscript(voiceDraft)}
-                      disabled={isPrefilling || !voiceDraft.trim()}
-                      style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        paddingVertical: 9, borderRadius: 10,
-                        backgroundColor: !voiceDraft.trim() || isPrefilling ? colors.border : BRAND.purple }}>
-                      {isPrefilling
-                        ? <ActivityIndicator size="small" color="#fff" />
-                        : <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: !voiceDraft.trim() ? colors.textTertiary : '#fff' }}>Send</Text>}
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            )}
-            {voice.state === 'error' && voice.error && (
-              <Text style={{ fontSize: TYPO.micro, color: colors.danger, marginTop: -8, marginBottom: 12 }}>
-                {voice.error}
-              </Text>
-            )}
+            {/* Voice → AI prefill — shared with AddEventModal (see
+                VoicePrefillBox). */}
+            <VoicePrefillBox
+              voice={voice} voiceDraft={voiceDraft} setVoiceDraft={setVoiceDraft}
+              isPrefilling={isPrefilling} onSend={applyVoiceTranscript}
+              accentColor={BRAND.purple} colors={colors} isDark={isDark}
+            />
 
             {/* Dynamic suggestion pills — always visible */}
             {suggestions.length > 0 && (
@@ -1152,71 +1013,17 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
             </>}
 
             {currentStepId === 'when' && <>
-            {/* Due Date + Time */}
-            <Text style={[aq.label, { color: colors.textSecondary }]}>Due Date & Time</Text>
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
-              {/* Date pill */}
-              <TouchableOpacity
-                style={[aq.datePill, { backgroundColor: showDatePick ? BRAND.purple + '20' : pillBg, borderColor: showDatePick ? BRAND.purple : pillBdr }]}
-                onPress={() => { setShowDatePick(p => !p); setShowTimePick(false); }}
-              >
-                <Text style={{ fontSize: TYPO.label, marginRight: 4 }}>📅</Text>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showDatePick ? BRAND.purple : colors.textPrimary }}>
-                  {fmtDateLabel(dueDate)}
-                </Text>
-              </TouchableOpacity>
-
-              {/* Time pill */}
-              <TouchableOpacity
-                style={[aq.datePill, { backgroundColor: showTimePick ? BRAND.purple + '20' : pillBg, borderColor: showTimePick ? BRAND.purple : pillBdr }]}
-                onPress={() => { setShowTimePick(p => !p); setShowDatePick(false); }}
-              >
-                <Text style={{ fontSize: TYPO.label, marginRight: 4 }}>🕐</Text>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: showTimePick ? BRAND.purple : colors.textPrimary }}>
-                  {fmtTimeLabel(dueDate)}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Picker overlay — floats above form, no layout shift */}
-            {(showDatePick || showTimePick) && (
-              <Modal transparent animationType="fade" visible onRequestClose={() => { setShowDatePick(false); setShowTimePick(false); }}>
-                <TouchableOpacity style={aq.pickerOverlay} activeOpacity={1} onPress={() => { setShowDatePick(false); setShowTimePick(false); }}>
-                  <TouchableOpacity activeOpacity={1} style={[aq.pickerCard, { backgroundColor: colors.card }]}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
-                      <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>
-                        {showDatePick ? '📅 Pick a Date' : '🕐 Pick a Time'}
-                      </Text>
-                      <TouchableOpacity onPress={() => { setShowDatePick(false); setShowTimePick(false); }}>
-                        <Text style={{ color: BRAND.purple, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
-                      </TouchableOpacity>
-                    </View>
-                    {showDatePick && (
-                      <DateTimePicker
-                        value={dueDate}
-                        mode="date"
-                        display="spinner"
-                        minimumDate={new Date()}
-                        onChange={onDateChange}
-                        textColor={colors.textPrimary}
-                        style={{ height: 180, width: '100%' }}
-                      />
-                    )}
-                    {showTimePick && (
-                      <DateTimePicker
-                        value={dueDate}
-                        mode="time"
-                        display="spinner"
-                        is24Hour={false}
-                        onChange={onTimeChange}
-                        textColor={colors.textPrimary}
-                        style={{ height: 180, width: '100%' }}
-                      />
-                    )}
-                  </TouchableOpacity>
-                </TouchableOpacity>
-              </Modal>
-            )}
+            {/* Due Date & Time — shared with EditQuestModal, which used to
+                keep a byte-identical copy of this block (see
+                DueDateTimePicker). */}
+            <DueDateTimePicker
+              value={dueDate} setValue={setDueDate}
+              showDatePick={showDatePick} setShowDatePick={setShowDatePick}
+              showTimePick={showTimePick} setShowTimePick={setShowTimePick}
+              fmtDateLabel={fmtDateLabel} fmtTimeLabel={fmtTimeLabel}
+              accentColor={BRAND.purple} colors={colors} isDark={isDark}
+              pillStyle={aq.datePill} overlayStyle={aq.pickerOverlay} cardStyle={aq.pickerCard}
+            />
 
             {/* Linked event (spec 8.2) — optional tie to an upcoming calendar
                 event this quest logistically supports, e.g. "Pack for the
@@ -1269,29 +1076,14 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               );
             })()}
 
-            {/* Call-style reminder — opt-in, rings via CallKit/ConnectionService */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: alertCall ? 8 : 14 }}>
-              <TouchableOpacity onPress={() => setAlertCall(v => !v)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                <Ionicons name={alertCall ? 'call' : 'call-outline'} size={18} color={alertCall ? BRAND.purple : colors.textSecondary} />
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>Call to remind</Text>
-              </TouchableOpacity>
-              <Switch value={alertCall} onValueChange={setAlertCall} trackColor={{ true: BRAND.purple }} />
-            </View>
-            {alertCall && (
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-                {[0, 10, 15, 30].map(mins => (
-                  <TouchableOpacity key={mins} onPress={() => setAlertCallLeadMinutes(mins)}
-                    style={[aq.datePill, {
-                      backgroundColor: alertCallLeadMinutes === mins ? BRAND.purple + '20' : pillBg,
-                      borderColor: alertCallLeadMinutes === mins ? BRAND.purple : pillBdr,
-                    }]}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: alertCallLeadMinutes === mins ? BRAND.purple : colors.textPrimary }}>
-                      {mins === 0 ? 'On time' : `${mins} min before`}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
+            {/* Call-style reminder — shared with the Schedule form and
+                EditQuestModal (see CallReminderToggle). */}
+            <CallReminderToggle
+              alertCall={alertCall} setAlertCall={setAlertCall}
+              alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
+              accentColor={BRAND.purple} colors={colors} isDark={isDark}
+              variant="icon" pillStyle={aq.datePill}
+            />
             </>}
 
             {currentStepId === 'assign' && <>
@@ -1412,25 +1204,7 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
               );
             })()}
 
-            </ScrollView>
-
-            {/* ── Footer nav — Next on every step but the last, which shows
-                the Create button above instead (inside the scroll, so its
-                caption/disabled-reason stays attached to the summary). */}
-            {currentStepId !== 'review' && (
-              <View style={{ paddingTop: 10, paddingBottom: Math.max(16, insets.bottom + 8) }}>
-                <TouchableOpacity
-                  style={[aq.submitBtn, { backgroundColor: BRAND.purple }]}
-                  onPress={() => setStep(s => Math.min(s + 1, stepIds.length - 1))}
-                >
-                  <Text style={{ color: '#fff', fontWeight: '900', fontSize: TYPO.body }}>Next</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </TaskFormShell>
   );
 }
 export const aq = StyleSheet.create({

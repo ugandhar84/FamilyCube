@@ -2,6 +2,10 @@ import React from 'react';
 import { View, Text, TouchableOpacity, TextInput, Pressable } from 'react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
+// The recurrence half of this section is genuinely shared with the Schedule
+// tab's own Repeats picker — one implementation, imported by both. The
+// routineType chips / coin-zeroing / shopping list below stay quest-only.
+import { WeekdayChips, DayOfMonthGrid } from '@/features/tasks/components/forms/RecurrenceControl';
 
 type RoutineType = 'citizenship' | 'routine' | 'bounty' | 'shopping';
 type RoutineFreq = 'daily' | 'weekly' | 'monthly' | 'first_come' | 'once';
@@ -200,65 +204,36 @@ export function AddQuestRecurrenceSection({
                     ))}
                   </View>
 
-                  {/* Which days — same S/M/T/W/T/F/S weekday-chip picker as
-                      the Schedule tab's own Repeats section (EventFormModal),
-                      so weekly recurrence looks and works identically in
-                      both places. No selection = every 7 days from whenever
-                      it was last approved, same as before this existed. */}
+                  {/* Which days / which day-of-month — the SAME picker the
+                      Schedule tab's Repeats section uses, now literally the
+                      same component (WeekdayChips / DayOfMonthGrid) rather
+                      than a second copy of it that merely looked the same.
+                      No weekday selection = every 7 days from whenever it
+                      was last approved; no day-of-month selection = whatever
+                      day it was first approved on. Both pre-existing. */}
                   {routineFreq === 'weekly' && (
                     <View>
                       <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.6 }}>
                         Which days?{'  '}
                         <Text style={{ fontWeight: '400', textTransform: 'none' }}>{recurrenceDays.length === 0 ? 'any day, every 7 days' : ''}</Text>
                       </Text>
-                      <View style={{ flexDirection: 'row', gap: 4 }}>
-                        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, dow) => {
-                          const active = recurrenceDays.includes(dow);
-                          return (
-                            <TouchableOpacity key={dow}
-                              onPress={() => setRecurrenceDays(days => active ? days.filter(d => d !== dow) : [...days, dow].sort())}
-                              style={{ flex: 1, borderRadius: 8, borderWidth: 1.5, paddingVertical: 8, alignItems: 'center',
-                                borderColor: active ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
-                                backgroundColor: active ? BRAND.teal : 'transparent' }}>
-                              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: active ? '#fff' : colors.textSecondary }}>{label}</Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
+                      <WeekdayChips
+                        days={recurrenceDays} setDays={setRecurrenceDays}
+                        accentColor={BRAND.teal} colors={colors} isDark={isDark}
+                      />
                     </View>
                   )}
 
-                  {/* Which day of the month — 1-28 plus "Last day" (never a
-                      fixed 29/30/31, which silently vanishes or shifts in
-                      shorter months). No selection = whatever day-of-month
-                      it was first approved on, same as before this existed. */}
                   {routineFreq === 'monthly' && (
                     <View>
                       <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textTertiary, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.6 }}>
                         Which day?{'  '}
                         <Text style={{ fontWeight: '400', textTransform: 'none' }}>{!recurrenceDayOfMonth ? 'day it was first approved' : ''}</Text>
                       </Text>
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
-                        {Array.from({ length: 28 }, (_, i) => i + 1).map(day => {
-                          const active = recurrenceDayOfMonth === day;
-                          return (
-                            <TouchableOpacity key={day}
-                              onPress={() => setRecurrenceDayOfMonth(active ? undefined : day)}
-                              style={{ width: '12.5%', aspectRatio: 1, borderRadius: 8, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
-                                borderColor: active ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
-                                backgroundColor: active ? BRAND.teal : 'transparent' }}>
-                              <Text style={{ fontSize: TYPO.micro + 1, fontWeight: '800', color: active ? '#fff' : colors.textSecondary }}>{day}</Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                        <TouchableOpacity
-                          onPress={() => setRecurrenceDayOfMonth(recurrenceDayOfMonth === 31 ? undefined : 31)}
-                          style={{ flexGrow: 1, borderRadius: 8, borderWidth: 1.5, paddingVertical: 7, alignItems: 'center', justifyContent: 'center', marginTop: 4,
-                            borderColor: recurrenceDayOfMonth === 31 ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
-                            backgroundColor: recurrenceDayOfMonth === 31 ? BRAND.teal : 'transparent' }}>
-                          <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: recurrenceDayOfMonth === 31 ? '#fff' : colors.textSecondary }}>Last day</Text>
-                        </TouchableOpacity>
-                      </View>
+                      <DayOfMonthGrid
+                        dayOfMonth={recurrenceDayOfMonth} setDayOfMonth={setRecurrenceDayOfMonth}
+                        accentColor={BRAND.teal} colors={colors} isDark={isDark}
+                      />
                     </View>
                   )}
                 </View>

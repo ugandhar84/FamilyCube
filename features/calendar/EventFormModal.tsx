@@ -58,15 +58,36 @@ import AssignmentSuggestionCard from './components/eventForm/AssignmentSuggestio
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { familyAi } from '@/lib/familyAiService';
 
+// ─── Shared task-form pieces (features/tasks/components/forms) ────────────────
+// One stepper shell + one recurrence picker + one call-reminder toggle + one
+// voice box, used by BOTH this form and AddQuestModal. See TaskFormShell's
+// header for why: these were hand-maintained twice and provably drifted.
+import { TaskFormShell } from '@/features/tasks/components/forms/TaskFormShell';
+import { RecurrenceControl } from '@/features/tasks/components/forms/RecurrenceControl';
+import { CallReminderToggle } from '@/features/tasks/components/forms/CallReminderToggle';
+import { VoicePrefillBox } from '@/features/tasks/components/forms/TitleStep';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // AddEventModal
 // ═══════════════════════════════════════════════════════════════════════════════
-export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
+export function AddEventModal({ visible, onClose, activeMemberId, prefill, initialStep }: {
   visible: boolean; onClose: () => void; activeMemberId: string;
   // Seeds initial state from AI-extracted data (VoiceIntakeReviewSheet's
-  // "Edit in full form" handoff) — only covers what the AI response
-  // actually produces; every other field keeps its normal default.
-  prefill?: { title?: string; category?: EventCategory; memberId?: string; startAt?: string; notes?: string };
+  // "Edit in full form" handoff) or from SmartTaskComposer's local
+  // detection ("Review & create in full form" handoff) — every field the
+  // caller doesn't know keeps its normal default.
+  prefill?: {
+    title?: string; category?: EventCategory; memberId?: string; memberIds?: string[]; startAt?: string; notes?: string;
+    doctorName?: string; clinicLocation?: string; coachName?: string; venueLocation?: string; tutorName?: string;
+    generalLocation?: string; pickupLocation?: string; dropLocation?: string; returnTime?: string;
+    helperId?: string; recurFreq?: 'none' | 'daily' | 'weekly' | 'monthly'; recurDays?: number[];
+    alertCall?: boolean; alertCallLeadMinutes?: number;
+  };
+  // 'review' opens directly on the summary step (SmartTaskComposer's
+  // "Review & create" handoff — the user already saw/edited these fields
+  // once and shouldn't have to re-click through the wizard to see them
+  // again); omitted/undefined keeps the normal step-0 start.
+  initialStep?: 'review';
 }) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -82,7 +103,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
   // event category shares the same What/When/Who/Review shape here, so
   // there's no category that skips a whole step the way chores' non-
   // Errand/Shopping categories skip the grocery step.
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(initialStep === 'review' ? 3 : 0);
   const stepIds = ['what', 'when', 'assign', 'review'] as const;
   type StepId = typeof stepIds[number];
   const currentStepId: StepId = stepIds[Math.min(step, stepIds.length - 1)];
@@ -135,39 +156,48 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
   const [showDatePick,   setShowDatePick]   = useState(false);
   const [showTimePick,   setShowTimePick]   = useState(false);
   const [allDay,         setAllDay]         = useState(false);
-  const [alertCall,            setAlertCall]            = useState(false);
-  const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(10);
+  const [alertCall,            setAlertCall]            = useState(prefill?.alertCall ?? false);
+  const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(prefill?.alertCallLeadMinutes ?? 10);
 
   // Repeats — weekly-on-specific-weekdays is the primary case (a school
   // class, recurring practice); daily/monthly are simpler variants of the
   // same underlying generator (see addRecurringEvent in eventStore.ts).
   // 'none' is the default — this control is opt-in, same as chores' own
   // Repeats picker never defaults to a recurring frequency.
-  const [repeatFreq, setRepeatFreq] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none');
-  const [repeatDays, setRepeatDays] = useState<number[]>([]); // 0=Sun..6=Sat, weekly only
+  const [repeatFreq, setRepeatFreq] = useState<'none' | 'daily' | 'weekly' | 'monthly'>(prefill?.recurFreq ?? 'none');
+  const [repeatDays, setRepeatDays] = useState<number[]>(prefill?.recurDays ?? []); // 0=Sun..6=Sat, weekly only
   const [repeatEndDate, setRepeatEndDate] = useState<Date | null>(null);
   const [showRepeatEndDatePick, setShowRepeatEndDatePick] = useState(false);
 
   // Category-specific
-  const [memberIds,      setMemberIds]      = useState<string[]>(prefill?.memberId ? [prefill.memberId] : (isKid ? [activeMemberId] : []));
-  const [helperId,       setHelperId]       = useState<string | undefined>();
-  const [helperName,     setHelperName]     = useState('');
-  const [doctorName,     setDoctorName]     = useState('');
-  const [clinicLocation, setClinicLocation] = useState('');
+  const [memberIds,      setMemberIds]      = useState<string[]>(
+    prefill?.memberIds?.length ? prefill.memberIds : (prefill?.memberId ? [prefill.memberId] : (isKid ? [activeMemberId] : []))
+  );
+  const [helperId,       setHelperId]       = useState<string | undefined>(prefill?.helperId);
+  const [helperName,     setHelperName]     = useState(() => prefill?.helperId ? (members.find(m => m.id === prefill.helperId)?.name ?? '') : '');
+  const [doctorName,     setDoctorName]     = useState(prefill?.doctorName ?? '');
+  const [clinicLocation, setClinicLocation] = useState(prefill?.clinicLocation ?? '');
   const [apptType,       setApptType]       = useState('');
   const [sportType,      setSportType]      = useState('');
-  const [coachName,      setCoachName]      = useState('');
-  const [venueLocation,  setVenueLocation]  = useState('');
-  const [returnDate,     setReturnDate]     = useState<Date | null>(null);
+  const [coachName,      setCoachName]      = useState(prefill?.coachName ?? '');
+  const [venueLocation,  setVenueLocation]  = useState(prefill?.venueLocation ?? '');
+  const [returnDate,     setReturnDate]     = useState<Date | null>(() => {
+    if (!prefill?.returnTime) return null;
+    const [h, m] = prefill.returnTime.split(':').map(Number);
+    if (isNaN(h) || isNaN(m)) return null;
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    return d;
+  });
   const [showReturnDatePick, setShowReturnDatePick] = useState(false);
   const [showReturnTimePick, setShowReturnTimePick] = useState(false);
   const [kitReminder,    setKitReminder]    = useState(false);
   const [subject,        setSubject]        = useState('');
-  const [tutorName,      setTutorName]      = useState('');
+  const [tutorName,      setTutorName]      = useState(prefill?.tutorName ?? '');
   const [isOnline,       setIsOnline]       = useState(false);
   const [meetingUrl,     setMeetingUrl]     = useState('');
-  const [pickupLocation, setPickupLocation] = useState('');
-  const [dropLocation,   setDropLocation]   = useState('');
+  const [pickupLocation, setPickupLocation] = useState(prefill?.pickupLocation ?? '');
+  const [dropLocation,   setDropLocation]   = useState(prefill?.dropLocation ?? '');
   // Drive assignment — separate from the tutor/escort/coach name above, for
   // when an external tutor is set but transport is still a parent decision.
   const [driverId,       setDriverId]       = useState<string | undefined>();
@@ -177,7 +207,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
     setDriverId(id);
     setDriverName(m?.name ?? '');
   };
-  const [generalLocation,setGeneralLocation]= useState('');
+  const [generalLocation,setGeneralLocation]= useState(prefill?.generalLocation ?? '');
   const [openToGrandparents, setOpenToGrandparents] = useState(false);
   const [openToTeens,        setOpenToTeens]        = useState(false);
   const [rideCoinsTeen,      setRideCoinsTeen]      = useState('');
@@ -660,67 +690,23 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
   const catEmoji = CATEGORIES.find(c => c.key === category)?.emoji ?? '📅';
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={() => { reset(); onClose(); }}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <View style={f.backdrop}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { reset(); onClose(); }} />
-          <View style={[f.sheet, { backgroundColor: colors.card }]}>
-            {/* Drag handle */}
-            <View style={[f.handle, { backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }]} />
-
-            {/* ── Fixed header ── */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={[f.title, { color: colors.textPrimary }]}>
-                  {isKid ? '🙋 Request Help' : isSenior ? '🤝 Ask for Help' : '+ New Event'}
-                </Text>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: catColor }}>
-                  {isKid
-                    ? 'Your request goes to a parent for approval'
-                    : isSenior
-                    ? 'Let the family know what you need'
-                    : `${catEmoji} ${category} — ${isParent ? 'full access' : 'senior view'}`}
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Close" on AddEventModal [features/calendar/EventFormModal.tsx:613]`); reset(); onClose(); }}
-                hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-                style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}
-              >
-                <X c={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            {/* ── Step progress — dots for the 4-step flow, Back arrow once
-                past step 1. Same pattern as AddQuestModal's stepper. ── */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              {step > 0 && (
-                <TouchableOpacity onPress={() => setStep(s => s - 1)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Ionicons name="chevron-back" size={20} color={colors.textSecondary} />
-                </TouchableOpacity>
-              )}
-              <View style={{ flexDirection: 'row', gap: 6, flex: 1 }}>
-                {stepIds.map((id, i) => (
-                  <View key={id} style={{
-                    flex: 1, height: 4, borderRadius: 2,
-                    backgroundColor: i <= step ? catColor : (isDark ? colors.border : '#E2E8F0'),
-                  }} />
-                ))}
-              </View>
-              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary }}>
-                {step + 1}/{stepIds.length}
-              </Text>
-            </View>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: catColor, marginBottom: 10, marginTop: -6 }}>
-              {stepTitles[currentStepId]}
-            </Text>
-
-            {/* ── Scrollable form fields (category included) ── */}
-            <ScrollView
-              keyboardShouldPersistTaps="always"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: currentStepId === 'review' ? Math.max(48, insets.bottom + 32) : 48 }}
-            >
+    <TaskFormShell
+      visible={visible}
+      onClose={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Close" on AddEventModal [features/calendar/EventFormModal.tsx]`); reset(); onClose(); }}
+      stepIds={stepIds}
+      stepTitles={stepTitles}
+      step={step}
+      setStep={setStep}
+      accentColor={catColor}
+      headerTitle={isKid ? '🙋 Request Help' : isSenior ? '🤝 Ask for Help' : '+ New Event'}
+      headerSubtitle={
+        isKid
+          ? 'Your request goes to a parent for approval'
+          : isSenior
+          ? 'Let the family know what you need'
+          : `${catEmoji} ${category} — ${isParent ? 'full access' : 'senior view'}`
+      }
+    >
             {currentStepId === 'what' && <>
             {/* ── Category selector ── */}
             <Text style={[f.label, { color: colors.textSecondary, marginBottom: 6 }]}>Category</Text>
@@ -803,95 +789,14 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               returnKeyType="next"
             />
 
-            {/* Voice → AI prefill — same interaction as Ask Cube's mic and
-                AddQuestModal's own: tap to record, the transcript lands in
-                an editable box once you stop talking, and only an explicit
-                "Send" tap sends it to the AI — never automatic on speech-
-                end. Speech-to-text happens entirely on-device; only the
-                transcript TEXT you approve is ever sent, never audio. */}
-            {voice.state !== 'listening' && !voiceDraft && (
-              <TouchableOpacity
-                onPress={() => voice.start()}
-                disabled={isPrefilling}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -6, marginBottom: 12,
-                  borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 13, paddingVertical: 11,
-                  borderColor: catColor + '45',
-                  backgroundColor: isDark ? catColor + '1c' : '#F8F5FF',
-                }}
-              >
-                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: catColor + '22', alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name="mic" size={13} color={catColor} />
-                </View>
-                <Text style={{ flex: 1, fontSize: TYPO.label, fontWeight: '700', color: catColor }} numberOfLines={1}>
-                  🎙️ Or just say it — Cube will fill this in
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {(voice.state === 'listening' || voiceDraft) && (
-              <View style={{ marginTop: -6, marginBottom: 12, borderRadius: 14, borderWidth: 1.5,
-                borderColor: voice.state === 'listening' ? colors.danger + '60' : catColor + '45',
-                backgroundColor: voice.state === 'listening' ? colors.danger + '08' : (isDark ? catColor + '1c' : '#F8F5FF'),
-                padding: 12, gap: 10 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <TouchableOpacity
-                    onPress={() => {
-                      if (voice.state === 'listening') {
-                        const transcript = voice.liveTranscript;
-                        voice.stop();
-                        if (transcript.trim()) setVoiceDraft(transcript);
-                        return;
-                      }
-                      voice.start();
-                    }}
-                    style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: voice.state === 'listening' ? colors.danger + '30' : catColor + '22' }}>
-                    {voice.state === 'listening'
-                      ? <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.danger }} />
-                      : <Ionicons name="mic" size={13} color={catColor} />}
-                  </TouchableOpacity>
-                  <Text style={{ flex: 1, fontSize: TYPO.micro, fontWeight: '700', color: voice.state === 'listening' ? colors.danger : colors.textTertiary }}>
-                    {voice.state === 'listening' ? 'Listening… tap to stop' : 'Review and edit, then send'}
-                  </Text>
-                </View>
-                <TextInput
-                  value={voice.state === 'listening' ? (voice.liveTranscript || '') : voiceDraft}
-                  onChangeText={setVoiceDraft}
-                  editable={voice.state !== 'listening' && !isPrefilling}
-                  placeholder="Listening…"
-                  placeholderTextColor={colors.textTertiary}
-                  multiline
-                  style={{ fontSize: TYPO.body, color: colors.textPrimary, minHeight: 44, textAlignVertical: 'top' }}
-                />
-                {voice.state !== 'listening' && (
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <TouchableOpacity
-                      onPress={() => { setVoiceDraft(''); voice.reset(); }}
-                      disabled={isPrefilling}
-                      style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10,
-                        borderWidth: 1, borderColor: colors.border }}>
-                      <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Discard</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => applyVoiceTranscript(voiceDraft)}
-                      disabled={isPrefilling || !voiceDraft.trim()}
-                      style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        paddingVertical: 9, borderRadius: 10,
-                        backgroundColor: !voiceDraft.trim() || isPrefilling ? colors.border : catColor }}>
-                      {isPrefilling
-                        ? <ActivityIndicator size="small" color={colors.textInverse} />
-                        : <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: !voiceDraft.trim() ? colors.textTertiary : colors.textInverse }}>Send</Text>}
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            )}
-            {voice.state === 'error' && voice.error && (
-              <Text style={{ fontSize: TYPO.micro, color: colors.danger, marginTop: -8, marginBottom: 12 }}>
-                {voice.error}
-              </Text>
-            )}
+            {/* Voice → AI prefill — shared with AddQuestModal (see
+                VoicePrefillBox); tap to record, review the transcript, and
+                only an explicit "Send" tap fires the AI call. */}
+            <VoicePrefillBox
+              voice={voice} voiceDraft={voiceDraft} setVoiceDraft={setVoiceDraft}
+              isPrefilling={isPrefilling} onSend={applyVoiceTranscript}
+              accentColor={catColor} colors={colors} isDark={isDark}
+            />
 
             {/* Suggestions */}
             {suggestions.length > 0 && (
@@ -1013,43 +918,23 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
                 Materializes real rows via addRecurringEvent, same
                 architecture chores' own recurrence uses. */}
             <View style={{ marginBottom: 16, paddingHorizontal: 4 }}>
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>
-                🔁 Repeats
-              </Text>
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {([
-                  { key: 'none' as const,    label: 'One-time' },
-                  { key: 'daily' as const,   label: 'Daily' },
-                  { key: 'weekly' as const,  label: 'Weekly' },
-                  { key: 'monthly' as const, label: 'Monthly' },
-                ]).map(({ key, label }) => (
-                  <TouchableOpacity key={key}
-                    onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${label}" for "repeats" [features/calendar/EventFormModal.tsx:836]`); setRepeatFreq(key); }}
-                    style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, paddingVertical: 8, alignItems: 'center',
-                      borderColor: repeatFreq === key ? catColor : colors.border,
-                      backgroundColor: repeatFreq === key ? catColor + '20' : 'transparent' }}>
-                    <Text style={{ fontSize: TYPO.label, fontWeight: '800',
-                      color: repeatFreq === key ? catColor : colors.textSecondary }}>{label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              {repeatFreq === 'weekly' && (
-                <View style={{ flexDirection: 'row', gap: 4, marginTop: 8 }}>
-                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, dow) => {
-                    const active = repeatDays.includes(dow);
-                    return (
-                      <TouchableOpacity key={dow}
-                        onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected weekday "${label}" (dow=${dow}) for "repeat days" newValue=${!active} [features/calendar/EventFormModal.tsx:852]`); setRepeatDays(days => active ? days.filter(d => d !== dow) : [...days, dow].sort()); }}
-                        style={{ flex: 1, borderRadius: 8, borderWidth: 1.5, paddingVertical: 8, alignItems: 'center',
-                          borderColor: active ? catColor : colors.border,
-                          backgroundColor: active ? catColor : 'transparent' }}>
-                        <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: active ? '#fff' : colors.textSecondary }}>{label}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
+              {/* Shared with the Chores form's own Repeats picker — one
+                  weekday-chip implementation, not two (see
+                  RecurrenceControl). Materializes real rows via
+                  addRecurringEvent on submit. */}
+              <RecurrenceControl
+                label="🔁 Repeats"
+                freq={repeatFreq}
+                setFreq={(k: any) => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${k}" for "repeats" [features/calendar/EventFormModal.tsx]`); setRepeatFreq(k); }}
+                options={[
+                  { key: 'none',    label: 'One-time' },
+                  { key: 'daily',   label: 'Daily' },
+                  { key: 'weekly',  label: 'Weekly' },
+                  { key: 'monthly', label: 'Monthly' },
+                ]}
+                days={repeatDays} setDays={setRepeatDays}
+                accentColor={catColor} colors={colors} isDark={isDark}
+              />
 
               {repeatFreq !== 'none' && (
                 <TouchableOpacity
@@ -1074,30 +959,16 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               )}
             </View>
 
-            {/* Call-style reminder — opt-in, rings via CallKit/ConnectionService */}
+            {/* Call-style reminder — shared with the Chores forms (see
+                CallReminderToggle); opt-in, rings via CallKit/
+                ConnectionService. Only meaningful when a time is set. */}
             {!allDay && (
-              <>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: alertCall ? 8 : 16, paddingHorizontal: 4 }}>
-                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>📞 Call to remind</Text>
-                  <Switch
-                    value={alertCall} onValueChange={(v) => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Call to remind" on AddEventModal newValue=${v} [features/calendar/EventFormModal.tsx:892]`); setAlertCall(v); }}
-                    trackColor={{ false: colors.border, true: catColor + '80' }}
-                    thumbColor={alertCall ? catColor : colors.textTertiary}
-                  />
-                </View>
-                {alertCall && (
-                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16, paddingHorizontal: 4 }}>
-                    {[0, 10, 15, 30].map(mins => (
-                      <TouchableOpacity key={mins} onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "${mins} min" for "call reminder lead time" [features/calendar/EventFormModal.tsx:900]`); setAlertCallLeadMinutes(mins); }}
-                        style={[f.dateBtn, { flex: 1, backgroundColor: alertCallLeadMinutes === mins ? catColor + '20' : colors.surface, borderColor: alertCallLeadMinutes === mins ? catColor : colors.border }]}>
-                        <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: alertCallLeadMinutes === mins ? catColor : colors.textPrimary }}>
-                          {mins === 0 ? 'On time' : `${mins} min before`}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </>
+              <CallReminderToggle
+                alertCall={alertCall} setAlertCall={setAlertCall}
+                alertCallLeadMinutes={alertCallLeadMinutes} setAlertCallLeadMinutes={setAlertCallLeadMinutes}
+                accentColor={catColor} colors={colors} isDark={isDark}
+                variant="switch" pillStyle={f.dateBtn} containerPaddingHorizontal={4}
+              />
             )}
             </>}
 
@@ -1382,25 +1253,7 @@ export function AddEventModal({ visible, onClose, activeMemberId, prefill }: {
               );
             })()}
 
-            </ScrollView>
-
-            {/* ── Footer nav — Next on every step but the last, which shows
-                the Create/Send button above instead, inside the scroll, so
-                its disabled-reason stays attached to the summary. ── */}
-            {currentStepId !== 'review' && (
-              <View style={{ paddingTop: 10, paddingBottom: Math.max(16, insets.bottom + 8) }}>
-                <TouchableOpacity
-                  style={[f.submitBtn, { backgroundColor: catColor }]}
-                  onPress={() => setStep(s => Math.min(s + 1, stepIds.length - 1))}
-                >
-                  <Text style={{ color: colors.textInverse, fontSize: TYPO.caption, fontWeight: '900' }}>Next</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </TaskFormShell>
   );
 }
 

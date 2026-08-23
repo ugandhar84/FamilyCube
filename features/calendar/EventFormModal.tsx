@@ -1364,6 +1364,12 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   // Drive assignment — separate from the tutor/escort/coach (`helper`) once
   // that's already filled in (e.g. by the kid naming an external tutor).
   const [editRideRequired, setEditRideRequired] = useState(event.rideRequired ?? false);
+  // Pickup/drop location — the create form (AddEventModal) has always let a
+  // parent set these for a Ride, but this edit form never did: the summary
+  // chip further down only ever displayed them read-only ("📍 X → ?"), with
+  // no way to fix a wrong value or fill a missing one after creation.
+  const [editPickupLocation, setEditPickupLocation] = useState(event.pickupLocation ?? '');
+  const [editDropLocation,   setEditDropLocation]   = useState(event.dropLocation ?? '');
   const [editDriverName,   setEditDriverName]   = useState(event.driverName ?? '');
   const [editDriverId,     setEditDriverId]     = useState<string | undefined>(
     members.find((m: any) => m.name === event.driverName)?.id
@@ -1472,6 +1478,10 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
           patch.driverName = editDriverName.trim() || undefined;
           patch.driverStatus = editDriverName.trim() ? (editDriverId === activeMemberId ? 'confirmed' : 'pending') : undefined;
         }
+      }
+      if (event.category === 'Ride') {
+        if (editPickupLocation.trim() !== (event.pickupLocation ?? '')) patch.pickupLocation = editPickupLocation.trim() || undefined;
+        if (editDropLocation.trim() !== (event.dropLocation ?? '')) patch.dropLocation = editDropLocation.trim() || undefined;
       }
     } else if (isOwnPending) {
       // Kid can only update notes on their own pending request
@@ -1807,12 +1817,43 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                 </View>
               )}
 
-              {/* GP Welcome toggle — matches the create form's gate (every
-                  category except Ride, which has its own inline toggle
-                  above); previously edit mode only offered this for
-                  Ride/Study, so a parent could set it at creation but never
-                  change it afterward for Medical/Sports/Birthday/etc. */}
-              {isParent && !isPast && event.category !== 'Ride' && (
+              {/* Pickup/Drop-off — Ride only. The create form always let a
+                  parent set these; this edit form never did, leaving the
+                  read-only "📍 X → ?" summary chip further down as the only
+                  way to see them and no way to fix a wrong value or fill in
+                  a missing one. */}
+              {isParent && !isPast && event.category === 'Ride' && (
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[f.label, { color: colors.textSecondary }]}>📍 Pickup from</Text>
+                    <TextInput
+                      style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
+                      placeholder="Home / School" placeholderTextColor={colors.textTertiary}
+                      value={editPickupLocation} onChangeText={setEditPickupLocation}
+                      onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} field="Pickup from" on "${event.title}" (id=${event.id}) newValue=${editPickupLocation} [features/calendar/EventFormModal.tsx]`)}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[f.label, { color: colors.textSecondary }]}>🏁 Drop to</Text>
+                    <TextInput
+                      style={[f.input, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.borderMed }]}
+                      placeholder="Chess Club, Oak St" placeholderTextColor={colors.textTertiary}
+                      value={editDropLocation} onChangeText={setEditDropLocation}
+                      onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} field="Drop to" on "${event.title}" (id=${event.id}) newValue=${editDropLocation} [features/calendar/EventFormModal.tsx]`)}
+                    />
+                  </View>
+                </View>
+              )}
+
+              {/* GP Welcome toggle — previously excluded Ride under the
+                  assumption it had its own inline edit-mode version
+                  elsewhere; it didn't, so a parent could open a ride to the
+                  GP/teen pool at creation but never change it afterward.
+                  Reusing this generic block for Ride too instead of building
+                  a third near-duplicate copy (CategoryFields.tsx already has
+                  one for the CREATE form; a second one here isn't worth it
+                  when this block already covers every other category fine). */}
+              {isParent && !isPast && (
                 <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 10 }}>
                   <TouchableOpacity
                     onPress={() => { const v = !editGPOpen; console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} toggled "Grandparents Welcome" on "${event.title}" (id=${event.id}) newValue=${v} [features/calendar/EventFormModal.tsx:1689]`); setEditGPOpen(v); }}

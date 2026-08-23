@@ -330,6 +330,18 @@ export interface ExtractedLocations { pickup: string | null; dropoff: string | n
 // nowhere near a real destination) and matching it unanchored produced
 // garbage drop-off values from unrelated later clauses in a longer
 // sentence. Only recognized paired with an explicit drop-off verb.
+//
+// The bare "from X" fallback used to match ANY "from" anywhere in the
+// input, including one that had nothing to do with the ride — a dictated
+// sentence with an unrelated aside ("...soccer at 4pm, I'm in the living
+// room, driver should be Priya") matched "from" against a clause that
+// was never a pickup location at all, silently pinning pickupLocation to
+// nonsense. Requiring the "from" to sit near a pickup/collect verb (or
+// right after the ride's own subject, "pick up Leo from X") keeps this
+// scoped to language that's actually describing a ride, not any "from"
+// in the sentence.
+const PICKUP_CONTEXT_RE = /\b(?:pick(?:ing)?\s?up|picked up|collect(?:ing)?|leaving|coming)\b[^.,;]{0,40}\bfrom\s+([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after)\b|[.,;]|$)/i;
+
 export function extractLocations(rawInput: string): ExtractedLocations {
   let pickup: string | null = null, dropoff: string | null = null;
   let m = rawInput.match(/\bfrom\s+([a-z0-9' ]+?)\s+to\s+([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after)\b|[.,]|$)/i);
@@ -337,7 +349,7 @@ export function extractLocations(rawInput: string): ExtractedLocations {
     pickup = m[1].trim();
     dropoff = m[2].trim();
   } else {
-    m = rawInput.match(/\bfrom\s+([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after)\b|[.,]|$)/i);
+    m = rawInput.match(PICKUP_CONTEXT_RE);
     if (m) pickup = m[1].trim();
     m = rawInput.match(/\b(?:drop(?:ping)?(?:\s|-)?off(?:\s+\w+)?\s+at|take (?:her|him|them) to)\s+([a-z0-9' ]+?)(?:\s+(?:at|on|by|before|after)\b|[.,]|$)/i);
     if (m) dropoff = m[1].trim();

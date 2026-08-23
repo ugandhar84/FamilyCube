@@ -22,16 +22,14 @@ import AskCubeChat from '@/components/AskCubeChat';
 // ── Tab icon name map ─────────────────────────────────────────────────────────
 const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
   index:    'grid-outline',
-  quests:   'checkbox-outline',
-  calendar: 'calendar-outline',
+  tasks:    'checkmark-done-outline',
   chat:     'chatbubbles-outline',
   profile:  'apps-outline',
   memories: 'images-outline',
 };
 const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
   index:    'grid',
-  quests:   'checkbox',
-  calendar: 'calendar',
+  tasks:    'checkmark-done',
   chat:     'chatbubbles',
   profile:  'apps',
   memories: 'images',
@@ -41,17 +39,22 @@ const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']>
 // Grandparents get Memories in the 5th slot instead of Apps/Profile —
 // settings/PIN for GP are still reachable from the Hub's profile switcher,
 // same as every other role; this only changes what's one tap away in the bar.
+//
+// 'quests' and 'calendar' merged into a single 'tasks' tab (chores + events
+// in one unified list) — see features/tasks/TasksScreen.tsx. The old route
+// files stay registered below (not in these visible arrays) so any existing
+// router.push('/(tabs)/quests' | '/(tabs)/calendar') deep link (push
+// notification taps, Ask Cube proposal cards, etc.) keeps resolving instead
+// of crashing, until those call sites are migrated to '/(tabs)/tasks'.
 const TABS_DEFAULT = [
-  { name: 'index',    label: 'Hub'      },
-  { name: 'quests',   label: 'Chores'   },
-  { name: 'calendar', label: 'Schedule' },
-  { name: 'chat',     label: 'Chat'     },
-  { name: 'profile',  label: 'Apps'     },
+  { name: 'index',    label: 'Hub'   },
+  { name: 'tasks',    label: 'Tasks' },
+  { name: 'chat',     label: 'Chat'  },
+  { name: 'profile',  label: 'Apps'  },
 ] as const;
 const TABS_SENIOR = [
   { name: 'index',    label: 'Hub'      },
-  { name: 'quests',   label: 'Chores'   },
-  { name: 'calendar', label: 'Schedule' },
+  { name: 'tasks',    label: 'Tasks'    },
   { name: 'chat',     label: 'Chat'     },
   { name: 'memories', label: 'Memories' },
 ] as const;
@@ -220,6 +223,10 @@ export default function TabLayout() {
   const [askCubeOpen, setAskCubeOpen] = useState(false);
   const pathname = usePathname();
   const onChatTab = pathname?.includes('/chat');
+  // Tasks tab has its own FAB (SmartTaskComposer's "+") — stacking Ask
+  // Cube's FAB on top of it in the same corner was genuinely confusing,
+  // same reasoning Chat's exclusion above already documents.
+  const onTasksTab = pathname?.includes('/tasks');
   const fullBleedScreenActive = useUIStore(s => s.fullBleedScreenActive);
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const insets = useSafeAreaInsets();
@@ -251,11 +258,14 @@ export default function TabLayout() {
         }}
       >
         <Tabs.Screen name="index"    />
-        <Tabs.Screen name="quests"   />
-        <Tabs.Screen name="calendar" />
+        <Tabs.Screen name="tasks"    />
         <Tabs.Screen name="chat"     />
         <Tabs.Screen name="store"    options={{ href: null }} />
         <Tabs.Screen name="profile"  />
+        {/* Superseded by 'tasks' (merged Quests + Schedule) — kept registered,
+            not in the visible bar, so old deep links still resolve. */}
+        <Tabs.Screen name="quests"   options={{ href: null }} />
+        <Tabs.Screen name="calendar" options={{ href: null }} />
         {/* Hidden routes — not in tab bar */}
         <Tabs.Screen name="gps"                  options={{ href: null }} />
         <Tabs.Screen name="grocery"              options={{ href: null }} />
@@ -285,7 +295,7 @@ export default function TabLayout() {
               every other tab still gets the FAB. If it's already open when
               the user navigates to Chat, leave it open rather than yanking
               it away mid-conversation — only the launcher button hides. */}
-          {!onChatTab && !fullBleedScreenActive && (
+          {!onChatTab && !onTasksTab && !fullBleedScreenActive && (
             <Pressable
               onPress={() => setAskCubeOpen(true)}
               style={{

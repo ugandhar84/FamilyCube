@@ -7,6 +7,11 @@ export interface ExtractedTask {
   startAt: string | null; // ISO 8601
   requirements: string[];
   forMemberName: string | null;
+  // Every family member this is for/about — resolves group references
+  // ("all kids", "everyone") against the roles passed in existingMembers.
+  // forMemberName mirrors this array's first entry for older callers that
+  // only read the singular field; always prefer this array when present.
+  forMemberNames: string[];
 }
 
 export interface ExtractedErrand {
@@ -37,7 +42,7 @@ export const familyAi = {
   // shaped task, an errand, both, or neither. Used by both the typed-title
   // category nudge and (once built) voice event/quest creation, so the
   // classification logic only lives in one place.
-  async extractResponsibility(text: string, existingMembers?: { id: string; name: string }[]) {
+  async extractResponsibility(text: string, existingMembers?: { id: string; name: string; role?: string }[]) {
     // Client's own local date, not the edge function's server clock — so
     // "this weekend"/"tonight" resolve against the day the user is actually
     // living in, matching parse-appointment-voice's same pattern.

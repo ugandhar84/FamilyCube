@@ -30,6 +30,14 @@ export function useVoiceDictation(onSilenceReady?: (transcript: string) => void)
   const [silenceReady, setSilenceReady] = useState(false);
   const VoiceRef       = useRef<any>(null);
   const transcriptRef  = useRef('');
+  // Text already finalized from PRIOR recognition sessions, before the
+  // current session's own (independent, restarts-from-empty) results are
+  // appended. See the onSpeechEnd/restart comment below for why this
+  // exists — without it, restarting mid-utterance either lost everything
+  // said before the restart or duplicated words spoken right at the
+  // restart boundary, since each new session's onSpeechResults reports
+  // only what IT heard, not a continuation of the whole utterance.
+  const committedPrefixRef = useRef('');
   const autoStopRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
   const silenceRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onSilenceReadyRef = useRef(onSilenceReady);
@@ -54,6 +62,7 @@ export function useVoiceDictation(onSilenceReady?: (transcript: string) => void)
     setError(null);
     setSilenceReady(false);
     transcriptRef.current = '';
+    committedPrefixRef.current = '';
     setLiveTranscript('');
 
     const Voice = await getVoice();
@@ -73,13 +82,26 @@ export function useVoiceDictation(onSilenceReady?: (transcript: string) => void)
       }, SILENCE_READY_MS);
     };
 
+    // Each recognition session's own onSpeechResults reports only what THAT
+    // session heard, starting from nothing — it has no memory of words
+    // spoken before a restart. "Longest result wins" (the old logic) broke
+    // as soon as a restart happened: the new session's growing-from-empty
+    // result briefly lost to the old session's already-long final result,
+    // and once it did grow past it, it replaced the WHOLE transcript with
+    // only the post-restart words, or duplicated the last few words heard
+    // right at the restart boundary. Concatenating this session's result
+    // onto committedPrefixRef (fixed at the moment of each restart) instead
+    // is what actually preserves a continuous transcript across restarts.
     const updateTranscript = (e: any) => {
-      const best = (e.value ?? []).reduce(
+      const sessionBest = (e.value ?? []).reduce(
         (acc: string, v: string) => (v.length > acc.length ? v : acc),
-        transcriptRef.current
+        ''
       );
-      transcriptRef.current = best;
-      setLiveTranscript(best);
+      const combined = committedPrefixRef.current
+        ? `${committedPrefixRef.current} ${sessionBest}`.trim()
+        : sessionBest;
+      transcriptRef.current = combined;
+      setLiveTranscript(combined);
       armSilenceTimer();
     };
     Voice.onSpeechResults = updateTranscript;
@@ -88,12 +110,19 @@ export function useVoiceDictation(onSilenceReady?: (transcript: string) => void)
     // Some platforms fire onSpeechEnd after a brief pause even though the
     // recognizer is still willing to keep listening — restart immediately
     // rather than dropping into 'idle' (which would silently stop capturing
-    // words mid-sentence, the exact "cutting off" symptom).
+    // words mid-sentence, the exact "cutting off" symptom). Whatever the
+    // transcript is AT THE MOMENT of restart becomes the fixed prefix the
+    // next session's own results get appended onto.
     const speechLocale = resolveSpeechLocale();
+
+    const restart = () => {
+      committedPrefixRef.current = transcriptRef.current;
+      Voice.start(speechLocale).catch(() => {});
+    };
 
     Voice.onSpeechEnd = () => {
       if (autoStopRef.current === null) return; // start() already tore this down via stop()
-      Voice.start(speechLocale).catch(() => {});
+      restart();
     };
     Voice.onSpeechError = (e: any) => {
       const msg: string = e?.error?.message ?? e?.error?.code ?? '';
@@ -101,7 +130,7 @@ export function useVoiceDictation(onSilenceReady?: (transcript: string) => void)
       if (benign) {
         // Restart on a benign timeout/no-speech error instead of stopping —
         // same reasoning as onSpeechEnd above.
-        if (autoStopRef.current !== null) Voice.start(speechLocale).catch(() => {});
+        if (autoStopRef.current !== null) restart();
         return;
       }
       setError(msg || 'Speech recognition failed.');
@@ -138,6 +167,7 @@ export function useVoiceDictation(onSilenceReady?: (transcript: string) => void)
     setError(null);
     setSilenceReady(false);
     transcriptRef.current = '';
+    committedPrefixRef.current = '';
     setLiveTranscript('');
   }, []);
 

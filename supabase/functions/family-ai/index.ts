@@ -504,7 +504,8 @@ calendar date. "This weekend" -> the upcoming Saturday. "Tonight"/no day
 mentioned but clearly today -> today's date. Always use the correct year;
 never return a date in the past.
 
-Family members (for matching "for Emma" type references): ${JSON.stringify(existingMembers ?? [])}
+Family members (for matching "for Emma" and group references like "all kids" —
+role is 'kid'/'teen'/'parent'/'senior'/'grandparent'): ${JSON.stringify(existingMembers ?? [])}
 
 Input: "${text}"
 
@@ -534,7 +535,15 @@ Return JSON: {
       today's date above; only leave this null if truly no timing was implied
       at all (e.g. "clean the garage" with no timeframe whatsoever).
     requirements: string[] (things to bring/prepare, empty array if none),
-    forMemberName: string | null (which family member this is for/about, if named)
+    forMemberName: string | null (which family member this is for/about, if named — the
+      FIRST name if multiple are named, kept for older callers; always populate this
+      whenever forMemberNames below is non-empty),
+    forMemberNames: string[] (every family member this is for/about — resolve group
+      references against the Family members list above: "all kids"/"the kids"/"everyone"
+      -> every listed member whose role implies kid/teen (never a parent/grandparent
+      unless the input explicitly names them too); "Leo and Maya" -> ["Leo","Maya"];
+      a single named person -> that one name only, still as a one-item array. Empty
+      array if nobody specific was named or implied.)
   },
   errand: null | {
     category: one of ${JSON.stringify(errandSubcategories)} (pick the closest match, never invent a new value — this must be one of these exact values, they map directly to a database constraint),

@@ -36,7 +36,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import { todayLocal, parseLocalDate, withinLast24h, parseTimeInput } from '@/lib/dates';
 import { useChatStore } from '@/store/chatStore';
-import { useChoreStore } from '@/store/choreStore';
+import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { supabase } from '@/lib/supabase';
 import { AiEngineBanner, AiTool } from './components/AiEngineBanner';
 import { QuestFilters, TabStatus } from './components/QuestFilters';
@@ -44,6 +44,7 @@ import { QuestSearchBar, type DateRange } from './components/QuestSearchBar';
 import { I } from './components/icons';
 import { s } from './components/questCardStyles';
 import { DeclineModal } from './components/DeclineModal';
+import { CantMakeItSheet } from '../tasks/components/CantMakeItSheet';
 import { AddQuestModal } from './components/AddQuestModal';
 import { EditQuestModal } from './components/EditQuestModal';
 import { CreateQuestModal } from '../hub/senior/CreateQuestModal';
@@ -162,6 +163,9 @@ export default function QuestsScreen() {
   const [isDeclining,    setIsDeclining]    = useState<Record<string, boolean>>({});
   const [isReopening,    setIsReopening]    = useState<Record<string, boolean>>({});
   const [declineTarget,  setDeclineTarget]  = useState<{ id: string; title: string; memberId?: string } | null>(null);
+  // Kid/teen's own "Can't do this" — see QuestCard.tsx's onCantMakeIt prop
+  // comment for why this is separate from declineTarget/DeclineModal.
+  const [cantMakeItTarget, setCantMakeItTarget] = useState<ChoreTask | null>(null);
   const [editTarget,     setEditTarget]     = useState<Quest | null>(null);
   const [showAddModal,   setShowAddModal]   = useState(false);
   const [addPrefill, setAddPrefill] = useState<{
@@ -733,9 +737,17 @@ export default function QuestsScreen() {
       // status === 'pending_approval' and silently no-ops otherwise, which
       // is exactly canKidDecline's target state -- the button appeared to
       // work (sheet closed, no error) but never actually released the
-      // chore. Route it through the same "send back to the pool" flow the
-      // multi-participant row's own "Can't do this" button already uses.
-      reassignQuest(id, '', activeMember?.id ?? '');
+      // chore.
+      //
+      // Was a bare reassignQuest(id, '', ...) — pool-release only, which
+      // silently skipped the GP-quest (sponsor DM) and team-clone
+      // (decline-this-clone-only) branches Hub's CantMakeItSheet already
+      // handles correctly via the same store action. A kid declining the SAME GP
+      // quest from this tab instead of Hub got the wrong behavior (no
+      // sponsor notified, or the whole team-clone shortlist affected).
+      // declineChoreAssignment centralizes the 3-way dispatch so both
+      // entry points now agree.
+      useChoreStore.getState().declineChoreAssignment(id, activeMember?.id ?? '', reason);
     } else {
       // Parent/senior declining a kid's pending_approval submission — a
       // real Redo request, requestRedo's actual intended target state.
@@ -1034,6 +1046,7 @@ export default function QuestsScreen() {
                   handleClaim={handleClaim}
                   openSubmitSheet={openSubmitSheet}
                   setDeclineTarget={setDeclineTarget}
+                  onCantMakeIt={setCantMakeItTarget}
                   approveQuest={approveQuest}
                   reassignQuest={reassignQuest}
                   approveParticipant={approveParticipant}
@@ -1147,6 +1160,13 @@ export default function QuestsScreen() {
         onCancel={() => setDeclineTarget(null)}
         colors={colors}
         isDark={isDark}
+      />
+
+      <CantMakeItSheet
+        target={cantMakeItTarget ? { kind: 'chore', item: cantMakeItTarget } : null}
+        byMemberId={activeMember?.id ?? ''}
+        members={members}
+        onClose={() => setCantMakeItTarget(null)}
       />
 
       <PushbackSheet

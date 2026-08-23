@@ -897,6 +897,12 @@ interface ChoreState {
   createGrandparentQuest: (task: { title: string; description?: string; basePoints: number; childIds: string[]; dueDate?: string; sponsorId: string; mode?: 'local' | 'virtual'; requiresPhoto?: boolean }) => ChoreTask;
   approveGrandparentQuest: (choreId: string, parentId: string) => void;
   declineGrandparentQuest: (choreId: string, parentId: string, reason: string) => void;
+  // Kid/teen declining a chore assigned directly to them — extracted from
+  // features/hub/kid/DeclineQuestSheet.tsx's inline button handler so the
+  // same 3-way dispatch (GP quest / team-clone / plain chore) is reusable
+  // from other surfaces (e.g. features/tasks' unified "can't make it" sheet)
+  // instead of being re-derived and risking drift between two copies.
+  declineChoreAssignment: (choreId: string, byMemberId: string, reason: string) => void;
   grandparentApproveAndCheer: (choreId: string, grandparentId: string, sticker?: string) => void;
 
   // ── Settings ──────────────────────────────────────────────────────────────
@@ -3966,6 +3972,60 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     get().updateChore(choreId, {
       status: 'declined', rejectionReason: reason, reviewedAt: new Date().toISOString(),
     });
+  },
+
+  declineChoreAssignment: (choreId, byMemberId, reason) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore) return;
+
+    let byName = 'Someone';
+    try {
+      const { useFamilyStore } = require('./familyStore');
+      byName = useFamilyStore.getState().members.find((m: any) => m.id === byMemberId)?.name?.split(' ')[0] ?? byName;
+    } catch (e) {
+      console.warn('[choreStore] declineChoreAssignment name lookup failed', e);
+    }
+
+    if (chore.categoryType === 'grandparent_quest') {
+      // declineGrandparentQuest sends the sponsor DM itself — only need the
+      // family-wide fallback here for the no-sponsor case, which it doesn't
+      // cover.
+      get().declineGrandparentQuest(choreId, byMemberId, reason);
+      if (!chore.sponsorUserId) {
+        try {
+          const { useChatStore } = require('./chatStore');
+          useChatStore.getState().sendMessage('all', byMemberId, `🙏 ${byName} can't take "${chore.title}" — "${reason}"`);
+        } catch (e) {
+          console.warn('[choreStore] declineChoreAssignment fallback notification failed', e);
+        }
+      }
+      return;
+    }
+
+    if (chore.teamGroupId && chore.targetChildIds?.length) {
+      // Team-clone chore — decline this one clone only. Releasing to the
+      // family-wide pool would expose it to kids who were never targeted,
+      // losing the shortlist framing; the other targets' clones are
+      // separate rows, untouched either way.
+      get().updateChore(choreId, { status: 'declined', assignedToId: undefined });
+    } else {
+      // Plain (non-team, non-GP) household chore — send back to the pool.
+      // rejectionReason/declinedAt record who declined and why so the
+      // creator sees "declined by X" instead of a task that looks brand
+      // new (PoolQuestCard reads these).
+      get().updateChore(choreId, {
+        assignedToId: undefined, isPool: true, status: 'todo',
+        rejectionReason: `Declined by ${byName}: "${reason}"`,
+        declinedAt: new Date().toISOString(),
+      });
+    }
+
+    try {
+      const { useChatStore } = require('./chatStore');
+      useChatStore.getState().sendMessage('all', byMemberId, `🙏 ${byName} can't take "${chore.title}" — "${reason}"`);
+    } catch (e) {
+      console.warn('[choreStore] declineChoreAssignment notification failed', e);
+    }
   },
 
   createAndAddParentQuest: (task) => {

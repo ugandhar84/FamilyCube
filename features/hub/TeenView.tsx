@@ -9,7 +9,7 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssignee } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
-import { useChoreStore } from '@/store/choreStore';
+import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useGroceryStore } from '@/store/groceryStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useChatStore } from '@/store/chatStore';
@@ -19,7 +19,7 @@ import { localToday, hoursUntilEvent, useCountdown } from './hubUtils';
 import { KidRequestHistoryModal, GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from './KidModals';
 import { AskParentSheet } from './kid/AskParentSheet';
 import { MyQuestsSection } from './kid/MyQuestsSection';
-import { DeclineQuestSheet } from './kid/DeclineQuestSheet';
+import { CantMakeItSheet } from '../tasks/components/CantMakeItSheet';
 import { SubmitProofSheet } from './kid/SubmitProofSheet';
 import { HubTimelineSection } from './HubTimelineSection';
 import { HubGreetingHeader } from './HubGreetingHeader';
@@ -60,7 +60,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips }: {
   const visibleEvents = events.filter(e =>
     !isEventSensitive(e) || canViewSensitiveEventDetail(e, 'teen', active.id, active.name));
   const { quests, submitQuest, claimQuest } = useQuestStore();
-  const { startGrandparentQuest, declineGrandparentQuest } = useChoreStore();
+  const { startGrandparentQuest } = useChoreStore();
   const { items: groceryItems, load: loadGrocery } = useGroceryStore();
   const familyId = (active as any).familyId ?? 'family-1';
   useEffect(() => { loadGrocery(familyId); }, [familyId]);
@@ -84,7 +84,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips }: {
   const declinedQuests = myQuests.filter(q => q.status === 'declined');
   const cancelledQuestsToday = myQuests.filter(q => q.status === 'cancelled' && (q.cancelledAt ?? '').startsWith(today));
   const pendingCoins = reviewQuests.reduce((sum, q) => sum + (q.coins ?? 0) + (q.bonusCoins ?? 0), 0);
-  const [declineQuest, setDeclineQuest] = useState<{ id: string; title: string } | null>(null);
+  const [declineQuest, setDeclineQuest] = useState<ChoreTask | null>(null);
   const [submitProofQuest, setSubmitProofQuest] = useState<Quest | null>(null);
 
   const handleSubmitTap = (q: Quest) => {
@@ -337,7 +337,10 @@ export function TeenView({ active, members, colors, isDark, activeTrips }: {
         onStart={(id) => submitQuest(id, undefined, active.id)}
         onSubmit={handleSubmitTap}
         onAcceptGpQuest={(id) => startGrandparentQuest(id, active.id)}
-        onDeclineGpQuest={(q) => setDeclineQuest({ id: q.id, title: q.title })}
+        onDeclineGpQuest={(q) => {
+          const chore = useChoreStore.getState().chores.find(c => c.id === q.id);
+          if (chore) setDeclineQuest(chore);
+        }}
       />
 
       {/* ── Tile grid — everything else opens in a bottom sheet ── */}
@@ -435,10 +438,10 @@ export function TeenView({ active, members, colors, isDark, activeTrips }: {
       />
       <QuestProposalModal visible={questProposalModal} onClose={() => setQuestProposalModal(false)} active={active} />
 
-      <DeclineQuestSheet
-        target={declineQuest} active={active} members={members} colors={colors} isDark={isDark}
+      <CantMakeItSheet
+        target={declineQuest ? { kind: 'chore', item: declineQuest } : null}
+        byMemberId={active.id} members={members}
         onClose={() => setDeclineQuest(null)}
-        declineGrandparentQuest={declineGrandparentQuest}
       />
       <SubmitProofSheet
         quest={submitProofQuest} colors={colors} isDark={isDark}

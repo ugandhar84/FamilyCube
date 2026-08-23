@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuestStore } from '@/store/choreAdapter';
-import { useChoreStore } from '@/store/choreStore';
+import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import type { Quest } from '@/store/questStore';
 import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssignee } from '@/store/eventStore';
 import { useRewardStore } from '@/store/rewardStore';
@@ -33,7 +33,7 @@ import { KidLeaderboard } from './kid/KidLeaderboard';
 import { CheerSquadSection } from './kid/CheerSquadSection';
 import { PiggyBankSheet } from './kid/PiggyBankSheet';
 import { SubmitProofSheet } from './kid/SubmitProofSheet';
-import { DeclineQuestSheet } from './kid/DeclineQuestSheet';
+import { CantMakeItSheet } from '../tasks/components/CantMakeItSheet';
 import { AskParentSheet } from './kid/AskParentSheet';
 
 // ─── Main KidView ──────────────────────────────────────────────────────────────
@@ -48,7 +48,7 @@ export function KidView({ active, members, colors, isDark, activeTrips }: {
   activeTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
 }) {
   const { quests, submitQuest, claimQuest, cheerQuest } = useQuestStore();
-  const { startGrandparentQuest, declineGrandparentQuest } = useChoreStore();
+  const { startGrandparentQuest } = useChoreStore();
   const { events, updateEvent }                           = useEventStore();
   const { rewards, redeemReward, getEligibleRewards }    = useRewardStore();
   const { sendRequest, requests, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
@@ -66,7 +66,7 @@ export function KidView({ active, members, colors, isDark, activeTrips }: {
   const [dismissedReplies, setDismissedReplies] = useState<Set<string>>(new Set());
   const [dismissedActions,  setDismissedActions]  = useState<Set<string>>(new Set());
   const [dismissedRideIds, setDismissedRideIds] = useState<Set<string>>(new Set());
-  const [declineQuest,    setDeclineQuest]    = useState<{ id: string; title: string } | null>(null);
+  const [declineQuest,    setDeclineQuest]    = useState<ChoreTask | null>(null);
   // Submitting a photo-required quest — "Take Photo to Get Paid" must not pay
   // out on a bare tap; the photo IS the proof, so collect it before submitting.
   const [submitProofQuest, setSubmitProofQuest] = useState<Quest | null>(null);
@@ -371,7 +371,10 @@ export function KidView({ active, members, colors, isDark, activeTrips }: {
         onStart={(id) => submitQuest(id, undefined, active.id)}
         onSubmit={handleSubmitTap}
         onAcceptGpQuest={(id) => startGrandparentQuest(id, active.id)}
-        onDeclineGpQuest={(q) => setDeclineQuest({ id: q.id, title: q.title })}
+        onDeclineGpQuest={(q) => {
+          const chore = useChoreStore.getState().chores.find(c => c.id === q.id);
+          if (chore) setDeclineQuest(chore);
+        }}
       />
 
 
@@ -393,10 +396,10 @@ export function KidView({ active, members, colors, isDark, activeTrips }: {
         }}
       />
       <QuestProposalModal visible={questProposalModal} onClose={() => setQuestProposalModal(false)} active={active} />
-      <DeclineQuestSheet
-        target={declineQuest} active={active} members={members} colors={colors} isDark={isDark}
+      <CantMakeItSheet
+        target={declineQuest ? { kind: 'chore', item: declineQuest } : null}
+        byMemberId={active.id} members={members}
         onClose={() => setDeclineQuest(null)}
-        declineGrandparentQuest={declineGrandparentQuest}
       />
       <SubmitProofSheet
         quest={submitProofQuest} colors={colors} isDark={isDark}

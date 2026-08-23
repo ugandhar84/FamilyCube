@@ -270,7 +270,7 @@ function RootNavigator() {
                 showAlert('Welcome back! 🐾', 'Your account and all your data have been fully restored. Nothing was lost.');
               }
             }
-            if (profileErr || !profile?.terms_accepted) {
+            if (profileErr || !profile?.terms_accepted || !profile?.onboarding_completed) {
               destination = '/onboarding';
             } else if (!profile?.handle) {
               destination = '/onboarding/handle-picker';
@@ -418,6 +418,9 @@ function RootNavigator() {
           router.replace('/onboarding');
         } else if (!profile.terms_accepted) {
           console.log('[PawBond:ProfileCheck] Terms not accepted, going to onboarding');
+          router.replace('/onboarding');
+        } else if (!profile.onboarding_completed) {
+          console.log('[PawBond:ProfileCheck] Onboarding not completed, going to onboarding');
           router.replace('/onboarding');
         } else if (!profile.handle) {
           console.log('[PawBond:ProfileCheck] No handle yet, showing handle picker');

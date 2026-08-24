@@ -6,6 +6,7 @@ import {
 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import { showToast } from '@/components/AppToast';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssignee } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
@@ -182,6 +183,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips }: {
     const role: 'helper' | 'driver' = ev?.rideRequired && ev.category !== 'Ride' ? 'driver' : 'helper';
     useEventStore.getState().claimHelperSlot(evId, role, active.name, undefined, () => {
       if (coins > 0) awardCoins(active.id, coins, 'mainCoins');
+      showToast(coins > 0 ? `Got it — +${coins} coins ✓` : 'Got it ✓');
     });
   };
 
@@ -215,12 +217,14 @@ export function TeenView({ active, members, colors, isDark, activeTrips }: {
     // a race; deductCoins' race guard would silently refuse the whole
     // deduction and let the teen keep the coins in exactly that case (QA
     // sweep, teen-role audit, Critical).
-    if (a?.name === active.name && paidCoins > 0) clawbackCoins(active.id, paidCoins, 'mainCoins');
+    const clawedBack = a?.name === active.name && paidCoins > 0;
+    if (clawedBack) clawbackCoins(active.id, paidCoins, 'mainCoins');
     const isDriverPair = ev?.driverName === active.name || (ev?.rideRequired && ev.category !== 'Ride');
     supabase.rpc('decline_event_assignment', {
       p_event_id: evId, p_member_id: active.id, p_role: isDriverPair ? 'driver' : 'helper', p_reason: null,
     }).then(({ error }) => {
-      if (error) console.warn('[TeenView] dropPickup decline_event_assignment failed', error.message);
+      if (error) { console.warn('[TeenView] dropPickup decline_event_assignment failed', error.message); return; }
+      showToast(clawedBack ? `Dropped — ${paidCoins} coins clawed back` : 'Dropped ✓');
     });
   };
 
@@ -235,7 +239,8 @@ export function TeenView({ active, members, colors, isDark, activeTrips }: {
     supabase.rpc('confirm_event_assignment', {
       p_event_id: evId, p_member_id: active.id, p_role: isDriverPair ? 'driver' : 'helper',
     }).then(({ error }) => {
-      if (error) console.warn('[TeenView] confirmAssignment failed', error.message);
+      if (error) { console.warn('[TeenView] confirmAssignment failed', error.message); return; }
+      showToast('Confirmed ✓');
     });
   };
 

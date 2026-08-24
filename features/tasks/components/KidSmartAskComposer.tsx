@@ -205,31 +205,24 @@ export default function KidSmartAskComposer({
           ...(pickupLocation.trim() ? { pickupLocation: pickupLocation.trim() } : {}),
           ...(dropLocation.trim() ? { dropLocation: dropLocation.trim() } : {}),
         });
-      } else if (category === 'grocery') {
-        // Hand off to the real multi-item modal (smart suggestion chips,
-        // quantities, per-item categories) instead of sending the typed
-        // text as one un-itemized request — see groceryModalOpen above.
+      } else if (category === 'grocery' || category === 'supplies' || category === 'birthday'
+        || category === 'permission' || category === 'question' || category === 'medication') {
+        // Hand off to the real dedicated modal (GroceryModal/SuppliesModal's
+        // multi-item entry, KidRequestModal's own category grid, or
+        // AskModal) instead of guessing/submitting from a short sentence.
+        // Two RN <Modal> components can't reliably present back-to-back in
+        // the same tick — iOS's UIKit presentation can't queue a second
+        // `present` before the first `dismiss` finishes — so this sheet is
+        // closed first (full reset via close()) and the target modal opens
+        // after a beat, matching the delay the old AskParentSheet handoff
+        // used for the same reason.
         setSubmitting(false);
-        setGroceryModalOpen(true);
-        return;
-      } else if (category === 'supplies') {
-        setSubmitting(false);
-        setSuppliesModalOpen(true);
-        return;
-      } else if (category === 'birthday') {
-        // KidRequestModal.tsx already has Birthday as one of its own
-        // category-grid cards (step 1) — hand off rather than guess title/
-        // date/location from a short sentence ourselves.
-        setSubmitting(false);
-        setBirthdayModalOpen(true);
-        return;
-      } else if (category === 'permission' || category === 'question' || category === 'medication') {
-        // AskModal (KidModals.tsx) — a short sentence like "Do I need to go
-        // to the park?" can't be reliably told apart from a Chore or a
-        // Question by keyword scoring; hand off to the real form for these
-        // rather than guess wrong and submit silently.
-        setSubmitting(false);
-        setAskModalType(category);
+        const openTarget = category === 'grocery' ? () => setGroceryModalOpen(true)
+          : category === 'supplies' ? () => setSuppliesModalOpen(true)
+          : category === 'birthday' ? () => setBirthdayModalOpen(true)
+          : () => setAskModalType(category);
+        close();
+        setTimeout(openTarget, 300);
         return;
       } else if (category === 'tutor') {
         sendRequest({

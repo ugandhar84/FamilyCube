@@ -3,6 +3,7 @@ import { View, Text, Pressable, Alert } from 'react-native';
 import { Medal, HeartPulse, BookOpen, Car, Calendar, Clock, CheckCircle2, Repeat, StickyNote } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useChatStore } from '@/store/chatStore';
+import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import { deriveEventActions } from '@/features/tasks/lib/deriveCardActions';
@@ -33,10 +34,18 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
   // surface) instead of this card's own hand-rolled ev.helper===active.name
   // checks — closes the drift class documented below (a past hand-rolled
   // "Can't" here bypassed the canonical decline path entirely).
-  const { showAssignToMe, showConfirm, showCantMakeIt } = deriveEventActions(
+  const { showAssignToMe, showConfirm, showCantMakeIt, assignee } = deriveEventActions(
     ev,
     { id: active.id, name: active.name, role: active.role, hasCar: active.hasCar },
   );
+  // Which field-pair this event's assignee actually lives in — mirrors
+  // hubComponents.tsx's own assigneeRole derivation exactly. Previously
+  // this card hardcoded 'helper' on every write regardless of which pair
+  // was actually populated, so a driver-paired event (Ride category, or
+  // rideRequired) got a second, independently-tracked helper_* pair written
+  // alongside its real driver_* pair — the exact conflicting-data bug this
+  // whole redesign exists to fix.
+  const assigneeRole: 'helper' | 'driver' = ev.driverName || (ev.rideRequired && !ev.helper) ? 'driver' : 'helper';
 
   return (
     <View style={{ borderRadius: 14, borderWidth: 1,
@@ -50,12 +59,12 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <CatIcon size={15} color={colors.parent} />
         <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{ev.title}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: ev.helperStatus === 'confirmed' ? `${CONFIRMED_GREEN}20` : colors.warning + '20',
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: assignee.status === 'confirmed' ? `${CONFIRMED_GREEN}20` : colors.warning + '20',
           borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-          {ev.helperStatus === 'confirmed' ? <CheckCircle2 size={10} color={CONFIRMED_GREEN} /> : <Clock size={10} color={PENDING_AMBER} />}
+          {assignee.status === 'confirmed' ? <CheckCircle2 size={10} color={CONFIRMED_GREEN} /> : <Clock size={10} color={PENDING_AMBER} />}
           <Text style={{ fontSize: TYPO.micro, fontWeight: '700',
-            color: ev.helperStatus === 'confirmed' ? CONFIRMED_GREEN : PENDING_AMBER }}>
-            {ev.helperStatus === 'confirmed' ? 'Confirmed' : 'Pending'}
+            color: assignee.status === 'confirmed' ? CONFIRMED_GREEN : PENDING_AMBER }}>
+            {assignee.status === 'confirmed' ? 'Confirmed' : 'Pending'}
           </Text>
         </View>
       </View>
@@ -74,24 +83,32 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
           </Text>
         </Pressable>
       ) : null}
-      {ev.helperStatus !== 'confirmed' && (
+      {assignee.status !== 'confirmed' && (
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 6, marginLeft: 24 }}>
           {showAssignToMe && (
             <Pressable
               onPress={() => {
-                console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Take Over" on "${ev.title}" from ${ev.helper} (id=${ev.id}) [features/hub/parent/backlog/HelperEventCard.tsx:72]`);
+                console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Take Over" on "${ev.title}" from ${assignee.name} (id=${ev.id}) [features/hub/parent/backlog/HelperEventCard.tsx:72]`);
                 Alert.alert(
                   'Take Over',
-                  `Reassign this from ${ev.helper} to yourself?`,
+                  `Reassign this from ${assignee.name} to yourself?`,
                   [
                     { text: 'Cancel', style: 'cancel' },
                     { text: "Yes, I'll do it", onPress: () => {
-                      console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Take Over" on "${ev.title}" from ${ev.helper} (id=${ev.id}) → updateEvent(helper/helperStatus) [features/hub/parent/backlog/HelperEventCard.tsx:77]`);
-                      // A one-off take-over ("I'll cover THIS one") stays
-                      // scoped to this occurrence only — it must not
-                      // silently take over every future occurrence of a
-                      // recurring series away from its regular driver.
-                      updateEvent(ev.id, { helper: active.name, helperStatus: 'confirmed' });
+                      console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Take Over" on "${ev.title}" from ${assignee.name} (id=${ev.id}) → reassign_event(${assigneeRole}) [features/hub/parent/backlog/HelperEventCard.tsx:77]`);
+                      // A one-off take-over ("I'll cover THIS one") is a
+                      // direct reassign, authority-based (the parent tapping
+                      // this already has the right to override) — the RPC
+                      // writes the correct field pair (driver_* or helper_*)
+                      // based on assigneeRole instead of always hardcoding
+                      // helper_*, which is the exact bug that let a
+                      // driver-paired event end up with a second,
+                      // independently-tracked stale helper_* pair.
+                      supabase.rpc('reassign_event', {
+                        p_event_id: ev.id, p_new_member_id: active.id, p_role: assigneeRole, p_actor_id: active.id,
+                      }).then(({ error }) => {
+                        if (error) console.warn('[HelperEventCard] Take Over reassign_event failed', error.message);
+                      });
                       const msg = `✅ ${active.name.split(' ')[0]} has taken over "${ev.title}" — you're off the hook.`;
                       useChatStore.getState().sendMessage('all', active.id, msg);
                     }},
@@ -108,15 +125,20 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
             <>
               <Pressable
                 onPress={() => {
-                  console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Confirm I'll do it" on "${ev.title}" (id=${ev.id}) → updateEvent(helperStatus=confirmed) [features/hub/parent/backlog/HelperEventCard.tsx:98]`);
+                  console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Confirm I'll do it" on "${ev.title}" (id=${ev.id}) → confirm_event_assignment(${assigneeRole}) [features/hub/parent/backlog/HelperEventCard.tsx:98]`);
                   // Confirming yourself as the already-named driver IS the
                   // "yes, I'm your driver going forward" moment — propagate
                   // to future occurrences, same as RideRequestCard's own
                   // "I'll Drive". Distinct from "Take Over" above, which is a
                   // one-time favor for just this occurrence.
-                  const patch = { helperStatus: 'confirmed' as const };
-                  if (ev.seriesId && updateEventScoped) updateEventScoped(ev.id, patch, 'following');
-                  else updateEvent(ev.id, patch);
+                  supabase.rpc('confirm_event_assignment', {
+                    p_event_id: ev.id, p_member_id: active.id, p_role: assigneeRole,
+                  }).then(({ error }) => {
+                    if (error) { console.warn('[HelperEventCard] confirm_event_assignment failed', error.message); return; }
+                    if (ev.seriesId && updateEventScoped) {
+                      updateEventScoped(ev.id, { [assigneeRole === 'driver' ? 'driverStatus' : 'helperStatus']: 'confirmed' } as Partial<FamilyEvent>, 'following');
+                    }
+                  });
                 }}
                 style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: `${CONFIRMED_GREEN}20`, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12,
                   borderWidth: 1, borderColor: `${CONFIRMED_GREEN}40` }}>
@@ -130,18 +152,34 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                   confirm with a decline (QA Round 11, Medium Finding M4). */}
               <Pressable
                 onPress={() => {
-                  console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Can't" on "${ev.title}" (id=${ev.id}) → updateEvent(helperStatus=rejected) [features/hub/parent/backlog/HelperEventCard.tsx:119]`);
-                  // Was a hand-rolled reassign-to-the-other-parent that
-                  // never set helperStatus:'rejected' — completely bypassed
-                  // autoOpenOnDecline (no GP/Teen pool reopen, no decline
-                  // notification to the requesting kid or assigning parent,
-                  // the exact fixes this session made everywhere else), and
-                  // in a single-parent household (or no other parent with a
-                  // car) silently reverted the ride to fully unassigned with
-                  // zero signal to anyone (QA sweep, parent-role audit,
-                  // Critical C2). Now goes through the canonical decline
-                  // path like every other decline surface in the app.
-                  updateEvent(ev.id, { helperStatus: 'rejected', declinedBy: active.name });
+                  console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Can't" on "${ev.title}" (id=${ev.id}) → decline_event_assignment(${assigneeRole}) [features/hub/parent/backlog/HelperEventCard.tsx:119]`);
+                  // Now the same decline_event_assignment RPC every other
+                  // decline surface in the app calls — one owner of
+                  // decline-and-reopen instead of each surface re-deriving
+                  // it, and correctly targets whichever field pair
+                  // (driver_*/helper_*) this event's assignee is actually
+                  // in, instead of always hardcoding helper_status. The RPC
+                  // doesn't (yet) send the "back open" notification
+                  // eventStore.ts's updateEvent() fires on decline — that
+                  // logic stays client-side only, hasn't moved server-side
+                  // in this pass — so replicate it here rather than lose it.
+                  const declinerName = active.name;
+                  supabase.rpc('decline_event_assignment', {
+                    p_event_id: ev.id, p_member_id: active.id, p_role: assigneeRole, p_reason: null,
+                  }).then(({ error }) => {
+                    if (error) { console.warn('[HelperEventCard] decline_event_assignment failed', error.message); return; }
+                    try {
+                      const recipients = new Set<string>();
+                      if (ev.updatedBy && ev.updatedBy !== active.id) recipients.add(ev.updatedBy);
+                      if (ev.memberId && ev.memberId !== active.id) recipients.add(ev.memberId);
+                      const msg = `🚫 ${declinerName} can't make "${ev.title}" — it's back open for someone else.`;
+                      for (const recipientId of recipients) {
+                        useChatStore.getState().sendMessage(recipientId, active.id, msg);
+                      }
+                    } catch (e) {
+                      console.warn('[HelperEventCard] decline notification failed', e);
+                    }
+                  });
                 }}
                 style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12,
                   borderWidth: 1, borderColor: colors.danger + '40' }}>

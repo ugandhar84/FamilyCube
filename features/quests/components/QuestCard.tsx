@@ -941,8 +941,14 @@ export function QuestCard({
                       useChoreStore.getState().updateChore(q.id, { gpOfferById: undefined } as any);
                       updateQuest(q.id, {
                         assignedToId: activeMember?.id, isPool: false, status: 'in_progress',
-                        gpWithdrawnIds: (q.gpWithdrawnIds ?? []).filter(id => id !== myId),
                       }, activeMember?.id);
+                      // Atomic remove instead of a client-side filter —
+                      // closes a real race two GPs passing/reconsidering
+                      // near-simultaneously on the same chore could hit.
+                      if (myId) {
+                        supabase.rpc('set_gp_withdrawn', { p_chore_id: q.id, p_gp_member_id: myId, p_withdrawn: false })
+                          .then(({ error }) => { if (error) console.warn('[QuestCard] set_gp_withdrawn failed', error.message); });
+                      }
                     },
                   }]
                 );
@@ -956,8 +962,11 @@ export function QuestCard({
               <TouchableOpacity
                 style={[s.actionBtn, { borderWidth: 1.5, borderColor: colors.border, backgroundColor: 'transparent', flex: 1 }]}
                 onPress={() => {
-                  console.log(`[UserAction] screen=Chores role=senior member=${activeMember?.name} tapped "Pass" on "${q.title}" (id=${q.id}) → updateQuest(gpWithdrawnIds) [features/quests/components/QuestCard.tsx:948]`);
-                  updateQuest(q.id, { gpWithdrawnIds: [...(q.gpWithdrawnIds ?? []), myId].filter((v, i, a): v is string => !!v && a.indexOf(v) === i) }, activeMember?.id);
+                  console.log(`[UserAction] screen=Chores role=senior member=${activeMember?.name} tapped "Pass" on "${q.title}" (id=${q.id}) → set_gp_withdrawn [features/quests/components/QuestCard.tsx:948]`);
+                  if (myId) {
+                    supabase.rpc('set_gp_withdrawn', { p_chore_id: q.id, p_gp_member_id: myId, p_withdrawn: true })
+                      .then(({ error }) => { if (error) console.warn('[QuestCard] set_gp_withdrawn failed', error.message); });
+                  }
                 }}
               >
                 <Text style={[s.actionBtnText, { color: colors.textTertiary }]}>Pass</Text>

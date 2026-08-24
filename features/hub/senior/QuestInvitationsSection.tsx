@@ -3,6 +3,7 @@ import { HeartHandshake } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useChoreStore } from '@/store/choreStore';
+import { supabase } from '@/lib/supabase';
 import { GP } from './seniorTheme';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
@@ -67,7 +68,11 @@ export function QuestInvitationsSection({
                 onPress={() => {
                   console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "${alreadyPassed ? 'Reconsider?' : "I'd Love To Help"}" on "${c.title}" (id=${c.id}) [features/hub/senior/QuestInvitationsSection.tsx:65]`);
                   if (alreadyPassed) {
-                    useChoreStore.getState().updateChore(c.id, { gpWithdrawnIds: (c.gpWithdrawnIds ?? []).filter(id => id !== active.id) });
+                    // Now the set_gp_withdrawn RPC — atomic remove instead
+                    // of a client-side filter, closing a real race two GPs
+                    // passing/reconsidering near-simultaneously could hit.
+                    supabase.rpc('set_gp_withdrawn', { p_chore_id: c.id, p_gp_member_id: active.id, p_withdrawn: false })
+                      .then(({ error }) => { if (error) console.warn('[QuestInvitationsSection] set_gp_withdrawn failed', error.message); });
                   }
                   // inviteGrandparents errand → claimGPErrand; grandparent_quest → startGrandparentQuest
                   if (c.inviteGrandparents && c.categoryType !== 'grandparent_quest') {
@@ -87,9 +92,9 @@ export function QuestInvitationsSection({
                   <View style={{ width: 1, backgroundColor: isDark ? BRAND.purple + '30' : BRAND.purple + '20' }} />
                   <Pressable
                     onPress={() => {
-                      console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Pass" on "${c.title}" (id=${c.id}) → updateChore(gpWithdrawnIds) [features/hub/senior/QuestInvitationsSection.tsx:88]`);
-                      const ids = (c.gpWithdrawnIds ?? []).filter(id => id !== active.id);
-                      useChoreStore.getState().updateChore(c.id, { gpWithdrawnIds: [...ids, active.id] });
+                      console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Pass" on "${c.title}" (id=${c.id}) → set_gp_withdrawn [features/hub/senior/QuestInvitationsSection.tsx:88]`);
+                      supabase.rpc('set_gp_withdrawn', { p_chore_id: c.id, p_gp_member_id: active.id, p_withdrawn: true })
+                        .then(({ error }) => { if (error) console.warn('[QuestInvitationsSection] set_gp_withdrawn failed', error.message); });
                     }}
                     style={({ pressed }) => ({ flex: 1, paddingVertical: 14, alignItems: 'center', opacity: pressed ? 0.7 : 1 })}>
                     <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textSecondary }}>

@@ -5,14 +5,18 @@
  * via /(tabs)/profile?openFeature=<id>, which VaultScreen reads on mount.
  *
  * Each member can pin/reorder their own pills (long-press "Edit" opens
- * PillOrderSheet) — saved to members.pillOrder, DB-backed via
- * familyStore's updateMember so it survives reinstall/new device, not just
- * local state.
+ * PillOrderSheet, real drag-and-drop) — saved to members.pillOrder,
+ * DB-backed via familyStore's updateMember so it survives reinstall/new
+ * device, not just local state.
  */
 import { useState } from 'react';
-import { View, ScrollView, Text, TouchableOpacity, Modal, Pressable } from 'react-native';
+import { View, ScrollView, Text, TouchableOpacity, Modal, Pressable, LayoutChangeEvent } from 'react-native';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue, useAnimatedStyle, withSpring, runOnJS, type SharedValue,
+} from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
-import { Radio, BookOpen, Heart, ShoppingCart, ChefHat, Coins, Image as ImageIcon, FolderOpen, Users, Gift, SlidersHorizontal, X, ChevronUp, ChevronDown, Check } from 'lucide-react-native';
+import { Radio, BookOpen, Heart, ShoppingCart, ChefHat, Coins, Image as ImageIcon, FolderOpen, Users, Gift, SlidersHorizontal, X, GripVertical, Check } from 'lucide-react-native';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
 import type { MemberRole } from '@/store/familyStore';
@@ -44,27 +48,138 @@ function orderPills(available: typeof PILLS, savedOrder: string[] | undefined) {
   return [...ordered, ...missing];
 }
 
+const ROW_HEIGHT = 54; // fixed row height (padding + content) so drag math is exact, no onLayout measurement per row needed
+
+// One draggable row. The drag itself runs entirely on the UI thread —
+// positions.value (a worklet-shared map of id -> index) is read AND
+// written inside the pan gesture's own onUpdate, so every other row's
+// displacement is computed and animated without ever touching React state
+// or crossing to the JS thread mid-drag. The previous version called
+// runOnJS(onReorder) on every index crossing, which round-tripped through
+// setDraft -> full re-render -> new positions.value assignment for EVERY
+// swap during a single continuous drag — that JS-thread wait per swap is
+// what read as stuttery/not tracking the finger smoothly. Now the only
+// JS-thread hop is once, on release, to commit the final order.
+function DraggableRow({ id, pill, total, positions, draggingId, onRemove, onCommitOrder, colors, isDark }: {
+  id: string; pill: typeof PILLS[number]; total: number;
+  positions: SharedValue<Record<string, number>>;
+  draggingId: SharedValue<string | null>;
+  onRemove: (id: string) => void;
+  onCommitOrder: (order: Record<string, number>) => void;
+  colors: any; isDark: boolean;
+}) {
+  const dragY = useSharedValue(0);
+  const isActive = useSharedValue(false);
+  const startIndex = useSharedValue(0);
+
+  const pan = Gesture.Pan()
+    .onStart(() => {
+      isActive.value = true;
+      draggingId.value = id;
+      startIndex.value = positions.value[id];
+    })
+    .onUpdate((e) => {
+      dragY.value = e.translationY;
+      const rawIndex = startIndex.value + e.translationY / ROW_HEIGHT;
+      const targetIndex = Math.min(total - 1, Math.max(0, Math.round(rawIndex)));
+      const currentIndex = positions.value[id];
+      if (targetIndex === currentIndex) return;
+      // Shift only the row(s) between the old and new slot by one — swaps
+      // this dragged id directly to targetIndex, sliding whichever single
+      // neighbor it crossed into the vacated slot. Entirely worklet-side,
+      // no runOnJS, no React render.
+      const next = { ...positions.value };
+      for (const otherId of Object.keys(next)) {
+        if (otherId === id) continue;
+        const otherIndex = next[otherId];
+        if (currentIndex < targetIndex && otherIndex > currentIndex && otherIndex <= targetIndex) {
+          next[otherId] = otherIndex - 1;
+        } else if (currentIndex > targetIndex && otherIndex < currentIndex && otherIndex >= targetIndex) {
+          next[otherId] = otherIndex + 1;
+        }
+      }
+      next[id] = targetIndex;
+      positions.value = next;
+    })
+    .onEnd(() => {
+      dragY.value = withSpring(0, { damping: 20, stiffness: 300 });
+      isActive.value = false;
+      draggingId.value = null;
+      runOnJS(onCommitOrder)(positions.value);
+    });
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const myIndex = positions.value[id] ?? 0;
+    const baseY = myIndex * ROW_HEIGHT;
+    return {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      // The dragged row tracks the raw gesture translation 1:1 on top of
+      // its live base slot (no spring lag while the finger is down); every
+      // other row springs to its new slot the instant positions.value
+      // shifts under it.
+      transform: [{ translateY: isActive.value ? baseY + dragY.value : withSpring(baseY, { damping: 22, stiffness: 260 }) }],
+      zIndex: isActive.value ? 10 : 1,
+      opacity: isActive.value ? 0.96 : 1,
+      shadowColor: '#000',
+      shadowOpacity: isActive.value ? 0.22 : 0,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: isActive.value ? 4 : 0,
+    };
+  });
+
+  return (
+    <Animated.View style={[{ height: ROW_HEIGHT - 8, paddingBottom: 8 }, animatedStyle]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12,
+        borderWidth: 1.5, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F8FAFC',
+        padding: 10, height: ROW_HEIGHT - 8 }}>
+        <GestureDetector gesture={pan}>
+          <View style={{ padding: 8, marginLeft: -8 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <GripVertical size={16} color={colors.textTertiary} />
+          </View>
+        </GestureDetector>
+        <pill.Icon size={16} color={colors.textPrimary} />
+        <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{pill.label}</Text>
+        <Pressable onPress={() => onRemove(id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <X size={16} color={colors.danger} />
+        </Pressable>
+      </View>
+    </Animated.View>
+  );
+}
+
 function PillOrderSheet({ visible, onClose, available, order, onSave, colors, isDark }: {
   visible: boolean; onClose: () => void; available: typeof PILLS; order: string[]; onSave: (next: string[]) => void;
   colors: any; isDark: boolean;
 }) {
   const [draft, setDraft] = useState<string[]>(order);
+  const positions = useSharedValue<Record<string, number>>(
+    Object.fromEntries(order.map((id, i) => [id, i]))
+  );
+  const draggingId = useSharedValue<string | null>(null);
 
-  const move = (id: string, dir: -1 | 1) => {
+  // Called once, from the pan gesture's onEnd (UI thread -> JS thread,
+  // exactly one hop for the whole drag) — commits the worklet-side
+  // positions map back into React state as the new draft order.
+  const onCommitOrder = (finalPositions: Record<string, number>) => {
+    setDraft(prev => [...prev].sort((a, b) => (finalPositions[a] ?? 0) - (finalPositions[b] ?? 0)));
+  };
+
+  const toggle = (id: string) => {
     setDraft(prev => {
-      const i = prev.indexOf(id);
-      const j = i + dir;
-      if (i < 0 || j < 0 || j >= prev.length) return prev;
-      const next = [...prev];
-      [next[i], next[j]] = [next[j], next[i]];
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      positions.value = Object.fromEntries(next.map((pid, i) => [pid, i]));
       return next;
     });
   };
-  const toggle = (id: string) => {
-    setDraft(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
 
   const save = () => { onSave(draft); onClose(); };
+
+  const visibleDraft = draft.filter(id => available.some(p => p.id === id));
+  const hidden = available.filter(p => !draft.includes(p.id));
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -75,7 +190,7 @@ function PillOrderSheet({ visible, onClose, available, order, onSave, colors, is
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: TYPO.heading, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary }}>Quick access</Text>
-              <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>Pick and order what shows here</Text>
+              <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginTop: 2 }}>Drag the handle to reorder</Text>
             </View>
             <Pressable onPress={onClose} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
               style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? colors.surface : '#F1F5F9' }}>
@@ -83,39 +198,35 @@ function PillOrderSheet({ visible, onClose, available, order, onSave, colors, is
             </Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 12, gap: 8 }} showsVerticalScrollIndicator={false}>
-            {draft.filter(id => available.some(p => p.id === id)).map(id => {
-              const pill = available.find(p => p.id === id)!;
-              return (
-                <View key={id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12,
-                  borderWidth: 1.5, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F8FAFC', padding: 10 }}>
-                  <pill.Icon size={16} color={colors.textPrimary} />
-                  <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{pill.label}</Text>
-                  <Pressable onPress={() => move(id, -1)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <ChevronUp size={18} color={colors.textSecondary} />
-                  </Pressable>
-                  <Pressable onPress={() => move(id, 1)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <ChevronDown size={18} color={colors.textSecondary} />
-                  </Pressable>
-                  <Pressable onPress={() => toggle(id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <X size={16} color={colors.danger} />
-                  </Pressable>
-                </View>
-              );
-            })}
+          <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 12 }} showsVerticalScrollIndicator={false}>
+            <View style={{ height: visibleDraft.length * ROW_HEIGHT }}>
+              {visibleDraft.map((id) => {
+                const pill = available.find(p => p.id === id)!;
+                return (
+                  <DraggableRow
+                    key={id} id={id} pill={pill} total={visibleDraft.length}
+                    positions={positions} draggingId={draggingId}
+                    onCommitOrder={onCommitOrder} onRemove={toggle}
+                    colors={colors} isDark={isDark}
+                  />
+                );
+              })}
+            </View>
 
-            {available.filter(p => !draft.includes(p.id)).length > 0 && (
+            {hidden.length > 0 && (
               <>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary, marginTop: 10, textTransform: 'uppercase', letterSpacing: 0.4 }}>Hidden</Text>
-                {available.filter(p => !draft.includes(p.id)).map(pill => (
-                  <Pressable key={pill.id} onPress={() => toggle(pill.id)}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12,
-                      borderWidth: 1.5, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F8FAFC', padding: 10, opacity: 0.6 }}>
-                    <pill.Icon size={16} color={colors.textSecondary} />
-                    <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{pill.label}</Text>
-                    <Check size={16} color={colors.textTertiary} />
-                  </Pressable>
-                ))}
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary, marginTop: 10, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.4 }}>Hidden</Text>
+                <View style={{ gap: 8 }}>
+                  {hidden.map(pill => (
+                    <Pressable key={pill.id} onPress={() => toggle(pill.id)}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12,
+                        borderWidth: 1.5, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F8FAFC', padding: 10, opacity: 0.6 }}>
+                      <pill.Icon size={16} color={colors.textSecondary} />
+                      <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{pill.label}</Text>
+                      <Check size={16} color={colors.textTertiary} />
+                    </Pressable>
+                  ))}
+                </View>
               </>
             )}
           </ScrollView>
@@ -181,11 +292,22 @@ export function AppsQuickAccessPills({ role, colors, isDark }: {
 
       {activeMemberId && (
         <PillOrderSheet
+          key={editing ? 'open' : 'closed'}
           visible={editing}
           onClose={() => setEditing(false)}
           available={available}
           order={visible.map(p => p.id)}
-          onSave={(next) => updateMember(activeMemberId, { pillOrder: next })}
+          onSave={(next) => {
+            // Was: no visible confirmation that Save actually reached the
+            // DB — updateMember's own error is only console.warn'd, so a
+            // failed write looked identical to a successful one from the
+            // user's side. Kept fire-and-forget (matches every other
+            // updateMember caller in the app) but this is now the one
+            // spot in the chain most likely to be checked when a saved
+            // order "doesn't stick" — confirm activeMemberId is genuinely
+            // set and the write is actually issued here.
+            updateMember(activeMemberId, { pillOrder: next });
+          }}
           colors={colors} isDark={isDark}
         />
       )}

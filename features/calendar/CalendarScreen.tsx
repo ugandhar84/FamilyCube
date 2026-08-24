@@ -47,7 +47,7 @@ import { EventCardTimeline, BusyBlockCard, roleStyle, catStyle, LocationLink } f
 import { s as calCardStyles } from './components/calendarCardStyles';
 import { AiConflictBanner, type AiConflict, type AiResult } from './components/AiConflictBanner';
 import { CalendarSearchBar } from './components/CalendarSearchBar';
-import { toDateStr, parseDate, addDays, DAY_SHORT, CAT_DOT, buildMonthGrid, isEventPast } from './components/calendarDateHelpers';
+import { toDateStr, parseDate, addDays, DAY_SHORT, CAT_DOT, buildMonthGrid, isEventPast, collapseSeries } from './components/calendarDateHelpers';
 import MonthGridView, { DayEventsSummaryCard } from './components/MonthGridView';
 import WeekView from './components/WeekView';
 import AgendaView from './components/AgendaView';
@@ -962,6 +962,16 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
     return filtered;
   }, [rangeEvents, isSenior, isKid, isTeen, isParent, activeMemberName, activeMemberId, filterMember, filterMemberName, searchQuery, scheduleFilter]);
 
+  // Agenda only — collapse a recurring series (up to 84 individual rows for
+  // a daily rule) down to one representative card, the next upcoming
+  // occurrence (or most recent past one if the series has fully elapsed).
+  // Week view is NOT collapsed here — its 7-day grid needs each occurrence
+  // on its own actual day column (it was never the "85 cards in one list"
+  // problem to begin with, since it only ever shows one week at a time).
+  // Month's day-strip dots also need every real occurrence to mark the
+  // right days.
+  const collapsedRangeEvents = useMemo(() => collapseSeries(scopedRangeEvents), [scopedRangeEvents]);
+
   // Events where senior can volunteer as helper (has a pending/no helper, dated today or future)
   // seniorOpenRides removed — ride volunteering now lives in Hub > Helper Dispatch
 
@@ -1200,7 +1210,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
               </View>
             ) : (
               <AgendaView
-                events={scopedRangeEvents}
+                events={collapsedRangeEvents}
                 members={members}
                 colors={colors} isDark={isDark}
                 onSelectEvent={(ev) => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped event "${ev.title}" (id=${ev.id}) in Agenda view → open detail sheet [features/calendar/CalendarScreen.tsx:1187]`); setDetailEv(ev); }}

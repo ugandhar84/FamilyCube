@@ -83,3 +83,29 @@ export function timeToMinutes(t?: string): number | null {
   if (Number.isNaN(h)) return null;
   return h * 60 + (m || 0);
 }
+
+// Collapse a recurring series (many rows sharing one seriesId) down to a
+// single representative row — the next upcoming occurrence, or the most
+// recent past one if the whole series has already happened. A daily rule
+// materializes up to 84 individual rows (RECURRENCE_WINDOW_DAYS in
+// eventStore.ts); Week/Agenda showing all of them as separate cards read as
+// "the same ride 12 weeks in a row" rather than one repeating thing.
+// Non-recurring events (no seriesId) pass through untouched. Month/Day
+// views deliberately do NOT use this — a month grid's per-day dots and a
+// single day's timeline both need the real individual occurrence for that
+// specific date, not a collapsed stand-in.
+export function collapseSeries<T extends { id: string; seriesId?: string; date: string; time?: string }>(events: T[]): T[] {
+  const bySeriesId = new Map<string, T[]>();
+  const result: T[] = [];
+  for (const ev of events) {
+    if (!ev.seriesId) { result.push(ev); continue; }
+    const group = bySeriesId.get(ev.seriesId);
+    if (group) group.push(ev); else bySeriesId.set(ev.seriesId, [ev]);
+  }
+  for (const group of bySeriesId.values()) {
+    const sorted = [...group].sort((a, b) => a.date === b.date ? (a.time ?? '').localeCompare(b.time ?? '') : a.date.localeCompare(b.date));
+    const upcoming = sorted.find(ev => !isEventPast(ev.date, ev.time));
+    result.push(upcoming ?? sorted[sorted.length - 1]);
+  }
+  return result.sort((a, b) => a.date === b.date ? (a.time ?? '').localeCompare(b.time ?? '') : a.date.localeCompare(b.date));
+}

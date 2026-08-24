@@ -203,9 +203,14 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
             <Text style={{ fontSize: 9, fontWeight: '700', color: rs.text, opacity: 0.8 }}>{timeParts.ampm}</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>
-              {ev.title}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              {!!ev.seriesId && (
+                <Text style={{ fontSize: 11 }} accessibilityLabel="Recurring event">🔄</Text>
+              )}
+              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary, flexShrink: 1 }} numberOfLines={1}>
+                {ev.title}
+              </Text>
+            </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
               {showCategory && ev.category && (
                 <View style={{ backgroundColor: colors.surface, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 }}>
@@ -309,6 +314,9 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
         opacity: isPast ? 0.5 : 1,
       }}>
       <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: rs.text, width: 46 }}>{timeParts.time}{timeParts.ampm.toLowerCase()}</Text>
+      {!!ev.seriesId && (
+        <Text style={{ fontSize: 10 }} accessibilityLabel="Recurring event">🔄</Text>
+      )}
       <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }} numberOfLines={1}>
         {ev.title}
       </Text>

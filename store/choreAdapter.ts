@@ -125,7 +125,13 @@ export function choreToQuest(c: ChoreTask): Quest {
     templateId:       undefined,
 
     status:           choreStatusToQuestStatus(c.status),
-    awaitingParentApproval: c.status === 'pending_parent_approval',
+    // A kid-authored chore (createdByKidPendingReview) means the same
+    // thing to every consumer of this flag as a GP-quest awaiting its
+    // sponsor's review does — "not visible/claimable yet, a parent must
+    // review it first" — folding it in here means every existing
+    // !q.awaitingParentApproval check across pool/claim/assignee-visible
+    // filters excludes it automatically, with no new filter edits needed.
+    awaitingParentApproval: c.status === 'pending_parent_approval' || !!c.createdByKidPendingReview,
     dueDate:          c.dueDate,
     dueTime:          c.dueTime,
 

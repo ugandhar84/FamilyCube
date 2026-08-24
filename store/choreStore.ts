@@ -132,6 +132,17 @@ export interface ChoreTask {
   // not award points while this is still true. Cleared by a parent via
   // approveTeenReward / adjustTeenReward / declineTeenReward.
   rewardPendingReview?: boolean;
+  // Set at creation when a KID (not teen/parent/senior) self-creates a
+  // chore via KidSmartAskComposer, for themselves or a sibling. Unlike
+  // rewardPendingReview (chore is live/claimable, only the PAYOUT is
+  // gated), this gates the chore's very existence — it must stay
+  // invisible to every claim/pool/assignee-visible query until a parent
+  // reviews it, since a kid picking who does the work (not just what the
+  // reward is) needs a stronger gate. Real status stays 'todo' the whole
+  // time. Cleared by a parent approving via KidProposedChoreCard, which
+  // also sets the real coin reward at that point (a kid-authored chore
+  // never carries a coin amount of its own).
+  createdByKidPendingReview?: boolean;
   // Scenario 1.6 — memberId of the grandparent/senior who offered to
   // handle this openToGP chore while status === 'gp_offer_pending'.
   // Deliberately NOT written to assignedToId until a parent actually
@@ -577,6 +588,7 @@ function choreFromRow(row: any): ChoreTask {
     reviewAckIds:            Array.isArray(row.review_ack_ids) ? row.review_ack_ids : undefined,
     isDisabled:              row.is_disabled ?? false,
     rewardPendingReview:     row.reward_pending_review ?? false,
+    createdByKidPendingReview: row.created_by_kid_pending_review ?? false,
     gpOfferById:             row.gp_offer_by_id ?? undefined,
     maxClaimants:            row.max_claimants ?? undefined,
     receiptPhotoUrl:         row.receipt_photo_url ?? undefined,
@@ -1267,6 +1279,36 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         ? new Date(Date.now() + (get().householdSettings.autoApproveTimeoutHours * 3600_000)).toISOString()
         : undefined;
 
+    // A kid (not teen/parent/senior) authoring a chore via
+    // KidSmartAskComposer — for themselves or a sibling — can never target
+    // a parent as the assignee (kids don't assign work to parents), and
+    // the chore stays invisible to every claim/pool/assignee query
+    // (createdByKidPendingReview) until a parent reviews it and sets the
+    // real coin reward. The composer's own UI already filters a parent out
+    // of the assignee picker for a kid viewer — this is the data-layer
+    // guard backing that up, same shape as the shopping adult-only check
+    // above (reject the bad assignee rather than the whole create).
+    let createdByKidPendingReview = false;
+    if (partial.createdById) {
+      try {
+        const { useFamilyStore } = require('./familyStore');
+        const creator = useFamilyStore.getState().members.find((m: any) => m.id === partial.createdById);
+        if (creator?.role === 'kid') {
+          const assignee = partial.assignedToId
+            ? useFamilyStore.getState().members.find((m: any) => m.id === partial.assignedToId)
+            : undefined;
+          if (assignee && (assignee.role === 'parent' || assignee.role === 'senior')) {
+            console.warn('[choreStore] addChore blocked a kid targeting an adult assignee — clearing to self', assignee.role);
+            partial = { ...partial, assignedToId: partial.createdById, isPool: false };
+          }
+          createdByKidPendingReview = true;
+          partial = { ...partial, coinsReward: 0, bonusCoins: 0, xpReward: 0 };
+        }
+      } catch (e) {
+        console.warn('[choreStore] addChore kid-authored-chore check failed', e);
+      }
+    }
+
     // Scenario 1.13 — a Teen self-creating a quest (createdById is a 'teen'
     // member) with a coin reward above the household threshold gets the
     // reward flagged for parent review. The task itself is unaffected: it's
@@ -1297,6 +1339,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       redoCount:            0,
       approvalWindowExpiresAt: autoExpire,
       rewardPendingReview,
+      createdByKidPendingReview,
       createdAt:            now,
     };
 
@@ -1318,6 +1361,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       assigned_to_id:           chore.assignedToId,
       is_pool:                  chore.isPool ?? false,
       reward_pending_review:    chore.rewardPendingReview ?? false,
+      created_by_kid_pending_review: chore.createdByKidPendingReview ?? false,
       family_id:                familyId,
       created_by_id:            chore.createdById,
       sponsor_user_id:          chore.sponsorUserId,
@@ -1522,6 +1566,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('reviewAckIds' in (updates as any)) patch.review_ack_ids          = (updates as any).reviewAckIds ?? [];
     if ('isDisabled'  in (updates as any)) patch.is_disabled               = (updates as any).isDisabled;
     if ('rewardPendingReview' in (updates as any)) patch.reward_pending_review = (updates as any).rewardPendingReview;
+    if ('createdByKidPendingReview' in (updates as any)) patch.created_by_kid_pending_review = (updates as any).createdByKidPendingReview;
     if ('gpOfferById'   in (updates as any)) patch.gp_offer_by_id             = (updates as any).gpOfferById ?? null;
     if ('maxClaimants'  in (updates as any)) patch.max_claimants              = (updates as any).maxClaimants ?? null;
     if ('receiptPhotoUrl'      in updates) patch.receipt_photo_url          = updates.receiptPhotoUrl ?? null;

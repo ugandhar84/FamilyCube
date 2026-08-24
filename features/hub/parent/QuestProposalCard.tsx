@@ -30,20 +30,20 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
   const wasEdited = finalCoins !== (req.rewardCoins ?? 15);
 
   return (
-    <CollapsibleCard accent={colors.primary} colors={colors} isDark={isDark} defaultExpanded
+    <CollapsibleCard accent={colors.parent} colors={colors} isDark={isDark} defaultExpanded
       summary={
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={{ fontSize: 16 }}>🧩</Text>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.primary }} numberOfLines={1}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.parent }} numberOfLines={1}>
               {kidName} suggested a chore
             </Text>
             <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>
               "{req.detail}"
             </Text>
           </View>
-          <View style={{ backgroundColor: colors.primary + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.primary }}>Review</Text>
+          <View style={{ backgroundColor: colors.parent + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.parent }}>Review</Text>
           </View>
         </View>
       }>
@@ -57,7 +57,7 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
             autoFocus
             onBlur={() => setEditing(false)}
             style={{
-              borderWidth: 1.5, borderColor: colors.primary, borderRadius: 8,
+              borderWidth: 1.5, borderColor: colors.parent, borderRadius: 8,
               paddingHorizontal: 10, paddingVertical: 4, fontSize: TYPO.label, fontWeight: '800',
               color: colors.textPrimary, width: 80,
             }}
@@ -90,7 +90,7 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
           <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.danger }}>Decline</Text>
         </Pressable>
         <Pressable onPress={() => onApprove(finalCoins)}
-          style={{ flex: 2, backgroundColor: colors.primary, paddingVertical: 10, borderRadius: 12,
+          style={{ flex: 2, backgroundColor: colors.parent, paddingVertical: 10, borderRadius: 12,
             alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
           <Check size={14} color="#fff" />
           <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>

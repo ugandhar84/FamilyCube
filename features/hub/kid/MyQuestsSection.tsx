@@ -90,7 +90,7 @@ export function MyQuestsSection({
             {combined.length === 0 ? (
               <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "All caught up!" on "MyQuestsSection empty state" → navigate to /(tabs)/quests [features/hub/kid/MyQuestsSection.tsx:90]`); router.push('/(tabs)/quests'); }}
                 style={{ borderRadius: 18, borderWidth: 1.5, borderStyle: 'dashed', borderColor: BRAND.purple + '50',
-                  backgroundColor: BRAND.purple + '08', padding: 28, alignItems: 'center', gap: 8 }}>
+                  backgroundColor: BRAND.purple + '14', padding: 28, alignItems: 'center', gap: 8 }}>
                 <Trophy size={40} color={BRAND.purple} />
                 <Text style={{ fontSize: KID.title, fontWeight: '900', color: BRAND.purple, marginTop: 4 }}>All caught up!</Text>
                 <Text style={{ fontSize: KID.sub, color: colors.textTertiary, textAlign: 'center' }}>

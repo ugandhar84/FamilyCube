@@ -334,7 +334,7 @@ export default function ProfileEditScreen() {
         {/* Delete account */}
         <View style={s.dangerSection}>
           <Text style={[s.dangerTitle, { color: colors.danger }]}>Danger zone</Text>
-          <TouchableOpacity style={[s.dangerBtn, { borderColor: colors.danger + '40', backgroundColor: colors.danger + '08' }]}
+          <TouchableOpacity style={[s.dangerBtn, { borderColor: colors.danger + '40', backgroundColor: colors.danger + '14' }]}
             onPress={() => {
               showAlert(
                 'Delete account?',

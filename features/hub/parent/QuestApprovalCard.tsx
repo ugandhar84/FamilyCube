@@ -25,25 +25,25 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
   const [photoOpen, setPhotoOpen] = useState(false);
 
   return (
-    <CollapsibleCard accent={colors.primary} colors={colors} isDark={isDark} defaultExpanded
+    <CollapsibleCard accent={colors.parent} colors={colors} isDark={isDark} defaultExpanded
       summary={
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Camera size={16} color={colors.primary} />
+          <Camera size={16} color={colors.parent} />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.primary }} numberOfLines={1}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.parent }} numberOfLines={1}>
               Quest done — {q.title}
             </Text>
             {kid && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
                 <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl}
-                  siblings={allNames} size={14} ringColor={colors.primary} ringWidth={1} />
+                  siblings={allNames} size={14} ringColor={colors.parent} ringWidth={1} />
                 {/* An adult task's coins are deliberately zeroed at creation
                     (AddQuestModal's toggleAdultTask) — parents don't earn
                     coins for their own chores. "wants 0 coins" reads as
                     broken rather than intentional, so a 0-coin task (adult
                     or otherwise) just states it was completed instead. */}
                 {q.coins > 0 && <Coins size={11} color={colors.kid} />}
-                <Text style={{ fontSize: TYPO.label, color: colors.primary, fontWeight: '600' }}>
+                <Text style={{ fontSize: TYPO.label, color: colors.parent, fontWeight: '600' }}>
                   {q.coins > 0 ? `${kid.name.split(' ')[0]} wants ${q.coins} coins` : `${kid.name.split(' ')[0]} completed this`}
                 </Text>
                 {hasBonus && (
@@ -57,8 +57,8 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
             )}
             <QuestLiveness history={q.history} members={members} colors={colors} />
           </View>
-          <View style={{ backgroundColor: colors.primary + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
-            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.primary }}>Review</Text>
+          <View style={{ backgroundColor: colors.parent + '30', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.parent }}>Review</Text>
           </View>
         </View>
       }>
@@ -111,7 +111,7 @@ export function QuestApprovalCard({ q, active, members, allNames, colors, isDark
           <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.danger }}>Decline</Text>
         </Pressable>
         <Pressable onPress={() => { approveQuest(q.id, active.id); useCelebrationStore.getState().trigger(); }}
-          style={{ flex: 2, backgroundColor: colors.primary, paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
+          style={{ flex: 2, backgroundColor: colors.parent, paddingVertical: 10, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
           <Coins size={14} color="#fff" />
           <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
             Approve & Pay {totalCoins} Coins{hasBonus ? ` (incl. ${q.bonusCoins} bonus)` : ''}

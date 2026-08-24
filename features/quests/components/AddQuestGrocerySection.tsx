@@ -73,7 +73,7 @@ export function AddQuestGrocerySection({
                         {/* Store header — tap to expand/collapse */}
                         <Pressable onPress={toggleStore}
                           style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-                            backgroundColor: storeSelected ? BRAND.purple + '15' : (storePartial ? BRAND.purple + '08' : isDark ? '#252540' : '#F3F4F6'),
+                            backgroundColor: storeSelected ? BRAND.purple + '15' : (storePartial ? BRAND.purple + '14' : isDark ? '#252540' : '#F3F4F6'),
                             borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12,
                             borderWidth: 1, borderColor: storeSelected ? BRAND.purple + '60' : (storePartial ? BRAND.purple + '30' : colors.border) }}
                         >

@@ -70,7 +70,7 @@ export function VoicePrefillBox({
         <View style={{
           marginTop: -6, marginBottom: 12, borderRadius: 14, borderWidth: 1.5,
           borderColor: listening ? colors.danger + '60' : accentColor + '45',
-          backgroundColor: listening ? colors.danger + '08' : (isDark ? accentColor + '1c' : '#F8F5FF'),
+          backgroundColor: listening ? colors.danger + '14' : (isDark ? accentColor + '1c' : '#F8F5FF'),
           padding: 12, gap: 10,
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

@@ -43,7 +43,7 @@ export function AskParentSheet({ visible, onClose, colors, isDark, onPick }: {
         ] as const).map(({ key, label, desc, Icon, color }) => (
           <Pressable key={key} onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "${label}" on "Ask Parent sheet" (id=${key}) → onPick("${key}") [features/hub/kid/AskParentSheet.tsx:36]`); onPick(key); }}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 16,
-              backgroundColor: isDark ? colors.surface : color + '08', borderWidth: 1.5, borderColor: color + '30' }}>
+              backgroundColor: isDark ? colors.surface : color + '14', borderWidth: 1.5, borderColor: color + '30' }}>
             <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: color + '20', alignItems: 'center', justifyContent: 'center' }}>
               <Icon size={22} color={color} />
             </View>

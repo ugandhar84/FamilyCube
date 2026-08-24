@@ -91,7 +91,7 @@ export default function GroceryLinkSection({
                             setSelectedItemIds(next);
                           }}
                           style={{ flexDirection: 'row', alignItems: 'center', gap: 8,
-                            backgroundColor: storeSelected ? catColor + '15' : (storePartial ? catColor + '08' : isDark ? '#252540' : '#F3F4F6'),
+                            backgroundColor: storeSelected ? catColor + '15' : (storePartial ? catColor + '14' : isDark ? '#252540' : '#F3F4F6'),
                             borderRadius: 10, paddingVertical: 7, paddingHorizontal: 12, marginBottom: 3,
                             borderWidth: 1, borderColor: storeSelected ? catColor + '60' : (storePartial ? catColor + '30' : colors.border) }}
                         >

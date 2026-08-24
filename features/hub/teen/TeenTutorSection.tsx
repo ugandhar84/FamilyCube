@@ -42,7 +42,7 @@ export function TeenTutorSection({
             {pendingOffers.map(r => (
               <View key={r.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
                 padding: 10, borderRadius: 12,
-                backgroundColor: isDark ? BRAND.purple + '12' : BRAND.purple + '08',
+                backgroundColor: isDark ? BRAND.purple + '12' : BRAND.purple + '14',
                 borderWidth: 1, borderColor: BRAND.purple + '30' }}>
                 <BookOpen size={14} color={BRAND.purple} />
                 <Text style={{ flex: 1, fontSize: TYPO.label, color: colors.textPrimary }} numberOfLines={2}>{r.detail}</Text>

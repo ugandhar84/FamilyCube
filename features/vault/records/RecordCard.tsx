@@ -226,7 +226,7 @@ export default function RecordCard({
               Added {new Date(rec.created_at).toLocaleDateString()}
             </Text>
             <TouchableOpacity onPress={onDelete}
-              style={[s.deleteBtn, { borderColor: BRAND.rose + '40', backgroundColor: BRAND.rose + '08' }]}>
+              style={[s.deleteBtn, { borderColor: BRAND.rose + '40', backgroundColor: BRAND.rose + '14' }]}>
               <Trash2 size={12} color={BRAND.rose} />
             </TouchableOpacity>
           </View>

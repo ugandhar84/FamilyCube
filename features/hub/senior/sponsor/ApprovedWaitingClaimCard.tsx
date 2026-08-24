@@ -20,7 +20,7 @@ export function ApprovedWaitingClaimCard({ quests, kids, colors, isDark }: {
         return (
           <View key={c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
             padding: 12, borderRadius: 12,
-            backgroundColor: isDark ? BRAND.purple + '12' : BRAND.purple + '08',
+            backgroundColor: isDark ? BRAND.purple + '12' : BRAND.purple + '14',
             borderWidth: 1, borderColor: BRAND.purple + '30' }}>
             {c.questMode === 'virtual' ? <Laptop size={18} color={BRAND.purple} /> : <Leaf size={18} color={BRAND.purple} />}
             <View style={{ flex: 1 }}>

@@ -32,13 +32,13 @@ export function KidHeroCard({
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
         <View style={{
           width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center',
-          backgroundColor: colors.primaryLight, borderWidth: 3, borderColor: colors.primary,
-          shadowColor: colors.primary, shadowOpacity: isDark ? 0 : 0.25, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4,
+          backgroundColor: colors.kidLight, borderWidth: 3, borderColor: colors.kid,
+          shadowColor: colors.kid, shadowOpacity: isDark ? 0 : 0.25, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4,
         }}>
           <Text style={{ fontSize: 30 }}>{active.emoji ?? '👤'}</Text>
           <View style={{
             position: 'absolute', bottom: -4, alignSelf: 'center',
-            backgroundColor: colors.primary, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2,
+            backgroundColor: colors.kid, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2,
             borderWidth: 2, borderColor: isDark ? colors.background : '#fff',
             flexDirection: 'row', alignItems: 'center', gap: 2,
           }}>
@@ -77,15 +77,15 @@ export function KidHeroCard({
       <View style={{ gap: 6 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: colors.primary + '20', alignItems: 'center', justifyContent: 'center' }}>
-              <Zap size={10} color={colors.primary} fill={colors.primary} />
+            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: colors.kid + '20', alignItems: 'center', justifyContent: 'center' }}>
+              <Zap size={10} color={colors.kid} fill={colors.kid} />
             </View>
             <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.textSecondary }}>XP to level {level + 1}</Text>
           </View>
-          <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.primary }}>{xp % xpForNext}/{xpForNext}</Text>
+          <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.kid }}>{xp % xpForNext}/{xpForNext}</Text>
         </View>
-        <View style={{ height: 10, borderRadius: 5, backgroundColor: colors.primary + '15', overflow: 'hidden' }}>
-          <View style={{ height: 10, borderRadius: 5, width: `${Math.max(6, Math.round(xpPct * 100))}%` as any, backgroundColor: colors.primary }} />
+        <View style={{ height: 10, borderRadius: 5, backgroundColor: colors.kid + '15', overflow: 'hidden' }}>
+          <View style={{ height: 10, borderRadius: 5, width: `${Math.max(6, Math.round(xpPct * 100))}%` as any, backgroundColor: colors.kid }} />
         </View>
       </View>
 

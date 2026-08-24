@@ -381,12 +381,13 @@ export default function TasksScreen() {
           onPress={openCreator}
           activeOpacity={0.88}
           style={[styles.fab, {
-            // Matches the global Ask Cube FAB's position (app/(tabs)/
-            // _layout.tsx: bottom = insets.bottom + 74) — was insets.bottom
-            // + 20, sitting 54px lower than Ask Cube's button on every
-            // other tab, so this one read as misaligned/closer to the tab
-            // bar and could overlap the last card in a long list.
-            bottom: (insets.bottom || 16) + 74,
+            // Reverted — Ask Cube is parent-only AND explicitly hidden on
+            // the Tasks tab itself (app/(tabs)/_layout.tsx line 298:
+            // !onTasksTab), so there's no Ask Cube FAB ever visible here to
+            // align against. Copying its +74 offset just pushed this FAB
+            // too high with nothing else on this screen for context —
+            // confirmed live, reverting to the original position.
+            bottom: insets.bottom + 20,
             backgroundColor: colors.primary,
           }]}
         >

@@ -187,7 +187,9 @@ export default function SmartTaskComposer({
   // and vice versa) rather than forcing both up front. Return time is a
   // simple HH:MM string, matching eventStore's own returnTime field shape.
   const [pickupLocation, setPickupLocation] = useState('');
+  const [touchedPickup, setTouchedPickup] = useState(false);
   const [dropLocation, setDropLocation] = useState('');
+  const [touchedDrop, setTouchedDrop] = useState(false);
   const [returnTime, setReturnTime] = useState('');
   const [showReturnTime, setShowReturnTime] = useState(false);
   // GP/Teen Welcome — same pool-opening toggles the full Ride form
@@ -210,7 +212,7 @@ export default function SmartTaskComposer({
     setAlertCall(false); setAlertCallLeadMinutes(10);
     setTitle(''); setForMemberIds([]); setCategory(undefined);
     setCoinsStr('20'); setPhotoRequired(false);
-    setPickupLocation(''); setDropLocation(''); setReturnTime(''); setShowReturnTime(false);
+    setPickupLocation(''); setTouchedPickup(false); setDropLocation(''); setTouchedDrop(false); setReturnTime(''); setShowReturnTime(false);
     setOpenToGrandparents(false); setOpenToTeens(false); setRideCoinsTeen('');
     setTouchedRecurrence(false); setRecurFreq('once'); setRecurDays([]); setRecurDayOfMonth(undefined);
     setTouchedWhen(false); setWhenDate(null); setShowWhenPicker(false); setShowReturnPicker(false);
@@ -252,8 +254,17 @@ export default function SmartTaskComposer({
       const dt = new Date(datePart + (d.when.time ? `T${d.when.time}:00` : 'T00:00:00'));
       if (!isNaN(dt.getTime())) setWhenDate(dt);
     }
-    if (d.locations.pickup && !pickupLocation) setPickupLocation(d.locations.pickup);
-    if (d.locations.dropoff && !dropLocation) setDropLocation(d.locations.dropoff);
+    // Was "only fill if currently empty" — once a stale detection (e.g.
+    // from an earlier abandoned sentence) had set this, re-analyzing a
+    // completely different, freshly-typed/spoken sentence could never
+    // overwrite or clear it, since the field was no longer empty. Live-
+    // reported: cancelled "...every day", re-recorded "today", but the
+    // Pickup field still showed the old "Badminton every day" text.
+    // touchedPickup/touchedDrop (set only by the user directly editing the
+    // field, see the TextInput onChangeText below) is the correct signal
+    // for "don't overwrite this" — matching every other field in this form.
+    if (!touchedPickup) setPickupLocation(d.locations.pickup ?? '');
+    if (!touchedDrop) setDropLocation(d.locations.dropoff ?? '');
     if (!touchedHelper && d.driverName) {
       const match = members.find(m => m.name === d.driverName);
       if (match) setHelperId(match.id);
@@ -264,9 +275,15 @@ export default function SmartTaskComposer({
     if (d.amount !== null && (parseInt(coinsStr, 10) || 0) === 20) {
       setCoinsStr(String(Math.round(d.amount)));
     }
-    if (!touchedRecurrence && d.recurrence !== 'once') {
+    // Was "only set when detected as recurring" — never cleared back to
+    // 'once' when a fresh detection no longer contains a recurrence
+    // phrase, so a stale "every day" guess from an earlier abandoned
+    // sentence stuck around (and kept routing to the full-form handoff)
+    // even after the input was cleared and replaced with a genuinely
+    // one-time sentence. Mirrors touchedPickup/touchedDrop's fix above.
+    if (!touchedRecurrence) {
       setRecurFreq(d.recurrence);
-      if (d.recurrenceDays.length) setRecurDays(d.recurrenceDays);
+      setRecurDays(d.recurrence === 'weekly' ? d.recurrenceDays : []);
     }
     if (!touchedUrgent && d.urgent) setUrgent(true);
   };
@@ -759,7 +776,7 @@ export default function SmartTaskComposer({
                   <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Pickup <Text style={{ fontWeight: '400' }}>(optional)</Text></Text>
                   <TextInput
                     value={pickupLocation}
-                    onChangeText={t => { setPickupLocation(t); if (t && !dropLocation) setDropLocation(''); }}
+                    onChangeText={t => { setPickupLocation(t); setTouchedPickup(true); if (t && !dropLocation) setDropLocation(''); }}
                     placeholder="e.g. Dance studio"
                     placeholderTextColor={colors.textTertiary}
                     style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary,
@@ -775,7 +792,7 @@ export default function SmartTaskComposer({
                   <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Drop-off <Text style={{ fontWeight: '400' }}>(optional)</Text></Text>
                   <TextInput
                     value={dropLocation}
-                    onChangeText={setDropLocation}
+                    onChangeText={t => { setDropLocation(t); setTouchedDrop(true); }}
                     placeholder="e.g. Home"
                     placeholderTextColor={colors.textTertiary}
                     style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary,

@@ -512,7 +512,13 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
   // Detected once here so the category scoring below can tell the two
   // apart instead of "pick up"'s 2-word phrase match (worth 6) always
   // outscoring a single-word errand keyword like "groceries" (worth 2).
-  const pickupTargetsPerson = members.some(m => {
+  // "pick me up"/"drop me off" is the single most common way a kid phrases
+  // their own ride request — "me"/"myself" is just as much a real target as
+  // a named family member or her/him/them, and previously fell through to
+  // the discounted generic-errand branch below, misclassifying "pick me up
+  // at 4pm" as a low-confidence chore instead of a Ride.
+  const pickupTargetsSelf = /\b(?:pick(?:ing)?\s?up|drop(?:ping)?\s?off)\s+(?:me|myself)\b/.test(input);
+  const pickupTargetsPerson = pickupTargetsSelf || members.some(m => {
     const first = m.name.split(' ')[0].toLowerCase();
     return new RegExp('\\b(?:pick(?:ing)?\\s?up|drop(?:ping)?\\s?off)\\s+' + escapeRegex(first) + '\\b').test(input)
       || new RegExp('\\b(?:pick(?:ing)?\\s?up|drop(?:ping)?\\s?off)\\s+(?:her|him|them)\\b').test(input);

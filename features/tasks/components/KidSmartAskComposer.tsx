@@ -114,11 +114,18 @@ export default function KidSmartAskComposer({
   const [choreForId, setChoreForId] = useState<string>(active.id);
   const pickableMembers = members.filter(m => m.role === 'kid' || m.role === 'teen');
 
+  // Ride-only: pickup/dropoff, pre-filled from local detection when
+  // present (e.g. "from soccer to home") but always editable — a parent
+  // acting on a ride request needs to know where, not just when.
+  const [pickupLocation, setPickupLocation] = useState('');
+  const [dropLocation, setDropLocation] = useState('');
+
   const dictation = useVoiceDictation();
 
   const reset = () => {
     setInput(''); setDetection(null); setCategory(null); setTouchedCategory(false);
     setError(null); setSubmitting(false); setChoreForId(active.id);
+    setPickupLocation(''); setDropLocation('');
     dictation.reset();
   };
   const close = () => { reset(); onClose(); };
@@ -131,6 +138,8 @@ export default function KidSmartAskComposer({
       const guess = guessCategory(d);
       if (guess) setCategory(guess);
     }
+    if (d?.locations.pickup && !pickupLocation) setPickupLocation(d.locations.pickup);
+    if (d?.locations.dropoff && !dropLocation) setDropLocation(d.locations.dropoff);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input]);
 
@@ -160,8 +169,8 @@ export default function KidSmartAskComposer({
           ...(category === 'ride' ? {
             rideRequired: true,
             driverStatus: 'pending' as const,
-            ...(detection?.locations.pickup ? { pickupLocation: detection.locations.pickup } : {}),
-            ...(detection?.locations.dropoff ? { dropLocation: detection.locations.dropoff } : {}),
+            ...(pickupLocation.trim() ? { pickupLocation: pickupLocation.trim() } : {}),
+            ...(dropLocation.trim() ? { dropLocation: dropLocation.trim() } : {}),
           } : {}),
         });
       } else if (category === 'grocery') {
@@ -291,6 +300,35 @@ export default function KidSmartAskComposer({
             })}
           </View>
         </View>
+
+        {category === 'ride' && (
+          <View style={{ gap: 8 }}>
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Pickup <Text style={{ fontWeight: '400' }}>(optional)</Text></Text>
+              <TextInput
+                value={pickupLocation}
+                onChangeText={setPickupLocation}
+                placeholder="e.g. Soccer practice"
+                placeholderTextColor={colors.textTertiary}
+                style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary,
+                  backgroundColor: isDark ? colors.surface : colors.card, borderRadius: RADIUS.md,
+                  paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, borderColor: colors.border }}
+              />
+            </View>
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Drop-off <Text style={{ fontWeight: '400' }}>(optional)</Text></Text>
+              <TextInput
+                value={dropLocation}
+                onChangeText={setDropLocation}
+                placeholder="e.g. Home"
+                placeholderTextColor={colors.textTertiary}
+                style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary,
+                  backgroundColor: isDark ? colors.surface : colors.card, borderRadius: RADIUS.md,
+                  paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, borderColor: colors.border }}
+              />
+            </View>
+          </View>
+        )}
 
         {category === 'chore' && (
           <View style={{ gap: 8 }}>

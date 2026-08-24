@@ -106,7 +106,15 @@ export function choreToQuest(c: ChoreTask): Quest {
     priority:         'medium',
     difficulty:       (c.difficulty as QuestDifficulty) ?? 'easy',
     estimatedMinutes: undefined,
-    coins:            c.basePoints,
+    // basePoints alone silently showed 0 coins on any chore created with
+    // base_points unset but a real coins_reward (a valid, real combination
+    // — approve_chore's own RPC already anticipates it via
+    // coalesce(nullif(base_points,0), coins_reward, 0)) — reported live:
+    // "Clean garage" had base_points:0, coins_reward:15, and every quest
+    // card (claim button, submit button, reward line) showed 0 coins even
+    // though the real payout correctly used coins_reward and credited 15.
+    // Same fallback line 32 in this file already uses.
+    coins:            c.basePoints > 0 ? c.basePoints : c.coinsReward,
     xpReward:         c.xpReward ?? 10,
     bonusCoins:       c.bonusCoins ?? 0,
     bonusExpiresAt:   (c as any).bonusExpiresAt ?? undefined,

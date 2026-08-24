@@ -186,20 +186,19 @@ security definer
 set search_path = public
 as $$
 declare
-  v_row public.event_participants;
+  v_event public.calendar_events;
   v_category text;
   v_ride_required boolean;
   v_result public.calendar_events;
   v_transition_id uuid := gen_random_uuid();
 begin
-  select * into v_row from public.calendar_events where id = p_event_id for update;
-  v_category := v_row.category;
-  v_ride_required := v_row.ride_required;
+  select * into v_event from public.calendar_events where id = p_event_id for update;
+  v_category := v_event.category;
+  v_ride_required := v_event.ride_required;
 
   update public.event_participants
     set status = 'rejected', decline_reason = p_reason, responded_at = now()
-    where event_id = p_event_id and role = p_role and member_id = p_member_id
-    returning * into v_row;
+    where event_id = p_event_id and role = p_role and member_id = p_member_id;
 
   delete from public.event_participants
     where event_id = p_event_id and role = p_role and member_id = p_member_id;

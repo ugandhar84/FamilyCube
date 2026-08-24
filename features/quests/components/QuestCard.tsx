@@ -923,7 +923,7 @@ export function QuestCard({
             <TouchableOpacity
               style={[s.actionBtn, { backgroundColor: BRAND.amber + '18', borderWidth: 1.5, borderColor: BRAND.amber + '60', flex: 2 }]}
               onPress={() => {
-                console.log(`[UserAction] screen=Chores role=senior member=${activeMember?.name} tapped "${gpAlreadyPassed ? 'Reconsider?' : "I'd Love To Help"}" on "${q.title}" (id=${q.id}) → updateQuest(assignedToId${gpAlreadyPassed ? ', gpWithdrawnIds' : ''}) [features/quests/components/QuestCard.tsx:918]`);
+                console.log(`[UserAction] screen=Chores role=senior member=${activeMember?.name} tapped "${gpAlreadyPassed ? 'Reconsider?' : "I'd Love To Help"}" on "${q.title}" (id=${q.id}) → updateQuest(assignedToId) + set_gp_withdrawn [features/quests/components/QuestCard.tsx:918]`);
                 Alert.alert(
                   'Help With This?',
                   `Take on "${q.title}"?`,

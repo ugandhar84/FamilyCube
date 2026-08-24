@@ -203,7 +203,11 @@ export default function HubScreen() {
         <Pressable
           onPress={() => setComposerVisible(true)}
           style={{
-            position: 'absolute', right: 20, bottom: insetsBottomForFab + 20, width: 56, height: 56, borderRadius: 28,
+            // Matches the global Ask Cube FAB's position (app/(tabs)/
+            // _layout.tsx: bottom = insets.bottom + 74) — was
+            // insetsBottomForFab + 20, sitting 54px lower/closer to the tab
+            // bar than Ask Cube's button on every other tab.
+            position: 'absolute', right: 20, bottom: (insetsBottomForFab || 16) + 74, width: 56, height: 56, borderRadius: 28,
             alignItems: 'center', justifyContent: 'center', zIndex: 20, backgroundColor: colors.primary,
             shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 4 }, shadowRadius: 10, elevation: 6,
           }}>

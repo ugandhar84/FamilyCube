@@ -381,7 +381,12 @@ export default function TasksScreen() {
           onPress={openCreator}
           activeOpacity={0.88}
           style={[styles.fab, {
-            bottom: insets.bottom + 20,
+            // Matches the global Ask Cube FAB's position (app/(tabs)/
+            // _layout.tsx: bottom = insets.bottom + 74) — was insets.bottom
+            // + 20, sitting 54px lower than Ask Cube's button on every
+            // other tab, so this one read as misaligned/closer to the tab
+            // bar and could overlap the last card in a long list.
+            bottom: (insets.bottom || 16) + 74,
             backgroundColor: colors.primary,
           }]}
         >

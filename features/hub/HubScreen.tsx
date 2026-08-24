@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Plus } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
@@ -44,6 +45,14 @@ export default function HubScreen() {
   const [enRouteVisible, setEnRouteVisible]= useState(false);
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const unreadNotifCount = useNotifStore(s => s.unreadCount);
+  // Kid/Teen/Senior's "smart ask/create" composer — the FAB that opens it
+  // must live OUTSIDE this screen's own ScrollView (below) to actually
+  // float, since KidView/TeenView/SeniorView render as scrolled content,
+  // not their own positioned ancestor. Visibility is lifted up here so the
+  // FAB (rendered here) and the composer (rendered inside each child view,
+  // which still owns all the routing/import specifics) can share one flag.
+  const [composerVisible, setComposerVisible] = useState(false);
+  const insetsBottomForFab = useSafeAreaInsets().bottom;
 
   useEffect(() => {
     if (!loaded) loadFromStorage();
@@ -164,13 +173,15 @@ export default function HubScreen() {
         {isKid && (
           <KidView
             active={active} members={members} colors={colors} isDark={isDark}
-            activeTrips={tripViews}
+            activeTrips={tripViews} familyId={familyId}
+            composerVisible={composerVisible} onCloseComposer={() => setComposerVisible(false)}
           />
         )}
         {isTeen && (
           <TeenView
             active={active} members={members} colors={colors} isDark={isDark}
             activeTrips={tripViews}
+            composerVisible={composerVisible} onCloseComposer={() => setComposerVisible(false)}
           />
         )}
         {isSenior && (
@@ -178,10 +189,27 @@ export default function HubScreen() {
             active={active} members={members} colors={colors} isDark={isDark}
             onHelpRequest={() => setHelpModal(true)}
             onEnRoute={() => setEnRouteVisible(true)}
-            activeTrips={tripViews}
+            activeTrips={tripViews} familyId={familyId}
+            composerVisible={composerVisible} onCloseComposer={() => setComposerVisible(false)}
           />
         )}
       </ScrollView>
+
+      {/* FAB — floats above the ScrollView (must be a sibling of it, not
+          content inside it, or it would scroll away with the page instead
+          of staying pinned). Kid/Teen/Senior only; Parent's own create
+          entry point is the Tasks tab's FAB, not the Hub. */}
+      {(isKid || isTeen || isSenior) && (
+        <Pressable
+          onPress={() => setComposerVisible(true)}
+          style={{
+            position: 'absolute', right: 20, bottom: insetsBottomForFab + 20, width: 56, height: 56, borderRadius: 28,
+            alignItems: 'center', justifyContent: 'center', zIndex: 20, backgroundColor: colors.primary,
+            shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 4 }, shadowRadius: 10, elevation: 6,
+          }}>
+          <Plus size={26} color="#fff" />
+        </Pressable>
+      )}
 
       {/* One instance per active trip — chat broadcast (30s in) and the
           overdue check both need to run independently per trip so two

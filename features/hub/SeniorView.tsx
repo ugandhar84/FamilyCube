@@ -42,8 +42,11 @@ import { LockedAssignmentCard } from './parent/backlog/LockedAssignmentCard';
 import { PushbackSheet } from './parent/PushbackSheet';
 import { DelegateSheet } from './parent/DelegateSheet';
 import { UserCheck } from 'lucide-react-native';
+import SmartTaskComposer from '../tasks/components/SmartTaskComposer';
+import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
+import { AddEventModal } from '@/features/calendar/EventFormModal';
 
-export function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute, activeTrips }: {
+export function SeniorView({ active, members, colors, isDark, onHelpRequest, onEnRoute, activeTrips, familyId, composerVisible, onCloseComposer }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   onHelpRequest: () => void;
@@ -51,6 +54,15 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   // Family-wide Pick-up Radar state, synced from tripStore — read-only
   // here. Every concurrently active trip is shown, not just one.
   activeTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; pickupMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
+  familyId?: string;
+  // The Hub-level FAB (HubScreen.tsx) opens the full SmartTaskComposer,
+  // unrestricted, same as Teen/Parent — additive alongside the existing
+  // separate inline "Sponsor Chore" flow (newQuestTitle/CreateQuestModal
+  // below), which is untouched. Floats outside HubScreen's own ScrollView
+  // (SeniorView itself is scrolled content, not a positioned ancestor), so
+  // only the visibility flag is shared down here.
+  composerVisible: boolean;
+  onCloseComposer: () => void;
 }) {
   const { events, updateEvent } = useEventStore();
   const sendMessage = useChatStore(s => s.sendMessage);
@@ -226,6 +238,18 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const [matchType, setMatchType] = useState<'FIXED_PERCENTAGE' | 'FIXED_AMOUNT'>('FIXED_PERCENTAGE');
   const [matchValue, setMatchValue] = useState('10');
   const [maxMonthly, setMaxMonthly] = useState('500');
+  // Hub-level FAB's SmartTaskComposer full-form handoff — same shape
+  // TasksScreen.tsx wires for Parent. Distinct from the Sponsor Chore
+  // flow below (showCreateQuestModal/newQuestTitle etc.), which is a
+  // separate, untouched GP-sponsorship concept.
+  const [manualQuestPrefill, setManualQuestPrefill] = useState<{
+    title?: string; coins?: number; assignedToId?: string; photoRequired?: boolean; dueDate?: string;
+  } | undefined>(undefined);
+  const [manualEventPrefill, setManualEventPrefill] = useState<{
+    title?: string; category?: string; memberId?: string; startAt?: string; notes?: string;
+  } | undefined>(undefined);
+  const [showManualQuest, setShowManualQuest] = useState(false);
+  const [showManualEvent, setShowManualEvent] = useState(false);
   const [showCreateQuestModal, setShowCreateQuestModal] = useState(false);
   const [newQuestTitle,  setNewQuestTitle]  = useState('');
   const [newQuestDesc,   setNewQuestDesc]   = useState('');
@@ -1021,6 +1045,43 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       <GroupBand label="Memories" color={BRAND.pink} colors={colors} />
 
       <FamilyMemoriesCard colors={colors} isDark={isDark} />
+
+      <SmartTaskComposer
+        visible={composerVisible}
+        members={members}
+        activeMemberId={active.id}
+        familyId={familyId ?? ''}
+        onClose={onCloseComposer}
+        onCreated={onCloseComposer}
+        onOpenFullForm={(kind, prefill) => {
+          onCloseComposer();
+          if (kind === 'quest') {
+            setManualQuestPrefill(prefill as typeof manualQuestPrefill);
+            setShowManualQuest(true);
+          } else {
+            setManualEventPrefill(prefill as typeof manualEventPrefill);
+            setShowManualEvent(true);
+          }
+        }}
+      />
+
+      {showManualQuest && (
+        <AddQuestModal
+          visible={showManualQuest}
+          onClose={() => { setShowManualQuest(false); setManualQuestPrefill(undefined); }}
+          activeMemberId={active.id}
+          prefill={manualQuestPrefill}
+        />
+      )}
+
+      {showManualEvent && (
+        <AddEventModal
+          visible={showManualEvent}
+          onClose={() => { setShowManualEvent(false); setManualEventPrefill(undefined); }}
+          activeMemberId={active.id}
+          prefill={manualEventPrefill as any}
+        />
+      )}
     </>
   );
 }

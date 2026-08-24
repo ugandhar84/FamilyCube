@@ -35,17 +35,28 @@ import { TeenGasLogSection } from './teen/TeenGasLogSection';
 import { TeenTutorSection } from './teen/TeenTutorSection';
 import { TeenCashOutSection } from './teen/TeenCashOutSection';
 import { TeenGroceryListSection } from './teen/TeenGroceryListSection';
+import SmartTaskComposer from '../tasks/components/SmartTaskComposer';
+import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
+import { AddEventModal } from '@/features/calendar/EventFormModal';
 
 const pad = { paddingHorizontal: 16, marginBottom: 4 } as const;
 
 type SheetKey = 'rides' | 'gas' | 'tutor' | 'grocery' | 'cashout' | 'history' | null;
 
-export function TeenView({ active, members, colors, isDark, activeTrips }: {
+export function TeenView({ active, members, colors, isDark, activeTrips, composerVisible, onCloseComposer }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   // Family-wide Pick-up Radar state, synced from tripStore — read-only
   // here. Every concurrently active trip is shown, not just one.
   activeTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
+  // The Hub-level FAB (HubScreen.tsx) opens the full SmartTaskComposer for
+  // Teen (unrestricted, same as Parent/Senior) — floats outside this
+  // view's own inner ScrollView, so its button lives in HubScreen and only
+  // the visibility flag is shared down here. familyId isn't threaded as a
+  // prop — TeenView already computes its own `familyId` below (used for
+  // the grocery store load), reused for the composer too.
+  composerVisible: boolean;
+  onCloseComposer: () => void;
 }) {
   const { events, updateEvent } = useEventStore();
   const familyIdForRides = (active as any).familyId as string | undefined;
@@ -289,7 +300,22 @@ export function TeenView({ active, members, colors, isDark, activeTrips }: {
   const [groceryModal, setGroceryModal] = useState(false);
   const [suppliesModal, setSuppliesModal] = useState(false);
 
+  // ── Smart composer — same unrestricted SmartTaskComposer/full-form
+  // handoff TasksScreen.tsx wires for Parent, no behavior change (Teen
+  // already has full self-creation rights via canCreate elsewhere). Purely
+  // additive alongside AskParentSheet's "ask a parent instead" tile above.
+  // Visibility is the composerVisible prop (Hub-level FAB, see HubScreen.tsx).
+  const [manualQuestPrefill, setManualQuestPrefill] = useState<{
+    title?: string; coins?: number; assignedToId?: string; photoRequired?: boolean; dueDate?: string;
+  } | undefined>(undefined);
+  const [manualEventPrefill, setManualEventPrefill] = useState<{
+    title?: string; category?: string; memberId?: string; startAt?: string; notes?: string;
+  } | undefined>(undefined);
+  const [showManualQuest, setShowManualQuest] = useState(false);
+  const [showManualEvent, setShowManualEvent] = useState(false);
+
   return (
+    <>
     <ScrollView showsVerticalScrollIndicator={false}>
 
       {urgentPickups.length > 0 && (
@@ -467,5 +493,43 @@ export function TeenView({ active, members, colors, isDark, activeTrips }: {
 
       <View style={{ height: 32 }} />
     </ScrollView>
+
+    <SmartTaskComposer
+      visible={composerVisible}
+      members={members}
+      activeMemberId={active.id}
+      familyId={familyId ?? ''}
+      onClose={onCloseComposer}
+      onCreated={onCloseComposer}
+      onOpenFullForm={(kind, prefill) => {
+        onCloseComposer();
+        if (kind === 'quest') {
+          setManualQuestPrefill(prefill as typeof manualQuestPrefill);
+          setShowManualQuest(true);
+        } else {
+          setManualEventPrefill(prefill as typeof manualEventPrefill);
+          setShowManualEvent(true);
+        }
+      }}
+    />
+
+    {showManualQuest && (
+      <AddQuestModal
+        visible={showManualQuest}
+        onClose={() => { setShowManualQuest(false); setManualQuestPrefill(undefined); }}
+        activeMemberId={active.id}
+        prefill={manualQuestPrefill}
+      />
+    )}
+
+    {showManualEvent && (
+      <AddEventModal
+        visible={showManualEvent}
+        onClose={() => { setShowManualEvent(false); setManualEventPrefill(undefined); }}
+        activeMemberId={active.id}
+        prefill={manualEventPrefill as any}
+      />
+    )}
+    </>
   );
 }

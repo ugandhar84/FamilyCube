@@ -34,10 +34,10 @@ import { CheerSquadSection } from './kid/CheerSquadSection';
 import { PiggyBankSheet } from './kid/PiggyBankSheet';
 import { SubmitProofSheet } from './kid/SubmitProofSheet';
 import { CantMakeItSheet } from '../tasks/components/CantMakeItSheet';
-import { AskParentSheet } from './kid/AskParentSheet';
+import KidSmartAskComposer from '../tasks/components/KidSmartAskComposer';
 
 // ─── Main KidView ──────────────────────────────────────────────────────────────
-export function KidView({ active, members, colors, isDark, activeTrips }: {
+export function KidView({ active, members, colors, isDark, activeTrips, familyId, composerVisible, onCloseComposer }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
   // Family-wide Pick-up Radar state, synced from tripStore — shown here
@@ -46,6 +46,14 @@ export function KidView({ active, members, colors, isDark, activeTrips }: {
   // active trip is shown, not just one, since a trip is visible family-wide
   // regardless of who's driving or who it's for.
   activeTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
+  familyId?: string;
+  // The Hub-level FAB (HubScreen.tsx, floats outside its ScrollView) and
+  // this smart-ask composer share one visibility flag lifted up to
+  // HubScreen — a plain View "FAB" rendered from inside this fragment
+  // would scroll away with the page instead of staying pinned, since
+  // KidView is itself scrolled content, not a positioned ancestor.
+  composerVisible: boolean;
+  onCloseComposer: () => void;
 }) {
   const { quests, submitQuest, claimQuest, cheerQuest } = useQuestStore();
   const { startGrandparentQuest } = useChoreStore();
@@ -59,7 +67,11 @@ export function KidView({ active, members, colors, isDark, activeTrips }: {
   const [askModal,        setAskModal]        = useState<null | 'permission' | 'question' | 'medication'>(null);
   const [historyModal,    setHistoryModal]    = useState(false);
   const [piggyBankModal,  setPiggyBankModal]  = useState(false);
-  const [askParentSheet,  setAskParentSheet]  = useState(false);
+  // "Ask Parent" tile below opens the same composer the Hub-level FAB does
+  // (composerVisible/onCloseComposer, lifted to HubScreen.tsx so the FAB
+  // can float outside this view's scrolled content) — local state here
+  // only covers the tile's own trigger, not the FAB's.
+  const [smartAskComposerFromTile, setSmartAskComposerFromTile] = useState(false);
   const [addEventModal,   setAddEventModal]   = useState(false);
   const [questProposalModal, setQuestProposalModal] = useState(false);
   const [lateNudgeSent,   setLateNudgeSent]   = useState<Record<string, boolean>>({});
@@ -358,7 +370,7 @@ export function KidView({ active, members, colors, isDark, activeTrips }: {
 
       <KidCheckinRow colors={colors} onCheckin={sendCheckin} />
       <KidActionRow colors={colors} isDark={isDark}
-        onAskParent={() => setAskParentSheet(true)}
+        onAskParent={() => setSmartAskComposerFromTile(true)}
         onNeedRide={() => setAddEventModal(true)} />
 
       <HubTimelineSection active={active} members={members} events={visibleEvents} updateEvent={updateEvent} colors={colors} isDark={isDark} />
@@ -392,17 +404,10 @@ export function KidView({ active, members, colors, isDark, activeTrips }: {
       <CheerSquadSection cheerable={siblingCheerable} siblingKids={siblingKids} colors={colors} isDark={isDark}
         onCheer={(id) => cheerQuest(id, active.id)} />
 
-      <AskParentSheet
-        visible={askParentSheet} onClose={() => setAskParentSheet(false)} colors={colors} isDark={isDark}
-        onPick={(choice) => {
-          setAskParentSheet(false);
-          setTimeout(() => {
-            if (choice === 'grocery') setGroceryModal(true);
-            else if (choice === 'supplies') setSuppliesModal(true);
-            else if (choice === 'quest') setQuestProposalModal(true);
-            else setAskModal(choice);
-          }, 300);
-        }}
+      <KidSmartAskComposer
+        visible={composerVisible || smartAskComposerFromTile}
+        onClose={() => { onCloseComposer(); setSmartAskComposerFromTile(false); }}
+        active={active} members={members} familyId={familyId ?? ''} colors={colors} isDark={isDark}
       />
       <QuestProposalModal visible={questProposalModal} onClose={() => setQuestProposalModal(false)} active={active} />
       <CantMakeItSheet

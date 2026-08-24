@@ -919,11 +919,11 @@ export default function ChatScreen() {
             {showAttachMenu && (
               <View style={[s.attachMenu, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 {([
-                  { Icon: Camera,    label: 'Camera',   color: '#6C5CE7', onPress: () => { setShowAttachMenu(false); pickCamera(); } },
-                  { Icon: ImageIcon, label: 'Photo',    color: '#10B981', onPress: () => { setShowAttachMenu(false); pickImage(); } },
-                  { Icon: Video,     label: 'Video',    color: '#EF4444', onPress: () => { setShowAttachMenu(false); recordVideo(); } },
-                  { Icon: FileText,  label: 'Document', color: '#F59E0B', onPress: () => { setShowAttachMenu(false); sendDocument(); } },
-                  { Icon: MapPin,    label: 'Location', color: '#3B82F6', onPress: () => { setShowAttachMenu(false); sendLocation(); } },
+                  { Icon: Camera,    label: 'Camera',   color: colors.accent,  onPress: () => { setShowAttachMenu(false); pickCamera(); } },
+                  { Icon: ImageIcon, label: 'Photo',    color: colors.success, onPress: () => { setShowAttachMenu(false); pickImage(); } },
+                  { Icon: Video,     label: 'Video',    color: colors.danger,  onPress: () => { setShowAttachMenu(false); recordVideo(); } },
+                  { Icon: FileText,  label: 'Document', color: colors.warning, onPress: () => { setShowAttachMenu(false); sendDocument(); } },
+                  { Icon: MapPin,    label: 'Location', color: colors.info,    onPress: () => { setShowAttachMenu(false); sendLocation(); } },
                 ] as { Icon: LucideIcon; label: string; color: string; onPress: () => void }[]).map(item => (
                   <Pressable key={item.label} onPress={item.onPress} style={s.attachItem}>
                     <View style={[s.attachIcon, { backgroundColor: item.color + '22' }]}>

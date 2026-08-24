@@ -6,17 +6,24 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { fmtDate } from '@/features/playdates/components/playdateDetailTypes';
 import type { PlaydateRequest, Pet } from '@/features/playdates/components/playdateDetailTypes';
 import { TYPO } from '@/constants/theme';
+import { useTheme } from '@/lib/ThemeContext';
 
-const STATUS_CFG = {
-  pending:    { label: 'Waiting for reply',   color: '#FF8C55', icon: 'time-outline' },
-  scheduling: { label: 'Finding the right time', color: '#6C63FF', icon: 'chatbubble-outline' },
-  accepted:   { label: 'Confirmed ✅',        color: '#22C55E', icon: 'checkmark-circle-outline' },
-  declined:   { label: 'Declined',            color: '#E24B4A', icon: 'close-circle-outline' },
-  withdrawn:  { label: 'Withdrawn',           color: '#94A3B8', icon: 'arrow-undo-outline' },
-  expired:    { label: 'Expired',             color: '#94A3B8', icon: 'hourglass-outline' },
-  cancelled:  { label: 'Cancelled',           color: '#94A3B8', icon: 'ban-outline' },
-  completed:  { label: 'Playdate completed 🎉', color: '#22C55E', icon: 'checkmark-done-outline' },
-} as const;
+// Was a hardcoded hex-per-status table bypassing useTheme() entirely (no
+// dark-mode adaptation at all) even though the app's own success/danger/
+// textTertiary/warning/accent tokens already cover every one of these
+// meanings. Built as a function of colors so it re-derives per theme.
+function statusCfg(colors: any) {
+  return {
+    pending:    { label: 'Waiting for reply',      color: colors.warning, icon: 'time-outline' },
+    scheduling: { label: 'Finding the right time',  color: colors.accent,  icon: 'chatbubble-outline' },
+    accepted:   { label: 'Confirmed ✅',            color: colors.success, icon: 'checkmark-circle-outline' },
+    declined:   { label: 'Declined',                color: colors.danger,  icon: 'close-circle-outline' },
+    withdrawn:  { label: 'Withdrawn',               color: colors.textTertiary, icon: 'arrow-undo-outline' },
+    expired:    { label: 'Expired',                 color: colors.textTertiary, icon: 'hourglass-outline' },
+    cancelled:  { label: 'Cancelled',                color: colors.textTertiary, icon: 'ban-outline' },
+    completed:  { label: 'Playdate completed 🎉',   color: colors.success, icon: 'checkmark-done-outline' },
+  } as const;
+}
 
 interface Props {
   request: PlaydateRequest;
@@ -41,6 +48,8 @@ function PetFace({ pet, size = 44 }: { pet: Pet | null; size?: number }) {
 }
 
 function PlaydateStatusBanner({ request, primaryColor, iAmFrom, otherPet, myPet }: Props) {
+  const { colors } = useTheme();
+  const STATUS_CFG = statusCfg(colors);
   const cfg = STATUS_CFG[request.status as keyof typeof STATUS_CFG]
     ?? { ...STATUS_CFG.pending, color: primaryColor };
 
@@ -68,11 +77,11 @@ function PlaydateStatusBanner({ request, primaryColor, iAmFrom, otherPet, myPet 
   // ── Outgoing pending: sent + waiting ──────────────────────────────────────
   if (request.status === 'pending' && iAmFrom) {
     return (
-      <View style={[s.banner, { backgroundColor: '#FF8C5512', borderColor: '#FF8C5530' }]}>
-        <Ionicons name="paper-plane-outline" size={16} color="#FF8C55" />
+      <View style={[s.banner, { backgroundColor: colors.warning + '12', borderColor: colors.warning + '30' }]}>
+        <Ionicons name="paper-plane-outline" size={16} color={colors.warning} />
         <View style={{ flex: 1 }}>
-          <Text style={[s.label, { color: '#FF8C55' }]}>Request sent to {otherPet?.name}</Text>
-          <Text style={{ fontSize: TYPO.caption, color: '#FF8C5588', marginTop: 1 }}>
+          <Text style={[s.label, { color: colors.warning }]}>Request sent to {otherPet?.name}</Text>
+          <Text style={{ fontSize: TYPO.caption, color: colors.warning + '88', marginTop: 1 }}>
             Waiting for their parent to respond
             {request.expires_at ? ` · Expires ${fmtDate(request.expires_at.split('T')[0])}` : ''}
           </Text>
@@ -84,11 +93,11 @@ function PlaydateStatusBanner({ request, primaryColor, iAmFrom, otherPet, myPet 
   // ── Scheduling: back-and-forth ─────────────────────────────────────────────
   if (request.status === 'scheduling') {
     return (
-      <View style={[s.banner, { backgroundColor: '#6C63FF12', borderColor: '#6C63FF30' }]}>
-        <Ionicons name="chatbubble-ellipses-outline" size={16} color="#6C63FF" />
+      <View style={[s.banner, { backgroundColor: colors.accent + '12', borderColor: colors.accent + '30' }]}>
+        <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.accent} />
         <View style={{ flex: 1 }}>
-          <Text style={[s.label, { color: '#6C63FF' }]}>Finding the right time</Text>
-          <Text style={{ fontSize: TYPO.caption, color: '#6C63FF88', marginTop: 1 }}>
+          <Text style={[s.label, { color: colors.accent }]}>Finding the right time</Text>
+          <Text style={{ fontSize: TYPO.caption, color: colors.accent + '88', marginTop: 1 }}>
             You and {otherPet?.name}'s parent are negotiating — check the proposal below
           </Text>
         </View>

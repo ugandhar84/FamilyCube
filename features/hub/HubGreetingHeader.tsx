@@ -26,10 +26,10 @@ export function HubGreetingHeader({ firstName, summary, balance, colors, isDark 
       {summary ? (
         <View style={{
           alignSelf: 'flex-start', marginTop: 10,
-          backgroundColor: isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.08)',
+          backgroundColor: colors.accent + (isDark ? '25' : '14'),
           borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7,
         }}>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: isDark ? '#C7D2FE' : '#4338CA' }}>
+          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.accent }}>
             {summary}
           </Text>
         </View>

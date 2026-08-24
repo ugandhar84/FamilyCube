@@ -1088,7 +1088,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
             <ScrollView horizontal showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 14, gap: 8, paddingTop: 10 }}>
               <TouchableOpacity
-                style={[sc.pill, !filterMember ? { backgroundColor: BRAND.purple, borderColor: BRAND.purple } : { backgroundColor: isDark ? colors.surface : '#F5F4FA', borderColor: isDark ? colors.border : 'rgba(146,97,199,0.2)' }]}
+                style={[sc.pill, !filterMember ? { backgroundColor: colors.accent, borderColor: colors.accent } : { backgroundColor: isDark ? colors.surface : '#F5F4FA', borderColor: isDark ? colors.border : colors.accent + '30' }]}
                 onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} selected "All Family" for "member filter" [features/calendar/CalendarScreen.tsx:1063]`); setFilterMember(null); }}>
                 <Text style={[sc.pillText, { color: !filterMember ? '#fff' : colors.textSecondary }]}>All Family</Text>
               </TouchableOpacity>
@@ -1224,13 +1224,13 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
         {/* ── Holiday banner — quiet amber strip, not a full card ── */}
         {viewMode === 'day' && dayEvents.filter(ev => ev.category === 'Holiday').map(ev => (
           <View key={ev.id} style={{ marginHorizontal: 14, marginTop: 10, borderRadius: 12,
-            backgroundColor: isDark ? '#451A03' : '#FEF3C7',
-            borderWidth: 1, borderColor: isDark ? '#92400E' : '#F59E0B',
+            backgroundColor: isDark ? colors.warning + '18' : colors.warningLight,
+            borderWidth: 1, borderColor: colors.warning,
             flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, gap: 8 }}>
             <Text style={{ fontSize: 15 }}>🎌</Text>
             <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700',
-              color: isDark ? '#FDE68A' : '#92400E' }} numberOfLines={1}>{ev.title}</Text>
-            {ev.notes ? <Text style={{ fontSize: TYPO.micro, color: isDark ? '#FCD34D' : '#B45309' }}
+              color: colors.warningDark }} numberOfLines={1}>{ev.title}</Text>
+            {ev.notes ? <Text style={{ fontSize: TYPO.micro, color: colors.warningDark }}
               numberOfLines={1}>{ev.notes}</Text> : null}
           </View>
         ))}

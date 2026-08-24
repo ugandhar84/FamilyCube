@@ -25,6 +25,18 @@ const VERB: Record<ActivityAction, string> = {
   other: 'Updated',
 };
 
+// Status/semantic color-coding for the timeline — was plain textPrimary
+// for every row regardless of outcome, so "Approved" and "Declined" read
+// identically at a glance despite the app already having a real
+// approved/declined color pattern (see KidQuestCard's questStatusMeta).
+function actionColor(action: ActivityAction, colors: any): string | undefined {
+  if (action === 'approved') return colors.success;
+  if (action === 'declined' || action === 'redo_disputed') return colors.danger;
+  if (action === 'submitted') return colors.amber;
+  if (action === 'redo_dispute_resolved') return colors.success;
+  return undefined;
+}
+
 function fmtWhen(iso: string): string {
   const d = new Date(iso);
   const mins = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
@@ -80,14 +92,15 @@ export function ChoreHistorySheet({ choreId, title, members, onClose }: {
                 const actor = row.actorId ? members.find(m => m.id === row.actorId)?.name : undefined;
                 const verb = VERB[row.action] ?? row.action;
                 const isLast = i === rows.length - 1;
+                const rowColor = actionColor(row.action, colors);
                 return (
                   <View key={row.id} style={{ flexDirection: 'row', gap: 10 }}>
                     <View style={{ alignItems: 'center', width: 12 }}>
-                      <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: i === 0 ? colors.primary : colors.border, marginTop: 4 }} />
+                      <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: rowColor ?? (i === 0 ? colors.primary : colors.border), marginTop: 4 }} />
                       {!isLast && <View style={{ flex: 1, width: 2, backgroundColor: colors.border, marginTop: 4 }} />}
                     </View>
                     <View style={{ flex: 1, paddingBottom: isLast ? 0 : 14 }}>
-                      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>
+                      <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: rowColor ?? colors.textPrimary }}>
                         {verb}{actor ? ` by ${actor.split(' ')[0]}` : ''}
                       </Text>
                       {!!row.note && (

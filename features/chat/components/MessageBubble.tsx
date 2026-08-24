@@ -96,7 +96,7 @@ export function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName
       Animated.timing(highlightAnim, { toValue: 0, duration: 1800, useNativeDriver: false }).start();
     }
   }, [highlighted]);
-  const highlightBorder = highlightAnim.interpolate({ inputRange: [0, 1], outputRange: ['transparent', '#F5A623'] });
+  const highlightBorder = highlightAnim.interpolate({ inputRange: [0, 1], outputRange: ['transparent', colors.amber] });
   const highlightWidth  = highlightAnim.interpolate({ inputRange: [0, 0.05, 1], outputRange: [0, 2, 2] });
 
   // Flat corner on the chat-side tip (last bubble in group)
@@ -123,7 +123,7 @@ export function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName
       <Text style={{ fontSize: 10, color: tsColor }}>{formatTime(msg.timestamp)}</Text>
       {isMe && (
         <CheckCheck size={13} color={
-          (readers?.length ?? 0) > 0 ? (isDark ? '#53BDEB' : '#34B7F1') : 'rgba(255,255,255,0.55)'
+          (readers?.length ?? 0) > 0 ? colors.parent : 'rgba(255,255,255,0.55)'
         } />
       )}
     </View>

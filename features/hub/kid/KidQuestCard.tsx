@@ -249,13 +249,28 @@ export function KidQuestCard({
                 <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.danger }}>Can't do this</Text>
               </Pressable>
             </>
+          ) : q.kidDisputedRedo ? (
+            <View style={{ flex: 1, alignItems: 'center', paddingVertical: 10 }}>
+              <Text style={{ fontSize: KID.body, color: colors.textTertiary, fontStyle: 'italic' }}>
+                Waiting on a second parent to take a look…
+              </Text>
+            </View>
           ) : isDeclined ? (
-            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "Revise & Resubmit" on "${q.title}" (id=${q.id}) → onSubmit [features/hub/kid/KidQuestCard.tsx:214]`); onSubmit(q); }}
-              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                borderRadius: 10, backgroundColor: colors.danger, paddingVertical: 13 }}>
-              <RotateCcw size={15} color="#fff" />
-              <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>↩ Revise & Resubmit</Text>
-            </Pressable>
+            <>
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "Revise & Resubmit" on "${q.title}" (id=${q.id}) → onSubmit [features/hub/kid/KidQuestCard.tsx:214]`); onSubmit(q); }}
+                style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  borderRadius: 10, backgroundColor: colors.danger, paddingVertical: 13 }}>
+                <RotateCcw size={15} color="#fff" />
+                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>↩ Revise & Resubmit</Text>
+              </Pressable>
+              {/* QA punch list #5 — pre-payout dispute: "I did do it right the
+                  first time" instead of resubmitting. Only offered on a real
+                  redo_requested (not while already disputed). */}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I did do it" on "${q.title}" (id=${q.id}) → disputeRedo`); useChoreStore.getState().disputeRedo(q.id, active.id); }}
+                style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: `${BRAND.purple}50`, paddingVertical: 13, alignItems: 'center' }}>
+                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: BRAND.purple }}>I did do it</Text>
+              </Pressable>
+            </>
           ) : (
             <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "${q.photoRequired ? 'Take Photo to Get Paid' : 'Mark Done → Get Paid'}" on "${q.title}" (id=${q.id}) → onSubmit [features/hub/kid/KidQuestCard.tsx:221]`); onSubmit(q); }}
               style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,

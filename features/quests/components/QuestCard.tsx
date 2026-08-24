@@ -845,13 +845,35 @@ export function QuestCard({
           </TouchableOpacity>
         )}
 
+        {/* QA punch list #5 — kid disputed the redo instead of resubmitting,
+            waiting on a second parent. Same waiting state as
+            KidQuestCard.tsx's Hub-side equivalent. */}
+        {q.kidDisputedRedo && (
+          <Text style={{ fontSize: 12, color: colors.textTertiary, fontStyle: 'italic', paddingVertical: 10 }}>
+            Waiting on a second parent to take a look…
+          </Text>
+        )}
+
         {/* Kid / teen: revise a parent-declined quest and send it back */}
-        {!q.pendingTerms && canResubmit && (
+        {!q.pendingTerms && !q.kidDisputedRedo && canResubmit && (
           <TouchableOpacity
             style={[s.actionBtn, { backgroundColor: BRAND.purple }]}
             onPress={() => openSubmitSheet(q)}
           >
             <Text style={[s.actionBtnText, { color: colors.textInverse }]}>↩ Revise & Resubmit</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* QA punch list #5 — "I did do it right the first time" instead of
+            resubmitting, asks a second parent to review the original
+            submission. Only offered alongside a real redo (not while
+            already disputed). */}
+        {!q.pendingTerms && !q.kidDisputedRedo && canResubmit && (
+          <TouchableOpacity
+            style={[s.actionBtn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: BRAND.purple }]}
+            onPress={() => useChoreStore.getState().disputeRedo(q.id, myId ?? '')}
+          >
+            <Text style={[s.actionBtnText, { color: BRAND.purple }]}>I did do it</Text>
           </TouchableOpacity>
         )}
 

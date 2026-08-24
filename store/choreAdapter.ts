@@ -61,6 +61,12 @@ function choreStatusToQuestStatus(s: ChoreTask['status']): QuestStatus {
     // to the default 'todo' (which would wrongly make it look pool-
     // eligible again in every claim/pool view).
     case 'terms_changed':                return 'in_progress';
+    // The assignee disputed a redo request (dispute_redo RPC) — waiting on
+    // a second parent, same shim bucket as redo_requested itself (still
+    // reads as "declined, something needs to happen before it's done" to
+    // every existing consumer; kidDisputedRedo below is what the review
+    // card actually keys off).
+    case 'kid_disputed_redo':            return 'declined';
     case 'approved':                     return 'approved';
     case 'auto_approved':                return 'approved';
     case 'redo_requested':               return 'declined';
@@ -148,6 +154,7 @@ export function choreToQuest(c: ChoreTask): Quest {
     // automatically, with no new filter edits needed.
     awaitingParentApproval: c.status === 'pending_parent_approval' || c.status === 'pending_kid_proposal',
     pendingTerms:     c.status === 'terms_changed' ? c.pendingTerms : undefined,
+    kidDisputedRedo:  c.status === 'kid_disputed_redo',
     dueDate:          c.dueDate,
     dueTime:          c.dueTime,
 

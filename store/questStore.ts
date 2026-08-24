@@ -111,6 +111,10 @@ export interface Quest {
   // claimed quest and the claimant needs to Accept or Hand It Back before
   // continuing. pendingTerms carries the old/new values for the card.
   pendingTerms?:    { old: { coinsReward: number; basePoints: number; dueDate?: string }; new: { coinsReward: number; basePoints: number; dueDate?: string }; changedBy: string; changedAt: string };
+  // Real status is 'kid_disputed_redo' — the assignee disputed a redo
+  // request (dispute_redo RPC) instead of resubmitting, waiting on a
+  // second parent to review the original submission directly.
+  kidDisputedRedo?: boolean;
   dueDate?:         string;
   dueTime?:         string;
   // Call-style reminder — opt-in, rings the assignee via CallKit/

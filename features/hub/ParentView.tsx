@@ -65,6 +65,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     approveTeenReward, adjustTeenReward, declineTeenReward,
     acceptGPOffer, declineGPOffer,
     approveKidProposedChore, declineKidProposedChore,
+    resolveRedoDispute,
     flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal,
     acknowledgeRecentApproval,
     getMyDirectPending, getMyLockedItems, getMyOutgoingPending, getActiveAssignmentChoreIds,
@@ -613,6 +614,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         declineGPOffer={declineGPOffer}
         approveKidProposedChore={approveKidProposedChore}
         declineKidProposedChore={declineKidProposedChore}
+        resolveRedoDispute={resolveRedoDispute}
         flagApprovalForDiscussion={flagApprovalForDiscussion}
         standByApproval={standByApproval}
         requestApprovalReversal={requestApprovalReversal}

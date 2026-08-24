@@ -60,6 +60,13 @@ export type ChoreStatus =
   // the old/new values for the claimant's card to show without a second
   // round-trip.
   | 'terms_changed'
+  // The assignee disputed a redo_requested decision — see dispute_redo RPC.
+  // A DIFFERENT parent than the one who requested the redo reviews the
+  // original submission (submissionPhotoUrl/submissionNote survive the
+  // redo transition untouched) and either pays it out directly
+  // (→ 'approved') or sides with the redo (→ back to 'redo_requested',
+  // the kid still has to actually resubmit).
+  | 'kid_disputed_redo'
   | 'approved'                       // Parent approved; points credited
   | 'auto_approved'                  // 24h window closed; auto-approved
   | 'redo_requested'                 // Parent rejected; child resubmitting
@@ -803,6 +810,11 @@ interface ChoreState {
   // RPC (server-side redo-cap/self-assigned-parent branch + coin payout).
   // Not part of the public store API surface, not called by UI directly.
   _submitChoreViaRpc:       (choreId: string, chore: ChoreTask, opts?: { photoUrl?: string; note?: string }) => void;
+  // QA punch list #5 — pre-payout dispute (kid disagrees with a redo
+  // request, asks a second parent instead of just resubmitting). See
+  // migration 20260908150000_redo_dispute_rpcs.sql.
+  disputeRedo:              (choreId: string, memberId: string) => void;
+  resolveRedoDispute:       (choreId: string, reviewerId: string, pay: boolean) => void;
   instantCompleteChore:     (choreId: string, childId: string) => void;
   startGrandparentQuest:    (choreId: string, childId: string) => void;
   submitGrandparentQuest:   (choreId: string, opts?: { photoUrl?: string; note?: string }) => void;
@@ -2056,6 +2068,66 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       note: opts?.note ?? chore.submissionNote,
       photoUrl: opts?.photoUrl ?? chore.submissionPhotoUrl,
     });
+  },
+
+  // QA punch list #5 — the kid's own "I did do it — ask [a parent]" path,
+  // pre-payout. See migration 20260908150000_redo_dispute_rpcs.sql.
+  disputeRedo: (choreId, memberId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.status !== 'redo_requested' || chore.assignedToId !== memberId) return;
+
+    set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'kid_disputed_redo' } : c) }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    supabase.rpc('dispute_redo', { p_chore_id: choreId, p_member_id: memberId })
+      .then(({ error }) => {
+        if (error) {
+          console.warn('[choreStore] disputeRedo RPC failed on', choreId, '— rolling back local state:', error.message);
+          set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'redo_requested' } : c) }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+          return;
+        }
+        showToast('Asked for a second opinion ✓');
+      });
+  },
+
+  // A different parent than the one who requested the redo reviews the
+  // original submission. p_pay=true approves it outright (→ 'approved',
+  // real payout); p_pay=false sides with the redo (→ back to
+  // 'redo_requested', the kid still has to resubmit).
+  resolveRedoDispute: (choreId, reviewerId, pay) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.status !== 'kid_disputed_redo') return;
+
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? { ...c, status: pay ? 'approved' as const : 'redo_requested' as const } : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    supabase.rpc('resolve_redo_dispute', { p_chore_id: choreId, p_reviewer_id: reviewerId, p_pay: pay })
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn('[choreStore] resolveRedoDispute RPC failed on', choreId, '— rolling back local state:', error.message);
+          set(s => ({ chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'kid_disputed_redo' } : c) }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+          return;
+        }
+        const result = Array.isArray(data) ? data[0] : data;
+        if (pay && result?.coins_paid > 0 && chore.assignedToId) {
+          const wallet: 'mainCoins' | 'gpCoins' = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+          try {
+            const { useFamilyStore } = require('./familyStore');
+            useFamilyStore.setState((s: any) => ({
+              members: s.members.map((m: any) => m.id === chore.assignedToId
+                ? wallet === 'gpCoins'
+                  ? { ...m, gpCoins: Math.max(0, (m.gpCoins ?? 0) + result.coins_paid), xp: Math.max(0, (m.xp ?? 0) + (chore.xpReward ?? 0)) }
+                  : { ...m, coins: Math.max(0, (m.coins ?? 0) + result.coins_paid), mainCoins: Math.max(0, (m.mainCoins ?? 0) + result.coins_paid), xp: Math.max(0, (m.xp ?? 0) + (chore.xpReward ?? 0)) }
+                : m),
+            }));
+          } catch { /* familyStore not mounted yet — server balance still landed */ }
+        }
+        showToast(pay ? 'Approved ✓' : 'Sided with the redo request');
+      });
   },
 
   // Citizenship 0-pt tasks: tap = immediate complete, no review needed

@@ -472,6 +472,68 @@ function DisputeApprovalCard({ c, members, colors, isDark, active, flagApprovalF
   );
 }
 
+// QA punch list #5 — the kid disputed a redo request instead of just
+// resubmitting ("I did do it right the first time"). A DIFFERENT parent
+// than whoever requested the redo (reviewedById) reviews the ORIGINAL
+// submission (photo/note survive the redo transition untouched) and either
+// approves it as-is (real payout) or sides with the original redo request.
+function RedoDisputeCard({ c, members, colors, isDark, active, resolveRedoDispute }: {
+  c: ChoreTask; members: FamilyMember[]; colors: any; isDark: boolean; active: FamilyMember;
+  resolveRedoDispute: (choreId: string, reviewerId: string, pay: boolean) => void;
+}) {
+  const kid = members.find(m => m.id === c.assignedToId);
+  const originalReviewer = members.find(m => m.id === c.reviewedById);
+  const isSameReviewer = active.id === c.reviewedById;
+  const totalCoins = (c.basePoints > 0 ? c.basePoints : c.coinsReward) + (c.bonusCoins ?? 0);
+
+  return (
+    <View style={{ borderRadius: 14, padding: 12, gap: 8,
+      backgroundColor: isDark ? colors.primary + '10' : colors.primaryLight,
+      borderWidth: 1.5, borderColor: colors.primary + '40' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <MessageCircle size={15} color={colors.primary} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+            {kid?.name.split(' ')[0] ?? 'Kid'} disagrees with {originalReviewer?.name.split(' ')[0] ?? 'the'} redo request — asking you to take a look
+          </Text>
+        </View>
+      </View>
+      {c.rejectionReason ? (
+        <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, fontStyle: 'italic' }}>
+          Redo reason: "{c.rejectionReason}"
+        </Text>
+      ) : null}
+      {c.submissionNote ? (
+        <Text style={{ fontSize: TYPO.label, color: colors.textPrimary }}>
+          Original note: "{c.submissionNote}"
+        </Text>
+      ) : null}
+      {isSameReviewer ? (
+        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, fontStyle: 'italic' }}>
+          You requested this redo — a different parent needs to review the dispute.
+        </Text>
+      ) : (
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Pressable
+            onPress={() => resolveRedoDispute(c.id, active.id, false)}
+            style={{ flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 12,
+              borderWidth: 1.5, borderColor: colors.border }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Side with the redo</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => resolveRedoDispute(c.id, active.id, true)}
+            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+              paddingVertical: 11, borderRadius: 12, backgroundColor: colors.primary }}>
+            <CheckCircle2 size={14} color="#fff" />
+            <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#fff' }}>Pay it ({totalCoins}🪙)</Text>
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+}
+
 export function ChoreReviewSection({
   active, members, colors, isDark, chores, pendingReviewsCount,
   approveGrandparentQuestAsParent, declineGrandparentQuestAsParent,
@@ -479,6 +541,7 @@ export function ChoreReviewSection({
   approveTeenReward, adjustTeenReward, declineTeenReward,
   acceptGPOffer, declineGPOffer,
   approveKidProposedChore, declineKidProposedChore,
+  resolveRedoDispute,
   flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal,
   acknowledgeRecentApproval,
 }: {
@@ -494,12 +557,17 @@ export function ChoreReviewSection({
   declineGPOffer: (choreId: string, parentId: string, reason?: string) => void;
   approveKidProposedChore: (choreId: string, reviewerId: string, coins: number) => void;
   declineKidProposedChore: (choreId: string, reviewerId: string, reason?: string) => void;
+  resolveRedoDispute: (choreId: string, reviewerId: string, pay: boolean) => void;
   flagApprovalForDiscussion?: (choreId: string, byParentId: string, note?: string) => void;
   standByApproval?: (choreId: string, byParentId: string) => void;
   requestApprovalReversal?: (choreId: string, byParentId: string, reason: string) => void;
   coSignReversal?: (choreId: string, coSigningParentId: string) => void;
   acknowledgeRecentApproval?: (choreId: string, byParentId: string) => void;
 }) {
+  // QA punch list #5 — kid disputed a redo request, waiting on a second
+  // parent (not whoever requested the redo) to review the original
+  // submission directly.
+  const redoDisputed = chores.filter(c => c.status === 'kid_disputed_redo');
   const gpPending = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval');
   const gpDeclined = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'declined');
   // Submitted by the kid, waiting on the SPONSOR grandparent to verify —
@@ -548,7 +616,7 @@ export function ChoreReviewSection({
   const pendingBountyClaimsCount = chores.reduce(
     (n, c) => n + (c.claims ?? []).filter(cl => cl.status === 'pending_approval').length, 0,
   );
-  const badgeCount = pendingReviewsCount + gpPending.length + teenRewardPending.length + gpOffersPending.length + kidProposedChores.length + disputeBadgeCount + pendingBountyClaimsCount;
+  const badgeCount = pendingReviewsCount + gpPending.length + teenRewardPending.length + gpOffersPending.length + kidProposedChores.length + redoDisputed.length + disputeBadgeCount + pendingBountyClaimsCount;
   // badgeCount deliberately only counts items needing a decision — but
   // gpDeclined/gpAwaitingSponsor/recentlyApproved all render real visible
   // content below (informational, not "pending"), so a card with only
@@ -619,6 +687,22 @@ export function ChoreReviewSection({
                 {kidProposedChores.map(c => (
                   <KidProposedChoreCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
                     approveKidProposedChore={approveKidProposedChore} declineKidProposedChore={declineKidProposedChore} />
+                ))}
+              </View>
+            )}
+
+            {redoDisputed.length > 0 && (
+              <View style={{ gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <MessageCircle size={12} color={colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                    textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                    Redo Disputes — Second Opinion Needed
+                  </Text>
+                </View>
+                {redoDisputed.map(c => (
+                  <RedoDisputeCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
+                    resolveRedoDispute={resolveRedoDispute} />
                 ))}
               </View>
             )}

@@ -1231,11 +1231,17 @@ export const useEventStore = create<EventState>((set, get) => ({
   // that only the current still-open state (both statuses currently unset)
   // can satisfy, and roll back the optimistic claim if the 0-row result
   // shows someone else already landed first.
+  // Now backed by the claim_event_slot Postgres RPC (see migration
+  // 20260905110000_event_participant_rpcs.sql) instead of a hand-rolled
+  // .is(dbStatusCol, null) conditional UPDATE — the RPC's insert into
+  // event_participants under a unique constraint is a real CAS the
+  // database itself enforces, not a client-side race against a nullable
+  // column. Same public signature/behavior (optimistic update, rollback on
+  // loss/rejection, onWon/onError callbacks, series propagation, creator
+  // notification) so no caller needs to change.
   claimHelperSlot: (id, role, claimantName, extra, onWon, onError) => {
     const statusField = role === 'driver' ? 'driverStatus' : 'helperStatus';
     const nameField    = role === 'driver' ? 'driverName'   : 'helper';
-    const dbStatusCol  = role === 'driver' ? 'driver_status' : 'helper_status';
-    const dbNameCol    = role === 'driver' ? 'driver_name'   : 'helper_name';
 
     const patch: Partial<FamilyEvent> = {
       ...extra,
@@ -1250,35 +1256,20 @@ export const useEventStore = create<EventState>((set, get) => ({
     set({ dayEvents: nextDay, events: nextDay });
     set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? { ...e, ...patch } : e)) });
 
-    const dbPatch: Record<string, unknown> = { [dbNameCol]: claimantName, [dbStatusCol]: 'confirmed' };
-    if (extra) {
-      // Was Object.assign(dbPatch, toRow(merged)) — same full-row-overwrite
-      // risk QA Round 21 (High) found in updateEvent: this callsite's own
-      // local snapshot could be stale relative to another parent's
-      // concurrent edit, and toRow() would silently rewrite every column
-      // back to that stale state. Scope the write to only nameField/
-      // statusField (already set above) plus whatever keys extra itself
-      // names — never anything wider.
-      const merged = nextDay.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
-      if (merged) Object.assign(dbPatch, toRowPartial(merged, Object.keys(extra) as (keyof FamilyEvent)[]));
-    }
-
-    supabase.from('calendar_events')
-      .update(dbPatch)
-      .eq('id', id)
-      .is(dbStatusCol, null)
-      .select('id')
+    const claimantId = getActiveMemberId();
+    supabase.rpc('claim_event_slot', {
+      p_event_id: id, p_member_id: claimantId, p_role: role, p_actor_id: claimantId,
+    })
       .then(({ data, error }) => {
         if (error) {
-          console.warn('[eventStore] claimHelperSlot DB update failed', id, error.message);
+          console.warn('[eventStore] claimHelperSlot RPC failed', id, error.message);
           // Was a silent no-op — the optimistic local claim (already
           // applied above) stayed in place even when the DB rejected the
           // write, so the claimant's own UI kept showing them as
           // confirmed for a claim that never actually landed (e.g. the
-          // new server-side weekly ride cap trigger rejecting it — QA
-          // sweep, grandparent-role live-DB verification, previously
-          // enforced client-side only). Roll back the same way a lost
-          // race already does, so the UI matches what's actually in the DB.
+          // server-side weekly ride cap trigger rejecting it). Roll back
+          // the same way a lost race already does, so the UI matches what's
+          // actually in the DB.
           const rollbackDay = get().dayEvents.map(e => e.id === id ? { ...e, [nameField]: undefined, [statusField]: undefined } : e);
           set({ dayEvents: sortByTime(rollbackDay), events: sortByTime(rollbackDay) });
           set({ rangeEvents: sortByTime(get().rangeEvents.map(e => e.id === id ? { ...e, [nameField]: undefined, [statusField]: undefined } : e)) });
@@ -1295,7 +1286,8 @@ export const useEventStore = create<EventState>((set, get) => ({
           );
           return;
         }
-        if (!data || data.length === 0) {
+        const won = Array.isArray(data) ? data[0]?.claimed : (data as any)?.claimed;
+        if (!won) {
           console.warn('[eventStore] claimHelperSlot lost the race on', id, '— rolling back local claim');
           // Re-fetch the row so the loser's UI reflects who actually won,
           // instead of just reverting to an unassigned/open state that no
@@ -1314,6 +1306,19 @@ export const useEventStore = create<EventState>((set, get) => ({
         // anything gated on genuinely winning (e.g. awarding ride coins),
         // instead of doing it optimistically before the outcome is known.
         onWon?.();
+
+        // extra carries fields the RPC itself doesn't know about (e.g.
+        // pickup notes) — same scoped-write pattern as before: only write
+        // the keys extra actually names, never a full-row snapshot.
+        if (extra) {
+          const merged = nextDay.find(e => e.id === id) ?? get().rangeEvents.find(e => e.id === id);
+          if (merged) {
+            const dbPatch = toRowPartial(merged, Object.keys(extra) as (keyof FamilyEvent)[]);
+            supabase.from('calendar_events').update(dbPatch).eq('id', id).then(({ error: extraErr }) => {
+              if (extraErr) console.warn('[eventStore] claimHelperSlot extra-fields write failed', id, extraErr.message);
+            });
+          }
+        }
 
         // Recurring QA sweep found the "initial accept propagates to the
         // series" rule (Round 7) only ever applied to the parent-assignment

@@ -321,7 +321,16 @@ export function KidView({ active, members, colors, isDark, activeTrips }: {
         dismissedIds={dismissedAll} onDismiss={dismissAlert}
       />
 
-      {confirmedRide && rideCountdown !== null && rideCountdown > -30 && !dismissedRideIds.has(confirmedRide.id) && (
+      {/* -180 (3hr), not -30 — a pickup that ran late relative to the
+          scheduled time is exactly when this window mattered most (a
+          parent's "Pickup Done" tap and the kid's actual pickup often
+          diverge from the original schedule by more than 30 min), and the
+          confirm option was disappearing before a delayed pickup even
+          finished. Trip-completion itself isn't a signal this view can
+          react to (tripStore.complete() only deletes local state, nothing
+          persisted for the kid's Hub to read), so widening the schedule-
+          based window is the fix instead of wiring a new signal. */}
+      {confirmedRide && rideCountdown !== null && rideCountdown > -180 && !dismissedRideIds.has(confirmedRide.id) && (
         <KidRideBanner
           ev={confirmedRide} rideCountdown={rideCountdown} colors={colors} isDark={isDark}
           active={active}

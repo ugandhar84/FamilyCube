@@ -14,6 +14,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { AlertBanner, PickupRadarStatus } from './hubComponents';
 import { localToday, hoursUntilEvent, isWorkEvent, minutesBetween } from './hubUtils';
 import { classifyEventUrgency } from './lib/classifyEventUrgency';
+import { decodeRideLate } from './KidModals';
 import { TodayView, GreetingHeader } from './TodayView';
 import { useChoreStore } from '@/store/choreStore';
 import type { ChoreTask } from '@/store/choreStore';
@@ -245,7 +246,27 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   });
 
   const showBanner     = conflictEvents.length > 0 || neverDispatchedOverdue.length > 0;
+  // Kids currently being picked up in an ACTIVE trip — a "my driver hasn't
+  // arrived" alert for one of them is stale the moment a trip actually
+  // starts, even though nobody tapped that card's own "I'm on my way"
+  // button (the parent instead dispatched normally via Pickup Radar/
+  // EnRouteBanner, a different action entirely). Reported live: starting
+  // En Route for a kid left their "still waiting" card stuck in Action
+  // Needed with no way to clear it short of the card's own button. If the
+  // trip goes overdue, neverDispatchedOverdue/EnRouteBanner's own overdue
+  // state picks it back up — this only suppresses the redundant alert
+  // while a trip is genuinely in progress.
+  const activeTripKidNames = new Set(
+    [activeTrip, ...(otherActiveTrips ?? [])]
+      .filter((t): t is NonNullable<typeof t> => !!t)
+      .map(t => t.kidName)
+  );
   const pendingKidRequests = kidRequests.filter(r => {
+    const rideLate = decodeRideLate(r.detail);
+    if (rideLate) {
+      const kidFirstName = members.find(m => m.id === r.fromMemberId)?.name.split(' ')[0];
+      if (kidFirstName && activeTripKidNames.has(kidFirstName)) return false;
+    }
     // Coordinated live-DB QA (Round 20, High) — a multi-item grocery/
     // supplies request transitions to 'partial' the moment any item is
     // decided while others remain undecided (kidRequestStore.ts's

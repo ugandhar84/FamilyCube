@@ -604,7 +604,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
     prevCalMemberRef.current = activeMemberId;
     setFilterMember(null);
     setScheduleFilter(isParent ? 'all' : 'mine');
-    setCompact(isKid);
+    setCompact(false);
     setShowAdd(false);
     setShowAskHelp(false);
     setEditEv(null);
@@ -612,7 +612,11 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
     setIsAnalyzing(false);
     calScrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [activeMemberId]);
-  const [compact,       setCompact]       = useState(isKid);
+  // Kid's Schedule now matches Parent's default view exactly (card view,
+  // not compact) — the standalone list/compact toggle that used to live
+  // next to "+ Ask Help" is gone (see the toolbar row below), so this
+  // never needs to differ by role.
+  const [compact,       setCompact]       = useState(false);
   // 'month' — Apple-style month sheet, tap a day to load its agenda below.
   // 'week' — one card per day, chronological events inside. 'day' — the
   // chronological single-day timeline. 'agenda' — grouped-by-date list
@@ -1037,20 +1041,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
               />
             )}
             {!hideSearchBar && <CalendarSearchBar query={searchQuery} onQueryChange={setSearchQuery} colors={colors} isDark={isDark} />}
-            {isKid ? (
-              <>
-                {/* List view toggle — defaults on for kids */}
-                <TouchableOpacity
-                  onPress={() => { console.log(`[UserAction] FORM screen=Schedule role=${roleLabel} member=${activeMemberName} toggled "Compact list view" newValue=${!compact} [features/calendar/CalendarScreen.tsx:1016]`); setCompact(v => !v); }}
-                  style={[calCardStyles.headerBtnOutline, { borderColor: compact ? BRAND.purple : colors.border, backgroundColor: compact ? BRAND.purple + '15' : 'transparent' }]}>
-                  <I.List c={compact ? BRAND.purple : colors.textTertiary} size={14} />
-                </TouchableOpacity>
-                <TouchableOpacity style={[calCardStyles.headerBtn, { backgroundColor: BRAND.amber }]} onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "+ Ask Help" → open KidRequestModal [features/calendar/CalendarScreen.tsx:1020]`); setShowAskHelp(true); }}>
-                  <I.HelpCircle c="#0F172A" size={14} />
-                  <Text style={{ fontSize: TYPO.label, fontWeight: '900', color: '#0F172A' }}>+ Ask Help</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
+            {isKid ? null : (
               isParentOrSenior && !hideCreateButton && (
                 <TouchableOpacity style={[calCardStyles.headerBtn, { backgroundColor: BRAND.purple }]} onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "+ Event" → open AddEventModal [features/calendar/CalendarScreen.tsx:1027]`); setShowAdd(true); }}>
                   <I.Plus c="#fff" size={14} />
@@ -1370,7 +1361,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
               No events scheduled
             </Text>
             <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center' }}>
-              {isKid ? 'Tap "+ Ask Help / Ride" above to request parent assistance.'
+              {isKid ? 'Tap "+" below to ask for a ride or anything else.'
                 : isSenior ? 'No rides or events assigned to you today.'
                 : 'Tap "+ Event" to add one for the family.'}
             </Text>

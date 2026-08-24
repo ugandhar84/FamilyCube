@@ -75,7 +75,7 @@ export { AddQuestModal };
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 // TabStatus and AiTool are imported from ./components/QuestFilters and ./components/AiEngineBanner
 
-export default function QuestsScreen() {
+export default function QuestsScreen({ onHeaderHeight }: { onHeaderHeight?: (height: number) => void } = {}) {
   const { colors, isDark } = useTheme();
   const { questId } = useLocalSearchParams<{ questId?: string }>();
   const { members, activeMemberId, setActiveMember } = useFamilyStore();
@@ -775,6 +775,7 @@ export default function QuestsScreen() {
         notifCount={unreadNotifCount}
         onPersonaPress={undefined}
         onBellPress={() => setNotifPanelOpen(true)}
+        onHeightChange={onHeaderHeight}
       />
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 

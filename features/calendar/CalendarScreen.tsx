@@ -422,7 +422,7 @@ function SwipeableEventCard({ children, onDelete, onLongPress, onPress, canDelet
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
-export default function CalendarScreen() {
+export default function CalendarScreen({ onHeaderHeight }: { onHeaderHeight?: (height: number) => void } = {}) {
   const { colors, isDark } = useTheme();
   const { height: windowHeight } = useWindowDimensions();
   const { members, activeMemberId, setActiveMember } = useFamilyStore();
@@ -966,6 +966,7 @@ export default function CalendarScreen() {
         notifCount={unreadNotifCount}
         onPersonaPress={switchMember}
         onBellPress={() => setNotifPanelOpen(true)}
+        onHeightChange={onHeaderHeight}
       />
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 

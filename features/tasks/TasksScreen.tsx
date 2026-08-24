@@ -41,6 +41,11 @@ export default function TasksScreen() {
   // never changes whether the "+" is there.
   const canCreate = activeMember?.role === 'parent' || activeMember?.role === 'teen';
   const [segment, setSegment] = useState<Segment>('schedule');
+  // Measured per-segment via AppHeader's own onLayout (each screen mounts
+  // its own AppHeader instance beneath this overlay) — docks the pill right
+  // under the real header instead of guessing a fixed offset that would
+  // overlap taller headers (long family/member names wrap the switcher row).
+  const [headerHeight, setHeaderHeight] = useState(0);
 
   // Smart creator — one "+" regardless of segment. SmartTaskComposer
   // classifies free text live as the user types (via extractResponsibility)
@@ -61,14 +66,16 @@ export default function TasksScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      {segment === 'schedule' ? <CalendarScreen /> : <QuestsScreen />}
+      {segment === 'schedule'
+        ? <CalendarScreen onHeaderHeight={setHeaderHeight} />
+        : <QuestsScreen onHeaderHeight={setHeaderHeight} />}
 
-      {/* Floating segmented control — sits just under the status bar, above
-          whichever screen's own AppHeader is mounted beneath it. Both
-          screens already reserve top safe-area via their own SafeAreaView,
-          so this floats in that same top strip rather than pushing content
-          down. */}
-      <View pointerEvents="box-none" style={[styles.overlayWrap, { top: insets.top + 6 }]}>
+      {/* Floating segmented control — docked just below whichever screen's
+          own AppHeader is mounted beneath it (measured live via
+          onHeaderHeight, since header height varies with name/badge
+          wrapping), not pinned to the status bar where it used to overlap
+          the header row entirely. */}
+      <View pointerEvents="box-none" style={[styles.overlayWrap, { top: insets.top + headerHeight + 4 }]}>
         <View style={[styles.pillTrack, {
           backgroundColor: isDark ? 'rgba(30,22,45,0.92)' : 'rgba(255,255,255,0.94)',
           borderColor: colors.border,

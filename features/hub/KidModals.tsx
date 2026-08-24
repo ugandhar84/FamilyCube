@@ -27,6 +27,9 @@ import type { KidRequestItem } from '@/store/kidRequestStore';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { fmtDateTime, parseDbTime } from '@/lib/dates';
+import { VoiceTextField } from './kid/VoiceTextField';
+import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
+import { Mic } from 'lucide-react-native';
 
 // ─── Encoding helpers (re-exported so HelpDispatchQueue can import them) ──────
 
@@ -205,6 +208,51 @@ const f = StyleSheet.create({
   submitBtn:  { borderRadius: 16, paddingVertical: 15, alignItems: 'center', marginTop: 4 },
 });
 
+// A single item-name TextInput with a compact inline mic button — used by
+// both GroceryModal and SuppliesModal's per-row name field. Each row gets
+// its own useVoiceDictation instance (not one shared across the whole
+// list) so tapping row 2's mic never clobbers row 1's in-progress speech —
+// a kid adding multiple items by voice needs each row's mic to be its own
+// independent session.
+function ItemNameField({ value, onChangeText, onFocus, onBlur, style, flex = 2.5, placeholder = 'Item name', accent, colors, isDark }: {
+  value: string; onChangeText: (t: string) => void;
+  onFocus?: () => void; onBlur?: () => void; style: any; flex?: number; placeholder?: string;
+  accent: string; colors: any; isDark: boolean;
+}) {
+  const dictation = useVoiceDictation();
+  // `style` may be an array (e.g. [gInput, {...}]) — flatten before reading
+  // borderColor off it, since arrays don't expose that as a property.
+  const flatStyle = StyleSheet.flatten(style) ?? {};
+  return (
+    <View style={{ flex, position: 'relative' }}>
+      <TextInput
+        style={[style, { paddingRight: 30, borderColor: dictation.state === 'listening' ? colors.danger : flatStyle.borderColor }]}
+        placeholder={placeholder} placeholderTextColor={colors.textTertiary}
+        value={dictation.state === 'listening' ? dictation.liveTranscript : value}
+        editable={dictation.state !== 'listening'}
+        onChangeText={onChangeText}
+        onFocus={onFocus}
+        onBlur={onBlur}
+      />
+      <Pressable
+        onPress={async () => {
+          if (dictation.state === 'listening') {
+            const finalTranscript = await dictation.stop();
+            if (finalTranscript) onChangeText(finalTranscript);
+          } else {
+            dictation.start();
+          }
+        }}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        style={{ position: 'absolute', right: 6, top: 0, bottom: 0, justifyContent: 'center' }}>
+        {dictation.state === 'listening'
+          ? <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: colors.danger }} />
+          : <Mic size={13} color={accent} />}
+      </Pressable>
+    </View>
+  );
+}
+
 // ─── GroceryModal — multi-item (EventFormModal style) ────────────────────────
 
 type GroceryLine = { name: string; qty: string; category: string; emoji: string };
@@ -348,13 +396,13 @@ export function GroceryModal({ visible, onClose, active }: {
                     <View key={idx} style={{ marginBottom: 8 }}>
                       {/* Row 1: name + qty + delete */}
                       <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 4 }}>
-                        <TextInput
-                          style={[gInput, { flex: 2.5, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'name' ? BRAND.teal : colors.border, marginBottom: 0 }]}
-                          placeholder="Item name" placeholderTextColor={colors.textTertiary}
+                        <ItemNameField
+                          style={[gInput, { color: colors.textPrimary, backgroundColor: colors.surface, borderColor: focusedLineIdx === idx && focusedField === 'name' ? BRAND.teal : colors.border, marginBottom: 0 }]}
                           value={line.name}
                           onChangeText={v => updateLine(idx, { name: v })}
                           onFocus={() => { setFocusedLineIdx(idx); setFocusedField('name'); }}
                           onBlur={() => { setFocusedLineIdx(null); setFocusedField(null); }}
+                          accent={BRAND.teal} colors={colors} isDark={isDark}
                         />
                         <TextInput
                           style={[gInput, { flex: 1, color: colors.textPrimary, backgroundColor: colors.surface, borderColor: colors.border, marginBottom: 0 }]}
@@ -528,11 +576,10 @@ export function SuppliesModal({ visible, onClose, active }: {
                 return (
                   <View key={idx} style={{ marginBottom: 10 }}>
                     <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                      <TextInput value={item.name} onChangeText={v => updateItem(idx, 'name', v)}
+                      <ItemNameField
+                        value={item.name} onChangeText={v => updateItem(idx, 'name', v)}
                         placeholder={`Item ${idx + 1} — type or pick below`}
-                        placeholderTextColor={colors.textTertiary}
-                        returnKeyType="next"
-                        style={[inp, { flex: 2 }]}
+                        style={inp} flex={2} accent="#6366F1" colors={colors} isDark={isDark}
                       />
                       <TextInput value={item.qty} onChangeText={v => updateItem(idx, 'qty', v)}
                         placeholder="Qty" placeholderTextColor={colors.textTertiary}
@@ -895,20 +942,9 @@ export function AskModal({ visible, onClose, type, active }: {
               onScrollBeginDrag={Keyboard.dismiss}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 48 }}>
-              <TextInput
-                value={text}
-                onChangeText={setText}
-                style={{
-                  borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14,
-                  fontSize: 15, color: colors.textPrimary,
-                  backgroundColor: isDark ? colors.surface : '#F9FAFB',
-                  borderColor: text.trim() ? meta.accent + '80' : colors.border,
-                  minHeight: 120, textAlignVertical: 'top',
-                }}
-                placeholder={meta.hint}
-                placeholderTextColor={colors.textTertiary}
-                multiline
-                numberOfLines={5}
+              <VoiceTextField
+                value={text} onChangeText={setText} placeholder={meta.hint}
+                colors={colors} isDark={isDark} accent={meta.accent} minHeight={120}
               />
               <TouchableOpacity onPress={submit} disabled={!text.trim()}
                 style={[f.submitBtn, { marginTop: 16, backgroundColor: text.trim() ? meta.accent : (isDark ? '#2A2A3E' : '#E0E0F0') }]}>
@@ -989,17 +1025,9 @@ export function QuestProposalModal({ visible, onClose, active }: {
               <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary, marginBottom: 6 }}>
                 What's the chore?
               </Text>
-              <TextInput
-                value={title}
-                onChangeText={setTitle}
-                style={{
-                  borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14,
-                  fontSize: 15, color: colors.textPrimary,
-                  backgroundColor: isDark ? colors.surface : '#F9FAFB',
-                  borderColor: title.trim() ? accent + '80' : colors.border,
-                }}
-                placeholder="e.g. Wash the car"
-                placeholderTextColor={colors.textTertiary}
+              <VoiceTextField
+                value={title} onChangeText={setTitle} placeholder="e.g. Wash the car"
+                colors={colors} isDark={isDark} accent={accent} minHeight={56} multiline={false}
               />
 
               <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary, marginTop: 16, marginBottom: 6 }}>

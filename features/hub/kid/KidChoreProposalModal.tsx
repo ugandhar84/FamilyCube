@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, Modal, KeyboardAvoidingView, Platform, TouchableOpacity, Keyboard, Alert, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Modal, KeyboardAvoidingView, Platform, TouchableOpacity, Keyboard, Alert, StyleSheet } from 'react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
+import { VoiceTextField } from './VoiceTextField';
 
 // Matches the same bottom-sheet chrome every other kid-facing request modal
 // in KidModals.tsx uses (that file's own local `f` isn't exported).
@@ -94,20 +95,9 @@ export function KidChoreProposalModal({ visible, onClose, active, members, famil
               onScrollBeginDrag={Keyboard.dismiss}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 48, gap: 14 }}>
-              <TextInput
-                value={title}
-                onChangeText={setTitle}
-                style={{
-                  borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 14,
-                  fontSize: 15, color: colors.textPrimary,
-                  backgroundColor: isDark ? colors.surface : '#F9FAFB',
-                  borderColor: title.trim() ? accent + '80' : colors.border,
-                  minHeight: 90, textAlignVertical: 'top',
-                }}
-                placeholder="e.g. Wash the car"
-                placeholderTextColor={colors.textTertiary}
-                multiline
-                numberOfLines={3}
+              <VoiceTextField
+                value={title} onChangeText={setTitle} placeholder="e.g. Wash the car"
+                colors={colors} isDark={isDark} accent={accent} minHeight={90}
               />
 
               <View style={{ gap: 8 }}>

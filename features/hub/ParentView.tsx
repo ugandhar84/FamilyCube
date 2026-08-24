@@ -128,10 +128,19 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // field pair the event uses (helper/helperStatus for Ride,
   // driverName/driverStatus for rideRequired) — both feed the same Action
   // Needed surface and the same series-dedup/carry-forward behavior.
-  const pendingRideRequiredEvents = events.filter(e =>
-    e.rideRequired && !isWorkEvent(e) && hoursUntilEvent(e.date, e.time) >= 0
-    && (!e.driverName || e.driverStatus === 'pending')
-  );
+  const pendingRideRequiredEvents = events.filter(e => {
+    if (!e.rideRequired || isWorkEvent(e) || hoursUntilEvent(e.date, e.time) < 0) return false;
+    // rideRequired's assignee can live in EITHER field pair — driverName/
+    // driverStatus (assigned via RideRequiredEventCard/reassign_event) or
+    // helper/helperStatus (assigned via the plain Ride-category create
+    // form, which never touches driverName at all). Checking driverName
+    // alone missed every rideRequired event whose driver actually landed
+    // in the helper pair — it silently never showed up in Action Needed,
+    // however unconfirmed it stayed (reported live: an unconfirmed
+    // today-driver ride wasn't surfacing on the parent's Hub at all).
+    const a = eventAssignee(e);
+    return !a.name || a.status === 'pending';
+  });
   // pending_approval and pending_grandparent_approval both collapse to the
   // same client-side status (choreAdapter's choreStatusToQuestStatus) — a
   // grandparent_quest awaiting its sponsor's review must NOT show up in the

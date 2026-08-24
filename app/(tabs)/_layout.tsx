@@ -254,6 +254,22 @@ export default function TabLayout() {
     if (!questsLoaded) loadQuests();
   }, []);
 
+  // Prefetch the default chat channel at tab-shell mount, same as Hub/
+  // Tasks' own stores above — Chat's ENTIRE data pipeline (message fetch,
+  // decrypt, realtime subscribe) was previously 100% deferred until the
+  // moment the user actually tapped the Chat tab, unlike every other tab
+  // whose store is already warm by then. That's the single biggest reason
+  // Chat specifically felt slow to open (live-reported): the first tap of
+  // a session paid the full loadChannel cost synchronously-relative-to-
+  // the-tap instead of it already being in flight/done. Only warms the
+  // default 'all' channel (senior accounts get redirected to
+  // 'seniors_all' inside ChatScreen itself, a separate known duplicate-
+  // fetch issue) — not the per-member DM channels, which aren't known
+  // until ChatScreen computes its own channel list.
+  useEffect(() => {
+    if (familyLoaded) useChatStore.getState().loadChannel('all');
+  }, [familyLoaded]);
+
   // Boot help store once family members are loaded — scope fetch to this family's IDs
   useEffect(() => {
     if (!helpLoaded && members.length > 0) {

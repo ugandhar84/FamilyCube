@@ -10,10 +10,10 @@
  *   - New device/reinstall: user enters passcode → fetch blob → unwrapKeyWithPasscode().
  *   - Implementation: @/lib/chatCrypto (wrapKeyWithPasscode / unwrapKeyWithPasscode).
  */
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, FlatList, Pressable, StyleSheet, TextInput,
-  KeyboardAvoidingView, Platform, Modal, Alert, Image, Animated, Clipboard,
+  KeyboardAvoidingView, Platform, Modal, Alert, Image, Animated, Clipboard, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -121,7 +121,6 @@ export default function ChatScreen() {
     if (!activeMemberId) return;
     loadPinnedChannels(activeMemberId).then(setPinnedChannels);
   }, [activeMemberId]);
-  useEffect(() => { loadChannel(channelId); }, [channelId]);
   // Inverted FlatList starts at bottom — no scroll-to-end needed.
   // Only reset scroll position on channel switch.
   const prevChannelRef = useRef<string | null>(null);
@@ -137,80 +136,97 @@ export default function ChatScreen() {
   }, [searchOpen]);
   useEffect(() => { setSearchMatchIdx(0); }, [searchQuery]);
 
-  const memberMap    = Object.fromEntries(members.map(m => [m.id, m]));
-  const activeMember = members.find(m => m.id === activeMemberId);
-  const isParent     = activeMember?.role === 'parent';
-  const isSenior     = activeMember?.role === 'senior';
-  const kids         = members.filter(m => m.role !== 'parent');
-  // Co-parents need a 1:1 DM tab too — e.g. quest nudges between parents
-  // route to each other's DM (not #all-family), which is invisible without
-  // a tab to open it from.
-  const coParents    = members.filter(m => m.role === 'parent' && m.id !== activeMemberId);
+  // Was a chain of ~10 unmemoized derivations (memberMap, channel lists,
+  // per-viewer filtering, DM tile construction) recomputed from scratch on
+  // EVERY render — including high-frequency ones with nothing to do with
+  // the roster/channel list at all, like a keystroke in the message box or
+  // a scroll-throttle tick (every 100ms while scrolling). None of it
+  // depends on anything but members/activeMemberId/pinnedChannels/
+  // lastActivity, so it's wrapped in one useMemo keyed on just those —
+  // live-reported as janky/unresponsive; this was one of several
+  // contributors alongside the FlatList/MessageBubble memo fixes and the
+  // items/reversedItems memo below.
+  const {
+    memberMap, activeMember, isParent, isSenior, kids, coParents,
+    rawGroupChannels, groupChannels, allChannels, FULL_LABELS,
+  } = useMemo(() => {
+    const memberMap    = Object.fromEntries(members.map(m => [m.id, m]));
+    const activeMember = members.find(m => m.id === activeMemberId);
+    const isParent     = activeMember?.role === 'parent';
+    const isSenior     = activeMember?.role === 'senior';
+    const kids         = members.filter(m => m.role !== 'parent');
+    // Co-parents need a 1:1 DM tab too — e.g. quest nudges between parents
+    // route to each other's DM (not #all-family), which is invisible without
+    // a tab to open it from.
+    const coParents    = members.filter(m => m.role === 'parent' && m.id !== activeMemberId);
 
-  // #all-family is no longer visible/postable to grandparents — they now
-  // have their own maternal/paternal + combined Grand Squad channels
-  // instead. The strip auto-sorts by most-recent-message so active
-  // conversations surface without manual scrolling; a pin (tap the pin
-  // icon while a channel is open) is the only manual override, always
-  // sorting first regardless of activity. DM tabs stay appended after
-  // group channels, in member order.
-  // #parents-vault is a GROUP channel for 3+ co-parents/guardians — with
-  // exactly the typical 2 parents, it's fully redundant with their own 1-1
-  // DM (same 2 people, same content, just a second tab for it). Hidden
-  // rather than removed: the channel/data model still fully supports it so
-  // nothing needs re-adding if a 3rd parent-role member (a temp-approver,
-  // a blended-family co-parent) is ever added — parentsCount recomputes
-  // live off the real roster, not a one-time flag.
-  const parentsCount = members.filter(m => m.role === 'parent').length;
-  // Which side (a/b) THIS viewing senior belongs to — buildGroupChannels
-  // always returns BOTH seniors_a and seniors_b whenever both sides have
-  // GPs (it has no concept of "the current viewer"), and the filter below
-  // previously only checked seniorOnly, not side — so a maternal
-  // grandparent's channel strip showed the paternal side's private channel
-  // too, and could open/post in it. Same derivation buildGroupChannels
-  // itself uses (linkedParentId → parents[0]/parents[1]).
-  const viewerGpSide: 'a' | 'b' | 'unlinked' | null = (() => {
-    if (!isSenior || !activeMember) return null;
-    const parents = members.filter(m => m.role === 'parent');
-    if (!(activeMember as any).linkedParentId) return 'unlinked';
-    if ((activeMember as any).linkedParentId === parents[0]?.id) return 'a';
-    if ((activeMember as any).linkedParentId === parents[1]?.id) return 'b';
-    return 'unlinked';
-  })();
-  const rawGroupChannels = buildGroupChannels(members)
-    .filter(ch => ch.id !== 'all' || !isSenior)
-    .filter(ch => ch.id !== 'parents' || parentsCount > 2)
-    .filter(ch => !(ch as any).seniorOnly || isSenior || isParent)
-    // A senior only ever sees/opens THEIR OWN side channel, never the
-    // other side's — parents still see both (they're on neither side and
-    // are the ones who'd coordinate across them). seniors_all (combined)
-    // and an unlinked senior's fallback seniors_a are unaffected.
-    .filter(ch => {
-      if (!isSenior) return true;
-      if (ch.id === 'seniors_a') return viewerGpSide === 'a' || viewerGpSide === 'unlinked';
-      if (ch.id === 'seniors_b') return viewerGpSide === 'b';
-      return true;
-    });
-  const groupChannels = sortChannelIds(rawGroupChannels.map(ch => ch.id), pinnedChannels, lastActivity)
-    .map(id => rawGroupChannels.find(ch => ch.id === id))
-    .filter((ch): ch is NonNullable<typeof ch> => !!ch);
+    // #all-family is no longer visible/postable to grandparents — they now
+    // have their own maternal/paternal + combined Grand Squad channels
+    // instead. The strip auto-sorts by most-recent-message so active
+    // conversations surface without manual scrolling; a pin (tap the pin
+    // icon while a channel is open) is the only manual override, always
+    // sorting first regardless of activity. DM tabs stay appended after
+    // group channels, in member order.
+    // #parents-vault is a GROUP channel for 3+ co-parents/guardians — with
+    // exactly the typical 2 parents, it's fully redundant with their own 1-1
+    // DM (same 2 people, same content, just a second tab for it). Hidden
+    // rather than removed: the channel/data model still fully supports it so
+    // nothing needs re-adding if a 3rd parent-role member (a temp-approver,
+    // a blended-family co-parent) is ever added — parentsCount recomputes
+    // live off the real roster, not a one-time flag.
+    const parentsCount = members.filter(m => m.role === 'parent').length;
+    // Which side (a/b) THIS viewing senior belongs to — buildGroupChannels
+    // always returns BOTH seniors_a and seniors_b whenever both sides have
+    // GPs (it has no concept of "the current viewer"), and the filter below
+    // previously only checked seniorOnly, not side — so a maternal
+    // grandparent's channel strip showed the paternal side's private channel
+    // too, and could open/post in it. Same derivation buildGroupChannels
+    // itself uses (linkedParentId → parents[0]/parents[1]).
+    const viewerGpSide: 'a' | 'b' | 'unlinked' | null = (() => {
+      if (!isSenior || !activeMember) return null;
+      const parents = members.filter(m => m.role === 'parent');
+      if (!(activeMember as any).linkedParentId) return 'unlinked';
+      if ((activeMember as any).linkedParentId === parents[0]?.id) return 'a';
+      if ((activeMember as any).linkedParentId === parents[1]?.id) return 'b';
+      return 'unlinked';
+    })();
+    const rawGroupChannels = buildGroupChannels(members)
+      .filter(ch => ch.id !== 'all' || !isSenior)
+      .filter(ch => ch.id !== 'parents' || parentsCount > 2)
+      .filter(ch => !(ch as any).seniorOnly || isSenior || isParent)
+      // A senior only ever sees/opens THEIR OWN side channel, never the
+      // other side's — parents still see both (they're on neither side and
+      // are the ones who'd coordinate across them). seniors_all (combined)
+      // and an unlinked senior's fallback seniors_a are unaffected.
+      .filter(ch => {
+        if (!isSenior) return true;
+        if (ch.id === 'seniors_a') return viewerGpSide === 'a' || viewerGpSide === 'unlinked';
+        if (ch.id === 'seniors_b') return viewerGpSide === 'b';
+        return true;
+      });
+    const groupChannels = sortChannelIds(rawGroupChannels.map(ch => ch.id), pinnedChannels, lastActivity)
+      .map(id => rawGroupChannels.find(ch => ch.id === id))
+      .filter((ch): ch is NonNullable<typeof ch> => !!ch);
 
-  const allChannels = [
-    ...groupChannels,
-    // CRITICAL FIX: a DM's id used to be just the OTHER party's member id
-    // (`p.id`/`k.id`) — that value is identical no matter who's viewing,
-    // so Alex's "DM with Priya" and Maya's "DM with Priya" resolved to the
-    // exact same channel_id and were, in the database, literally the same
-    // conversation thread. dmChannelId() below makes the id unique PER
-    // PAIR (both member ids, sorted so it's the same value regardless of
-    // who opens it from which side) instead of per-counterpart.
-    // label no longer carries a 💬 emoji prefix — the strip tab now renders
-    // a real avatar for a DM tile (see allChannels.map below) instead of a
-    // generic chat-bubble icon standing in for the actual person.
-    ...coParents.map(p => ({ id: dmChannelId(activeMemberId ?? '', p.id), otherId: p.id, label: p.name.split(' ')[0], isDM: true, lock: false })),
-    ...kids.map(k => ({ id: dmChannelId(activeMemberId ?? '', k.id), otherId: k.id, label: k.name.split(' ')[0], isDM: true, lock: false })),
-  ];
-  const FULL_LABELS: Record<string, string> = Object.fromEntries(groupChannels.map(ch => [ch.id, ch.label]));
+    const allChannels = [
+      ...groupChannels,
+      // CRITICAL FIX: a DM's id used to be just the OTHER party's member id
+      // (`p.id`/`k.id`) — that value is identical no matter who's viewing,
+      // so Alex's "DM with Priya" and Maya's "DM with Priya" resolved to the
+      // exact same channel_id and were, in the database, literally the same
+      // conversation thread. dmChannelId() below makes the id unique PER
+      // PAIR (both member ids, sorted so it's the same value regardless of
+      // who opens it from which side) instead of per-counterpart.
+      // label no longer carries a 💬 emoji prefix — the strip tab now renders
+      // a real avatar for a DM tile (see allChannels.map below) instead of a
+      // generic chat-bubble icon standing in for the actual person.
+      ...coParents.map(p => ({ id: dmChannelId(activeMemberId ?? '', p.id), otherId: p.id, label: p.name.split(' ')[0], isDM: true, lock: false })),
+      ...kids.map(k => ({ id: dmChannelId(activeMemberId ?? '', k.id), otherId: k.id, label: k.name.split(' ')[0], isDM: true, lock: false })),
+    ];
+    const FULL_LABELS: Record<string, string> = Object.fromEntries(groupChannels.map(ch => [ch.id, ch.label]));
+
+    return { memberMap, activeMember, isParent, isSenior, kids, coParents, rawGroupChannels, groupChannels, allChannels, FULL_LABELS };
+  }, [members, activeMemberId, pinnedChannels, lastActivity]);
   // channelLabel used to look up memberMap[channelId] directly, relying on
   // channelId itself being a raw member id — now that DM ids are a
   // composite pair-id, resolve the OTHER party via the matching
@@ -224,6 +240,22 @@ export default function ChatScreen() {
   useEffect(() => {
     if (channelId === 'all' && isSenior) setChannelId('seniors_all');
   }, [isSenior]);
+
+  // Was an unconditional `useEffect(() => loadChannel(channelId), [channelId])`
+  // placed near mount, before isSenior/activeMember were even declared —
+  // it fired loadChannel('all') for EVERY viewer including seniors, who
+  // get redirected to 'seniors_all' a moment later by the effect above
+  // once isSenior resolves. That redirect changes channelId, re-triggering
+  // a loadChannel call a SECOND time — every senior login paid for two
+  // full message fetch+decrypt+subscribe cycles (one entirely wasted)
+  // before the real channel ever loaded (live-reported: Chat feels slow/
+  // unresponsive to open). Skip the 'all' fetch once activeMember has
+  // resolved and turned out to be a senior — this effect only ever fires
+  // loadChannel for the channel the viewer will actually end up on.
+  useEffect(() => {
+    if (channelId === 'all' && activeMember && isSenior) return;
+    loadChannel(channelId);
+  }, [channelId, isSenior, !!activeMember]);
 
   // One cheap query for last-activity + unread counts across every channel
   // this member can see, so the strip can sort/badge correctly even for
@@ -256,6 +288,13 @@ export default function ChatScreen() {
   };
 
   const rawMsgs = channels[channelId]?.messages ?? [];
+  // Was never read anywhere — loadChannel (chatStore.ts) sets this true
+  // while fetching, but nothing here checked it, so a slow load rendered
+  // the FlatList's empty state ("No messages yet. Say hello!") instead of
+  // any loading indicator — a genuinely slow/stalled channel open looked
+  // identical to an empty channel, reading as "hung" rather than "loading"
+  // (live-reported: Chat feels unresponsive on open).
+  const channelLoading = channels[channelId]?.loading ?? false;
   const msgs    = searchQuery.trim()
     ? rawMsgs.filter(m => m.text.toLowerCase().includes(searchQuery.toLowerCase()))
     : rawMsgs;
@@ -271,15 +310,23 @@ export default function ChatScreen() {
   }, [channelId, rawMsgs.length, activeMemberId]);
 
   type DayGroup = { type: 'day'; label: string } | { type: 'msg'; msg: ChatMessage };
-  const items: DayGroup[] = [];
-  let lastDay = '';
-  for (const m of msgs) {
-    const day = formatDay(m.timestamp);
-    if (day !== lastDay) { items.push({ type: 'day', label: day }); lastDay = day; }
-    items.push({ type: 'msg', msg: m });
-  }
-  // Inverted FlatList renders index-0 at the visual bottom — newest first
-  const reversedItems = [...items].reverse();
+  // Was recomputed synchronously on EVERY render (every keystroke, every
+  // scroll-throttle tick at 100ms) — a full pass + array copy over up to
+  // 100 messages, unconditionally, regardless of whether msgs actually
+  // changed. Live-reported as janky/unresponsive; this was one of several
+  // contributors (see MessageBubble memo + FlatList tuning fix earlier —
+  // this is the ChatScreen-side counterpart).
+  const reversedItems = useMemo(() => {
+    const items: DayGroup[] = [];
+    let lastDay = '';
+    for (const m of msgs) {
+      const day = formatDay(m.timestamp);
+      if (day !== lastDay) { items.push({ type: 'day', label: day }); lastDay = day; }
+      items.push({ type: 'msg', msg: m });
+    }
+    // Inverted FlatList renders index-0 at the visual bottom — newest first
+    return [...items].reverse();
+  }, [msgs]);
 
   // ── @mention suggestions ───────────────────────────────────────────────────
   // Scoped to who's ACTUALLY in the open channel — this used to suggest
@@ -309,7 +356,11 @@ export default function ChatScreen() {
     return 'unlinked';
   };
 
-  const currentChannelMemberIds: string[] = dmOtherId
+  // Was recomputed unmemoized on every render (keystrokes, scroll ticks)
+  // despite only ever depending on channelId/dmOtherId/members —
+  // memoized alongside the channel-list derivation above for the same
+  // reason.
+  const currentChannelMemberIds: string[] = useMemo(() => dmOtherId
     ? [activeMemberId, dmOtherId].filter((id): id is string => !!id)
     : channelId === 'parents'
       ? members.filter(m => m.role === 'parent').map(m => m.id)
@@ -333,7 +384,8 @@ export default function ChatScreen() {
           // opening this channel (see the groupChannels filter above and
           // the matching server-side RLS rule), so its real participants
           // are parents + kids/teens only, never seniors.
-          : members.filter(m => m.role !== 'senior').map(m => m.id);
+          : members.filter(m => m.role !== 'senior').map(m => m.id),
+    [dmOtherId, channelId, members, activeMemberId]);
 
   const mentionSuggestions = mentionQuery !== null
     ? members.filter(m =>
@@ -761,12 +813,18 @@ export default function ChatScreen() {
                 setTimeout(() => flatRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 }), 200);
               }}
               ListEmptyComponent={
-                <View style={{ alignItems: 'center', paddingVertical: 56 }}>
-                  <Text style={{ fontSize: 36, marginBottom: 12 }}>💬</Text>
-                  <Text style={{ fontSize: 13, color: colors.textTertiary, textAlign: 'center', lineHeight: 20 }}>
-                    {searchQuery ? `No results for "${searchQuery}"` : 'No messages yet.\nSay hello! 👋'}
-                  </Text>
-                </View>
+                channelLoading ? (
+                  <View style={{ alignItems: 'center', paddingVertical: 56 }}>
+                    <ActivityIndicator color={colors.primary} />
+                  </View>
+                ) : (
+                  <View style={{ alignItems: 'center', paddingVertical: 56 }}>
+                    <Text style={{ fontSize: 36, marginBottom: 12 }}>💬</Text>
+                    <Text style={{ fontSize: 13, color: colors.textTertiary, textAlign: 'center', lineHeight: 20 }}>
+                      {searchQuery ? `No results for "${searchQuery}"` : 'No messages yet.\nSay hello! 👋'}
+                    </Text>
+                  </View>
+                )
               }
               renderItem={({ item, index }) => {
                 if (item.type === 'day') {

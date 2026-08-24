@@ -718,8 +718,22 @@ export default function CalendarScreen() {
     // than one conflict was in play.
     const targetIds = conflict.eventIds?.length ? conflict.eventIds : [events[0]?.id].filter(Boolean) as string[];
     console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Apply Swap" on conflict idx=${idx} (eventIds=${targetIds.join(',')}) → updateEvent helper=${conflict.recommendedDriverSwap} [features/calendar/CalendarScreen.tsx:718]`);
+    const targetMember = members.find(m => m.name === conflict.recommendedDriverSwap);
     targetIds.forEach(id => {
-      updateEvent(id, { helper: conflict.recommendedDriverSwap, helperStatus: 'pending', conflict: false });
+      if (targetMember) {
+        const targetEvent = events.find(e => e.id === id);
+        const role: 'driver' | 'helper' = targetEvent?.driverName || (targetEvent?.rideRequired && !targetEvent?.helper) ? 'driver' : 'helper';
+        supabase.rpc('reassign_event', {
+          p_event_id: id, p_new_member_id: targetMember.id, p_role: role, p_actor_id: activeMemberId,
+        }).then(({ error }) => {
+          if (error) console.warn('[CalendarScreen] handleApplySwap reassign_event failed', error.message);
+        });
+      } else {
+        // No matching member row for the suggested name — fall back to the
+        // old direct write rather than silently drop the swap.
+        updateEvent(id, { helper: conflict.recommendedDriverSwap, helperStatus: 'pending' });
+      }
+      updateEvent(id, { conflict: false });
     });
     setAppliedSwaps(p => ({ ...p, [`swap_${idx}`]: true }));
   };

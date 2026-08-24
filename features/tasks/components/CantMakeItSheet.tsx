@@ -23,6 +23,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS, SPACING } from '@/constants/theme';
 import type { FamilyMember } from '@/store/familyStore';
 import { resolveCantMakeIt, type CantMakeItItem, type CantMakeItOutcome } from '../lib/cantMakeIt';
+import { showToast } from '@/components/AppToast';
 
 const REASONS = ['Something came up', 'Not feeling well', 'No ride', 'Need more time', 'Too hard, need help'];
 
@@ -56,6 +57,12 @@ export function CantMakeItSheet({
       reassignToMemberId: reassignMember?.id,
       reassignToMemberName: reassignMember?.name,
     });
+    showToast(
+      outcome === 'pool' ? "Marked — you're off this one ✓"
+      : outcome === 'reassign' ? `Sent to ${reassignMember?.name?.split(' ')[0] ?? 'them'} ✓`
+      : outcome === 'later' ? 'Sent back to re-time ✓'
+      : 'Cancelled ✓'
+    );
     close();
   };
 

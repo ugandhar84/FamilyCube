@@ -5,6 +5,7 @@ import { TYPO } from '@/constants/theme';
 import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useChatStore } from '@/store/chatStore';
+import { showToast } from '@/components/AppToast';
 
 // A task that bounced (Blocker/Trade/Discuss) and is now locked — previously
 // a permanent dead end with no button at all once both parents had "the
@@ -29,6 +30,7 @@ export function LockedAssignmentCard({ a, chore, active, members, colors, isDark
       { text: 'Reopen', onPress: () => {
         console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Reopen" on "${chore.title}" (id=${a.id}) → cancelLockedAssignment [features/hub/parent/backlog/LockedAssignmentCard.tsx:27]`);
         cancelLockedAssignment(a.id);
+        showToast('Reopened ✓');
         // Neither cancelLockedAssignment nor DelegateSheet's reassign path
         // notify the OTHER party in this negotiation — a task Marcus was
         // mid-discussion on would just silently vanish from his card with

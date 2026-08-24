@@ -799,6 +799,10 @@ interface ChoreState {
   // One-time chores and on/after-due-date recurring chores always succeed.
   submitChore:              (choreId: string, opts?: { photoUrl?: string; note?: string }) => boolean;
   resubmitChore:            (choreId: string, opts?: { photoUrl?: string; note?: string }) => void;
+  // Internal — shared by submitChore/resubmitChore, calls the submit_chore
+  // RPC (server-side redo-cap/self-assigned-parent branch + coin payout).
+  // Not part of the public store API surface, not called by UI directly.
+  _submitChoreViaRpc:       (choreId: string, chore: ChoreTask, opts?: { photoUrl?: string; note?: string }) => void;
   instantCompleteChore:     (choreId: string, childId: string) => void;
   startGrandparentQuest:    (choreId: string, childId: string) => void;
   submitGrandparentQuest:   (choreId: string, opts?: { photoUrl?: string; note?: string }) => void;
@@ -1954,137 +1958,104 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // (overdue/catch-up) submission are both fine, matching how "overdue"
     // is already defined elsewhere (dueDate <= today). One-time chores
     // (frequency 'once', or no recurrenceRule) are never gated by this.
+    // Purely a UX pre-check (no exploit in submitting "early" — the RPC
+    // below doesn't re-derive this), left client-side.
     const freq = chore.recurrenceRule?.frequency;
     if (freq && freq !== 'once' && chore.dueDate && chore.dueDate > localDateStr(new Date())) {
       return false;
     }
+    if (chore.requiresPhotoProof && !opts?.photoUrl && !chore.submissionPhotoUrl) return false;
 
-    // A parent completing ANY chore they self-created and self-assigned
-    // (not just an Adults-Only/parent_only_quest one — a parent claiming an
-    // ordinary household chore like "Clean the stovetop" from the pool is
-    // the same case) has nobody meaningful to review it — createdById ===
-    // assignedToId means no delegation ever happened (no other parent
-    // negotiated or accepted this via System A, no kid was ever assigned
-    // it), so requiring a separate "approve" tap from the same person who
-    // just did the work is pure friction, not real oversight. A kid/teen's
-    // own chore, and any genuinely delegated adult task (createdById !==
-    // assignedToId, e.g. Priya assigns Marcus), still go through the
-    // normal pending_approval review — that review is real: it's a
-    // different person checking the work.
-    const isSelfAssignedByParent = (() => {
-      if (!chore.createdById || chore.createdById !== chore.assignedToId) return false;
-      const { useFamilyStore } = require('./familyStore');
-      const assignee = useFamilyStore.getState().members.find((m: any) => m.id === chore.assignedToId);
-      return assignee?.role === 'parent';
-    })();
-    if (isSelfAssignedByParent) {
-      const now = new Date().toISOString();
-      get().updateChore(choreId, {
-        status: 'approved', approvedAt: now, reviewedAt: now,
-        submissionNote: opts?.note, submissionPhotoUrl: opts?.photoUrl, submittedAt: now,
-      });
-      const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
-      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward);
-      return true;
-    }
-
-    // Spec: if redo_count >= 2, auto-approve immediately — no more manual
-    // review. Same photo-proof gap as resubmitChore's identical branch:
-    // must still require a photo before this fires for a photo-required
-    // chore, not silently pay out with no proof on file.
-    if ((chore.redoCount ?? 0) >= 2 && (!chore.requiresPhotoProof || !!opts?.photoUrl)) {
-      const now = new Date().toISOString();
-      get().updateChore(choreId, {
-        status: 'auto_approved', approvedAt: now, reviewedAt: now,
-        submissionNote: opts?.note, submissionPhotoUrl: opts?.photoUrl, submittedAt: now,
-      });
-      const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
-      const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
-      // Scenario 1.13 — same reward gate as approveChore: work still
-      // auto-approves, coin payout waits if flagged.
-      if (pts > 0 && chore.assignedToId && !chore.rewardPendingReview) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward, wallet);
-      return true;
-    }
-
-    const now = new Date().toISOString();
-    const expiry = new Date(Date.now() +
-      (get().householdSettings.autoApproveTimeoutHours * 3600_000)).toISOString();
-
-    get().updateChore(choreId, {
-      status:                  'pending_approval',
-      submissionNote:          opts?.note,
-      submissionPhotoUrl:      opts?.photoUrl,
-      submittedAt:             now,
-      approvalWindowExpiresAt: expiry,
-    });
-    notifyQuestSubmitted(chore);
+    get()._submitChoreViaRpc(choreId, chore, opts);
     return true;
+  },
+
+  // QA punch list #3 — submitChore/resubmitChore used to compose the whole
+  // status transition (including which of self-assigned-parent/redo-cap-
+  // auto-approve/normal-pending_approval branch to take, and the coin
+  // payout itself) entirely client-side, trusting the LOCAL chore.redoCount
+  // — a stale or modified client could bypass the "max 2 redo rounds, then
+  // auto-approve" cap that way. Both now optimistically update local state
+  // (so the UI feels instant) then call submit_chore, which re-derives
+  // every branch from the DB ROW and pays out via award_coins atomically —
+  // see migration 20260908130000_submit_chore_rpc.sql. Shared by
+  // submitChore and resubmitChore since the server-side branch is
+  // identical either way (the RPC only cares about the row's own status/
+  // redo_count/created_by_id, not which client action name got there).
+  _submitChoreViaRpc: (choreId: string, chore: ChoreTask, opts?: { photoUrl?: string; note?: string }) => {
+    const now = new Date().toISOString();
+    // Optimistic guess — pending_approval unless the RPC's own re-derived
+    // branches (self-assigned-parent / redo-cap) say otherwise, corrected
+    // by the RPC's real response below.
+    get().updateChore(choreId, {
+      status: 'pending_approval', submissionNote: opts?.note, submissionPhotoUrl: opts?.photoUrl, submittedAt: now,
+    });
+    supabase.rpc('submit_chore', {
+      p_chore_id: choreId, p_member_id: chore.assignedToId,
+      p_note: opts?.note ?? null, p_photo_url: opts?.photoUrl ?? null,
+    }).then(({ data, error }) => {
+      if (error) {
+        console.warn('[choreStore] submit_chore RPC failed on', choreId, '— rolling back local state:', error.message);
+        set(s => ({ chores: s.chores.map(c => c.id === choreId ? chore : c) }));
+        AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+        return;
+      }
+      const result = Array.isArray(data) ? data[0] : data;
+      if (!result) return;
+      const newStatus: ChoreStatus = result.chore.status;
+      set(s => ({
+        chores: s.chores.map(c => c.id === choreId ? {
+          ...c, status: newStatus,
+          approvedAt: result.chore.approved_at ?? c.approvedAt,
+          reviewedAt: result.chore.reviewed_at ?? c.reviewedAt,
+          approvalWindowExpiresAt: result.chore.approval_window_expires_at ?? c.approvalWindowExpiresAt,
+        } : c),
+      }));
+      AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+      _fetchedAt = 0;
+      // award_coins already ran server-side inside the RPC — mirror the
+      // local member-balance patch + jar-split reporting row awardPoints()
+      // normally does, without re-calling award_coins a second time (that
+      // would double-pay). See awardPoints()'s own comment: the RPC call
+      // is the source of truth, everything else here is display/reporting.
+      if (result.coins_paid > 0 && chore.assignedToId) {
+        const wallet: 'mainCoins' | 'gpCoins' = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
+        try {
+          const { useFamilyStore } = require('./familyStore');
+          useFamilyStore.setState((s: any) => ({
+            members: s.members.map((m: any) => m.id === chore.assignedToId
+              ? wallet === 'gpCoins'
+                ? { ...m, gpCoins: Math.max(0, (m.gpCoins ?? 0) + result.coins_paid), xp: Math.max(0, (m.xp ?? 0) + (chore.xpReward ?? 0)) }
+                : { ...m, coins: Math.max(0, (m.coins ?? 0) + result.coins_paid), mainCoins: Math.max(0, (m.mainCoins ?? 0) + result.coins_paid), xp: Math.max(0, (m.xp ?? 0) + (chore.xpReward ?? 0)) }
+              : m),
+          }));
+        } catch { /* familyStore not mounted yet — server balance still landed */ }
+        const settings = get().householdSettings;
+        const { spend, save, give } = wallet === 'gpCoins' ? { spend: result.coins_paid, save: 0, give: 0 } : calculateJarSplit(result.coins_paid, settings);
+        dbInsert('point_transactions', {
+          id: genId(), user_id: chore.assignedToId, chore_instance_id: choreId, amount: result.coins_paid,
+          transaction_type: 'EARNED', spend_allocation: spend, save_allocation: save, give_allocation: give,
+          notes: result.auto_approved ? 'Chore auto-approved (redo cap reached)' : 'Chore approved', created_at: now, wallet,
+        });
+      }
+      if (newStatus === 'pending_approval') notifyQuestSubmitted(chore);
+    });
   },
 
   resubmitChore: (choreId, opts) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'redo_requested') return;
+    if (chore.requiresPhotoProof && !opts?.photoUrl && !chore.submissionPhotoUrl) return;
 
-    // Same self-assigned-by-a-parent shortcut as submitChore — see that
-    // function's comment for the full reasoning.
-    const isSelfAssignedByParentResubmit = (() => {
-      if (!chore.createdById || chore.createdById !== chore.assignedToId) return false;
-      const { useFamilyStore } = require('./familyStore');
-      const assignee = useFamilyStore.getState().members.find((m: any) => m.id === chore.assignedToId);
-      return assignee?.role === 'parent';
-    })();
-    if (isSelfAssignedByParentResubmit) {
-      const now = new Date().toISOString();
-      get().updateChore(choreId, {
-        status: 'approved', approvedAt: now, reviewedAt: now,
-        submissionNote: opts?.note ?? chore.submissionNote,
-        submissionPhotoUrl: opts?.photoUrl ?? chore.submissionPhotoUrl,
-        submittedAt: now,
-      });
-      const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
-      if (pts > 0 && chore.assignedToId) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward);
-      return;
-    }
-
-    // Spec: redo_count >= 2 → auto-approve. Was: paid out unconditionally
-    // here with zero regard for opts?.photoUrl or chore.requiresPhotoProof
-    // — every UI entry point (Hub's SubmitProofSheet, the Quests tab's
-    // submit sheet, ChildChoreBoard) correctly resets its own local photo
-    // state and blocks its Submit button until a fresh photo is attached
-    // for redo attempts 1 and 2, but this 3rd-attempt auto-approve branch
-    // never checked at all — a kid tapping resubmit with no photo on their
-    // 3rd try (or a caller that bypassed the client gate) got paid for a
-    // photo-required chore with literally no proof on file (reported
-    // directly by the user). The "don't let a parent indefinitely
-    // stonewall a kid" protection stays intact — a photo is still
-    // required to actually trigger it, it just can't be skipped.
-    if ((chore.redoCount ?? 0) >= 2 && (!chore.requiresPhotoProof || !!opts?.photoUrl)) {
-      const now = new Date().toISOString();
-      get().updateChore(choreId, {
-        status: 'auto_approved', approvedAt: now, reviewedAt: now,
-        submissionNote: opts?.note ?? chore.submissionNote,
-        submissionPhotoUrl: opts?.photoUrl ?? chore.submissionPhotoUrl,
-        submittedAt: now,
-      });
-      const pts = (chore.basePoints > 0 ? chore.basePoints : chore.coinsReward) + (chore.bonusCoins ?? 0);
-      const wallet = chore.categoryType === 'grandparent_quest' || chore.sponsorUserId ? 'gpCoins' : 'mainCoins';
-      // Scenario 1.13 — same reward gate as approveChore/submitChore.
-      if (pts > 0 && chore.assignedToId && !chore.rewardPendingReview) get().awardPoints(chore.assignedToId, choreId, pts, chore.xpReward, wallet);
-      return;
-    }
-
-    const now = new Date().toISOString();
-    const expiry = new Date(Date.now() +
-      (get().householdSettings.autoApproveTimeoutHours * 3600_000)).toISOString();
-
-    get().updateChore(choreId, {
-      status:                  'pending_approval',
-      submissionNote:          opts?.note ?? chore.submissionNote,
-      submissionPhotoUrl:      opts?.photoUrl ?? chore.submissionPhotoUrl,
-      submittedAt:             now,
-      approvalWindowExpiresAt: expiry,
+    // Same submit_chore RPC as submitChore — see that function's comment
+    // and migration 20260908130000_submit_chore_rpc.sql. The RPC's own
+    // status check already accepts 'redo_requested' as a valid starting
+    // state, so no separate resubmit-specific RPC is needed; the
+    // self-assigned-parent/redo-cap branches are identical either way.
+    get()._submitChoreViaRpc(choreId, chore, {
+      note: opts?.note ?? chore.submissionNote,
+      photoUrl: opts?.photoUrl ?? chore.submissionPhotoUrl,
     });
-    notifyQuestSubmitted(chore);
   },
 
   // Citizenship 0-pt tasks: tap = immediate complete, no review needed

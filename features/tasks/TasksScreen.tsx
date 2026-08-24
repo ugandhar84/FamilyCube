@@ -247,7 +247,7 @@ export default function TasksScreen() {
 
       {searchOpen && (
         <Animated.View style={{
-          marginHorizontal: 14, marginBottom: 8,
+          marginHorizontal: 14, marginTop: 10, marginBottom: 6,
           opacity: searchAnim,
           transform: [{ translateY: searchAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
         }}>
@@ -255,7 +255,7 @@ export default function TasksScreen() {
             flexDirection: 'row', alignItems: 'center', gap: 8,
             borderRadius: RADIUS.lg, borderWidth: 1.5, borderColor: colors.border,
             backgroundColor: isDark ? colors.surface : '#F8FAFC',
-            paddingHorizontal: 12, paddingVertical: 10,
+            paddingHorizontal: 12, paddingVertical: 13,
           }}>
             <Search size={15} color={colors.textTertiary} />
             <TextInput
@@ -280,7 +280,7 @@ export default function TasksScreen() {
           drop-down pattern. Same 3 tools/tints as the inline pill this
           replaces (AiEngineBanner), just relocated. */}
       {aiOpen && (
-        <View style={{ flexDirection: 'row', gap: 8, marginHorizontal: 14, marginBottom: 8 }}>
+        <View style={{ flexDirection: 'row', gap: 8, marginHorizontal: 14, marginTop: 10, marginBottom: 6 }}>
           {([
             { key: 'autobalance' as const, label: 'Balance', Icon: Sparkles, tint: colors.primary },
             { key: 'spark' as const, label: 'Spark', Icon: Flame, tint: colors.kid },
@@ -293,7 +293,7 @@ export default function TasksScreen() {
                 activeOpacity={0.8}
                 style={{
                   flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-                  paddingVertical: 9, borderRadius: RADIUS.lg,
+                  paddingVertical: 13, borderRadius: RADIUS.lg,
                   backgroundColor: toolActive ? tint : tint + '18',
                   borderWidth: 1, borderColor: tint + (toolActive ? '' : '40'),
                 }}

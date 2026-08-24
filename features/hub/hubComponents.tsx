@@ -308,7 +308,7 @@ export function UrgencyBadge({ hours, hasIssue }: { hours: number; hasIssue: boo
 // separate components (AlertBanner and EventDetailSheet) both drive
 // DriverChipRow's onAssign. Call BEFORE updateEvent so `ev` still holds
 // the outgoing assignee's name.
-function notifyTakeover(ev: FamilyEvent, newName: string, members: FamilyMember[], activeName?: string) {
+export function notifyTakeover(ev: FamilyEvent, newName: string, members: FamilyMember[], activeName?: string) {
   const prevName = ev.helper ?? ev.driverName;
   if (!prevName || prevName === newName) return;
   const actor = members.find(m => m.name === activeName);

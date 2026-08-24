@@ -187,7 +187,7 @@ export function ActionNeededSection({
     ranked.push({
       key: `ride-required-${ev.id}`, age,
       severity, score,
-      node: <RideRequiredEventCard key={ev.id} ev={ev} active={active} colors={colors} isDark={isDark}
+      node: <RideRequiredEventCard key={ev.id} ev={ev} active={active} members={members} colors={colors} isDark={isDark}
         updateEvent={updateEvent} updateEventScoped={updateEventScoped} addEvent={addEvent} />,
     });
   }

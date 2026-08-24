@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { Medal, HeartPulse, BookOpen, Calendar, Car, CheckCircle2, HandHelping, Repeat, MapPinCheck, Flag } from 'lucide-react-native';
+import { Medal, HeartPulse, BookOpen, Calendar, Car, CheckCircle2, HandHelping, Repeat, MapPinCheck, Flag, UserCog } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
-import { CollapsibleCard } from '../hubComponents';
+import { CollapsibleCard, notifyTakeover } from '../hubComponents';
 import { fmtTime } from '../hubUtils';
 import { parseRideMeta, plus90Minutes, forkRideLegs } from './rideLegs';
 import { PickupTimeStepper } from './PickupTimeStepper';
@@ -27,8 +27,8 @@ import type { FamilyEvent } from '@/store/eventStore';
 const DROPOFF_GREEN = '#10B981';
 const PICKUP_INDIGO = '#6366F1';
 
-export function RideRequiredEventCard({ ev, active, colors, isDark, updateEvent, updateEventScoped, addEvent }: {
-  ev: FamilyEvent; active: FamilyMember; colors: any; isDark: boolean;
+export function RideRequiredEventCard({ ev, active, members, colors, isDark, updateEvent, updateEventScoped, addEvent }: {
+  ev: FamilyEvent; active: FamilyMember; members: FamilyMember[]; colors: any; isDark: boolean;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
   updateEventScoped?: (id: string, patch: Partial<FamilyEvent>, scope: 'this' | 'following' | 'all') => void;
   addEvent: (ev: Omit<FamilyEvent, 'id'>) => string;
@@ -38,6 +38,8 @@ export function RideRequiredEventCard({ ev, active, colors, isDark, updateEvent,
   const { isBothWays, isDropoff, isPickup, pickupDateKnownOnly, pickupLabel: returnTimeStr } = rideMeta;
   const pickupIsDifferentDay = rideMeta.pickupDate && rideMeta.pickupDate !== ev.date;
   const [pickupTimeOverride, setPickupTimeOverride] = useState<string | null>(null);
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const otherParents = members.filter(m => m.role === 'parent' && m.id !== active.id);
 
   // Naming yourself as the driver here IS the "yes, I'm driving this
   // series going forward" moment — propagates to future occurrences the
@@ -70,6 +72,25 @@ export function RideRequiredEventCard({ ev, active, colors, isDark, updateEvent,
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Open to Helpers" on "${ev.title}" (id=${ev.id}) → updateEvent(openToGrandparents/openToTeens) [features/hub/parent/RideRequiredEventCard.tsx:61]`);
     updateEvent(ev.id, { isOpenToGrandparents: true, isOpenToTeens: true, driverName: undefined, driverStatus: undefined });
     showToast('Opened to helpers ✓');
+  };
+
+  // Parent-to-parent handoff — a third option alongside "I'll Drive"
+  // (keep it) and "Open to Helpers" (open to GP/teen pool). Same
+  // reassign_event RPC + notifyTakeover flow EventDetailSheet's own
+  // DriverChipRow already uses for this exact case: reassigning to
+  // someone other than yourself starts 'pending' (the RPC's own status
+  // logic), requiring the new parent's own confirm, not auto-confirmed
+  // the way "I'll Drive" is.
+  const reassignTo = (m: FamilyMember) => {
+    console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Reassign to ${m.name}" on "${ev.title}" (id=${ev.id}) → reassign_event(driver) [features/hub/parent/RideRequiredEventCard.tsx]`);
+    notifyTakeover(ev, m.name, members, active.name);
+    supabase.rpc('reassign_event', {
+      p_event_id: ev.id, p_new_member_id: m.id, p_role: 'driver', p_actor_id: active.id,
+    }).then(({ error }) => {
+      if (error) { console.warn('[RideRequiredEventCard] reassignTo reassign_event failed', error.message); return; }
+      showToast(`Assigned to ${m.name.split(' ')[0]} ✓`);
+    });
+    setReassignOpen(false);
   };
 
   const forkRide = (selfDrive: boolean) => {
@@ -167,17 +188,38 @@ export function RideRequiredEventCard({ ev, active, colors, isDark, updateEvent,
           </View>
         </View>
       ) : (
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Pressable onPress={iDrive}
-            style={{ flex: 1, backgroundColor: colors.warning, paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-            <CheckCircle2 size={14} color="#fff" />
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
-          </Pressable>
-          <Pressable onPress={openToHelpers}
-            style={{ flex: 1, backgroundColor: colors.warning + '20', borderWidth: 1.5, borderColor: colors.warning + '50', paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
-            <HandHelping size={14} color={colors.warning} />
-            <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.warning }}>Open to Helpers</Text>
-          </Pressable>
+        <View style={{ gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Pressable onPress={iDrive}
+              style={{ flex: 1, backgroundColor: colors.warning, paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+              <CheckCircle2 size={14} color="#fff" />
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
+            </Pressable>
+            {otherParents.length > 0 && (
+              <Pressable onPress={() => setReassignOpen(v => !v)}
+                style={{ flex: 1, backgroundColor: reassignOpen ? colors.parent + '20' : colors.warning + '20', borderWidth: 1.5, borderColor: reassignOpen ? colors.parent + '50' : colors.warning + '50', paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
+                <UserCog size={14} color={reassignOpen ? colors.parent : colors.warning} />
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: reassignOpen ? colors.parent : colors.warning }}>Reassign</Text>
+              </Pressable>
+            )}
+            <Pressable onPress={openToHelpers}
+              style={{ flex: 1, backgroundColor: colors.warning + '20', borderWidth: 1.5, borderColor: colors.warning + '50', paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
+              <HandHelping size={14} color={colors.warning} />
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.warning }}>Open to Helpers</Text>
+            </Pressable>
+          </View>
+          {reassignOpen && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {otherParents.map(m => (
+                <Pressable key={m.id} onPress={() => reassignTo(m)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 9,
+                    borderRadius: 999, borderWidth: 1.5, borderColor: colors.parent + '50', backgroundColor: colors.parent + '14' }}>
+                  <UserCog size={13} color={colors.parent} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.parent }}>{m.name.split(' ')[0]}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
         </View>
       )}
     </CollapsibleCard>

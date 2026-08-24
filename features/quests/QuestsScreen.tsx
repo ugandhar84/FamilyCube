@@ -790,18 +790,20 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
         {headerContent}
 
         {/* ── Title ── */}
-        <View style={[s.titleRow, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.title, { color: colors.textPrimary }]}>
-              {isKid ? 'My Chores' : 'Household Chores'}
-            </Text>
-            {isParent && (
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple, marginTop: 1 }}>
-                Add quests, approve chores & distribute coins
+        {!hideHeader && (
+          <View style={[s.titleRow, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.title, { color: colors.textPrimary }]}>
+                {isKid ? 'My Chores' : 'Household Chores'}
               </Text>
-            )}
+              {isParent && (
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple, marginTop: 1 }}>
+                  Add quests, approve chores & distribute coins
+                </Text>
+              )}
+            </View>
           </View>
-        </View>
+        )}
 
         {/* ── AI toggle + search/filter + add-chore, one shared row (wraps
             to a second line if things are expanded at once) ── */}

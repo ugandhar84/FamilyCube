@@ -996,13 +996,17 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
         <View>
           <View style={[sc.titleRow, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }]}>
             <View>
-              <Text style={[sc.title, { color: isDark ? colors.textPrimary : '#1E2D6B' }]}>
-                {isKid ? 'My Schedule' : 'Family Schedule'}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 1 }}>
-                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>
-                  {selectedDateLabel}
+              {!hideHeader && (
+                <Text style={[sc.title, { color: isDark ? colors.textPrimary : '#1E2D6B' }]}>
+                  {isKid ? 'My Schedule' : 'Family Schedule'}
                 </Text>
+              )}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 1 }}>
+                {!hideHeader && (
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>
+                    {selectedDateLabel}
+                  </Text>
+                )}
                 {selectedDate !== todayStr && (
                   <TouchableOpacity onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "Today" pill [features/calendar/CalendarScreen.tsx:984]`); goToToday(); }}
                     style={{ borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: BRAND.purple + '15' }}>

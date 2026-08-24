@@ -21,7 +21,7 @@ import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 export function HouseholdBacklogSection({
   active, members, colors, isDark,
   questPool, myAdultQuests, othersAdultQuests, myDirectPending, myLockedItems, myOutgoingPending, myHelperEvents,
-  familyRideCoordination,
+  coParentPending,
   systemBIds, parentAssignments,
   updateQuest, updateEvent, updateEventScoped, completeParentQuest, respondToParentQuest, cancelLockedAssignment, recallParentQuest, appreciationPing, handlePullTask,
   onAddTask, onDelegate, onRespond,
@@ -34,7 +34,7 @@ export function HouseholdBacklogSection({
   myHelperEvents: FamilyEvent[];
   // Read-only — a co-parent's ride still finding a driver. Optional so any
   // call site not yet updated still compiles.
-  familyRideCoordination?: FamilyEvent[];
+  coParentPending?: FamilyEvent[];
   systemBIds: Set<string>; parentAssignments: ParentQuestAssignment[];
   updateQuest: (id: string, patch: Partial<Quest>) => void;
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
@@ -78,7 +78,7 @@ export function HouseholdBacklogSection({
   const isEmpty = questPool.length === 0 && myDirectPending.length === 0
     && myHelperEvents.length === 0 && myLockedItems.length === 0 && myOutgoingPending.length === 0
     && othersAdultQuests.length === 0 && myAdultQuests.length === 0
-    && !familyRideCoordination?.length;
+    && !coParentPending?.length;
 
   // Soonest due date first within a group — undated items sort last so
   // something with a deadline never gets buried under whatever loaded first.
@@ -96,7 +96,7 @@ export function HouseholdBacklogSection({
         accent={colors.warning}
         badge={badgeCount} badgeLabel="Active" badgeColor={colors.warning}
         // Was `myPendingCount > 0` — that count excludes othersAdultQuests
-        // and familyRideCoordination, both of which render real visible
+        // and coParentPending, both of which render real visible
         // content in this card (an "Assigned to others" delegation, a
         // family ride coordination row) — so a parent could see genuine
         // content here yet the section still defaulted to collapsed. Use
@@ -196,13 +196,13 @@ export function HouseholdBacklogSection({
               </View>
             )}
 
-            {!!familyRideCoordination?.length && (
+            {!!coParentPending?.length && (
               <View style={{ gap: 6 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 }}>
                   <Car size={12} color={colors.textTertiary} />
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>Family ride status</Text>
                 </View>
-                {familyRideCoordination.map(ev => (
+                {coParentPending.map(ev => (
                   <RideCoordinationRow key={ev.id} ev={ev} members={members} colors={colors} isDark={isDark} />
                 ))}
               </View>

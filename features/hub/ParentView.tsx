@@ -13,6 +13,7 @@ import { AddEventModal } from '@/features/calendar/EventFormModal';
 import type { FamilyMember } from '@/store/familyStore';
 import { AlertBanner, PickupRadarStatus } from './hubComponents';
 import { localToday, hoursUntilEvent, isWorkEvent, minutesBetween } from './hubUtils';
+import { classifyEventUrgency } from './lib/classifyEventUrgency';
 import { TodayView, GreetingHeader } from './TodayView';
 import { useChoreStore } from '@/store/choreStore';
 import type { ChoreTask } from '@/store/choreStore';
@@ -105,42 +106,23 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   const workEvents    = allTodayEvents.filter(e => isWorkEvent(e));
   const todayEvents   = allTodayEvents.filter(e => !isWorkEvent(e));
 
-  // Excludes rideRequired — that field pair (driverName/driverStatus) is
-  // handled entirely by pendingRideRequiredEvents below via
-  // RideRequiredEventCard. Without this exclusion, a KID-created
-  // rideRequired event (which also sets approvalPending=true at creation,
-  // same as a plain Ride request) matched here first and rendered via
-  // RideRequestCard instead — a card that reads/writes helper/helperStatus,
-  // which this event never uses, so "I'll Drive" silently wrote to a field
-  // nothing else in the app was watching while the event stayed stuck
-  // "needs a driver" forever on its actual field pair (QA Round 11, High
-  // Finding H2).
-  const pendingRequests  = events.filter(e =>
-    e.approvalPending && !e.rideRequired && !isWorkEvent(e) && hoursUntilEvent(e.date, e.time) >= 0
+  // Single classification pass replacing 4 independently-derived filters
+  // that used to live here (pendingRequests, pendingRideRequiredEvents,
+  // myHelperEvents, familyRideCoordination) — see classifyEventUrgency.ts
+  // for the unassigned/myPending/coParentPending bucket rules and the field-
+  // pair-consistency bugs this closed (myHelperEvents used to read raw
+  // e.helper only, silently dropping driverName-paired events from a
+  // parent's own Household Backlog; the same unconfirmed ride could
+  // previously show in both AlertBanner and Action Needed at once).
+  const { unassigned, myPending, coParentPending } = classifyEventUrgency(
+    events, { id: active.id, name: active.name }, today,
   );
-  // A non-Ride event (Sports/Study/Medical/etc) with its own "needs a ride"
-  // toggle (rideRequired) previously had NO presence in Action Needed at
-  // all — only category:'Ride' events fed pendingRequests above. A parent
-  // had to notice it buried in the day's Schedule/Agenda instead, and each
-  // materialized occurrence of a recurring rideRequired series showed its
-  // own separate "no driver" indicator there with no way to decide once.
-  // This treats "still needs a driver" the same way regardless of which
-  // field pair the event uses (helper/helperStatus for Ride,
-  // driverName/driverStatus for rideRequired) — both feed the same Action
-  // Needed surface and the same series-dedup/carry-forward behavior.
-  const pendingRideRequiredEvents = events.filter(e => {
-    if (!e.rideRequired || isWorkEvent(e) || hoursUntilEvent(e.date, e.time) < 0) return false;
-    // rideRequired's assignee can live in EITHER field pair — driverName/
-    // driverStatus (assigned via RideRequiredEventCard/reassign_event) or
-    // helper/helperStatus (assigned via the plain Ride-category create
-    // form, which never touches driverName at all). Checking driverName
-    // alone missed every rideRequired event whose driver actually landed
-    // in the helper pair — it silently never showed up in Action Needed,
-    // however unconfirmed it stayed (reported live: an unconfirmed
-    // today-driver ride wasn't surfacing on the parent's Hub at all).
-    const a = eventAssignee(e);
-    return !a.name || a.status === 'pending' || a.status === 'rejected';
-  });
+  // ActionNeededSection still renders 2 distinct card types (RideRequestCard
+  // vs RideRequiredEventCard) — this split is purely about which card to
+  // render, not which events are in-scope, so it stays here rather than
+  // inside the classifier.
+  const pendingRequests = unassigned.filter(e => e.category === 'Ride' && !e.rideRequired);
+  const pendingRideRequiredEvents = unassigned.filter(e => e.rideRequired);
   // pending_approval and pending_grandparent_approval both collapse to the
   // same client-side status (choreAdapter's choreStatusToQuestStatus) — a
   // grandparent_quest awaiting its sponsor's review must NOT show up in the
@@ -169,14 +151,18 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     }
   }
 
-  // B: helper/driver double-booked (same helper name, <30 min, not rejected, non-Work)
-  const timedHelperEvents = upcomingEvents.filter(e => !!e.time && !!e.helper && e.helperStatus !== 'rejected');
+  // B: helper/driver double-booked (same assignee name, <30 min, not
+  // rejected, non-Work). Was raw e.helper-only — missed a conflict between
+  // two driverName-paired (rideRequired) events, or one of each pair,
+  // since only eventAssignee() checks both field pairs.
+  const timedHelperEvents = upcomingEvents.filter(e => !!e.time && !!eventAssignee(e).name && eventAssignee(e).status !== 'rejected');
   for (let i = 0; i < timedHelperEvents.length; i++) {
     for (let j = i + 1; j < timedHelperEvents.length; j++) {
       const a = timedHelperEvents[i], b = timedHelperEvents[j];
-      if (a.helper !== b.helper) continue;
+      const aName = eventAssignee(a).name, bName = eventAssignee(b).name;
+      if (aName !== bName) continue;
       if (minutesBetween(a.time!, b.time!) < 30) {
-        const label = `${a.helper!.split(' ')[0]} assigned to 2 events`;
+        const label = `${aName!.split(' ')[0]} assigned to 2 events`;
         if (!conflictReasons.has(a.id)) conflictReasons.set(a.id, label);
         if (!conflictReasons.has(b.id)) conflictReasons.set(b.id, label);
       }
@@ -203,9 +189,9 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // from check C, which only catches a kid's own event colliding with a
   // work event for that same person — this catches a helper assignment
   // colliding with the helper's own work schedule.
-  const timedHelperAssignments = upcomingEvents.filter(e => !!e.time && !!e.helper && e.helperStatus !== 'rejected');
+  const timedHelperAssignments = upcomingEvents.filter(e => !!e.time && !!eventAssignee(e).name && eventAssignee(e).status !== 'rejected');
   for (const familyEv of timedHelperAssignments) {
-    const helperMember = members.find(m => m.name === familyEv.helper);
+    const helperMember = members.find(m => m.name === eventAssignee(familyEv).name);
     if (!helperMember) continue;
     for (const workEv of upcomingWorkEvents) {
       if (workEv.memberId !== helperMember.id) continue;
@@ -437,32 +423,18 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // card for an accepted delegation — confirmed via live QA to render
   // with the correct Done/Reassign/Nudge-back actions.
   const myOutgoingPending = getMyOutgoingPending(active.id);
-  // Calendar events where this parent is the assigned helper/driver — show in HB.
-  // Backlog is for things still needing action: once confirmed, it's a settled
-  // commitment (visible in Schedule instead), not something to pull off a backlog.
-  const myHelperEvents = events.filter(e => {
-    if (!e.helper || e.helper !== active.name) return false;
-    if (e.helperStatus === 'rejected' || e.helperStatus === 'confirmed') return false;
-    return (e.date ?? '') >= today;
-  });
+  // Calendar events where this parent is the assigned helper/driver — show
+  // in Household Backlog. Backlog is for things still needing action: once
+  // confirmed, it's a settled commitment (visible in Schedule instead), not
+  // something to pull off a backlog. Sourced from classifyEventUrgency
+  // above (myPending) — see that file for the exact rule.
+  const myHelperEvents = myPending;
 
-  // A ride the OTHER parent opened to helpers, or that's been claimed by
-  // a GP/teen but not yet confirmed, previously fell through every parent
-  // surface: pendingRequests requires approvalPending (already cleared
-  // once opened), pendingRideRequiredEvents requires rideRequired (this
-  // is category:'Ride'), myHelperEvents requires this parent to BE the
-  // assignee. A parent had zero visibility into a co-parent's outstanding
-  // ride until it either got confirmed or stalled long enough to trip the
-  // <1hr escalation banner (QA Round 12, Finding M3 — confirmed still
-  // open). Read-only awareness only, deliberately no claim/assign action
-  // here — offering one would reopen the exact claim-race class Round 11
-  // just closed, from a third surface.
-  const familyRideCoordination = events.filter(e => {
-    if (e.createdBy === active.id || isWorkEvent(e)) return false;
-    if (!(e.isOpenToGrandparents || e.isOpenToTeens)) return false;
-    if (eventAssignee(e).status === 'confirmed') return false;
-    return hoursUntilEvent(e.date, e.time) >= 0;
-  });
+  // A co-parent's own outstanding ride assignment (self-claimed, opened to
+  // GP/teen, or directly reassigned to them) — read-only awareness only,
+  // deliberately no claim/assign action here, since offering one would
+  // reopen the exact claim-race class the RPC migration closed elsewhere.
+  // Sourced from classifyEventUrgency above (coParentPending).
 
   const backlogCount = questPool.length + myAdultQuests.length + othersAdultQuests.length + myHelperEvents.length;
 
@@ -579,7 +551,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         questPool={questPool} myAdultQuests={myAdultQuests} othersAdultQuests={othersAdultQuests}
         myDirectPending={myDirectPending} myLockedItems={myLockedItems}
         myOutgoingPending={myOutgoingPending}
-        myHelperEvents={myHelperEvents} familyRideCoordination={familyRideCoordination} systemBIds={systemBIds} parentAssignments={parentAssignments}
+        myHelperEvents={myHelperEvents} coParentPending={coParentPending} systemBIds={systemBIds} parentAssignments={parentAssignments}
         updateQuest={updateQuest} updateEvent={updateEvent} updateEventScoped={updateEventScoped}
         completeParentQuest={completeParentQuest} respondToParentQuest={respondToParentQuest}
         cancelLockedAssignment={cancelLockedAssignment} recallParentQuest={recallParentQuest}

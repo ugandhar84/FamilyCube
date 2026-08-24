@@ -8,6 +8,7 @@ import { parseRideMeta, plus90Minutes, forkRideLegs } from './rideLegs';
 import { PickupTimeStepper } from './PickupTimeStepper';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
+import { deriveEventActions } from '@/features/tasks/lib/deriveCardActions';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
@@ -40,6 +41,14 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
   const [pickupTimeOverride, setPickupTimeOverride] = useState<string | null>(null);
   const [reassignOpen, setReassignOpen] = useState(false);
   const otherParents = members.filter(m => m.role === 'parent' && m.id !== active.id);
+  // Shared gating logic (deriveCardActions.ts) instead of the naive
+  // otherParents.length > 0 check this card had before — without it, a
+  // driver who'd already CONFIRMED could still be silently reassigned via
+  // this card's Reassign button, the exact case showReassign's
+  // !helperConfirmed guard exists elsewhere to prevent.
+  const { showReassign } = deriveEventActions(
+    ev, { id: active.id, name: active.name, role: active.role, hasCar: active.hasCar },
+  );
 
   // Naming yourself as the driver here IS the "yes, I'm driving this
   // series going forward" moment — propagates to future occurrences the
@@ -195,7 +204,7 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
               <CheckCircle2 size={12} color="#fff" />
               <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }} numberOfLines={1}>I'll Drive</Text>
             </Pressable>
-            {otherParents.length > 0 && (
+            {showReassign && otherParents.length > 0 && (
               <Pressable onPress={() => setReassignOpen(v => !v)}
                 style={{ flex: 1, backgroundColor: reassignOpen ? colors.parent + '20' : colors.warning + '20', borderWidth: 1.5, borderColor: reassignOpen ? colors.parent + '50' : colors.warning + '50', paddingVertical: 9, paddingHorizontal: 4, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 3 }}>
                 <UserCog size={12} color={reassignOpen ? colors.parent : colors.warning} />

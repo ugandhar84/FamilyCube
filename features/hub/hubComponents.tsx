@@ -25,6 +25,7 @@ import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
 import { decryptLocationText } from '@/lib/locationCrypto';
+import { deriveEventActions } from '@/features/tasks/lib/deriveCardActions';
 
 // ─── LiveDot ──────────────────────────────────────────────────────────────────
 // Pulsing dot for "LIVE NOW" indicators — a soft outward ring pulse behind a
@@ -323,12 +324,10 @@ export function notifyTakeover(ev: FamilyEvent, newName: string, members: Family
 }
 
 export function AlertBanner({
-  conflictEvents, rejectedEvents = [], pendingNoResponseEvents = [], unassignedUrgentEvents = [],
-  neverDispatchedEvents = [],
+  conflictEvents, neverDispatchedEvents = [],
   conflictReasons, members, colors, isDark, updateEvent, activeName, onDispatch,
 }: {
-  conflictEvents: FamilyEvent[]; rejectedEvents?: FamilyEvent[];
-  pendingNoResponseEvents?: FamilyEvent[]; unassignedUrgentEvents?: FamilyEvent[];
+  conflictEvents: FamilyEvent[];
   neverDispatchedEvents?: FamilyEvent[];
   conflictReasons?: Map<string, string>;
   members: FamilyMember[]; colors: any; isDark: boolean;
@@ -342,151 +341,8 @@ export function AlertBanner({
   // Radar and find the right nextRide slot themselves.
   onDispatch?: (memberId: string | undefined, etaMinutes: number) => void;
 }) {
-  const viewer = members.find(m => m.name === activeName);
-
   return (
     <View style={{ marginHorizontal: 16, marginBottom: 12, gap: 8 }}>
-      {rejectedEvents.filter(ev => { const h = hoursUntilEvent(ev.date, ev.time); return h >= 0 && h < 4; }).map(ev => {
-        const kid = members.find(m => m.id === ev.memberId);
-        // These 3 cards previously read/wrote ev.helper unconditionally —
-        // now that pendingNoResponse/unassignedUrgent/rejectedHelperEvents
-        // (ParentView.tsx) are field-pair-aware via eventAssignee(), these
-        // lists actually include driverName-based events (every kid ride
-        // request), so the cards themselves need to match (QA sweep,
-        // kid-role audit finding, extended to all 3 AlertBanner cards).
-        const assignee = eventAssignee(ev);
-        const assigneeRole: 'helper' | 'driver' = ev.driverName || (ev.rideRequired && !ev.helper) ? 'driver' : 'helper';
-        return (
-          <View key={ev.id} style={{
-            backgroundColor: isDark ? colors.danger + '14' : colors.dangerLight,
-            borderRadius: 16, borderWidth: 1.5, borderColor: colors.danger + '50', overflow: 'hidden',
-          }}>
-            <View style={{ backgroundColor: colors.danger, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
-              <AlertOctagon size={15} color="#fff" />
-              <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
-                Driver Declined — {ev.title}
-              </Text>
-              <Text style={{ fontSize: TYPO.label, color: 'rgba(255,255,255,0.85)', fontWeight: '700' }}>{fmtTime(ev.time)}</Text>
-            </View>
-            <View style={{ padding: 14, gap: 8 }}>
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                <Text style={{ fontWeight: '700', color: colors.danger }}>{relationalNameByName(assignee.name, members)}</Text> declined
-                {ev.declineReason ? `: "${ev.declineReason}"` : ''}
-              </Text>
-              {kid && ev.location && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <MapPin size={12} color={colors.textSecondary} />
-                  <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{ev.location} · For {kid.name.split(' ')[0]}</Text>
-                </View>
-              )}
-              <DriverChipRow ev={ev} members={members} colors={colors} isDark={isDark}
-                activeName={activeName} excludeName={assignee.name} allowGpTeen
-                onOpenPool={(kind) => {
-                  updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
-                }}
-                onAssign={(name, reason) => {
-                  notifyTakeover(ev, name, members, activeName);
-                  // Assigning it to yourself IS the confirmation — no separate
-                  // "accept" step needed, unlike handing it to someone else
-                  // who still needs to acknowledge before it's settled.
-                  updateEvent(ev.id, {
-                    ...(assigneeRole === 'driver'
-                      ? { driverName: name, driverStatus: name === activeName ? 'confirmed' as const : 'pending' as const }
-                      : { helper: name, helperStatus: name === activeName ? 'confirmed' as const : 'pending' as const }),
-                    notes: reason || undefined,
-                  });
-                }} />
-            </View>
-          </View>
-        );
-      })}
-
-      {/* Pending no-response urgent (< 1 hr, helper not replied) */}
-      {pendingNoResponseEvents.map(ev => {
-        const kid = members.find(m => m.id === ev.memberId);
-        const assignee = eventAssignee(ev);
-        const assigneeRole: 'helper' | 'driver' = ev.driverName || (ev.rideRequired && !ev.helper) ? 'driver' : 'helper';
-        return (
-          <View key={`pnr-${ev.id}`} style={{
-            backgroundColor: isDark ? colors.warning + '14' : colors.warningLight,
-            borderRadius: 16, borderWidth: 1.5, borderColor: colors.warning + '60', overflow: 'hidden',
-          }}>
-            <View style={{ backgroundColor: colors.warning, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
-              <AlertTriangle size={15} color="#fff" />
-              <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
-                No Reply — {ev.title}
-              </Text>
-              <Text style={{ fontSize: TYPO.label, color: 'rgba(255,255,255,0.9)', fontWeight: '700' }}>{fmtTime(ev.time)}</Text>
-            </View>
-            <View style={{ padding: 14, gap: 8 }}>
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                <Text style={{ fontWeight: '700', color: colors.warning }}>{relationalNameByName(assignee.name, members)}</Text> hasn't replied.
-                {kid ? ` Pickup for ${kid.name.split(' ')[0]} is in under an hour.` : ' Event is in under an hour.'}
-              </Text>
-              <DriverChipRow ev={ev} members={members} colors={colors} isDark={isDark}
-                activeName={activeName} excludeName={assignee.name} allowGpTeen
-                onOpenPool={(kind) => {
-                  updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
-                }}
-                onAssign={(name, reason) => {
-                  notifyTakeover(ev, name, members, activeName);
-                  // Assigning it to yourself IS the confirmation — no separate
-                  // "accept" step needed, unlike handing it to someone else
-                  // who still needs to acknowledge before it's settled.
-                  updateEvent(ev.id, {
-                    ...(assigneeRole === 'driver'
-                      ? { driverName: name, driverStatus: name === activeName ? 'confirmed' as const : 'pending' as const }
-                      : { helper: name, helperStatus: name === activeName ? 'confirmed' as const : 'pending' as const }),
-                    notes: reason || undefined,
-                  });
-                }} />
-            </View>
-          </View>
-        );
-      })}
-
-      {/* Unassigned urgent (transport event < 2 hr, no driver) */}
-      {unassignedUrgentEvents.map(ev => {
-        const kid = members.find(m => m.id === ev.memberId);
-        const assigneeRole: 'helper' | 'driver' = ev.driverName || (ev.rideRequired && !ev.helper) ? 'driver' : 'helper';
-        return (
-          <View key={`ua-${ev.id}`} style={{
-            backgroundColor: isDark ? colors.warningDark + '14' : colors.warningLight,
-            borderRadius: 16, borderWidth: 1.5, borderColor: colors.warning + '60', overflow: 'hidden',
-          }}>
-            <View style={{ backgroundColor: colors.warningDark, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 }}>
-              <Car size={15} color="#fff" />
-              <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '900', color: '#fff' }}>
-                No Driver Assigned — {ev.title}
-              </Text>
-              <Text style={{ fontSize: TYPO.label, color: 'rgba(255,255,255,0.9)', fontWeight: '700' }}>{fmtTime(ev.time)}</Text>
-            </View>
-            <View style={{ padding: 14, gap: 8 }}>
-              <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                {kid ? `${kid.name.split(' ')[0]}'s pickup` : 'This event'} needs a driver and no one is assigned.
-              </Text>
-              <DriverChipRow ev={ev} members={members} colors={colors} isDark={isDark}
-                activeName={activeName} excludeName={eventAssignee(ev).name} allowGpTeen
-                onOpenPool={(kind) => {
-                  updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
-                }}
-                onAssign={(name, reason) => {
-                  notifyTakeover(ev, name, members, activeName);
-                  // Assigning it to yourself IS the confirmation — no separate
-                  // "accept" step needed, unlike handing it to someone else
-                  // who still needs to acknowledge before it's settled.
-                  updateEvent(ev.id, {
-                    ...(assigneeRole === 'driver'
-                      ? { driverName: name, driverStatus: name === activeName ? 'confirmed' as const : 'pending' as const }
-                      : { helper: name, helperStatus: name === activeName ? 'confirmed' as const : 'pending' as const }),
-                    notes: reason || undefined,
-                  });
-                }} />
-            </View>
-          </View>
-        );
-      })}
-
       {/* Confirmed driver, scheduled time already passed, no trip ever
           dispatched — the gap between "nobody answered" (No Reply, above)
           and "someone's actually en route" (Pick-up Radar, below). Visible
@@ -747,64 +603,25 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
   // helper, opening a slot to GP/Teen, or backing out of one are all parent
   // actions. Derived from members rather than threading a new activeRole
   // prop through three call sites just for this one gate.
-  const isViewerParent = members.find(m => m.name === activeName)?.role === 'parent';
-  // QA sweep Critical Finding #1 — this whole section was ev.helper/
-  // ev.helperStatus-only, so ANY driverName-based ride (every kid ride
-  // request now uses this pair) rendered as if it had no driver at all
-  // here, regardless of role — hiding the true state and every action
-  // (confirm/decline/take-over/remind) a role should have been able to
-  // take from this, the single most common entry point (tapping any event
-  // card, on both Hub and Schedule). eventAssignee() normalizes both pairs;
-  // assigneeRole tracks which pair to actually write back to.
-  const assignee       = eventAssignee(ev);
-  const assigneeRole: 'helper' | 'driver' = ev.driverName || (ev.rideRequired && !ev.helper) ? 'driver' : 'helper';
+  const viewerMember   = members.find(m => m.name === activeName);
+  const isViewerParent = viewerMember?.role === 'parent';
+  // Single shared derivation (deriveCardActions.ts) instead of a hand-rolled
+  // copy — this block WAS the original source of truth those showX booleans
+  // were modeled on verbatim; now it calls back into the shared module
+  // instead of the module quietly drifting from what's actually here.
+  const {
+    assignee, assigneeRole, isSelfAssigned,
+    showRemind, showReassign, showAssignToMe, showOverride, showCantMakeIt, showConfirm,
+  } = deriveEventActions(
+    ev,
+    { id: viewerMember?.id ?? '', name: activeName ?? '', role: viewerMember?.role ?? 'parent', hasCar: viewerMember?.hasCar },
+    { isPast },
+  );
   const helperMissing  = !assignee.name && !!ev.location && !isWork && !isHomeLocation(ev.location);
   const helperPending  = assignee.status === 'pending';
   const helperRejected = assignee.status === 'rejected';
-  const isSelfAssigned = !!activeName && assignee.name === activeName;
   const hadPriorHelper = !!assignee.name;
-
   const helperConfirmed = assignee.status === 'confirmed';
-  const showRemind    = !isPast && !isWork && isViewerParent && !!assignee.name && helperPending && !isSelfAssigned;
-  // helperMissing's "has a real away-from-home location" check exists to
-  // avoid flagging events that never needed a helper in the first place —
-  // but once someone explicitly backs out via "Can't Make It", the event
-  // needs to be reassignable regardless of that heuristic (the helper slot
-  // is now genuinely empty by a real action, not just "never set"). "Can't
-  // Make It" clears helper AND helperStatus together in one tap, so
-  // !ev.helper alone is enough of a signal here.
-  // Self-assigned+pending is excluded here — showCantMakeIt already covers
-  // that case with clearer "Can't Make It" wording instead of the generic
-  // "Reassign to a Parent" label, which would read oddly pointed at yourself.
-  // Reassigning/opening-to-GP/opening-to-Teen are parent-only actions —
-  // a kid or teen viewing their own event (e.g. their own dentist
-  // appointment) shouldn't see controls for picking who drives them.
-  const showReassign   = !isPast && !isWork && isViewerParent && (!assignee.name || (helperPending && !isSelfAssigned) || helperRejected);
-  // A parent viewing someone ELSE's still-open/pending/rejected slot can take
-  // it directly in one tap instead of opening the reassign picker and finding
-  // their own name in a list of everyone else — the common case shouldn't be
-  // routed through UI built for handing it to a different person. Only makes
-  // sense when the viewer themselves has a "Can Drive" flag (hasCar !== false).
-  const viewerMember   = members.find(m => m.name === activeName);
-  const showAssignToMe = showReassign && !isSelfAssigned && viewerMember?.hasCar !== false;
-  // A CONFIRMED slot isn't reassignable through the normal one-tap flow —
-  // someone already committed, so overriding them needs a deliberate
-  // acknowledgment step, not the same ease as claiming an empty slot. This
-  // is the only path back to reassignability besides the confirmed person
-  // backing out themselves via Can't Make It.
-  const showOverride   = !isPast && !isWork && isViewerParent && helperConfirmed && !isSelfAssigned;
-  // Backing out ("I can't make it") applies whether you're confirmed OR
-  // still pending on your own assignment — either way it's the same move:
-  // clear your own claim, which then unlocks the normal reassign flow
-  // (including Open to GP/Teen) for whoever picks it up next.
-  const showCantMakeIt = !isPast && !isWork && isSelfAssigned && (helperConfirmed || helperPending);
-  // Decline (Can't Make It) already existed for a self-assigned pending
-  // helper, but there was no counterpart accept — the ONLY action a
-  // pending assignee could take from this shared detail sheet was to say
-  // no. A GP or teen tapping their own event in the Calendar tab, or via
-  // their Hub timeline, saw "⏳ Awaiting" with a decline button and
-  // nothing else (QA Round 11, High Finding H3).
-  const showConfirm = !isPast && !isWork && isSelfAssigned && helperPending;
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>

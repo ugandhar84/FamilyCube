@@ -35,18 +35,17 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
   // surface) instead of this card's own hand-rolled ev.helper===active.name
   // checks — closes the drift class documented below (a past hand-rolled
   // "Can't" here bypassed the canonical decline path entirely).
-  const { showAssignToMe, showConfirm, showCantMakeIt, assignee } = deriveEventActions(
+  // assigneeRole (which field-pair this event's assignee lives in) now
+  // comes straight from deriveEventActions instead of being re-derived
+  // locally — previously this card hardcoded 'helper' on every write
+  // regardless of which pair was actually populated, so a driver-paired
+  // event (Ride category, or rideRequired) got a second, independently-
+  // tracked helper_* pair written alongside its real driver_* pair — the
+  // exact conflicting-data bug this whole redesign exists to fix.
+  const { showAssignToMe, showConfirm, showCantMakeIt, assignee, assigneeRole } = deriveEventActions(
     ev,
     { id: active.id, name: active.name, role: active.role, hasCar: active.hasCar },
   );
-  // Which field-pair this event's assignee actually lives in — mirrors
-  // hubComponents.tsx's own assigneeRole derivation exactly. Previously
-  // this card hardcoded 'helper' on every write regardless of which pair
-  // was actually populated, so a driver-paired event (Ride category, or
-  // rideRequired) got a second, independently-tracked helper_* pair written
-  // alongside its real driver_* pair — the exact conflicting-data bug this
-  // whole redesign exists to fix.
-  const assigneeRole: 'helper' | 'driver' = ev.driverName || (ev.rideRequired && !ev.helper) ? 'driver' : 'helper';
 
   return (
     <View style={{ borderRadius: 14, borderWidth: 1,

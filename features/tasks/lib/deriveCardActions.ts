@@ -152,8 +152,23 @@ export interface EventActionsViewer {
   hasCar?: boolean;
 }
 
+// Which field-pair an event's assignee actually lives in — a Ride-category
+// event uses helper/helperStatus, a non-Ride event with rideRequired:true
+// uses driverName/driverStatus. Was independently re-derived verbatim in at
+// least 3 places (hubComponents.tsx's EventDetailSheet, HelperEventCard.tsx,
+// and this exact expression) before being lifted here — every consumer
+// should import this instead of re-deriving it, to avoid the 3 copies
+// silently drifting apart. Preserves the exact original expression
+// (including its slightly odd operator-precedence-driven shape) rather than
+// "fixing" it, since that would be a behavior change outside this refactor's
+// scope.
+export function eventAssigneeRole(ev: Pick<FamilyEvent, 'driverName' | 'helper' | 'rideRequired'>): 'helper' | 'driver' {
+  return ev.driverName || (ev.rideRequired && !ev.helper) ? 'driver' : 'helper';
+}
+
 export interface EventActions {
   assignee: { name: string | undefined; status: HelperStatus | undefined };
+  assigneeRole: 'helper' | 'driver';
   isSelfAssigned: boolean;
   showRemind: boolean;
   showReassign: boolean;
@@ -172,6 +187,7 @@ export function deriveEventActions(
   const isViewerParent = viewer.role === 'parent';
   const isWork = isWorkEvent(ev);
   const assignee = eventAssignee(ev);
+  const assigneeRole = eventAssigneeRole(ev);
   const helperPending = assignee.status === 'pending';
   const helperRejected = assignee.status === 'rejected';
   const isSelfAssigned = !!viewer.name && assignee.name === viewer.name;
@@ -184,5 +200,5 @@ export function deriveEventActions(
   const showCantMakeIt = !isPast && !isWork && isSelfAssigned && (helperConfirmed || helperPending);
   const showConfirm = !isPast && !isWork && isSelfAssigned && helperPending;
 
-  return { assignee, isSelfAssigned, showRemind, showReassign, showAssignToMe, showOverride, showCantMakeIt, showConfirm };
+  return { assignee, assigneeRole, isSelfAssigned, showRemind, showReassign, showAssignToMe, showOverride, showCantMakeIt, showConfirm };
 }

@@ -161,6 +161,7 @@ export default function TasksScreen() {
   } | undefined>(undefined);
   const [manualEventPrefill, setManualEventPrefill] = useState<{
     title?: string; category?: string; memberId?: string; startAt?: string; notes?: string;
+    recurFreq?: 'daily' | 'weekly' | 'monthly'; recurDays?: number[];
   } | undefined>(undefined);
   const [showManualQuest, setShowManualQuest] = useState(false);
   const [showManualEvent, setShowManualEvent] = useState(false);
@@ -446,6 +447,12 @@ export default function TasksScreen() {
           onClose={() => { setShowManualEvent(false); setManualEventPrefill(undefined); }}
           activeMemberId={activeMemberId ?? ''}
           prefill={manualEventPrefill as any}
+          // The composer only ever hands off here once it's already detected
+          // title/category/when/who/recurrence — restarting at step 0 threw
+          // all of that context away and made the user re-click through the
+          // whole wizard just to see what it already knew. Opening on
+          // Review lets them confirm/adjust in place instead.
+          initialStep="review"
         />
       )}
     </SafeAreaView>

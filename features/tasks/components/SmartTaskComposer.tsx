@@ -64,6 +64,7 @@ export default function SmartTaskComposer({
   onOpenFullForm: (kind: 'event' | 'quest', prefill: {
     title: string; category?: string; memberId?: string; startAt?: string;
     notes?: string; coins?: number; photoRequired?: boolean;
+    recurFreq?: 'daily' | 'weekly' | 'monthly'; recurDays?: number[];
   }) => void;
 }) {
   const { colors, isDark } = useTheme();
@@ -422,6 +423,15 @@ export default function SmartTaskComposer({
         category: category ?? detected.category.eventCategory,
         memberId: forMemberIds[0],
         startAt: detected.when.date ? (detected.when.date + (detected.when.time ? `T${detected.when.time}:00` : 'T00:00:00')) : undefined,
+        // Was dropped entirely on handoff — the composer's own detected/
+        // chosen recurrence (e.g. "every day") never reached the full
+        // form's prefill, so REPEATS silently reset to "One-time" on
+        // step 4's review screen despite the title still saying "every
+        // day" and the composer having correctly detected it moments
+        // earlier (live-reported: title "Pickup from Badminton every
+        // day", Repeats showed "One-time").
+        recurFreq,
+        ...(recurFreq === 'weekly' && recurDays.length ? { recurDays } : {}),
       });
       close();
       return;

@@ -17,14 +17,25 @@
  * mounted its own AppHeader) with a floating pill overlaid on top of it —
  * that pill visually overlapped the header row instead of sitting below
  * it. Both screens now accept hideHeader to suppress their own AppHeader
- * when embedded here, so there's exactly one header, with the tab-cards
- * laid out in normal flow right underneath — no floating/absolute
- * positioning left to drift out of alignment as header height changes.
+ * when embedded here, so there's exactly one header.
+ *
+ * The title + tab-cards are passed into each screen's own ScrollView via
+ * headerContent so they scroll away with the rest of the page instead of
+ * staying pinned — CalendarScreen/QuestsScreen already scroll their own
+ * content independently, so a second outer ScrollView around them isn't
+ * reliable in React Native; injecting header content into the existing
+ * scroller is the correct way to get everything to scroll as one unit.
+ * The redundant "+Event"/"+Quest" pills are hidden (hideCreateButton) since
+ * the shared FAB below already covers creation for both segments; each
+ * screen's own inline search bar is hidden too (hideSearchBar) — search now
+ * lives as one icon on the active tab-card, expanding into a bar docked
+ * right under that card, driven into whichever screen is active via
+ * externalSearchQuery.
  */
 import { useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CalendarDays, ListChecks, Plus } from 'lucide-react-native';
+import { CalendarDays, ListChecks, Plus, Search, X } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
@@ -59,6 +70,19 @@ export default function TasksScreen() {
   // never changes whether the "+" is there.
   const canCreate = activeMember?.role === 'parent' || activeMember?.role === 'teen';
   const [segment, setSegment] = useState<Segment>('schedule');
+
+  // One search query per segment — kept separate so switching tabs doesn't
+  // carry a Schedule search term into Chores' unrelated result set.
+  const [scheduleQuery, setScheduleQuery] = useState('');
+  const [choreQuery, setChoreQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchAnim = useState(() => new Animated.Value(0))[0];
+
+  const toggleSearch = (next: boolean) => {
+    setSearchOpen(next);
+    Animated.timing(searchAnim, { toValue: next ? 1 : 0, duration: 200, useNativeDriver: false }).start();
+    if (!next) { setScheduleQuery(''); setChoreQuery(''); }
+  };
 
   // Status counts shown on each tab-card — a lightweight summary, not a
   // role-scoped visibility filter (that RBAC logic lives deep inside
@@ -104,25 +128,26 @@ export default function TasksScreen() {
 
   const openCreator = () => setShowComposer(true);
 
-  return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <AppHeader
-        memberName={activeMember?.name}
-        memberRole={activeMember?.role === 'kid' ? 'kid' : activeMember?.role === 'teen' ? 'teen' : activeMember?.role === 'senior' ? 'senior' : 'parent'}
-        notifCount={unreadNotifCount}
-        onPersonaPress={undefined}
-        onBellPress={() => setNotifPanelOpen(true)}
-      />
-      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
+  const activeQuery = segment === 'schedule' ? scheduleQuery : choreQuery;
+  const setActiveQuery = segment === 'schedule' ? setScheduleQuery : setChoreQuery;
 
-      {/* Two square tab-cards, in normal layout flow right under the
-          header — replaces the old floating pill, which visually
-          overlapped the header instead of sitting below it. Each reads as
-          a small stat tile (big count, not a sentence) so "does anything
-          need me right now" is answerable at a glance, with a dot on the
-          inactive tab when it's carrying pending items the parent hasn't
-          switched over to see yet. */}
-      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 6 }}>
+  // Page title + the 2 status-count tab-cards + the collapsible search bar
+  // that drops down from whichever card is active — passed into
+  // CalendarScreen/QuestsScreen as headerContent so it scrolls away with
+  // the rest of the page instead of staying pinned above it.
+  const tasksHeader = (
+    <View>
+      <Text style={{ fontSize: TYPO.heading, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary, paddingHorizontal: 14, paddingTop: 10 }}>
+        Tasks
+      </Text>
+
+      {/* Two square tab-cards. Each reads as a small stat tile (big count,
+          not a sentence) so "does anything need me right now" is
+          answerable at a glance, with a dot on the inactive tab when it's
+          carrying pending items the parent hasn't switched over to see
+          yet. The active card's own search icon sits bottom-right; tapping
+          it drops the search bar down directly beneath the card row. */}
+      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingTop: 8, paddingBottom: 6 }}>
         {([
           { key: 'schedule' as const, label: 'Schedule', Icon: CalendarDays, counts: scheduleCounts, accent: colors.teal, accentLight: colors.tealLight },
           { key: 'chores' as const, label: 'Chores', Icon: ListChecks, counts: choreCounts, accent: colors.amber, accentLight: colors.amberLight },
@@ -132,7 +157,7 @@ export default function TasksScreen() {
           return (
             <TouchableOpacity
               key={key}
-              onPress={() => setSegment(key)}
+              onPress={() => { setSegment(key); if (searchOpen) toggleSearch(false); }}
               activeOpacity={0.85}
               style={[
                 styles.tabCard,
@@ -156,17 +181,33 @@ export default function TasksScreen() {
               <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 8, color: active ? 'rgba(255,255,255,0.85)' : colors.textSecondary }}>
                 {label}
               </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5, marginTop: 2 }}>
-                <Text style={{ fontSize: 22, fontWeight: '900', color: active ? '#fff' : colors.textPrimary }}>
-                  {counts.pending}
-                </Text>
-                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: active ? 'rgba(255,255,255,0.75)' : colors.textTertiary }}>
-                  pending
-                </Text>
-                {counts.active > 0 && (
-                  <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: active ? 'rgba(255,255,255,0.75)' : colors.textTertiary, marginLeft: 2 }}>
-                    · {counts.active} active
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5, marginTop: 2 }}>
+                  <Text style={{ fontSize: 22, fontWeight: '900', color: active ? '#fff' : colors.textPrimary }}>
+                    {counts.pending}
                   </Text>
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: active ? 'rgba(255,255,255,0.75)' : colors.textTertiary }}>
+                    pending
+                  </Text>
+                  {counts.active > 0 && (
+                    <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: active ? 'rgba(255,255,255,0.75)' : colors.textTertiary, marginLeft: 2 }}>
+                      · {counts.active} active
+                    </Text>
+                  )}
+                </View>
+                {active && (
+                  <TouchableOpacity
+                    onPress={() => toggleSearch(!searchOpen)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={{
+                      width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: searchOpen ? '#fff' : 'rgba(255,255,255,0.22)',
+                    }}
+                  >
+                    {searchOpen
+                      ? <X size={13} color={accent} />
+                      : <Search size={13} color="#fff" />}
+                  </TouchableOpacity>
                 )}
               </View>
             </TouchableOpacity>
@@ -174,9 +215,52 @@ export default function TasksScreen() {
         })}
       </View>
 
+      {searchOpen && (
+        <Animated.View style={{
+          marginHorizontal: 14, marginBottom: 8,
+          opacity: searchAnim,
+          transform: [{ translateY: searchAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
+        }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', gap: 8,
+            borderRadius: RADIUS.lg, borderWidth: 1.5, borderColor: colors.border,
+            backgroundColor: isDark ? colors.surface : '#F8FAFC',
+            paddingHorizontal: 12, paddingVertical: 10,
+          }}>
+            <Search size={15} color={colors.textTertiary} />
+            <TextInput
+              value={activeQuery}
+              onChangeText={setActiveQuery}
+              placeholder={segment === 'schedule' ? 'Search events…' : 'Search chores…'}
+              placeholderTextColor={colors.textTertiary}
+              autoFocus
+              style={{ flex: 1, fontSize: TYPO.body, color: colors.textPrimary, padding: 0 }}
+            />
+            {activeQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setActiveQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <X size={15} color={colors.textTertiary} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </Animated.View>
+      )}
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+      <AppHeader
+        memberName={activeMember?.name}
+        memberRole={activeMember?.role === 'kid' ? 'kid' : activeMember?.role === 'teen' ? 'teen' : activeMember?.role === 'senior' ? 'senior' : 'parent'}
+        notifCount={unreadNotifCount}
+        onPersonaPress={undefined}
+        onBellPress={() => setNotifPanelOpen(true)}
+      />
+      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
+
       {segment === 'schedule'
-        ? <CalendarScreen hideHeader />
-        : <QuestsScreen hideHeader />}
+        ? <CalendarScreen hideHeader hideCreateButton hideSearchBar externalSearchQuery={scheduleQuery} headerContent={tasksHeader} />
+        : <QuestsScreen hideHeader hideCreateButton hideSearchBar externalSearchQuery={choreQuery} headerContent={tasksHeader} />}
 
       {canCreate && (
         <TouchableOpacity

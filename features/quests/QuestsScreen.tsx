@@ -75,7 +75,10 @@ export { AddQuestModal };
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 // TabStatus and AiTool are imported from ./components/QuestFilters and ./components/AiEngineBanner
 
-export default function QuestsScreen({ hideHeader }: { hideHeader?: boolean } = {}) {
+export default function QuestsScreen({ hideHeader, hideCreateButton, headerContent, hideSearchBar, externalSearchQuery }: {
+  hideHeader?: boolean; hideCreateButton?: boolean; headerContent?: React.ReactNode;
+  hideSearchBar?: boolean; externalSearchQuery?: string;
+} = {}) {
   const { colors, isDark } = useTheme();
   const { questId } = useLocalSearchParams<{ questId?: string }>();
   const { members, activeMemberId, setActiveMember } = useFamilyStore();
@@ -150,7 +153,8 @@ export default function QuestsScreen({ hideHeader }: { hideHeader?: boolean } = 
 
   const [kidFilter,      setKidFilter]      = useState('all');
   const [tabStatus,      setTabStatus]      = useState<TabStatus>('all');
-  const [searchQuery,    setSearchQuery]    = useState('');
+  const [internalSearchQuery, setSearchQuery] = useState('');
+  const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : internalSearchQuery;
   const [dateRange,      setDateRange]      = useState<DateRange>(null);
   const [showAiTool,     setShowAiTool]     = useState<AiTool>('none');
   const [isAiLoading,    setIsAiLoading]    = useState(false);
@@ -783,6 +787,8 @@ export default function QuestsScreen({ hideHeader }: { hideHeader?: boolean } = 
       <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
 
+        {headerContent}
+
         {/* ── Title ── */}
         <View style={[s.titleRow, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }]}>
           <View style={{ flex: 1 }}>
@@ -809,15 +815,17 @@ export default function QuestsScreen({ hideHeader }: { hideHeader?: boolean } = 
               isDark={isDark}
             />
           )}
-          <QuestSearchBar
-            query={searchQuery} onQueryChange={setSearchQuery}
-            range={dateRange} onRangeChange={setDateRange}
-            colors={colors} isDark={isDark}
-          />
+          {!hideSearchBar && (
+            <QuestSearchBar
+              query={searchQuery} onQueryChange={setSearchQuery}
+              range={dateRange} onRangeChange={setDateRange}
+              colors={colors} isDark={isDark}
+            />
+          )}
           {/* Scenario 1.5 — a Teen has the same self-creation rights as a
               parent (broad autonomy; only 1.13's reward co-sign threshold
               gates a high-value payout, not creation itself). */}
-          {(isParent || isTeen) && (
+          {(isParent || isTeen) && !hideCreateButton && (
             <TouchableOpacity onPress={() => setShowAddModal(true)}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 6,
                 paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,

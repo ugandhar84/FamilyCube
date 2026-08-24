@@ -422,7 +422,13 @@ function SwipeableEventCard({ children, onDelete, onLongPress, onPress, canDelet
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
-export default function CalendarScreen({ hideHeader }: { hideHeader?: boolean } = {}) {
+export default function CalendarScreen({ hideHeader, hideCreateButton, headerContent, hideSearchBar, externalSearchQuery }: {
+  hideHeader?: boolean; hideCreateButton?: boolean; headerContent?: React.ReactNode;
+  // TasksScreen hosts its own search icon on the tab-card and drives this
+  // screen's existing title/notes filter externally, instead of duplicating
+  // a second search affordance inline here.
+  hideSearchBar?: boolean; externalSearchQuery?: string;
+} = {}) {
   const { colors, isDark } = useTheme();
   const { height: windowHeight } = useWindowDimensions();
   const { members, activeMemberId, setActiveMember } = useFamilyStore();
@@ -681,7 +687,8 @@ export default function CalendarScreen({ hideHeader }: { hideHeader?: boolean } 
   const [detailEv,      setDetailEv]      = useState<FamilyEvent | null>(null);
   // Net-new title/notes search — layers on top of the existing date/member/
   // role filters below, never replaces them.
-  const [searchQuery,   setSearchQuery]   = useState('');
+  const [internalSearchQuery, setSearchQuery] = useState('');
+  const searchQuery = externalSearchQuery !== undefined ? externalSearchQuery : internalSearchQuery;
 
   // AI state
   const [aiResult,       setAiResult]       = useState<AiResult | null>(null);
@@ -983,6 +990,8 @@ export default function CalendarScreen({ hideHeader }: { hideHeader?: boolean } 
       <ScrollView ref={calScrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 48 }}
         scrollEnabled={viewMode !== 'day'} bounces={viewMode !== 'day'}>
 
+        {headerContent}
+
         {/* [0] Scrollable: Title row + AI banner + AI panel */}
         <View>
           <View style={[sc.titleRow, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }]}>
@@ -1022,7 +1031,7 @@ export default function CalendarScreen({ hideHeader }: { hideHeader?: boolean } 
                 colors={colors} isDark={isDark}
               />
             )}
-            <CalendarSearchBar query={searchQuery} onQueryChange={setSearchQuery} colors={colors} isDark={isDark} />
+            {!hideSearchBar && <CalendarSearchBar query={searchQuery} onQueryChange={setSearchQuery} colors={colors} isDark={isDark} />}
             {isKid ? (
               <>
                 {/* List view toggle — defaults on for kids */}
@@ -1037,7 +1046,7 @@ export default function CalendarScreen({ hideHeader }: { hideHeader?: boolean } 
                 </TouchableOpacity>
               </>
             ) : (
-              isParentOrSenior && (
+              isParentOrSenior && !hideCreateButton && (
                 <TouchableOpacity style={[calCardStyles.headerBtn, { backgroundColor: BRAND.purple }]} onPress={() => { console.log(`[UserAction] screen=Schedule role=${roleLabel} member=${activeMemberName} tapped "+ Event" → open AddEventModal [features/calendar/CalendarScreen.tsx:1027]`); setShowAdd(true); }}>
                   <I.Plus c="#fff" size={14} />
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Event</Text>

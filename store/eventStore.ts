@@ -39,6 +39,15 @@ export interface FamilyEvent {
   date: string;
   time?: string;
   endTime?: string;
+  // Lifecycle status of the event itself — distinct from helperStatus/
+  // driverStatus (a participant's assignment status) and from the
+  // pre-existing DB `status` column (an unrelated approval-workflow value,
+  // always 'approved' today — this maps to completion_status instead to
+  // avoid colliding with it). Flips to 'completed' automatically once the
+  // event is over (end_time, or start_time + 1h if no end_time is set) via
+  // the event-completion-sweep cron job — never set directly by client
+  // code today.
+  completionStatus?: 'scheduled' | 'completed';
   memberId?: string;
   memberIds?: string[];
   type: EventType;
@@ -442,6 +451,7 @@ export function fromRow(row: any): FamilyEvent {
     date:              String(row.date ?? '').slice(0, 10),
     time:              row.start_time ?? undefined,
     endTime:           row.end_time ?? undefined,
+    completionStatus:  row.completion_status ?? 'scheduled',
     allDay:            row.all_day ?? false,
     type:              row.type ?? 'event',
     category:          row.category ?? 'Event',

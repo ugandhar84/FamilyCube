@@ -6,7 +6,7 @@
  * flow for locked non-active profiles.
  */
 import React, { useState, useRef, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Animated as RNAnimated, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Animated as RNAnimated, Modal, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -227,6 +227,12 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, setActiveMember } = useFamilyStore();
   const [pinTarget, setPinTarget] = useState<FamilyMember | null>(null);
+  const { height: windowHeight } = useWindowDimensions();
+  // Was a flat maxHeight:380 regardless of screen size — clipped the list
+  // (a 6th+ member cut off mid-row) even on tall phones with plenty of
+  // room below. Sizes against the actual available space under the panel
+  // instead, leaving room for the header row + a comfortable bottom margin.
+  const listMaxHeight = Math.max(220, windowHeight - HEADER_OFFSET - 220);
 
   const handleSelect = (m: FamilyMember) => {
     if (m.pinEnabled && m.id !== activeMemberId) {
@@ -276,7 +282,7 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
               {pinTarget ? (
                 <PinPad member={pinTarget} isDark={isDark} onSuccess={handlePinSuccess} onCancel={() => setPinTarget(null)} />
               ) : (
-                <ScrollView style={{ maxHeight: 380 }} contentContainerStyle={{ padding: 8, gap: 2 }} showsVerticalScrollIndicator={false}>
+                <ScrollView style={{ maxHeight: listMaxHeight }} contentContainerStyle={{ padding: 8, gap: 2 }} showsVerticalScrollIndicator={false}>
                   {members.map(m => (
                     <MemberRow key={m.id} member={m} isActive={m.id === activeMemberId} onPress={() => handleSelect(m)} isDark={isDark} />
                   ))}

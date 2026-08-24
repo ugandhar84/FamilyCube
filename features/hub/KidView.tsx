@@ -282,9 +282,14 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
       location:      ev.pickupLocation ?? ev.location,
       scheduledTime: ev.time ? fmtTime(ev.time) : undefined,
     });
-    sendMessage('all', active.id, `⚠️ ${active.name.split(' ')[0]}: My driver hasn't arrived yet for "${ev.title}"! Can someone check?`);
+    // Was hardcoded "My driver" regardless of who's actually assigned —
+    // reads oddly when the driver is a named parent/grandparent ("My
+    // driver hasn't arrived" instead of "Dad hasn't arrived"). Falls back
+    // to "My ride" (not "driver") only when nobody's actually assigned.
+    const driverFirst = eventAssignee(ev).name?.split(' ')[0];
+    sendMessage('all', active.id, `⚠️ ${active.name.split(' ')[0]}: ${driverFirst ?? 'My ride'} hasn't arrived yet for "${ev.title}"! Can someone check?`);
     setLateNudgeSent(p => ({ ...p, [ev.id]: true }));
-    Alert.alert('⚠️ Alert sent!', 'Your parent has been notified that your driver is late.');
+    Alert.alert('⚠️ Alert sent!', `Your parent has been notified that ${driverFirst ?? 'your ride'} is late.`);
   };
 
   // Either side (rider or driver) can confirm a pickup actually happened —
@@ -328,8 +333,6 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
       />
 
       <KidUrgentAlerts
-        confirmedRide={confirmedRide} rideCountdown={rideCountdown}
-        lateNudgeSent={lateNudgeSent} onSendDriverLate={sendDriverLate}
         declinedRides={myDeclinedRides} pendingRides={myPendingRides}
         declinedQuests={declinedQuests} approvedQuests={approvedQuests}
         cheersForMe={cheersForMe} recentReplies={recentReplies}
@@ -352,6 +355,7 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
           active={active}
           onConfirmPickup={confirmPickup}
           onDismiss={(id) => setDismissedRideIds(prev => new Set([...prev, id]))}
+          onSendDriverLate={sendDriverLate} lateNudgeSent={lateNudgeSent}
         />
       )}
 

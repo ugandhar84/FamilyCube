@@ -180,18 +180,13 @@ export default function TasksScreen() {
   const [rideRequestModal, setRideRequestModal] = useState(false);
   const openCreator = () => { if (isKidCreator) setShowAskParentSheet(true); else setShowComposer(true); };
 
-  // Set by CustomTabBar the instant the Tasks tab is tapped — no longer
-  // auto-opens the composer (live-tested: stealing the list view on every
-  // single tab switch was too aggressive), just plays a matching "arrival"
-  // pop on this screen's own + FAB, completing the launch animation the
-  // sparkle FAB in app/(tabs)/_layout.tsx plays as it fades out on tap.
-  const fabPopScale = useRef(new Animated.Value(1)).current;
+  // Set by CustomTabBar the instant the Tasks tab is tapped — was used to
+  // auto-open the composer + play a FAB pop animation; both removed per
+  // feedback (auto-open stole the list view on every switch; the pop
+  // animation was cut too). Still clear the flag so a stale `true` doesn't
+  // linger from before this was simplified.
   useFocusEffect(useCallback(() => {
-    if (useUIStore.getState().autoOpenTaskComposer) {
-      useUIStore.getState().setAutoOpenTaskComposer(false);
-      fabPopScale.setValue(0.5);
-      Animated.spring(fabPopScale, { toValue: 1, useNativeDriver: true, tension: 260, friction: 7 }).start();
-    }
+    if (useUIStore.getState().autoOpenTaskComposer) useUIStore.getState().setAutoOpenTaskComposer(false);
   }, []));
 
   const activeQuery = segment === 'schedule' ? scheduleQuery : choreQuery;
@@ -393,18 +388,16 @@ export default function TasksScreen() {
         )}
 
       {(canCreate || isKidCreator) && (
-        <Animated.View style={[styles.fab, {
-          bottom: insets.bottom + 20,
-          transform: [{ scale: fabPopScale }],
-        }]}>
-          <TouchableOpacity
-            onPress={openCreator}
-            activeOpacity={0.88}
-            style={{ width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary }}
-          >
-            <Plus size={26} color="#fff" />
-          </TouchableOpacity>
-        </Animated.View>
+        <TouchableOpacity
+          onPress={openCreator}
+          activeOpacity={0.88}
+          style={[styles.fab, {
+            bottom: insets.bottom + 20,
+            backgroundColor: colors.primary,
+          }]}
+        >
+          <Plus size={26} color="#fff" />
+        </TouchableOpacity>
       )}
 
       <AskParentSheet

@@ -8,7 +8,6 @@ import { KID } from './kidTheme';
 import CelebrationBurst from '@/components/CelebrationBurst';
 import { fmtTime, hoursUntilEvent } from '../hubUtils';
 import type { FamilyMember } from '@/store/familyStore';
-import { eventAssignee } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { Quest, QuestCheer } from '@/store/questStore';
 
@@ -46,12 +45,9 @@ function AlertRow({ Icon, accent, colors, isDark, title, detail, onPress, onDism
 }
 
 export function KidUrgentAlerts({
-  confirmedRide, rideCountdown, lateNudgeSent, onSendDriverLate,
   declinedRides, pendingRides, declinedQuests, approvedQuests, cheersForMe, recentReplies,
   members, colors, isDark, dismissedIds, onDismiss,
 }: {
-  confirmedRide: FamilyEvent | undefined; rideCountdown: number | null;
-  lateNudgeSent: Record<string, boolean>; onSendDriverLate: (ev: FamilyEvent) => void;
   declinedRides: FamilyEvent[]; pendingRides: FamilyEvent[];
   declinedQuests: Quest[]; approvedQuests: Quest[];
   cheersForMe: { quest: Quest; cheer: QuestCheer }[];
@@ -62,22 +58,14 @@ export function KidUrgentAlerts({
 }) {
   return (
     <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 4 }}>
-      {confirmedRide && rideCountdown !== null && rideCountdown < -5 && (
-        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "Alert!" on "Driver hasn't arrived" (id=${confirmedRide.id}) → onSendDriverLate [features/hub/kid/KidUrgentAlerts.tsx:66]`); onSendDriverLate(confirmedRide); }}
-          style={{ borderRadius: 16, backgroundColor: '#450A0A', borderWidth: 2, borderColor: '#EF4444',
-            padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#EF444430', alignItems: 'center', justifyContent: 'center' }}>
-            <AlertTriangle size={20} color="#FCA5A5" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: KID.body, fontWeight: '900', color: '#FCA5A5' }}>Driver hasn't arrived!</Text>
-            <Text style={{ fontSize: KID.sub, color: '#F87171' }}>{eventAssignee(confirmedRide).name?.split(' ')[0] ?? 'Your ride'} was due at {fmtTime(confirmedRide.time)}</Text>
-          </View>
-          <View style={{ backgroundColor: '#EF4444', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8 }}>
-            <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>{lateNudgeSent[confirmedRide.id] ? 'Sent ✓' : 'Alert!'}</Text>
-          </View>
-        </Pressable>
-      )}
+      {/* "Driver hasn't arrived!" used to live here as its own banner,
+          firing in the same overdue window as KidRideBanner's own
+          'overdue' state right below on the page — two banners saying
+          the same thing about the same ride, live-reported as confusing.
+          The "Alert my parent" action now lives inside KidRideBanner's
+          overdue state instead, alongside "I'm picked up", so there's one
+          continuous banner per ride that carries through every state
+          instead of a second one appearing/disappearing on top of it. */}
 
       {(() => {
         const filteredDeclinedRides = declinedRides.filter(ev => !dismissedIds.has(`ride-${ev.id}`));

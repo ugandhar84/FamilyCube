@@ -32,11 +32,20 @@ function rideState(rideCountdown: number, confirmed: boolean) {
 
 // Full-width "your ride is coming" banner — separate from the hero card's own
 // mini countdown so it stays visible even after scrolling past the hero.
-export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, onConfirmPickup, onDismiss }: {
+export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, onConfirmPickup, onDismiss, onSendDriverLate, lateNudgeSent }: {
   ev: FamilyEvent; rideCountdown: number; colors: any; isDark: boolean;
   active: FamilyMember;
   onConfirmPickup: (ev: FamilyEvent) => void;
   onDismiss: (evId: string) => void;
+  // Was a separate duplicate banner in KidUrgentAlerts.tsx ("Driver hasn't
+  // arrived!") firing in the same overdue window as this banner's own
+  // 'overdue' state, both saying essentially the same thing with two
+  // different actions — live-reported as confusing double alerts for one
+  // ride. Folded "Alert my parent" into this banner's overdue state
+  // instead, so there's exactly one ride-status banner per ride that
+  // seamlessly carries through counting → here → overdue → confirmed.
+  onSendDriverLate?: (ev: FamilyEvent) => void;
+  lateNudgeSent?: Record<string, boolean>;
 }) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
@@ -72,30 +81,54 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, onCon
 
   const dismiss = () => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "dismiss" on "KidRideBanner" (id=${ev.id}) → onDismiss("${ev.id}") [features/hub/kid/KidRideBanner.tsx:73]`); setDismissed(true); onDismiss(ev.id); };
 
+  const alertSent = !!lateNudgeSent?.[ev.id];
+
   return (
     <View style={{ paddingHorizontal: 16, marginBottom: 18 }}>
-      <View style={{ borderRadius: 18, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
+      <View style={{ borderRadius: 18, padding: 14, gap: 10,
         backgroundColor: confirmed ? (isDark ? '#0F2A20' : '#ECFDF5') : isOverdue ? '#7C2D12' : rideHere ? '#064E3B' : (isDark ? '#0F2A20' : '#ECFDF5'),
         borderWidth: 1.5, borderColor: confirmed ? `${MONEY_GREEN}50` : isOverdue ? colors.danger : rideHere ? MONEY_GREEN : `${MONEY_GREEN}50` }}>
-        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: iconColor + '25', alignItems: 'center', justifyContent: 'center' }}>
-          <Icon size={22} color={iconColor} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: iconColor + '25', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon size={22} color={iconColor} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: KID.body, fontWeight: '900', color: iconColor }}>{headline}</Text>
+            <Text style={{ fontSize: KID.tiny, color: confirmed ? colors.textTertiary : '#34D399', marginTop: 2 }}>
+              {ev.title} · {fmtTime(ev.time)}
+            </Text>
+          </View>
+          {!confirmed && rideHere && (
+            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidRideBanner.tsx:90]`); onConfirmPickup(ev); }}
+              style={{ backgroundColor: MONEY_GREEN, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 7 }}>
+              <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>I'm picked up</Text>
+            </Pressable>
+          )}
+          {canDismiss && (
+            <Pressable onPress={dismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <X size={18} color={confirmed ? colors.textTertiary : '#fff'} />
+            </Pressable>
+          )}
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: KID.body, fontWeight: '900', color: iconColor }}>{headline}</Text>
-          <Text style={{ fontSize: KID.tiny, color: confirmed ? colors.textTertiary : '#34D399', marginTop: 2 }}>
-            {ev.title} · {fmtTime(ev.time)}
-          </Text>
-        </View>
-        {!confirmed && (rideHere || isOverdue) && (
-          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidRideBanner.tsx:90]`); onConfirmPickup(ev); }}
-            style={{ backgroundColor: isOverdue ? colors.danger : MONEY_GREEN, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 7 }}>
-            <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>I'm picked up</Text>
-          </Pressable>
-        )}
-        {canDismiss && (
-          <Pressable onPress={dismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <X size={18} color={confirmed ? colors.textTertiary : '#fff'} />
-          </Pressable>
+
+        {/* Overdue gets two stacked actions instead of one cramped button
+            in the header row — "I'm picked up" (if it actually happened
+            and just hasn't been confirmed) and "Alert my parent" (if it
+            genuinely hasn't), same two outcomes the old separate
+            KidUrgentAlerts banner offered, now living in this one banner. */}
+        {!confirmed && isOverdue && (
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidRideBanner.tsx:overdue]`); onConfirmPickup(ev); }}
+              style={{ flex: 1, backgroundColor: MONEY_GREEN, borderRadius: 12, paddingVertical: 9, alignItems: 'center' }}>
+              <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>I'm picked up</Text>
+            </Pressable>
+            {onSendDriverLate && (
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "${alertSent ? 'Sent' : 'Alert my parent'}" on "${ev.title}" (id=${ev.id}) → onSendDriverLate [features/hub/kid/KidRideBanner.tsx:overdue]`); onSendDriverLate(ev); }}
+                style={{ flex: 1, backgroundColor: colors.danger, borderRadius: 12, paddingVertical: 9, alignItems: 'center', opacity: alertSent ? 0.7 : 1 }}>
+                <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>{alertSent ? 'Sent ✓' : 'Alert my parent'}</Text>
+              </Pressable>
+            )}
+          </View>
         )}
       </View>
     </View>

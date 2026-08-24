@@ -203,12 +203,6 @@ export default function HubScreen() {
         <Pressable
           onPress={() => setComposerVisible(true)}
           style={{
-            // Reverted — Ask Cube is parent-only and this FAB is explicitly
-            // NOT shown to parents ("Parent's own create entry point is
-            // the Tasks tab's FAB, not the Hub" — see the comment above),
-            // so no single viewer ever sees both stacked together. There's
-            // nothing here to actually align against; copying Ask Cube's
-            // offset just pushed this too high with no visual reference.
             position: 'absolute', right: 20, bottom: insetsBottomForFab + 20, width: 56, height: 56, borderRadius: 28,
             alignItems: 'center', justifyContent: 'center', zIndex: 20, backgroundColor: colors.primary,
             shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 4 }, shadowRadius: 10, elevation: 6,

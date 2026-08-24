@@ -5,6 +5,7 @@ import { SectionCard, CollapsibleCard } from '../hubComponents';
 import { fmtTime } from '../hubUtils';
 import { GP } from './seniorTheme';
 import { DeclineReasonPanel } from './DeclineReasonPanel';
+import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
@@ -38,8 +39,12 @@ export function YourRidesSection({
   };
   const cancelDecline = () => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Cancel" on decline panel (id=${declineId}) → setDeclineId(null) [features/hub/senior/YourRidesSection.tsx:36]`); setDeclineId(null); };
   const confirmDecline = (ev: FamilyEvent) => {
-    console.log(`[UserAction] screen=Hub role=senior member=${active.name} confirmed decline reason on "${ev.title}" (id=${ev.id}) → updateEvent(helperStatus=rejected, declinedBy=${active.name}) [features/hub/senior/YourRidesSection.tsx:38]`);
-    updateEvent(ev.id, { helperStatus: 'rejected', declinedBy: active.name, declineReason: declineText.trim() });
+    console.log(`[UserAction] screen=Hub role=senior member=${active.name} confirmed decline reason on "${ev.title}" (id=${ev.id}) → decline_event_assignment(helper) [features/hub/senior/YourRidesSection.tsx:38]`);
+    supabase.rpc('decline_event_assignment', {
+      p_event_id: ev.id, p_member_id: active.id, p_role: 'helper', p_reason: declineText.trim() || null,
+    }).then(({ error }) => {
+      if (error) console.warn('[YourRidesSection] decline_event_assignment failed', error.message);
+    });
     setDeclineId(null); setDeclineText('');
   };
 
@@ -83,7 +88,11 @@ export function YourRidesSection({
                   </View>
                 )}
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Accept Drive" on "${ev.title}" (id=${ev.id}) → updateEvent(helperStatus=confirmed) [features/hub/senior/YourRidesSection.tsx:82]`); updateEvent(ev.id, { helperStatus: 'confirmed' }); }}
+                  <Pressable onPress={() => {
+                    console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Accept Drive" on "${ev.title}" (id=${ev.id}) → confirm_event_assignment(helper) [features/hub/senior/YourRidesSection.tsx:82]`);
+                    supabase.rpc('confirm_event_assignment', { p_event_id: ev.id, p_member_id: active.id, p_role: 'helper' })
+                      .then(({ error }) => { if (error) console.warn('[YourRidesSection] confirm_event_assignment failed', error.message); });
+                  }}
                     style={{ flex: 1, backgroundColor: MONEY_GREEN, borderRadius: 12, paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                     <Car size={14} color="#fff" />
                     <Text style={{ fontSize: GP.body, fontWeight: '700', color: '#fff' }}>Accept Drive</Text>

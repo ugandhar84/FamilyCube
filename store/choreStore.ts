@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import { logActivity, type ActivityAction } from '@/lib/activityLog';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
+import { showToast } from '@/components/AppToast';
 
 const genId = (): string =>
   typeof crypto !== 'undefined' && crypto.randomUUID
@@ -1609,6 +1610,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         set(s => ({
           chores: s.chores.map(c => c.id === choreId ? { ...c, claims: [...(c.claims ?? []), claim] } : c),
         }));
+        showToast('Claimed ✓');
       });
   },
 
@@ -1858,7 +1860,9 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
                 () => onLost('claimed'),
               );
           }
+          return;
         }
+        showToast('Claimed ✓');
       });
   },
 
@@ -2023,6 +2027,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (chore.assignedToId && chore.assignedToId !== childId) return; // already claimed by sibling
     // Claim clears pool flag so first-come wins permanently.
     get().updateChore(choreId, { status: 'in_progress', assignedToId: childId, isPool: false });
+    showToast("You're on it ✓");
   },
 
   submitGrandparentQuest: (choreId, opts) => {
@@ -2077,7 +2082,9 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
             ),
           }));
           AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+          return;
         }
+        showToast('Offer sent ✓');
       });
 
     if (chore.familyId) {
@@ -2315,6 +2322,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     } catch (e) {
       console.warn('[choreStore] completeGpWelcomeChore notification failed', e);
     }
+    showToast('Marked done ✓');
   },
 
   // The claiming GP giving the chore back before finishing — releases it
@@ -2330,6 +2338,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     get().updateChore(choreId, {
       status: 'todo', assignedToId: undefined, isPool: true,
     });
+    showToast('Given back to the pool ✓');
   },
 
   // ─────────────────────────────────────────────────────────────────────────

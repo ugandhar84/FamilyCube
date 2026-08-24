@@ -18,6 +18,7 @@ import { fmt12h, timeAgo } from './questAiFallbacks';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { supabase } from '@/lib/supabase';
+import { showToast } from '@/components/AppToast';
 
 interface Props {
   q: Quest;
@@ -894,7 +895,8 @@ export function QuestCard({
                     supabase.rpc('reassign_chore', {
                       p_chore_id: q.id, p_new_member_id: activeMember.id, p_by_member_id: activeMember.id,
                     }).then(({ error }) => {
-                      if (error) console.warn('[QuestCard] Take It reassign_chore failed', error.message);
+                      if (error) { console.warn('[QuestCard] Take It reassign_chore failed', error.message); return; }
+                      showToast('Taken ✓');
                     });
                   },
                 }]
@@ -949,6 +951,7 @@ export function QuestCard({
                         supabase.rpc('set_gp_withdrawn', { p_chore_id: q.id, p_gp_member_id: myId, p_withdrawn: false })
                           .then(({ error }) => { if (error) console.warn('[QuestCard] set_gp_withdrawn failed', error.message); });
                       }
+                      showToast("You're on it ✓");
                     },
                   }]
                 );
@@ -965,7 +968,10 @@ export function QuestCard({
                   console.log(`[UserAction] screen=Chores role=senior member=${activeMember?.name} tapped "Pass" on "${q.title}" (id=${q.id}) → set_gp_withdrawn [features/quests/components/QuestCard.tsx:948]`);
                   if (myId) {
                     supabase.rpc('set_gp_withdrawn', { p_chore_id: q.id, p_gp_member_id: myId, p_withdrawn: true })
-                      .then(({ error }) => { if (error) console.warn('[QuestCard] set_gp_withdrawn failed', error.message); });
+                      .then(({ error }) => {
+                        if (error) { console.warn('[QuestCard] set_gp_withdrawn failed', error.message); return; }
+                        showToast('Passed ✓');
+                      });
                   }
                 }}
               >
@@ -1026,7 +1032,8 @@ export function QuestCard({
                   supabase.rpc('reassign_chore', {
                     p_chore_id: q.id, p_new_member_id: activeMember.id, p_by_member_id: activeMember.id,
                   }).then(({ error }) => {
-                    if (error) console.warn('[QuestCard] GP claim reassign_chore failed', error.message);
+                    if (error) { console.warn('[QuestCard] GP claim reassign_chore failed', error.message); return; }
+                    showToast("You're on it ✓");
                   });
                 },
               }]

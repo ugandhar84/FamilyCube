@@ -253,6 +253,13 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   const neverDispatchedOverdue = todayEvents.filter(e => {
     const a = eventAssignee(e);
     if (!a.name || a.status !== 'confirmed' || e.approvalPending) return false;
+    // Was missing entirely — a ride whose pickup was already confirmed
+    // (kid or driver tapped "I'm picked up") still showed as "Trip Never
+    // Started" forever, since this filter only ever checked assignment
+    // status + elapsed time, never whether the pickup itself had already
+    // happened. Live-reported/DB-confirmed: today's ride had a real
+    // pickup_confirmed_at timestamp, yet the banner stayed stuck.
+    if (e.pickupConfirmedAt) return false;
     if (activeTripDriverNames.has(a.name)) return false; // a trip IS running, just use the normal overdue path
     const h = hoursUntilEvent(e.date, e.time);
     return h < 0 && h > -2; // 2hr outer bound so a days-old stale row doesn't linger forever

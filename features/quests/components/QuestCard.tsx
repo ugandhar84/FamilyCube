@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, Animated, Image, ActivityIndicator } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import FamilyAvatar from '@/components/FamilyAvatar';
@@ -19,6 +19,8 @@ import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
+import { ChoreHistorySheet } from '@/features/tasks/components/ChoreHistorySheet';
+import { Ionicons } from '@expo/vector-icons';
 
 interface Props {
   q: Quest;
@@ -126,6 +128,7 @@ export function QuestCard({
     q.priority === 'urgent' ? colors.danger : BRAND.purple;
 
   const hasBonus = q.bonusCoins > 0 && (!q.bonusExpiresAt || new Date(q.bonusExpiresAt).getTime() > now);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Whether the action strip has ANYTHING to render — with the
   // redundant Edit button gone (long-press covers it now), an
@@ -308,6 +311,9 @@ export function QuestCard({
             below — so this column only carries the due chip
             and in-progress coin pill here). */}
         <View style={{ alignItems: 'flex-end', gap: 4 }}>
+          <TouchableOpacity onPress={() => setHistoryOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="time-outline" size={16} color={colors.textTertiary} />
+          </TouchableOpacity>
           {(isTodoCard || isPoolCard || isReview) && (
             <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10,
               backgroundColor: dueColor + '14', borderWidth: 1, borderColor: dueColor + '30' }}>
@@ -1128,6 +1134,9 @@ export function QuestCard({
       )}{/* action strip */}
     </CollapsibleQuestCard>
     </Swipeable>
+    {historyOpen && (
+      <ChoreHistorySheet choreId={q.id} title={q.title} members={members} onClose={() => setHistoryOpen(false)} />
+    )}
     </View>
   );
 }

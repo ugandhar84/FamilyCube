@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import {
-  Clock, CheckCircle2, Ban, Zap, Coins, ClipboardList, Sparkles, Trophy, Camera, Target, RotateCcw,
+  Clock, CheckCircle2, Ban, Zap, Coins, ClipboardList, Sparkles, Trophy, Camera, Target, RotateCcw, History,
 } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { fmtDateTime, fmtDateShort, parseLocalDate } from '@/lib/dates';
@@ -12,6 +13,7 @@ import type { Quest } from '@/store/questStore';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { useChoreStore } from '@/store/choreStore';
 import { useShallow } from 'zustand/react/shallow';
+import { ChoreHistorySheet } from '@/features/tasks/components/ChoreHistorySheet';
 
 // Money-green — "approved / bounty" positive accent, distinct from brand
 // teal (used elsewhere in this card for in-progress/claimed state). Not
@@ -96,6 +98,7 @@ export function KidQuestCard({
   // Multi-slot bounties share one due date across every claimant — see
   // QuestCard.tsx's identical isMultiSlot note (QA Round 19, High).
   const isMultiSlot = (q.maxClaimants ?? 1) > 1;
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   return (
     <CollapsibleCard accent={meta.color} colors={colors} isDark={isDark} defaultExpanded={false}
@@ -128,6 +131,9 @@ export function KidQuestCard({
             {q.status === 'cancelled' && q.cancelledAt && (
               <Text style={{ fontSize: KID.tiny, color: colors.textTertiary }}>{fmtDateTime(q.cancelledAt)}</Text>
             )}
+            <Pressable onPress={() => setHistoryOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <History size={14} color={colors.textTertiary} />
+            </Pressable>
           </View>
           {/* Full claimed → submitted → approved timeline — previously only
               the approved timestamp showed, and only for a fully-done
@@ -297,6 +303,9 @@ export function KidQuestCard({
             </Pressable>
           )}
         </View>
+      )}
+      {historyOpen && (
+        <ChoreHistorySheet choreId={q.id} title={q.title} members={members} onClose={() => setHistoryOpen(false)} />
       )}
     </CollapsibleCard>
   );

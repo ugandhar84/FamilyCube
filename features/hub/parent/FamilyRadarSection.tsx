@@ -87,7 +87,7 @@ export function FamilyRadarSection({ members, colors, isDark }: {
       badge={liveCount} badgeLabel="Live" badgeColor={colors.teal}
       seeAll={() => router.push({ pathname: '/(tabs)/profile', params: { openFeature: 'gps' } } as any)}
       seeAllLabel="Open Map"
-      collapsible defaultExpanded={false}
+      collapsible defaultExpanded={liveCount > 0}
       colors={colors} isDark={isDark}>
       <View style={{ gap: 2 }}>
         {roster.map(({ member, loc }, i) => {

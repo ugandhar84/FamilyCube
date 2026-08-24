@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { View, Text, Pressable, Alert, TextInput } from 'react-native';
+import { View, Text, Pressable, Alert, TextInput, Modal, TouchableOpacity, Platform } from 'react-native';
 import { CheckCircle2, Sparkles, Coins, Calendar } from 'lucide-react-native';
-import { TYPO } from '@/constants/theme';
-import { localDateStr } from '@/lib/dates';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { TYPO, RADIUS } from '@/constants/theme';
+import { localDateStr, fmtDate } from '@/lib/dates';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
 
@@ -33,6 +34,7 @@ export function KidProposedChoreCard({ c, members, colors, isDark, active, appro
   const [approving, setApproving] = useState(false);
   const [coins, setCoins] = useState('5');
   const [dueDate, setDueDate] = useState(() => comingSaturday());
+  const [showDatePick, setShowDatePick] = useState(false);
 
   const confirmApprove = () => {
     const parsed = parseInt(coins, 10);
@@ -73,18 +75,41 @@ export function KidProposedChoreCard({ c, members, colors, isDark, active, appro
                 fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}
             />
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity onPress={() => setShowDatePick(true)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 10, borderWidth: 1.5, borderColor: colors.primary + '60',
+              backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 8 }}>
             <Calendar size={14} color={colors.primary} />
-            <TextInput
-              value={dueDate}
-              onChangeText={setDueDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.textTertiary}
-              style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: colors.primary + '60',
-                backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 8,
-                fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}
-            />
-          </View>
+            <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+              {fmtDate(dueDate)}
+            </Text>
+          </TouchableOpacity>
+
+          {showDatePick && (
+            <Modal transparent animationType="fade" visible onRequestClose={() => setShowDatePick(false)}>
+              <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
+                activeOpacity={1} onPress={() => setShowDatePick(false)}>
+                <TouchableOpacity activeOpacity={1}
+                  style={{ backgroundColor: colors.card, borderTopLeftRadius: RADIUS.xxl, borderTopRightRadius: RADIUS.xxl, paddingBottom: 20 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                    <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>📅 Pick a Date</Text>
+                    <TouchableOpacity onPress={() => setShowDatePick(false)}>
+                      <Text style={{ color: colors.primary, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <DateTimePicker
+                    value={(() => { const [y, m, d] = dueDate.split('-').map(Number); return (y && m && d) ? new Date(y, m - 1, d) : new Date(); })()}
+                    mode="date" display="spinner"
+                    onChange={(_, selected) => {
+                      if (Platform.OS === 'android') setShowDatePick(false);
+                      if (selected) setDueDate(localDateStr(selected));
+                    }}
+                    textColor={colors.textPrimary}
+                    style={{ height: 180, width: '100%' }}
+                  />
+                </TouchableOpacity>
+              </TouchableOpacity>
+            </Modal>
+          )}
           <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
             <Pressable onPress={() => setApproving(false)}
               style={{ paddingHorizontal: 12, paddingVertical: 9 }}>

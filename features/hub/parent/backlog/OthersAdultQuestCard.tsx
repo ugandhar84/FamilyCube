@@ -5,6 +5,7 @@ import { TYPO } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
 import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
+import { showToast } from '@/components/AppToast';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
 
@@ -33,8 +34,12 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
   const sendNudge = () => {
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Nudge" on "${q.title}" assigned to ${assignee?.name ?? 'partner'} (id=${q.id}) → sendMessage [features/hub/parent/backlog/OthersAdultQuestCard.tsx:32]`);
     const msg = `👋 Hey ${assignee?.name?.split(' ')[0] ?? 'partner'}, just a nudge — "${q.title}" is still open. Need any help?`;
-    useChatStore.getState().sendMessage(assignee?.id ?? 'all', active.id, msg);
-    Alert.alert('Nudge sent!', `A reminder was sent directly to ${assignee?.name ?? 'your partner'}.`);
+    useChatStore.getState().sendMessage(assignee?.id ?? 'all', active.id, msg)
+      .then(() => showToast(`Nudge sent to ${assignee?.name?.split(' ')[0] ?? 'them'} ✓`))
+      .catch((e: any) => {
+        console.warn('[OthersAdultQuestCard] sendNudge failed', e?.message ?? e);
+        Alert.alert('Could not send', "The nudge didn't go through — check your connection and try again.");
+      });
   };
 
   const reclaim = () => {
@@ -50,7 +55,10 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
         // the exact "missing both" asymmetry the audit flagged.
         // reassign_chore always bundles all three together.
         supabase.rpc('reassign_chore', { p_chore_id: q.id, p_new_member_id: active.id, p_by_member_id: active.id })
-          .then(({ error }) => { if (error) console.warn('[OthersAdultQuestCard] reassign_chore failed', error.message); });
+          .then(({ error }) => {
+            if (error) { console.warn('[OthersAdultQuestCard] reassign_chore failed', error.message); return; }
+            showToast('Reclaimed ✓');
+          });
       } },
     ]
   );

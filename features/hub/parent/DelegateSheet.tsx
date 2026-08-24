@@ -6,6 +6,7 @@ import AppBottomSheet from '@/components/AppBottomSheet';
 import { useChoreStore } from '@/store/choreStore';
 import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
+import { showToast } from '@/components/AppToast';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
 
@@ -75,10 +76,12 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
                 supabase.rpc('reassign_chore', {
                   p_chore_id: target.choreId, p_new_member_id: m.id, p_by_member_id: active.id,
                 }).then(({ error }) => {
-                  if (error) console.warn('[DelegateSheet] reassign_chore failed', error.message);
+                  if (error) { console.warn('[DelegateSheet] reassign_chore failed', error.message); return; }
+                  showToast(`Delegated to ${m.name.split(' ')[0]} ✓`);
                 });
               } else {
                 addParentQuest(target.choreId, active.id, m.id, 'DIRECT', note.trim() || undefined);
+                showToast(`Delegated to ${m.name.split(' ')[0]} ✓`);
               }
               if (priorAssigneeId && priorAssigneeId !== m.id && priorAssigneeId !== active.id) {
                 useChatStore.getState().sendMessage(priorAssigneeId, active.id,

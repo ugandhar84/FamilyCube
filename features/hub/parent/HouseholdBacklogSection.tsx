@@ -4,6 +4,7 @@ import { TYPO } from '@/constants/theme';
 import { SectionCard } from '../hubComponents';
 import { useChoreStore } from '@/store/choreStore';
 import { supabase } from '@/lib/supabase';
+import { showToast } from '@/components/AppToast';
 import { MyAdultQuestCard } from './backlog/MyAdultQuestCard';
 import { OthersAdultQuestCard } from './backlog/OthersAdultQuestCard';
 import { DirectPendingCard } from './backlog/DirectPendingCard';
@@ -173,7 +174,8 @@ export function HouseholdBacklogSection({
                     // exact semantics (a pool item, claimed directly).
                     supabase.rpc('claim_pool_quest', { p_chore_id: c.id, p_member_id: active.id })
                       .then(({ error }) => {
-                        if (error) console.warn('[HouseholdBacklogSection] claim_pool_quest failed', error.message);
+                        if (error) { console.warn('[HouseholdBacklogSection] claim_pool_quest failed', error.message); return; }
+                        showToast('Taken ✓');
                       });
                   } else {
                     handlePullTask(c);

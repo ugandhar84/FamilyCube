@@ -3,6 +3,7 @@ import { View, Text, Pressable, Alert } from 'react-native';
 import { ChevronUp, ChevronDown, Clock, Undo2, MessageCircle } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useChatStore } from '@/store/chatStore';
+import { showToast } from '@/components/AppToast';
 import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 
@@ -27,8 +28,12 @@ export function OutgoingPendingCard({ a, chore, members, active, colors, isDark,
   const sendNudge = () => {
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Nudge" on "${chore.title}" waiting on ${assignee?.name ?? 'partner'} (id=${a.id}) → sendMessage [features/hub/parent/backlog/OutgoingPendingCard.tsx:28]`);
     const msg = `👋 Hey ${assignee?.name?.split(' ')[0] ?? 'there'}, just a nudge — "${chore.title}" is still waiting on you. Need any help?`;
-    useChatStore.getState().sendMessage(a.assignedTo, active.id, msg);
-    Alert.alert('Nudge sent!', `A reminder was sent directly to ${assignee?.name ?? 'them'}.`);
+    useChatStore.getState().sendMessage(a.assignedTo, active.id, msg)
+      .then(() => showToast(`Nudge sent to ${assignee?.name?.split(' ')[0] ?? 'them'} ✓`))
+      .catch((e: any) => {
+        console.warn('[OutgoingPendingCard] sendNudge failed', e?.message ?? e);
+        Alert.alert('Could not send', "The nudge didn't go through — check your connection and try again.");
+      });
   };
   const isSnoozed = a.status === 'SNOOZED' && a.snoozeUntil && a.snoozeUntil > new Date().toISOString();
   const isBounced = a.status === 'PARKED';

@@ -195,22 +195,6 @@ export default function HubScreen() {
         )}
       </ScrollView>
 
-      {/* FAB — floats above the ScrollView (must be a sibling of it, not
-          content inside it, or it would scroll away with the page instead
-          of staying pinned). Kid/Teen/Senior only; Parent's own create
-          entry point is the Tasks tab's FAB, not the Hub. */}
-      {(isKid || isTeen || isSenior) && (
-        <Pressable
-          onPress={() => setComposerVisible(true)}
-          style={{
-            position: 'absolute', right: 20, bottom: insetsBottomForFab + 20, width: 56, height: 56, borderRadius: 28,
-            alignItems: 'center', justifyContent: 'center', zIndex: 20, backgroundColor: colors.primary,
-            shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 4 }, shadowRadius: 10, elevation: 6,
-          }}>
-          <Plus size={26} color="#fff" />
-        </Pressable>
-      )}
-
       {/* One instance per active trip — chat broadcast (30s in) and the
           overdue check both need to run independently per trip so two
           simultaneous trips (different drivers) each fire their own,

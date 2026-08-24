@@ -180,15 +180,6 @@ export default function TasksScreen() {
   const [rideRequestModal, setRideRequestModal] = useState(false);
   const openCreator = () => { if (isKidCreator) setShowAskParentSheet(true); else setShowComposer(true); };
 
-  // Set by CustomTabBar the instant the Tasks tab is tapped — was used to
-  // auto-open the composer + play a FAB pop animation; both removed per
-  // feedback (auto-open stole the list view on every switch; the pop
-  // animation was cut too). Still clear the flag so a stale `true` doesn't
-  // linger from before this was simplified.
-  useFocusEffect(useCallback(() => {
-    if (useUIStore.getState().autoOpenTaskComposer) useUIStore.getState().setAutoOpenTaskComposer(false);
-  }, []));
-
   const activeQuery = segment === 'schedule' ? scheduleQuery : choreQuery;
   const setActiveQuery = segment === 'schedule' ? setScheduleQuery : setChoreQuery;
 

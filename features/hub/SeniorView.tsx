@@ -828,7 +828,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       {confirmedRide && rideCountdown !== null && rideCountdown > -30 && !dismissedRideIds.has(confirmedRide.id) && (
         <KidRideBanner
           ev={confirmedRide} rideCountdown={rideCountdown} colors={colors} isDark={isDark}
-          active={active}
+          active={active} members={members}
           onConfirmPickup={confirmPickup}
           onDismiss={(id) => setDismissedRideIds(prev => new Set([...prev, id]))}
         />

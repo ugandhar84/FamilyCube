@@ -6,6 +6,7 @@ import { KID } from './kidTheme';
 import { eventAssignee } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
+import { driverLabelByName } from '@/lib/format';
 
 // Money-green — "ride here / on the way" positive accent, distinct from
 // brand teal used elsewhere in the kid hub. Not colors.success (which IS
@@ -32,9 +33,9 @@ function rideState(rideCountdown: number, confirmed: boolean) {
 
 // Full-width "your ride is coming" banner — separate from the hero card's own
 // mini countdown so it stays visible even after scrolling past the hero.
-export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, onConfirmPickup, onDismiss, onSendDriverLate, lateNudgeSent }: {
+export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, members, onConfirmPickup, onDismiss, onSendDriverLate, lateNudgeSent }: {
   ev: FamilyEvent; rideCountdown: number; colors: any; isDark: boolean;
-  active: FamilyMember;
+  active: FamilyMember; members: FamilyMember[];
   onConfirmPickup: (ev: FamilyEvent) => void;
   onDismiss: (evId: string) => void;
   // Was a separate duplicate banner in KidUrgentAlerts.tsx ("Driver hasn't
@@ -65,8 +66,9 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, onCon
   // driverName-based kid ride request (KidRequestModal's own shape), so
   // this banner literally rendered "undefined is HERE!" for the exact ride
   // type this session's redesign was built around (QA sweep, kid-role
-  // audit, High). eventAssignee() covers both field pairs.
-  const driverFirst = eventAssignee(ev).name?.split(' ')[0];
+  // audit, High). eventAssignee() covers both field pairs. driverLabelByName
+  // shows a parent as just "Dad"/"Mom", anyone else as "Name (Relation)".
+  const driverFirst = driverLabelByName(eventAssignee(ev).name, members);
   const headline = confirmed
     ? `Pickup confirmed — you're all set`
     : isOverdue

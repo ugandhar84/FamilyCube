@@ -52,3 +52,31 @@ export function relationalNameByName(name: string | undefined, allMembers: Relat
   const member = allMembers.find(m => m.name === name);
   return member ? relationalName(member, allMembers) : name.split(' ')[0];
 }
+
+interface DriverLabelMember {
+  name: string;
+  role: string;
+  subRole?: string;
+  relationship?: string;
+}
+
+/**
+ * Display label for a named driver/helper (a free-text field, not a
+ * memberId — event.helper/driverName), used specifically for "so-and-so
+ * hasn't arrived" style copy where the READER needs to know who's being
+ * talked about, not just how the family refers to them casually.
+ * - parent → subRole alone ("Dad"/"Mom") — unambiguous, no bracket needed.
+ * - anyone else with a relationship or subRole → "Name (Relation)"
+ *   ("Raj (Grandpa)", "Priya (Aunt)") — explicit rather than assuming the
+ *   reader already knows the relation the way relationalName() does.
+ * - no match / no relation info at all → just the first name.
+ */
+export function driverLabelByName(name: string | undefined, allMembers: DriverLabelMember[]): string | undefined {
+  if (!name) return undefined;
+  const firstName = name.split(' ')[0];
+  const member = allMembers.find(m => m.name === name);
+  if (!member) return firstName;
+  if (member.role === 'parent') return member.subRole?.trim() || firstName;
+  const relation = member.relationship?.trim() || member.subRole?.trim();
+  return relation ? `${firstName} (${relation})` : firstName;
+}

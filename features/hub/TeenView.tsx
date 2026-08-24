@@ -347,7 +347,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
       {confirmedRide && rideCountdown !== null && rideCountdown > -30 && !dismissedRideIds.has(confirmedRide.id) && (
         <KidRideBanner
           ev={confirmedRide} rideCountdown={rideCountdown} colors={colors} isDark={isDark}
-          active={active}
+          active={active} members={members}
           onConfirmPickup={confirmPickup}
           onDismiss={(id) => setDismissedRideIds(prev => new Set([...prev, id]))}
         />

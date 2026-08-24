@@ -182,16 +182,7 @@ function CustomTabBar({ state, navigation }: any) {
                 if (now - lastNavTime.current < 400) return;
                 lastNavTime.current = now;
                 const event = navigation.emit({ type: 'tabPress', target: route?.key, canPreventDefault: true });
-                if (!focused && !event.defaultPrevented) {
-                  // Tasks tap — echoes Ask Cube's sparkle FAB (hidden on
-                  // Tasks specifically to avoid stacking on its own "+")
-                  // by auto-opening the same smart composer the instant
-                  // the tab lands, so switching TO Tasks reads as "the
-                  // sparkle button became the + button" rather than the
-                  // create action just disappearing.
-                  if (name === 'tasks') useUIStore.getState().setAutoOpenTaskComposer(true);
-                  navigation.navigate(name);
-                }
+                if (!focused && !event.defaultPrevented) navigation.navigate(name);
               }}
               style={styles.tabItem}
             >
@@ -232,10 +223,6 @@ export default function TabLayout() {
   const [askCubeOpen, setAskCubeOpen] = useState(false);
   const pathname = usePathname();
   const onChatTab = pathname?.includes('/chat');
-  // Tasks tab has its own FAB (SmartTaskComposer's "+") — stacking Ask
-  // Cube's FAB on top of it in the same corner was genuinely confusing,
-  // same reasoning Chat's exclusion above already documents.
-  const onTasksTab = pathname?.includes('/tasks');
   const fullBleedScreenActive = useUIStore(s => s.fullBleedScreenActive);
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const insets = useSafeAreaInsets();
@@ -304,7 +291,7 @@ export default function TabLayout() {
               every other tab still gets the FAB. If it's already open when
               the user navigates to Chat, leave it open rather than yanking
               it away mid-conversation — only the launcher button hides. */}
-          {!onChatTab && !onTasksTab && !fullBleedScreenActive && (
+          {!onChatTab && !fullBleedScreenActive && (
             <Pressable
               onPress={() => setAskCubeOpen(true)}
               style={{

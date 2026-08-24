@@ -12,6 +12,7 @@ import { withinLast24h } from '@/lib/dates';
 import { KidRequestModal } from '@/features/calendar/KidRequestModal';
 import { useChatStore } from '@/store/chatStore';
 import { localToday, fmtTime, hoursUntilEvent, useCountdown } from './hubUtils';
+import { driverLabelByName } from '@/lib/format';
 
 // Encoding helpers and modals live in KidModals.tsx
 export { GROCERY_PREFIX, SUPPLIES_PREFIX, encodeGroceryRequest, decodeGroceryRequest } from './KidModals';
@@ -284,12 +285,15 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
     });
     // Was hardcoded "My driver" regardless of who's actually assigned —
     // reads oddly when the driver is a named parent/grandparent ("My
-    // driver hasn't arrived" instead of "Dad hasn't arrived"). Falls back
-    // to "My ride" (not "driver") only when nobody's actually assigned.
-    const driverFirst = eventAssignee(ev).name?.split(' ')[0];
-    sendMessage('all', active.id, `⚠️ ${active.name.split(' ')[0]}: ${driverFirst ?? 'My ride'} hasn't arrived yet for "${ev.title}"! Can someone check?`);
+    // driver hasn't arrived" instead of "Dad hasn't arrived"). A parent
+    // shows as just their subRole ("Dad"/"Mom") — no ambiguity, every kid's
+    // dad is "Dad". Anyone else (grandparent, teen sibling driving, aunt,
+    // etc.) shows as "Name (Relation)". Falls back to "My ride" (not
+    // "driver") only when nobody's actually assigned.
+    const driverLabel = driverLabelByName(eventAssignee(ev).name, members);
+    sendMessage('all', active.id, `⚠️ ${active.name.split(' ')[0]}: ${driverLabel ?? 'My ride'} hasn't arrived yet for "${ev.title}"! Can someone check?`);
     setLateNudgeSent(p => ({ ...p, [ev.id]: true }));
-    Alert.alert('⚠️ Alert sent!', `Your parent has been notified that ${driverFirst ?? 'your ride'} is late.`);
+    Alert.alert('⚠️ Alert sent!', `Your parent has been notified that ${driverLabel ?? 'your ride'} is late.`);
   };
 
   // Either side (rider or driver) can confirm a pickup actually happened —
@@ -352,7 +356,7 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
       {confirmedRide && rideCountdown !== null && rideCountdown > -180 && !dismissedRideIds.has(confirmedRide.id) && (
         <KidRideBanner
           ev={confirmedRide} rideCountdown={rideCountdown} colors={colors} isDark={isDark}
-          active={active}
+          active={active} members={members}
           onConfirmPickup={confirmPickup}
           onDismiss={(id) => setDismissedRideIds(prev => new Set([...prev, id]))}
           onSendDriverLate={sendDriverLate} lateNudgeSent={lateNudgeSent}

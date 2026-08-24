@@ -1998,10 +1998,22 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     const now = new Date().toISOString();
     // Optimistic guess — pending_approval unless the RPC's own re-derived
     // branches (self-assigned-parent / redo-cap) say otherwise, corrected
-    // by the RPC's real response below.
-    get().updateChore(choreId, {
-      status: 'pending_approval', submissionNote: opts?.note, submissionPhotoUrl: opts?.photoUrl, submittedAt: now,
-    });
+    // by the RPC's real response below. LOCAL-ONLY set() here, deliberately
+    // NOT updateChore() — updateChore fires its OWN independent async DB
+    // write (a plain supabase.from(...).update(...), racing the RPC call
+    // right below it). Live-tested bug: the RPC correctly wrote
+    // status='auto_approved' on a redo-cap submission, then updateChore's
+    // own optimistic write landed ~8ms later and silently clobbered it
+    // back to 'pending_approval' IN THE DATABASE — not just local state,
+    // the real row. A kid's redo-cap auto-approval kept reverting to
+    // needing manual review because two independent writers were racing
+    // the same row for the same submit action.
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId
+        ? { ...c, status: 'pending_approval', submissionNote: opts?.note ?? c.submissionNote, submissionPhotoUrl: opts?.photoUrl ?? c.submissionPhotoUrl, submittedAt: now }
+        : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     supabase.rpc('submit_chore', {
       p_chore_id: choreId, p_member_id: chore.assignedToId,
       p_note: opts?.note ?? null, p_photo_url: opts?.photoUrl ?? null,

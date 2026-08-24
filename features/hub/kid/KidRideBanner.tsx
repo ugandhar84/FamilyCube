@@ -107,46 +107,23 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, membe
           )}
         </View>
 
-        {/* 'here' (the scheduled pickup window has arrived) previously
-            only offered "I'm picked up" — a kid could confirm a GOOD
-            outcome immediately, but had no way to flag a bad one until
-            the system silently escalated to 'overdue' 2+ minutes later on
-            its own. For kid safety, waiting on a timer to notice
-            something's wrong is worse than letting the kid say so the
-            moment the ride was actually due. "Not here yet" sends the
-            same nudge onSendDriverLate already sends once overdue — just
-            reachable immediately instead of gated behind that delay. */}
-        {!confirmed && rideHere && (
+        {/* Was split across two different states with two different
+            labels ("Not here yet" while 'here', "Alert my parent" once
+            'overdue') — confusing and inconsistent. Simplified per direct
+            feedback: both "I'm picked up" and "Alert my parent" show
+            together the entire time pickup isn't confirmed (here AND
+            overdue), same two buttons throughout — a kid should never
+            have to wait for the app to decide something's "overdue"
+            before they're allowed to say so themselves. */}
+        {!confirmed && (rideHere || isOverdue) && (
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidRideBanner.tsx:here]`); onConfirmPickup(ev); }}
+            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidRideBanner.tsx]`); onConfirmPickup(ev); }}
               style={{ flex: 1, backgroundColor: MONEY_GREEN, borderRadius: 12, paddingVertical: 9, alignItems: 'center' }}>
               <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>I'm picked up</Text>
             </Pressable>
             {onSendDriverLate && (
-              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "${alertSent ? 'Sent' : 'Not here yet'}" on "${ev.title}" (id=${ev.id}) → onSendDriverLate [features/hub/kid/KidRideBanner.tsx:here]`); onSendDriverLate(ev); }}
-                style={{ flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)', paddingVertical: 9, alignItems: 'center', opacity: alertSent ? 0.7 : 1 }}>
-                <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>{alertSent ? 'Sent ✓' : 'Not here yet'}</Text>
-              </Pressable>
-            )}
-          </View>
-        )}
-
-        {/* Overdue gets the same two stacked actions, styled with more
-            urgency (solid danger button instead of the outline "not sure
-            yet" treatment above) — "I'm picked up" (if it actually
-            happened and just hasn't been confirmed) and "Alert my
-            parent" (if it genuinely hasn't), same two outcomes the old
-            separate KidUrgentAlerts banner offered, now living in this
-            one banner. */}
-        {!confirmed && isOverdue && (
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidRideBanner.tsx:overdue]`); onConfirmPickup(ev); }}
-              style={{ flex: 1, backgroundColor: MONEY_GREEN, borderRadius: 12, paddingVertical: 9, alignItems: 'center' }}>
-              <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>I'm picked up</Text>
-            </Pressable>
-            {onSendDriverLate && (
-              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "${alertSent ? 'Sent' : 'Alert my parent'}" on "${ev.title}" (id=${ev.id}) → onSendDriverLate [features/hub/kid/KidRideBanner.tsx:overdue]`); onSendDriverLate(ev); }}
-                style={{ flex: 1, backgroundColor: colors.danger, borderRadius: 12, paddingVertical: 9, alignItems: 'center', opacity: alertSent ? 0.7 : 1 }}>
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "${alertSent ? 'Sent' : 'Alert my parent'}" on "${ev.title}" (id=${ev.id}) → onSendDriverLate [features/hub/kid/KidRideBanner.tsx]`); onSendDriverLate(ev); }}
+                style={{ flex: 1, backgroundColor: isOverdue ? colors.danger : 'transparent', borderWidth: isOverdue ? 0 : 1.5, borderColor: 'rgba(255,255,255,0.5)', borderRadius: 12, paddingVertical: 9, alignItems: 'center', opacity: alertSent ? 0.7 : 1 }}>
                 <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>{alertSent ? 'Sent ✓' : 'Alert my parent'}</Text>
               </Pressable>
             )}

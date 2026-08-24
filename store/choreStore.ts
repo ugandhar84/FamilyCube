@@ -2053,28 +2053,23 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || !chore.inviteGrandparents || chore.status !== 'todo') return;
 
-    // Live QA audit (round 1) found updateChore's underlying dbUpdate has
-    // no WHERE guard beyond id — the 'status !== todo' check above only
-    // reads possibly-stale LOCAL state, so two GPs offering near-
-    // simultaneously (or one client with stale cache) could have the
-    // second unconditional UPDATE silently overwrite the first offer with
-    // zero error surfaced. Fixed the same way claimPoolQuest already
-    // guards its own race (spec 3.1) — a conditional UPDATE keyed on the
-    // DB still showing 'todo', with a rows-affected check and local
-    // rollback on loss, instead of trusting only the in-memory read above.
+    // Now backed by the claim_gp_errand Postgres RPC (see migration
+    // 20260905150000_fix_request_redo_status_and_wire_remaining_rpcs.sql) —
+    // a real row-locked, unique-outcome CAS check-and-write instead of a
+    // client-side conditional UPDATE, plus a real activity_log audit row
+    // this write previously had none of (one of the 12 raw-write actions
+    // the original audit flagged as bypassing updateChore's logging
+    // entirely). Same optimistic-update + rollback-on-loss shape as before.
     set(s => ({
       chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'gp_offer_pending', gpOfferById: gpMemberId } : c),
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
-    supabase.from('chore_tasks')
-      .update({ status: 'gp_offer_pending', gp_offer_by_id: gpMemberId })
-      .eq('id', choreId)
-      .eq('status', 'todo')
-      .select('id')
+    supabase.rpc('claim_gp_errand', { p_chore_id: choreId, p_gp_member_id: gpMemberId })
       .then(({ data, error }) => {
-        if (error) { console.warn('[choreStore] claimGPErrand DB update failed', error.message); return; }
-        if (!data || data.length === 0) {
+        if (error) { console.warn('[choreStore] claimGPErrand RPC failed', error.message); return; }
+        const claimed = Array.isArray(data) ? data[0]?.claimed : (data as any)?.claimed;
+        if (!claimed) {
           console.warn('[choreStore] claimGPErrand lost the race on', choreId, '— another GP already offered, rolling back local state');
           set(s => ({
             chores: s.chores.map(c =>
@@ -2582,6 +2577,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
     const newRedoCount = (chore.redoCount ?? 0) + 1;
     const now = new Date().toISOString();
+    // Optimistic local update, same shape as before.
     get().updateChore(choreId, {
       status:          'redo_requested',
       rejectionReason: reason,
@@ -2590,21 +2586,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       redoCount:       newRedoCount,
     });
 
-    // Same 3.3 race guard as approveChore's identical comment — if the
-    // other parent's approval already landed first, this conditional
-    // UPDATE finds 0 rows and the redo_requested flip (and the assignee
-    // being told "needs another pass") should not have applied against an
-    // already-paid submission.
-    const previousStatus = chore.status;
-    supabase.from('chore_tasks')
-      .update({ status: 'redo_requested', rejection_reason: reason, reviewed_at: now, reviewed_by_id: reviewerId, redo_count: newRedoCount })
-      .eq('id', choreId)
-      .eq('status', previousStatus)
-      .select('id')
-      .then(({ data, error }) => {
-        if (error) { console.warn('[choreStore] requestRedo CAS check failed', error.message); return; }
-        if (!data || data.length === 0) {
-          console.warn(`[choreStore] requestRedo lost the race on ${choreId} — the other parent already approved this; redo_requested should not have applied locally`);
+    // Now backed by the request_redo Postgres RPC (see migrations
+    // 20260905150000/20260905160000) — row-locked, authorization-checked
+    // server-side (not just trusting the client's canApprove read above),
+    // and CAS-guarded against the same "other parent already approved"
+    // race the old separate raw update handled, now in the SAME
+    // transaction as the status write instead of a second round-trip.
+    supabase.rpc('request_redo', { p_chore_id: choreId, p_reviewer_id: reviewerId, p_reason: reason })
+      .then(({ error }) => {
+        if (error) {
+          console.warn(`[choreStore] requestRedo RPC rejected ${choreId} — likely a concurrent approval landed first or authorization failed:`, error.message);
         }
       });
   },

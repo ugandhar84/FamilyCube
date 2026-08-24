@@ -20,7 +20,6 @@ import type { FamilyEvent } from '@/store/eventStore';
 import { fmtTime, hoursUntilEvent, catColor, isWorkEvent, isHomeLocation } from './hubUtils';
 import { EventCardRow } from '@/features/calendar/components/EventCard';
 import { fmtDateShort } from '@/lib/dates';
-import { relationalNameByName } from '@/lib/format';
 import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
@@ -314,7 +313,11 @@ export function notifyTakeover(ev: FamilyEvent, newName: string, members: Family
   if (!prevName || prevName === newName) return;
   const actor = members.find(m => m.name === activeName);
   const prevMember = members.find(m => m.name === prevName);
-  const msg = `🔄 ${relationalNameByName(newName, members)} is now driving "${ev.title}" instead of ${relationalNameByName(prevName, members)}.`;
+  // Was relationalNameByName ("Dad"/"Mom") — this is a parent-to-parent
+  // driver-reassignment broadcast, where knowing exactly WHO by name
+  // matters more than the familiar/kid-facing "Dad"/"Mom" framing the
+  // rest of the app uses. Live-reported as confusing here specifically.
+  const msg = `🔄 ${newName.split(' ')[0]} is now driving "${ev.title}" instead of ${prevName.split(' ')[0]}.`;
   const recipients = new Set<string>();
   if (prevMember && prevMember.id !== actor?.id) recipients.add(prevMember.id);
   if (ev.memberId && ev.memberId !== actor?.id) recipients.add(ev.memberId);
@@ -367,7 +370,12 @@ export function AlertBanner({
             </View>
             <View style={{ padding: 14, gap: 8 }}>
               <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>
-                <Text style={{ fontWeight: '700', color: colors.danger }}>{relationalNameByName(assignee.name, members)}</Text> confirmed
+                {/* Was relationalNameByName ("Dad"/"Mom") — parent-to-
+                    parent coordination/accountability banner (visible to
+                    EVERY parent, not just the confirmed driver), where
+                    knowing exactly who by name is clearer than the
+                    familiar framing. */}
+                <Text style={{ fontWeight: '700', color: colors.danger }}>{(assignee.name?.split(' ')[0] ?? 'Driver')}</Text> confirmed
                 {kid ? ` ${kid.name.split(' ')[0]}'s pickup` : ' this ride'} for {fmtTime(ev.time)}, but never started the trip.
               </Text>
               {isMe && onDispatch ? (
@@ -378,7 +386,7 @@ export function AlertBanner({
                 </Pressable>
               ) : (
                 <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, fontStyle: 'italic' }}>
-                  Check in with {relationalNameByName(assignee.name, members)} — the pickup may already be handled but never marked En Route.
+                  Check in with {(assignee.name?.split(' ')[0] ?? 'Driver')} — the pickup may already be handled but never marked En Route.
                 </Text>
               )}
             </View>
@@ -863,8 +871,12 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
 
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{helperLabel}</Text>
+                  {/* Was relationalNameByName — this driver-assignment
+                      management row (Take Over/Reassign/Override) is a
+                      parent picking among a specific roster; the real
+                      name is clearer than "Dad"/"Mom" here too. */}
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: showAlarm ? colors.danger : colors.textPrimary }}>
-                    {relationalNameByName(assignee.name, members)}
+                    {(assignee.name?.split(' ')[0] ?? 'Driver')}
                   </Text>
                   {showAlarm && ev.declineReason && (
                     <Text style={{ fontSize: TYPO.label, color: colors.danger, marginTop: 2 }}>
@@ -902,7 +914,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: borderCol }}>
                   {showRemind && (
                     <Pressable
-                      onPress={() => { showToast(`Reminder sent to ${relationalNameByName(assignee.name, members)} ✓`); onClose(); }}
+                      onPress={() => { showToast(`Reminder sent to ${(assignee.name?.split(' ')[0] ?? 'Driver')} ✓`); onClose(); }}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, backgroundColor: colors.warning + '18' }}>
                       <Bell size={13} color={colors.warningDark} />
                       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warningDark }}>Remind</Text>
@@ -926,7 +938,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                       onPress={() => {
                         Alert.alert(
                           'Override Confirmed Ride?',
-                          `${relationalNameByName(assignee.name, members)} already confirmed this. Only change it if there's a real problem.`,
+                          `${(assignee.name?.split(' ')[0] ?? 'Driver')} already confirmed this. Only change it if there's a real problem.`,
                           [
                             { text: 'Cancel', style: 'cancel' },
                             { text: 'Yes, Reassign', style: 'destructive', onPress: () => setChangeOpen(true) },

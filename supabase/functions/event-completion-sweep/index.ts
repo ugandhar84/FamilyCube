@@ -18,6 +18,17 @@
 // this repo) before this feature was built; using a distinct column name
 // avoids colliding with it.
 //
+// date/start_time/end_time are the FAMILY'S LOCAL wall-clock values (same
+// convention the client uses everywhere — hoursUntilEvent constructs a
+// local Date from them), not UTC. Deno runs this function in UTC, so
+// `new Date("2026-08-24T15:00:00")` would be parsed as 15:00 UTC, not
+// 15:00 in the family's actual zone — up to 8 hours of skew for a US
+// family, marking events completed hours early. Resolves each row's real
+// UTC instant using its own `timezone` column (an IANA zone name written
+// by the client at event-creation time, e.g. "America/Los_Angeles") via
+// Intl.DateTimeFormat's offset, falling back to UTC only if a row somehow
+// has no timezone recorded.
+//
 // Cron schedule (set via the migration's cron.schedule call): every 15 min.
 //
 // Deploy: supabase functions deploy event-completion-sweep
@@ -35,6 +46,54 @@ const json = (b: unknown, s = 200) =>
 
 const ONE_HOUR_MS = 60 * 60_000;
 
+// Returns the UTC epoch ms for a local wall-clock date+time in the given
+// IANA timezone, e.g. (2026, 8, 24, 15, 0, "America/Los_Angeles") ->
+// 2026-08-24T22:00:00Z (15:00 PDT). Works by formatting a UTC guess in the
+// target zone and correcting for the offset — handles DST correctly since
+// it asks Intl for the actual offset on that specific date, not a fixed one.
+function zonedWallClockToUtcMs(y: number, mo: number, d: number, h: number, mi: number, s: number, timeZone: string): number {
+  const utcGuessMs = Date.UTC(y, mo - 1, d, h, mi, s);
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone, hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  const parts = Object.fromEntries(dtf.formatToParts(new Date(utcGuessMs)).map(p => [p.type, p.value]));
+  const asIfUtc = Date.UTC(
+    Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+    Number(parts.hour), Number(parts.minute), Number(parts.second),
+  );
+  // asIfUtc is what utcGuessMs LOOKS LIKE when read in `timeZone` — the
+  // difference is the zone's offset at this instant; subtract it to land
+  // on the UTC instant that actually displays as the wall-clock we want.
+  return utcGuessMs - (asIfUtc - utcGuessMs);
+}
+
+function eventEndUtcMs(r: { date: string; start_time: string | null; end_time: string | null; timezone: string | null }): number | null {
+  const dateMatch = r.date?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!dateMatch) return null;
+  const [, yStr, moStr, dStr] = dateMatch;
+  const y = Number(yStr), mo = Number(moStr), d = Number(dStr);
+  const tz = r.timezone || 'UTC';
+
+  let h = 23, mi = 59, s = 59, extraMs = 0;
+  if (r.end_time) {
+    const [hh, mm] = r.end_time.split(':').map(Number);
+    h = hh; mi = mm; s = 0;
+  } else if (r.start_time) {
+    const [hh, mm] = r.start_time.split(':').map(Number);
+    h = hh; mi = mm; s = 0;
+    extraMs = ONE_HOUR_MS;
+  }
+  try {
+    return zonedWallClockToUtcMs(y, mo, d, h, mi, s, tz) + extraMs;
+  } catch {
+    // Unknown/invalid IANA zone string — fall back to naive UTC parsing
+    // rather than dropping the row from the sweep entirely.
+    return new Date(Date.UTC(y, mo - 1, d, h, mi, s)).getTime() + extraMs;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
@@ -51,7 +110,7 @@ serve(async (req) => {
 
     let q = supabase
       .from('calendar_events')
-      .select('id, date, start_time, end_time, all_day, family_id, completion_status')
+      .select('id, date, start_time, end_time, all_day, family_id, completion_status, timezone')
       .eq('completion_status', 'scheduled')
       .is('deleted_at', null);
     if (familyId) q = q.eq('family_id', familyId);
@@ -60,35 +119,39 @@ serve(async (req) => {
 
     const due = (rows ?? []).filter(r => {
       if (!r.date) return false;
-      let endMs: number;
-      if (r.end_time) {
-        endMs = new Date(`${r.date}T${r.end_time}:00`).getTime();
-      } else if (r.start_time) {
-        endMs = new Date(`${r.date}T${r.start_time}:00`).getTime() + ONE_HOUR_MS;
-      } else {
-        // No time at all (all-day) — completed once the whole date has passed.
-        endMs = new Date(`${r.date}T23:59:59`).getTime();
-      }
-      if (Number.isNaN(endMs)) return false;
+      const endMs = eventEndUtcMs(r as any);
+      if (endMs === null || Number.isNaN(endMs)) return false;
       return now >= endMs;
     });
 
     const report = { scanned: rows?.length ?? 0, completed: 0, dryRun };
 
-    for (const r of due) {
-      report.completed++;
-      if (dryRun) continue;
-      const { error: updErr } = await supabase
+    if (due.length > 0 && !dryRun) {
+      // Single batched UPDATE (still CAS-guarded via the same
+      // completion_status='scheduled' predicate) instead of one round trip
+      // per row — this sweep runs every 15 minutes and can touch dozens of
+      // rows across every family at once.
+      const { data: updated, error: updErr } = await supabase
         .from('calendar_events')
         .update({ completion_status: 'completed' })
-        .eq('id', r.id)
-        .eq('completion_status', 'scheduled'); // CAS — don't clobber a concurrent client edit
-      if (updErr) { console.warn('[event-completion-sweep] update failed', r.id, updErr.message); report.completed--; continue; }
-      await supabase.from('activity_log').insert({
-        entity_type: 'event', entity_id: r.id, family_id: r.family_id,
-        actor_id: null, action: 'auto_completed', from_status: 'scheduled', to_status: 'completed',
-        note: 'Auto-completed: event time has passed',
-      }).then(() => {}).catch(() => {});
+        .in('id', due.map(r => r.id))
+        .eq('completion_status', 'scheduled')
+        .select('id, family_id');
+      if (updErr) {
+        console.warn('[event-completion-sweep] batch update failed', updErr.message);
+      } else {
+        report.completed = updated?.length ?? 0;
+        if (updated && updated.length > 0) {
+          // Best-effort audit trail — fire-and-forget, batched in one insert.
+          supabase.from('activity_log').insert(updated.map(r => ({
+            entity_type: 'event', entity_id: r.id, family_id: r.family_id,
+            actor_id: null, action: 'auto_completed', from_status: 'scheduled', to_status: 'completed',
+            note: 'Auto-completed: event time has passed',
+          }))).then(() => {}).catch(() => {});
+        }
+      }
+    } else if (dryRun) {
+      report.completed = due.length;
     }
 
     console.log('[event-completion-sweep]', JSON.stringify(report));

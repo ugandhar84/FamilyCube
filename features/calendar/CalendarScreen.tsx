@@ -52,6 +52,7 @@ import MonthGridView, { DayEventsSummaryCard } from './components/MonthGridView'
 import WeekView from './components/WeekView';
 import AgendaView from './components/AgendaView';
 import DaySlotView from './components/DaySlotView';
+import { eventAssigneeRole } from '@/features/tasks/lib/deriveCardActions';
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 // Minutes until a today-dated event starts; Infinity for other days / no time set
@@ -729,7 +730,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
     targetIds.forEach(id => {
       if (targetMember) {
         const targetEvent = events.find(e => e.id === id);
-        const role: 'driver' | 'helper' = targetEvent?.driverName || (targetEvent?.rideRequired && !targetEvent?.helper) ? 'driver' : 'helper';
+        const role = targetEvent ? eventAssigneeRole(targetEvent) : 'helper';
         supabase.rpc('reassign_event', {
           p_event_id: id, p_new_member_id: targetMember.id, p_role: role, p_actor_id: activeMemberId,
         }).then(({ error }) => {

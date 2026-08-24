@@ -203,7 +203,7 @@ export function HouseholdBacklogSection({
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>Family ride status</Text>
                 </View>
                 {coParentPending.map(ev => (
-                  <RideCoordinationRow key={ev.id} ev={ev} members={members} colors={colors} isDark={isDark} />
+                  <RideCoordinationRow key={ev.id} ev={ev} members={members} active={active} colors={colors} isDark={isDark} />
                 ))}
               </View>
             )}

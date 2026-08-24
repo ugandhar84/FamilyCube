@@ -171,7 +171,16 @@ export default function TasksScreen() {
           return (
             <TouchableOpacity
               key={key}
-              onPress={() => { setSegment(key); if (searchOpen) toggleSearch(false); }}
+              onPress={() => {
+                setSegment(key);
+                if (searchOpen) toggleSearch(false);
+                // AI dropdown lives in QuestsScreen (only mounted while
+                // segment === 'chores') — leaving it open across a switch
+                // to Schedule left a stale row on screen whose buttons
+                // called into runAIRef pointing at an unmounted screen's
+                // runAI (found live: ultrareview Angle A, finding #2).
+                if (aiOpen) setAiOpen(false);
+              }}
               activeOpacity={0.85}
               style={[
                 styles.tabCard,

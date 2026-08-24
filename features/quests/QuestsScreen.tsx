@@ -421,6 +421,12 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
   runAIRef.current = runAI;
   useEffect(() => {
     onExposeAiRunner?.((tool: AiTool) => runAIRef.current(tool));
+    // Clear the parent's reference on unmount — TasksScreen only mounts
+    // this screen while segment === 'chores', so without this a runner
+    // exposed here could still be invoked from a stale dropdown after
+    // switching away (found live: ultrareview, stale-closure-into-
+    // unmounted-screen finding).
+    return () => onExposeAiRunner?.(() => {});
   }, [onExposeAiRunner]);
 
   useEffect(() => {

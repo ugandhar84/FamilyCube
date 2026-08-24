@@ -12,7 +12,7 @@ import { AddQuestModal } from '@/features/quests/QuestsScreen';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
 import type { FamilyMember } from '@/store/familyStore';
 import { AlertBanner, PickupRadarStatus } from './hubComponents';
-import { localToday, hoursUntilEvent, isWorkEvent, minutesBetween } from './hubUtils';
+import { localToday, hoursUntilEvent, isWorkEvent, minutesBetween, isHomeLocation } from './hubUtils';
 import { classifyEventUrgency } from './lib/classifyEventUrgency';
 import { decodeRideLate } from './KidModals';
 import { TodayView, GreetingHeader } from './TodayView';
@@ -123,7 +123,18 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // render, not which events are in-scope, so it stays here rather than
   // inside the classifier.
   const pendingRequests = unassigned.filter(e => e.category === 'Ride' && !e.rideRequired);
-  const pendingRideRequiredEvents = unassigned.filter(e => e.rideRequired);
+  // Also catches a non-Ride event with a real away-from-home location that
+  // never had rideRequired explicitly flagged at creation (e.g. a Sports/
+  // Study/Medical event created without ever typing a driver name) —
+  // previously surfaced via AlertBanner's own unassignedUrgent escalation,
+  // which this session's dedup removed; the only place left to notice it
+  // was EventDetailSheet's helperMissing check, reactive only (a parent had
+  // to already have the specific event open). RideRequiredEventCard already
+  // writes rideRequired:true on any action taken from it regardless of
+  // whether the flag was set going in, so it's safe to render for this case.
+  const pendingRideRequiredEvents = unassigned.filter(e =>
+    e.rideRequired || (e.category !== 'Ride' && !!e.location && !isHomeLocation(e.location))
+  );
   // pending_approval and pending_grandparent_approval both collapse to the
   // same client-side status (choreAdapter's choreStatusToQuestStatus) — a
   // grandparent_quest awaiting its sponsor's review must NOT show up in the

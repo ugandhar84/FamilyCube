@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, Alert } from 'react-native';
 import { ChevronUp, ChevronDown, Check, MessageCircle, Hand } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
@@ -82,8 +82,15 @@ export function DirectPendingCard({ a, chore, members, colors, isDark, respondTo
           "Let X know you're on it" nudge for the already-accepted case. */}
       <Pressable onPress={() => {
         console.log(`[UserAction] screen=Hub role=parent tapped "I'm on it" on "${chore.title}" from ${assigner?.name ?? 'partner'} (id=${a.id}) → sendMessage [features/hub/parent/backlog/DirectPendingCard.tsx:97]`);
+        // Was fire-and-forget with zero error visibility — any failure
+        // (channel creation, encryption, RLS rejection) silently swallowed,
+        // reading as "tapped but nothing happened" with no way to diagnose.
         useChatStore.getState().sendMessage(a.assignedBy, a.assignedTo,
-          `👋 ${assignee?.name?.split(' ')[0] ?? 'They'} saw "${chore.title}" — on it!`);
+          `👋 ${assignee?.name?.split(' ')[0] ?? 'They'} saw "${chore.title}" — on it!`)
+          .catch((e: any) => {
+            console.warn('[DirectPendingCard] "on it" nudge failed', e?.message ?? e);
+            Alert.alert('Could not send', "The nudge didn't go through — check your connection and try again.");
+          });
       }}
         style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
           marginHorizontal: 12, marginBottom: 12, paddingVertical: 8, borderRadius: 10 }}>

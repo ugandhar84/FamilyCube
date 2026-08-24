@@ -1346,7 +1346,18 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
   const lockedMemberIds = originalRequesterId ? [originalRequesterId] : [];
 
   const [notes,      setNotes]      = useState(event.notes ?? '');
-  const [helperName, setHelperName] = useState('');
+  // Was seeded to '' instead of event.helper — helperId (right below)
+  // correctly started from the real assignee, but helperName didn't, so
+  // save()'s `helperName !== event.helper` diff check was true on first
+  // render for ANY event with a real assignee, silently triggering a
+  // reassignment on saving an edit to something completely unrelated (e.g.
+  // notes). This is the root cause of a production bug: a Ride's driver
+  // got silently swapped to a co-parent because the edit form was opened
+  // and saved for an unrelated reason. helperTouched (below) additionally
+  // replaces the value-diff itself with an explicit dirty flag, since even
+  // a correctly-seeded value-diff is fragile against this class of bug.
+  const [helperName, setHelperName] = useState(event.helper ?? '');
+  const [helperTouched, setHelperTouched] = useState(false);
   const [helperId,   setHelperId]   = useState<string | undefined>(
     members.find((m: any) => m.name === event.helper)?.id
   );
@@ -1409,6 +1420,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
     const m = members.find(x => x.id === id);
     setHelperId(id);
     setHelperName(m?.name ?? '');
+    setHelperTouched(true);
   };
 
   const save = async () => {
@@ -1444,7 +1456,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
       const newTimeStr = event.allDay ? undefined : fmtTime(editEventDate);
       if (newDateStr !== event.date) patch.date = newDateStr;
       if (newTimeStr !== event.time) patch.time = newTimeStr;
-      if (helperName !== event.helper) {
+      if (helperTouched) {
         let newHelperName = helperName.trim();
         // Same auto-assign-to-other-parent convenience as creating a new
         // Ride — clearing the helper here without opening to GP/Teen
@@ -1751,7 +1763,7 @@ export function EditEventModal({ event, activeMemberId, onClose, onDelete }: {
                       placeholder="Or type a name (e.g. external tutor)"
                       placeholderTextColor={colors.textTertiary}
                       value={helperName}
-                      onChangeText={t => setHelperName(t)}
+                      onChangeText={t => { setHelperName(t); setHelperTouched(true); }}
                       onBlur={() => console.log(`[UserAction] FORM screen=Schedule role=${editRoleLabel} member=${editActiveMemberName} field="Helper name" on "${event.title}" (id=${event.id}) newValue=${helperName} [features/calendar/EventFormModal.tsx:1617]`)}
                     />
                   )}

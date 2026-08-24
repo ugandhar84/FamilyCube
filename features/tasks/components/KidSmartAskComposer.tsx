@@ -1,32 +1,37 @@
 /**
- * KidSmartAskComposer — a Kid's "just describe it" composer, sibling to
- * SmartTaskComposer but NOT a fork of it. Kid-facing "ask" categories
- * (ride/birthday/tutor/grocery/supplies/permission/question/medication) are
- * all genuinely different concepts from Parent/Teen/Senior's event/quest
- * creation — reusing SmartTaskComposer's 1292 lines here would mean bolting
- * an isKid branch onto every one of its quest/event/coin/GP-pool fields,
- * none of which apply. This component reuses only the free-text + voice
- * input UX (detectLocalTask/useVoiceDictation) and has its own small
- * routing table into the EXISTING kid mechanisms:
- *   - Ride/Birthday       → useEventStore().addEvent(...) with
- *                            approvalPending:true, same shape
- *                            KidRequestModal.tsx already writes.
- *   - Tutor/Permission/
- *     Question/Medication → useKidRequestStore().sendRequest({ type, ... })
- *   - Grocery/Supplies    → hands off to the real GroceryModal/SuppliesModal
- *                            (KidModals.tsx) — multi-item entry with
- *                            always-visible smart suggestion chips, not a
- *                            single un-itemized free-text request.
- *   - Chore               → supabase.rpc('propose_kid_chore', ...) — the one
- *                            genuinely new capability, gated to kid/teen
- *                            recipients only (server also rejects a parent
- *                            target). No coins field anywhere here — a
- *                            parent sets the real reward at approval time
- *                            (KidProposedChoreCard.tsx).
+ * KidSmartAskComposer — a Kid's "just describe it" entry point, sibling to
+ * SmartTaskComposer but NOT a fork of it. It free-text-detects (or lets the
+ * kid tap) a category from a short description, then routes:
+ *
+ *   - Ride     → stays INLINE (this component's own pickup/dropoff fields,
+ *                writes useEventStore().addEvent(...) with
+ *                approvalPending:true, same shape KidRequestModal.tsx
+ *                already writes) — the one category with real structured
+ *                data worth extracting from free text.
+ *   - Chore    → stays INLINE (recipient picker + supabase.rpc
+ *                ('propose_kid_chore', ...)) — the one genuinely new
+ *                capability, gated to kid/teen recipients only (server also
+ *                rejects a parent target). No coins field anywhere here — a
+ *                parent sets the real reward at approval time
+ *                (KidProposedChoreCard.tsx).
+ *   - Grocery/Supplies → hands off to the real GroceryModal/SuppliesModal
+ *                (KidModals.tsx) — multi-item entry with always-visible
+ *                smart suggestion chips.
+ *   - Birthday → hands off to KidRequestModal.tsx's own category grid
+ *                (already covers Birthday as one of its cards).
+ *   - Tutor/Permission/Question/Medication → hands off to AskModal
+ *                (KidModals.tsx) — a short free-text sentence ("Do I need
+ *                to go to the park?") genuinely can't be reliably
+ *                classified between these by keyword scoring the way Ride
+ *                (has locations/times) or Chore (has an imperative verb)
+ *                can; rather than guess wrong, the composer's job for these
+ *                is just picking which dedicated ask-form to open, not
+ *                submitting on their behalf.
  *
  * This directly replaces AskParentSheet's manual 6-button chooser for Kid
  * (removed from KidView.tsx in the same change) — every category it offered
- * is covered here, plus free-text/voice entry and the new Chore option.
+ * is covered here, plus free-text/voice category detection and the new
+ * Chore option.
  */
 import { useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, Platform, Keyboard, Alert } from 'react-native';
@@ -39,10 +44,11 @@ import { TYPO, RADIUS, SPACING } from '@/constants/theme';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { detectLocalTask, type LocalDetectionResult } from '../lib/localTaskDetection';
 import { useEventStore } from '@/store/eventStore';
-import { useKidRequestStore, type RequestType } from '@/store/kidRequestStore';
-import { GroceryModal, SuppliesModal } from '@/features/hub/KidModals';
+import { useKidRequestStore } from '@/store/kidRequestStore';
 import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
+import { GroceryModal, SuppliesModal, AskModal } from '@/features/hub/KidModals';
+import { KidRequestModal } from '@/features/calendar/KidRequestModal';
 
 const MIN_CHARS = 4;
 
@@ -60,9 +66,17 @@ const CATEGORY_CHIPS: { key: AskCategory; label: string; emoji: string; Icon: an
   { key: 'chore',       label: 'Chore',       emoji: '✅', Icon: ClipboardList, color: '#9261C7' },
 ];
 
+// A literal question ("Do/Can/Should/Am I ...?", or just ending in "?")
+// reads as a QUEST_VERB_RE imperative to localTaskDetection.ts (e.g. "Do I
+// NEED TO go to the park?" hits its "need to" to-do phrase) and gets
+// classified quest-kind, which guessCategory below would otherwise turn
+// into a wrongly-guessed Chore. Checked first, ahead of the quest-kind
+// fallback, so a plain question never gets offered as a chore proposal.
+const QUESTION_PHRASING_RE = /^(?:do|does|did|can|could|should|would|will|may|am|is|are|was|were)\b.*\?\s*$|\?\s*$/i;
+
 // Best-effort local-detection → AskCategory guess, purely a starting
 // suggestion the kid can always override with a chip tap below.
-function guessCategory(d: LocalDetectionResult | null): AskCategory | null {
+function guessCategory(d: LocalDetectionResult | null, rawInput: string): AskCategory | null {
   if (!d) return null;
   const key = d.category.key?.toLowerCase() ?? '';
   const label = d.category.label?.toLowerCase() ?? '';
@@ -74,6 +88,7 @@ function guessCategory(d: LocalDetectionResult | null): AskCategory | null {
   if (/supplies|school supply/.test(key + label)) return 'supplies';
   if (/permission/.test(key + label)) return 'permission';
   if (/medication|medicine/.test(key + label)) return 'medication';
+  if (QUESTION_PHRASING_RE.test(rawInput.trim())) return 'question';
   // A plain chore-sounding sentence (quest-kind local detection, not an
   // event) — offer the new sibling-chore path rather than guessing wrong.
   if (d.category.kind === 'quest') return 'chore';
@@ -103,13 +118,17 @@ export default function KidSmartAskComposer({
   const addEvent = useEventStore(s => s.addEvent);
   const sendRequest = useKidRequestStore(s => s.sendRequest);
 
-  // Grocery/Supplies hand off to their real modals (multi-item list entry
-  // + always-visible smart suggestion chips, GroceryModal/SuppliesModal in
-  // KidModals.tsx) rather than sending the kid's free text as a single
-  // un-itemized request — this composer's job for these two categories is
-  // just routing, the existing modals already own the actual UX.
+  // Grocery/Supplies/Birthday/Permission/Question/Medication all hand off
+  // to their own dedicated, already-built modal instead of guessing from a
+  // short sentence — see the top-of-file comment for why. Only one of
+  // these is ever open at once. Tutor has no dedicated kid-facing form
+  // anywhere in the app (only a card on the parent side renders it) — it
+  // stays on the inline free-text → sendRequest path since there's nothing
+  // to hand off to.
   const [groceryModalOpen, setGroceryModalOpen] = useState(false);
   const [suppliesModalOpen, setSuppliesModalOpen] = useState(false);
+  const [birthdayModalOpen, setBirthdayModalOpen] = useState(false);
+  const [askModalType, setAskModalType] = useState<'permission' | 'question' | 'medication' | null>(null);
 
   const [input, setInput] = useState('');
   const [detection, setDetection] = useState<LocalDetectionResult | null>(null);
@@ -145,7 +164,7 @@ export default function KidSmartAskComposer({
     const d = detectLocalTask(input, members.map(m => ({ id: m.id, name: m.name, role: m.role })));
     setDetection(d);
     if (!touchedCategory) {
-      const guess = guessCategory(d);
+      const guess = guessCategory(d, input);
       if (guess) setCategory(guess);
     }
     if (d?.locations.pickup && !pickupLocation) setPickupLocation(d.locations.pickup);
@@ -155,9 +174,11 @@ export default function KidSmartAskComposer({
 
   const detectedTitle = (detection?.title || input).trim();
   const catMeta = category ? CATEGORY_CHIPS.find(c => c.key === category) : undefined;
-  // Grocery/Supplies just route to their own modal — no title needed here,
-  // the modal owns its own item entry.
-  const needsTitle = category !== 'grocery' && category !== 'supplies';
+  // Only Ride/Chore/Tutor actually submit from this component's own title —
+  // every other category hands off to a dedicated modal that owns its own
+  // input, so a title typed here is just a routing hint for them, not
+  // required to proceed.
+  const needsTitle = category === 'ride' || category === 'chore' || category === 'tutor';
   const canSubmit = !!category && (!needsTitle || !!detectedTitle) && !submitting;
 
   const submit = async () => {
@@ -165,27 +186,24 @@ export default function KidSmartAskComposer({
     setSubmitting(true);
     setError(null);
     try {
-      if (category === 'ride' || category === 'birthday') {
-        // Same shape KidRequestModal.tsx writes for both ride requests and
-        // birthday-party help — approvalPending:true, rideRequired only
-        // for an actual ride.
+      if (category === 'ride') {
+        // Same shape KidRequestModal.tsx writes for a ride request —
+        // approvalPending:true, rideRequired:true.
         addEvent({
           title: detectedTitle,
           date: detection?.when.date ?? new Date().toISOString().slice(0, 10),
           time: detection?.when.time ?? undefined,
-          type: category === 'birthday' ? 'birthday' : 'event',
-          category: category === 'birthday' ? 'Birthday' : 'Ride',
+          type: 'event',
+          category: 'Ride',
           allDay: !detection?.when.time,
           memberId: active.id,
           approvalPending: true,
           conflict: false,
           helperRequestedBy: active.name,
-          ...(category === 'ride' ? {
-            rideRequired: true,
-            driverStatus: 'pending' as const,
-            ...(pickupLocation.trim() ? { pickupLocation: pickupLocation.trim() } : {}),
-            ...(dropLocation.trim() ? { dropLocation: dropLocation.trim() } : {}),
-          } : {}),
+          rideRequired: true,
+          driverStatus: 'pending' as const,
+          ...(pickupLocation.trim() ? { pickupLocation: pickupLocation.trim() } : {}),
+          ...(dropLocation.trim() ? { dropLocation: dropLocation.trim() } : {}),
         });
       } else if (category === 'grocery') {
         // Hand off to the real multi-item modal (smart suggestion chips,
@@ -198,13 +216,27 @@ export default function KidSmartAskComposer({
         setSubmitting(false);
         setSuppliesModalOpen(true);
         return;
-      } else if (category === 'tutor' || category === 'permission' || category === 'question' || category === 'medication') {
-        const type: RequestType = category === 'tutor' ? 'tutor' : category;
+      } else if (category === 'birthday') {
+        // KidRequestModal.tsx already has Birthday as one of its own
+        // category-grid cards (step 1) — hand off rather than guess title/
+        // date/location from a short sentence ourselves.
+        setSubmitting(false);
+        setBirthdayModalOpen(true);
+        return;
+      } else if (category === 'permission' || category === 'question' || category === 'medication') {
+        // AskModal (KidModals.tsx) — a short sentence like "Do I need to go
+        // to the park?" can't be reliably told apart from a Chore or a
+        // Question by keyword scoring; hand off to the real form for these
+        // rather than guess wrong and submit silently.
+        setSubmitting(false);
+        setAskModalType(category);
+        return;
+      } else if (category === 'tutor') {
         sendRequest({
-          type,
+          type: 'tutor',
           fromMemberId: active.id,
           detail: detectedTitle,
-          urgency: category === 'medication' ? 'urgent' : 'normal',
+          urgency: 'normal',
         });
       } else if (category === 'chore') {
         const target = members.find(m => m.id === choreForId);
@@ -232,7 +264,7 @@ export default function KidSmartAskComposer({
 
   return (
     <>
-    <AppBottomSheet visible={visible && !groceryModalOpen && !suppliesModalOpen} onClose={close} title="Ask Parent" subtitle="Describe it — we'll figure out where it goes"
+    <AppBottomSheet visible={visible && !groceryModalOpen && !suppliesModalOpen && !birthdayModalOpen && !askModalType} onClose={close} title="Ask Parent" subtitle="Describe it — we'll figure out where it goes"
       minHeight="45%" maxHeight={keyboardOpen ? '55%' : '85%'} bodyPaddingBottom={40}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 14 }}>
         <View style={{ position: 'relative' }}>
@@ -378,6 +410,10 @@ export default function KidSmartAskComposer({
               <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
                 {category === 'grocery' ? 'Open Grocery List'
                   : category === 'supplies' ? 'Open Supplies List'
+                  : category === 'birthday' ? 'Open Birthday Form'
+                  : category === 'permission' ? 'Open Ask Permission'
+                  : category === 'question' ? 'Open Ask a Question'
+                  : category === 'medication' ? 'Open Medication Alert'
                   : `Send to ${members.filter(m => m.role === 'parent').length > 0 ? 'Parent' : 'Family'}`}
               </Text>
             )}
@@ -392,6 +428,10 @@ export default function KidSmartAskComposer({
         meant to take over. */}
     <GroceryModal visible={groceryModalOpen} onClose={() => { setGroceryModalOpen(false); close(); }} active={active} />
     <SuppliesModal visible={suppliesModalOpen} onClose={() => { setSuppliesModalOpen(false); close(); }} active={active} />
+    <KidRequestModal visible={birthdayModalOpen} onClose={() => { setBirthdayModalOpen(false); close(); }} activeMemberId={active.id} />
+    {askModalType && (
+      <AskModal visible={!!askModalType} onClose={() => { setAskModalType(null); close(); }} type={askModalType} active={active} />
+    )}
     </>
   );
 }

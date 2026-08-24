@@ -292,7 +292,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   const [askParentSheet, setAskParentSheet] = useState(false);
   const [askModal, setAskModal] = useState<null | 'permission' | 'question' | 'medication'>(null);
   // Scenario 1.5 already gives a Teen full self-creation rights via the
-  // Quests tab's own +Quest button — this "Propose a Quest" entry (shared
+  // Quests tab's own +Quest button — this "Suggest a Chore" entry (shared
   // AskParentSheet, mainly built for Kids) still works for a Teen too
   // (asking a parent to set up something the Teen doesn't want full
   // ownership of), so it's wired the same way rather than hidden.
@@ -474,7 +474,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
             // already has full self-creation rights via the unrestricted
             // SmartTaskComposer/Quests tab, so there's nothing to "propose"
             // instead of just creating directly) folds into the same
-            // "ask a parent to set something up" framing as Propose a Quest.
+            // "ask a parent to set something up" framing as Suggest a Chore.
             else if (choice === 'quest' || choice === 'chore') setQuestProposalModal(true);
             else setAskModal(choice);
           }, 300);

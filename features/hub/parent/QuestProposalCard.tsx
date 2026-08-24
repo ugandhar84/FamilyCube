@@ -6,12 +6,12 @@ import { CollapsibleCard } from '../hubComponents';
 import type { FamilyMember } from '@/store/familyStore';
 import type { KidRequest } from '@/store/kidRequestStore';
 
-// Scenario 1.4 — a Kid's proposed quest ("Can I wash the car for 15 coins?")
+// Scenario 1.4 — a Kid's suggested chore ("Can I wash the car for 15 coins?")
 // awaiting a parent's Approve-as-is / Approve-with-Changes / Decline
 // decision. Mirrors QuestApprovalCard's visual shape (the closest existing
 // review-card pattern) but the action underneath is different: approving
 // here doesn't just flip a status — it converts the request into a real,
-// live quest via choreStore.addChore (wired by the caller through
+// live chore via choreStore.addChore (wired by the caller through
 // onApprove), matching every other kid-request review card's "approve
 // calls back up to ParentView, which owns the actual store calls" shape.
 export function QuestProposalCard({ req, kidName, active, colors, isDark, onApprove, onDecline }: {
@@ -36,7 +36,7 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
           <Text style={{ fontSize: 16 }}>🧩</Text>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.primary }} numberOfLines={1}>
-              {kidName} wants to propose a quest
+              {kidName} suggested a chore
             </Text>
             <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>
               "{req.detail}"
@@ -75,7 +75,7 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <Pressable
           onPress={() => Alert.prompt(
-            'Decline Quest Idea',
+            'Decline Chore Idea',
             `Let ${kidName} know why "${req.detail}" wasn't approved (optional).`,
             [
               { text: 'Cancel', style: 'cancel' },
@@ -94,7 +94,7 @@ export function QuestProposalCard({ req, kidName, active, colors, isDark, onAppr
             alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
           <Check size={14} color="#fff" />
           <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
-            {wasEdited ? `Approve with Changes (${finalCoins}🪙)` : `Approve as Quest (${finalCoins}🪙)`}
+            {wasEdited ? `Approve with Changes (${finalCoins}🪙)` : `Approve as Chore (${finalCoins}🪙)`}
           </Text>
         </Pressable>
       </View>

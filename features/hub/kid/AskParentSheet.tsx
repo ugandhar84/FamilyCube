@@ -31,14 +31,15 @@ export function AskParentSheet({ visible, onClose, colors, isDark, onPick }: {
           { key: 'medication',  label: 'Medication Alert', desc: "I didn't take my meds",          Icon: Pill,         color: colors.danger },
           { key: 'grocery',     label: 'Request Grocery',  desc: 'Add items to the shopping list', Icon: ShoppingCart, color: BRAND.teal },
           { key: 'supplies',    label: 'School Supplies',  desc: 'Things I need for school',       Icon: BookOpen,     color: INDIGO_ACCENT },
-          // Scenario 1.4 — a Kid proposing a brand-new quest for coins,
-          // distinct from claiming an existing pool quest.
-          { key: 'quest',       label: 'Propose a Quest',  desc: 'Suggest a chore to earn coins',  Icon: HelpCircle,   color: BRAND.purple },
+          // Scenario 1.4 — a Kid proposing a brand-new quest for coins
+          // (self only, kid suggests their own coin amount), distinct from
+          // claiming an existing pool quest.
+          { key: 'quest',       label: 'Suggest a Chore',  desc: 'For yourself — pick your own coin amount', Icon: HelpCircle,   color: BRAND.purple },
           // propose_kid_chore RPC — can target a sibling, never carries a
           // coin amount from the kid (a parent sets it at approval time);
-          // distinct from "Propose a Quest" above, which is self-only and
+          // distinct from "Suggest a Chore" above, which is self-only and
           // lets the kid suggest their own coin amount.
-          { key: 'chore',       label: 'Propose a Chore',  desc: 'For you or a sibling — no coins set by you', Icon: ClipboardList, color: BRAND.purple },
+          { key: 'chore',       label: 'Propose a Chore',  desc: 'For you or a sibling — a parent sets the coins', Icon: ClipboardList, color: BRAND.purple },
         ] as const).map(({ key, label, desc, Icon, color }) => (
           <Pressable key={key} onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "${label}" on "Ask Parent sheet" (id=${key}) → onPick("${key}") [features/hub/kid/AskParentSheet.tsx:36]`); onPick(key); }}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 16,

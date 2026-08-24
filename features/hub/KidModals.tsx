@@ -956,7 +956,7 @@ export function QuestProposalModal({ visible, onClose, active }: {
       urgency: 'normal',
     });
     dismiss();
-    Alert.alert('Sent! 🧩', 'Your parent will review your quest idea.');
+    Alert.alert('Sent! 🧩', 'Your parent will review your chore idea.');
   };
 
   return (
@@ -968,7 +968,7 @@ export function QuestProposalModal({ visible, onClose, active }: {
             <View style={[f.handle, { backgroundColor: colors.border }]} />
             <View style={f.header}>
               <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={[f.title, { color: colors.textPrimary }]}>🧩 Propose a Quest</Text>
+                <Text style={[f.title, { color: colors.textPrimary }]}>🧩 Suggest a Chore</Text>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 2, color: accent }}>
                   Sent to a parent to review
                 </Text>
@@ -987,7 +987,7 @@ export function QuestProposalModal({ visible, onClose, active }: {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 48 }}>
               <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary, marginBottom: 6 }}>
-                What's the quest?
+                What's the chore?
               </Text>
               <TextInput
                 value={title}

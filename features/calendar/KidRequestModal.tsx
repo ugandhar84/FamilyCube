@@ -193,7 +193,23 @@ export function KidRequestModal({ visible, onClose, activeMemberId, editEvent }:
     if (result.task) {
       setTitle(result.task.title);
       setCategory(guessCategoryFromDomain(result.task.category, result.task.title));
-      if (result.task.startAt) setEventDate(new Date(result.task.startAt));
+      // startAt is only trusted when it carries a real time-of-day — a
+      // date-only string like "2026-08-24" (no time spoken, the AI
+      // extracted just the date context) parses via `new Date(...)` as UTC
+      // midnight, which lands on the WRONG local day/hour depending on
+      // timezone and reads as already-past by the time a parent checks
+      // Action Needed (hoursUntilEvent goes negative, silently excluding
+      // it). If no time was actually spoken, default to "today, 1 hour
+      // from now" instead of trusting a bare date.
+      const parsed = result.task.startAt ? new Date(result.task.startAt) : null;
+      const hasRealTime = !!result.task.startAt && /T\d{2}:\d{2}/.test(result.task.startAt);
+      if (parsed && hasRealTime && !Number.isNaN(parsed.getTime())) {
+        setEventDate(parsed);
+      } else {
+        const fallback = new Date();
+        fallback.setHours(fallback.getHours() + 1, fallback.getMinutes(), 0, 0);
+        setEventDate(fallback);
+      }
     }
     setMicOpen(false);
     setStep(2);

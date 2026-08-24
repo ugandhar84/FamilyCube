@@ -2403,10 +2403,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     // would already have fired locally before either write even reaches
     // the DB. Guard specifically the approved/paid outcome with a
     // conditional UPDATE on the status this call started from, mirroring
-    // respondToParentQuest's identical race guard — if a concurrent
-    // decline already landed first, this 0-row result means the payout
-    // below should not have happened; log it loudly so it surfaces
-    // instead of silently double-crediting a since-declined submission.
+    // respondToParentQuest's identical race guard.
+    //
+    // NOTE: the approve_chore Postgres RPC (migration
+    // 20260905120000_chore_participant_rpcs.sql) exists and is the intended
+    // long-term single source of truth for this transition — but it also
+    // pays out via its own award_coins() call, and this function's
+    // downstream side effects (jar-split PointTransaction recording via
+    // awardPoints, quest-event-notifier, GP-sponsor chat, streak, grocery
+    // sync, recurrence reset) all assume awardPoints below is the ONE
+    // payout call. Calling the RPC here as well would double-pay. Left as a
+    // raw CAS update for now rather than risk a double payout; folding this
+    // specific call site fully onto the RPC (moving the jar-split/
+    // notification logic server-side too) is future work, not done in this
+    // pass — see the DB-driven-assignment-state plan's Phase 2 step 2 note.
     const previousStatus = chore.status;
     supabase.from('chore_tasks')
       .update({ status: 'approved', approved_at: now, reviewed_at: now, reviewed_by_id: reviewerId })
@@ -2419,6 +2429,15 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           console.warn(`[choreStore] approveChore lost the race on ${choreId} — another parent's decision landed first; payout already applied locally may need manual reconciliation (see 4.7 dispute handling)`);
         }
       });
+
+    // Atomic audit-trail write this CAS previously skipped entirely
+    // (bypassing updateChore's own activity_log logging) — approveChore
+    // pays out real coins and had zero record of who approved what until
+    // now. Fire-and-forget, matching every other logActivity call site.
+    logActivity({
+      entityType: 'chore', entityId: choreId, familyId: chore.familyId, actorId: reviewerId,
+      action: 'approved', field: 'status', oldValue: previousStatus, newValue: 'approved',
+    });
 
     // Bounty targeted at a shortlist (teamGroupId links the sibling clones for
     // display only): each kid earns the full amount independently, the moment

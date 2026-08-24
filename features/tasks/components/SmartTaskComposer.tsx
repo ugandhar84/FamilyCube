@@ -646,6 +646,30 @@ export default function SmartTaskComposer({
           </View>
         </View>
 
+        {/* Big centered mic — only while the sheet is still empty (no
+            typed/dictated text, nothing detected yet). Live-tested: once
+            local detection parses the input and the field form shows
+            below, this just sat as dead space above the results — so it's
+            gated off the instant there's real content to work with. */}
+        {!input.trim() && !showFields && dictation.state !== 'listening' && (
+          <View style={{ alignItems: 'center', gap: 8, paddingVertical: 4 }}>
+            <Pressable
+              onPress={() => dictation.start()}
+              style={{
+                width: 72, height: 72, borderRadius: 36,
+                alignItems: 'center', justifyContent: 'center',
+                backgroundColor: colors.primary,
+                shadowColor: colors.primary,
+                shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6,
+              }}>
+              <Mic size={28} color="#fff" />
+            </Pressable>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>
+              Tap to speak
+            </Text>
+          </View>
+        )}
+
         {dictation.state === 'listening' && (
           <Text style={{ fontSize: TYPO.label, color: colors.danger, fontWeight: '700' }}>
             Listening… tap ■ to stop and edit

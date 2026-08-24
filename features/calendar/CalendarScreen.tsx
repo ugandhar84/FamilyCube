@@ -994,7 +994,7 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
 
         {/* [0] Scrollable: Title row + AI banner + AI panel */}
         <View>
-          <View style={[sc.titleRow, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }]}>
+          <View style={[sc.titleRow, { backgroundColor: 'transparent', borderBottomColor: 'transparent' }, hideHeader && { paddingTop: 0, paddingBottom: 2 }]}>
             <View>
               {!hideHeader && (
                 <Text style={[sc.title, { color: isDark ? colors.textPrimary : '#1E2D6B' }]}>

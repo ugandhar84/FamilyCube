@@ -75,9 +75,20 @@ export { AddQuestModal };
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 // TabStatus and AiTool are imported from ./components/QuestFilters and ./components/AiEngineBanner
 
-export default function QuestsScreen({ hideHeader, hideCreateButton, headerContent, hideSearchBar, externalSearchQuery }: {
+export default function QuestsScreen({ hideHeader, hideCreateButton, headerContent, hideSearchBar, externalSearchQuery, hideAiTrigger, onAiStateChange, onExposeAiRunner }: {
   hideHeader?: boolean; hideCreateButton?: boolean; headerContent?: React.ReactNode;
   hideSearchBar?: boolean; externalSearchQuery?: string;
+  // TasksScreen hosts the CubeAI trigger icon on the Chores tab-card
+  // instead of QuestsScreen's own inline pill — hideAiTrigger suppresses
+  // that pill, onAiStateChange reports showAiTool/isAiLoading upward so
+  // the card's dropdown can reflect the real state, and onExposeAiRunner
+  // hands the actual runAI(tool) function up once on mount so the card's
+  // dropdown buttons can call straight into it (the AI call itself still
+  // needs this screen's internal quest/cache state, so the function stays
+  // defined here — only the trigger UI moves).
+  hideAiTrigger?: boolean;
+  onAiStateChange?: (state: { showAiTool: AiTool; isAiLoading: boolean }) => void;
+  onExposeAiRunner?: (runAI: (tool: AiTool) => void) => void;
 } = {}) {
   const { colors, isDark } = useTheme();
   const { questId } = useLocalSearchParams<{ questId?: string }>();
@@ -401,6 +412,20 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
     aiQuestHash.current[tool] = currentHash;
     setIsAiLoading(false);
   };
+
+  // Hand runAI up once so TasksScreen's card-hosted trigger can call the
+  // real thing (a ref keeps the callback stable across renders — runAI
+  // itself closes over per-render state, so the wrapper always calls the
+  // latest version via the ref rather than a stale closure from mount).
+  const runAIRef = useRef(runAI);
+  runAIRef.current = runAI;
+  useEffect(() => {
+    onExposeAiRunner?.((tool: AiTool) => runAIRef.current(tool));
+  }, [onExposeAiRunner]);
+
+  useEffect(() => {
+    onAiStateChange?.({ showAiTool, isAiLoading });
+  }, [showAiTool, isAiLoading, onAiStateChange]);
 
   const handleApply = (key: string, item: any, type = 'assign') => {
     setAppliedActions(p => ({ ...p, [key]: true }));
@@ -808,7 +833,7 @@ export default function QuestsScreen({ hideHeader, hideCreateButton, headerConte
         {/* ── AI toggle + search/filter + add-chore, one shared row (wraps
             to a second line if things are expanded at once) ── */}
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', paddingHorizontal: 14, marginBottom: 10, gap: 8 }}>
-          {isParent && (
+          {isParent && !hideAiTrigger && (
             <AiEngineBanner
               showAiTool={showAiTool}
               isAiLoading={isAiLoading}

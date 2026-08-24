@@ -32,10 +32,10 @@
  * right under that card, driven into whichever screen is active via
  * externalSearchQuery.
  */
-import { useMemo, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Animated, ActivityIndicator } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CalendarDays, ListChecks, Plus, Search, X } from 'lucide-react-native';
+import { CalendarDays, ListChecks, Plus, Search, X, Bot, Sparkles, Flame, Award } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
@@ -47,6 +47,7 @@ import AppHeader from '@/components/AppHeader';
 import NotificationPanel from '@/components/NotificationPanel';
 import CalendarScreen from '@/features/calendar/CalendarScreen';
 import QuestsScreen from '@/features/quests/QuestsScreen';
+import type { AiTool } from '@/features/quests/components/AiEngineBanner';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
@@ -83,6 +84,19 @@ export default function TasksScreen() {
     Animated.timing(searchAnim, { toValue: next ? 1 : 0, duration: 200, useNativeDriver: false }).start();
     if (!next) { setScheduleQuery(''); setChoreQuery(''); }
   };
+
+  // CubeAI trigger — moved off the page and onto the Chores card's own
+  // top-right corner (was QuestsScreen's own inline pill). QuestsScreen
+  // still owns the actual AI call (needs its internal quest/cache state);
+  // this only hosts the trigger icon + the dropdown of 3 tool buttons,
+  // driven through the exposed runAI function and reported showAiTool/
+  // isAiLoading state.
+  const isParent = activeMember?.role === 'parent';
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiState, setAiState] = useState<{ showAiTool: AiTool; isAiLoading: boolean }>({ showAiTool: 'none', isAiLoading: false });
+  const runAIRef = useRef<((tool: AiTool) => void) | null>(null);
+  const exposeAiRunner = useCallback((runAI: (tool: AiTool) => void) => { runAIRef.current = runAI; }, []);
+  const runAiTool = (tool: AiTool) => { runAIRef.current?.(tool); setAiOpen(false); };
 
   // Status counts shown on each tab-card — a lightweight summary, not a
   // role-scoped visibility filter (that RBAC logic lives deep inside
@@ -147,7 +161,7 @@ export default function TasksScreen() {
           carrying pending items the parent hasn't switched over to see
           yet. The active card's own search icon sits bottom-right; tapping
           it drops the search bar down directly beneath the card row. */}
-      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingTop: 8, paddingBottom: 6 }}>
+      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingTop: 8, paddingBottom: 2 }}>
         {([
           { key: 'schedule' as const, label: 'Schedule', Icon: CalendarDays, counts: scheduleCounts, accent: colors.teal, accentLight: colors.tealLight },
           { key: 'chores' as const, label: 'Chores', Icon: ListChecks, counts: choreCounts, accent: colors.amber, accentLight: colors.amberLight },
@@ -174,9 +188,25 @@ export default function TasksScreen() {
                 }}>
                   <Icon size={14} color={active ? '#fff' : accent} />
                 </View>
-                {needsAttention && (
-                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger }} />
-                )}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  {key === 'chores' && active && isParent && (
+                    <TouchableOpacity
+                      onPress={() => { setAiOpen(v => !v); if (searchOpen) toggleSearch(false); }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={{
+                        width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                        backgroundColor: aiOpen ? '#fff' : 'rgba(255,255,255,0.22)',
+                      }}
+                    >
+                      {aiState.isAiLoading
+                        ? <ActivityIndicator size="small" color={aiOpen ? accent : '#fff'} />
+                        : <Bot size={13} color={aiOpen ? accent : '#fff'} />}
+                    </TouchableOpacity>
+                  )}
+                  {needsAttention && (
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger }} />
+                  )}
+                </View>
               </View>
               <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 8, color: active ? 'rgba(255,255,255,0.85)' : colors.textSecondary }}>
                 {label}
@@ -197,7 +227,7 @@ export default function TasksScreen() {
                 </View>
                 {active && (
                   <TouchableOpacity
-                    onPress={() => toggleSearch(!searchOpen)}
+                    onPress={() => { toggleSearch(!searchOpen); if (aiOpen) setAiOpen(false); }}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     style={{
                       width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
@@ -244,6 +274,39 @@ export default function TasksScreen() {
           </View>
         </Animated.View>
       )}
+
+      {/* CubeAI tool dropdown — opens directly under the card row when the
+          Chores card's bot icon is tapped, mirroring the search bar's own
+          drop-down pattern. Same 3 tools/tints as the inline pill this
+          replaces (AiEngineBanner), just relocated. */}
+      {aiOpen && (
+        <View style={{ flexDirection: 'row', gap: 8, marginHorizontal: 14, marginBottom: 8 }}>
+          {([
+            { key: 'autobalance' as const, label: 'Balance', Icon: Sparkles, tint: colors.primary },
+            { key: 'spark' as const, label: 'Spark', Icon: Flame, tint: colors.kid },
+            { key: 'advice' as const, label: 'Advice', Icon: Award, tint: colors.pink },
+          ]).map(({ key, label, Icon, tint }) => {
+            const toolActive = aiState.showAiTool === key;
+            return (
+              <TouchableOpacity key={key}
+                onPress={() => runAiTool(key)}
+                activeOpacity={0.8}
+                style={{
+                  flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+                  paddingVertical: 9, borderRadius: RADIUS.lg,
+                  backgroundColor: toolActive ? tint : tint + '18',
+                  borderWidth: 1, borderColor: tint + (toolActive ? '' : '40'),
+                }}
+              >
+                <Icon size={13} color={toolActive ? '#fff' : tint} />
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: toolActive ? '#fff' : tint }}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
     </View>
   );
 
@@ -260,7 +323,13 @@ export default function TasksScreen() {
 
       {segment === 'schedule'
         ? <CalendarScreen hideHeader hideCreateButton hideSearchBar externalSearchQuery={scheduleQuery} headerContent={tasksHeader} />
-        : <QuestsScreen hideHeader hideCreateButton hideSearchBar externalSearchQuery={choreQuery} headerContent={tasksHeader} />}
+        : (
+          <QuestsScreen
+            hideHeader hideCreateButton hideSearchBar hideAiTrigger
+            externalSearchQuery={choreQuery} headerContent={tasksHeader}
+            onAiStateChange={setAiState} onExposeAiRunner={exposeAiRunner}
+          />
+        )}
 
       {canCreate && (
         <TouchableOpacity

@@ -34,7 +34,8 @@ import { CheerSquadSection } from './kid/CheerSquadSection';
 import { PiggyBankSheet } from './kid/PiggyBankSheet';
 import { SubmitProofSheet } from './kid/SubmitProofSheet';
 import { CantMakeItSheet } from '../tasks/components/CantMakeItSheet';
-import KidSmartAskComposer from '../tasks/components/KidSmartAskComposer';
+import { AskParentSheet } from './kid/AskParentSheet';
+import { KidChoreProposalModal } from './kid/KidChoreProposalModal';
 
 // ─── Main KidView ──────────────────────────────────────────────────────────────
 export function KidView({ active, members, colors, isDark, activeTrips, familyId, composerVisible, onCloseComposer }: {
@@ -67,13 +68,16 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   const [askModal,        setAskModal]        = useState<null | 'permission' | 'question' | 'medication'>(null);
   const [historyModal,    setHistoryModal]    = useState(false);
   const [piggyBankModal,  setPiggyBankModal]  = useState(false);
-  // "Ask Parent" tile below opens the same composer the Hub-level FAB does
-  // (composerVisible/onCloseComposer, lifted to HubScreen.tsx so the FAB
-  // can float outside this view's scrolled content) — local state here
+  // "Ask Parent" tile below opens the same stacked picker the Hub-level FAB
+  // does (composerVisible/onCloseComposer, lifted to HubScreen.tsx so the
+  // FAB can float outside this view's scrolled content) — local state here
   // only covers the tile's own trigger, not the FAB's.
-  const [smartAskComposerFromTile, setSmartAskComposerFromTile] = useState(false);
+  const [askParentSheetFromTile, setAskParentSheetFromTile] = useState(false);
+  const askParentSheetOpen = composerVisible || askParentSheetFromTile;
+  const closeAskParentSheet = () => { onCloseComposer(); setAskParentSheetFromTile(false); };
   const [addEventModal,   setAddEventModal]   = useState(false);
   const [questProposalModal, setQuestProposalModal] = useState(false);
+  const [choreProposalModal, setChoreProposalModal] = useState(false);
   const [lateNudgeSent,   setLateNudgeSent]   = useState<Record<string, boolean>>({});
   const [dismissedReplies, setDismissedReplies] = useState<Set<string>>(new Set());
   const [dismissedActions,  setDismissedActions]  = useState<Set<string>>(new Set());
@@ -370,7 +374,7 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
 
       <KidCheckinRow colors={colors} onCheckin={sendCheckin} />
       <KidActionRow colors={colors} isDark={isDark}
-        onAskParent={() => setSmartAskComposerFromTile(true)}
+        onAskParent={() => setAskParentSheetFromTile(true)}
         onNeedRide={() => setAddEventModal(true)} />
 
       <HubTimelineSection active={active} members={members} events={visibleEvents} updateEvent={updateEvent} colors={colors} isDark={isDark} />
@@ -404,12 +408,25 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
       <CheerSquadSection cheerable={siblingCheerable} siblingKids={siblingKids} colors={colors} isDark={isDark}
         onCheer={(id) => cheerQuest(id, active.id)} />
 
-      <KidSmartAskComposer
-        visible={composerVisible || smartAskComposerFromTile}
-        onClose={() => { onCloseComposer(); setSmartAskComposerFromTile(false); }}
-        active={active} members={members} familyId={familyId ?? ''} colors={colors} isDark={isDark}
+      <AskParentSheet
+        visible={askParentSheetOpen} onClose={closeAskParentSheet} colors={colors} isDark={isDark}
+        onPick={(choice) => {
+          closeAskParentSheet();
+          setTimeout(() => {
+            if (choice === 'ride') setAddEventModal(true);
+            else if (choice === 'grocery') setGroceryModal(true);
+            else if (choice === 'supplies') setSuppliesModal(true);
+            else if (choice === 'quest') setQuestProposalModal(true);
+            else if (choice === 'chore') setChoreProposalModal(true);
+            else setAskModal(choice);
+          }, 300);
+        }}
       />
       <QuestProposalModal visible={questProposalModal} onClose={() => setQuestProposalModal(false)} active={active} />
+      <KidChoreProposalModal
+        visible={choreProposalModal} onClose={() => setChoreProposalModal(false)}
+        active={active} members={members} familyId={familyId ?? ''}
+      />
       <CantMakeItSheet
         target={declineQuest ? { kind: 'chore', item: declineQuest } : null}
         byMemberId={active.id} members={members}

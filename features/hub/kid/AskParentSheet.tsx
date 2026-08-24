@@ -1,5 +1,5 @@
 import { View, Text, Pressable } from 'react-native';
-import { ChevronRight, Unlock, HelpCircle, Pill, ShoppingCart, BookOpen, MessageCircle } from 'lucide-react-native';
+import { ChevronRight, Unlock, HelpCircle, Pill, ShoppingCart, BookOpen, MessageCircle, Car, ClipboardList } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { KID } from './kidTheme';
 import AppBottomSheet from '@/components/AppBottomSheet';
@@ -7,10 +7,11 @@ import AppBottomSheet from '@/components/AppBottomSheet';
 // Indigo — distinct accent for "School Supplies", not in the brand palette or
 // a semantic token; kept as a single named constant instead of a bare hex.
 const INDIGO_ACCENT = '#6366F1';
+const AMBER_ACCENT = '#F59E0B';
 
 export function AskParentSheet({ visible, onClose, colors, isDark, onPick }: {
   visible: boolean; onClose: () => void; colors: any; isDark: boolean;
-  onPick: (choice: 'permission' | 'question' | 'medication' | 'grocery' | 'supplies' | 'quest') => void;
+  onPick: (choice: 'ride' | 'permission' | 'question' | 'medication' | 'grocery' | 'supplies' | 'quest' | 'chore') => void;
 }) {
   return (
     <AppBottomSheet
@@ -24,14 +25,20 @@ export function AskParentSheet({ visible, onClose, colors, isDark, onPick }: {
     >
       <View style={{ gap: 10 }}>
         {([
-          { key: 'permission', label: 'Ask Permission',   desc: 'Go somewhere, do something',     Icon: Unlock,       color: BRAND.purple },
-          { key: 'question',   label: 'Ask a Question',   desc: 'Something you want to know',     Icon: HelpCircle,   color: colors.info },
-          { key: 'medication', label: 'Medication Alert', desc: "I didn't take my meds",          Icon: Pill,         color: colors.danger },
-          { key: 'grocery',    label: 'Request Grocery',  desc: 'Add items to the shopping list', Icon: ShoppingCart, color: BRAND.teal },
-          { key: 'supplies',   label: 'School Supplies',  desc: 'Things I need for school',       Icon: BookOpen,     color: INDIGO_ACCENT },
+          { key: 'ride',        label: 'Ask for a Ride',   desc: 'Pickup, drop-off, or both',      Icon: Car,          color: AMBER_ACCENT },
+          { key: 'permission',  label: 'Ask Permission',   desc: 'Go somewhere, do something',     Icon: Unlock,       color: BRAND.purple },
+          { key: 'question',    label: 'Ask a Question',   desc: 'Something you want to know',     Icon: HelpCircle,   color: colors.info },
+          { key: 'medication',  label: 'Medication Alert', desc: "I didn't take my meds",          Icon: Pill,         color: colors.danger },
+          { key: 'grocery',     label: 'Request Grocery',  desc: 'Add items to the shopping list', Icon: ShoppingCart, color: BRAND.teal },
+          { key: 'supplies',    label: 'School Supplies',  desc: 'Things I need for school',       Icon: BookOpen,     color: INDIGO_ACCENT },
           // Scenario 1.4 — a Kid proposing a brand-new quest for coins,
           // distinct from claiming an existing pool quest.
-          { key: 'quest',      label: 'Propose a Quest',  desc: 'Suggest a chore to earn coins',  Icon: HelpCircle,   color: BRAND.purple },
+          { key: 'quest',       label: 'Propose a Quest',  desc: 'Suggest a chore to earn coins',  Icon: HelpCircle,   color: BRAND.purple },
+          // propose_kid_chore RPC — can target a sibling, never carries a
+          // coin amount from the kid (a parent sets it at approval time);
+          // distinct from "Propose a Quest" above, which is self-only and
+          // lets the kid suggest their own coin amount.
+          { key: 'chore',       label: 'Propose a Chore',  desc: 'For you or a sibling — no coins set by you', Icon: ClipboardList, color: BRAND.purple },
         ] as const).map(({ key, label, desc, Icon, color }) => (
           <Pressable key={key} onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "${label}" on "Ask Parent sheet" (id=${key}) → onPick("${key}") [features/hub/kid/AskParentSheet.tsx:36]`); onPick(key); }}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 16,

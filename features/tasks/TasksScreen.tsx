@@ -49,9 +49,12 @@ import CalendarScreen from '@/features/calendar/CalendarScreen';
 import QuestsScreen from '@/features/quests/QuestsScreen';
 import type { AiTool } from '@/features/quests/components/AiEngineBanner';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
-import KidSmartAskComposer from '@/features/tasks/components/KidSmartAskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
+import { AskParentSheet } from '@/features/hub/kid/AskParentSheet';
+import { KidChoreProposalModal } from '@/features/hub/kid/KidChoreProposalModal';
+import { GroceryModal, SuppliesModal, AskModal, QuestProposalModal } from '@/features/hub/KidModals';
+import { KidRequestModal } from '@/features/calendar/KidRequestModal';
 
 type Segment = 'schedule' | 'chores';
 
@@ -71,11 +74,11 @@ export default function TasksScreen() {
   // directly). Both segments share this one gate so switching segments
   // never changes whether the "+" is there.
   const canCreate = activeMember?.role === 'parent' || activeMember?.role === 'teen';
-  // Kid gets the same "+" FAB slot, but it opens the Kid-safe composer
-  // (KidSmartAskComposer — routes into existing ask/request mechanisms,
-  // no direct assignment, no coins) instead of the unrestricted
-  // SmartTaskComposer. Replaces the Schedule segment's old standalone
-  // "+ Ask Help" header pill (CalendarScreen.tsx), which opened
+  // Kid gets the same "+" FAB slot, but it opens the Kid-safe stacked
+  // picker (AskParentSheet — routes into each dedicated ask/request modal,
+  // no direct assignment, no coins, no free-text guessing) instead of the
+  // unrestricted SmartTaskComposer. Replaces the Schedule segment's old
+  // standalone "+ Ask Help" header pill (CalendarScreen.tsx), which opened
   // KidRequestModal directly and only covered rides — this FAB covers
   // every ask category from one place, matching the Hub's own FAB.
   const isKidCreator = activeMember?.role === 'kid';
@@ -149,8 +152,17 @@ export default function TasksScreen() {
   const [showManualQuest, setShowManualQuest] = useState(false);
   const [showManualEvent, setShowManualEvent] = useState(false);
 
-  const [showKidComposer, setShowKidComposer] = useState(false);
-  const openCreator = () => { if (isKidCreator) setShowKidComposer(true); else setShowComposer(true); };
+  // Kid gets the same stacked "Ask Parent" picker the Hub's FAB opens
+  // (AskParentSheet) instead of the unrestricted SmartTaskComposer —
+  // routes to each dedicated modal below, no free-text guessing.
+  const [showAskParentSheet, setShowAskParentSheet] = useState(false);
+  const [groceryModal, setGroceryModal] = useState(false);
+  const [suppliesModal, setSuppliesModal] = useState(false);
+  const [askModal, setAskModal] = useState<null | 'permission' | 'question' | 'medication'>(null);
+  const [questProposalModal, setQuestProposalModal] = useState(false);
+  const [choreProposalModal, setChoreProposalModal] = useState(false);
+  const [rideRequestModal, setRideRequestModal] = useState(false);
+  const openCreator = () => { if (isKidCreator) setShowAskParentSheet(true); else setShowComposer(true); };
 
   const activeQuery = segment === 'schedule' ? scheduleQuery : choreQuery;
   const setActiveQuery = segment === 'schedule' ? setScheduleQuery : setChoreQuery;
@@ -363,15 +375,29 @@ export default function TasksScreen() {
         </TouchableOpacity>
       )}
 
-      <KidSmartAskComposer
-        visible={showKidComposer}
-        onClose={() => setShowKidComposer(false)}
-        active={activeMember!}
-        members={members}
-        familyId={activeMember?.familyId ?? ''}
-        colors={colors}
-        isDark={isDark}
+      <AskParentSheet
+        visible={showAskParentSheet} onClose={() => setShowAskParentSheet(false)} colors={colors} isDark={isDark}
+        onPick={(choice) => {
+          setShowAskParentSheet(false);
+          setTimeout(() => {
+            if (choice === 'ride') setRideRequestModal(true);
+            else if (choice === 'grocery') setGroceryModal(true);
+            else if (choice === 'supplies') setSuppliesModal(true);
+            else if (choice === 'quest') setQuestProposalModal(true);
+            else if (choice === 'chore') setChoreProposalModal(true);
+            else setAskModal(choice);
+          }, 300);
+        }}
       />
+      <GroceryModal visible={groceryModal} onClose={() => setGroceryModal(false)} active={activeMember!} />
+      <SuppliesModal visible={suppliesModal} onClose={() => setSuppliesModal(false)} active={activeMember!} />
+      {askModal && <AskModal visible={!!askModal} onClose={() => setAskModal(null)} type={askModal} active={activeMember!} />}
+      <QuestProposalModal visible={questProposalModal} onClose={() => setQuestProposalModal(false)} active={activeMember!} />
+      <KidChoreProposalModal
+        visible={choreProposalModal} onClose={() => setChoreProposalModal(false)}
+        active={activeMember!} members={members} familyId={activeMember?.familyId ?? ''}
+      />
+      <KidRequestModal visible={rideRequestModal} onClose={() => setRideRequestModal(false)} activeMemberId={activeMemberId ?? ''} />
 
       <SmartTaskComposer
         visible={showComposer}

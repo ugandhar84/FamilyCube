@@ -467,9 +467,15 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
         onPick={(choice) => {
           setAskParentSheet(false);
           setTimeout(() => {
-            if (choice === 'grocery') setGroceryModal(true);
+            if (choice === 'ride') setOpenSheet('rides');
+            else if (choice === 'grocery') setGroceryModal(true);
             else if (choice === 'supplies') setSuppliesModal(true);
-            else if (choice === 'quest') setQuestProposalModal(true);
+            // "Propose a Chore" (kid-only propose_kid_chore RPC — a Teen
+            // already has full self-creation rights via the unrestricted
+            // SmartTaskComposer/Quests tab, so there's nothing to "propose"
+            // instead of just creating directly) folds into the same
+            // "ask a parent to set something up" framing as Propose a Quest.
+            else if (choice === 'quest' || choice === 'chore') setQuestProposalModal(true);
             else setAskModal(choice);
           }, 300);
         }}

@@ -189,23 +189,23 @@ export function RideRequiredEventCard({ ev, active, members, colors, isDark, upd
         </View>
       ) : (
         <View style={{ gap: 8 }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
             <Pressable onPress={iDrive}
-              style={{ flex: 1, backgroundColor: colors.warning, paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
-              <CheckCircle2 size={14} color="#fff" />
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
+              style={{ flex: 1, backgroundColor: colors.warning, paddingVertical: 9, paddingHorizontal: 4, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 3 }}>
+              <CheckCircle2 size={12} color="#fff" />
+              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: '#fff' }} numberOfLines={1}>I'll Drive</Text>
             </Pressable>
             {otherParents.length > 0 && (
               <Pressable onPress={() => setReassignOpen(v => !v)}
-                style={{ flex: 1, backgroundColor: reassignOpen ? colors.parent + '20' : colors.warning + '20', borderWidth: 1.5, borderColor: reassignOpen ? colors.parent + '50' : colors.warning + '50', paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
-                <UserCog size={14} color={reassignOpen ? colors.parent : colors.warning} />
-                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: reassignOpen ? colors.parent : colors.warning }}>Reassign</Text>
+                style={{ flex: 1, backgroundColor: reassignOpen ? colors.parent + '20' : colors.warning + '20', borderWidth: 1.5, borderColor: reassignOpen ? colors.parent + '50' : colors.warning + '50', paddingVertical: 9, paddingHorizontal: 4, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 3 }}>
+                <UserCog size={12} color={reassignOpen ? colors.parent : colors.warning} />
+                <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: reassignOpen ? colors.parent : colors.warning }} numberOfLines={1}>Reassign</Text>
               </Pressable>
             )}
             <Pressable onPress={openToHelpers}
-              style={{ flex: 1, backgroundColor: colors.warning + '20', borderWidth: 1.5, borderColor: colors.warning + '50', paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 5 }}>
-              <HandHelping size={14} color={colors.warning} />
-              <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.warning }}>Open to Helpers</Text>
+              style={{ flex: 1, backgroundColor: colors.warning + '20', borderWidth: 1.5, borderColor: colors.warning + '50', paddingVertical: 9, paddingHorizontal: 4, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 3 }}>
+              <HandHelping size={12} color={colors.warning} />
+              <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.warning }} numberOfLines={1}>Helpers</Text>
             </Pressable>
           </View>
           {reassignOpen && (

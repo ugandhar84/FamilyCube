@@ -11,6 +11,7 @@ import type { FamilyEvent } from '@/store/eventStore';
 import type { ChoreTask } from '@/store/choreStore';
 import type { KidRequest } from '@/store/kidRequestStore';
 import { supabase } from '@/lib/supabase';
+import { showToast } from '@/components/AppToast';
 
 // Green — "GP Welcome" accent for parent-flagged requests/chores, distinct
 // from brand teal used elsewhere in this section. Not colors.success (which
@@ -85,7 +86,7 @@ export function FamilyNeedsHandSection({
                 // claim sticks, rather than both devices' optimistic state
                 // showing themselves as the confirmed helper.
                 console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "I'll Drive" on "${ev.title}" (id=${ev.id}) → claimHelperSlot [features/hub/senior/FamilyNeedsHandSection.tsx:80]`);
-                useEventStore.getState().claimHelperSlot(ev.id, 'helper', active.name, { approvalPending: false });
+                useEventStore.getState().claimHelperSlot(ev.id, 'helper', active.name, { approvalPending: false }, () => showToast("You're driving ✓"));
               }}
                 style={{ flex: 1, backgroundColor: BRAND.purple, paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                 <Car size={14} color="#fff" />
@@ -130,7 +131,7 @@ export function FamilyNeedsHandSection({
               </View>
             )}
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "I'll Help" on "${req.detail}" (id=${req.id}) → assignRequest [features/hub/senior/FamilyNeedsHandSection.tsx:125]`); assignRequest(req.id, active.id); }}
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "I'll Help" on "${req.detail}" (id=${req.id}) → assignRequest [features/hub/senior/FamilyNeedsHandSection.tsx:125]`); assignRequest(req.id, active.id); showToast("You're on it ✓"); }}
                 style={{ flex: 1, backgroundColor: GP_WELCOME_GREEN, paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                 <Hand size={14} color="#fff" />
                 <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Help</Text>
@@ -182,7 +183,10 @@ export function FamilyNeedsHandSection({
                 // simultaneously could both succeed, last-writer-wins.
                 // claim_gp_welcome_chore row-locks and CAS-guards the claim.
                 supabase.rpc('claim_gp_welcome_chore', { p_chore_id: c.id, p_gp_member_id: active.id })
-                  .then(({ error }) => { if (error) console.warn('[FamilyNeedsHandSection] claim_gp_welcome_chore failed', error.message); });
+                  .then(({ error }) => {
+                    if (error) { console.warn('[FamilyNeedsHandSection] claim_gp_welcome_chore failed', error.message); return; }
+                    showToast("You're on it ✓");
+                  });
               }}
                 style={{ flex: 1, backgroundColor: GP_WELCOME_GREEN, paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                 <Hand size={14} color="#fff" />

@@ -2146,6 +2146,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         } catch (e) {
           console.warn('[choreStore] acceptGPOffer notification failed', e);
         }
+        showToast('Offer accepted ✓');
       });
   },
 
@@ -2189,6 +2190,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         } catch (e) {
           console.warn('[choreStore] declineGPOffer notification failed', e);
         }
+        showToast('Declined — back in the pool ✓');
       });
   },
 

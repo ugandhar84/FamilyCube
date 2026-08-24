@@ -4,6 +4,7 @@ import { TYPO } from '@/constants/theme';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useChoreStore } from '@/store/choreStore';
 import { supabase } from '@/lib/supabase';
+import { showToast } from '@/components/AppToast';
 import { GP } from './seniorTheme';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
@@ -94,7 +95,10 @@ export function QuestInvitationsSection({
                     onPress={() => {
                       console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Pass" on "${c.title}" (id=${c.id}) → set_gp_withdrawn [features/hub/senior/QuestInvitationsSection.tsx:88]`);
                       supabase.rpc('set_gp_withdrawn', { p_chore_id: c.id, p_gp_member_id: active.id, p_withdrawn: true })
-                        .then(({ error }) => { if (error) console.warn('[QuestInvitationsSection] set_gp_withdrawn failed', error.message); });
+                        .then(({ error }) => {
+                          if (error) { console.warn('[QuestInvitationsSection] set_gp_withdrawn failed', error.message); return; }
+                          showToast('Passed ✓');
+                        });
                     }}
                     style={({ pressed }) => ({ flex: 1, paddingVertical: 14, alignItems: 'center', opacity: pressed ? 0.7 : 1 })}>
                     <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textSecondary }}>

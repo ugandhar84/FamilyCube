@@ -253,10 +253,16 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     // so a request with one genuinely still-open item vanished from BOTH
     // parents' Action Needed the instant the first item was decided — with
     // no history view on the parent side to ever find it again.
-    // GroceryRequestCard already renders only the still-pending items
-    // within a request regardless of its overall status, so surfacing
-    // 'partial' here is safe — it won't show anything already resolved.
     if (!['pending', 'partial'].includes(r.status)) return false;
+    // 'partial' is genuinely ambiguous — kidRequestStore.ts sets it both
+    // for "some items still undecided" (still actionable) AND "every item
+    // decided, but a mixed approve/reject outcome" (fully resolved, nothing
+    // left to do). GroceryRequestCard's card never hides itself once
+    // resolved (its header always reads "Pending" regardless), so a fully-
+    // resolved mixed request sat in Action Needed forever (reported live —
+    // parent approved 2 items, declined 1, card never left the list). Only
+    // a request with at least one item still genuinely pending belongs here.
+    if (r.status === 'partial' && (r.items?.length ?? 0) > 0 && !r.items!.some((it: any) => it.status === 'pending')) return false;
     // Auto-expire checkin requests older than 2 hours
     if (r.type === 'checkin') {
       const ageHours = (Date.now() - new Date(r.requestedAt).getTime()) / 3_600_000;

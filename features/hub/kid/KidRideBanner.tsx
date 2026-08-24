@@ -100,12 +100,6 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, membe
               {ev.title} · {fmtTime(ev.time)}
             </Text>
           </View>
-          {!confirmed && rideHere && (
-            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidRideBanner.tsx:90]`); onConfirmPickup(ev); }}
-              style={{ backgroundColor: MONEY_GREEN, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 7 }}>
-              <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>I'm picked up</Text>
-            </Pressable>
-          )}
           {canDismiss && (
             <Pressable onPress={dismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <X size={18} color={confirmed ? colors.textTertiary : '#fff'} />
@@ -113,11 +107,37 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, membe
           )}
         </View>
 
-        {/* Overdue gets two stacked actions instead of one cramped button
-            in the header row — "I'm picked up" (if it actually happened
-            and just hasn't been confirmed) and "Alert my parent" (if it
-            genuinely hasn't), same two outcomes the old separate
-            KidUrgentAlerts banner offered, now living in this one banner. */}
+        {/* 'here' (the scheduled pickup window has arrived) previously
+            only offered "I'm picked up" — a kid could confirm a GOOD
+            outcome immediately, but had no way to flag a bad one until
+            the system silently escalated to 'overdue' 2+ minutes later on
+            its own. For kid safety, waiting on a timer to notice
+            something's wrong is worse than letting the kid say so the
+            moment the ride was actually due. "Not here yet" sends the
+            same nudge onSendDriverLate already sends once overdue — just
+            reachable immediately instead of gated behind that delay. */}
+        {!confirmed && rideHere && (
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidRideBanner.tsx:here]`); onConfirmPickup(ev); }}
+              style={{ flex: 1, backgroundColor: MONEY_GREEN, borderRadius: 12, paddingVertical: 9, alignItems: 'center' }}>
+              <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>I'm picked up</Text>
+            </Pressable>
+            {onSendDriverLate && (
+              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "${alertSent ? 'Sent' : 'Not here yet'}" on "${ev.title}" (id=${ev.id}) → onSendDriverLate [features/hub/kid/KidRideBanner.tsx:here]`); onSendDriverLate(ev); }}
+                style={{ flex: 1, borderRadius: 12, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)', paddingVertical: 9, alignItems: 'center', opacity: alertSent ? 0.7 : 1 }}>
+                <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>{alertSent ? 'Sent ✓' : 'Not here yet'}</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+
+        {/* Overdue gets the same two stacked actions, styled with more
+            urgency (solid danger button instead of the outline "not sure
+            yet" treatment above) — "I'm picked up" (if it actually
+            happened and just hasn't been confirmed) and "Alert my
+            parent" (if it genuinely hasn't), same two outcomes the old
+            separate KidUrgentAlerts banner offered, now living in this
+            one banner. */}
         {!confirmed && isOverdue && (
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidRideBanner.tsx:overdue]`); onConfirmPickup(ev); }}

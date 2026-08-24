@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, memo } from 'react';
 import { View, Text, Pressable, StyleSheet, Image, Animated, Alert, Linking } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { Play, CheckCheck, AlertTriangle, MapPin, FileText } from 'lucide-react-native';
@@ -45,7 +45,18 @@ export function SharedCardBubble({ payload, colors, onLongPress, onPress }: { pa
 
 // ─── Message bubble (WhatsApp style — rounded rect with tail) ────────────────
 
-export function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName, senderEmoji,
+// Chat's FlatList renders potentially hundreds of these rows with no
+// tuning props previously set (see ChatScreen.tsx's FlatList) — every
+// list re-render (new message arriving, a reaction on ANY row, scroll-
+// derived header-collapse state changing) re-rendered every currently-
+// mounted MessageBubble from scratch, none of it skippable, since this
+// had no memo boundary at all. Live-reported as janky/not-smooth
+// scrolling. Wrapped in React.memo with a custom comparator below (not
+// the default shallow-props check) since `readers` arrives as a freshly
+// filtered array on every parent render even when its actual contents
+// are unchanged — a plain reference-equality memo would never skip a
+// re-render for messages that show the reader stack.
+function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, senderEmoji,
   senderColor, replyToColor, activeMemberId, memberMap, searchQuery, colors, isDark, highlighted, isParent, readers,
   onLongPress, onDoubleTap, onSwipeRight, onQuoteTap, onOpenImage, onOpenVideo, onOpenSharedCard }: {
   msg: ChatMessage; isMe: boolean; isGroupFirst: boolean; isGroupLast: boolean;
@@ -416,6 +427,42 @@ export function MessageBubble({ msg, isMe, isGroupFirst, isGroupLast, senderName
     </SwipeableBubble>
   );
 }
+
+function sameReaders(a?: string[], b?: string[]): boolean {
+  if (a === b) return true;
+  if (!a || !b) return a === b;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+export const MessageBubble = memo(MessageBubbleImpl, (prev, next) => {
+  return (
+    prev.msg === next.msg &&
+    prev.isMe === next.isMe &&
+    prev.isGroupFirst === next.isGroupFirst &&
+    prev.isGroupLast === next.isGroupLast &&
+    prev.senderName === next.senderName &&
+    prev.senderEmoji === next.senderEmoji &&
+    prev.senderColor === next.senderColor &&
+    prev.replyToColor === next.replyToColor &&
+    prev.activeMemberId === next.activeMemberId &&
+    prev.memberMap === next.memberMap &&
+    prev.searchQuery === next.searchQuery &&
+    prev.colors === next.colors &&
+    prev.isDark === next.isDark &&
+    prev.highlighted === next.highlighted &&
+    prev.isParent === next.isParent &&
+    sameReaders(prev.readers, next.readers)
+    // Callback props (onLongPress/onDoubleTap/onSwipeRight/onQuoteTap/
+    // onOpenImage/onOpenVideo/onOpenSharedCard) are deliberately excluded
+    // from this comparison — ChatScreen recreates them as fresh closures
+    // per render regardless, so comparing them would defeat the memo
+    // entirely. None of them capture per-row-varying values other than
+    // `msg` itself (already compared above), so a stale closure from a
+    // skipped re-render still behaves correctly.
+  );
+});
 
 const mb = StyleSheet.create({
   avatar:  { width: 34, height: 34, borderRadius: 17, borderWidth: 1.5,

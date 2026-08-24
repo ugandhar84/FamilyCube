@@ -722,6 +722,18 @@ export default function ChatScreen() {
               style={{ backgroundColor: colors.background }}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
+              // No tuning at all previously — FlatList's defaults render
+              // more offscreen content than this variable-height, richly-
+              // decorated row (images/voice waveforms/reactions/reply
+              // quotes) needs, which is expensive to lay out per row.
+              // initialNumToRender/windowSize/maxToRenderPerBatch tuned
+              // down together with MessageBubble's new memo boundary
+              // (above) — live-reported as janky/not-smooth scrolling.
+              initialNumToRender={20}
+              maxToRenderPerBatch={10}
+              windowSize={7}
+              updateCellsBatchingPeriod={50}
+              removeClippedSubviews
               onTouchStart={() => showAttachMenu && setShowAttachMenu(false)}
               onScroll={({ nativeEvent: { contentOffset } }) => {
                 // In inverted list offset 0 = bottom; >200 means user scrolled up

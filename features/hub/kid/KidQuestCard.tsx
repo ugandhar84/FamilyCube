@@ -40,6 +40,7 @@ export function KidQuestCard({
   onAcceptGpQuest: (id: string) => void;
   onDeclineGpQuest: (q: Quest) => void;
 }) {
+  const { acceptTermsChange, rejectTermsChange } = useChoreStore();
   const isPool = q.isPool && q.status === 'todo';
   const isClaimed = q.status === 'claimed';
   const isDeclined = q.status === 'declined';
@@ -151,6 +152,21 @@ export function KidQuestCard({
           "{q.declineReason}"
         </Text>
       )}
+      {q.pendingTerms && (
+        <View style={{ backgroundColor: BRAND.amber + '14', borderRadius: 10, padding: 10, gap: 4 }}>
+          <Text style={{ fontSize: KID.body, fontWeight: '800', color: BRAND.amber }}>The terms changed</Text>
+          {q.pendingTerms.old.coinsReward !== q.pendingTerms.new.coinsReward && (
+            <Text style={{ fontSize: KID.body, color: colors.textSecondary }}>
+              Coins: <Text style={{ textDecorationLine: 'line-through', color: colors.textTertiary }}>{q.pendingTerms.old.coinsReward}</Text> → {q.pendingTerms.new.coinsReward} 🪙
+            </Text>
+          )}
+          {q.pendingTerms.old.dueDate !== q.pendingTerms.new.dueDate && (
+            <Text style={{ fontSize: KID.body, color: colors.textSecondary }}>
+              Due: <Text style={{ textDecorationLine: 'line-through', color: colors.textTertiary }}>{q.pendingTerms.old.dueDate ?? 'none'}</Text> → {q.pendingTerms.new.dueDate ?? 'none'}
+            </Text>
+          )}
+        </View>
+      )}
       {q.teamGroupId && teamMates.length > 0 && (
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
           <Target size={14} color={BRAND.amber} style={{ marginTop: 1 }} />
@@ -159,7 +175,20 @@ export function KidQuestCard({
           </Text>
         </View>
       )}
-      {isActionable && (
+      {q.pendingTerms ? (
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "Still fine by me" on "${q.title}" (id=${q.id}) → acceptTermsChange`); acceptTermsChange(q.id, active.id); }}
+            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+              borderRadius: 10, backgroundColor: MONEY_GREEN, paddingVertical: 13 }}>
+            <CheckCircle2 size={15} color="#fff" />
+            <Text style={{ fontSize: KID.sub, fontWeight: '800', color: '#fff' }}>Still fine by me</Text>
+          </Pressable>
+          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "Hand it back" on "${q.title}" (id=${q.id}) → rejectTermsChange`); rejectTermsChange(q.id, active.id); }}
+            style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: `${colors.danger}50`, paddingVertical: 13, alignItems: 'center' }}>
+            <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.danger }}>Hand it back</Text>
+          </Pressable>
+        </View>
+      ) : isActionable && (
         <View style={{ flexDirection: 'row', gap: 6 }}>
           {isGpTodo ? (
             <>

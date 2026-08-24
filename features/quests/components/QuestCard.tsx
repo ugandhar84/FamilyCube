@@ -132,6 +132,7 @@ export function QuestCard({
   // otherwise-inert card would show a bare empty divider bar
   // without this gate.
   const hasActionStripContent =
+    !!q.pendingTerms ||
     canClaim || canAcceptGp || canGpClaimPool || canGpDone ||
     (canSubmit && !canAcceptGp && q.participants.length <= 1) ||
     canResubmit || canKidDecline ||
@@ -634,6 +635,25 @@ export function QuestCard({
           </View>
         )}
 
+        {/* ── Terms changed (QA punch list #2) ── */}
+        {q.pendingTerms && (
+          <View style={[s.declineBox, { backgroundColor: colors.dangerLight, borderColor: colors.danger + '60' }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.declineText, { color: colors.danger, fontWeight: '800' }]}>The terms changed</Text>
+              {q.pendingTerms.old.coinsReward !== q.pendingTerms.new.coinsReward && (
+                <Text style={[s.declineText, { color: colors.textSecondary }]}>
+                  Coins: {q.pendingTerms.old.coinsReward} → {q.pendingTerms.new.coinsReward} 🪙
+                </Text>
+              )}
+              {q.pendingTerms.old.dueDate !== q.pendingTerms.new.dueDate && (
+                <Text style={[s.declineText, { color: colors.textSecondary }]}>
+                  Due: {q.pendingTerms.old.dueDate ?? 'none'} → {q.pendingTerms.new.dueDate ?? 'none'}
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
+
         </>
         )}{/* end badge strip */}
 
@@ -770,8 +790,30 @@ export function QuestCard({
       {hasActionStripContent && (
       <View style={[s.actionStrip, { borderTopColor: colors.border }]}>
 
+        {/* QA punch list #2 — a parent changed coins/due-date on this
+            already-claimed chore (propose_terms_change RPC). Paused until
+            the claimant Accepts or Hands It Back — replaces every other
+            action in the strip while pending, same as KidQuestCard.tsx's
+            Hub-side equivalent. */}
+        {q.pendingTerms && q.assignedToId === myId && (
+          <>
+            <TouchableOpacity
+              style={[s.actionBtn, { backgroundColor: colors.success }]}
+              onPress={() => useChoreStore.getState().acceptTermsChange(q.id, myId ?? '')}
+            >
+              <Text style={[s.actionBtnText, { color: colors.textInverse }]}>Still fine by me</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.actionBtn, { backgroundColor: colors.danger }]}
+              onPress={() => useChoreStore.getState().rejectTermsChange(q.id, myId ?? '')}
+            >
+              <Text style={[s.actionBtnText, { color: colors.textInverse }]}>Hand it back</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
         {/* Kid: Claim open bounty */}
-        {canClaim && (
+        {!q.pendingTerms && canClaim && (
           <TouchableOpacity
             style={[s.actionBtn, { backgroundColor: BRAND.amber, opacity: isClaiming[q.id] ? 0.6 : 1 }]}
             onPress={() => handleClaim(q.id)}
@@ -784,7 +826,7 @@ export function QuestCard({
         )}
 
         {/* Kid: opt in to a grandparent quest before working it */}
-        {canAcceptGp && (
+        {!q.pendingTerms && canAcceptGp && (
           <TouchableOpacity
             style={[s.actionBtn, { backgroundColor: colors.success }]}
             onPress={() => useChoreStore.getState().startGrandparentQuest(q.id, myId ?? '')}
@@ -794,7 +836,7 @@ export function QuestCard({
         )}
 
         {/* Kid: Submit single-assign quest (multi-assign submits via participant row) */}
-        {canSubmit && !canAcceptGp && q.participants.length <= 1 && (
+        {!q.pendingTerms && canSubmit && !canAcceptGp && q.participants.length <= 1 && (
           <TouchableOpacity
             style={[s.actionBtn, { backgroundColor: BRAND.purple }]}
             onPress={() => openSubmitSheet(q)}
@@ -804,7 +846,7 @@ export function QuestCard({
         )}
 
         {/* Kid / teen: revise a parent-declined quest and send it back */}
-        {canResubmit && (
+        {!q.pendingTerms && canResubmit && (
           <TouchableOpacity
             style={[s.actionBtn, { backgroundColor: BRAND.purple }]}
             onPress={() => openSubmitSheet(q)}
@@ -815,7 +857,7 @@ export function QuestCard({
 
         {/* Kid: Decline / refuse an assigned quest — same label as the Hub's
             GP-quest card ("Decline") when this is that same choice */}
-        {canKidDecline && (
+        {!q.pendingTerms && canKidDecline && (
           <TouchableOpacity
             style={[s.actionBtn, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.danger }]}
             onPress={() => {

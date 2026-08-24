@@ -54,6 +54,13 @@ function choreStatusToQuestStatus(s: ChoreTask['status']): QuestStatus {
     // distinct so parent-facing UI (ChoreReviewSection.tsx) can filter
     // specifically for GP offers — see gpOfferById.
     case 'gp_offer_pending':             return 'pending_approval';
+    // A parent changed coins/due-date on a chore the assignee already
+    // claimed (propose_terms_change RPC) — still assigned to them, just
+    // paused pending Accept/Hand-back (TermsChangedCard.tsx), so it stays
+    // in the same shim bucket as 'in_progress' rather than falling through
+    // to the default 'todo' (which would wrongly make it look pool-
+    // eligible again in every claim/pool view).
+    case 'terms_changed':                return 'in_progress';
     case 'approved':                     return 'approved';
     case 'auto_approved':                return 'approved';
     case 'redo_requested':               return 'declined';
@@ -140,6 +147,7 @@ export function choreToQuest(c: ChoreTask): Quest {
     // across pool/claim/assignee-visible filters excludes it
     // automatically, with no new filter edits needed.
     awaitingParentApproval: c.status === 'pending_parent_approval' || c.status === 'pending_kid_proposal',
+    pendingTerms:     c.status === 'terms_changed' ? c.pendingTerms : undefined,
     dueDate:          c.dueDate,
     dueTime:          c.dueTime,
 

@@ -106,6 +106,11 @@ export interface Quest {
   // that decide kid visibility MUST check this before showing a
   // grandparent_quest as claimable.
   awaitingParentApproval?: boolean;
+  // Real status is 'terms_changed' (ChoreTask, not this Quest shim — see
+  // choreAdapter.ts) — a parent edited coins/due-date on this already-
+  // claimed quest and the claimant needs to Accept or Hand It Back before
+  // continuing. pendingTerms carries the old/new values for the card.
+  pendingTerms?:    { old: { coinsReward: number; basePoints: number; dueDate?: string }; new: { coinsReward: number; basePoints: number; dueDate?: string }; changedBy: string; changedAt: string };
   dueDate?:         string;
   dueTime?:         string;
   // Call-style reminder — opt-in, rings the assignee via CallKit/

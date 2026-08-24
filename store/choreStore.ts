@@ -52,6 +52,14 @@ export type ChoreStatus =
   // Declined proposals are deleted outright (decline_kid_chore), not
   // soft-declined — a declined proposal was never a real chore.
   | 'pending_kid_proposal'
+  // A parent changed coins/due_date on a chore that was already claimed
+  // (status was 'in_progress') — see propose_terms_change RPC. Paused,
+  // not submittable, until the claimant Accepts (→ 'in_progress' again,
+  // same assignee) or Hands It Back (→ 'todo', released to the pool, no
+  // reason required — the deal changed, not them). pendingTerms carries
+  // the old/new values for the claimant's card to show without a second
+  // round-trip.
+  | 'terms_changed'
   | 'approved'                       // Parent approved; points credited
   | 'auto_approved'                  // 24h window closed; auto-approved
   | 'redo_requested'                 // Parent rejected; child resubmitting
@@ -100,6 +108,9 @@ export interface ChoreTask {
   // a chore claimed then abandoned before submission — see migration
   // 20260908100000_chore_tasks_claimed_at.sql.
   claimedAt?: string;
+  // Set while status === 'terms_changed' — old/new coins/due-date values
+  // for the claimant's Accept/Hand-back card. See propose_terms_change RPC.
+  pendingTerms?: { old: { coinsReward: number; basePoints: number; dueDate?: string }; new: { coinsReward: number; basePoints: number; dueDate?: string }; changedBy: string; changedAt: string };
   requiresPhotoProof: boolean;
   difficulty?: 'easy' | 'medium' | 'hard' | 'hero';
   recurrenceRule: RecurrenceRule;
@@ -578,6 +589,7 @@ function choreFromRow(row: any): ChoreTask {
     submittedAt:             row.submitted_at ?? undefined,
     approvedAt:              row.approved_at ?? undefined,
     claimedAt:               row.claimed_at ?? undefined,
+    pendingTerms:            row.pending_terms ?? undefined,
     reviewedAt:              row.reviewed_at ?? undefined,
     reviewedById:            row.reviewed_by_id ?? undefined,
     declinedAt:              row.declined_at ?? undefined,
@@ -806,6 +818,12 @@ interface ChoreState {
   // chore). See 20260907120000_kid_proposed_chore_rpcs.sql.
   approveKidProposedChore: (choreId: string, reviewerId: string, coins: number) => void;
   declineKidProposedChore: (choreId: string, reviewerId: string, reason?: string) => void;
+  // QA punch list #2 — a claimant's response to a parent changing coins/
+  // due-date underneath them (status='terms_changed', see propose_terms_
+  // change RPC in updateChore above). Accept keeps the chore on the new
+  // terms; reject hands it back to the pool, no reason required.
+  acceptTermsChange:       (choreId: string, memberId: string) => void;
+  rejectTermsChange:       (choreId: string, memberId: string) => void;
   withdrawGPOffer:         (choreId: string, gpMemberId: string) => void;
   submitGPErrandReceipt:   (choreId: string, opts: { receiptPhotoUrl?: string; receiptAmount?: number; receiptNote?: string }) => void;
   acknowledgeGPReimbursement: (choreId: string) => void;
@@ -1396,6 +1414,40 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
   updateChore: (id, rawUpdates) => {
     const prevChore = get().chores.find(c => c.id === id);
+    // QA punch list #2 — "Terms changed after someone took it" was
+    // entirely missing: a plain patch here silently rewrote coins/due-date
+    // on an already-claimed chore with zero notice to the claimant. A
+    // coins/due-date edit on a claimed (in_progress, has an assignee)
+    // chore now goes through propose_terms_change instead of a plain
+    // patch — the chore pauses at 'terms_changed' until the claimant
+    // Accepts or Hands It Back (see TermsChangedCard.tsx). Doesn't apply
+    // to the reviewer's OWN accept/decline flows (those already route
+    // through their own dedicated RPCs, never through updateChore for
+    // this field combination) or to a chore that isn't claimed yet (a
+    // parent editing an open pool/unclaimed chore's coins is still a
+    // plain, immediate edit — nobody has a stake in it yet).
+    if (
+      prevChore && prevChore.status === 'in_progress' && prevChore.assignedToId &&
+      (('coinsReward' in rawUpdates) || ('basePoints' in rawUpdates) || ('dueDate' in rawUpdates))
+    ) {
+      const reviewerId = getActiveMemberId();
+      if (reviewerId) {
+        const newCoins = 'coinsReward' in rawUpdates ? (rawUpdates as any).coinsReward : undefined;
+        const newBase   = 'basePoints'  in rawUpdates ? (rawUpdates as any).basePoints  : undefined;
+        const newDue     = 'dueDate'     in rawUpdates ? (rawUpdates as any).dueDate     : undefined;
+        supabase.rpc('propose_terms_change', {
+          p_chore_id: id, p_by_member_id: reviewerId,
+          p_new_coins_reward: newCoins ?? null, p_new_base_points: newBase ?? null, p_new_due_date: newDue ?? null,
+        }).then(({ error }) => {
+          if (error) {
+            console.warn('[choreStore] propose_terms_change RPC failed', error.message);
+            return;
+          }
+          get().syncFromDB(true);
+        });
+        return;
+      }
+    }
     // Live QA audit found a shopping chore's assignedToId could be changed
     // to a kid/teen via a later edit (not just at creation, which addChore
     // now separately guards) with zero rejection. Same fix here: an edit
@@ -2296,6 +2348,56 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           console.warn('[choreStore] declineKidProposedChore notification failed', e);
         }
         showToast('Declined');
+      });
+  },
+
+  acceptTermsChange: (choreId, memberId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.status !== 'terms_changed' || chore.assignedToId !== memberId) return;
+
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'in_progress', pendingTerms: undefined } : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    supabase.rpc('accept_terms_change', { p_chore_id: choreId, p_member_id: memberId })
+      .then(({ error }) => {
+        if (error) {
+          console.warn('[choreStore] acceptTermsChange RPC failed on', choreId, '— rolling back local state:', error.message);
+          set(s => ({
+            chores: s.chores.map(c => c.id === choreId ? { ...c, status: 'terms_changed', pendingTerms: chore.pendingTerms } : c),
+          }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+          return;
+        }
+        showToast('Still fine by you ✓');
+      });
+  },
+
+  rejectTermsChange: (choreId, memberId) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.status !== 'terms_changed' || chore.assignedToId !== memberId) return;
+
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId
+        ? { ...c, status: 'todo', isPool: true, assignedToId: undefined, claimedAt: undefined, pendingTerms: undefined }
+        : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    supabase.rpc('reject_terms_change', { p_chore_id: choreId, p_member_id: memberId })
+      .then(({ error }) => {
+        if (error) {
+          console.warn('[choreStore] rejectTermsChange RPC failed on', choreId, '— rolling back local state:', error.message);
+          set(s => ({
+            chores: s.chores.map(c => c.id === choreId
+              ? { ...c, status: 'terms_changed', isPool: false, assignedToId: memberId, pendingTerms: chore.pendingTerms }
+              : c),
+          }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+          return;
+        }
+        showToast('Handed back ✓');
       });
   },
 

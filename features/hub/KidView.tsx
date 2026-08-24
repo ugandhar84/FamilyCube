@@ -16,7 +16,7 @@ import { driverLabelByName } from '@/lib/format';
 
 // Encoding helpers and modals live in KidModals.tsx
 export { GROCERY_PREFIX, SUPPLIES_PREFIX, encodeGroceryRequest, decodeGroceryRequest } from './KidModals';
-import { SUPPLIES_PREFIX, encodeRideLate } from './KidModals';
+import { SUPPLIES_PREFIX, encodeRideLate, decodeRideLate } from './KidModals';
 import { GroceryModal, SuppliesModal, AskModal, KidRequestHistoryModal, QuestProposalModal } from './KidModals';
 import { HubTimelineSection } from './HubTimelineSection';
 import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
@@ -156,7 +156,25 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   // a ride confirmed for tomorrow showed correctly on the Schedule tab but
   // produced zero Hub banner, unlike awaitingDriverRide/myDeclinedRides
   // below which already read from the multi-day feed.
-  const confirmedRide = myUpcomingEvents.find(e => { if (e.date < today) return false; const a = eventAssignee(e); return a.name && a.status === 'confirmed'; });
+  // Was .find() — trusted array order to land on the SOONEST confirmed
+  // ride, but a daily-recurring series materializes many future
+  // occurrences that can ALSO carry helper_status='confirmed' (the
+  // recurrence-series insert stamps every occurrence with the same
+  // assignment). Live-reported/DB-confirmed: today's actual ride
+  // (2026-08-24) was correctly confirmed AND pickup-confirmed, yet the
+  // Hub kept showing an active/overdue ride banner — .find() had picked
+  // tomorrow's (2026-08-25) row instead, which is also 'confirmed' but
+  // obviously has no pickup confirmation yet, since it hasn't happened.
+  // Explicitly sort by date+time and take the earliest, rather than
+  // trusting whatever order the upstream feed happens to return.
+  const confirmedRideCandidates = myUpcomingEvents.filter(e => {
+    if (e.date < today) return false;
+    const a = eventAssignee(e);
+    return a.name && a.status === 'confirmed';
+  });
+  const confirmedRide = confirmedRideCandidates.sort((a, b) =>
+    a.date === b.date ? (a.time ?? '').localeCompare(b.time ?? '') : a.date.localeCompare(b.date)
+  )[0];
   const rideCountdown = useCountdown(confirmedRide?.date, confirmedRide?.time);
 
   // A driver has been named but hasn't confirmed yet — the gap between
@@ -263,8 +281,23 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   };
 
   const sendDriverLate = (ev: typeof todayEvents[0]) => {
-    if (lateNudgeSent[ev.id]) {
+    // lateNudgeSent alone was local React state — reset on every remount
+    // (app background/foreground, screen refocus, tab switch), so the
+    // guard only ever blocked a second tap in the SAME session. A
+    // remounted Hub let the kid tap "Alert" again, creating a genuine
+    // duplicate kid_requests row + duplicate chat message each time —
+    // live-reported as multiple "kid not picked up" banners stacking on
+    // the parent's side for one ride. Check the actual DB-backed requests
+    // array for an existing unresolved (pending) alert for this exact
+    // event before creating another one — survives remounts because it's
+    // real synced state, not local-only.
+    const alreadyPending = requests.some(r =>
+      r.fromMemberId === active.id && r.status === 'pending' &&
+      decodeRideLate(r.detail)?.eventId === ev.id
+    );
+    if (lateNudgeSent[ev.id] || alreadyPending) {
       Alert.alert('Already sent', 'You already notified your parent about this.');
+      setLateNudgeSent(p => ({ ...p, [ev.id]: true }));
       return;
     }
     sendRequest({

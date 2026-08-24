@@ -26,7 +26,10 @@ import { useKidRequestStore } from '@/store/kidRequestStore';
 import type { KidRequestItem } from '@/store/kidRequestStore';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
-import { fmtDateTime, parseDbTime } from '@/lib/dates';
+import { fmtDateTime, parseDbTime, fmtDate, localDateStr } from '@/lib/dates';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { RADIUS } from '@/constants/theme';
+import { Calendar } from 'lucide-react-native';
 import { VoiceTextField } from './kid/VoiceTextField';
 import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { Mic } from 'lucide-react-native';
@@ -650,13 +653,68 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
   const members = useFamilyStore(s => s.members);
   const { requests, deleteRequest } = useKidRequestStore();
 
-  // Last 7 days only — older requests fall off automatically
+  // Default view: last 7 days. A kid can widen the window via the date
+  // pickers below, up to a 30-day span at a time, no further back than 6
+  // months — matches the store's own fetch (loadFromStorage pulls every
+  // kid_requests row for the family with no date filter, so all history up
+  // to 6 months is already sitting in the requests array; only the UI
+  // window was ever capped to 7 days).
+  const MAX_LOOKBACK_MS = 183 * 24 * 60 * 60 * 1000;   // ~6 months
+  const MAX_RANGE_MS    = 30  * 24 * 60 * 60 * 1000;   // 30-day span cap
+  const todayStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+  const defaultRangeStart = () => { const d = todayStart(); d.setDate(d.getDate() - 6); return d; }; // 7 days inclusive of today
+
+  const [rangeStart, setRangeStart] = useState<Date>(defaultRangeStart());
+  const [rangeEnd, setRangeEnd] = useState<Date>(todayStart());
+  const [pickingStart, setPickingStart] = useState(false);
+  const [pickingEnd, setPickingEnd] = useState(false);
+  const isDefaultRange = rangeStart.getTime() === defaultRangeStart().getTime() && rangeEnd.getTime() === todayStart().getTime();
+
+  const minAllowedDate = new Date(Date.now() - MAX_LOOKBACK_MS);
+
+  const onPickStart = (_: any, selected?: Date) => {
+    setPickingStart(Platform.OS === 'ios');
+    if (!selected) return;
+    selected.setHours(0, 0, 0, 0);
+    let newStart = selected;
+    let newEnd = rangeEnd;
+    // Keep the span within 30 days by pulling the far end back in, not
+    // rejecting the pick outright — matches how the app's other date
+    // pickers self-correct instead of erroring.
+    if (newEnd.getTime() - newStart.getTime() > MAX_RANGE_MS) {
+      newEnd = new Date(newStart.getTime() + MAX_RANGE_MS);
+      if (newEnd.getTime() > todayStart().getTime()) newEnd = todayStart();
+    }
+    if (newStart.getTime() > newEnd.getTime()) newStart = newEnd;
+    setRangeStart(newStart);
+    setRangeEnd(newEnd);
+  };
+  const onPickEnd = (_: any, selected?: Date) => {
+    setPickingEnd(Platform.OS === 'ios');
+    if (!selected) return;
+    selected.setHours(0, 0, 0, 0);
+    let newEnd = selected > todayStart() ? todayStart() : selected;
+    let newStart = rangeStart;
+    if (newEnd.getTime() - newStart.getTime() > MAX_RANGE_MS) {
+      newStart = new Date(newEnd.getTime() - MAX_RANGE_MS);
+      if (newStart.getTime() < minAllowedDate.getTime()) newStart = minAllowedDate;
+    }
+    if (newEnd.getTime() < newStart.getTime()) newEnd = newStart;
+    setRangeEnd(newEnd);
+    setRangeStart(newStart);
+  };
+  const resetRange = () => { setRangeStart(defaultRangeStart()); setRangeEnd(todayStart()); };
+
   const myRequestsRecent = useMemo(() => {
-    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const startMs = rangeStart.getTime();
+    const endMs = rangeEnd.getTime() + 24 * 60 * 60 * 1000 - 1; // inclusive through end of day
     return requests
-      .filter(r => r.fromMemberId === active.id && parseDbTime(r.requestedAt).getTime() > cutoff)
+      .filter(r => r.fromMemberId === active.id && r.requestedAt && (() => {
+        const t = parseDbTime(r.requestedAt).getTime();
+        return t >= startMs && t <= endMs;
+      })())
       .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
-  }, [requests, active.id]);
+  }, [requests, active.id, rangeStart, rangeEnd]);
 
   const HISTORY_FILTERS = [
     { key: 'all',      label: 'All' },
@@ -703,10 +761,63 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
       visible={visible}
       onClose={onClose}
       title="📋 My Requests"
-      subtitle={`${myRequestsRecent.length} request${myRequestsRecent.length !== 1 ? 's' : ''} in the last 7 days · tap to see item details`}
+      subtitle={`${myRequestsRecent.length} request${myRequestsRecent.length !== 1 ? 's' : ''}${isDefaultRange ? ' in the last 7 days' : ''} · tap to see item details`}
       accentColor={BRAND.purple}
       maxHeight="75%"
     >
+            {/* Date range — defaults to last 7 days; widenable up to a
+                30-day span, no further back than 6 months. */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <TouchableOpacity onPress={() => { setPickingEnd(false); setPickingStart(true); }}
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, borderWidth: 1.5,
+                  borderColor: isDark ? colors.border : '#E2E8F0', backgroundColor: isDark ? colors.surface : '#F1F5F9',
+                  paddingHorizontal: 10, paddingVertical: 8 }}>
+                <Calendar size={13} color={colors.textSecondary} />
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{fmtDate(localDateStr(rangeStart))}</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>–</Text>
+              <TouchableOpacity onPress={() => { setPickingStart(false); setPickingEnd(true); }}
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, borderWidth: 1.5,
+                  borderColor: isDark ? colors.border : '#E2E8F0', backgroundColor: isDark ? colors.surface : '#F1F5F9',
+                  paddingHorizontal: 10, paddingVertical: 8 }}>
+                <Calendar size={13} color={colors.textSecondary} />
+                <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textPrimary }}>{fmtDate(localDateStr(rangeEnd))}</Text>
+              </TouchableOpacity>
+              {!isDefaultRange && (
+                <TouchableOpacity onPress={resetRange} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: BRAND.purple }}>Reset</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {(pickingStart || pickingEnd) && (
+              <Modal transparent animationType="fade" visible onRequestClose={() => { setPickingStart(false); setPickingEnd(false); }}>
+                <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}
+                  activeOpacity={1} onPress={() => { setPickingStart(false); setPickingEnd(false); }}>
+                  <TouchableOpacity activeOpacity={1}
+                    style={{ backgroundColor: colors.card, borderTopLeftRadius: RADIUS.xxl, borderTopRightRadius: RADIUS.xxl, paddingBottom: 20 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                      <Text style={{ fontSize: TYPO.body, fontWeight: '900', color: colors.textPrimary }}>
+                        📅 {pickingStart ? 'From' : 'To'} — up to a 30-day range
+                      </Text>
+                      <TouchableOpacity onPress={() => { setPickingStart(false); setPickingEnd(false); }}>
+                        <Text style={{ color: BRAND.purple, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <DateTimePicker
+                      value={pickingStart ? rangeStart : rangeEnd}
+                      mode="date" display="spinner"
+                      minimumDate={minAllowedDate}
+                      maximumDate={todayStart()}
+                      onChange={pickingStart ? onPickStart : onPickEnd}
+                      textColor={colors.textPrimary}
+                      style={{ height: 180, width: '100%' }}
+                    />
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              </Modal>
+            )}
+
             {/* Quick filter pills */}
             <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
               {HISTORY_FILTERS.map(f => (
@@ -728,8 +839,8 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
                 </Text>
                 <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary, marginTop: 4 }}>
                   {historyFilter === 'all'
-                    ? 'Use the Grocery or Supplies buttons to ask for things!'
-                    : 'in the last 7 days'}
+                    ? (isDefaultRange ? 'Use the Grocery or Supplies buttons to ask for things!' : 'in this date range')
+                    : (isDefaultRange ? 'in the last 7 days' : 'in this date range')}
                 </Text>
               </View>
             ) : myRequests.map(req => {

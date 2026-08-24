@@ -1393,20 +1393,83 @@ export const useEventStore = create<EventState>((set, get) => ({
 
   addRecurringEvent: (first, rule) => {
     const anchorId = get().addEvent({ ...first, recurrenceRule: rule, isSeriesAnchor: true });
+
+    const dates = generateOccurrenceDates(first.date, rule, 1);
+    // A daily rule with no end date generates up to RECURRENCE_WINDOW_DAYS
+    // (84) occurrence dates — live-tested crash: looping get().addEvent()
+    // once per date fired 84 separate rounds of ~5 synchronous set() calls
+    // each (dayEvents/rangeEvents/_rangeCache/stripMap/stripRows), well
+    // over 400 store updates in one tight synchronous loop, which blew
+    // React's "Maximum update depth exceeded" render-depth guard. Each
+    // occurrence is still a full independent row (editing one, e.g. adding
+    // a note to Wednesday's class only, must never touch the others — same
+    // independence guarantee the chore team-clone pattern established
+    // elsewhere), but they're now built as one batch and applied to local
+    // state / the DB in a single round-trip each, not one at a time.
+    const now = new Date().toISOString();
+    const createdBy = first.createdBy ?? getActiveMemberId() ?? undefined;
+    const occurrences: FamilyEvent[] = dates.map((date, i) => ({
+      ...first,
+      id: `ev${Date.now()}_${i}`,
+      date,
+      seriesId: anchorId,
+      isSeriesAnchor: false,
+      recurrenceRule: undefined,
+      createdBy,
+      createdAt: now,
+    }));
+
+    if (occurrences.length > 0) {
+      const currentDate = get().currentDate;
+      const sameDayOccurrences = occurrences.filter(ev => ev.date === currentDate);
+      if (sameDayOccurrences.length > 0) {
+        const next = sortByTime([...get().dayEvents, ...sameDayOccurrences]);
+        set({ dayEvents: next, events: next });
+        const entry = get()._dayCache[currentDate];
+        if (entry) set({ _dayCache: { ...get()._dayCache, [currentDate]: { ...entry, events: next } } });
+      }
+
+      const rangeNext = sortByTime([...get().rangeEvents, ...occurrences]);
+      set({ rangeEvents: rangeNext });
+      const rc = get()._rangeCache;
+      let rangeCacheChanged = false;
+      const nextRangeCache = { ...rc };
+      for (const key of Object.keys(rc)) {
+        const [from, to] = key.split(':');
+        const inRange = occurrences.filter(ev => ev.date >= from && ev.date <= to);
+        if (inRange.length > 0) {
+          nextRangeCache[key] = { ...rc[key], events: sortByTime([...rc[key].events, ...inRange]) };
+          rangeCacheChanged = true;
+        }
+      }
+      if (rangeCacheChanged) set({ _rangeCache: nextRangeCache });
+
+      const cat = first.category;
+      if (cat) {
+        const sm = { ...get().stripMap };
+        const stripRows = [...get().stripRows];
+        for (const ev of occurrences) {
+          if (!sm[ev.date]?.includes(cat)) sm[ev.date] = [...(sm[ev.date] ?? []), cat];
+          stripRows.push({ date: ev.date, category: cat, memberId: ev.memberId, helper: ev.helper, driverName: ev.driverName });
+        }
+        set({ stripMap: sm, stripRows });
+      }
+
+      supabase.from('calendar_events').insert(occurrences.map(toRow)).then(({ error }) => {
+        if (error) {
+          console.warn('[eventStore] batched recurring insert failed', error.message);
+          const ids = new Set(occurrences.map(ev => ev.id));
+          const rolledBackDay = get().dayEvents.filter(e => !ids.has(e.id));
+          set({ dayEvents: rolledBackDay, events: rolledBackDay });
+          set({ rangeEvents: get().rangeEvents.filter(e => !ids.has(e.id)) });
+        }
+      });
+    }
+
     // seriesId is stamped as a follow-up updateEvent rather than folded into
     // the initial addEvent() call because the anchor's own id (what
     // seriesId needs to be) doesn't exist until addEvent creates it.
     get().updateEvent(anchorId, { seriesId: anchorId });
-
-    const dates = generateOccurrenceDates(first.date, rule, 1);
-    for (const date of dates) {
-      // Each occurrence is a full independent row — editing/completing one
-      // (e.g. adding a note to Wednesday's class only) never touches the
-      // others, same independence guarantee the chore team-clone pattern
-      // established elsewhere in this app. Only seriesId links them; the
-      // rule itself lives solely on the anchor.
-      get().addEvent({ ...first, date, seriesId: anchorId, isSeriesAnchor: false, recurrenceRule: undefined });
-    }
     return anchorId;
   },
 

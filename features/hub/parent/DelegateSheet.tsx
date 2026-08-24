@@ -5,6 +5,7 @@ import { TYPO } from '@/constants/theme';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import { useChoreStore } from '@/store/choreStore';
 import { useChatStore } from '@/store/chatStore';
+import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
 
@@ -66,7 +67,16 @@ export function DelegateSheet({ target, questPool, members, active, colors, isDa
                 : undefined;
               const isQRow = questPool.find(c => c.id === target.choreId && (c as any)._isQuestRow);
               if (isQRow) {
-                updateQuest(target.choreId, { assignedToId: m.id, status: 'todo' });
+                // Was a raw updateQuest patch missing isPool:false — a
+                // pool-sourced row delegated here could stay flagged as
+                // still-poolable even though it now had a real assignee.
+                // reassign_chore always bundles assigned_to_id/is_pool/
+                // status together.
+                supabase.rpc('reassign_chore', {
+                  p_chore_id: target.choreId, p_new_member_id: m.id, p_by_member_id: active.id,
+                }).then(({ error }) => {
+                  if (error) console.warn('[DelegateSheet] reassign_chore failed', error.message);
+                });
               } else {
                 addParentQuest(target.choreId, active.id, m.id, 'DIRECT', note.trim() || undefined);
               }

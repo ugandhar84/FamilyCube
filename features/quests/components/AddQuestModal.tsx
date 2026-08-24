@@ -619,7 +619,11 @@ export function AddQuestModal({ visible, onClose, activeMemberId, defaultQuestTy
           if (isAdultTask && res.selectedMemberId !== activeMemberId) {
             useChoreStore.getState().addParentQuest(newQ.id, activeMemberId, res.selectedMemberId, 'DIRECT');
           } else {
-            useQuestStore.getState().updateQuest(newQ.id, { assignedToId: res.selectedMemberId, isPool: false });
+            supabase.rpc('reassign_chore', {
+              p_chore_id: newQ.id, p_new_member_id: res.selectedMemberId, p_by_member_id: activeMemberId,
+            }).then(({ error }) => {
+              if (error) console.warn('[AddQuestModal] auto-assign reassign_chore failed', error.message);
+            });
           }
         });
       }

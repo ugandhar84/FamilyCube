@@ -4,6 +4,7 @@ import AppBottomSheet from '@/components/AppBottomSheet';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
+import { supabase } from '@/lib/supabase';
 
 interface Props {
   delegateTarget: { id: string; title: string } | null;
@@ -29,8 +30,12 @@ export function DelegateQuestSheet({ delegateTarget, setDelegateTarget, members,
       <View style={{ gap: 10 }}>
         {members.filter(m => m.role === 'parent').map(m => (
           <Pressable key={m.id} onPress={() => {
-            if (delegateTarget) {
-              updateQuest(delegateTarget.id, { assignedToId: m.id, isPool: false }, activeMemberId);
+            if (delegateTarget && activeMemberId) {
+              supabase.rpc('reassign_chore', {
+                p_chore_id: delegateTarget.id, p_new_member_id: m.id, p_by_member_id: activeMemberId,
+              }).then(({ error }) => {
+                if (error) console.warn('[DelegateQuestSheet] reassign_chore failed', error.message);
+              });
               setDelegateTarget(null);
             }
           }} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14,

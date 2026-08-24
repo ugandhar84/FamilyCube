@@ -66,7 +66,17 @@ export function CantMakeItSheet({
     close();
   };
 
-  const otherMembers = members.filter(m => m.id !== byMemberId);
+  // Kids should never be able to hand a "can't do it" chore to a
+  // grandparent (or a parent) — a kid picking a reassign target only ever
+  // gets to pick another kid/teen, same restriction already established
+  // for KidChoreProposalModal's recipient picker. A parent/teen using this
+  // same sheet keeps the full family list — this restriction is specific
+  // to a kid acting on their own chore.
+  const actingMember = members.find(m => m.id === byMemberId);
+  const otherMembers = members.filter(m =>
+    m.id !== byMemberId &&
+    (actingMember?.role !== 'kid' || m.role === 'kid' || m.role === 'teen')
+  );
 
   return (
     <Modal visible={!!target} transparent animationType="slide" onRequestClose={dismiss}>

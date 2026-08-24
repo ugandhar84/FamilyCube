@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { View, Text, Pressable, Alert, TextInput } from 'react-native';
-import { ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins, Camera, MessageCircle, Coins, X, Hand, PartyPopper } from 'lucide-react-native';
-import { TYPO } from '@/constants/theme';
+import { ClipboardList, Laptop, Leaf, HeartHandshake, CheckCircle2, HandCoins, Camera, MessageCircle, Coins, X, Hand, PartyPopper, Clock3 } from 'lucide-react-native';
+import { TYPO, RADIUS } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
 import { useChatStore } from '@/store/chatStore';
+import { supabase } from '@/lib/supabase';
 import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
 import { GpOfferReviewCard } from './GpOfferReviewCard';
 import { KidProposedChoreCard } from './KidProposedChoreCard';
@@ -534,6 +535,110 @@ function RedoDisputeCard({ c, members, colors, isDark, active, resolveRedoDisput
   );
 }
 
+// A kid tapped "Can't make it" → "Ask for a later time" on their own
+// assigned chore (features/tasks/lib/cantMakeIt.ts's 'later' outcome) —
+// stays assigned to them, status resets to 'todo', reason recorded, but
+// previously had NO dedicated parent-facing surface: it just blended into
+// the plain chore list with no visible reason and no reassign/coin-bump
+// action. Reported live (user: "too hard, need help... assigned to Leo...
+// what it suppose to... that request must go to parent... if they want to
+// increase coins they can do right?"). Distinguished from a plain
+// declined-to-pool chore (declineChoreAssignment's 'Declined by X:' prefix,
+// assignedToId cleared) by still having a real assignee.
+function CantMakeItLaterCard({ c, members, colors, isDark, active, reassignChore, updateChoreCoins, dismissLaterRequest }: {
+  c: ChoreTask; members: FamilyMember[]; colors: any; isDark: boolean; active: FamilyMember;
+  reassignChore: (choreId: string, newMemberId: string, byMemberId: string, reason?: string) => void;
+  updateChoreCoins: (choreId: string, coins: number) => void;
+  dismissLaterRequest: (choreId: string) => void;
+}) {
+  const kid = members.find(m => m.id === c.assignedToId);
+  const [reassigning, setReassigning] = useState(false);
+  const [bumping, setBumping] = useState(false);
+  const [coins, setCoins] = useState(String((c.basePoints > 0 ? c.basePoints : c.coinsReward) ?? 0));
+  const eligibleSiblings = members.filter(m => (m.role === 'kid' || m.role === 'teen') && m.id !== c.assignedToId);
+
+  const confirmBump = () => {
+    const parsed = parseInt(coins, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) return;
+    updateChoreCoins(c.id, parsed);
+    setBumping(false);
+  };
+
+  return (
+    <View style={{ borderRadius: 14, padding: 12, gap: 8,
+      backgroundColor: isDark ? colors.amber + '10' : colors.amberLight,
+      borderWidth: 1.5, borderColor: colors.amber + '40' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Clock3 size={15} color={colors.amber} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.textPrimary }}>{c.title}</Text>
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary, marginTop: 2 }}>
+            {kid?.name.split(' ')[0] ?? 'Kid'} asked for a later time
+          </Text>
+        </View>
+      </View>
+      {c.rejectionReason ? (
+        <Text style={{ fontSize: TYPO.label, color: colors.textPrimary, fontStyle: 'italic' }}>"{c.rejectionReason}"</Text>
+      ) : null}
+
+      {bumping ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Coins size={14} color={colors.amber} />
+          <TextInput
+            value={coins} onChangeText={setCoins} keyboardType="number-pad" autoFocus
+            style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: colors.amber + '60',
+              backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 8,
+              fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}
+          />
+          <Pressable onPress={() => setBumping(false)} style={{ paddingHorizontal: 10, paddingVertical: 9 }}>
+            <X size={16} color={colors.textTertiary} />
+          </Pressable>
+          <Pressable onPress={confirmBump}
+            style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, backgroundColor: colors.amber }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Save</Text>
+          </Pressable>
+        </View>
+      ) : reassigning ? (
+        <View style={{ gap: 8 }}>
+          <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Reassign to</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {eligibleSiblings.map(m => (
+              <Pressable key={m.id}
+                onPress={() => { reassignChore(c.id, m.id, active.id, c.rejectionReason); setReassigning(false); }}
+                style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.full, borderWidth: 1.5,
+                  backgroundColor: isDark ? colors.surface : colors.card, borderColor: colors.border }}>
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{m.name.split(' ')[0]}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Pressable onPress={() => setReassigning(false)} style={{ alignSelf: 'flex-start' }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>Cancel</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+          <Pressable onPress={() => dismissLaterRequest(c.id)}
+            style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10,
+              borderWidth: 1.5, borderColor: colors.border }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Leave as-is</Text>
+          </Pressable>
+          <Pressable onPress={() => setBumping(true)}
+            style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10,
+              borderWidth: 1.5, borderColor: colors.amber + '60' }}>
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.amber }}>Bump coins</Text>
+          </Pressable>
+          {eligibleSiblings.length > 0 && (
+            <Pressable onPress={() => setReassigning(true)}
+              style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10, backgroundColor: colors.amber }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Reassign</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
 export function ChoreReviewSection({
   active, members, colors, isDark, chores, pendingReviewsCount,
   approveGrandparentQuestAsParent, declineGrandparentQuestAsParent,
@@ -568,6 +673,21 @@ export function ChoreReviewSection({
   // parent (not whoever requested the redo) to review the original
   // submission directly.
   const redoDisputed = chores.filter(c => c.status === 'kid_disputed_redo');
+  // A kid tapped "Can't make it" → "Ask for a later time" on their own
+  // chore (cantMakeIt.ts's 'later' outcome — stays assigned to them,
+  // status resets to 'todo', a real rejectionReason recorded) — reported
+  // live as having no visible parent-facing surface at all. Distinguished
+  // from a plain declined-to-pool chore by still having a real
+  // assignedToId (a pool-declined chore always clears it) and NOT starting
+  // with declineChoreAssignment's "Declined by X:" prefix. reviewAckIds
+  // (the same "Dismiss" mechanism recentlyApproved already uses below)
+  // lets this parent clear it from their own list without affecting a
+  // co-parent's view.
+  const laterRequests = chores.filter(c =>
+    c.status === 'todo' && c.assignedToId && c.rejectionReason && c.declinedAt &&
+    !c.rejectionReason.startsWith('Declined by') &&
+    !(c.reviewAckIds ?? []).includes(active.id)
+  );
   const gpPending = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'pending_parent_approval');
   const gpDeclined = chores.filter(c => c.categoryType === 'grandparent_quest' && c.status === 'declined');
   // Submitted by the kid, waiting on the SPONSOR grandparent to verify —
@@ -616,7 +736,7 @@ export function ChoreReviewSection({
   const pendingBountyClaimsCount = chores.reduce(
     (n, c) => n + (c.claims ?? []).filter(cl => cl.status === 'pending_approval').length, 0,
   );
-  const badgeCount = pendingReviewsCount + gpPending.length + teenRewardPending.length + gpOffersPending.length + kidProposedChores.length + redoDisputed.length + disputeBadgeCount + pendingBountyClaimsCount;
+  const badgeCount = pendingReviewsCount + gpPending.length + teenRewardPending.length + gpOffersPending.length + kidProposedChores.length + redoDisputed.length + laterRequests.length + disputeBadgeCount + pendingBountyClaimsCount;
   // badgeCount deliberately only counts items needing a decision — but
   // gpDeclined/gpAwaitingSponsor/recentlyApproved all render real visible
   // content below (informational, not "pending"), so a card with only
@@ -687,6 +807,31 @@ export function ChoreReviewSection({
                 {kidProposedChores.map(c => (
                   <KidProposedChoreCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
                     approveKidProposedChore={approveKidProposedChore} declineKidProposedChore={declineKidProposedChore} />
+                ))}
+              </View>
+            )}
+
+            {laterRequests.length > 0 && (
+              <View style={{ gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Clock3 size={12} color={colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                    textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                    Asked for a Later Time
+                  </Text>
+                </View>
+                {laterRequests.map(c => (
+                  <CantMakeItLaterCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
+                    reassignChore={(choreId, newMemberId, byMemberId, reason) => {
+                      supabase.rpc('reassign_chore', { p_chore_id: choreId, p_new_member_id: newMemberId, p_by_member_id: byMemberId, p_reason: reason ?? null })
+                        .then(({ error }: any) => { if (error) console.warn('[ChoreReviewSection] reassign_chore failed', error.message); else useChoreStore.getState().syncFromDB(true); });
+                    }}
+                    updateChoreCoins={(choreId, coins) => useChoreStore.getState().updateChore(choreId, { coinsReward: coins, basePoints: coins })}
+                    dismissLaterRequest={(choreId) => {
+                      const chore = chores.find(x => x.id === choreId);
+                      useChoreStore.getState().updateChore(choreId, { reviewAckIds: [...(chore?.reviewAckIds ?? []), active.id] });
+                    }}
+                  />
                 ))}
               </View>
             )}

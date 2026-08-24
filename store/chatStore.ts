@@ -404,7 +404,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { count } = await query;
       return [id, count ?? 0] as const;
     }));
-    set(s => ({ unreadCounts: { ...s.unreadCounts, ...Object.fromEntries(counts) } }));
+    // The channel currently open on screen is excluded from this write —
+    // this query and markChannelRead's own read-cursor upsert (fired from
+    // a separate, unordered effect in ChatScreen) can race: if this
+    // query's chat_channel_reads read lands before markChannelRead's
+    // upsert commits, it computes a stale nonzero count and overwrites
+    // the zero markChannelRead JUST set, right back to "unread" — for the
+    // exact channel the user is actively looking at. Live-reported as the
+    // bottom-nav Chat badge staying lit with no actual new messages.
+    const filtered = Object.fromEntries(counts.filter(([id]) => id !== _openChannelId));
+    set(s => ({ unreadCounts: { ...s.unreadCounts, ...filtered } }));
   },
 
   // Bumps the read cursor to now and zeroes the badge locally — called when

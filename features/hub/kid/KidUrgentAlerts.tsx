@@ -29,8 +29,8 @@ function AlertRow({ Icon, accent, colors, isDark, title, detail, onPress, onDism
   const handlePress = onPress ? () => { console.log(`[UserAction] screen=Hub role=kid tapped "${title}" on "KidUrgentAlerts row" [features/hub/kid/KidUrgentAlerts.tsx:28]`); onPress(); } : undefined;
   const handleDismiss = () => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "KidUrgentAlerts row: ${title}" [features/hub/kid/KidUrgentAlerts.tsx:39]`); onDismiss(); };
   return (
-    <Wrapper onPress={handlePress} style={{ borderRadius: 16, backgroundColor: isDark ? colors.card : accent + '08',
-      borderWidth: 1.5, borderColor: accent + '35', padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+    <Wrapper onPress={handlePress} style={{ borderRadius: 16, backgroundColor: isDark ? colors.card : accent + '14',
+      borderWidth: 1.5, borderColor: accent + '50', padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
       <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: accent + '20', alignItems: 'center', justifyContent: 'center' }}>
         <Icon size={17} color={accent} fill={accent} fillOpacity={0.15} />
       </View>
@@ -162,8 +162,8 @@ export function KidUrgentAlerts({
           timeAgo = diffMins < 60 ? `${diffMins}m ago` : diffMins < 1440 ? `${Math.floor(diffMins / 60)}h ago` : `${Math.floor(diffMins / 1440)}d ago`;
         }
         return (
-          <View key={r.id} style={{ borderRadius: 16, backgroundColor: isDark ? colors.card : accent + '08',
-            borderWidth: 1.5, borderColor: accent + '35', padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+          <View key={r.id} style={{ borderRadius: 16, backgroundColor: isDark ? colors.card : accent + '14',
+            borderWidth: 1.5, borderColor: accent + '50', padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
             <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: accent + '20', alignItems: 'center', justifyContent: 'center' }}>
               <ReplyIcon size={17} color={accent} />
             </View>
@@ -174,7 +174,10 @@ export function KidUrgentAlerts({
               </Text>
               <Text style={{ fontSize: KID.sub, color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>"{r.detail}"</Text>
               {r.parentNote ? (
-                <Text style={{ fontSize: KID.sub, color: accent, fontStyle: 'italic', marginTop: 4 }}>Parent: "{r.parentNote}"</Text>
+                <Text style={{ fontSize: KID.sub, fontStyle: 'italic', marginTop: 4 }}>
+                  <Text style={{ color: accent, fontStyle: 'normal', fontWeight: '700' }}>Parent: </Text>
+                  <Text style={{ color: colors.textPrimary }}>"{r.parentNote}"</Text>
+                </Text>
               ) : null}
             </View>
             <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "${label} — ${typeLabel}" (id=${r.id}) → onDismiss [features/hub/kid/KidUrgentAlerts.tsx:180]`); onDismiss(r.id); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>

@@ -124,6 +124,12 @@ export interface FamilyMember {
   // date before they've even seen the app). Optional/nullable indefinitely;
   // skipping it is a real, supported choice, not a temporary gap.
   dateOfBirth?: string;
+  // Hub's quick-access pill row (Radar/School/Health/Ledger/...), in the
+  // order this member wants them. Only the ids the member chose to
+  // show/pin are listed — anything not in here still falls back to
+  // AppsQuickAccessPills's default PILLS order, so an old member with no
+  // saved order yet sees the same list as before.
+  pillOrder?: string[];
   // Set once a member has independent auth (accepted a member_invitations
   // email invite, or joined via invite code on their own anonymous-auth
   // device) — undefined for a locally-added PIN-only profile riding on
@@ -211,6 +217,7 @@ function fromRow(row: any): FamilyMember {
     goalRewardId:       row.goal_reward_id ?? undefined,
     email:              row.email ?? undefined,
     dateOfBirth:        row.date_of_birth ?? undefined,
+    pillOrder:          row.pill_order ?? undefined,
   };
 }
 
@@ -247,6 +254,7 @@ function toRow(m: FamilyMember) {
     linked_parent_id:      m.linkedParentId ?? null,
     goal_reward_id:        m.goalRewardId ?? null,
     date_of_birth:         m.dateOfBirth ?? null,
+    pill_order:            m.pillOrder ?? null,
   };
 }
 

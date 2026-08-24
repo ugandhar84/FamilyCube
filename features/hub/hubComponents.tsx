@@ -1169,7 +1169,13 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   {showConfirm && (
                     <Pressable
-                      onPress={() => updateEvent(ev.id, assigneeRole === 'driver' ? { driverStatus: 'confirmed' } : { helperStatus: 'confirmed' })}
+                      onPress={() => {
+                        supabase.rpc('confirm_event_assignment', {
+                          p_event_id: ev.id, p_member_id: viewerMember?.id, p_role: assigneeRole,
+                        }).then(({ error }) => {
+                          if (error) console.warn('[EventDetailSheet] confirm_event_assignment failed', error.message);
+                        });
+                      }}
                       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
                         backgroundColor: colors.success + '15', borderRadius: 14, paddingVertical: 12,
                         borderWidth: 1, borderColor: colors.success + '40' }}>
@@ -1205,10 +1211,12 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                     <Pressable onPress={() => {
                       // Backing out of the chip row without picking anyone
                       // is the actual decline — write it now, not before.
-                      if (cancelledSelfName) {
-                        updateEvent(ev.id, assigneeRole === 'driver'
-                          ? { driverStatus: 'rejected', declinedBy: cancelledSelfName }
-                          : { helperStatus: 'rejected', declinedBy: cancelledSelfName });
+                      if (cancelledSelfName && viewerMember) {
+                        supabase.rpc('decline_event_assignment', {
+                          p_event_id: ev.id, p_member_id: viewerMember.id, p_role: assigneeRole, p_reason: null,
+                        }).then(({ error }) => {
+                          if (error) console.warn('[EventDetailSheet] decline_event_assignment failed', error.message);
+                        });
                       }
                       setChangeOpen(false);
                       setCancelledSelfName(undefined);
@@ -1228,19 +1236,24 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                     excludeName={cancelledSelfName ?? assignee.name}
                     allowGpTeen={cat !== 'Work'}
                     onOpenPool={(kind) => {
-                      updateEvent(ev.id, {
-                        ...(kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true }),
-                        // Coming from Can't Make It — opening the pool IS
-                        // the decline in this path, since no replacement was
-                        // picked. Without this, the assignee field would
-                        // still show the person who just said they can't
-                        // make it.
-                        ...(cancelledSelfName
-                          ? (assigneeRole === 'driver'
-                              ? { driverStatus: 'rejected' as const, declinedBy: cancelledSelfName }
-                              : { helperStatus: 'rejected' as const, declinedBy: cancelledSelfName })
-                          : {}),
-                      });
+                      // Coming from Can't Make It — opening the pool IS the
+                      // decline in this path, since no replacement was
+                      // picked. decline_event_assignment already
+                      // auto-opens BOTH GP and Teen pools for a Ride/
+                      // rideRequired event, so route through it whenever
+                      // this is genuinely a decline; otherwise it's just a
+                      // parent manually opening one specific pool kind with
+                      // no decline involved — a plain scoped write, no RPC
+                      // needed for that narrower case yet.
+                      if (cancelledSelfName && viewerMember) {
+                        supabase.rpc('decline_event_assignment', {
+                          p_event_id: ev.id, p_member_id: viewerMember.id, p_role: assigneeRole, p_reason: null,
+                        }).then(({ error }) => {
+                          if (error) console.warn('[EventDetailSheet] decline_event_assignment (open pool) failed', error.message);
+                        });
+                      } else {
+                        updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
+                      }
                       Alert.alert(kind === 'gp' ? 'Opened to Grandparents' : 'Opened to Teens',
                         `Any eligible ${kind === 'gp' ? 'grandparent' : 'teen'} can now claim "${ev.title}" from their own Hub.`);
                       onClose();
@@ -1250,14 +1263,26 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                       // Assigning it to yourself IS the confirmation — no
                       // separate "accept" step needed (see HelperEventCard's
                       // backlog card, which otherwise asks for one).
-                      updateEvent(ev.id, {
-                        ...(assigneeRole === 'driver'
+                      // onAssign gives a NAME, not a member id — reassign_event
+                      // takes a member id, so resolve it first. An external
+                      // name with no matching member row (e.g. someone typed
+                      // into a free-text driver field) has no RPC path yet;
+                      // falls back to the old direct write for that case only.
+                      const targetMember = members.find(m => m.name === name);
+                      if (targetMember) {
+                        supabase.rpc('reassign_event', {
+                          p_event_id: ev.id, p_new_member_id: targetMember.id, p_role: assigneeRole, p_actor_id: viewerMember?.id ?? targetMember.id,
+                        }).then(({ error }) => {
+                          if (error) console.warn('[EventDetailSheet] reassign_event failed', error.message);
+                        });
+                      } else {
+                        updateEvent(ev.id, assigneeRole === 'driver'
                           ? { driverName: name, driverStatus: name === activeName ? 'confirmed' as const : 'pending' as const }
-                          : { helper: name, helperStatus: name === activeName ? 'confirmed' as const : 'pending' as const }),
-                        notes: reason
-                          ? `${cancelledSelfName ?? activeName ?? 'Parent'} can't do "${helperLabel}" — "${reason}"`
-                          : undefined,
-                      });
+                          : { helper: name, helperStatus: name === activeName ? 'confirmed' as const : 'pending' as const });
+                      }
+                      if (reason) {
+                        updateEvent(ev.id, { notes: `${cancelledSelfName ?? activeName ?? 'Parent'} can't do "${helperLabel}" — "${reason}"` });
+                      }
                       setChangeOpen(false);
                       setCancelledSelfName(undefined);
                       onClose();

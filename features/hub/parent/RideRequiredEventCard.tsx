@@ -6,6 +6,7 @@ import { CollapsibleCard } from '../hubComponents';
 import { fmtTime } from '../hubUtils';
 import { parseRideMeta, plus90Minutes, forkRideLegs } from './rideLegs';
 import { PickupTimeStepper } from './PickupTimeStepper';
+import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
@@ -44,10 +45,15 @@ export function RideRequiredEventCard({ ev, active, colors, isDark, updateEvent,
   // HelperEventCard's Take-Over action instead, which stays scoped to
   // 'this' only.
   const iDrive = () => {
-    console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "I'll Drive" on "${ev.title}" (id=${ev.id}) → updateEvent(driverName/driverStatus) [features/hub/parent/RideRequiredEventCard.tsx:47]`);
-    const patch = { driverName: active.name, driverStatus: 'confirmed' as const };
-    if (ev.seriesId && updateEventScoped) updateEventScoped(ev.id, patch, 'following');
-    else updateEvent(ev.id, patch);
+    console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "I'll Drive" on "${ev.title}" (id=${ev.id}) → reassign_event(driver) [features/hub/parent/RideRequiredEventCard.tsx:47]`);
+    supabase.rpc('reassign_event', {
+      p_event_id: ev.id, p_new_member_id: active.id, p_role: 'driver', p_actor_id: active.id,
+    }).then(({ error }) => {
+      if (error) { console.warn('[RideRequiredEventCard] iDrive reassign_event failed', error.message); return; }
+      if (ev.seriesId && updateEventScoped) {
+        updateEventScoped(ev.id, { driverName: active.name, driverStatus: 'confirmed' }, 'following');
+      }
+    });
   };
 
   // A parent who can't drive this themselves previously had no path at

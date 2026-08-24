@@ -95,7 +95,14 @@ export function RideLateAlertCard({ req, rideLate, kidName, ev, active, colors, 
       {ev && (
         <Pressable onPress={() => {
           console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Ask someone else to go" on "${rideLate.title}" (id=${req.id}) → updateEvent(openToGrandparents/openToTeens) + resolve [features/hub/parent/RideLateAlertCard.tsx:96]`);
-          updateEvent(ev.id, { isOpenToGrandparents: true, isOpenToTeens: true, helperStatus: undefined });
+          // Was helperStatus-only — a driverName-paired late ride (the
+          // driverName/driverStatus field pair, distinct from helper/
+          // helperStatus) never got its status cleared here, leaving a
+          // stale 'confirmed'/'pending' driverStatus behind even though the
+          // ride was just reopened to the pool. Clear both pairs
+          // symmetrically; harmless for whichever pair the event doesn't
+          // actually use (it's already unset).
+          updateEvent(ev.id, { isOpenToGrandparents: true, isOpenToTeens: true, helperStatus: undefined, driverStatus: undefined });
           resolve('Opened to other helpers',
             `🆘 ${kidName} needs a ride for "${rideLate.title}" — can anyone pick this up?`);
         }}

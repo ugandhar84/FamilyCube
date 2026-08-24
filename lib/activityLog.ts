@@ -16,6 +16,7 @@ export type ActivityAction =
   | 'notes_changed'
   | 'claimed' | 'submitted' | 'approved' | 'declined' | 'reassigned'
   | 'status_changed' | 'reward_changed' | 'due_date_changed'
+  | 'redo_disputed' | 'redo_dispute_resolved'
   | 'other';
 
 export function logActivity(entry: {

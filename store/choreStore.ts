@@ -2137,6 +2137,20 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
                 : m),
             }));
           } catch { /* familyStore not mounted yet — server balance still landed */ }
+          // Mirrors the same reporting-row insert _submitChoreViaRpc's
+          // auto-approve/approve branch already does — award_coins updates
+          // the real balance server-side, but nothing writes the
+          // point_transactions ledger row for it, so a dispute payout was
+          // silently missing from the kid's own earnings history even
+          // though the coins had genuinely landed (confirmed live: balance
+          // matched exactly, only the ledger row was absent).
+          const settings = get().householdSettings;
+          const { spend, save, give } = wallet === 'gpCoins' ? { spend: result.coins_paid, save: 0, give: 0 } : calculateJarSplit(result.coins_paid, settings);
+          dbInsert('point_transactions', {
+            id: genId(), user_id: chore.assignedToId, chore_instance_id: choreId, amount: result.coins_paid,
+            transaction_type: 'EARNED', spend_allocation: spend, save_allocation: save, give_allocation: give,
+            notes: 'Redo dispute resolved in kid\'s favor', created_at: new Date().toISOString(), wallet,
+          });
         }
         showToast(pay ? 'Approved ✓' : 'Sided with the redo request');
       });

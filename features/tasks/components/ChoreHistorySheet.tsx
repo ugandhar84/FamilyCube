@@ -21,6 +21,7 @@ const VERB: Record<ActivityAction, string> = {
   claimed: 'Claimed', submitted: 'Submitted for review', approved: 'Approved',
   declined: 'Sent back', reassigned: 'Reassigned',
   status_changed: 'Status changed', reward_changed: 'Reward changed', due_date_changed: 'Due date changed',
+  redo_disputed: 'Disputed the redo request', redo_dispute_resolved: 'Dispute resolved',
   other: 'Updated',
 };
 

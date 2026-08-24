@@ -826,16 +826,18 @@ export default function ChatScreen() {
                 );
               }}
             />
-            {/* Scroll-to-bottom */}
+            {/* Scroll-to-bottom — matches AskCubeChat's pill+"Latest" label
+                treatment (components/AskCubeChat.tsx) instead of a bare
+                circular chevron, so the two chat surfaces read as the same
+                affordance rather than two different-looking buttons. */}
             {showScrollBtn && (
               <Pressable onPress={() => flatRef.current?.scrollToOffset({ offset: 0, animated: true })}
-                style={{ position: 'absolute', bottom: 12, right: 16,
-                  width: 42, height: 42, borderRadius: 21,
-                  backgroundColor: colors.primary,
-                  alignItems: 'center', justifyContent: 'center',
-                  shadowColor: colors.primary, shadowOpacity: 0.4, shadowRadius: 8,
-                  shadowOffset: { width: 0, height: 3 }, elevation: 6 }}>
-                <ChevronDown size={22} color="#fff" />
+                style={{ position: 'absolute', bottom: 12, alignSelf: 'center',
+                  flexDirection: 'row', alignItems: 'center', gap: 4,
+                  backgroundColor: colors.primary, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+                  shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 4 }}>
+                <ChevronDown size={14} color="#fff" />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Latest</Text>
               </Pressable>
             )}
 

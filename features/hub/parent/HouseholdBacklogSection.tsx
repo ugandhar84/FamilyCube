@@ -3,6 +3,7 @@ import { ClipboardList, Car, PartyPopper } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { SectionCard } from '../hubComponents';
 import { useChoreStore } from '@/store/choreStore';
+import { supabase } from '@/lib/supabase';
 import { MyAdultQuestCard } from './backlog/MyAdultQuestCard';
 import { OthersAdultQuestCard } from './backlog/OthersAdultQuestCard';
 import { DirectPendingCard } from './backlog/DirectPendingCard';
@@ -165,8 +166,15 @@ export function HouseholdBacklogSection({
               <PoolQuestCard key={chore.id} chore={chore} members={members} colors={colors} isDark={isDark}
                 onTakeIt={(c) => {
                   if ((c as any)._isQuestRow) {
-                    updateQuest(c.id, { assignedToId: active.id, status: 'in_progress' } as any);
-                    useChoreStore.getState().updateChore(c.id, { isPool: false });
+                    // Was two separate non-atomic writes (assignedToId+status
+                    // in one, isPool in another) — claim_pool_quest bundles
+                    // the same fields (assigned_to_id/is_pool/status=
+                    // in_progress) in one transaction, matching this card's
+                    // exact semantics (a pool item, claimed directly).
+                    supabase.rpc('claim_pool_quest', { p_chore_id: c.id, p_member_id: active.id })
+                      .then(({ error }) => {
+                        if (error) console.warn('[HouseholdBacklogSection] claim_pool_quest failed', error.message);
+                      });
                   } else {
                     handlePullTask(c);
                   }

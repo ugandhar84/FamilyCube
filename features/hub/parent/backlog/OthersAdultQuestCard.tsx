@@ -4,6 +4,7 @@ import { ChevronUp, ChevronDown, MessageCircle, ArrowRightLeft, ShoppingBag, Hea
 import { TYPO } from '@/constants/theme';
 import { useChoreStore } from '@/store/choreStore';
 import { useChatStore } from '@/store/chatStore';
+import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
 
@@ -43,7 +44,14 @@ export function OthersAdultQuestCard({ q, active, members, colors, isDark, updat
     `Reassign "${q.title}" to yourself?`,
     [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Reclaim', onPress: () => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Reclaim" on "${q.title}" (id=${q.id}) → updateQuest(assignedToId) [features/hub/parent/backlog/OthersAdultQuestCard.tsx:43]`); updateQuest(q.id, { assignedToId: active.id }); } },
+      { text: 'Reclaim', onPress: () => {
+        console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Reclaim" on "${q.title}" (id=${q.id}) → reassign_chore [features/hub/parent/backlog/OthersAdultQuestCard.tsx:43]`);
+        // Was assignedToId-only — never touched status/isPool at all,
+        // the exact "missing both" asymmetry the audit flagged.
+        // reassign_chore always bundles all three together.
+        supabase.rpc('reassign_chore', { p_chore_id: q.id, p_new_member_id: active.id, p_by_member_id: active.id })
+          .then(({ error }) => { if (error) console.warn('[OthersAdultQuestCard] reassign_chore failed', error.message); });
+      } },
     ]
   );
   };

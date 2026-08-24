@@ -76,7 +76,15 @@ export function SponsorQuestsSection({
           : 'Set up a chore or a savings match'}
         badge={(pendingGpApproval.length) || undefined} badgeColor={BRAND.teal}
         actionBtn={{ label: 'New Chore', onPress: () => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "New Chore" on "Chores I Sponsor" → onOpenCreateQuestModal [features/hub/senior/sponsor/SponsorQuestsSection.tsx:72]`); onOpenCreateQuestModal(); } }}
-        collapsible defaultExpanded={pendingGpApproval.length > 0}
+        // Was pendingGpApproval.length > 0 only — missed real visible
+        // content from awaitingParent/turnedDown/approvedWaitingClaim/
+        // inProgress/done quests, each with their own card rendered
+        // below, so a sponsor with e.g. an in-progress chore but nothing
+        // currently needing their own review still saw this collapsed by
+        // default despite real content being there. totalSponsored
+        // (already computed above for the empty-state subtitle) covers
+        // every one of those cases.
+        collapsible defaultExpanded={pendingGpApproval.length > 0 || totalSponsored > 0}
         colors={colors} isDark={isDark}>
 
         {/* Match Setup shortcut */}

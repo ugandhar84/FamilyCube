@@ -180,6 +180,16 @@ export default function TasksScreen() {
   const [rideRequestModal, setRideRequestModal] = useState(false);
   const openCreator = () => { if (isKidCreator) setShowAskParentSheet(true); else setShowComposer(true); };
 
+  // Set by the shared FAB in app/(tabs)/_layout.tsx when tapped while
+  // showing its Tasks-tab "+" face — opens SmartTaskComposer directly
+  // (parent/teen path only; the shared FAB itself is parent-role-gated).
+  useFocusEffect(useCallback(() => {
+    if (useUIStore.getState().openTaskComposerRequested) {
+      useUIStore.getState().setOpenTaskComposerRequested(false);
+      setShowComposer(true);
+    }
+  }, []));
+
   const activeQuery = segment === 'schedule' ? scheduleQuery : choreQuery;
   const setActiveQuery = segment === 'schedule' ? setScheduleQuery : setChoreQuery;
 
@@ -378,18 +388,14 @@ export default function TasksScreen() {
           />
         )}
 
-      {(canCreate || isKidCreator) && (
-        <TouchableOpacity
-          onPress={openCreator}
-          activeOpacity={0.88}
-          style={[styles.fab, {
-            bottom: insets.bottom + 20,
-            backgroundColor: colors.primary,
-          }]}
-        >
-          <Plus size={26} color="#fff" />
-        </TouchableOpacity>
-      )}
+      {/* No FAB owned by this screen — parent creation routes through the
+          single shared FAB in app/(tabs)/_layout.tsx (morphs from Ask
+          Cube's sparkle into this screen's own "+" the moment Tasks is
+          focused — see openTaskComposerRequested below). Kids/teens rely
+          on the inline +Event/+Quest header buttons (CalendarScreen/
+          QuestsScreen, hideCreateButton removed) and their own dedicated
+          buttons elsewhere (Hub's Ask Parent flow, etc.) instead of a
+          floating FAB here. */}
 
       <AskParentSheet
         visible={showAskParentSheet} onClose={() => setShowAskParentSheet(false)} colors={colors} isDark={isDark}

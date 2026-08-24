@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Tabs, usePathname } from 'expo-router';
+import { Tabs } from 'expo-router';
 import {
   View, Text, StyleSheet, Pressable, Animated, Easing,
 } from 'react-native';
@@ -16,7 +16,7 @@ import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useHelpStore } from '@/store/helpStore';
 import { useUIStore } from '@/store/uiStore';
-import { Sparkles } from 'lucide-react-native';
+import { Sparkles, Plus } from 'lucide-react-native';
 import AskCubeChat from '@/components/AskCubeChat';
 
 // ── Tab icon name map ─────────────────────────────────────────────────────────
@@ -110,6 +110,10 @@ function CustomTabBar({ state, navigation }: any) {
   const TAB_COUNT     = TABS.length;
 
   const activeTabIndex = TABS.findIndex(t => t.name === state.routes[state.index]?.name);
+  const activeRouteName: string | undefined = state.routes[state.index]?.name;
+  useEffect(() => {
+    useUIStore.getState().setActiveTabName(activeRouteName);
+  }, [activeRouteName]);
 
   const [barWidth, setBarWidth] = useState(0);
   const tabWidth = barWidth / TAB_COUNT;
@@ -221,11 +225,37 @@ export default function TabLayout() {
   const { loaded: questsLoaded, loadFromStorage: loadQuests } = useQuestStore();
   const { loaded: helpLoaded,   loadFromStorage: loadHelp   } = useHelpStore();
   const [askCubeOpen, setAskCubeOpen] = useState(false);
-  const pathname = usePathname();
-  const onChatTab = pathname?.includes('/chat');
+  // Read from CustomTabBar's own React Navigation `state` prop (via
+  // uiStore.activeTabName) rather than expo-router's usePathname() —
+  // usePathname() lagged/mismatched the real focused tab on Expo Router's
+  // lazy+frozen tab screens (live-reported: the shared FAB below sometimes
+  // showed "+" on Hub/Apps and sparkle on Tasks, backwards). state.routes[
+  // state.index] is synchronous and authoritative.
+  const activeTabName = useUIStore(s => s.activeTabName);
+  const onChatTab = activeTabName === 'chat';
+  // One shared FAB (not two separate ones) morphs between Ask Cube
+  // (sparkle, every tab except Chat/Tasks) and Tasks' own smart-create
+  // entry point (+, Tasks tab only) — same physical button, same position,
+  // crossfading its icon/color rather than one FAB disappearing while an
+  // unrelated one appears elsewhere.
+  const onTasksTab = activeTabName === 'tasks';
   const fullBleedScreenActive = useUIStore(s => s.fullBleedScreenActive);
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const insets = useSafeAreaInsets();
+
+  const iconMorph = useRef(new Animated.Value(onTasksTab ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.timing(iconMorph, {
+      toValue: onTasksTab ? 1 : 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [onTasksTab]);
+  const sparkleOpacity = iconMorph.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, 0, 0] });
+  const sparkleScale   = iconMorph.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, 0.5, 0.5] });
+  const plusOpacity    = iconMorph.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 0, 1] });
+  const plusScale      = iconMorph.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.5, 0.5, 1] });
 
   // Boot all stores once when the tab shell mounts — before any screen renders
   useEffect(() => {
@@ -278,22 +308,30 @@ export default function TabLayout() {
         <Tabs.Screen name="social-notifications" options={{ href: null }} />
       </Tabs>
 
-      {/* Ask Cube — floating agentic chat, reachable from every tab. Mounted
-          once here (not per-screen) so it overlays consistently regardless
-          of which tab is active. Parent-only: it can act broadly across the
+      {/* Shared FAB — Ask Cube (sparkle) everywhere except Chat/Tasks;
+          morphs in place into Tasks' own "+" (opens SmartTaskComposer via
+          the one-shot openTaskComposerRequested flag TasksScreen consumes)
+          the moment the Tasks tab is focused. One physical button, one
+          position, crossfading icon — not two separate FABs swapping in
+          and out. Parent-only: Ask Cube can act broadly across the
           household (grocery, meals, chores, schedule) on the parent's
-          behalf, which isn't something a kid/teen/GP account should be able
-          to trigger. */}
+          behalf, which isn't something a kid/teen/GP account should be
+          able to trigger; Tasks' own "+" for kid/teen still uses its own
+          separate role-gated logic inside TasksScreen, unaffected by this
+          parent-only gate. */}
       {activeMember?.role === 'parent' && (
         <>
           {/* Hidden on the Chat tab — a second AI entry point on top of the
-              family's own messaging surface was redundant/confusing there;
-              every other tab still gets the FAB. If it's already open when
-              the user navigates to Chat, leave it open rather than yanking
-              it away mid-conversation — only the launcher button hides. */}
+              family's own messaging surface was redundant/confusing there.
+              If it's already open when the user navigates to Chat, leave it
+              open rather than yanking it away mid-conversation — only the
+              launcher button hides. */}
           {!onChatTab && !fullBleedScreenActive && (
             <Pressable
-              onPress={() => setAskCubeOpen(true)}
+              onPress={() => {
+                if (onTasksTab) useUIStore.getState().setOpenTaskComposerRequested(true);
+                else setAskCubeOpen(true);
+              }}
               style={{
                 position: 'absolute', right: 16, bottom: (insets.bottom || 16) + 74,
                 width: 52, height: 52, borderRadius: 26, backgroundColor: colors.primary,
@@ -301,7 +339,12 @@ export default function TabLayout() {
                 shadowColor: colors.primary, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
                 elevation: 6,
               }}>
-              <Sparkles size={22} color="#fff" />
+              <Animated.View style={{ position: 'absolute', opacity: sparkleOpacity, transform: [{ scale: sparkleScale }] }}>
+                <Sparkles size={22} color="#fff" />
+              </Animated.View>
+              <Animated.View style={{ position: 'absolute', opacity: plusOpacity, transform: [{ scale: plusScale }] }}>
+                <Plus size={24} color="#fff" />
+              </Animated.View>
             </Pressable>
           )}
           <AskCubeChat

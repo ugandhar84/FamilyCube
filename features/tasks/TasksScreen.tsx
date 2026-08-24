@@ -33,6 +33,7 @@
  * externalSearchQuery.
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Animated, ActivityIndicator } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CalendarDays, ListChecks, Plus, Search, X, Bot, Sparkles, Flame, Award } from 'lucide-react-native';
@@ -42,6 +43,7 @@ import { useFamilyStore } from '@/store/familyStore';
 import { useEventStore, eventAssignee } from '@/store/eventStore';
 import { useChoreStore } from '@/store/choreStore';
 import { useNotifStore } from '@/store/notifStore';
+import { useUIStore } from '@/store/uiStore';
 import { localDateStr } from '@/lib/dates';
 import AppHeader from '@/components/AppHeader';
 import NotificationPanel from '@/components/NotificationPanel';
@@ -177,6 +179,26 @@ export default function TasksScreen() {
   const [choreProposalModal, setChoreProposalModal] = useState(false);
   const [rideRequestModal, setRideRequestModal] = useState(false);
   const openCreator = () => { if (isKidCreator) setShowAskParentSheet(true); else setShowComposer(true); };
+
+  // Set by CustomTabBar the instant the Tasks tab is tapped — echoes Ask
+  // Cube's sparkle FAB (hidden here to avoid stacking on this screen's own
+  // "+") by auto-opening the same composer the moment the tab lands, so
+  // the sparkle button reads as having "become" the + rather than just
+  // disappearing. One-shot: cleared immediately so backgrounding/returning
+  // to an already-open Tasks tab doesn't keep re-triggering it.
+  const fabPopScale = useRef(new Animated.Value(1)).current;
+  useFocusEffect(useCallback(() => {
+    if (useUIStore.getState().autoOpenTaskComposer) {
+      useUIStore.getState().setAutoOpenTaskComposer(false);
+      openCreator();
+      // Matching "arrival" pop — the sparkle FAB in app/(tabs)/_layout.tsx
+      // plays its own launch pop the instant this tab is tapped; this
+      // completes the illusion of it landing here as the + button, rather
+      // than the two being visually unrelated.
+      fabPopScale.setValue(0.5);
+      Animated.spring(fabPopScale, { toValue: 1, useNativeDriver: true, tension: 260, friction: 7 }).start();
+    }
+  }, []));
 
   const activeQuery = segment === 'schedule' ? scheduleQuery : choreQuery;
   const setActiveQuery = segment === 'schedule' ? setScheduleQuery : setChoreQuery;
@@ -377,22 +399,18 @@ export default function TasksScreen() {
         )}
 
       {(canCreate || isKidCreator) && (
-        <TouchableOpacity
-          onPress={openCreator}
-          activeOpacity={0.88}
-          style={[styles.fab, {
-            // Reverted — Ask Cube is parent-only AND explicitly hidden on
-            // the Tasks tab itself (app/(tabs)/_layout.tsx line 298:
-            // !onTasksTab), so there's no Ask Cube FAB ever visible here to
-            // align against. Copying its +74 offset just pushed this FAB
-            // too high with nothing else on this screen for context —
-            // confirmed live, reverting to the original position.
-            bottom: insets.bottom + 20,
-            backgroundColor: colors.primary,
-          }]}
-        >
-          <Plus size={26} color="#fff" />
-        </TouchableOpacity>
+        <Animated.View style={[styles.fab, {
+          bottom: insets.bottom + 20,
+          transform: [{ scale: fabPopScale }],
+        }]}>
+          <TouchableOpacity
+            onPress={openCreator}
+            activeOpacity={0.88}
+            style={{ width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary }}
+          >
+            <Plus size={26} color="#fff" />
+          </TouchableOpacity>
+        </Animated.View>
       )}
 
       <AskParentSheet

@@ -182,7 +182,16 @@ function CustomTabBar({ state, navigation }: any) {
                 if (now - lastNavTime.current < 400) return;
                 lastNavTime.current = now;
                 const event = navigation.emit({ type: 'tabPress', target: route?.key, canPreventDefault: true });
-                if (!focused && !event.defaultPrevented) navigation.navigate(name);
+                if (!focused && !event.defaultPrevented) {
+                  // Tasks tap — echoes Ask Cube's sparkle FAB (hidden on
+                  // Tasks specifically to avoid stacking on its own "+")
+                  // by auto-opening the same smart composer the instant
+                  // the tab lands, so switching TO Tasks reads as "the
+                  // sparkle button became the + button" rather than the
+                  // create action just disappearing.
+                  if (name === 'tasks') useUIStore.getState().setAutoOpenTaskComposer(true);
+                  navigation.navigate(name);
+                }
               }}
               style={styles.tabItem}
             >
@@ -221,6 +230,22 @@ export default function TabLayout() {
   const { loaded: questsLoaded, loadFromStorage: loadQuests } = useQuestStore();
   const { loaded: helpLoaded,   loadFromStorage: loadHelp   } = useHelpStore();
   const [askCubeOpen, setAskCubeOpen] = useState(false);
+  // "Launch" pop — scale up + fade out — plays the instant the Tasks tab
+  // is tapped (autoOpenTaskComposer flips true), right as the sparkle FAB
+  // is about to hide behind onTasksTab going true a beat later. Reads as
+  // the sparkle button "becoming" Tasks' own + rather than just vanishing.
+  const sparkleLaunchScale = useRef(new Animated.Value(1)).current;
+  const sparkleLaunchOpacity = useRef(new Animated.Value(1)).current;
+  const autoOpenTaskComposer = useUIStore(s => s.autoOpenTaskComposer);
+  useEffect(() => {
+    if (!autoOpenTaskComposer) return;
+    sparkleLaunchScale.setValue(1);
+    sparkleLaunchOpacity.setValue(1);
+    Animated.parallel([
+      Animated.timing(sparkleLaunchScale, { toValue: 1.6, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(sparkleLaunchOpacity, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start(() => { sparkleLaunchScale.setValue(1); sparkleLaunchOpacity.setValue(1); });
+  }, [autoOpenTaskComposer]);
   const pathname = usePathname();
   const onChatTab = pathname?.includes('/chat');
   // Tasks tab has its own FAB (SmartTaskComposer's "+") — stacking Ask
@@ -296,17 +321,23 @@ export default function TabLayout() {
               the user navigates to Chat, leave it open rather than yanking
               it away mid-conversation — only the launcher button hides. */}
           {!onChatTab && !onTasksTab && !fullBleedScreenActive && (
-            <Pressable
-              onPress={() => setAskCubeOpen(true)}
+            <Animated.View
+              pointerEvents="box-none"
               style={{
                 position: 'absolute', right: 16, bottom: (insets.bottom || 16) + 74,
-                width: 52, height: 52, borderRadius: 26, backgroundColor: colors.primary,
-                alignItems: 'center', justifyContent: 'center',
-                shadowColor: colors.primary, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
-                elevation: 6,
+                transform: [{ scale: sparkleLaunchScale }], opacity: sparkleLaunchOpacity,
               }}>
-              <Sparkles size={22} color="#fff" />
-            </Pressable>
+              <Pressable
+                onPress={() => setAskCubeOpen(true)}
+                style={{
+                  width: 52, height: 52, borderRadius: 26, backgroundColor: colors.primary,
+                  alignItems: 'center', justifyContent: 'center',
+                  shadowColor: colors.primary, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
+                  elevation: 6,
+                }}>
+                <Sparkles size={22} color="#fff" />
+              </Pressable>
+            </Animated.View>
           )}
           <AskCubeChat
             visible={askCubeOpen}

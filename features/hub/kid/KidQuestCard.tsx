@@ -11,6 +11,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import type { Quest } from '@/store/questStore';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { useChoreStore } from '@/store/choreStore';
+import { useShallow } from 'zustand/react/shallow';
 
 // Money-green — "approved / bounty" positive accent, distinct from brand
 // teal (used elsewhere in this card for in-progress/claimed state). Not
@@ -40,7 +41,15 @@ export function KidQuestCard({
   onAcceptGpQuest: (id: string) => void;
   onDeclineGpQuest: (q: Quest) => void;
 }) {
-  const { acceptTermsChange, rejectTermsChange } = useChoreStore();
+  // Selected individually (not destructured from the whole store) — Zustand
+  // actions are stable references, so this subscribes to nothing and never
+  // re-renders on unrelated store changes. Destructuring the whole store
+  // here caused a real infinite-render crash (live-tested on device): this
+  // card ALSO subscribes below via a selector that returns a fresh object
+  // literal every call, so any store update — including this component's
+  // own resulting re-render — kept re-triggering itself.
+  const acceptTermsChange = useChoreStore(s => s.acceptTermsChange);
+  const rejectTermsChange = useChoreStore(s => s.rejectTermsChange);
   const isPool = q.isPool && q.status === 'todo';
   const isClaimed = q.status === 'claimed';
   const isDeclined = q.status === 'declined';
@@ -52,10 +61,16 @@ export function KidQuestCard({
   // documented drift bugs vs. the Chores tab (a dead decline-branch on
   // claimed chores, an overdue-badge mismatch) — see
   // features/tasks/lib/deriveCardActions.ts for the full rule set.
-  const choreExtra = useChoreStore(s => {
+  // useShallow — the raw selector below returns a fresh object literal on
+  // every call, which without shallow comparison always looks "different"
+  // to Zustand's default reference-equality check, re-triggering a render
+  // on every store update forever. Combined with the acceptTermsChange/
+  // rejectTermsChange fix above, this caused a real "Maximum update depth
+  // exceeded" crash live-tested on a physical device.
+  const choreExtra = useChoreStore(useShallow(s => {
     const c = s.chores.find(c => c.id === q.id);
     return c ? { categoryType: c.categoryType, status: c.status } : undefined;
-  });
+  }));
   const { canClaim, canSubmit, canResubmit, canKidDecline, canAcceptGp } = deriveQuestActions(
     q,
     { id: active.id, role: active.role },

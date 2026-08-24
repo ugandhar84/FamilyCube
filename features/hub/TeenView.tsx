@@ -5,6 +5,7 @@ import {
   Bell, ShoppingCart, ClipboardList, Car, Fuel, BookOpen, CreditCard, MessageCircle,
 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
+import { supabase } from '@/lib/supabase';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssignee } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
@@ -216,9 +217,11 @@ export function TeenView({ active, members, colors, isDark, activeTrips }: {
     // sweep, teen-role audit, Critical).
     if (a?.name === active.name && paidCoins > 0) clawbackCoins(active.id, paidCoins, 'mainCoins');
     const isDriverPair = ev?.driverName === active.name || (ev?.rideRequired && ev.category !== 'Ride');
-    updateEvent(evId, isDriverPair
-      ? { driverStatus: 'rejected', declinedBy: active.name }
-      : { helperStatus: 'rejected', declinedBy: active.name });
+    supabase.rpc('decline_event_assignment', {
+      p_event_id: evId, p_member_id: active.id, p_role: isDriverPair ? 'driver' : 'helper', p_reason: null,
+    }).then(({ error }) => {
+      if (error) console.warn('[TeenView] dropPickup decline_event_assignment failed', error.message);
+    });
   };
 
   // Confirming a direct assignment settles it — no coins change hands here
@@ -229,7 +232,11 @@ export function TeenView({ active, members, colors, isDark, activeTrips }: {
   const confirmAssignment = (evId: string) => {
     const ev = upcomingEvents.find(e => e.id === evId);
     const isDriverPair = ev?.driverName === active.name || (ev?.rideRequired && ev.category !== 'Ride');
-    updateEvent(evId, isDriverPair ? { driverStatus: 'confirmed' } : { helperStatus: 'confirmed' });
+    supabase.rpc('confirm_event_assignment', {
+      p_event_id: evId, p_member_id: active.id, p_role: isDriverPair ? 'driver' : 'helper',
+    }).then(({ error }) => {
+      if (error) console.warn('[TeenView] confirmAssignment failed', error.message);
+    });
   };
 
   // Either side (rider or driver) can confirm a pickup actually happened —

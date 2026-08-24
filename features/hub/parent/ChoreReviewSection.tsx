@@ -6,6 +6,7 @@ import { useChoreStore } from '@/store/choreStore';
 import { useChatStore } from '@/store/chatStore';
 import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
 import { GpOfferReviewCard } from './GpOfferReviewCard';
+import { KidProposedChoreCard } from './KidProposedChoreCard';
 import { SectionCard } from '../hubComponents';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
@@ -477,6 +478,7 @@ export function ChoreReviewSection({
   grandparentApproveAndCheer,
   approveTeenReward, adjustTeenReward, declineTeenReward,
   acceptGPOffer, declineGPOffer,
+  approveKidProposedChore, declineKidProposedChore,
   flagApprovalForDiscussion, standByApproval, requestApprovalReversal, coSignReversal,
   acknowledgeRecentApproval,
 }: {
@@ -490,6 +492,8 @@ export function ChoreReviewSection({
   declineTeenReward: (choreId: string, approverId: string, reason?: string) => void;
   acceptGPOffer: (choreId: string, parentId: string) => void;
   declineGPOffer: (choreId: string, parentId: string, reason?: string) => void;
+  approveKidProposedChore: (choreId: string, reviewerId: string, coins: number) => void;
+  declineKidProposedChore: (choreId: string, reviewerId: string, reason?: string) => void;
   flagApprovalForDiscussion?: (choreId: string, byParentId: string, note?: string) => void;
   standByApproval?: (choreId: string, byParentId: string) => void;
   requestApprovalReversal?: (choreId: string, byParentId: string, reason: string) => void;
@@ -513,6 +517,10 @@ export function ChoreReviewSection({
   // on the real ChoreStatus ('gp_offer_pending'), not the Quest-shim status
   // it maps to (which is shared with ordinary kid submissions).
   const gpOffersPending = chores.filter(c => c.status === 'gp_offer_pending');
+  // A kid proposed this chore for themselves/a sibling — real DB status
+  // (see 20260907120000_kid_proposed_chore_rpcs.sql), invisible everywhere
+  // else via awaitingParentApproval until the parent Approves/Declines here.
+  const kidProposedChores = chores.filter(c => c.status === 'pending_kid_proposal');
   // Scenario 4.7 — approved-in-the-last-7-days chores, so a co-parent
   // catching up after being away still has a reasonable window to dispute
   // something they missed, without surfacing every approval ever made.
@@ -540,7 +548,7 @@ export function ChoreReviewSection({
   const pendingBountyClaimsCount = chores.reduce(
     (n, c) => n + (c.claims ?? []).filter(cl => cl.status === 'pending_approval').length, 0,
   );
-  const badgeCount = pendingReviewsCount + gpPending.length + teenRewardPending.length + gpOffersPending.length + disputeBadgeCount + pendingBountyClaimsCount;
+  const badgeCount = pendingReviewsCount + gpPending.length + teenRewardPending.length + gpOffersPending.length + kidProposedChores.length + disputeBadgeCount + pendingBountyClaimsCount;
   // badgeCount deliberately only counts items needing a decision — but
   // gpDeclined/gpAwaitingSponsor/recentlyApproved all render real visible
   // content below (informational, not "pending"), so a card with only
@@ -595,6 +603,22 @@ export function ChoreReviewSection({
                 {gpOffersPending.map(c => (
                   <GpOfferReviewCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
                     acceptGPOffer={acceptGPOffer} declineGPOffer={declineGPOffer} />
+                ))}
+              </View>
+            )}
+
+            {kidProposedChores.length > 0 && (
+              <View style={{ gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <ClipboardList size={12} color={colors.textTertiary} />
+                  <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textTertiary,
+                    textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                    Kid-Proposed Chores
+                  </Text>
+                </View>
+                {kidProposedChores.map(c => (
+                  <KidProposedChoreCard key={c.id} c={c} members={members} colors={colors} isDark={isDark} active={active}
+                    approveKidProposedChore={approveKidProposedChore} declineKidProposedChore={declineKidProposedChore} />
                 ))}
               </View>
             )}

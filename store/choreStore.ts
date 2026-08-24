@@ -793,6 +793,13 @@ interface ChoreState {
   claimGPErrand:           (choreId: string, gpMemberId: string) => void;
   acceptGPOffer:           (choreId: string, parentId: string) => void;
   declineGPOffer:          (choreId: string, parentId: string, reason?: string) => void;
+  // A kid proposed this chore for themselves/a sibling (propose_kid_chore
+  // RPC, status='pending_kid_proposal') — parent Accepts with a real coin
+  // amount (the kid never sets one) or Declines outright (row is deleted
+  // server-side, not soft-declined — a declined proposal was never a real
+  // chore). See 20260907120000_kid_proposed_chore_rpcs.sql.
+  approveKidProposedChore: (choreId: string, reviewerId: string, coins: number) => void;
+  declineKidProposedChore: (choreId: string, reviewerId: string, reason?: string) => void;
   withdrawGPOffer:         (choreId: string, gpMemberId: string) => void;
   submitGPErrandReceipt:   (choreId: string, opts: { receiptPhotoUrl?: string; receiptAmount?: number; receiptNote?: string }) => void;
   acknowledgeGPReimbursement: (choreId: string) => void;
@@ -2199,6 +2206,84 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           console.warn('[choreStore] declineGPOffer notification failed', e);
         }
         showToast('Declined — back in the pool ✓');
+      });
+  },
+
+  // Parent (or active temporary approver) accepts a kid's proposed chore —
+  // becomes a real, live 'todo' chore assigned to whoever the kid picked,
+  // with the coin reward the PARENT sets now via approve_kid_chore.
+  approveKidProposedChore: (choreId, reviewerId, coins) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.status !== 'pending_kid_proposal') return;
+    if (!get().canApprove(reviewerId)) {
+      console.warn('[choreStore] approveKidProposedChore blocked — reviewer', reviewerId, 'is not authorized');
+      return;
+    }
+    const coinsReward = Math.max(0, Math.floor(coins) || 0);
+
+    set(s => ({
+      chores: s.chores.map(c => c.id === choreId
+        ? { ...c, status: 'todo', coinsReward, basePoints: coinsReward, reviewedById: reviewerId }
+        : c),
+    }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    supabase.rpc('approve_kid_chore', { p_chore_id: choreId, p_reviewer_id: reviewerId, p_coins_reward: coinsReward, p_xp_reward: 0 })
+      .then(({ error }) => {
+        if (error) {
+          console.warn('[choreStore] approveKidProposedChore RPC failed on', choreId, '— rolling back local state:', error.message);
+          set(s => ({
+            chores: s.chores.map(c =>
+              c.id === choreId ? { ...c, status: 'pending_kid_proposal', coinsReward: chore.coinsReward, basePoints: chore.basePoints, reviewedById: chore.reviewedById } : c
+            ),
+          }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+          return;
+        }
+        try {
+          const { useChatStore } = require('./chatStore');
+          if (chore.assignedToId) {
+            useChatStore.getState().sendMessage(chore.assignedToId, reviewerId,
+              `✅ "${chore.title}" was approved — ${coinsReward} coins when it's done!`);
+          }
+        } catch (e) {
+          console.warn('[choreStore] approveKidProposedChore notification failed', e);
+        }
+        showToast('Chore approved ✓');
+      });
+  },
+
+  // A declined proposal was never a real, live chore — decline_kid_chore
+  // deletes the row server-side. Optimistically removed locally too.
+  declineKidProposedChore: (choreId, reviewerId, reason) => {
+    const chore = get().chores.find(c => c.id === choreId);
+    if (!chore || chore.status !== 'pending_kid_proposal') return;
+    if (!get().canApprove(reviewerId)) {
+      console.warn('[choreStore] declineKidProposedChore blocked — reviewer', reviewerId, 'is not authorized');
+      return;
+    }
+
+    set(s => ({ chores: s.chores.filter(c => c.id !== choreId) }));
+    AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+    _fetchedAt = 0;
+    supabase.rpc('decline_kid_chore', { p_chore_id: choreId, p_reviewer_id: reviewerId, p_reason: reason ?? null })
+      .then(({ error }) => {
+        if (error) {
+          console.warn('[choreStore] declineKidProposedChore RPC failed on', choreId, '— restoring local state:', error.message);
+          set(s => ({ chores: [...s.chores, chore] }));
+          AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
+          return;
+        }
+        try {
+          const { useChatStore } = require('./chatStore');
+          if (chore.createdById) {
+            useChatStore.getState().sendMessage(chore.createdById, reviewerId,
+              `"${chore.title}" wasn't approved this time${reason ? ` — "${reason}"` : ''}.`);
+          }
+        } catch (e) {
+          console.warn('[choreStore] declineKidProposedChore notification failed', e);
+        }
+        showToast('Declined');
       });
   },
 

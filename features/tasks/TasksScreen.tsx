@@ -8,18 +8,32 @@
  * claiming, two-bounce delegation). Re-deriving that inline here to produce
  * one truly interleaved list would risk silently regressing behavior that's
  * already correct and well-tested. Instead this renders one of the two
- * screens full-bleed and lets a small floating segmented control switch
- * between them — "one tab in the nav bar," without touching either
- * screen's internals. A deeper interleaved-list merge can build on this
- * shell later without another navigation change.
+ * screens full-bleed below a single shared header, and lets 2 square
+ * status-count tab-cards switch between them — "one tab in the nav bar,"
+ * without touching either screen's internals. A deeper interleaved-list
+ * merge can build on this shell later without another navigation change.
+ *
+ * The header used to be duplicated (each of CalendarScreen/QuestsScreen
+ * mounted its own AppHeader) with a floating pill overlaid on top of it —
+ * that pill visually overlapped the header row instead of sitting below
+ * it. Both screens now accept hideHeader to suppress their own AppHeader
+ * when embedded here, so there's exactly one header, with the tab-cards
+ * laid out in normal flow right underneath — no floating/absolute
+ * positioning left to drift out of alignment as header height changes.
  */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Plus } from 'lucide-react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CalendarDays, ListChecks, Plus } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
+import { useEventStore, eventAssignee } from '@/store/eventStore';
+import { useChoreStore } from '@/store/choreStore';
+import { useNotifStore } from '@/store/notifStore';
+import { localDateStr } from '@/lib/dates';
+import AppHeader from '@/components/AppHeader';
+import NotificationPanel from '@/components/NotificationPanel';
 import CalendarScreen from '@/features/calendar/CalendarScreen';
 import QuestsScreen from '@/features/quests/QuestsScreen';
 import SmartTaskComposer from '@/features/tasks/components/SmartTaskComposer';
@@ -33,6 +47,10 @@ export default function TasksScreen() {
   const insets = useSafeAreaInsets();
   const { members, activeMemberId } = useFamilyStore();
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
+  const events = useEventStore(s => s.events);
+  const chores = useChoreStore(s => s.chores);
+  const unreadNotifCount = useNotifStore(s => s.unreadCount);
+  const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   // Matches QuestsScreen's own quest-creation gate (parent/teen only — a
   // senior sponsors chores through a separate, distinct "Sponsor Chore"
   // flow inside QuestsScreen that this FAB deliberately doesn't fold in,
@@ -41,11 +59,33 @@ export default function TasksScreen() {
   // never changes whether the "+" is there.
   const canCreate = activeMember?.role === 'parent' || activeMember?.role === 'teen';
   const [segment, setSegment] = useState<Segment>('schedule');
-  // Measured per-segment via AppHeader's own onLayout (each screen mounts
-  // its own AppHeader instance beneath this overlay) — docks the pill right
-  // under the real header instead of guessing a fixed offset that would
-  // overlap taller headers (long family/member names wrap the switcher row).
-  const [headerHeight, setHeaderHeight] = useState(0);
+
+  // Status counts shown on each tab-card — a lightweight summary, not a
+  // role-scoped visibility filter (that RBAC logic lives deep inside
+  // CalendarScreen/QuestsScreen and shouldn't be re-derived here, per this
+  // file's own header comment). Pending = waiting on someone to act;
+  // Active = already claimed/in progress. Good enough for a glance-count
+  // badge, not a substitute for either screen's own filtered list.
+  const scheduleCounts = useMemo(() => {
+    const upcoming = events.filter(e => e.date >= localDateStr());
+    let pending = 0, active = 0;
+    for (const e of upcoming) {
+      const a = eventAssignee(e);
+      if (!a.status) continue;
+      if (a.status === 'pending') pending++;
+      else if (a.status === 'confirmed') active++;
+    }
+    return { pending, active };
+  }, [events]);
+
+  const choreCounts = useMemo(() => {
+    let pending = 0, active = 0;
+    for (const c of chores) {
+      if (c.status === 'todo' || c.status === 'gp_offer_pending') pending++;
+      else if (c.status === 'in_progress' || c.status === 'pending_approval' || c.status === 'pending_grandparent_approval' || c.status === 'pending_parent_approval') active++;
+    }
+    return { pending, active };
+  }, [chores]);
 
   // Smart creator — one "+" regardless of segment. SmartTaskComposer
   // classifies free text live as the user types (via extractResponsibility)
@@ -65,41 +105,78 @@ export default function TasksScreen() {
   const openCreator = () => setShowComposer(true);
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      {segment === 'schedule'
-        ? <CalendarScreen onHeaderHeight={setHeaderHeight} />
-        : <QuestsScreen onHeaderHeight={setHeaderHeight} />}
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+      <AppHeader
+        memberName={activeMember?.name}
+        memberRole={activeMember?.role === 'kid' ? 'kid' : activeMember?.role === 'teen' ? 'teen' : activeMember?.role === 'senior' ? 'senior' : 'parent'}
+        notifCount={unreadNotifCount}
+        onPersonaPress={undefined}
+        onBellPress={() => setNotifPanelOpen(true)}
+      />
+      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 
-      {/* Floating segmented control — docked just below whichever screen's
-          own AppHeader is mounted beneath it (measured live via
-          onHeaderHeight, since header height varies with name/badge
-          wrapping), not pinned to the status bar where it used to overlap
-          the header row entirely. */}
-      <View pointerEvents="box-none" style={[styles.overlayWrap, { top: insets.top + headerHeight + 4 }]}>
-        <View style={[styles.pillTrack, {
-          backgroundColor: isDark ? 'rgba(30,22,45,0.92)' : 'rgba(255,255,255,0.94)',
-          borderColor: colors.border,
-        }]}>
-          {(['schedule', 'chores'] as Segment[]).map(seg => {
-            const active = segment === seg;
-            return (
-              <TouchableOpacity
-                key={seg}
-                onPress={() => setSegment(seg)}
-                style={[styles.pillBtn, active && { backgroundColor: colors.primary }]}
-                activeOpacity={0.85}
-              >
-                <Text style={[
-                  styles.pillText,
-                  { color: active ? '#fff' : colors.textSecondary, fontWeight: active ? '800' : '600' },
-                ]}>
-                  {seg === 'schedule' ? '📅 Schedule' : '✅ Chores'}
+      {/* Two square tab-cards, in normal layout flow right under the
+          header — replaces the old floating pill, which visually
+          overlapped the header instead of sitting below it. Each reads as
+          a small stat tile (big count, not a sentence) so "does anything
+          need me right now" is answerable at a glance, with a dot on the
+          inactive tab when it's carrying pending items the parent hasn't
+          switched over to see yet. */}
+      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 6 }}>
+        {([
+          { key: 'schedule' as const, label: 'Schedule', Icon: CalendarDays, counts: scheduleCounts, accent: colors.teal, accentLight: colors.tealLight },
+          { key: 'chores' as const, label: 'Chores', Icon: ListChecks, counts: choreCounts, accent: colors.amber, accentLight: colors.amberLight },
+        ]).map(({ key, label, Icon, counts, accent, accentLight }) => {
+          const active = segment === key;
+          const needsAttention = !active && counts.pending > 0;
+          return (
+            <TouchableOpacity
+              key={key}
+              onPress={() => setSegment(key)}
+              activeOpacity={0.85}
+              style={[
+                styles.tabCard,
+                {
+                  backgroundColor: active ? accent : (isDark ? colors.card : '#FFFFFF'),
+                  borderColor: active ? accent : colors.border,
+                },
+              ]}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{
+                  width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: active ? 'rgba(255,255,255,0.22)' : accentLight,
+                }}>
+                  <Icon size={14} color={active ? '#fff' : accent} />
+                </View>
+                {needsAttention && (
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger }} />
+                )}
+              </View>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', marginTop: 8, color: active ? 'rgba(255,255,255,0.85)' : colors.textSecondary }}>
+                {label}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 5, marginTop: 2 }}>
+                <Text style={{ fontSize: 22, fontWeight: '900', color: active ? '#fff' : colors.textPrimary }}>
+                  {counts.pending}
                 </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+                <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: active ? 'rgba(255,255,255,0.75)' : colors.textTertiary }}>
+                  pending
+                </Text>
+                {counts.active > 0 && (
+                  <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: active ? 'rgba(255,255,255,0.75)' : colors.textTertiary, marginLeft: 2 }}>
+                    · {counts.active} active
+                  </Text>
+                )}
+              </View>
+            </TouchableOpacity>
+          );
+        })}
       </View>
+
+      {segment === 'schedule'
+        ? <CalendarScreen hideHeader />
+        : <QuestsScreen hideHeader />}
 
       {canCreate && (
         <TouchableOpacity
@@ -150,27 +227,18 @@ export default function TasksScreen() {
           prefill={manualEventPrefill as any}
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  overlayWrap: {
-    position: 'absolute', left: 0, right: 0, alignItems: 'center', zIndex: 20,
-  },
-  pillTrack: {
-    flexDirection: 'row', borderRadius: RADIUS.full ?? 999, borderWidth: 1,
-    padding: 3, gap: 2,
+  tabCard: {
+    flex: 1, borderRadius: RADIUS.lg, borderWidth: 1.5,
+    paddingHorizontal: 14, paddingVertical: 13,
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOpacity: 0.12, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8 },
-      android: { elevation: 4 },
+      ios: { shadowColor: '#000', shadowOpacity: 0.08, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6 },
+      android: { elevation: 2 },
     }),
-  },
-  pillBtn: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: RADIUS.full ?? 999,
-  },
-  pillText: {
-    fontSize: TYPO.caption,
   },
   fab: {
     position: 'absolute', right: 20, width: 56, height: 56, borderRadius: 28,

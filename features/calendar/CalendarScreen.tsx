@@ -422,7 +422,7 @@ function SwipeableEventCard({ children, onDelete, onLongPress, onPress, canDelet
 }
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
-export default function CalendarScreen({ onHeaderHeight }: { onHeaderHeight?: (height: number) => void } = {}) {
+export default function CalendarScreen({ hideHeader }: { hideHeader?: boolean } = {}) {
   const { colors, isDark } = useTheme();
   const { height: windowHeight } = useWindowDimensions();
   const { members, activeMemberId, setActiveMember } = useFamilyStore();
@@ -959,16 +959,17 @@ export default function CalendarScreen({ onHeaderHeight }: { onHeaderHeight?: (h
   const cardBord = isDark ? '#1E293B' : '#E2E8F0';
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <AppHeader
-        memberName={activeMember?.name}
-        memberRole={isKid ? 'kid' : isTeen ? 'teen' : isSenior ? 'senior' : 'parent'}
-        notifCount={unreadNotifCount}
-        onPersonaPress={switchMember}
-        onBellPress={() => setNotifPanelOpen(true)}
-        onHeightChange={onHeaderHeight}
-      />
-      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
+      {!hideHeader && (
+        <AppHeader
+          memberName={activeMember?.name}
+          memberRole={isKid ? 'kid' : isTeen ? 'teen' : isSenior ? 'senior' : 'parent'}
+          notifCount={unreadNotifCount}
+          onPersonaPress={switchMember}
+          onBellPress={() => setNotifPanelOpen(true)}
+        />
+      )}
+      {!hideHeader && <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />}
 
       {/* ── Main Scroll: title + AI + member filter + timeline ──
           No stickyHeaderIndices here anymore — it was pinned to index 1,

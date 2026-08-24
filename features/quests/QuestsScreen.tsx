@@ -75,7 +75,7 @@ export { AddQuestModal };
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 // TabStatus and AiTool are imported from ./components/QuestFilters and ./components/AiEngineBanner
 
-export default function QuestsScreen({ onHeaderHeight }: { onHeaderHeight?: (height: number) => void } = {}) {
+export default function QuestsScreen({ hideHeader }: { hideHeader?: boolean } = {}) {
   const { colors, isDark } = useTheme();
   const { questId } = useLocalSearchParams<{ questId?: string }>();
   const { members, activeMemberId, setActiveMember } = useFamilyStore();
@@ -768,16 +768,17 @@ export default function QuestsScreen({ onHeaderHeight }: { onHeaderHeight?: (hei
   const cardBord = colors.border;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <AppHeader
-        memberName={activeMember?.name}
-        memberRole={activeMember?.role === 'kid' ? 'kid' : activeMember?.role === 'teen' ? 'teen' : activeMember?.role === 'senior' ? 'senior' : 'parent'}
-        notifCount={unreadNotifCount}
-        onPersonaPress={undefined}
-        onBellPress={() => setNotifPanelOpen(true)}
-        onHeightChange={onHeaderHeight}
-      />
-      <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={hideHeader ? [] : ['top']}>
+      {!hideHeader && (
+        <AppHeader
+          memberName={activeMember?.name}
+          memberRole={activeMember?.role === 'kid' ? 'kid' : activeMember?.role === 'teen' ? 'teen' : activeMember?.role === 'senior' ? 'senior' : 'parent'}
+          notifCount={unreadNotifCount}
+          onPersonaPress={undefined}
+          onBellPress={() => setNotifPanelOpen(true)}
+        />
+      )}
+      {!hideHeader && <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />}
 
       <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>

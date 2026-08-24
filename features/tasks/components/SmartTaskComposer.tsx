@@ -359,6 +359,12 @@ export default function SmartTaskComposer({
   // dentist" (a to-do) apart from an actual dentist visit.
   const isEvent = (detected?.kindOverride ?? detected?.category.kind) === 'event';
   const showFields = !!detected;
+  // Big mic/stop button + hiding the redundant inline icon — true for an
+  // empty sheet (no typed text, nothing detected yet) whether or not
+  // dictation is actively running. Once real content exists (typed text or
+  // a detected field form), this goes false and the small inline mic in
+  // the input box takes back over.
+  const bigMicShowing = !input.trim() && !showFields;
 
   // Assignment suggestion — fetched once a member/category is known,
   // mirrors AssignmentSuggestionCard's own preview call.
@@ -606,13 +612,16 @@ export default function SmartTaskComposer({
             }}
           />
           {/* Row pinned inside the box, bottom-right: Clear (only once
-              there's text) · Mic (tap to start/stop dictation — stopping
-              hands the transcript to `input` as normal editable text) · AI
-              (explicit "send this text to AI" action, separate from the
-              local detection that already runs live as the user types/
-              speaks — only this tap fires the network call). Bottom-right
-              instead of top-right so it never collides with the first
-              line of typed text. */}
+              there's text) · AI (explicit "send this text to AI" action,
+              separate from the local detection that already runs live as
+              the user types — only this tap fires the network call).
+              Bottom-right instead of top-right so it never collides with
+              the first line of typed text. The inline mic/stop icon used
+              to live here too, but while the big centered mic/stop button
+              below is showing (empty sheet, before or during dictation)
+              it's a redundant second control for the same action — so
+              it's only rendered here once the sheet has real content and
+              the big button has already disappeared. */}
           <View style={{ position: 'absolute', right: 10, bottom: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             {!!input && dictation.state !== 'listening' && (
               <Pressable
@@ -624,27 +633,29 @@ export default function SmartTaskComposer({
                 <X size={13} color={colors.textSecondary} />
               </Pressable>
             )}
-            <Pressable
-              onPress={async () => {
-                if (dictation.state === 'listening') {
-                  // stop() only resolves the transcript, it doesn't commit
-                  // it anywhere — without this the box would flip back to
-                  // whatever `input` was before dictation started (usually
-                  // empty) the instant state left 'listening', silently
-                  // losing everything just spoken.
-                  const finalTranscript = await dictation.stop();
-                  if (finalTranscript) setInput(finalTranscript);
-                } else {
-                  dictation.start();
-                }
-              }}
-              style={{ width: 28, height: 28, borderRadius: 14,
-                alignItems: 'center', justifyContent: 'center',
-                backgroundColor: dictation.state === 'listening' ? colors.danger : colors.primary + '18' }}>
-              {dictation.state === 'listening'
-                ? <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#fff' }} />
-                : <Mic size={14} color={colors.primary} />}
-            </Pressable>
+            {!bigMicShowing && (
+              <Pressable
+                onPress={async () => {
+                  if (dictation.state === 'listening') {
+                    // stop() only resolves the transcript, it doesn't commit
+                    // it anywhere — without this the box would flip back to
+                    // whatever `input` was before dictation started (usually
+                    // empty) the instant state left 'listening', silently
+                    // losing everything just spoken.
+                    const finalTranscript = await dictation.stop();
+                    if (finalTranscript) setInput(finalTranscript);
+                  } else {
+                    dictation.start();
+                  }
+                }}
+                style={{ width: 28, height: 28, borderRadius: 14,
+                  alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: dictation.state === 'listening' ? colors.danger : colors.primary + '18' }}>
+                {dictation.state === 'listening'
+                  ? <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#fff' }} />
+                  : <Mic size={14} color={colors.primary} />}
+              </Pressable>
+            )}
             <Pressable
               onPress={sendToAi}
               disabled={!input.trim() || aiLoading || dictation.state === 'listening'}
@@ -656,34 +667,40 @@ export default function SmartTaskComposer({
           </View>
         </View>
 
-        {/* Big centered mic — only while the sheet is still empty (no
-            typed/dictated text, nothing detected yet). Live-tested: once
-            local detection parses the input and the field form shows
-            below, this just sat as dead space above the results — so it's
-            gated off the instant there's real content to work with. */}
-        {!input.trim() && !showFields && dictation.state !== 'listening' && (
+        {/* Big centered mic/stop — shown while the sheet is still empty (no
+            typed text, nothing detected yet), covering both "not yet
+            listening" and "actively listening" so there's one obvious big
+            control the whole time instead of shrinking down to just the
+            small inline square once recording starts. Once local detection
+            parses the input and the field form shows below, this
+            disappears — it would otherwise just be dead space above the
+            results. */}
+        {bigMicShowing && (
           <View style={{ alignItems: 'center', gap: 8, paddingVertical: 4 }}>
             <Pressable
-              onPress={() => dictation.start()}
+              onPress={async () => {
+                if (dictation.state === 'listening') {
+                  const finalTranscript = await dictation.stop();
+                  if (finalTranscript) setInput(finalTranscript);
+                } else {
+                  dictation.start();
+                }
+              }}
               style={{
                 width: 72, height: 72, borderRadius: 36,
                 alignItems: 'center', justifyContent: 'center',
-                backgroundColor: colors.primary,
-                shadowColor: colors.primary,
+                backgroundColor: dictation.state === 'listening' ? colors.danger : colors.primary,
+                shadowColor: dictation.state === 'listening' ? colors.danger : colors.primary,
                 shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6,
               }}>
-              <Mic size={28} color="#fff" />
+              {dictation.state === 'listening'
+                ? <View style={{ width: 22, height: 22, borderRadius: 5, backgroundColor: '#fff' }} />
+                : <Mic size={28} color="#fff" />}
             </Pressable>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>
-              Tap to speak
+            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: dictation.state === 'listening' ? colors.danger : colors.textSecondary }}>
+              {dictation.state === 'listening' ? 'Listening… tap to stop' : 'Tap to speak'}
             </Text>
           </View>
-        )}
-
-        {dictation.state === 'listening' && (
-          <Text style={{ fontSize: TYPO.label, color: colors.danger, fontWeight: '700' }}>
-            Listening… tap ■ to stop and edit
-          </Text>
         )}
         {aiLoading && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

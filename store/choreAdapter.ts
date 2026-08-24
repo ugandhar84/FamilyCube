@@ -42,6 +42,12 @@ function choreStatusToQuestStatus(s: ChoreTask['status']): QuestStatus {
     case 'pending_approval':             return 'pending_approval';
     case 'pending_grandparent_approval': return 'pending_approval';
     case 'pending_parent_approval':      return 'todo';
+    // A kid's own proposal — matches pending_parent_approval's own
+    // shim mapping (not a real 'todo' chore yet, but nothing in the
+    // Quest-shim status space distinguishes "awaiting approval before
+    // it exists" from plain 'todo'; awaitingParentApproval below is what
+    // actually hides it from pool/claim/assignee-visible views).
+    case 'pending_kid_proposal':         return 'todo';
     // Scenario 1.6 — a GP's pending offer maps to 'pending_approval' so it
     // rides the existing pending-approval UI (QuestsScreen's Review tab,
     // etc.) without new plumbing there. The real ChoreTask status stays
@@ -125,13 +131,15 @@ export function choreToQuest(c: ChoreTask): Quest {
     templateId:       undefined,
 
     status:           choreStatusToQuestStatus(c.status),
-    // A kid-authored chore (createdByKidPendingReview) means the same
-    // thing to every consumer of this flag as a GP-quest awaiting its
-    // sponsor's review does — "not visible/claimable yet, a parent must
-    // review it first" — folding it in here means every existing
-    // !q.awaitingParentApproval check across pool/claim/assignee-visible
-    // filters excludes it automatically, with no new filter edits needed.
-    awaitingParentApproval: c.status === 'pending_parent_approval' || !!c.createdByKidPendingReview,
+    // 'pending_kid_proposal' (a kid-authored chore awaiting parent
+    // Accept/Decline via propose_kid_chore/approve_kid_chore/
+    // decline_kid_chore) means the same thing to every consumer of this
+    // flag as a GP-quest awaiting its sponsor's review does —
+    // "not visible/claimable yet, a parent must review it first" — folding
+    // it in here means every existing !q.awaitingParentApproval check
+    // across pool/claim/assignee-visible filters excludes it
+    // automatically, with no new filter edits needed.
+    awaitingParentApproval: c.status === 'pending_parent_approval' || c.status === 'pending_kid_proposal',
     dueDate:          c.dueDate,
     dueTime:          c.dueTime,
 

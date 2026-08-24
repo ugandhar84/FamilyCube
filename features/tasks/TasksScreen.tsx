@@ -128,14 +128,27 @@ export default function TasksScreen() {
     return { pending, active };
   }, [events]);
 
+  // Reported live: a kid's "1 pending" badge here counted a chore assigned
+  // to nobody (assignedToId: null) and not even in the pool (isPool:
+  // false) — a genuinely orphaned todo chore that wasn't theirs, wasn't
+  // claimable by them, and didn't appear anywhere in their own filtered
+  // chore list below. This badge was scanning the family-wide chores array
+  // unfiltered, instead of "mine, or something I could actually claim,"
+  // the same scoping KidView.tsx's own myQuests/poolQuests already use.
+  // A parent/senior keeps the family-wide count — they need visibility
+  // into every kid's pending chores at a glance, not just their own.
   const choreCounts = useMemo(() => {
     let pending = 0, active = 0;
+    const isKidOrTeen = activeMember?.role === 'kid' || activeMember?.role === 'teen';
+    const isRelevant = (c: (typeof chores)[number]) =>
+      !isKidOrTeen || c.assignedToId === activeMemberId || (c.isPool && c.status === 'todo');
     for (const c of chores) {
+      if (!isRelevant(c)) continue;
       if (c.status === 'todo' || c.status === 'gp_offer_pending') pending++;
       else if (c.status === 'in_progress' || c.status === 'pending_approval' || c.status === 'pending_grandparent_approval' || c.status === 'pending_parent_approval') active++;
     }
     return { pending, active };
-  }, [chores]);
+  }, [chores, activeMemberId, activeMember?.role]);
 
   // Smart creator — one "+" regardless of segment. SmartTaskComposer
   // classifies free text live as the user types (via extractResponsibility)

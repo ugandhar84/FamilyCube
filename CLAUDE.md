@@ -34,35 +34,44 @@ const { colors, isDark } = useTheme();
 // Then use: colors.primary, colors.teal, colors.amber, etc.
 ```
 
-### Brand palette (defined in `constants/colors.ts`):
+### Brand palette (defined in `constants/colors.ts`) — "Kinfolk" palette
+
+Warm editorial terracotta/sage/lavender/amber on cashmere neutrals. Token
+*names* still map to the original brand roles (primary/teal/amber/pink/
+parent/kid/accent) — only the hex values changed when the palette moved
+from the original cool purple/teal/pink cube colors to this warmer set.
+`components/FamilyCubeLogo.tsx`'s `BRAND` constant mirrors these same
+values for the handful of call sites that can't use `useTheme()` (plain
+functions, no hooks) — keep both in sync if this table changes.
 
 | Token | Light | Dark | Meaning |
 |-------|-------|------|---------|
-| `colors.primary` | `#9261C7` | `#B98EDB` | Purple — main brand (GROW cube face) |
-| `colors.teal` | `#00BBA4` | `#2DD4BF` | Teal — CONNECT (parent role accent) |
-| `colors.amber` | `#F5A623` | `#FCD34D` | Amber — ORGANIZE (kid role accent) |
-| `colors.pink` | `#F04E98` | `#F472B6` | Pink — CARE (accent) |
-| `colors.navy` | `#1E2D6B` | `#A5B4FC` | Navy — wordmark / text primary |
-| `colors.parent` | `#00BBA4` | `#2DD4BF` | Teal — used for parent role UI |
-| `colors.kid` | `#F5A623` | `#FCD34D` | Amber — used for kid role UI |
-| `colors.accent` | `#F04E98` | `#F472B6` | Pink — highlights, FABs |
-| `colors.textPrimary` | `#1E2D6B` | `#F8FAFC` | Main text |
-| `colors.textSecondary` | `#64748B` | `#94A3B8` | Secondary text |
-| `colors.textTertiary` | `#94A3B8` | `#64748B` | Timestamps, captions |
-| `colors.card` | `#FFFFFF` | `#1E2640` | Card backgrounds |
-| `colors.surface` | `#F1F5F9` | `#161C2D` | Surface / input backgrounds |
-| `colors.background` | `#F8FAFC` | `#0B0F1A` | Screen background |
-| `colors.border` | purple/15% | purple/15% | Dividers, card borders |
-| `colors.danger` | `#EF4444` | `#F87171` | Errors, destructive |
-| `colors.success` | `#00BBA4` | `#2DD4BF` | Success states |
-| `colors.primaryLight` | `#F0E8FA` | rgba purple | Light tint of primary |
-| `colors.tealLight` | `#D6F5F1` | rgba teal | Light tint of teal |
-| `colors.amberLight` | `#FEF0D3` | rgba amber | Light tint of amber |
+| `colors.primary` | `#DF613C` | `#EE8058` | Terracotta — main brand, primary actions |
+| `colors.teal` | `#3D7A5A` | `#5FA37D` | Sage — CONNECT (parent role accent) |
+| `colors.amber` | `#D97706` | `#F5A85A` | Amber — ORGANIZE (kid role accent) |
+| `colors.pink` | `#7B5EA7` | `#A78BC9` | Lavender — CARE (third accent) |
+| `colors.navy` | `#2C2722` | `#EDE7DE` | Warm near-black — wordmark / text primary |
+| `colors.parent` | `#3D7A5A` | `#5FA37D` | Sage — used for parent role UI |
+| `colors.kid` | `#D97706` | `#F5A85A` | Amber — used for kid role UI |
+| `colors.accent` | `#7B5EA7` | `#A78BC9` | Lavender — highlights, FABs |
+| `colors.textPrimary` | `#2C2722` | `#FDFCF9` | Main text |
+| `colors.textSecondary` | `#6B5F52` | `#B8AC9C` | Secondary text |
+| `colors.textTertiary` | `#A69A8A` | `#7A6E60` | Timestamps, captions |
+| `colors.card` | `#FFFFFF` | `#1D1A24` | Card backgrounds |
+| `colors.surface` | `#F2ECE1` | `#17151D` | Surface / input backgrounds |
+| `colors.background` | `#FAF8F4` | `#0E0C13` | Screen background (warm cashmere) |
+| `colors.border` | terracotta/15% | terracotta/15% | Dividers, card borders |
+| `colors.danger` | `#C54A27` | `#EE8058` | Errors, destructive |
+| `colors.success` | `#3D7A5A` | `#5FA37D` | Success states |
+| `colors.primaryLight` | `#FBEADF` | rgba terracotta | Light tint of primary |
+| `colors.tealLight` | `#E1EFE7` | rgba sage | Light tint of teal |
+| `colors.amberLight` | `#FDF1D6` | rgba amber | Light tint of amber |
+| `colors.pinkLight` | `#EFE8F8` | rgba lavender | Light tint of pink/accent |
 
 ### Role color mapping:
-- **Parent** → `colors.parent` (teal) / `colors.parentLight`
+- **Parent** → `colors.parent` (sage) / `colors.parentLight`
 - **Kid** → `colors.kid` (amber) / `colors.kidLight`
-- **Active member highlight** → `colors.primary` (purple)
+- **Active member highlight** → `colors.primary` (terracotta)
 
 ---
 
@@ -211,5 +220,5 @@ npx tsc --noEmit
 
 ---
 
-**Last Updated:** 2026-08-09
+**Last Updated:** 2026-08-24
 **Maintained by:** Claude Code

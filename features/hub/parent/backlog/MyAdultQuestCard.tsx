@@ -3,6 +3,7 @@ import { View, Text, Pressable, Alert } from 'react-native';
 import { ChevronUp, ChevronDown, Check, Send, MessageCircle } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { useChatStore } from '@/store/chatStore';
+import { showToast } from '@/components/AppToast';
 import type { Quest } from '@/store/questStore';
 import type { ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
@@ -39,8 +40,15 @@ export function MyAdultQuestCard({ q, parentAssignments, active, members, colors
   const sendNudgeBack = () => {
     if (!assigner) return;
     const msg = `👋 Just a heads up — I'm on "${q.title}", will handle it soon!`;
-    useChatStore.getState().sendMessage(assigner.id, active.id, msg);
-    Alert.alert('Sent!', `${assigner.name.split(' ')[0]} was notified you're on it.`);
+    // Was an unconditional "Sent!" alert fired right after the
+    // fire-and-forget call, regardless of whether it actually succeeded —
+    // now gated on the real outcome.
+    useChatStore.getState().sendMessage(assigner.id, active.id, msg)
+      .then(() => showToast(`${assigner.name.split(' ')[0]} was notified you're on it ✓`))
+      .catch((e: any) => {
+        console.warn('[MyAdultQuestCard] sendNudgeBack failed', e?.message ?? e);
+        Alert.alert('Could not send', "The nudge didn't go through — check your connection and try again.");
+      });
   };
 
   return (

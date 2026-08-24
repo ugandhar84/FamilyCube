@@ -5,6 +5,7 @@ import { TYPO } from '@/constants/theme';
 import type { ChoreTask, ParentQuestAssignment } from '@/store/choreStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useChatStore } from '@/store/chatStore';
+import { showToast } from '@/components/AppToast';
 
 // Money-green — "Accept" action accent, distinct from brand amber used
 // elsewhere in this card. Not colors.success (which IS brand teal in this
@@ -87,6 +88,13 @@ export function DirectPendingCard({ a, chore, members, colors, isDark, respondTo
         // reading as "tapped but nothing happened" with no way to diagnose.
         useChatStore.getState().sendMessage(a.assignedBy, a.assignedTo,
           `👋 ${assignee?.name?.split(' ')[0] ?? 'They'} saw "${chore.title}" — on it!`)
+          // sendMessage resolves normally even when it only queued the
+          // message offline for later retry (it catches its own send
+          // failure and never re-throws) — "Nudge sent" is still accurate
+          // either way, since a queued message will go out automatically
+          // once the connection is back (see lib/networkStore.ts's
+          // flushOfflineQueue wiring).
+          .then(() => showToast(`Let ${assigner?.name?.split(' ')[0] ?? 'them'} know you're on it ✓`))
           .catch((e: any) => {
             console.warn('[DirectPendingCard] "on it" nudge failed', e?.message ?? e);
             Alert.alert('Could not send', "The nudge didn't go through — check your connection and try again.");

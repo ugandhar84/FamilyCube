@@ -14,6 +14,7 @@ import { isFeatureEnabled } from '@/lib/featureFlags';
 import { Stack, router, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import AppAlert from '@/components/AppAlert';
+import AppToast from '@/components/AppToast';
 import OfflineBanner from '@/components/OfflineBanner';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Location from 'expo-location';
@@ -1073,6 +1074,7 @@ export default function RootLayout() {
       <ThemeProvider>
         <RootNavigator />
         <AppAlert />
+        <AppToast />
         <OfflineBanner />
       </ThemeProvider>
     </QueryClientProvider>

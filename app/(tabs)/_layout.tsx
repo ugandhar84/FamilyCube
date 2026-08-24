@@ -233,29 +233,19 @@ export default function TabLayout() {
   // state.index] is synchronous and authoritative.
   const activeTabName = useUIStore(s => s.activeTabName);
   const onChatTab = activeTabName === 'chat';
-  // One shared FAB (not two separate ones) morphs between Ask Cube
+  // One shared FAB (not two separate ones) swaps between Ask Cube
   // (sparkle, every tab except Chat/Tasks) and Tasks' own smart-create
-  // entry point (+, Tasks tab only) — same physical button, same position,
-  // crossfading its icon/color rather than one FAB disappearing while an
-  // unrelated one appears elsewhere.
+  // entry point (+, Tasks tab only) — same physical button, same position.
+  // A crossfade animation was tried first but the Pressable unmounts/
+  // remounts whenever onChatTab toggles (see !onChatTab && ... below),
+  // which reset the animated value's continuity and left the icon stuck
+  // on stale state after certain tab sequences (live-reported repeatedly:
+  // "+" stuck showing on Hub/Apps after visiting Chat). Plain conditional
+  // icon render instead — no animation, but always correct.
   const onTasksTab = activeTabName === 'tasks';
   const fullBleedScreenActive = useUIStore(s => s.fullBleedScreenActive);
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const insets = useSafeAreaInsets();
-
-  const iconMorph = useRef(new Animated.Value(onTasksTab ? 1 : 0)).current;
-  useEffect(() => {
-    Animated.timing(iconMorph, {
-      toValue: onTasksTab ? 1 : 0,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [onTasksTab]);
-  const sparkleOpacity = iconMorph.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, 0, 0] });
-  const sparkleScale   = iconMorph.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, 0.5, 0.5] });
-  const plusOpacity    = iconMorph.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 0, 1] });
-  const plusScale      = iconMorph.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.5, 0.5, 1] });
 
   // Boot all stores once when the tab shell mounts — before any screen renders
   useEffect(() => {
@@ -339,12 +329,7 @@ export default function TabLayout() {
                 shadowColor: colors.primary, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
                 elevation: 6,
               }}>
-              <Animated.View style={{ position: 'absolute', opacity: sparkleOpacity, transform: [{ scale: sparkleScale }] }}>
-                <Sparkles size={22} color="#fff" />
-              </Animated.View>
-              <Animated.View style={{ position: 'absolute', opacity: plusOpacity, transform: [{ scale: plusScale }] }}>
-                <Plus size={24} color="#fff" />
-              </Animated.View>
+              {onTasksTab ? <Plus size={24} color="#fff" /> : <Sparkles size={22} color="#fff" />}
             </Pressable>
           )}
           <AskCubeChat

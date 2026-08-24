@@ -17,6 +17,7 @@ import { ParentSelfNoteRow } from './ParentSelfNoteRow';
 import { fmt12h, timeAgo } from './questAiFallbacks';
 import { deriveQuestActions } from '@/features/tasks/lib/deriveCardActions';
 import { useTemporaryApproverStore } from '@/store/temporaryApproverStore';
+import { supabase } from '@/lib/supabase';
 
 interface Props {
   q: Quest;
@@ -888,7 +889,14 @@ export function QuestCard({
                 `Assign "${q.title}" to yourself?`,
                 [{ text: 'Cancel', style: 'cancel' }, {
                   text: "✋ Take It",
-                  onPress: () => updateQuest(q.id, { assignedToId: activeMember?.id, isPool: false }, activeMember?.id),
+                  onPress: () => {
+                    if (!activeMember?.id) return;
+                    supabase.rpc('reassign_chore', {
+                      p_chore_id: q.id, p_new_member_id: activeMember.id, p_by_member_id: activeMember.id,
+                    }).then(({ error }) => {
+                      if (error) console.warn('[QuestCard] Take It reassign_chore failed', error.message);
+                    });
+                  },
                 }]
               )}
             >
@@ -1004,7 +1012,14 @@ export function QuestCard({
               `Take on "${q.title}"?`,
               [{ text: 'Cancel', style: 'cancel' }, {
                 text: "I'll take it 👴",
-                onPress: () => updateQuest(q.id, { assignedToId: activeMember?.id, isPool: false }, activeMember?.id),
+                onPress: () => {
+                  if (!activeMember?.id) return;
+                  supabase.rpc('reassign_chore', {
+                    p_chore_id: q.id, p_new_member_id: activeMember.id, p_by_member_id: activeMember.id,
+                  }).then(({ error }) => {
+                    if (error) console.warn('[QuestCard] GP claim reassign_chore failed', error.message);
+                  });
+                },
               }]
             )}
           >

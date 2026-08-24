@@ -2114,20 +2114,16 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
-    // Guard on gp_offer_by_id too, not just status — if the parent's client
-    // was showing a stale offer (e.g. GP A withdrew and GP B has since
-    // offered), this must accept the LIVE offer or fail entirely, never
-    // silently accept/msg the wrong (no-longer-current) GP.
-    supabase.from('chore_tasks')
-      .update({ status: 'in_progress', assigned_to_id: offeringGpId, gp_offer_by_id: null, is_pool: false })
-      .eq('id', choreId)
-      .eq('status', 'gp_offer_pending')
-      .eq('gp_offer_by_id', offeringGpId)
-      .select('id')
-      .then(({ data, error }) => {
-        if (error) { console.warn('[choreStore] acceptGPOffer DB update failed', error.message); return; }
-        if (!data || data.length === 0) {
-          console.warn('[choreStore] acceptGPOffer lost the race on', choreId, '— offer changed underneath, rolling back local state');
+    // Now backed by the accept_gp_offer Postgres RPC (see migration
+    // 20260905180000_gp_offer_rpcs.sql) — same two-field CAS (status +
+    // the specific offering GP, guarding against a stale offer if GP A
+    // withdrew and GP B has since offered) now enforced server-side with
+    // authorization checking and a real audit row, instead of a client
+    // conditional UPDATE.
+    supabase.rpc('accept_gp_offer', { p_chore_id: choreId, p_parent_id: parentId })
+      .then(({ error }) => {
+        if (error) {
+          console.warn('[choreStore] acceptGPOffer RPC failed on', choreId, '— rolling back local state:', error.message);
           set(s => ({
             chores: s.chores.map(c =>
               c.id === choreId && c.assignedToId === offeringGpId ? { ...c, status: 'gp_offer_pending', assignedToId: undefined, gpOfferById: offeringGpId, isPool: false } : c
@@ -2165,16 +2161,12 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
-    supabase.from('chore_tasks')
-      .update({ status: 'todo', gp_offer_by_id: null, rejection_reason: reason ?? null })
-      .eq('id', choreId)
-      .eq('status', 'gp_offer_pending')
-      .eq('gp_offer_by_id', offeringGpId)
-      .select('id')
-      .then(({ data, error }) => {
-        if (error) { console.warn('[choreStore] declineGPOffer DB update failed', error.message); return; }
-        if (!data || data.length === 0) {
-          console.warn('[choreStore] declineGPOffer lost the race on', choreId, '— offer changed underneath, rolling back local state');
+    // Now backed by the decline_gp_offer Postgres RPC — same two-field CAS
+    // and authorization check as accept_gp_offer, server-side.
+    supabase.rpc('decline_gp_offer', { p_chore_id: choreId, p_parent_id: parentId, p_reason: reason ?? null })
+      .then(({ error }) => {
+        if (error) {
+          console.warn('[choreStore] declineGPOffer RPC failed on', choreId, '— rolling back local state:', error.message);
           set(s => ({
             chores: s.chores.map(c =>
               c.id === choreId && c.status === 'todo' ? { ...c, status: 'gp_offer_pending', gpOfferById: offeringGpId } : c
@@ -2205,21 +2197,15 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
-    supabase.from('chore_tasks')
-      .update({ status: 'todo', gp_offer_by_id: null })
-      .eq('id', choreId)
-      .eq('status', 'gp_offer_pending')
-      .eq('gp_offer_by_id', gpMemberId)
-      .select('id')
+    // Now backed by the withdraw_gp_offer Postgres RPC — returns null
+    // (not an error) when the offer was already resolved by someone else,
+    // matching the "no safe local rollback, force a resync" handling this
+    // call already needed.
+    supabase.rpc('withdraw_gp_offer', { p_chore_id: choreId, p_gp_member_id: gpMemberId })
       .then(({ data, error }) => {
-        if (error) { console.warn('[choreStore] withdrawGPOffer DB update failed', error.message); return; }
-        if (!data || data.length === 0) {
+        if (error) { console.warn('[choreStore] withdrawGPOffer RPC failed', error.message); return; }
+        if (!data) {
           console.warn('[choreStore] withdrawGPOffer lost the race on', choreId, '— offer already resolved (accepted/declined) underneath, re-syncing from DB');
-          // Unlike the other 3, there's no safe local rollback here — if this
-          // 0-rows result means a parent already accepted/declined between
-          // this GP's stale read and this call, reverting to 'gp_offer_pending'
-          // locally would be actively wrong (the offer is genuinely gone).
-          // Force a resync instead of guessing.
           get().syncFromDB(true);
         }
       });

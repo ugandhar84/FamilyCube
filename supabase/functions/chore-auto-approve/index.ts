@@ -1,6 +1,7 @@
 // FamilyCube — Edge Function: chore-auto-approve
-// Scans all chores in `pending_approval` status whose 24h approval window has
-// expired and auto-approves them, crediting points to the child's wallet.
+// Scans pending_approval chores past their approval window and either
+// escalates (24h, the common case) or auto-approves as a last resort (48h
+// total, only if escalation itself also went unanswered).
 //
 // FIXED (was querying a `chores` table that does not exist anywhere in the
 // live schema — confirmed via information_schema.tables, zero rows — plus a
@@ -16,22 +17,20 @@
 // FIXED (round 3 audit): this function also (a) hardcoded a 50/40/10
 // Spend/Save/Give split instead of reading each family's actual
 // spend_allocation_pct/save_allocation_pct/give_allocation_pct from the
-// `families` table — a parent-approved chore (store/choreStore.ts
-// awardPoints → calculateJarSplit) always used the family's live settings,
-// but a chore that instead timed out and was auto-approved by this cron
-// silently used the default split forever, even after a parent changed
-// their household's allocation percentages. This only ever showed up once a
-// family strayed from the 50/40/10 default, which is exactly why it went
-// unnoticed. (b) never called the award_coins RPC or touched
-// members.coins/main_coins at all — it only inserted a point_transactions
-// row, so an auto-approved chore's points showed up in the jar-balance view
-// (which sums point_transactions) but never actually credited the kid's
-// spendable Perks Store wallet (members.main_coins), permanently
-// under-crediting it relative to a manually-approved chore, which pays out
-// through both paths via choreStore's awardPoints. Both are fixed below:
-// the split now reads the family's row from `families`, and each payout now
-// also calls award_coins so member.coins/main_coins/xp move in lockstep
-// with a manual approval, exactly like migration 20260817000007 established.
+// `families` table, (b) never called the award_coins RPC or touched
+// members.coins/main_coins at all. Both fixed.
+//
+// FIXED (QA master-flow audit, "Parent never answered in time" exit branch,
+// punch list #4): this function used to fire at the 24h cutoff and pay out
+// SILENTLY — no nudge to anyone, no escalation, the opposite of the spec's
+// "nudge, then a co-parent decision." Per explicit product direction,
+// auto-approve is no longer the only outcome: at the 24h cutoff the chore
+// now ESCALATES instead (approval_escalated_at set once, chore flagged
+// urgent, every parent in the family pushed) — a real human decision
+// ("Approve it now" / re-time it), not a silent timeout. Auto-approve only
+// still fires as a genuine last resort at 48h TOTAL (24h past the
+// escalation itself), so a kid in a fully unresponsive household still
+// isn't stuck waiting forever — but the common case is now a real decision.
 //
 // Cron schedule (Supabase Dashboard → Edge Functions → Schedule):
 //   every 30 minutes: */30 * * * *
@@ -49,6 +48,12 @@ const CORS = {
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
+// Escalation fires at the chore's own 24h approval_window_expires_at
+// (unchanged cutoff). The 48h-total auto-approve fallback is this many
+// hours PAST that same escalation timestamp — i.e. a chore escalated at
+// hour 24 auto-approves at hour 48 if still untouched.
+const AUTO_APPROVE_FALLBACK_HOURS = 24;
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
@@ -61,14 +66,22 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    const now = new Date().toISOString();
+    const notifierUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/family-notifier`;
+    const notifierHeaders = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+    };
 
-    // ── 1. Fetch expired pending_approval chores ──────────────────────────────
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const fallbackCutoffIso = new Date(now.getTime() - AUTO_APPROVE_FALLBACK_HOURS * 3600_000).toISOString();
+
+    // ── 1. Fetch every pending_approval chore past its 24h window ──────────
     let q = supabase
       .from('chore_tasks')
-      .select('id, title, assigned_to_id, family_id, coins_reward, redo_count, approval_window_expires_at, category_type')
+      .select('id, title, assigned_to_id, family_id, coins_reward, base_points, bonus_coins, xp_reward, redo_count, approval_window_expires_at, approval_escalated_at, category_type, sponsor_user_id, reward_pending_review')
       .eq('status', 'pending_approval')
-      .lte('approval_window_expires_at', now);
+      .lte('approval_window_expires_at', nowIso);
 
     if (familyId) q = q.eq('family_id', familyId);
 
@@ -76,12 +89,10 @@ serve(async (req) => {
     if (fetchErr) throw fetchErr;
 
     if (!expired || expired.length === 0) {
-      return json({ auto_approved: 0, message: 'Nothing to auto-approve.' });
+      return json({ escalated: 0, auto_approved: 0, message: 'Nothing overdue for approval.' });
     }
 
-    // ── 1b. Load each distinct family's real allocation split ────────────────
-    // Previously hardcoded to 50/40/10 regardless of what a parent actually
-    // configured in Household Settings (families.spend/save/give_allocation_pct).
+    // ── 1b. Load each distinct family's real allocation split + parent tokens ─
     const familyIds = [...new Set(expired.map(c => c.family_id).filter(Boolean))];
     const { data: families, error: famErr } = familyIds.length
       ? await supabase
@@ -98,88 +109,117 @@ serve(async (req) => {
       }]),
     );
 
+    const { data: members } = await supabase
+      .from('members')
+      .select('id, name, family_id, role, expo_push_token')
+      .in('family_id', familyIds.length ? familyIds : ['__none__']);
+    const memberMap: Record<string, any> = {};
+    for (const m of (members ?? [])) memberMap[m.id] = m;
+    const parentTokensByFamily: Record<string, string[]> = {};
+    for (const m of (members ?? [])) {
+      if (m.role === 'parent' && m.expo_push_token) {
+        (parentTokensByFamily[m.family_id] ??= []).push(m.expo_push_token);
+      }
+    }
+
+    const escalated: string[] = [];
     const approved: string[] = [];
     const errors: string[]   = [];
 
+    const payOut = async (chore: any, note: string) => {
+      const pts = chore.base_points || chore.coins_reward || 0;
+      const total = pts + (chore.bonus_coins ?? 0);
+      if (total <= 0 || !chore.assigned_to_id || chore.reward_pending_review) return 0;
+
+      const alloc = allocByFamily.get(chore.family_id) ?? { spendPct: 50, savePct: 40, givePct: 10 };
+      const wallet = chore.category_type === 'grandparent_quest' || chore.sponsor_user_id ? 'gp' : 'main';
+      const spend = wallet === 'gp' ? total : Math.floor(total * (alloc.spendPct / 100));
+      const save  = wallet === 'gp' ? 0     : Math.floor(total * (alloc.savePct  / 100));
+      const give  = wallet === 'gp' ? 0     : total - spend - save;
+
+      await supabase.from('point_transactions').insert({
+        user_id: chore.assigned_to_id, chore_instance_id: chore.id, transaction_type: 'EARNED',
+        amount: total, spend_allocation: spend, save_allocation: save, give_allocation: give,
+        notes: note, created_at: nowIso, wallet,
+      });
+
+      const { error: awardErr } = await supabase.rpc('award_coins', {
+        member_id: chore.assigned_to_id, coins_delta: total, xp_delta: chore.xp_reward ?? 0, wallet,
+      });
+      if (awardErr) errors.push(`${chore.id}: award_coins failed: ${awardErr.message}`);
+
+      await supabase.from('responsibility_history').insert({
+        family_id: chore.family_id, chore_id: chore.id, member_id: chore.assigned_to_id,
+        category: chore.category_type ?? 'chore', responsibility_type: 'chore', outcome: 'completed',
+        effort_points: total, metadata: { auto_approved: true },
+      });
+
+      return total;
+    };
+
+    const notify = async (type: string, tokens: string[], fId: string, payload: Record<string, unknown>) => {
+      if (!tokens.length || dryRun) return;
+      await fetch(notifierUrl, {
+        method: 'POST', headers: notifierHeaders,
+        body: JSON.stringify({ type, tokens, familyId: fId, payload, persist: true }),
+      });
+    };
+
     for (const chore of expired) {
-      if (dryRun) {
-        approved.push(chore.id);
+      const assignee = chore.assigned_to_id ? memberMap[chore.assigned_to_id] : null;
+      const parentTokens = parentTokensByFamily[chore.family_id] ?? [];
+      const alreadyEscalated = !!chore.approval_escalated_at;
+      const escalatedPastFallback = alreadyEscalated && chore.approval_escalated_at <= fallbackCutoffIso;
+
+      if (alreadyEscalated && !escalatedPastFallback) {
+        // Already nudged once, still inside the 24h grace period before the
+        // 48h-total fallback — nothing to do this tick, a parent still has
+        // time to act.
         continue;
       }
 
-      // Mark chore as approved. reviewed_by_id stays null — an auto-approval
-      // has no human reviewer, distinct from a parent explicitly approving.
+      if (!alreadyEscalated) {
+        // ── First time past the 24h window: escalate, don't pay out ──────
+        if (dryRun) { escalated.push(chore.id); continue; }
+        const { error: escErr } = await supabase
+          .from('chore_tasks')
+          .update({ approval_escalated_at: nowIso })
+          .eq('id', chore.id)
+          .is('approval_escalated_at', null); // CAS — don't re-escalate if another tick already did
+        if (escErr) { errors.push(`${chore.id}: ${escErr.message}`); continue; }
+
+        await supabase.from('activity_log').insert({
+          entity_type: 'chore', entity_id: chore.id, family_id: chore.family_id,
+          actor_id: null, action: 'approval_escalated', from_status: 'pending_approval', to_status: 'pending_approval',
+          note: `24h approval window lapsed with no reviewer response — escalated to all parents (${assignee?.name ?? 'kid'}'s "${chore.title}")`,
+        });
+
+        await notify('chore_ghosted', parentTokens, chore.family_id, {
+          questTitle: chore.title, questId: chore.id, kidName: assignee?.name ?? 'A kid', daysOverdue: 1,
+        });
+        escalated.push(chore.id);
+        continue;
+      }
+
+      // ── Escalated 24h ago and STILL untouched: last-resort auto-approve ──
+      if (dryRun) { approved.push(chore.id); continue; }
+
       const { error: updateErr } = await supabase
         .from('chore_tasks')
-        .update({
-          status: 'auto_approved',
-          reviewed_at: now,
-          approved_at: now,
-        })
-        .eq('id', chore.id);
+        .update({ status: 'auto_approved', reviewed_at: nowIso, approved_at: nowIso })
+        .eq('id', chore.id)
+        .eq('status', 'pending_approval'); // CAS — a parent may have acted between ticks
+      if (updateErr) { errors.push(`${chore.id}: ${updateErr.message}`); continue; }
 
-      if (updateErr) {
-        errors.push(`${chore.id}: ${updateErr.message}`);
-        continue;
-      }
-
-      // Credit points — split using the family's real, current allocation
-      // settings (falls back to the 50/40/10 default only if the family row
-      // wasn't found/loaded, matching HouseholdSettings' own defaults).
-      const pts = chore.coins_reward ?? 0;
-      if (pts > 0 && chore.assigned_to_id) {
-        const alloc = allocByFamily.get(chore.family_id) ?? { spendPct: 50, savePct: 40, givePct: 10 };
-        const spend = Math.floor(pts * (alloc.spendPct / 100));
-        const save  = Math.floor(pts * (alloc.savePct  / 100));
-        const give  = pts - spend - save; // remainder ensures sum = pts, same as calculateJarSplit client-side
-
-        await supabase.from('point_transactions').insert({
-          user_id:           chore.assigned_to_id,
-          chore_instance_id: chore.id,
-          transaction_type:  'EARNED',
-          amount:            pts,
-          spend_allocation:  spend,
-          save_allocation:   save,
-          give_allocation:   give,
-          notes:             `Auto-approved: ${chore.title}`,
-          created_at:        now,
-        });
-
-        // Actually credit the kid's spendable wallet. point_transactions
-        // alone only feeds the jar-balance view (getMemberBalance sums it) —
-        // members.coins/main_coins (what the Perks Store and Kid Hub
-        // balance actually read) is a separate column the award_coins RPC
-        // is responsible for, and this function used to never call it,
-        // silently leaving an auto-approved chore's payout invisible in the
-        // Store while still counting in the jar-balance breakdown.
-        const { error: awardErr } = await supabase.rpc('award_coins', {
-          member_id:   chore.assigned_to_id,
-          coins_delta: pts,
-          xp_delta:    0,
-        });
-        if (awardErr) errors.push(`${chore.id}: award_coins failed: ${awardErr.message}`);
-
-        // responsibility_history — same append-only audit trail the
-        // Responsibility Engine writes to on every assignment/completion,
-        // so an auto-approved chore shows up in fairness/effort scoring
-        // the same as a manually-approved one.
-        await supabase.from('responsibility_history').insert({
-          family_id: chore.family_id,
-          chore_id: chore.id,
-          member_id: chore.assigned_to_id,
-          category: chore.category_type ?? 'chore',
-          responsibility_type: 'chore',
-          outcome: 'completed',
-          effort_points: pts,
-          metadata: { auto_approved: true },
-        });
-      }
-
+      const paid = await payOut(chore, `Auto-approved (48h, unresponded escalation): ${chore.title}`);
+      await notify('coins_awarded', assignee?.expo_push_token ? [assignee.expo_push_token] : [], chore.family_id, {
+        coins: paid, reason: `"${chore.title}" auto-approved after 48h with no parent response`,
+      });
       approved.push(chore.id);
     }
 
-    console.log(`[chore-auto-approve] approved=${approved.length} errors=${errors.length} dryRun=${dryRun}`);
-    return json({ auto_approved: approved.length, approved_ids: approved, errors });
+    console.log(`[chore-auto-approve] escalated=${escalated.length} approved=${approved.length} errors=${errors.length} dryRun=${dryRun}`);
+    return json({ escalated: escalated.length, escalated_ids: escalated, auto_approved: approved.length, approved_ids: approved, errors });
 
   } catch (err: any) {
     console.error('[chore-auto-approve] fatal:', err);

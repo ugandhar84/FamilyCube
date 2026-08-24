@@ -109,7 +109,18 @@ function DraggableRow({ id, pill, total, positions, draggingId, onRemove, onComm
     });
 
   const animatedStyle = useAnimatedStyle(() => {
-    const myIndex = positions.value[id] ?? 0;
+    // While being dragged, this row's translateY must be anchored to its
+    // START slot (startIndex, fixed for the whole gesture) plus the raw
+    // finger translation — NOT its live positions.value slot, which
+    // updates mid-drag the instant it crosses into a new index. Reading
+    // the live (already-shifted) index here and then adding dragY on top
+    // double-applied the offset — the row jumped an extra ROW_HEIGHT (or
+    // more) ahead of the actual finger position every time it crossed a
+    // neighbor, which is exactly the "goes way up off the touch" bug.
+    // Every OTHER (non-dragged) row still reads the live index normally,
+    // since those genuinely need to spring to wherever they've been
+    // displaced to.
+    const myIndex = isActive.value ? startIndex.value : (positions.value[id] ?? 0);
     const baseY = myIndex * ROW_HEIGHT;
     return {
       position: 'absolute',
@@ -117,9 +128,9 @@ function DraggableRow({ id, pill, total, positions, draggingId, onRemove, onComm
       left: 0,
       right: 0,
       // The dragged row tracks the raw gesture translation 1:1 on top of
-      // its live base slot (no spring lag while the finger is down); every
-      // other row springs to its new slot the instant positions.value
-      // shifts under it.
+      // its fixed start slot (no spring lag while the finger is down);
+      // every other row springs to its new slot the instant
+      // positions.value shifts under it.
       transform: [{ translateY: isActive.value ? baseY + dragY.value : withSpring(baseY, { damping: 22, stiffness: 260 }) }],
       zIndex: isActive.value ? 10 : 1,
       opacity: isActive.value ? 0.96 : 1,

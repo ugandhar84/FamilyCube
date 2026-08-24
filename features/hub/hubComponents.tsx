@@ -23,6 +23,7 @@ import { fmtDateShort } from '@/lib/dates';
 import { relationalNameByName } from '@/lib/format';
 import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
+import { showToast } from '@/components/AppToast';
 import { decryptLocationText } from '@/lib/locationCrypto';
 
 // ─── LiveDot ──────────────────────────────────────────────────────────────────
@@ -1084,7 +1085,7 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: borderCol }}>
                   {showRemind && (
                     <Pressable
-                      onPress={() => { Alert.alert('Reminder Sent', `A nudge was sent to ${relationalNameByName(assignee.name, members)}.`); onClose(); }}
+                      onPress={() => { showToast(`Reminder sent to ${relationalNameByName(assignee.name, members)} ✓`); onClose(); }}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, backgroundColor: colors.warning + '18' }}>
                       <Bell size={13} color={colors.warningDark} />
                       <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warningDark }}>Remind</Text>
@@ -1173,7 +1174,8 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                         supabase.rpc('confirm_event_assignment', {
                           p_event_id: ev.id, p_member_id: viewerMember?.id, p_role: assigneeRole,
                         }).then(({ error }) => {
-                          if (error) console.warn('[EventDetailSheet] confirm_event_assignment failed', error.message);
+                          if (error) { console.warn('[EventDetailSheet] confirm_event_assignment failed', error.message); return; }
+                          showToast('Confirmed ✓');
                         });
                       }}
                       style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -1215,7 +1217,8 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                         supabase.rpc('decline_event_assignment', {
                           p_event_id: ev.id, p_member_id: viewerMember.id, p_role: assigneeRole, p_reason: null,
                         }).then(({ error }) => {
-                          if (error) console.warn('[EventDetailSheet] decline_event_assignment failed', error.message);
+                          if (error) { console.warn('[EventDetailSheet] decline_event_assignment failed', error.message); return; }
+                          showToast("Marked — you're off this one ✓");
                         });
                       }
                       setChangeOpen(false);
@@ -1245,17 +1248,18 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                       // parent manually opening one specific pool kind with
                       // no decline involved — a plain scoped write, no RPC
                       // needed for that narrower case yet.
+                      const doneToast = () => showToast(kind === 'gp' ? 'Opened to Grandparents ✓' : 'Opened to Teens ✓');
                       if (cancelledSelfName && viewerMember) {
                         supabase.rpc('decline_event_assignment', {
                           p_event_id: ev.id, p_member_id: viewerMember.id, p_role: assigneeRole, p_reason: null,
                         }).then(({ error }) => {
-                          if (error) console.warn('[EventDetailSheet] decline_event_assignment (open pool) failed', error.message);
+                          if (error) { console.warn('[EventDetailSheet] decline_event_assignment (open pool) failed', error.message); return; }
+                          doneToast();
                         });
                       } else {
                         updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
+                        doneToast();
                       }
-                      Alert.alert(kind === 'gp' ? 'Opened to Grandparents' : 'Opened to Teens',
-                        `Any eligible ${kind === 'gp' ? 'grandparent' : 'teen'} can now claim "${ev.title}" from their own Hub.`);
                       onClose();
                     }}
                     onAssign={(name, reason) => {
@@ -1273,12 +1277,14 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                         supabase.rpc('reassign_event', {
                           p_event_id: ev.id, p_new_member_id: targetMember.id, p_role: assigneeRole, p_actor_id: viewerMember?.id ?? targetMember.id,
                         }).then(({ error }) => {
-                          if (error) console.warn('[EventDetailSheet] reassign_event failed', error.message);
+                          if (error) { console.warn('[EventDetailSheet] reassign_event failed', error.message); return; }
+                          showToast(`Assigned to ${name.split(' ')[0]} ✓`);
                         });
                       } else {
                         updateEvent(ev.id, assigneeRole === 'driver'
                           ? { driverName: name, driverStatus: name === activeName ? 'confirmed' as const : 'pending' as const }
                           : { helper: name, helperStatus: name === activeName ? 'confirmed' as const : 'pending' as const });
+                        showToast(`Assigned to ${name.split(' ')[0]} ✓`);
                       }
                       if (reason) {
                         updateEvent(ev.id, { notes: `${cancelledSelfName ?? activeName ?? 'Parent'} can't do "${helperLabel}" — "${reason}"` });

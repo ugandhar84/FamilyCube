@@ -832,7 +832,7 @@ interface ChoreState {
   // amount (the kid never sets one) or Declines outright (row is deleted
   // server-side, not soft-declined — a declined proposal was never a real
   // chore). See 20260907120000_kid_proposed_chore_rpcs.sql.
-  approveKidProposedChore: (choreId: string, reviewerId: string, coins: number) => void;
+  approveKidProposedChore: (choreId: string, reviewerId: string, coins: number, dueDate?: string) => void;
   declineKidProposedChore: (choreId: string, reviewerId: string, reason?: string) => void;
   // QA punch list #2 — a claimant's response to a parent changing coins/
   // due-date underneath them (status='terms_changed', see propose_terms_
@@ -2319,7 +2319,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
   // Parent (or active temporary approver) accepts a kid's proposed chore —
   // becomes a real, live 'todo' chore assigned to whoever the kid picked,
   // with the coin reward the PARENT sets now via approve_kid_chore.
-  approveKidProposedChore: (choreId, reviewerId, coins) => {
+  approveKidProposedChore: (choreId, reviewerId, coins, dueDate) => {
     const chore = get().chores.find(c => c.id === choreId);
     if (!chore || chore.status !== 'pending_kid_proposal') return;
     if (!get().canApprove(reviewerId)) {
@@ -2330,18 +2330,18 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
 
     set(s => ({
       chores: s.chores.map(c => c.id === choreId
-        ? { ...c, status: 'todo', coinsReward, basePoints: coinsReward, reviewedById: reviewerId }
+        ? { ...c, status: 'todo', coinsReward, basePoints: coinsReward, dueDate, reviewedById: reviewerId }
         : c),
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
-    supabase.rpc('approve_kid_chore', { p_chore_id: choreId, p_reviewer_id: reviewerId, p_coins_reward: coinsReward, p_xp_reward: 0 })
+    supabase.rpc('approve_kid_chore', { p_chore_id: choreId, p_reviewer_id: reviewerId, p_coins_reward: coinsReward, p_xp_reward: 0, p_due_date: dueDate ?? null })
       .then(({ error }) => {
         if (error) {
           console.warn('[choreStore] approveKidProposedChore RPC failed on', choreId, '— rolling back local state:', error.message);
           set(s => ({
             chores: s.chores.map(c =>
-              c.id === choreId ? { ...c, status: 'pending_kid_proposal', coinsReward: chore.coinsReward, basePoints: chore.basePoints, reviewedById: chore.reviewedById } : c
+              c.id === choreId ? { ...c, status: 'pending_kid_proposal', coinsReward: chore.coinsReward, basePoints: chore.basePoints, dueDate: chore.dueDate, reviewedById: chore.reviewedById } : c
             ),
           }));
           AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));

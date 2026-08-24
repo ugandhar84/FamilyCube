@@ -1,9 +1,21 @@
 import { useState } from 'react';
 import { View, Text, Pressable, Alert, TextInput } from 'react-native';
-import { CheckCircle2, Sparkles, Coins } from 'lucide-react-native';
+import { CheckCircle2, Sparkles, Coins, Calendar } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
+import { localDateStr } from '@/lib/dates';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
+
+// Coming Saturday — the default due date offered when a parent approves a
+// kid's chore proposal, per explicit product direction. "Coming" means the
+// next Saturday from today, including today itself if today already is one.
+function comingSaturday(): string {
+  const d = new Date();
+  const day = d.getDay(); // 0=Sun..6=Sat
+  const daysUntilSat = (6 - day + 7) % 7;
+  d.setDate(d.getDate() + daysUntilSat);
+  return localDateStr(d);
+}
 
 // A kid proposed this chore for themselves or a sibling (propose_kid_chore
 // RPC, chore_tasks.status = 'pending_kid_proposal') — the kid never sets a
@@ -12,7 +24,7 @@ import type { ChoreTask } from '@/store/choreStore';
 // was never a live chore) via decline_kid_chore.
 export function KidProposedChoreCard({ c, members, colors, isDark, active, approveKidProposedChore, declineKidProposedChore }: {
   c: ChoreTask; members: FamilyMember[]; colors: any; isDark: boolean; active: FamilyMember;
-  approveKidProposedChore: (choreId: string, reviewerId: string, coins: number) => void;
+  approveKidProposedChore: (choreId: string, reviewerId: string, coins: number, dueDate?: string) => void;
   declineKidProposedChore: (choreId: string, reviewerId: string, reason?: string) => void;
 }) {
   const proposer = members.find(m => m.id === c.createdById);
@@ -20,11 +32,12 @@ export function KidProposedChoreCard({ c, members, colors, isDark, active, appro
   const isForSelf = c.createdById === c.assignedToId;
   const [approving, setApproving] = useState(false);
   const [coins, setCoins] = useState('5');
+  const [dueDate, setDueDate] = useState(() => comingSaturday());
 
   const confirmApprove = () => {
     const parsed = parseInt(coins, 10);
     if (!Number.isFinite(parsed) || parsed < 0) return;
-    approveKidProposedChore(c.id, active.id, parsed);
+    approveKidProposedChore(c.id, active.id, parsed, dueDate.trim() || undefined);
     setApproving(false);
   };
 
@@ -47,25 +60,41 @@ export function KidProposedChoreCard({ c, members, colors, isDark, active, appro
       ) : null}
 
       {approving ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Coins size={14} color={colors.primary} />
-          <TextInput
-            value={coins}
-            onChangeText={setCoins}
-            keyboardType="number-pad"
-            autoFocus
-            style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: colors.primary + '60',
-              backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 8,
-              fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}
-          />
-          <Pressable onPress={() => setApproving(false)}
-            style={{ paddingHorizontal: 12, paddingVertical: 9 }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
-          </Pressable>
-          <Pressable onPress={confirmApprove}
-            style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, backgroundColor: colors.primary }}>
-            <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Set & Approve</Text>
-          </Pressable>
+        <View style={{ gap: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Coins size={14} color={colors.primary} />
+            <TextInput
+              value={coins}
+              onChangeText={setCoins}
+              keyboardType="number-pad"
+              autoFocus
+              style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: colors.primary + '60',
+                backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 8,
+                fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}
+            />
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Calendar size={14} color={colors.primary} />
+            <TextInput
+              value={dueDate}
+              onChangeText={setDueDate}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.textTertiary}
+              style={{ flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: colors.primary + '60',
+                backgroundColor: colors.card, paddingHorizontal: 10, paddingVertical: 8,
+                fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}
+            />
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
+            <Pressable onPress={() => setApproving(false)}
+              style={{ paddingHorizontal: 12, paddingVertical: 9 }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
+            </Pressable>
+            <Pressable onPress={confirmApprove}
+              style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, backgroundColor: colors.primary }}>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: '#fff' }}>Set & Approve</Text>
+            </Pressable>
+          </View>
         </View>
       ) : (
         <View style={{ flexDirection: 'row', gap: 8 }}>

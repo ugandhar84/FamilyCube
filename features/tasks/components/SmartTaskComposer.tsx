@@ -1260,7 +1260,7 @@ export default function SmartTaskComposer({
               <Pressable onPress={create} disabled={!title.trim() && !detected.title}
                 style={{ flex: 2, borderRadius: RADIUS.md, paddingVertical: 13, alignItems: 'center', backgroundColor: colors.primary }}>
                 <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
-                  {isEvent && recurFreq !== 'once' ? 'Review & Create →' : `Create ${isEvent ? 'Event' : 'Quest'}`}
+                  {isEvent && recurFreq !== 'once' ? 'Set Up Recurring →' : `Create ${isEvent ? 'Event' : 'Quest'}`}
                 </Text>
               </Pressable>
             </View>
@@ -1277,7 +1277,7 @@ export default function SmartTaskComposer({
               })}
               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10 }}>
               <PenLine size={13} color={colors.textSecondary} />
-              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Review & create in full form</Text>
+              <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textSecondary }}>Adjust in full form</Text>
             </Pressable>
           </>
         )}

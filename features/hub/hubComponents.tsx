@@ -323,11 +323,11 @@ export function notifyTakeover(ev: FamilyEvent, newName: string, members: Family
 }
 
 export function AlertBanner({
-  conflictEvents, rejectedEvents, pendingNoResponseEvents = [], unassignedUrgentEvents = [],
+  conflictEvents, rejectedEvents = [], pendingNoResponseEvents = [], unassignedUrgentEvents = [],
   neverDispatchedEvents = [],
   conflictReasons, members, colors, isDark, updateEvent, activeName, onDispatch,
 }: {
-  conflictEvents: FamilyEvent[]; rejectedEvents: FamilyEvent[];
+  conflictEvents: FamilyEvent[]; rejectedEvents?: FamilyEvent[];
   pendingNoResponseEvents?: FamilyEvent[]; unassignedUrgentEvents?: FamilyEvent[];
   neverDispatchedEvents?: FamilyEvent[];
   conflictReasons?: Map<string, string>;

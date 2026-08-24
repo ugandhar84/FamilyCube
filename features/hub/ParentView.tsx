@@ -139,7 +139,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     // however unconfirmed it stayed (reported live: an unconfirmed
     // today-driver ride wasn't surfacing on the parent's Hub at all).
     const a = eventAssignee(e);
-    return !a.name || a.status === 'pending';
+    return !a.name || a.status === 'pending' || a.status === 'rejected';
   });
   // pending_approval and pending_grandparent_approval both collapse to the
   // same client-side status (choreAdapter's choreStatusToQuestStatus) — a
@@ -149,8 +149,6 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   // previously also duplicated here in "Action Needed" with a different
   // card design for the exact same item. actionCount below intentionally
   // excludes these; ChoreReviewSection's own badge covers them.
-
-  const rejectedHelperEvents = todayEvents.filter(e => eventAssignee(e).status === 'rejected');
 
   // ── Conflict detection ────────────────────────────────────────────────────
   const conflictReasons = new Map<string, string>(); // eventId → reason label
@@ -233,39 +231,12 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
   const conflictEventIds = new Set(conflictReasons.keys());
   const conflictEvents   = todayEvents.filter(e => e.conflict || conflictEventIds.has(e.id));
 
-  // Escalation: helper/driver pending + no response + < 1 hr away — was
-  // helper-only, so a driverName-based kid ride request (every kid ride
-  // request now uses this pair) never escalated into this urgency banner
-  // at all, no matter how close the deadline (QA sweep, kid-role audit,
-  // Medium — feeds directly off the same field-pair gap fixed elsewhere).
-  const pendingNoResponse = todayEvents.filter(e => {
-    const a = eventAssignee(e);
-    return !!a.name && a.status === 'pending' &&
-      hoursUntilEvent(e.date, e.time) < 1 && hoursUntilEvent(e.date, e.time) >= 0;
-  });
-
-  // Escalation: transport event unassigned + < 2 hr away — same fix.
-  const unassignedUrgent = todayEvents.filter(e => {
-    const a = eventAssignee(e);
-    if (!e.location || e.approvalPending || a.name || e.declinedBy) return false;
-    if (a.status === 'rejected') return false;
-    const h = hoursUntilEvent(e.date, e.time);
-    return h >= 0 && h < 2;
-  });
-
-  const urgentRejected = rejectedHelperEvents.filter(ev => {
-    const h = hoursUntilEvent(ev.date, ev.time);
-    return h >= 0 && h < 4;
-  });
-
   // Escalation: driver CONFIRMED, scheduled time already passed by 5+ min,
-  // but no trip was ever dispatched for this pickup — the one gap none of
-  // the other 3 escalations above cover. pendingNoResponse only matches
-  // status 'pending' (and stops matching once the event's time is already
-  // in the past, since it requires hoursUntilEvent >= 0). unassignedUrgent
-  // explicitly excludes any event with an assignee name. So a ride that
-  // went all the way to "confirmed" and then nobody actually tapped
-  // Dispatch/En Route for was invisible to every parent-facing escalation —
+  // but no trip was ever dispatched for this pickup — a case neither
+  // ActionNeededSection's pending/unassigned/rejected cards nor a plain
+  // 'pending' status catch, since this ride went all the way to
+  // "confirmed" and then nobody actually tapped Dispatch/En Route for it.
+  // Invisible to every parent-facing escalation —
   // and to the OTHER parent specifically, since only the driving parent's
   // own device runs HubScreen's TripEffects overdue timer, and that timer
   // only exists once a trip row exists at all. The kid still gets a manual
@@ -284,12 +255,10 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     if (!a.name || a.status !== 'confirmed' || e.approvalPending) return false;
     if (activeTripDriverNames.has(a.name)) return false; // a trip IS running, just use the normal overdue path
     const h = hoursUntilEvent(e.date, e.time);
-    return h < 0 && h > -2; // same 2hr outer bound as unassignedUrgent, so a days-old stale row doesn't linger forever
+    return h < 0 && h > -2; // 2hr outer bound so a days-old stale row doesn't linger forever
   });
 
-  const showBanner     = conflictEvents.length > 0 || urgentRejected.length > 0 ||
-                         pendingNoResponse.length > 0 || unassignedUrgent.length > 0 ||
-                         neverDispatchedOverdue.length > 0;
+  const showBanner     = conflictEvents.length > 0 || neverDispatchedOverdue.length > 0;
   const pendingKidRequests = kidRequests.filter(r => {
     // Coordinated live-DB QA (Round 20, High) — a multi-item grocery/
     // supplies request transitions to 'partial' the moment any item is
@@ -543,10 +512,16 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     <>
       <GreetingHeader colors={colors} isDark={isDark} activeMember={active} otherAttentionCount={otherAttentionCount} />
 
+      {/* rejectedEvents/pendingNoResponseEvents/unassignedUrgentEvents were
+          dropped from here — those 3 card types duplicated
+          ActionNeededSection's own RideRequestCard/RideRequiredEventCard
+          (same unconfirmed/unassigned ride, shown twice with two different
+          card designs and two different action sets). AlertBanner now only
+          covers what ActionNeededSection doesn't: scheduling conflicts and
+          confirmed-but-never-dispatched trips. */}
       {showBanner && (
         <AlertBanner
-          conflictEvents={conflictEvents} rejectedEvents={urgentRejected}
-          pendingNoResponseEvents={pendingNoResponse} unassignedUrgentEvents={unassignedUrgent}
+          conflictEvents={conflictEvents}
           neverDispatchedEvents={neverDispatchedOverdue}
           conflictReasons={conflictReasons}
           members={members} colors={colors} isDark={isDark} updateEvent={updateEvent}

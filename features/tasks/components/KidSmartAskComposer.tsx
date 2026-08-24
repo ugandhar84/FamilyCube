@@ -13,8 +13,10 @@
  *                            KidRequestModal.tsx already writes.
  *   - Tutor/Permission/
  *     Question/Medication → useKidRequestStore().sendRequest({ type, ... })
- *   - Grocery/Supplies    → sendRequest({ type:'delegation', detail: ... })
- *                            using KidModals.tsx's own encode helpers.
+ *   - Grocery/Supplies    → hands off to the real GroceryModal/SuppliesModal
+ *                            (KidModals.tsx) — multi-item entry with
+ *                            always-visible smart suggestion chips, not a
+ *                            single un-itemized free-text request.
  *   - Chore               → supabase.rpc('propose_kid_chore', ...) — the one
  *                            genuinely new capability, gated to kid/teen
  *                            recipients only (server also rejects a parent
@@ -38,7 +40,7 @@ import { useVoiceDictation } from '@/lib/hooks/useVoiceDictation';
 import { detectLocalTask, type LocalDetectionResult } from '../lib/localTaskDetection';
 import { useEventStore } from '@/store/eventStore';
 import { useKidRequestStore, type RequestType } from '@/store/kidRequestStore';
-import { encodeGroceryRequest, SUPPLIES_PREFIX } from '@/features/hub/KidModals';
+import { GroceryModal, SuppliesModal } from '@/features/hub/KidModals';
 import { supabase } from '@/lib/supabase';
 import type { FamilyMember } from '@/store/familyStore';
 
@@ -101,6 +103,14 @@ export default function KidSmartAskComposer({
   const addEvent = useEventStore(s => s.addEvent);
   const sendRequest = useKidRequestStore(s => s.sendRequest);
 
+  // Grocery/Supplies hand off to their real modals (multi-item list entry
+  // + always-visible smart suggestion chips, GroceryModal/SuppliesModal in
+  // KidModals.tsx) rather than sending the kid's free text as a single
+  // un-itemized request — this composer's job for these two categories is
+  // just routing, the existing modals already own the actual UX.
+  const [groceryModalOpen, setGroceryModalOpen] = useState(false);
+  const [suppliesModalOpen, setSuppliesModalOpen] = useState(false);
+
   const [input, setInput] = useState('');
   const [detection, setDetection] = useState<LocalDetectionResult | null>(null);
   const [category, setCategory] = useState<AskCategory | null>(null);
@@ -145,9 +155,13 @@ export default function KidSmartAskComposer({
 
   const detectedTitle = (detection?.title || input).trim();
   const catMeta = category ? CATEGORY_CHIPS.find(c => c.key === category) : undefined;
+  // Grocery/Supplies just route to their own modal — no title needed here,
+  // the modal owns its own item entry.
+  const needsTitle = category !== 'grocery' && category !== 'supplies';
+  const canSubmit = !!category && (!needsTitle || !!detectedTitle) && !submitting;
 
   const submit = async () => {
-    if (!category || !detectedTitle || submitting) return;
+    if (!canSubmit) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -174,19 +188,16 @@ export default function KidSmartAskComposer({
           } : {}),
         });
       } else if (category === 'grocery') {
-        sendRequest({
-          type: 'delegation',
-          fromMemberId: active.id,
-          urgency: 'normal',
-          detail: encodeGroceryRequest({ name: detectedTitle, qty: '', category: 'Multi', notes: '' }),
-        });
+        // Hand off to the real multi-item modal (smart suggestion chips,
+        // quantities, per-item categories) instead of sending the typed
+        // text as one un-itemized request — see groceryModalOpen above.
+        setSubmitting(false);
+        setGroceryModalOpen(true);
+        return;
       } else if (category === 'supplies') {
-        sendRequest({
-          type: 'delegation',
-          fromMemberId: active.id,
-          urgency: 'normal',
-          detail: `${SUPPLIES_PREFIX}${JSON.stringify({ items: [{ name: detectedTitle, qty: '1' }], notes: '', urgency: 'normal' })}`,
-        });
+        setSubmitting(false);
+        setSuppliesModalOpen(true);
+        return;
       } else if (category === 'tutor' || category === 'permission' || category === 'question' || category === 'medication') {
         const type: RequestType = category === 'tutor' ? 'tutor' : category;
         sendRequest({
@@ -220,7 +231,8 @@ export default function KidSmartAskComposer({
   };
 
   return (
-    <AppBottomSheet visible={visible} onClose={close} title="Ask Parent" subtitle="Describe it — we'll figure out where it goes"
+    <>
+    <AppBottomSheet visible={visible && !groceryModalOpen && !suppliesModalOpen} onClose={close} title="Ask Parent" subtitle="Describe it — we'll figure out where it goes"
       minHeight="45%" maxHeight={keyboardOpen ? '55%' : '85%'} bodyPaddingBottom={40}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 14 }}>
         <View style={{ position: 'relative' }}>
@@ -359,17 +371,27 @@ export default function KidSmartAskComposer({
             style={{ flex: 1, borderRadius: RADIUS.md, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: colors.border }}>
             <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Cancel</Text>
           </Pressable>
-          <Pressable onPress={submit} disabled={!category || !detectedTitle || submitting}
+          <Pressable onPress={submit} disabled={!canSubmit}
             style={{ flex: 2, borderRadius: RADIUS.md, paddingVertical: 13, alignItems: 'center',
-              backgroundColor: catMeta?.color ?? colors.primary, opacity: (!category || !detectedTitle || submitting) ? 0.5 : 1 }}>
+              backgroundColor: catMeta?.color ?? colors.primary, opacity: canSubmit ? 1 : 0.5 }}>
             {submitting ? <ActivityIndicator size="small" color="#fff" /> : (
               <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
-                Send to {members.filter(m => m.role === 'parent').length > 0 ? 'Parent' : 'Family'}
+                {category === 'grocery' ? 'Open Grocery List'
+                  : category === 'supplies' ? 'Open Supplies List'
+                  : `Send to ${members.filter(m => m.role === 'parent').length > 0 ? 'Parent' : 'Family'}`}
               </Text>
             )}
           </Pressable>
         </View>
       </ScrollView>
     </AppBottomSheet>
+
+    {/* Rendered as a sibling, not nested inside AppBottomSheet's own
+        Modal — that Modal unmounts its children entirely once `visible`
+        goes false, which would tear this down mid-handoff right as it's
+        meant to take over. */}
+    <GroceryModal visible={groceryModalOpen} onClose={() => { setGroceryModalOpen(false); close(); }} active={active} />
+    <SuppliesModal visible={suppliesModalOpen} onClose={() => { setSuppliesModalOpen(false); close(); }} active={active} />
+    </>
   );
 }

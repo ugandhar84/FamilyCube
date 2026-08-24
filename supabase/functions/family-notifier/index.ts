@@ -48,6 +48,12 @@ type NotifType =
   | 'chat_mention'
   | 'coins_awarded'
   | 'chore_ghosted'
+  // Master-flow spec's "Gone quiet — still on?" check-in — fires once,
+  // shortly before a claimed chore's due time, distinct from chore_ghosted
+  // (which fires hours later, after real silence). Auto-releases the chore
+  // back to the pool if there's still no answer — see chore-noshow-release.
+  | 'chore_still_on'
+  | 'chore_auto_released'
   | 'help_requested'
   | 'help_resolved'
   | 'reward_redeemed'
@@ -189,6 +195,19 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
       return {
         title: '👻 Chore Ghosted',
         body: `${p.kidName} claimed "${p.questTitle}" but hasn't started — it may be reassigned`,
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'chore_still_on':
+      return {
+        title: '👋 Still on?',
+        body: `"${p.questTitle}" is due soon — tap to confirm you've got it.`,
+        sound: 'default',
+        data: { screen: 'Quests', questId: p.questId },
+      };
+    case 'chore_auto_released':
+      return {
+        title: '🔓 Released back to the pool',
+        body: `You didn't confirm "${p.questTitle}" in time, so it's open for anyone else to take now.`,
         data: { screen: 'Quests', questId: p.questId },
       };
 

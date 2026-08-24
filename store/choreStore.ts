@@ -95,6 +95,11 @@ export interface ChoreTask {
   inviteGrandparents?: boolean;  // parent-proposed: open invitation to grandparents
   isPrivateParent: boolean;
   isPool?: boolean;               // unassigned quest open for anyone to claim
+  // Set when a single-slot chore is claimed via claimPoolQuest (in_progress),
+  // cleared on release back to the pool. Used by chore-noshow-sweep to detect
+  // a chore claimed then abandoned before submission — see migration
+  // 20260908100000_chore_tasks_claimed_at.sql.
+  claimedAt?: string;
   requiresPhotoProof: boolean;
   difficulty?: 'easy' | 'medium' | 'hard' | 'hero';
   recurrenceRule: RecurrenceRule;
@@ -572,6 +577,7 @@ function choreFromRow(row: any): ChoreTask {
     approvalWindowExpiresAt: row.approval_window_expires_at ?? undefined,
     submittedAt:             row.submitted_at ?? undefined,
     approvedAt:              row.approved_at ?? undefined,
+    claimedAt:               row.claimed_at ?? undefined,
     reviewedAt:              row.reviewed_at ?? undefined,
     reviewedById:            row.reviewed_by_id ?? undefined,
     declinedAt:              row.declined_at ?? undefined,
@@ -1509,6 +1515,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if ('description'        in updates) patch.description              = updates.description;
     if ('status'             in updates) patch.status                   = updates.status;
     if ('assignedToId'       in updates) patch.assigned_to_id           = updates.assignedToId ?? null;
+    if ('claimedAt'          in updates) patch.claimed_at               = updates.claimedAt ?? null;
     if ('isPool'             in updates) patch.is_pool                  = updates.isPool;
     if ('targetChildIds'     in updates) patch.target_child_ids         = updates.targetChildIds;
     if ('coinsSplitPerKid'   in updates) patch.coins_split_per_kid       = updates.coinsSplitPerKid;
@@ -1844,13 +1851,18 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     }
     if (chore.assignedToId) return; // Already claimed or gone
 
+    // claimedAt — used by the chore-noshow-sweep edge function to tell
+    // "claimed a while ago, gone silent" apart from "just claimed" (spec's
+    // "Gone quiet — still on?" exit branch). Cleared below if the claim
+    // loses the race.
+    const claimedAt = new Date().toISOString();
     set(s => ({
-      chores: s.chores.map(c => c.id === choreId ? { ...c, assignedToId: memberId, status: 'in_progress', isPool: false } : c),
+      chores: s.chores.map(c => c.id === choreId ? { ...c, assignedToId: memberId, status: 'in_progress', isPool: false, claimedAt } : c),
     }));
     AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
     _fetchedAt = 0;
     supabase.from('chore_tasks')
-      .update({ assigned_to_id: memberId, status: 'in_progress', is_pool: false })
+      .update({ assigned_to_id: memberId, status: 'in_progress', is_pool: false, claimed_at: claimedAt })
       .eq('id', choreId)
       .is('assigned_to_id', null)
       .select('id')
@@ -1863,7 +1875,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
           console.warn('[choreStore] claimPoolQuest lost the race on', choreId, '— rolling back local claim (see spec 3.1)');
           set(s => ({
             chores: s.chores.map(c =>
-              c.id === choreId && c.assignedToId === memberId ? { ...c, assignedToId: undefined, status: 'todo', isPool: true } : c
+              c.id === choreId && c.assignedToId === memberId ? { ...c, assignedToId: undefined, status: 'todo', isPool: true, claimedAt: undefined } : c
             ),
           }));
           AsyncStorage.setItem(CACHE_KEY_CHORES, JSON.stringify(get().chores));
@@ -2431,7 +2443,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (!['todo', 'in_progress'].includes(chore.status)) return;
 
     get().updateChore(choreId, {
-      status: 'todo', assignedToId: undefined, isPool: true,
+      status: 'todo', assignedToId: undefined, isPool: true, claimedAt: undefined,
     });
     showToast('Given back to the pool ✓');
   },
@@ -4114,7 +4126,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       // creator sees "declined by X" instead of a task that looks brand
       // new (PoolQuestCard reads these).
       get().updateChore(choreId, {
-        assignedToId: undefined, isPool: true, status: 'todo',
+        assignedToId: undefined, isPool: true, status: 'todo', claimedAt: undefined,
         rejectionReason: `Declined by ${byName}: "${reason}"`,
         declinedAt: new Date().toISOString(),
       });

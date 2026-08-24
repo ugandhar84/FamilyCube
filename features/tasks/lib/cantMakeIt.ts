@@ -70,7 +70,7 @@ export function resolveCantMakeIt(
         // isPool — this goes back to the creator to re-time, not straight
         // into the open pool at the old time.
         useChoreStore.getState().updateChore(item.id, {
-          assignedToId: undefined, status: 'todo',
+          assignedToId: undefined, status: 'todo', claimedAt: undefined,
           rejectionReason: reason, declinedAt: new Date().toISOString(),
           ...(opts?.laterDate ? { dueDate: opts.laterDate } : {}),
         });

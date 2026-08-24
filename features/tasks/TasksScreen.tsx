@@ -180,21 +180,15 @@ export default function TasksScreen() {
   const [rideRequestModal, setRideRequestModal] = useState(false);
   const openCreator = () => { if (isKidCreator) setShowAskParentSheet(true); else setShowComposer(true); };
 
-  // Set by CustomTabBar the instant the Tasks tab is tapped — echoes Ask
-  // Cube's sparkle FAB (hidden here to avoid stacking on this screen's own
-  // "+") by auto-opening the same composer the moment the tab lands, so
-  // the sparkle button reads as having "become" the + rather than just
-  // disappearing. One-shot: cleared immediately so backgrounding/returning
-  // to an already-open Tasks tab doesn't keep re-triggering it.
+  // Set by CustomTabBar the instant the Tasks tab is tapped — no longer
+  // auto-opens the composer (live-tested: stealing the list view on every
+  // single tab switch was too aggressive), just plays a matching "arrival"
+  // pop on this screen's own + FAB, completing the launch animation the
+  // sparkle FAB in app/(tabs)/_layout.tsx plays as it fades out on tap.
   const fabPopScale = useRef(new Animated.Value(1)).current;
   useFocusEffect(useCallback(() => {
     if (useUIStore.getState().autoOpenTaskComposer) {
       useUIStore.getState().setAutoOpenTaskComposer(false);
-      openCreator();
-      // Matching "arrival" pop — the sparkle FAB in app/(tabs)/_layout.tsx
-      // plays its own launch pop the instant this tab is tapped; this
-      // completes the illusion of it landing here as the + button, rather
-      // than the two being visually unrelated.
       fabPopScale.setValue(0.5);
       Animated.spring(fabPopScale, { toValue: 1, useNativeDriver: true, tension: 260, friction: 7 }).start();
     }

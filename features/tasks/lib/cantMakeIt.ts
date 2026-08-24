@@ -29,6 +29,7 @@
  */
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import { useEventStore, type FamilyEvent } from '@/store/eventStore';
+import { supabase } from '@/lib/supabase';
 
 export type CantMakeItItem =
   | { kind: 'chore'; item: ChoreTask }
@@ -51,9 +52,17 @@ export function resolveCantMakeIt(
         return;
       case 'reassign':
         if (!opts?.reassignToMemberId) return;
-        useChoreStore.getState().updateChore(item.id, {
-          assignedToId: opts.reassignToMemberId, isPool: false, status: 'todo',
-          rejectionReason: reason, declinedAt: new Date().toISOString(),
+        // Now the reassign_chore RPC (see migrations
+        // 20260905120000_chore_participant_rpcs.sql and
+        // 20260905130000_reassign_chore_reason.sql) instead of a raw
+        // updateChore patch — single entry point that atomically bundles
+        // assigned_to_id/is_pool/status/rejection_reason/declined_at
+        // together in one write, and writes a real activity_log audit row
+        // this call previously skipped.
+        supabase.rpc('reassign_chore', {
+          p_chore_id: item.id, p_new_member_id: opts.reassignToMemberId, p_by_member_id: byMemberId, p_reason: reason,
+        }).then(({ error }) => {
+          if (error) console.warn('[cantMakeIt] reassign_chore failed', error.message);
         });
         return;
       case 'later':

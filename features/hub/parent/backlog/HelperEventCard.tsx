@@ -4,6 +4,7 @@ import { Medal, HeartPulse, BookOpen, Car, Calendar, Clock, CheckCircle2, Repeat
 import { TYPO } from '@/constants/theme';
 import { useChatStore } from '@/store/chatStore';
 import { supabase } from '@/lib/supabase';
+import { showToast } from '@/components/AppToast';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import { deriveEventActions } from '@/features/tasks/lib/deriveCardActions';
@@ -107,7 +108,8 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                       supabase.rpc('reassign_event', {
                         p_event_id: ev.id, p_new_member_id: active.id, p_role: assigneeRole, p_actor_id: active.id,
                       }).then(({ error }) => {
-                        if (error) console.warn('[HelperEventCard] Take Over reassign_event failed', error.message);
+                        if (error) { console.warn('[HelperEventCard] Take Over reassign_event failed', error.message); return; }
+                        showToast('Taken over ✓');
                       });
                       const msg = `✅ ${active.name.split(' ')[0]} has taken over "${ev.title}" — you're off the hook.`;
                       useChatStore.getState().sendMessage('all', active.id, msg);
@@ -138,6 +140,7 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                     if (ev.seriesId && updateEventScoped) {
                       updateEventScoped(ev.id, { [assigneeRole === 'driver' ? 'driverStatus' : 'helperStatus']: 'confirmed' } as Partial<FamilyEvent>, 'following');
                     }
+                    showToast('Confirmed ✓');
                   });
                 }}
                 style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: `${CONFIRMED_GREEN}20`, borderRadius: 10, paddingVertical: 6, paddingHorizontal: 12,
@@ -168,6 +171,7 @@ export function HelperEventCard({ ev, members, active, colors, isDark, updateEve
                     p_event_id: ev.id, p_member_id: active.id, p_role: assigneeRole, p_reason: null,
                   }).then(({ error }) => {
                     if (error) { console.warn('[HelperEventCard] decline_event_assignment failed', error.message); return; }
+                    showToast("Marked — you're off this one ✓");
                     try {
                       const recipients = new Set<string>();
                       if (ev.updatedBy && ev.updatedBy !== active.id) recipients.add(ev.updatedBy);

@@ -7,6 +7,7 @@ import { fmtTime } from '../hubUtils';
 import { parseRideMeta, plus90Minutes, forkRideLegs } from './rideLegs';
 import { PickupTimeStepper } from './PickupTimeStepper';
 import { supabase } from '@/lib/supabase';
+import { showToast } from '@/components/AppToast';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
@@ -53,6 +54,7 @@ export function RideRequiredEventCard({ ev, active, colors, isDark, updateEvent,
       if (ev.seriesId && updateEventScoped) {
         updateEventScoped(ev.id, { driverName: active.name, driverStatus: 'confirmed' }, 'following');
       }
+      showToast("You're driving ✓");
     });
   };
 
@@ -67,6 +69,7 @@ export function RideRequiredEventCard({ ev, active, colors, isDark, updateEvent,
   const openToHelpers = () => {
     console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Open to Helpers" on "${ev.title}" (id=${ev.id}) → updateEvent(openToGrandparents/openToTeens) [features/hub/parent/RideRequiredEventCard.tsx:61]`);
     updateEvent(ev.id, { isOpenToGrandparents: true, isOpenToTeens: true, driverName: undefined, driverStatus: undefined });
+    showToast('Opened to helpers ✓');
   };
 
   const forkRide = (selfDrive: boolean) => {
@@ -81,6 +84,7 @@ export function RideRequiredEventCard({ ev, active, colors, isDark, updateEvent,
       updateEvent, addEvent, tryAutoDispatch: () => {},
       pickupTimeOverride: pickupTimeOverride ?? undefined,
     });
+    showToast(selfDrive ? "You're driving ✓" : 'Split into 2 legs ✓');
   };
 
   return (

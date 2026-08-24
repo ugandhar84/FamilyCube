@@ -7,6 +7,7 @@ import { fmtTime } from '../hubUtils';
 import { applyAssignment } from '@/lib/responsibilityCategories';
 import { parseRideMeta, plus90Minutes, forkRideLegs } from './rideLegs';
 import { PickupTimeStepper } from './PickupTimeStepper';
+import { showToast } from '@/components/AppToast';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
@@ -86,6 +87,7 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
     // naturally repeat if the same GP keeps claiming it.
     updateEvent(ev.id, patch);
     tryAutoDispatchToGrandparent(ev.id);
+    showToast('Opened to helpers ✓');
   };
 
   // A kid's ride request never includes a pickup TIME (the redesigned
@@ -110,6 +112,7 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
       updateEvent, addEvent, tryAutoDispatch: tryAutoDispatchToGrandparent,
       pickupTimeOverride: pickupTimeOverride ?? undefined,
     });
+    showToast(selfDrive ? "You're driving ✓" : 'Split into 2 legs ✓');
   };
 
   return (
@@ -208,6 +211,7 @@ export function RideRequestCard({ ev, active, members, colors, isDark, updateEve
               const patch = { approvalPending: false, helperStatus: 'confirmed' as const, helper: active.name, returnTime: undefined };
               if (ev.seriesId && updateEventScoped) updateEventScoped(ev.id, patch, 'following');
               else updateEvent(ev.id, patch);
+              showToast("You're driving ✓");
             }}
             style={{ flex: 1, backgroundColor: DROPOFF_GREEN, paddingVertical: 11, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
             <Car size={14} color="#fff" />

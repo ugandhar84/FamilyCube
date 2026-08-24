@@ -646,35 +646,6 @@ export default function SmartTaskComposer({
           </View>
         </View>
 
-        {/* Big centered mic — same start/stop action as the small inline
-            one in the input box, just a much more prominent affordance for
-            the primary "just speak it" path this sheet is built around. */}
-        <View style={{ alignItems: 'center', gap: 8, paddingVertical: 4 }}>
-          <Pressable
-            onPress={async () => {
-              if (dictation.state === 'listening') {
-                const finalTranscript = await dictation.stop();
-                if (finalTranscript) setInput(finalTranscript);
-              } else {
-                dictation.start();
-              }
-            }}
-            style={{
-              width: 72, height: 72, borderRadius: 36,
-              alignItems: 'center', justifyContent: 'center',
-              backgroundColor: dictation.state === 'listening' ? colors.danger : colors.primary,
-              shadowColor: dictation.state === 'listening' ? colors.danger : colors.primary,
-              shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6,
-            }}>
-            {dictation.state === 'listening'
-              ? <View style={{ width: 20, height: 20, borderRadius: 4, backgroundColor: '#fff' }} />
-              : <Mic size={28} color="#fff" />}
-          </Pressable>
-          <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: dictation.state === 'listening' ? colors.danger : colors.textSecondary }}>
-            {dictation.state === 'listening' ? 'Tap to stop' : 'Tap to speak'}
-          </Text>
-        </View>
-
         {dictation.state === 'listening' && (
           <Text style={{ fontSize: TYPO.label, color: colors.danger, fontWeight: '700' }}>
             Listening… tap ■ to stop and edit

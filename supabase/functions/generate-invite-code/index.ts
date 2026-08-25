@@ -204,29 +204,32 @@ serve(async (req) => {
     // one just never get this, same as before). Never blocks/fails the
     // code-generation response — the code is already live in the DB
     // regardless of whether the email actually sends, same "best-effort,
-    // report the outcome" pattern send-member-invite already uses for its
-    // own Zoho SMTP send.
+    // report the outcome" pattern send-member-invite already used for its
+    // own SMTP send (Zoho there; this project switched to Gmail — needs
+    // GMAIL_EMAIL/GMAIL_APP_PASSWORD as Supabase secrets, a 16-char Google
+    // App Password, not the account's real login password. Gmail SMTP
+    // requires 2-Step Verification enabled on the account first).
     let emailSent = false;
     let emailError: string | null = null;
     if (targetMember.email) {
-      const zohoEmail    = Deno.env.get('ZOHO_EMAIL');
-      const zohoPassword = Deno.env.get('ZOHO_APP_PASSWORD');
-      if (!zohoEmail || !zohoPassword) {
-        emailError = 'ZOHO_EMAIL or ZOHO_APP_PASSWORD not configured';
-        console.warn('[generate-invite-code] Zoho SMTP credentials missing');
+      const gmailEmail    = Deno.env.get('GMAIL_EMAIL');
+      const gmailPassword = Deno.env.get('GMAIL_APP_PASSWORD');
+      if (!gmailEmail || !gmailPassword) {
+        emailError = 'GMAIL_EMAIL or GMAIL_APP_PASSWORD not configured';
+        console.warn('[generate-invite-code] Gmail SMTP credentials missing');
       } else {
         let smtpClient: SMTPClient | null = null;
         try {
           smtpClient = new SMTPClient({
             connection: {
-              hostname: 'smtp.zoho.com',
+              hostname: 'smtp.gmail.com',
               port: 465,
               tls: true,
-              auth: { username: zohoEmail, password: zohoPassword },
+              auth: { username: gmailEmail, password: gmailPassword },
             },
           });
           await smtpClient.send({
-            from: `FamilyCube <connect@peopleontech.com>`,
+            from: `Family Cube <${gmailEmail}>`,
             to: targetMember.email,
             subject: `Your Family Cube invite code`,
             html: inviteCodeEmailTemplate({ memberName: targetMember.name, familyName: family?.name, code }),

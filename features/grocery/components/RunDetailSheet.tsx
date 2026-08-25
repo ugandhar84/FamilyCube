@@ -113,12 +113,18 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
   const checkedCount = runItems.filter(ri => ri.checkedInRun).length;
   const isActive = run.status === 'active';
   const isDone   = run.status === 'done';
+  // Was: check-off/"not here"/remove were only gated on !isDone, so a
+  // still-draft trip (before "Start Shopping" is tapped) let you check
+  // items off before the trip had even begun — live-reported. Checking off
+  // is a shopping-in-progress action; it shouldn't be reachable until the
+  // trip is actually active.
+  const isDraft  = run.status === 'draft';
 
   // Items not already in this run
   const notInRun = pendingItems.filter(item => !runItems.find(ri => ri.itemId === item.id));
 
   const toggleCheck = async (ri: GroceryRunItem) => {
-    if (isDone) return;
+    if (isDone || isDraft) return;
     setLoadingId(ri.itemId);
     if (ri.checkedInRun) {
       await uncheckRunItem(run.id, ri.itemId);
@@ -331,6 +337,15 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
           {/* Items list */}
           {tab === 'items' && (
             <ScrollView style={{ flex: 1, marginTop: 8 }} showsVerticalScrollIndicator={false}>
+              {isDraft && runItems.length > 0 && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.surface,
+                  borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 10 }}>
+                  <Ionicons name="lock-closed-outline" size={14} color={colors.textSecondary} />
+                  <Text style={{ flex: 1, fontSize: 12, color: colors.textSecondary }}>
+                    Tap "Start Shopping" below to check items off
+                  </Text>
+                </View>
+              )}
               {runItems.length === 0 ? (
                 <View style={{ alignItems: 'center', paddingVertical: 32, gap: 12 }}>
                   <Text style={{ fontSize: 40 }}>🛒</Text>
@@ -346,12 +361,12 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
                   return (
                     <Pressable
                       key={ri.itemId}
-                      onPress={() => !isDone && !isNotFound && toggleCheck(ri)}
+                      onPress={() => !isDone && !isDraft && !isNotFound && toggleCheck(ri)}
                       style={[rd.itemRow, {
                         backgroundColor: isNotFound ? colors.dangerLight : 'transparent',
                         borderBottomColor: border,
                         borderBottomWidth: riIdx < runItems.length - 1 ? StyleSheet.hairlineWidth : 0,
-                        opacity: isNotFound ? 0.75 : 1,
+                        opacity: isNotFound ? 0.75 : isDraft ? 0.55 : 1,
                       }]}
                     >
                       {/* Checkbox */}
@@ -414,8 +429,8 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
                             <Text style={{ fontSize: 11, fontWeight: '700', color: colors.warningDark }}>↩️ Return</Text>
                           </Pressable>
                         )}
-                        {/* Not found toggle — only on active runs */}
-                        {!isDone && !ri.checkedInRun && (
+                        {/* Not found toggle — only once shopping has started */}
+                        {!isDone && !isDraft && !ri.checkedInRun && (
                           <Pressable
                             onPress={() => markNotFound(ri)}
                             hitSlop={6}
@@ -431,7 +446,8 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
                             </Text>
                           </Pressable>
                         )}
-                        {/* Remove — only on active runs */}
+                        {/* Remove — still allowed while planning a draft trip
+                            (that's just editing the list, not shopping) */}
                         {!isDone && (
                           <Pressable onPress={() => removeItemFromRun(run.id, ri.itemId)} style={{ padding: 4 }}>
                             <Ionicons name="close-circle-outline" size={18} color={colors.textTertiary} />

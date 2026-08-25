@@ -188,8 +188,16 @@ export default function NotificationPanel({ visible, onClose }: Props) {
     const ids = rows.map(n => n.id);
     removeCachedNotifs(ids);
     setUnreadCount(0);
+    // Was a silent .catch(() => {}) — a real DB failure (RLS, network) left
+    // the local cache cleared (looks like it worked) while the rows never
+    // actually left the DB, so they'd reappear on the next real fetch with
+    // zero indication anything went wrong. Log it so a failure is at least
+    // diagnosable; optimistic-clear stays (a failed batch delete isn't
+    // worth re-inserting the rows back into the visible list either).
     import('@/lib/db/notifications').then(({ deleteNotifications }) => {
-      deleteNotifications(ids).catch(() => {});
+      deleteNotifications(ids).catch((e: any) => {
+        console.error('[NotificationPanel] Clear all failed:', e?.message, e);
+      });
     }).catch(() => {});
   };
 

@@ -6,6 +6,12 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 
+// Same fallback pattern already used in choreStore.ts/temporaryApproverStore.ts.
+const genId = (): string =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 // ─── Realtime subscription (V-A3) ─────────────────────────────────────────────
 // Mirrors choreStore.ts's ensureRealtime pattern exactly: family-scoped
 // channel name (no fixed/shared literal — avoids the channel-name-collision
@@ -423,9 +429,16 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     // is redeemed. RLS's members_insert policy also accepts
     // family_id = current_user_family_id() (not just auth_user_id = uid()),
     // which is what lets a parent insert a row for someone else here.
+    // id has no DB-side default on this table (confirmed live: "null value
+    // in column id... violates not-null constraint") — every other insert
+    // into members either relies on a default that doesn't actually exist
+    // or generates its own id client-side; this one didn't, so it always
+    // failed. Same genId() fallback already used in choreStore.ts/
+    // temporaryApproverStore.ts.
     const { data, error } = await supabase
       .from('members')
       .insert([{
+        id: genId(),
         name: name.trim(),
         role: dbRole,
         relationship: relationship ?? null,

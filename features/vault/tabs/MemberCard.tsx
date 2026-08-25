@@ -147,9 +147,10 @@ export const MemberCard = memo(MemberCardImpl, memberPropsEqual);
  * avatar-forward tile instead: avatar centered near the top, first name
  * below it, a small role/relation chip underneath, PIN-lock as a corner
  * badge (same corner-badge language MemberCard's key icon already uses).
- * Same three actions, same wiring shape as MemberCard: tap → view
- * (MemberProfileSheet), long-press parent-only → edit (EditMemberModal),
- * key icon → PIN (PinModal) — purely a layout change, not a new
+ * Same three actions, same wiring shape as MemberCard: tap → view,
+ * long-press parent-only → edit, key icon → PIN — all landing in the same
+ * unified MemberProfileSheet instance (its own internal `section` state
+ * picks which one shows), purely a layout change here, not a new
  * interaction model.
  */
 function CarouselMemberCardImpl({ m, isActive, isParentViewer, colors, isDark, onPress, onLongPress, onPinPress }: {

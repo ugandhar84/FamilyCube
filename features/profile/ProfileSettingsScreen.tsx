@@ -31,7 +31,7 @@ import {
 import { CarouselMemberCard } from '@/features/vault/tabs/MemberCard';
 import { FamilyTreeView } from '@/features/vault/tabs/FamilyTreeView';
 import { MemberProfileSheet } from '@/features/vault/tabs/MemberProfileSheet';
-import { PinModal, EditMemberModal, PhotoPickerSheet } from '@/features/vault/tabs/RosterTab';
+import { PhotoPickerSheet } from '@/features/vault/tabs/RosterTab';
 import { saveMemberEdit } from '@/features/vault/tabs/memberActions';
 import { localDateStr, fmtDate } from '@/lib/dates';
 import { showPickerLoading, hidePickerLoading } from '@/lib/pickerLoading';
@@ -1056,14 +1056,16 @@ export default function ProfileSettingsScreen() {
   const isAuthLinked = !!activeMember?.authUserId;
   const familyId = activeMember?.familyId ?? '';
 
-  // Member carousel + inline family tree — same view/edit/pin wiring
-  // RosterTab.tsx already uses (setViewTarget/setEditTarget/setPinTarget →
-  // MemberProfileSheet/EditMemberModal/PinModal), reusing those exact
-  // exported components so behavior can't drift between the Roster tab and
-  // this page's own first-class version of the same experience.
+  // Member carousel + inline family tree — same single unified-sheet wiring
+  // RosterTab.tsx uses: ONE MemberProfileSheet instance per member, whose
+  // own internal `section` state (view/edit/pin/confirmRemove) handles
+  // everything that used to be three separate stacked modals
+  // (MemberProfileSheet/EditMemberModal/PinModal). viewTarget tracks which
+  // member the sheet is open for; initialSection tracks which section it
+  // should land on (tap → 'view', long-press → 'edit', key icon → 'pin').
   const [viewTarget, setViewTarget] = useState<FamilyMember | null>(null);
-  const [editTarget, setEditTarget] = useState<FamilyMember | null>(null);
-  const [pinTarget, setPinTarget] = useState<FamilyMember | null>(null);
+  const [initialSection, setInitialSection] = useState<'view' | 'edit' | 'pin'>('view');
+  const openMember = (m: FamilyMember, section: 'view' | 'edit' | 'pin' = 'view') => { setInitialSection(section); setViewTarget(m); };
   const [showFullTree, setShowFullTree] = useState(false);
   const [showInviteSheet, setShowInviteSheet] = useState(false);
   const [showEditMyProfile, setShowEditMyProfile] = useState(false);
@@ -1216,9 +1218,9 @@ export default function ProfileSettingsScreen() {
 
         {/* Identity card — tappable, opens EditMyProfileSheet (self-service:
             name/DOB/email/avatar for the CURRENTLY ACTIVE member only,
-            available to everyone regardless of role). Distinct from
-            EditMemberModal below, which is the parent-edits-someone-ELSE
-            flow. */}
+            available to everyone regardless of role). Distinct from the
+            unified MemberProfileSheet's edit section below, which is the
+            parent-edits-someone-ELSE flow. */}
         <TouchableOpacity onPress={() => setShowEditMyProfile(true)} activeOpacity={0.75} style={{
           flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16,
           borderRadius: RADIUS.lg, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
@@ -1249,12 +1251,13 @@ export default function ProfileSettingsScreen() {
 
         {/* Family — member carousel + expandable full tree, the same
             underlying components (MemberCard/FamilyTreeView/
-            MemberProfileSheet/EditMemberModal/PinModal) RosterTab.tsx uses,
-            so this page offers a first-class version of the same
-            experience instead of just linking out to the Roster tab.
-            Tap a card → read-only MemberProfileSheet (never switches
+            MemberProfileSheet) RosterTab.tsx uses, so this page offers a
+            first-class version of the same experience instead of just
+            linking out to the Roster tab. Tap a card → the unified
+            MemberProfileSheet, read-only 'view' section (never switches
             activeMemberId — an admin views without impersonating). Long-
-            press (parents only) → EditMemberModal. Key icon → PinModal. */}
+            press (parents only) → same sheet, landing on its 'edit'
+            section. Key icon → same sheet, landing on its 'pin' section. */}
         <View style={{ marginBottom: 24 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
             <SectionHeader label="Family" colors={colors} />
@@ -1271,9 +1274,9 @@ export default function ProfileSettingsScreen() {
             {members.map(m => (
               <CarouselMemberCard key={m.id} m={m} isActive={m.id === activeMemberId} isParentViewer={isParent}
                 colors={colors} isDark={isDark}
-                onPress={() => setViewTarget(m)}
-                onLongPress={() => { if (isParent) setEditTarget(m); }}
-                onPinPress={() => setPinTarget(m)} />
+                onPress={() => openMember(m, 'view')}
+                onLongPress={() => { if (isParent) openMember(m, 'edit'); }}
+                onPinPress={() => openMember(m, 'pin')} />
             ))}
           </ScrollView>
 
@@ -1294,31 +1297,29 @@ export default function ProfileSettingsScreen() {
               <FamilyTreeView
                 members={members} activeMemberId={activeMemberId} isParent={isParent}
                 colors={colors} isDark={isDark}
-                onView={setViewTarget} onEdit={setEditTarget} onPin={setPinTarget}
+                onView={(m) => openMember(m, 'view')} onEdit={(m) => openMember(m, 'edit')} onPin={(m) => openMember(m, 'pin')}
               />
             </View>
           )}
         </View>
 
+        {/* Member sheet — ONE unified instance (view/edit/pin/confirmRemove
+            all live inside MemberProfileSheet's own `section` state)
+            instead of the old MemberProfileSheet/EditMemberModal/PinModal
+            trio of separately-mounted Modals. */}
         {viewTarget && (
-          <MemberProfileSheet member={viewTarget} siblings={members.map(m => m.name)}
+          <MemberProfileSheet member={viewTarget} siblings={members.map(m => m.name)} allMembers={members}
             visible onClose={() => setViewTarget(null)}
+            initialSection={initialSection}
             isParentViewer={isParent}
-            onEdit={(m) => { setViewTarget(null); setEditTarget(m); }}
-            onChangePin={(m) => { setViewTarget(null); setPinTarget(m); }}
-            colors={colors} isDark={isDark} />
-        )}
-        {editTarget && (
-          <EditMemberModal member={editTarget} allMembers={members} onClose={() => setEditTarget(null)}
-            onSave={saveMember} onLinkParent={(id, parentId) => updateMember(id, { linkedParentId: parentId })}
+            canChangePin={isParent || viewTarget.id === activeMemberId}
+            onSave={saveMember}
+            onLinkParent={(id, parentId) => updateMember(id, { linkedParentId: parentId })}
             onDelete={deleteFamilyMember}
-            onResetPin={(m) => { setEditTarget(null); setPinTarget(m); }}
+            onSavePin={savePin}
+            onResetPin={(m) => openMember(m, 'pin')}
             onResendInvite={(m) => resendInviteFor(m)}
             colors={colors} isDark={isDark} />
-        )}
-        {pinTarget && (
-          <PinModal member={pinTarget} onClose={() => setPinTarget(null)}
-            onSave={savePin} colors={colors} isDark={isDark} />
         )}
         {isParent && familyId && (
           <InviteMemberSheet visible={showInviteSheet} onClose={() => setShowInviteSheet(false)}

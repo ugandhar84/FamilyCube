@@ -30,6 +30,7 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
   const [receiptUri,       setReceiptUri]       = useState<string | null>(null);
   const [receiptAnalysis,  setReceiptAnalysis]  = useState<any | null>(null);
   const [analyzingReceipt, setAnalyzingReceipt] = useState(false);
+  const [startingRun,      setStartingRun]      = useState(false);
 
   const pickReceipt = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -547,8 +548,11 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
           {!isDone && (
             <View style={{ gap: 8, marginTop: 12 }}>
               {run.status === 'draft' && (
-                <Pressable onPress={() => startRun(run.id, memberId)} style={[sh.btn, { backgroundColor: colors.success }]}>
-                  <Text style={[sh.btnText, { color: colors.textInverse }]}>🛒 Start Shopping</Text>
+                <Pressable onPress={async () => { setStartingRun(true); await startRun(run.id, memberId); setStartingRun(false); }}
+                  disabled={startingRun} style={[sh.btn, { backgroundColor: colors.success, opacity: startingRun ? 0.7 : 1 }]}>
+                  {startingRun
+                    ? <ActivityIndicator color={colors.textInverse} size="small" />
+                    : <Text style={[sh.btnText, { color: colors.textInverse }]}>🛒 Start Shopping</Text>}
                 </Pressable>
               )}
 

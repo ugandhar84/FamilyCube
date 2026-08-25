@@ -59,7 +59,15 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
   const [detailItem,  setDetailItem]    = useState<GroceryItem | null>(null);
   const [showNewRun,  setShowNewRun]    = useState(false);
   const [showAiPanel, setShowAiPanel]   = useState(false);
-  const [selectedRun, setSelectedRun]  = useState<GroceryRun | null>(null);
+  // Was a frozen GroceryRun snapshot captured once at selection time — once
+  // startRun/completeRun updated the run in the store, RunDetailSheet kept
+  // rendering the stale status forever (button stayed "Start Shopping"
+  // with zero feedback after tapping it, live-reported). Track just the id
+  // and re-derive the live object from `runs` on every render instead, so
+  // the sheet always reflects the store's current state.
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const selectedRun = runs.find(r => r.id === selectedRunId) ?? null;
+  const setSelectedRun = (run: GroceryRun | null) => setSelectedRunId(run?.id ?? null);
   const [showReceiptScan, setShowReceiptScan] = useState(false);
 
   // Price comparison state

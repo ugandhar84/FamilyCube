@@ -655,6 +655,15 @@ function RootNavigator() {
         } else {
           router.push('/my-playdates' as any);
         }
+      } else if (data?.type === 'shopping_trip_started' || data?.type === 'store_proximity') {
+        // Family Cube grocery notifications (notify-shopping-trip-started
+        // edge function / storeGeofencing.ts's local proximity reminder) —
+        // fell through to the PawBond-only fallback below with no case of
+        // its own, landing on /(tabs)/notifications (a different app's
+        // screen) instead of the actual grocery list (live-reported: "it
+        // is going to somewhere"). VaultScreen.tsx's own openFeature deep-
+        // link is the real route into the Grocery tab.
+        router.push({ pathname: '/(tabs)/profile', params: { openFeature: 'grocery' } } as any);
       } else {
         // system, pet_found, sos, and truly unknown types
         console.log('[PawBond:Notification] Sending to notifications tab for type:', data?.type);

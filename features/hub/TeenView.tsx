@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, Pressable, Alert, ScrollView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  Bell, ShoppingCart, ClipboardList, Car, Fuel, BookOpen, CreditCard, MessageCircle,
+  Bell, ClipboardList, Car, Fuel, BookOpen, CreditCard, MessageCircle,
 } from 'lucide-react-native';
 import { TYPO } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
@@ -12,7 +12,6 @@ import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssi
 import { useFamilyStore } from '@/store/familyStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
-import { useGroceryStore } from '@/store/groceryStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import { useChatStore } from '@/store/chatStore';
 import type { FamilyMember } from '@/store/familyStore';
@@ -34,14 +33,13 @@ import { TeenCarDispatchSection } from './teen/TeenCarDispatchSection';
 import { TeenGasLogSection } from './teen/TeenGasLogSection';
 import { TeenTutorSection } from './teen/TeenTutorSection';
 import { TeenCashOutSection } from './teen/TeenCashOutSection';
-import { TeenGroceryListSection } from './teen/TeenGroceryListSection';
 import SmartTaskComposer from '../tasks/components/SmartTaskComposer';
 import { AddQuestModal } from '@/features/quests/components/AddQuestModal';
 import { AddEventModal } from '@/features/calendar/EventFormModal';
 
 const pad = { paddingHorizontal: 16, marginBottom: 4 } as const;
 
-type SheetKey = 'rides' | 'gas' | 'tutor' | 'grocery' | 'cashout' | 'history' | null;
+type SheetKey = 'rides' | 'gas' | 'tutor' | 'cashout' | 'history' | null;
 
 export function TeenView({ active, members, colors, isDark, activeTrips, composerVisible, onCloseComposer }: {
   active: FamilyMember; members: FamilyMember[];
@@ -74,9 +72,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
     !isEventSensitive(e) || canViewSensitiveEventDetail(e, 'teen', active.id, active.name));
   const { quests, submitQuest, claimQuest } = useQuestStore();
   const { startGrandparentQuest } = useChoreStore();
-  const { items: groceryItems, load: loadGrocery } = useGroceryStore();
   const familyId = (active as any).familyId ?? 'family-1';
-  useEffect(() => { loadGrocery(familyId); }, [familyId]);
   const { updateMember, awardCoins, clawbackCoins } = useFamilyStore();
   const { sendRequest, requests, cancelRequest, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
   const sendMessage = useChatStore(s => s.sendMessage);
@@ -416,11 +412,6 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
           />
         )}
         <TeenTile
-          label="Grocery List" sublabel="Family shopping list"
-          Icon={ShoppingCart} accent={BRAND.teal} badge={groceryItems.length}
-          onPress={() => setOpenSheet('grocery')} colors={colors} isDark={isDark}
-        />
-        <TeenTile
           label="My Requests" sublabel="History & status"
           Icon={ClipboardList} accent={BRAND.purple}
           onPress={() => setOpenSheet('history')} colors={colors} isDark={isDark}
@@ -450,11 +441,6 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
           onSend={sendTutorOffer} onCancel={cancelRequest}
           colors={colors} isDark={isDark}
         />
-      </TeenTileSheet>
-
-      <TeenTileSheet visible={openSheet === 'grocery'} onClose={() => setOpenSheet(null)}
-        title="Family Grocery List" accentColor={BRAND.teal} colors={colors} isDark={isDark}>
-        <TeenGroceryListSection items={groceryItems} colors={colors} isDark={isDark} />
       </TeenTileSheet>
 
       <TeenTileSheet visible={openSheet === 'cashout'} onClose={() => setOpenSheet(null)}

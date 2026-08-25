@@ -507,9 +507,38 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
     // partner would only find out by opening the app and checking
     // (live-reported: "do the partner get notification if the other
     // partner start shopping?").
-    supabase.functions.invoke('notify-shopping-trip-started', {
-      body: { run_id: runId, shopper_member_id: shopperId },
-    }).catch(() => {});
+    //
+    // Originally called a standalone notify-shopping-trip-started function
+    // that read push tokens from a `push_tokens` table — that table is a
+    // leftover from a different app sharing this Supabase project and is
+    // never actually populated for Family Cube; the real per-member token
+    // lives on members.expo_push_token, which family-notifier (the
+    // function every other Family Cube notification — quests, rewards,
+    // help requests, kid requests — already goes through) correctly reads.
+    // Reusing it here instead of a bespoke function, via its generic
+    // 'custom' type since 'shopping_trip_started' isn't one of its
+    // pre-built templates.
+    const run = get().runs.find(r => r.id === runId);
+    if (run?.familyId) {
+      supabase.from('members').select('id').eq('family_id', run.familyId).neq('id', shopperId)
+        .then(({ data: others }) => {
+          const memberIds = (others ?? []).map((m: any) => m.id);
+          if (memberIds.length === 0) return;
+          supabase.functions.invoke('family-notifier', {
+            body: {
+              type: 'custom',
+              memberIds,
+              familyId: run.familyId,
+              payload: {
+                title: `🛒 Shopping started at ${run.store}`,
+                body: `Add anything you need now — it'll show up on their list live.`,
+                data: { type: 'shopping_trip_started', run_id: runId, store: run.store },
+              },
+              persist: false,
+            },
+          }).catch(() => {});
+        });
+    }
   },
 
   completeRun: async (runId) => {

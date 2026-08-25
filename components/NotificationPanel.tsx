@@ -12,11 +12,14 @@ import {
   Modal, View, Text, TouchableOpacity, ScrollView, StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useTheme } from '@/lib/ThemeContext';
 import { RADIUS, TYPO } from '@/constants/theme';
 import { useNotifStore } from '@/store/notifStore';
 import { useAuthStore } from '@/store/authStore';
+import { useFamilyStore } from '@/store/familyStore';
+import FamilyAvatar from '@/components/FamilyAvatar';
 import type { NotificationLog } from '@/lib/types';
 
 // ── Per-type icon + routing ──────────────────────────────────────────────────
@@ -64,6 +67,12 @@ export function routeForNotification(type: string, data?: Record<string, any> | 
     case 'Hub':     return '/(tabs)';
     case 'Chat':    return '/(tabs)/chat';
     case 'Rewards': return '/(tabs)/store';
+    // Kid requests are reviewed inline on the parent Hub (ActionNeededSection),
+    // there's no dedicated Requests screen/tab to deep-link into further.
+    case 'Requests': return '/(tabs)';
+    // Geofence/battery alerts are about a member's location — same
+    // openFeature deep link FamilyRadarSection's own "view on map" already uses.
+    case 'Hearth':   return '/(tabs)/profile?openFeature=gps';
     default: break;
   }
   // Fall back on the notification `type` itself when no screen hint is set.
@@ -72,11 +81,37 @@ export function routeForNotification(type: string, data?: Record<string, any> | 
       || type === 'bonus_activated' || type === 'bonus_expiring') return '/(tabs)/quests';
   if (type === 'coins_awarded' || type === 'reward_redeemed' || type === 'reward_decision') return '/(tabs)/store';
   if (type === 'chat_message') return '/(tabs)/chat';
-  return null;
+  if (type.startsWith('kid_request')) return '/(tabs)';
+  if (type === 'geofence_exit' || type === 'geofence_arrive' || type === 'low_battery') {
+    return '/(tabs)/profile?openFeature=gps';
+  }
+  if (type === 'help_requested' || type === 'help_resolved') return '/(tabs)';
+  // Grocery trip/proximity alerts — no dedicated tab, deep-links into
+  // VaultScreen's Apps grid the same way app/_layout.tsx's push-tap
+  // listener does. Was missing here entirely, so tapping one of these rows
+  // from the in-app notification panel (as opposed to the OS push banner)
+  // silently did nothing (live-reported).
+  if (type === 'shopping_trip_started' || type === 'store_proximity') {
+    return '/(tabs)/profile?openFeature=grocery';
+  }
+  // No specific deep link known for this type — fall back to the Hub
+  // rather than doing nothing at all when tapped (live-reported: tapping a
+  // notification should always take you somewhere).
+  return '/(tabs)';
 }
 
 function routeFor(n: NotificationLog): string | null {
   return routeForNotification(n.type, n.data);
+}
+
+// Which member actually triggered this notification — no single consistent
+// field across family-notifier's payload shapes (some pass an id, some only
+// a name string), so this tries every id-shaped field family-notifier's
+// own templates are seen using, in the order most likely to be "the person
+// who did the thing" rather than "the person being told about it".
+function actorMemberId(n: NotificationLog): string | undefined {
+  const d = n.data ?? {};
+  return (d.fromMemberId ?? d.assigneeId ?? d.memberId ?? d.kidId ?? d.byId) as string | undefined;
 }
 
 function relativeTime(iso: string): string {
@@ -113,12 +148,18 @@ export default function NotificationPanel({ visible, onClose }: Props) {
   const markCachedRead = useNotifStore(s => s.markCachedRead);
   const decrement = useNotifStore(s => s.decrement);
   const userId = useAuthStore(s => s.session?.user?.id);
+  const members = useFamilyStore(s => s.members);
+  const siblingNames = useMemo(() => members.map(m => m.name), [members]);
 
   useEffect(() => {
     if (visible && userId) fetchAll(userId);
   }, [visible, userId]);
 
   const rows = useMemo(() => notifications ?? [], [notifications]);
+
+  const removeCachedNotifs = useNotifStore(s => s.removeCachedNotifs);
+  const setUnreadCount = useNotifStore(s => s.setUnreadCount);
+  const activeMemberId = useFamilyStore(s => s.activeMemberId);
 
   const handlePress = (n: NotificationLog) => {
     if (!n.read) {
@@ -132,6 +173,36 @@ export default function NotificationPanel({ visible, onClose }: Props) {
     const dest = routeFor(n);
     onClose();
     if (dest) router.push(dest as any);
+  };
+
+  const handleDeleteOne = (n: NotificationLog) => {
+    removeCachedNotifs([n.id]);
+    if (!n.read) decrement(1);
+    import('@/lib/db/notifications').then(({ deleteNotifications }) => {
+      deleteNotifications([n.id]).catch(() => {});
+    }).catch(() => {});
+  };
+
+  const handleDeleteAll = () => {
+    if (rows.length === 0) return;
+    const ids = rows.map(n => n.id);
+    removeCachedNotifs(ids);
+    setUnreadCount(0);
+    import('@/lib/db/notifications').then(({ deleteNotifications }) => {
+      deleteNotifications(ids).catch(() => {});
+    }).catch(() => {});
+  };
+
+  const handleMarkAllRead = () => {
+    const unreadIds = rows.filter(n => !n.read).map(n => n.id);
+    if (unreadIds.length === 0) return;
+    markCachedRead(unreadIds);
+    setUnreadCount(0);
+    if (activeMemberId) {
+      import('@/lib/db/notifications').then(({ markAllNotificationsRead }) => {
+        markAllNotificationsRead(activeMemberId).catch(() => {});
+      }).catch(() => {});
+    }
   };
 
   return (
@@ -156,7 +227,17 @@ export default function NotificationPanel({ visible, onClose }: Props) {
             }]}>
               {/* Header */}
               <View style={[s.header, { borderBottomColor: colors.border }]}>
-                <Text style={[s.title, { color: colors.textPrimary }]}>Notifications</Text>
+                <Text style={[s.title, { color: colors.textPrimary, flex: 1 }]}>Notifications</Text>
+                {rows.some(n => !n.read) && (
+                  <TouchableOpacity onPress={handleMarkAllRead} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }} style={{ marginRight: 14 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>Mark all read</Text>
+                  </TouchableOpacity>
+                )}
+                {rows.length > 0 && (
+                  <TouchableOpacity onPress={handleDeleteAll} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }} style={{ marginRight: 14 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: colors.danger }}>Clear all</Text>
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>Done</Text>
                 </TouchableOpacity>
@@ -177,16 +258,25 @@ export default function NotificationPanel({ visible, onClose }: Props) {
                     </Text>
                   </View>
                 ) : (
-                  rows.map(n => (
+                  rows.map(n => {
+                    const actor = members.find(m => m.id === actorMemberId(n));
+                    return (
                     <TouchableOpacity
                       key={n.id}
                       activeOpacity={0.7}
                       onPress={() => handlePress(n)}
                       style={[s.row, { borderBottomColor: colors.border }]}
                     >
-                      <View style={[s.iconWrap, { backgroundColor: isDark ? 'rgba(146,97,199,0.18)' : colors.primaryLight }]}>
-                        <Text style={{ fontSize: 17 }}>{iconFor(n.type)}</Text>
-                      </View>
+                      {actor ? (
+                        <FamilyAvatar
+                          name={actor.name} emoji={actor.emoji} avatarUrl={actor.avatarUrl}
+                          siblings={siblingNames} size={36} ringWidth={0}
+                        />
+                      ) : (
+                        <View style={[s.iconWrap, { backgroundColor: isDark ? 'rgba(146,97,199,0.18)' : colors.primaryLight }]}>
+                          <Text style={{ fontSize: 17 }}>{iconFor(n.type)}</Text>
+                        </View>
+                      )}
                       <View style={{ flex: 1 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                           <Text
@@ -207,8 +297,12 @@ export default function NotificationPanel({ visible, onClose }: Props) {
                           {relativeTime(n.created_at)}
                         </Text>
                       </View>
+                      <TouchableOpacity onPress={() => handleDeleteOne(n)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ paddingLeft: 8 }}>
+                        <Ionicons name="close" size={16} color={colors.textTertiary} />
+                      </TouchableOpacity>
                     </TouchableOpacity>
-                  ))
+                    );
+                  })
                 )}
               </ScrollView>
             </View>

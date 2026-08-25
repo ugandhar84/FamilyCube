@@ -6,9 +6,6 @@ import { StyleSheet, AppState, LogBox, Linking, Modal, View, Text, TouchableOpac
 import FamilyCubeSplashScreen from '@/components/FamilyCubeSplashScreen';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
-import { fetchFeedPage } from '@/lib/db/social';
-import { FEED_QUERY_KEY } from '@/lib/hooks/useFeed';
-import { getAppSettings } from '@/lib/db/appSettings';
 import { updateStreak, awardCoins } from '@/lib/db/rewards';
 import { isFeatureEnabled } from '@/lib/featureFlags';
 import { Stack, router, usePathname } from 'expo-router';
@@ -17,7 +14,6 @@ import AppAlert from '@/components/AppAlert';
 import AppToast from '@/components/AppToast';
 import OfflineBanner from '@/components/OfflineBanner';
 import * as SplashScreen from 'expo-splash-screen';
-import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
 import { ThemeProvider, useTheme } from '@/lib/ThemeContext';
 import { useAuthStore, invalidateProfileCache } from '@/store/authStore';
@@ -75,77 +71,6 @@ LogBox.ignoreLogs([
 ]);
 
 const TAG = 'RootLayout';
-
-// Auto-sync user location to all their pets on login
-async function syncLocationToPets(userId: string) {
-  try {
-    console.log('[PawBond:LocationSync] Starting location sync for user', userId);
-
-    // Check existing permission before prompting — avoid re-requesting on every login
-    let { status } = await Location.getForegroundPermissionsAsync();
-    console.log('[PawBond:LocationSync] Current permission status:', status);
-
-    if (status === 'denied') {
-      console.warn('[PawBond:LocationSync] Location permission previously denied — skipping');
-      return;
-    }
-
-    if (status !== 'granted') {
-      const result = await Location.requestForegroundPermissionsAsync();
-      status = result.status;
-      console.log('[PawBond:LocationSync] Permission after request:', status);
-    }
-
-    if (status !== 'granted') {
-      console.warn('[PawBond:LocationSync] Location permission not granted');
-      return;
-    }
-
-    console.log('[PawBond:LocationSync] Requesting current position...');
-    // Get current position with high accuracy (street level)
-    const pos = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.High,
-      timeInterval: 500,
-      distanceInterval: 0,
-    });
-
-    const { latitude: lat, longitude: lon } = pos.coords;
-    const now = new Date().toISOString();
-
-    console.log('[PawBond:LocationSync] Got coordinates:', { lat, lon });
-    console.log('[PawBond:LocationSync] Updating all pets...');
-
-    // Refresh coordinates only. Do NOT flip location_shared — discovery
-    // visibility is the user's explicit choice, controlled from settings.
-    const { data, error } = await supabase
-      .from('pets')
-      .update({
-        location_lat: lat,
-        location_lng: lon,
-        location_updated_at: now,
-      })
-      .eq('owner_id', userId)
-      .select('id, name, location_lat, location_lng');
-
-    if (error) {
-      dbgWarn(TAG, 'Failed to sync location', error.message);
-    } else {
-      console.log('[PawBond:LocationSync] ✅ Synced location to', data?.length ?? 0, 'pets', { lat, lon });
-      dbg(TAG, 'Location synced', { pets: data?.length, lat, lon });
-    }
-
-    // Also upsert user_locations — used by send-lost-alert / send-found-alert
-    // to find nearby users to notify. Without this the lost alert always finds
-    // zero recipients because those edge functions query user_locations, not pets.
-    await supabase.from('user_locations').upsert(
-      { user_id: userId, lat, lng: lon, updated_at: now },
-      { onConflict: 'user_id' }
-    );
-  } catch (err: any) {
-    console.error('[PawBond:LocationSync] Exception:', err?.message);
-    dbgWarn(TAG, 'syncLocationToPets exception', err?.message);
-  }
-}
 
 function RootNavigator() {
   useWidgetSync();
@@ -220,23 +145,6 @@ function RootNavigator() {
           updateStreak(session.user.id).catch(() => {});
           awardCoins(session.user.id, 'daily_login').catch(() => {});
         }
-        // Prefetch first feed page so Connect tab is instant on first visit.
-        queryClient.prefetchInfiniteQuery({
-          queryKey: FEED_QUERY_KEY,
-          queryFn: ({ pageParam }) => fetchFeedPage(pageParam as number),
-          initialPageParam: 0,
-        }).catch(() => {});
-        // Batch-prefetch all feature flags in one query — seeds the COLD cache
-        // so the 5 individual useFeatureFlag calls on the social screen are instant.
-        getAppSettings([
-          'media_fullscreen_download_enabled', 'video_posts_enabled',
-          'events_enabled', 'connect_feed_enabled', 'connect_playdates_chat_enabled',
-          'sos_enabled', 'connect_family_enabled',
-        ]).then(settings => {
-          Object.entries(settings).forEach(([key, value]) => {
-            queryClient.setQueryData(['app_settings', key], value);
-          });
-        }).catch(() => {});
       }
       // Hold native splash until auth + profile check finishes. The overlay
       // calls hideAsync once painted, then hideSplashThen fades it out.
@@ -310,11 +218,6 @@ function RootNavigator() {
         initRevenueCat(session.user.id);
         useSubscriptionStore.getState().loadSubscription(session.user.id).catch(() => {});
         useNotifStore.getState().fetchAll(session.user.id).catch(() => {});
-        queryClient.prefetchInfiniteQuery({
-          queryKey: FEED_QUERY_KEY,
-          queryFn: ({ pageParam }) => fetchFeedPage(pageParam as number),
-          initialPageParam: 0,
-        }).catch(() => {});
 
         savePushToken(session.user.id).catch((e) =>
           dbgWarn(TAG, 'savePushToken failed', e?.message)
@@ -360,11 +263,6 @@ function RootNavigator() {
             if (en) saveBiometricSession(session.access_token, session.refresh_token).catch(() => {});
           }).catch(() => {});
         }
-
-        // Auto-sync location to all pets on login
-        syncLocationToPets(session.user.id).catch((e) =>
-          dbgWarn(TAG, 'syncLocationToPets failed', e?.message)
-        );
 
         // During initial app boot, getSession handles the first navigation.
         // Only navigate from SIGNED_IN after boot is done (i.e. user signed in from the login screen).
@@ -457,7 +355,7 @@ function RootNavigator() {
     const handleDeepLink = ({ url }: { url: string }) => {
       console.log('[PawBond:DeepLink] Received:', url);
       // Widget tap — open home tab (only after boot completes)
-      if (url === 'pawbond:///' || url === 'pawbond://' || url === 'pawbond://home') {
+      if (url === 'familycube:///' || url === 'familycube://' || url === 'familycube://home') {
         if (bootCompleted.current) {
           const { session: activeSession } = useAuthStore.getState();
           if (activeSession) {
@@ -472,13 +370,7 @@ function RootNavigator() {
         }
         return;
       }
-      const inviteMatch = url.match(/^pawbond:\/\/invite\/([^?#]+)/);
-      if (inviteMatch) {
-        console.log('[PawBond:DeepLink] Processing invite:', inviteMatch[1]);
-        router.push(`/invite/${inviteMatch[1]}`);
-        return;
-      }
-      if (!url.startsWith('pawbond://auth/callback') && !url.includes('/--/auth/callback') && !url.includes('auth/callback')) {
+      if (!url.startsWith('familycube://auth/callback') && !url.startsWith('pawbond://auth/callback') && !url.includes('/--/auth/callback') && !url.includes('auth/callback')) {
         console.log('[PawBond:DeepLink] Not an auth callback, ignoring');
         return;
       }
@@ -534,9 +426,7 @@ function RootNavigator() {
       // the destination screen (e.g. Care > Today) shows all pets regardless.
       const switchPetIfSingle = (data: any) => switchPet(data?.pet_id);
 
-      if (data?.type === 'lost_alert') {
-        router.push('/(tabs)/sos');
-      } else if (data?.type === 'appointment_complete_prompt' && data?.appointment_id) {
+      if (data?.type === 'appointment_complete_prompt' && data?.appointment_id) {
         switchPet(data.pet_id);
         showAlert(
           'Mark appointment complete?',
@@ -590,42 +480,13 @@ function RootNavigator() {
       } else if (data?.type === 'appointment_reminder') {
         switchPet(data?.pet_id);
         router.push('/health/appointments');
-      } else if (data?.type === 'invite' && data?.invitation_token) {
-        router.push(`/invite/${data.invitation_token}`);
-      } else if (
-        data?.type === 'playdate_request' || data?.type === 'playdate_resend' ||
-        data?.type === 'playdate_accepted' ||
-        data?.type === 'playdate_withdrawal' || data?.type === 'playdate_declined' ||
-        data?.type === 'playdate_reminder' || data?.type === 'playdate_message' ||
-        data?.type === 'playdate_proposal' || data?.type === 'playdate_proposal_response' ||
-        data?.type === 'playdate_counter_proposal' ||
-        data?.type === 'playdate_confirmed' || data?.type === 'playdate_cancelled' ||
-        data?.type === 'chat_message'
-      ) {
-        console.log('[PawBond:Notification] Playdate notification:', data?.type);
-        // Switch to the relevant pet so My Playdates shows the right data
-        if (data?.pet_id) switchPet(data.pet_id);
-        if (data?.chat_id) {
-          router.push(`/playdate-chat/${data.chat_id}`);
-        } else if (data?.request_id) {
-          router.push({ pathname: '/playdate/[id]', params: { id: data.request_id } } as any);
-        } else {
-          router.push('/my-playdates' as any);
-        }
-      } else if (data?.type === 'event_rsvp' && data?.event_id) {
-        router.push(`/event/${data.event_id}`);
-      } else if (['post_like', 'post_comment', 'post_comment_reply', 'mention', 'new_post'].includes(data?.type)) {
-        const openComments = ['post_comment', 'post_comment_reply', 'mention'].includes(data?.type) ? '1' : '0';
-        if (data?.post_id) {
-          router.push({ pathname: '/post/[id]', params: { id: data.post_id, open_comments: openComments } } as any);
-        } else {
-          router.push('/(tabs)/social-notifications' as any);
-        }
+      } else if (data?.type === 'chat_message') {
+        router.push('/(tabs)/chat' as any);
       } else if (data?.type === 'follow') {
         if (data?.actor_pet_id) {
           router.push({ pathname: '/pet/[id]', params: { id: data.actor_pet_id } } as any);
         } else {
-          router.push('/(tabs)/social-notifications' as any);
+          router.push('/(tabs)/notifications' as any);
         }
       } else if (['medication_reminder', 'med_missed_dose', 'med_monthly_nudge', 'med_monthly_followup'].includes(data?.type)) {
         switchPet(data?.pet_id);
@@ -635,26 +496,6 @@ function RootNavigator() {
         router.push({ pathname: '/(tabs)/care', params: { section: 'notes' } } as any);
       } else if (data?.type === 'daily_tip') {
         router.push({ pathname: '/(tabs)/care', params: { section: 'today' } } as any);
-      } else if (data?.type === 'lost_owner_checkin') {
-        router.push('/(tabs)/sos' as any);
-      } else if (data?.type === 'family_update') {
-        router.push({ pathname: '/(tabs)/connect', params: { tab: 'Family' } } as any);
-      } else if (data?.type === 'invite' && !data?.invitation_token) {
-        router.push('/(tabs)/notifications' as any);
-      } else if (
-        data?.type === 'playdate_rescheduled' ||
-        data?.type === 'playdate_expired' ||
-        data?.type === 'playdate_completion' ||
-        data?.type === 'playdate_chat_message'
-      ) {
-        if (data?.pet_id) switchPet(data.pet_id);
-        if (data?.chat_id) {
-          router.push(`/playdate-chat/${data.chat_id}`);
-        } else if (data?.request_id) {
-          router.push({ pathname: '/playdate/[id]', params: { id: data.request_id } } as any);
-        } else {
-          router.push('/my-playdates' as any);
-        }
       } else if (data?.type === 'shopping_trip_started' || data?.type === 'store_proximity') {
         // Family Cube grocery notifications (notify-shopping-trip-started
         // edge function / storeGeofencing.ts's local proximity reminder) —
@@ -665,8 +506,8 @@ function RootNavigator() {
         // link is the real route into the Grocery tab.
         router.push({ pathname: '/(tabs)/profile', params: { openFeature: 'grocery' } } as any);
       } else {
-        // system, pet_found, sos, and truly unknown types
-        console.log('[PawBond:Notification] Sending to notifications tab for type:', data?.type);
+        // system, pet_found, and truly unknown types
+        console.log('[Notification] Sending to notifications tab for type:', data?.type);
         router.push('/(tabs)/notifications' as any);
       }
     });
@@ -705,9 +546,12 @@ function RootNavigator() {
 
   // In-app notification toast — light, top-anchored, auto-dismissing card.
   // Fed by two independent sources below:
-  //   1. The `global-notif-${rtUserId}` realtime channel (DB INSERT into
-  //      notification_logs) — has the full row (type/data), so tapping it
-  //      can route to the right screen.
+  //   1. The `global-notif-${activeMemberId}` realtime channel (DB INSERT
+  //      into `notifications`, member_id-scoped — the table family-notifier
+  //      actually writes to; notification_logs has zero real writers and
+  //      was the wrong table, live-reported as "i didn't see anything under
+  //      the notification screen") — has the full row (type/data), so
+  //      tapping it can route to the right screen.
   //   2. The OS foreground push listener — fires purely off the push
   //      payload (title/body only, no guaranteed `data`), for the rare case
   //      a push arrives without (or before) its DB row being visible here.
@@ -735,22 +579,28 @@ function RootNavigator() {
     });
   };
 
+  const activeMemberIdForNotifs = useFamilyStore(s => s.activeMemberId);
   useEffect(() => {
-    if (!rtUserId) return;
+    if (!activeMemberIdForNotifs) return;
     const ch = supabase
-      .channel(`global-notif-${rtUserId}`)
+      .channel(`global-notif-${activeMemberIdForNotifs}`)
       .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notification_logs', filter: `user_id=eq.${rtUserId}` },
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `member_id=eq.${activeMemberIdForNotifs}` },
         (payload) => {
           const row = payload.new as any;
           useNotifStore.getState().increment();
-          useNotifStore.getState().prependNotification(row);
-          showInAppToast({ title: row?.title ?? 'New notification', body: row?.body, type: row?.type, data: row?.data });
+          useNotifStore.getState().prependNotification({
+            id: row.id, user_id: row.member_id ?? '', type: row.type,
+            title: row.title, body: row.body ?? row.message ?? '',
+            data: row.data ?? row.meta ?? {}, read: row.read ?? false,
+            created_at: row.created_at ?? row.timestamp,
+          });
+          showInAppToast({ title: row?.title ?? 'New notification', body: row?.body ?? row?.message, type: row?.type, data: row?.data ?? row?.meta });
         },
       )
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [rtUserId]);
+  }, [activeMemberIdForNotifs]);
 
   // Chat unread badge — global, app-wide, not tied to the Chat tab being
   // open. Previously the bottom-nav Chat dot only ever reflected whatever
@@ -951,17 +801,12 @@ function RootNavigator() {
         <Stack.Screen name="onboarding/index" options={{ animation: 'fade' }} />
         <Stack.Screen name="onboarding/terms" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="onboarding/add-pet" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="onboarding/ai-consent" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="pet/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="pet/edit" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="invite/[token]" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="vet/clinics" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="health/appointments" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="health/weights" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="profile/edit" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="pet/card" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="playdate/[id]" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="event/[id]" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="hub/help-history" options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="call-alert" options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'fade', gestureEnabled: false }} />
       </Stack>

@@ -70,6 +70,38 @@ interface NotifShape {
   data?: Record<string, unknown>;
 }
 
+// A kid_request's `detail` field is sometimes an internal-only encoded
+// string (KidModals.tsx's encodeGroceryRequest/encodeRideLate — a
+// "PREFIX:{...json...}" convention used to smuggle structured data through
+// one plain-text column), never meant to reach a human directly. Passing it
+// straight through as the push/notification body showed the raw prefix +
+// JSON verbatim (live-reported: "i see the grocery list is raw json").
+// Mirrors the decode logic in features/hub/KidModals.tsx (can't import a
+// .tsx file from this Deno function, so it's duplicated narrowly here).
+function decodeRequestDetail(detail: string | undefined): string {
+  if (!detail) return '';
+  if (detail.startsWith('GROCERY_REQUEST:')) {
+    try {
+      const p = JSON.parse(detail.slice('GROCERY_REQUEST:'.length));
+      return `Grocery request: ${p.name}${p.qty ? ` (${p.qty})` : ''}`;
+    } catch { /* fall through to raw detail below */ }
+  }
+  if (detail.startsWith('SUPPLIES_REQUEST:')) {
+    try {
+      const p = JSON.parse(detail.slice('SUPPLIES_REQUEST:'.length));
+      const names = Array.isArray(p.items) ? p.items.map((i: any) => i.name ?? i).join(', ') : '';
+      return `Supplies request: ${names}`;
+    } catch { /* fall through */ }
+  }
+  if (detail.startsWith('RIDE_LATE:')) {
+    try {
+      const p = JSON.parse(detail.slice('RIDE_LATE:'.length));
+      return `${p.driver ?? 'Your ride'} hasn't arrived for "${p.title ?? 'pickup'}"`;
+    } catch { /* fall through */ }
+  }
+  return detail;
+}
+
 function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifShape {
   const p = payload;
   switch (type) {
@@ -256,9 +288,9 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
       };
       return {
         title: `${typeEmoji[p.requestType as string] ?? '📣'} ${urgencyPrefix}Kid Request`,
-        body: p.detail as string,
+        body: decodeRequestDetail(p.detail as string),
         sound: 'default',
-        data: { screen: 'Requests', requestId: p.requestId },
+        data: { screen: 'Requests', requestId: p.requestId, fromMemberId: p.fromMemberId },
       };
     }
     case 'kid_request_decision':
@@ -267,7 +299,7 @@ function buildMessage(type: NotifType, payload: Record<string, unknown>): NotifS
         body: p.decision === 'approved'
           ? `Your request was approved!${p.note ? ` "${p.note}"` : ''}`
           : `Your request was declined${p.note ? `: ${p.note}` : ''}`,
-        data: { screen: 'Requests', requestId: p.requestId },
+        data: { screen: 'Requests', requestId: p.requestId, fromMemberId: p.fromMemberId },
       };
 
     case 'custom':
@@ -340,6 +372,7 @@ serve(async (req) => {
       familyId,   // string  — used for DB lookup + notification persistence
       payload,    // Record<string, unknown> — template variables
       persist,    // bool — whether to write to notifications table (default true)
+      excludeMemberId, // string — the member whose own action triggered this; never notify them about it
     } = await req.json() as {
       type: NotifType;
       tokens?: string[];
@@ -347,6 +380,7 @@ serve(async (req) => {
       familyId?: string;
       payload: Record<string, unknown>;
       persist?: boolean;
+      excludeMemberId?: string;
     };
 
     const supabase = createClient(
@@ -392,6 +426,15 @@ serve(async (req) => {
       }
     }
 
+    // Never notify the member whose own action triggered this — applies
+    // regardless of whether recipients came from explicit memberIds/tokens
+    // or one of the auto-route branches above, so a caller only ever has to
+    // pass excludeMemberId once instead of remembering to filter it out of
+    // every possible recipient list itself.
+    if (excludeMemberId) {
+      resolvedMemberIds = resolvedMemberIds.filter(id => id !== excludeMemberId);
+    }
+
     if (!pushTokens.length && resolvedMemberIds.length) {
       const { data: members } = await supabase
         .from('members')
@@ -399,6 +442,17 @@ serve(async (req) => {
         .in('id', resolvedMemberIds)
         .not('expo_push_token', 'is', null);
       pushTokens = (members ?? []).map((m: any) => m.expo_push_token).filter(Boolean);
+    } else if (excludeMemberId && tokens?.length) {
+      // Caller passed raw tokens directly (rare path) — can't map a token
+      // back to a member id here to exclude by id, so exclude by re-deriving
+      // from members instead when this happens; in practice every current
+      // caller passes memberIds, not raw tokens, so this is a defensive
+      // fallback rather than a hit path.
+      const { data: excludedMember } = await supabase
+        .from('members').select('expo_push_token').eq('id', excludeMemberId).single();
+      if (excludedMember?.expo_push_token) {
+        pushTokens = pushTokens.filter(t => t !== excludedMember.expo_push_token);
+      }
     }
 
     // Build the notification shape from type + payload
@@ -411,7 +465,10 @@ serve(async (req) => {
 
     // Persist to notifications table (so in-app bell shows it even if push fails)
     if (persist !== false && familyId) {
-      const rows = (resolvedMemberIds.length ? resolvedMemberIds : [payload.memberId as string]).filter(Boolean).map((memberId: string) => ({
+      const persistIds = (resolvedMemberIds.length ? resolvedMemberIds : [payload.memberId as string])
+        .filter(Boolean)
+        .filter((id: string) => id !== excludeMemberId);
+      const rows = persistIds.map((memberId: string) => ({
         family_id:     familyId,
         member_id:     memberId,
         target_member: memberId,

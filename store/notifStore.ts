@@ -2,6 +2,29 @@ import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import * as Notifications from 'expo-notifications';
 import type { NotificationLog } from '@/lib/types';
+import { useFamilyStore } from '@/store/familyStore';
+
+// Was querying notification_logs by user_id — that table has zero writers
+// for real Family Cube notifications (confirmed: always empty). Every real
+// quest/chore/reward/help/kid-request/grocery notification is actually
+// written by family-notifier to the separate `notifications` table, keyed
+// by member_id, not user_id — the panel/badge was reading a permanently
+// empty table the whole time (live-reported: "i didn't see anything under
+// the notification screen"). Keeps the external fetchAll(userId)/
+// fetchUnreadCount(userId) signatures unchanged (many call sites) — userId
+// is now unused internally, the active member id is resolved here instead.
+function rowToNotificationLog(r: any): NotificationLog {
+  return {
+    id: r.id,
+    user_id: r.member_id ?? '',
+    type: r.type,
+    title: r.title,
+    body: r.body ?? r.message ?? '',
+    data: r.data ?? r.meta ?? {},
+    read: r.read ?? false,
+    created_at: r.created_at ?? r.timestamp,
+  };
+}
 
 
 interface NotifState {
@@ -43,33 +66,37 @@ export const useNotifStore = create<NotifState>((set, get) => ({
 
   reset: () => set({ unreadCount: 0, notifications: null }),
 
-  fetchUnreadCount: async (userId: string) => {
+  fetchUnreadCount: async (_userId: string) => {
+    const memberId = useFamilyStore.getState().activeMemberId;
+    if (!memberId) { set({ unreadCount: 0 }); return; }
     const { count } = await supabase
-      .from('notification_logs')
+      .from('notifications')
       .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
+      .eq('member_id', memberId)
       .eq('read', false);
     set({ unreadCount: count ?? 0 });
   },
 
-  fetchAll: async (userId: string) => {
+  fetchAll: async (_userId: string) => {
+    const memberId = useFamilyStore.getState().activeMemberId;
+    if (!memberId) { set({ unreadCount: 0, notifications: [] }); return; }
     const [countRes, dataRes] = await Promise.all([
       supabase
-        .from('notification_logs')
+        .from('notifications')
         .select('id', { count: 'exact', head: true })
-        .eq('user_id', userId)
+        .eq('member_id', memberId)
         .eq('read', false),
       supabase
-        .from('notification_logs')
-        .select('id,user_id,type,title,body,data,read,created_at')
-        .eq('user_id', userId)
+        .from('notifications')
+        .select('id,member_id,type,title,body,message,data,meta,read,created_at,timestamp')
+        .eq('member_id', memberId)
         .order('created_at', { ascending: false })
         .limit(100),
     ]);
     const unreadCount = countRes.count ?? 0;
     set({
       unreadCount,
-      notifications: (dataRes.data as NotificationLog[]) ?? [],
+      notifications: (dataRes.data ?? []).map(rowToNotificationLog),
     });
     Notifications.setBadgeCountAsync(unreadCount).catch(() => {});
   },

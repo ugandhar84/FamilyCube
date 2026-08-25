@@ -49,10 +49,11 @@ const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']>
 // notification taps, Ask Cube proposal cards, etc.) keeps resolving instead
 // of crashing, until those call sites are migrated to '/(tabs)/tasks'.
 const TABS_DEFAULT = [
-  { name: 'index',    label: 'Hub'   },
-  { name: 'tasks',    label: 'Tasks' },
-  { name: 'chat',     label: 'Chat'  },
-  { name: 'profile',  label: 'Apps'  },
+  { name: 'index',    label: 'Hub'    },
+  { name: 'tasks',    label: 'Tasks'  },
+  { name: 'chat',     label: 'Chat'   },
+  { name: 'gps',      label: 'FindFam' },
+  { name: 'profile',  label: 'Apps'   },
 ] as const;
 const TABS_SENIOR = [
   { name: 'index',    label: 'Hub'      },
@@ -60,18 +61,8 @@ const TABS_SENIOR = [
   { name: 'chat',     label: 'Chat'     },
   { name: 'memories', label: 'Memories' },
 ] as const;
-// Parent gets a 5th slot — checking where family members are is frequent/
-// time-sensitive enough to want one tap, not a lookup buried in Apps
-// (previously only reachable via Profile's Apps grid).
-const TABS_PARENT = [
-  { name: 'index',    label: 'Hub'    },
-  { name: 'tasks',    label: 'Tasks'  },
-  { name: 'chat',     label: 'Chat'   },
-  { name: 'gps',      label: 'FindFam' },
-  { name: 'profile',  label: 'Apps'   },
-] as const;
 
-type TabName = typeof TABS_DEFAULT[number]['name'] | typeof TABS_SENIOR[number]['name'] | typeof TABS_PARENT[number]['name'];
+type TabName = typeof TABS_DEFAULT[number]['name'] | typeof TABS_SENIOR[number]['name'];
 
 // ── Animated tab icon — spring bounce on selection ────────────────────────────
 function AnimatedTabIcon({ name, focused, activeColor, inactiveColor }: {
@@ -132,7 +123,10 @@ function CustomTabBar({ state, navigation }: any) {
   const { members, activeMemberId } = useFamilyStore();
   const activeRole = members.find(m => m.id === activeMemberId)?.role;
   const isSenior = activeRole === 'senior';
-  const TABS = isSenior ? TABS_SENIOR : activeRole === 'parent' ? TABS_PARENT : TABS_DEFAULT;
+  // FindFam (gps) is now in TABS_DEFAULT for everyone except senior
+  // (who gets Memories in that slot instead) — kid/teen/parent all share
+  // the same bar shape now that kids also get direct FindFam access.
+  const TABS = isSenior ? TABS_SENIOR : TABS_DEFAULT;
 
   const activeColor   = colors.primary;
   const inactiveColor = colors.tabInactive;
@@ -322,10 +316,11 @@ export default function TabLayout() {
         <Tabs.Screen name="tasks"    />
         <Tabs.Screen name="chat"     />
         <Tabs.Screen name="store"    options={{ href: null }} />
-        {/* Parent-only 5th tab (TABS_PARENT) — registered without href:null
-            like every other visible tab; role-based visibility is handled
-            entirely by which TABS array CustomTabBar renders, same pattern
-            already used for 'memories' (senior-only). */}
+        {/* FindFam — in TABS_DEFAULT for everyone except senior (Memories
+            takes that slot instead); registered without href:null like
+            every other visible tab, same pattern already used for
+            'memories' (senior-only) — role-based visibility is handled
+            entirely by which TABS array CustomTabBar renders. */}
         <Tabs.Screen name="gps"      />
         <Tabs.Screen name="profile"  />
         {/* Superseded by 'tasks' (merged Quests + Schedule) — kept registered,

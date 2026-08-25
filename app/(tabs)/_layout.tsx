@@ -16,7 +16,7 @@ import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useHelpStore } from '@/store/helpStore';
 import { useUIStore } from '@/store/uiStore';
-import { Sparkles, Plus } from 'lucide-react-native';
+import { Sparkles, Plus, Home, ListChecks, MessageCircle } from 'lucide-react-native';
 import AskCubeChat from '@/components/AskCubeChat';
 
 // ── Tab icon name map ─────────────────────────────────────────────────────────
@@ -26,6 +26,7 @@ const ICON_OUTLINE: Record<string, React.ComponentProps<typeof Ionicons>['name']
   chat:     'chatbubbles-outline',
   profile:  'apps-outline',
   memories: 'images-outline',
+  gps:      'radio-outline',
 };
 const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
   index:    'grid',
@@ -33,6 +34,7 @@ const ICON_FILLED: Record<string, React.ComponentProps<typeof Ionicons>['name']>
   chat:     'chatbubbles',
   profile:  'apps',
   memories: 'images',
+  gps:      'radio',
 };
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
@@ -58,8 +60,18 @@ const TABS_SENIOR = [
   { name: 'chat',     label: 'Chat'     },
   { name: 'memories', label: 'Memories' },
 ] as const;
+// Parent gets a 5th slot — checking where family members are is frequent/
+// time-sensitive enough to want one tap, not a lookup buried in Apps
+// (previously only reachable via Profile's Apps grid).
+const TABS_PARENT = [
+  { name: 'index',    label: 'Hub'    },
+  { name: 'tasks',    label: 'Tasks'  },
+  { name: 'chat',     label: 'Chat'   },
+  { name: 'gps',      label: 'FindFam' },
+  { name: 'profile',  label: 'Apps'   },
+] as const;
 
-type TabName = typeof TABS_DEFAULT[number]['name'] | typeof TABS_SENIOR[number]['name'];
+type TabName = typeof TABS_DEFAULT[number]['name'] | typeof TABS_SENIOR[number]['name'] | typeof TABS_PARENT[number]['name'];
 
 // ── Animated tab icon — spring bounce on selection ────────────────────────────
 function AnimatedTabIcon({ name, focused, activeColor, inactiveColor }: {
@@ -78,8 +90,24 @@ function AnimatedTabIcon({ name, focused, activeColor, inactiveColor }: {
     prevFocused.current = focused;
   }, [focused]);
 
+  const color = focused ? activeColor : inactiveColor;
+
+  // Hub/Tasks/Chat use lucide icons instead of their Ionicons equivalents —
+  // deliberate per-tab requests, not a library-wide switch; gps/profile/
+  // memories stay on Ionicons (ICON_OUTLINE/ICON_FILLED) below.
+  const LUCIDE_ICONS: Partial<Record<TabName, typeof Home>> = {
+    index: Home, tasks: ListChecks, chat: MessageCircle,
+  };
+  const LucideIcon = LUCIDE_ICONS[name];
+  if (LucideIcon) {
+    return (
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <LucideIcon size={22} color={color} strokeWidth={focused ? 2.4 : 2} fill={focused ? color : 'none'} fillOpacity={focused ? 0.15 : 0} />
+      </Animated.View>
+    );
+  }
+
   const iconName = focused ? ICON_FILLED[name] : ICON_OUTLINE[name];
-  const color    = focused ? activeColor : inactiveColor;
 
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
@@ -102,8 +130,9 @@ function CustomTabBar({ state, navigation }: any) {
   const hasUnreadChat = Object.values(chatUnreadCounts).some(n => n > 0);
   const lastNavTime = useRef(0);
   const { members, activeMemberId } = useFamilyStore();
-  const isSenior = members.find(m => m.id === activeMemberId)?.role === 'senior';
-  const TABS = isSenior ? TABS_SENIOR : TABS_DEFAULT;
+  const activeRole = members.find(m => m.id === activeMemberId)?.role;
+  const isSenior = activeRole === 'senior';
+  const TABS = isSenior ? TABS_SENIOR : activeRole === 'parent' ? TABS_PARENT : TABS_DEFAULT;
 
   const activeColor   = colors.primary;
   const inactiveColor = colors.tabInactive;
@@ -293,6 +322,11 @@ export default function TabLayout() {
         <Tabs.Screen name="tasks"    />
         <Tabs.Screen name="chat"     />
         <Tabs.Screen name="store"    options={{ href: null }} />
+        {/* Parent-only 5th tab (TABS_PARENT) — registered without href:null
+            like every other visible tab; role-based visibility is handled
+            entirely by which TABS array CustomTabBar renders, same pattern
+            already used for 'memories' (senior-only). */}
+        <Tabs.Screen name="gps"      />
         <Tabs.Screen name="profile"  />
         {/* Superseded by 'tasks' (merged Quests + Schedule) — kept registered,
             not in the visible bar, so old deep links still resolve. */}

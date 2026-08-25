@@ -21,7 +21,6 @@ import type { ChoreTask } from '@/store/choreStore';
 
 import { ParentQuickActions } from './parent/ParentQuickActions';
 import { TemporaryApproverCard } from './parent/TemporaryApproverCard';
-import { FamilyRadarSection } from './parent/FamilyRadarSection';
 import { EnRouteBanner } from './parent/EnRouteBanner';
 import { ActionNeededSection } from './parent/ActionNeededSection';
 import { GpCanHelpSection } from './parent/GpCanHelpSection';
@@ -665,9 +664,11 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
         <PickupRadarStatus key={trip.tripId} colors={colors} isDark={isDark} activeTrip={trip} />
       ))}
 
-      <View style={pad}>
-        <FamilyRadarSection members={members} colors={colors} isDark={isDark} />
-      </View>
+      {/* Family Radar hidden from the Hub — now its own top-level tab
+          (FindFam, app/(tabs)/gps.tsx) for parents specifically, so it no
+          longer needs a permanent slot on the Hub too. Component/data left
+          fully intact, just not rendered here — one-line revert if ever
+          wanted back alongside the tab. */}
 
       {/* Family Leaderboard (HouseholdSnapshotCard) hidden from the Hub per
           explicit request — component/data left fully intact, just not

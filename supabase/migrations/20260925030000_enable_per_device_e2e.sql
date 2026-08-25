@@ -1,0 +1,14 @@
+-- Turns on per_device_e2e: real per-device public-key (X25519 ECDH +
+-- AES-256-GCM) encryption for both chat and location address text, instead
+-- of the legacy single family-shared-passcode-wrapped key
+-- (encryptMessage/decryptMessage in lib/chatCrypto.ts). Both envelopes were
+-- already fully built (lib/chatCrypto.ts's wrap/unwrap functions,
+-- lib/locationCrypto.ts, device_keys/member_location_keys tables) — just
+-- never flipped on. Per explicit request: encrypt each message/location
+-- update individually for every recipient device's own public key, not one
+-- shared secret everyone holds.
+--
+-- Requires the member_location_keys UPDATE policy from
+-- 20260925020000_member_location_keys_update_policy.sql (already applied)
+-- so re-wrapping an existing device's key doesn't hit RLS.
+update feature_flags set enabled = true, updated_at = now() where key = 'per_device_e2e';

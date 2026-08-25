@@ -42,7 +42,12 @@ const DEFAULTS: Record<FeatureFlagKey, boolean> = {
   seasonal_events:     false,
   rewards_marketplace: false,
   sponsored_ads:       true,
-  per_device_e2e:      false,
+  // Real per-device public-key (X25519 ECDH) encryption for chat + location,
+  // replacing the legacy shared-family-passcode-key scheme — both envelopes
+  // were fully built, just gated off. Enabled per explicit request
+  // (20260925030000_enable_per_device_e2e.sql flips the remote flag too;
+  // this default only matters before that first remote fetch resolves).
+  per_device_e2e:      true,
   store_proximity_reminders: false,
 };
 

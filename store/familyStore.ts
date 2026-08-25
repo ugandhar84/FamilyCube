@@ -180,6 +180,9 @@ export interface FamilyMember {
   // See migration 20260924050000_per_invitee_invite_system.sql. Never a
   // permission gate on its own; purely status display + list filtering.
   inviteStatus?: 'active' | 'pending' | 'invited';
+  // members.created_at — read-only, display only (e.g. Profile's "Member
+  // since" row). Never written back via updateMember/toRow.
+  createdAt?: string;
 }
 
 interface FamilyState {
@@ -272,6 +275,7 @@ function fromRow(row: any): FamilyMember {
     storeProximityRemindersEnabled: row.store_proximity_reminders_enabled ?? true,
     authUserId:         row.auth_user_id ?? undefined,
     deletedAt:          row.deleted_at ?? undefined,
+    createdAt:          row.created_at ?? undefined,
     // notification_prefs was added to the type but never actually wired
     // into fromRow/toRow — every toggle write via updateMember() was
     // silently dropped before this fix (never reached the DB, so it also

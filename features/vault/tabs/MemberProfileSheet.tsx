@@ -27,12 +27,13 @@
  * destructive/confirm-worthy, so the extra step is deliberate friction,
  * not something the "fewer taps" goal is asking to remove.
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, TextInput, ActivityIndicator, Image,
-  StyleSheet, InteractionManager,
+  StyleSheet, InteractionManager, Share,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as Clipboard from 'expo-clipboard';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { showAlert } from '@/components/AppAlert';
@@ -78,7 +79,12 @@ export function MemberProfileSheet({ member, siblings, allMembers, visible, onCl
   /** Senior/grandparent-only actions, rendered in the view section instead
    * of a full edit form. */
   onResetPin?: (member: FamilyMember) => void;
-  onResendInvite?: (member: FamilyMember) => void;
+  /** Generates a fresh invite code and returns it (or an error) instead of
+   * alerting directly — the view section renders the result inline with
+   * copy/share actions. A native Alert.alert fired here while this sheet's
+   * Modal is still visible was the exact freeze already found and fixed
+   * once this session for the photo picker; this avoids the same bug. */
+  onResendInvite?: (member: FamilyMember) => Promise<{ ok: true; code: string } | { ok: false; error: string }>;
   /** Gates the Edit entry point — parent-only, same as before. */
   isParentViewer?: boolean;
   /** Gates the Change PIN entry point — parent or the member themself. */
@@ -96,6 +102,17 @@ export function MemberProfileSheet({ member, siblings, allMembers, visible, onCl
   colors: any; isDark: boolean;
 }) {
   const [section, setSection] = useState<'view' | 'edit' | 'pin' | 'confirmRemove'>(initialSection ?? 'view');
+  // The useState initializer above only runs on first mount — this sheet
+  // never unmounts between opens (same MemberProfileSheet instance stays
+  // rendered, `visible` just toggles), so a tap that changes initialSection
+  // while the sheet is ALREADY open (e.g. "Reset PIN" from inside the view
+  // section, which calls openMember(m, 'pin') on an already-mounted sheet)
+  // silently did nothing — section never re-synced. Re-derive it any time
+  // the caller's intent changes: a new initialSection, a different member,
+  // or the sheet re-opening (visible flipping back to true).
+  useEffect(() => {
+    if (visible) setSection(initialSection ?? 'view');
+  }, [visible, initialSection, member.id]);
   const rc = roleColor(member.role);
   const isKidOrTeen = member.role === 'kid' || member.role === 'teen';
   const isSenior = member.role === 'senior';
@@ -147,10 +164,36 @@ function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentView
   isParentViewer?: boolean; canChangePin?: boolean;
   onSave?: (...args: any[]) => Promise<void>;
   onDelete?: (memberId: string) => Promise<void>;
-  onResetPin?: (member: FamilyMember) => void; onResendInvite?: (member: FamilyMember) => void;
+  onResetPin?: (member: FamilyMember) => void;
+  onResendInvite?: (member: FamilyMember) => Promise<{ ok: true; code: string } | { ok: false; error: string }>;
   onEdit: () => void; onChangePin: () => void; onRequestRemove: () => void;
   colors: any; isDark: boolean;
 }) {
+  const [inviteResult, setInviteResult] = useState<{ code: string } | { error: string } | null>(null);
+  const [resending, setResending] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleResendInvite = async () => {
+    if (!onResendInvite || resending) return;
+    setResending(true);
+    setInviteResult(null);
+    const result = await onResendInvite(member);
+    setResending(false);
+    setInviteResult(result.ok ? { code: result.code } : { error: result.error });
+  };
+
+  const copyInviteCode = async (code: string) => {
+    await Clipboard.setStringAsync(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const shareInviteCode = async (code: string) => {
+    try {
+      await Share.share({ message: `Join our family on Family Cube! Use invite code ${code} to set up ${member.name}'s profile.` });
+    } catch { /* user cancelled — no-op */ }
+  };
+
   return (
     <View>
       <View style={{ alignItems: 'center', marginBottom: 16 }}>
@@ -266,13 +309,42 @@ function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentView
             </TouchableOpacity>
           )}
           {onResendInvite && (
-            <TouchableOpacity onPress={() => onResendInvite(member)}
+            <TouchableOpacity onPress={handleResendInvite} disabled={resending}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14,
-                borderWidth: 1.5, borderColor: colors.border }}>
+                borderWidth: 1.5, borderColor: colors.border, opacity: resending ? 0.6 : 1 }}>
               <Mail size={16} color={BRAND.teal} />
               <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>Resend Invite</Text>
-              <RefreshCw size={14} color={colors.textTertiary} />
+              {resending ? <ActivityIndicator size="small" color={colors.textTertiary} /> : <RefreshCw size={14} color={colors.textTertiary} />}
             </TouchableOpacity>
+          )}
+
+          {inviteResult && 'code' in inviteResult && (
+            <View style={{ borderRadius: 14, borderWidth: 1.5, borderColor: BRAND.teal + '50',
+              backgroundColor: BRAND.teal + '10', padding: 14, gap: 10 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>
+                New code for {member.name.split(' ')[0]}
+              </Text>
+              <Text style={{ fontSize: 22, fontWeight: '900', letterSpacing: 2, color: colors.textPrimary }}>
+                {inviteResult.code}
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity onPress={() => copyInviteCode(inviteResult.code)}
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    borderRadius: 10, borderWidth: 1.5, borderColor: colors.border, paddingVertical: 10 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textPrimary }}>
+                    {copied ? 'Copied!' : 'Copy'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => shareInviteCode(inviteResult.code)}
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    borderRadius: 10, backgroundColor: BRAND.teal, paddingVertical: 10 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#fff' }}>Share</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+          {inviteResult && 'error' in inviteResult && (
+            <Text style={{ fontSize: 12, color: BRAND.rose, fontWeight: '600' }}>{inviteResult.error}</Text>
           )}
         </View>
       )}

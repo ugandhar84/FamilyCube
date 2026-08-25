@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  ScrollView, Alert, Image,
+  ScrollView, Alert, Image, Share,
 } from 'react-native';
 import Svg, { Path, Circle, Rect, Polyline, Line } from 'react-native-svg';
 import { Users, Mail } from 'lucide-react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { supabase } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
 import AppBottomSheet from '@/components/AppBottomSheet';
@@ -220,8 +221,13 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
   // ProfileSettingsScreen.tsx) uses, just triggered from Roster instead of
   // Profile. A brand-new code, not a TTL refresh on the old one, per spec
   // ("each time we should generate new invite for that person").
-  const resendInviteFor = async (targetMember: any) => {
-    if (!familyId || !activeMemberId) return;
+  // Returns the result instead of Alert.alert-ing it directly — this runs
+  // from inside MemberProfileSheet's still-open bottom sheet (a Modal), and
+  // a native Alert firing while that Modal is visible is the exact
+  // Alert-over-Modal freeze already found and fixed once this session for
+  // the photo picker. The caller renders the result inline instead.
+  const resendInviteFor = async (targetMember: any): Promise<{ ok: true; code: string } | { ok: false; error: string }> => {
+    if (!familyId || !activeMemberId) return { ok: false, error: 'Not ready yet — try again in a moment.' };
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
@@ -235,18 +241,15 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
         body: JSON.stringify({ familyId, memberId: activeMemberId, targetMemberId: targetMember.id }),
       });
       const json = await res.json();
-      if (json.ok) {
-        Alert.alert('New code generated', `${targetMember.name}'s new invite code is ${json.code}. Share it with them to sign in.`);
-      } else {
-        Alert.alert("Couldn't generate code", json.error ?? 'Something went wrong.');
-      }
+      if (json.ok) return { ok: true, code: json.code };
+      return { ok: false, error: json.error ?? 'Something went wrong.' };
     } catch (e: any) {
-      Alert.alert("Couldn't generate code", e?.message ?? 'Network error.');
+      return { ok: false, error: e?.message ?? 'Network error.' };
     }
   };
 
-  const copyCode = (code: string) => {
-    // Clipboard.setStringAsync not available without expo-clipboard; show as copied visually
+  const copyCode = async (code: string) => {
+    await Clipboard.setStringAsync(code);
     setCopied(code);
     setTimeout(() => setCopied(null), 2000);
   };

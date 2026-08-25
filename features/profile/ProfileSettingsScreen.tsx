@@ -600,7 +600,7 @@ function InviteMemberSheet({
       {showDobPicker && (
         <View style={{ borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, marginTop: 8 }}>
           <DateTimePicker
-            value={dob ?? new Date(MIN_DOB.getFullYear() + 30, 0, 1)}
+            value={dob ?? MAX_DOB}
             mode="date"
             display="spinner"
             minimumDate={MIN_DOB}
@@ -782,6 +782,21 @@ function EditMyProfileSheet({
   const [uploading, setUploading] = useState(false);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
 
+  // A member with a real Supabase Auth account (signed up themselves,
+  // rather than a PIN-only profile someone else created) already has a
+  // verified email on file in auth.users — pull it in instead of asking
+  // them to retype it, and don't let it be hand-edited into something that
+  // no longer matches their actual login. PIN-only members (kids/seniors
+  // with no auth_user_id) have no auth.users row at all, so they keep the
+  // plain editable field below.
+  const hasRealAuth = !!member.authUserId;
+  useEffect(() => {
+    if (!hasRealAuth) return;
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user && data.user.id === member.authUserId && data.user.email) setEmail(data.user.email);
+    });
+  }, [hasRealAuth, member.authUserId]);
+
   const MAX_DOB = new Date();
   const MIN_DOB = new Date(Date.now() - 110 * 365.25 * 24 * 3600_000);
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -925,7 +940,7 @@ function EditMyProfileSheet({
       {showDobPicker && (
         <View style={{ borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, marginTop: 8 }}>
           <DateTimePicker
-            value={dob ?? new Date(MIN_DOB.getFullYear() + 30, 0, 1)}
+            value={dob ?? MAX_DOB}
             mode="date"
             display="spinner"
             minimumDate={MIN_DOB}
@@ -942,20 +957,28 @@ function EditMyProfileSheet({
       <View style={{ marginBottom: 14 }} />
 
       <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>
-        Email <Text style={{ fontWeight: '400' }}>(optional)</Text>
+        Email {hasRealAuth ? <Text style={{ fontWeight: '400' }}>(from your sign-in, can't be edited here)</Text> : <Text style={{ fontWeight: '400' }}>(optional)</Text>}
       </Text>
       <TextInput
         value={email} onChangeText={setEmail} onBlur={() => setTouched(t => ({ ...t, email: true }))}
         placeholder="e.g. you@example.com" placeholderTextColor={colors.textTertiary}
         autoCapitalize="none" autoCorrect={false} keyboardType="email-address"
+        editable={!hasRealAuth}
         style={{
           borderWidth: 1.5, borderColor: (touched.email && emailError) ? colors.danger : colors.border, borderRadius: RADIUS.sm,
           paddingHorizontal: 12, paddingVertical: 10, fontSize: TYPO.body,
-          color: colors.textPrimary, backgroundColor: colors.surface,
+          color: hasRealAuth ? colors.textSecondary : colors.textPrimary,
+          backgroundColor: hasRealAuth ? colors.border + '30' : colors.surface,
         }}
       />
       {touched.email && emailError ? (
         <Text style={{ fontSize: TYPO.caption, color: colors.danger, marginTop: 4 }}>{emailError}</Text>
+      ) : null}
+
+      {member.createdAt ? (
+        <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginTop: 14 }}>
+          Member since {new Date(member.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+        </Text>
       ) : null}
 
       <TouchableOpacity onPress={handleSave} disabled={saving || !formValid}
@@ -1090,11 +1113,15 @@ export default function ProfileSettingsScreen() {
   };
 
   // Member-scoped resend, mirroring RosterTab.tsx's own resendInviteFor —
-  // used by EditMemberModal's GP-only "Resend Invite" action. Generates a
-  // brand-new code tied to that member's row (targetMemberId), same
-  // per-invitee model InviteMemberSheet uses.
-  const resendInviteFor = async (targetMember: FamilyMember) => {
-    if (!familyId || !activeMember?.id) return;
+  // used by the unified member sheet's GP-only "Resend Invite" action.
+  // Generates a brand-new code tied to that member's row (targetMemberId),
+  // same per-invitee model InviteMemberSheet uses. Returns the result
+  // instead of alerting directly — this runs from inside
+  // MemberProfileSheet's still-open bottom sheet (a Modal), and firing an
+  // alert while that Modal is visible reproduced a real on-device freeze;
+  // the sheet renders the result inline (code + copy/share) instead.
+  const resendInviteFor = async (targetMember: FamilyMember): Promise<{ ok: true; code: string } | { ok: false; error: string }> => {
+    if (!familyId || !activeMember?.id) return { ok: false, error: 'Not ready yet — try again in a moment.' };
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
@@ -1108,13 +1135,10 @@ export default function ProfileSettingsScreen() {
         body: JSON.stringify({ familyId, memberId: activeMember.id, targetMemberId: targetMember.id }),
       });
       const json = await res.json();
-      if (json.ok) {
-        showAlert('New code generated', `${targetMember.name}'s new invite code is ${json.code}. Share it with them to sign in.`);
-      } else {
-        showAlert("Couldn't generate code", json.error ?? 'Something went wrong.');
-      }
+      if (json.ok) return { ok: true, code: json.code };
+      return { ok: false, error: json.error ?? 'Something went wrong.' };
     } catch (e: any) {
-      showAlert("Couldn't generate code", e?.message ?? 'Network error.');
+      return { ok: false, error: e?.message ?? 'Network error.' };
     }
   };
 

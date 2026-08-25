@@ -125,6 +125,7 @@ export function MemberProfileSheet({ member, siblings, allMembers, visible, onCl
       {section === 'edit' && onSave && (
         <EditSection member={member} allMembers={allMembers ?? []} rc={rc}
           onCancel={() => setSection('view')} onLinkParent={onLinkParent}
+          restrictToRelationship={isSenior}
           onSave={async (...args) => { await onSave(...args); close(); }}
           colors={colors} isDark={isDark} />
       )}
@@ -155,7 +156,7 @@ function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentView
       <View style={{ alignItems: 'center', marginBottom: 16 }}>
         <FamilyAvatar name={member.name} emoji={member.emoji} avatarUrl={member.avatarUrl}
           siblings={siblings} size={72} ringColor={rc} ringWidth={2.5} />
-        {onSave && isParentViewer && !isSenior && (
+        {onSave && isParentViewer && (
           <TouchableOpacity onPress={onEdit}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12,
               paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: rc }}>
@@ -249,8 +250,10 @@ function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentView
         </View>
       )}
 
-      {/* Senior/GP — deliberately narrow surface: reset PIN or resend
-          invite, never a name/avatar/relationship/role edit. */}
+      {/* Senior/GP — Reset PIN / Resend Invite are still direct one-tap
+          actions here (not folded into Edit); Edit itself now also opens
+          for GPs above, but stays restricted to relationship only
+          (EditSection's restrictToRelationship) — never name/avatar/role. */}
       {isSenior && isParentViewer && (
         <View style={{ marginTop: 12, gap: 10 }}>
           {onResetPin && (
@@ -354,11 +357,15 @@ function ConfirmRemoveSection({ member, rc, onCancel, onConfirm, colors, isDark 
 // ─── Edit section (full form — kid/teen/parent only; carried over from the
 // old EditMemberModal's edit-mode content, styling unchanged) ───────────────
 
-function EditSection({ member, allMembers, rc, onCancel, onSave, onLinkParent, colors, isDark }: {
+function EditSection({ member, allMembers, rc, onCancel, onSave, onLinkParent, restrictToRelationship, colors, isDark }: {
   member: any; allMembers: any[]; rc: string;
   onCancel: () => void;
   onSave: (memberId: string, name: string, role: string, hasCar: boolean, rideEarnings: number, groceryEarnings: number, subRole?: string, relationship?: string, avatarEmoji?: string, avatarUrl?: string) => Promise<void>;
   onLinkParent?: (memberId: string, parentId: string) => void;
+  /** Senior/GP — deliberately narrow: relationship + "what do the kids call
+   * them" only, everything else (name/avatar/role/Can-Drive/whose-parent)
+   * stays untouched and un-editable from here. */
+  restrictToRelationship?: boolean;
   colors: any; isDark: boolean;
 }) {
   const [name, setName] = useState(member.name ?? '');
@@ -452,6 +459,8 @@ function EditSection({ member, allMembers, rc, onCancel, onSave, onLinkParent, c
 
   return (
     <View>
+      {!restrictToRelationship && (
+        <>
       {/* Avatar — emoji or photo, same choice CompleteProfileScreen offers
           at onboarding. Picking a photo clears any just-picked emoji (and
           vice versa) so Save only ever sends one or the other. */}
@@ -501,6 +510,8 @@ function EditSection({ member, allMembers, rc, onCancel, onSave, onLinkParent, c
           </TouchableOpacity>
         ))}
       </View>
+        </>
+      )}
 
       {/* Relationship — purely descriptive, scoped to options that make
           sense for the selected role. Never gates permissions. */}

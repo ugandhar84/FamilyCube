@@ -50,6 +50,15 @@ export const roleColor = (role: string) =>
 const I = {
   Lock: ({ c }: { c: string }) => <Svg width={10} height={10} viewBox="0 0 24 24"><Path d="M3 11h18v11H3zM7 11V7a5 5 0 0 1 10 0v4" stroke={c} strokeWidth={2.5} fill="none" strokeLinecap="round"/></Svg>,
   Key:  ({ c }: { c: string }) => <Svg width={11} height={11} viewBox="0 0 24 24"><Path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" stroke={c} strokeWidth={2} fill="none" strokeLinecap="round"/></Svg>,
+  // Filled variant for the carousel's single bottom-right PIN badge — solid
+  // body reads clearly at 18px where the outline Lock above (drawn for
+  // MemberCard's tiny 10px inline badge) would look too thin.
+  LockFilled: ({ c }: { c: string }) => (
+    <Svg width={12} height={12} viewBox="0 0 24 24">
+      <Path d="M7 11V7a5 5 0 0 1 10 0v4" stroke={c} strokeWidth={2.5} fill="none" strokeLinecap="round"/>
+      <Path d="M5 11h14a1 1 0 0 1 1 1v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a1 1 0 0 1 1-1z" fill={c}/>
+    </Svg>
+  ),
   Car:  ({ c }: { c: string }) => <Svg width={10} height={10} viewBox="0 0 24 24"><Path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h14l4 4v4a2 2 0 0 1-2 2h-2M5 17a2 2 0 1 0 4 0M15 17a2 2 0 1 0 4 0" stroke={c} strokeWidth={2} fill="none" strokeLinecap="round"/></Svg>,
 };
 
@@ -193,22 +202,23 @@ function CarouselMemberCardImpl({ m, isActive, isParentViewer, colors, isDark, o
         </View>
       </View>
 
-      {/* Corner badges — key icon (PIN action, parents/self only, same
-          gate MemberCard uses) top-right, PIN-set indicator top-left when
-          set (mirrors MemberCard's inline lock icon, just relocated to a
-          corner badge to fit the square footprint). */}
-      {hasPin && (
-        <View style={{ position: 'absolute', top: 6, left: 6, width: 16, height: 16, borderRadius: 8,
-          backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' }}>
-          <I.Lock c={colors.success} />
-        </View>
-      )}
-      {(isParentViewer || isActive) && (
+      {/* Single PIN badge, bottom-right, filled — replaces the old separate
+          top-right key icon + top-left outline-lock pair. Filled color when
+          a PIN is already set, filled neutral otherwise; tappable (in place
+          of the old key icon) whenever the viewer is allowed to manage it. */}
+      {(isParentViewer || isActive) ? (
         <TouchableOpacity onPress={onPinPress} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={{ position: 'absolute', top: 6, right: 6, padding: 4 }}>
-          <I.Key c={colors.textTertiary} />
+          style={{ position: 'absolute', bottom: 6, right: 6, width: 20, height: 20, borderRadius: 10,
+            backgroundColor: hasPin ? colors.success : colors.textTertiary,
+            alignItems: 'center', justifyContent: 'center' }}>
+          <I.LockFilled c="#fff" />
         </TouchableOpacity>
-      )}
+      ) : hasPin ? (
+        <View style={{ position: 'absolute', bottom: 6, right: 6, width: 20, height: 20, borderRadius: 10,
+          backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center' }}>
+          <I.LockFilled c="#fff" />
+        </View>
+      ) : null}
     </TouchableOpacity>
   );
 }

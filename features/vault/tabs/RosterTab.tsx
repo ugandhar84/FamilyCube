@@ -627,7 +627,8 @@ export function EditMemberModal({ member, allMembers, onClose, onSave, onLinkPar
                   try {
                     uploadedUrl = await uploadMemberAvatar(member.familyId, member.id, photoUri);
                   } catch (e: any) {
-                    showAlert('Photo upload failed', "Couldn't upload the photo — other changes will still be saved.");
+                    console.error('[EditMemberModal] avatar upload failed', e?.message, e);
+                    showAlert('Photo upload failed', e?.message ? `${e.message} — other changes will still be saved.` : "Couldn't upload the photo — other changes will still be saved.");
                   }
                   setUploadingPhoto(false);
                 }

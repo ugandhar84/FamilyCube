@@ -286,7 +286,10 @@ export async function uploadMemberAvatar(familyId: string, memberId: string, loc
   const bodySize = encoded instanceof ArrayBuffer ? encoded.byteLength : (encoded as Blob).size;
   if (bodySize === 0) throw new Error('Encoded upload body is 0 bytes — the source file may be empty or unreadable.');
   const { error } = await supabase.storage.from('family-media').upload(path, encoded, { upsert: false, contentType: 'image/jpeg' });
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error('[uploadMemberAvatar] upload failed', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    throw new Error(error.message || (error as any).error || (error as any).statusCode || 'Unknown storage error');
+  }
   const { data } = supabase.storage.from('family-media').getPublicUrl(path);
   return data.publicUrl;
 }

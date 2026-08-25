@@ -1,18 +1,23 @@
 import { useState, useMemo } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { TimelineCard, LiveDot } from './hubComponents';
+import { Clock } from 'lucide-react-native';
+import { TimelineCard, LiveDot, SectionCard } from './hubComponents';
 import { TYPO } from '@/constants/theme';
 import { isWorkEvent, hoursUntilEvent } from './hubUtils';
 import { localDateStr } from '@/lib/dates';
+import { isEventSensitive } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
 // Same "Today" vertical-rail timeline Parent's Hub leads with (TodayView.tsx),
-// but scoped to this member: their own events (assignee or helper) plus
-// family-wide events with no specific assignee (e.g. "Family Dinner"). A kid
-// or teen shouldn't see a sibling's personal/medical appointment on their own
-// Hub just because it happened to be on the same day. Parents keep the full
-// household view via ParentView/TodayView, which doesn't use this component.
+// scoped to this member: their own events (assignee/helper/driver), plus
+// family-wide events with no specific assignee (e.g. "Family Dinner"), plus
+// any OTHER member's event that isn't actually sensitive (isEventSensitive —
+// not Medical/private/Ride, no rideRequired). A kid or teen still shouldn't
+// see a sibling's Medical appointment or ride request just because it's the
+// same day — those stay hidden unless a parent explicitly flips
+// sharedWithSiblings on that one event. Parents keep the full household view
+// via ParentView/TodayView, which doesn't use this component.
 export function HubTimelineSection({ active, members, events, updateEvent, colors, isDark }: {
   active: FamilyMember; members: FamilyMember[]; events: FamilyEvent[];
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
@@ -34,6 +39,15 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
     // driver had no on-Hub reminder they're supposed to be driving (QA
     // sweep, kid-role audit, Medium).
     if (e.driverName === active.name) return true;
+    // A sibling's event that ISN'T actually sensitive (not Medical/private/
+    // Ride, no rideRequired) is ordinary family awareness, not something
+    // that needs hiding — matches canViewSensitiveEventDetail's own "hidden
+    // by default only for sensitive events" rule (eventStore.ts). A
+    // sensitive event stays hidden unless the parent explicitly flipped
+    // sharedWithSiblings for it — the same opt-in that already governs
+    // whether a sibling sees the event's full DETAIL elsewhere in the app.
+    if (!isEventSensitive(e)) return true;
+    if (e.sharedWithSiblings) return true;
     return false;
   };
 
@@ -48,14 +62,18 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
   const past     = todayEvents.filter(ev => hoursUntilEvent(ev.date, ev.time) <= -0.5);
 
   return (
-    <View style={{ paddingHorizontal: 16, marginBottom: 16 }}>
-      <View style={{ marginBottom: 10 }}>
-        <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: colors.textPrimary }}>Today</Text>
-        <Text style={{ fontSize: TYPO.label, color: colors.textTertiary, marginTop: 1 }}>
-          {now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-        </Text>
-      </View>
-
+    <View style={{ paddingHorizontal: 16 }}>
+      {/* Same collapsible SectionCard shell Parent's TodayView uses — Kid's
+          Today previously had its own fixed (non-collapsible) header,
+          reported live as inconsistent with Parent's Hub. */}
+      <SectionCard
+        icon={<Clock size={16} color={colors.primary} />}
+        title="Today"
+        subtitle={now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+        accent={colors.primary}
+        badge={upcoming.length} badgeLabel={upcoming.length === 1 ? 'Event' : 'Events'} badgeColor={colors.primary}
+        collapsible defaultExpanded={todayEvents.length > 0}
+        colors={colors} isDark={isDark}>
       {todayEvents.length === 0 ? (
         <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>
           Nothing on the calendar today — enjoy the breathing room.
@@ -132,6 +150,7 @@ export function HubTimelineSection({ active, members, events, updateEvent, color
           )}
         </>
       )}
+      </SectionCard>
     </View>
   );
 }

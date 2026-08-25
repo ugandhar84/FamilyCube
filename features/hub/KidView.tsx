@@ -99,7 +99,13 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   // shared/second device. dismissItem() is optimistic (updates local state
   // immediately) so a dismissed row disappears instantly, same feel as the
   // old local-only state, just actually persisted now.
-  const { dismissedIds, load: loadDismissedHubItems, dismissItem } = useDismissedHubItemsStore();
+  // dismissedLoaded gates KidNeedsYouSection's render below — without it, a
+  // profile switch briefly showed every ALREADY-dismissed item for the new
+  // member (the store clears dismissedIds synchronously while the DB fetch
+  // for the new member is still in flight), including re-triggering
+  // celebration animations for things the kid had already seen and
+  // dismissed days ago. Confirmed live.
+  const { dismissedIds, loaded: dismissedLoaded, load: loadDismissedHubItems, dismissItem } = useDismissedHubItemsStore();
   useEffect(() => {
     loadDismissedHubItems(active.id);
   }, [active.id]);
@@ -362,17 +368,19 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
           react to (tripStore.complete() only deletes local state, nothing
           persisted for the kid's Hub to read), so widening the schedule-
           based window is the fix instead of wiring a new signal. */}
-      <KidNeedsYouSection
-        declinedRides={myDeclinedRides} pendingRides={myPendingRides}
-        declinedQuests={declinedQuests} approvedQuests={approvedQuests}
-        cheersForMe={cheersForMe} recentReplies={recentReplies}
-        confirmedRide={confirmedRide} rideCountdown={rideCountdown}
-        awaitingDriverRide={awaitingDriverRide} activeTrips={activeTrips}
-        active={active} members={members} colors={colors} isDark={isDark}
-        dismissedIds={dismissedIds} onDismiss={dismissItem}
-        onConfirmPickup={confirmPickup}
-        onSendDriverLate={sendDriverLate} lateNudgeSent={lateNudgeSent}
-      />
+      {dismissedLoaded && (
+        <KidNeedsYouSection
+          declinedRides={myDeclinedRides} pendingRides={myPendingRides}
+          declinedQuests={declinedQuests} approvedQuests={approvedQuests}
+          cheersForMe={cheersForMe} recentReplies={recentReplies}
+          confirmedRide={confirmedRide} rideCountdown={rideCountdown}
+          awaitingDriverRide={awaitingDriverRide} activeTrips={activeTrips}
+          active={active} members={members} colors={colors} isDark={isDark}
+          dismissedIds={dismissedIds} onDismiss={dismissItem}
+          onConfirmPickup={confirmPickup}
+          onSendDriverLate={sendDriverLate} lateNudgeSent={lateNudgeSent}
+        />
+      )}
 
       {/* 3. Today — the timeline strip, with "I'm safe" check-ins and
           Ask Parent/Need a Ride folded in as inline actions instead of

@@ -28,7 +28,11 @@ export function KidTodaySection({
   onNeedRide: () => void;
 }) {
   return (
-    <View style={{ marginBottom: 16 }}>
+    // No marginBottom here — HubTimelineSection (the last child) already
+    // carries its own bottom margin; wrapping it in another one doubled the
+    // gap before My Chores (confirmed live: visibly too much padding above
+    // the My Chores card).
+    <View>
       <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 14 }}>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           {([

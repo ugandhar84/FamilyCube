@@ -377,6 +377,26 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
       set(s => ({ items: s.items.filter(i => i.id !== id) }));
       return null;
     }
+
+    // A new item tagged to a store that already has an open (draft or
+    // active) trip should show up in that trip immediately — a partner
+    // mid-shop shouldn't need someone to separately remember to "Add to
+    // Run" for something added moments ago from the main list. Mirrors
+    // createRun's own explicit-store-match auto-join. RunDetailSheet's
+    // existing INSERT realtime subscription on grocery_run_items already
+    // picks this up live for anyone with that trip open.
+    if (params.storePreference) {
+      const normStore = (s?: string | null) => (s ?? '').toLowerCase().trim();
+      const openRun = get().runs.find(r =>
+        r.status !== 'done' && normStore(r.store) === normStore(params.storePreference)
+      );
+      if (openRun) {
+        const { error: joinError } = await supabase.from('grocery_run_items')
+          .upsert({ run_id: openRun.id, item_id: id, checked_in_run: false }, { onConflict: 'run_id,item_id' });
+        if (joinError) console.warn('[groceryStore] addItem auto-join error', joinError);
+      }
+    }
+
     return optimistic;
   },
 
@@ -480,13 +500,23 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
     const now = new Date().toISOString();
     set(s => ({ runs: s.runs.map(r => r.id === runId ? { ...r, status: 'done', completedAt: now } : r) }));
     await supabase.from('grocery_runs').update({ status: 'done', completed_at: now }).eq('id', runId);
-    // Mark checked items as bought — but skip returning items (they stay on the list)
-    const { data } = await supabase
+    // Mark checked items as bought. Was selecting is_returning from
+    // grocery_run_items to skip "returning" items — that column only ever
+    // existed on grocery_items (set later, by markReturning, once an item
+    // is ALREADY bought and flagged to go back) — it never existed on this
+    // join table. The query error'd out silently every single time
+    // (PostgREST 42703 undefined column), so `data` was always empty and
+    // NO item ever got marked bought on trip completion — live-reported
+    // ("bought 3 items but list still shows 12"). The "skip returning"
+    // intent doesn't even apply here: an item being newly checked off in
+    // THIS run can't already be flagged is_returning from a future state.
+    const { data, error } = await supabase
       .from('grocery_run_items')
-      .select('item_id, checked_by, is_returning')
+      .select('item_id, checked_by')
       .eq('run_id', runId)
       .eq('checked_in_run', true);
-    const bought = (data ?? []).filter(ri => !ri.is_returning);
+    if (error) console.warn('[groceryStore] completeRun bought-items query error', error);
+    const bought = data ?? [];
     if (bought.length) {
       for (const ri of bought) {
         await supabase.from('grocery_items').update({ is_bought: true, bought_by: ri.checked_by, bought_at: now }).eq('id', ri.item_id);

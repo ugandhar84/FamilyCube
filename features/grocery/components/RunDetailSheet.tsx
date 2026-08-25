@@ -401,8 +401,14 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
 
                       {/* Actions */}
                       <View style={{ flexDirection: 'row', gap: 4, alignItems: 'center' }}>
-                        {/* Return — one tap, pick who, quest created instantly */}
-                        {(ri.checkedInRun || isDone) && !isNotFound && (
+                        {/* Return — one tap, pick who, quest created instantly.
+                            Was (ri.checkedInRun || isDone) — once a trip was
+                            marked done, EVERY item still listed got a Return
+                            button, including ones never actually checked off/
+                            bought (live-reported: "why are unbought items
+                            showing for return"). Only a checked (bought) item
+                            can meaningfully be "returned." */}
+                        {ri.checkedInRun && !isNotFound && (
                           <Pressable
                             onPress={() => {
                               const itemName = ri.item?.name ?? ri.itemId;

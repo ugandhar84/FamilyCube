@@ -6,7 +6,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import PawBondLoader from '@/components/PawBondLoader';
 import { TYPO } from '@/constants/theme';
 
-// Handles the pawbond://auth/callback deep link redirect from:
+// Handles the familycube://auth/callback deep link redirect from:
 //   - Email confirmation links
 //   - Google OAuth redirects (Android / fallback)
 //

@@ -184,7 +184,7 @@ export default function LoginScreen() {
       } else {
         // Web OAuth flow for Android (same pattern as Google)
         const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
-        const redirectUri = isExpoGo ? 'exp://127.0.0.1:8081/--/auth/callback' : 'pawbond://auth/callback';
+        const redirectUri = isExpoGo ? 'exp://127.0.0.1:8081/--/auth/callback' : 'familycube://auth/callback';
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider: 'apple',
           options: { redirectTo: redirectUri, skipBrowserRedirect: true },
@@ -216,13 +216,13 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       // iOS: ASWebAuthenticationSession intercepts any scheme automatically → use app scheme
-      // Android Expo Go: pawbond:// not registered as intent filter → use exp:// so
+      // Android Expo Go: familycube:// not registered as intent filter → use exp:// so
       //   Chrome Custom Tabs can hand back to Expo Go after OAuth completes
-      // Android standalone/dev-client: app scheme is registered → use pawbond://
+      // Android standalone/dev-client: app scheme is registered → use familycube://
       const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
       const redirectUri = (Platform.OS === 'android' && isExpoGo)
         ? 'exp://127.0.0.1:8081/--/auth/callback'    // adb reverse: localhost tunnels to Metro
-        : 'pawbond://auth/callback';
+        : 'familycube://auth/callback';
 
 
       const { data, error } = await supabase.auth.signInWithOAuth({

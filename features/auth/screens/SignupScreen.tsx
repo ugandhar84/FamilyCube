@@ -76,7 +76,7 @@ export default function SignupScreen() {
           data: {
             full_name: fullName.trim(),
           },
-          emailRedirectTo: 'pawbond://auth/callback',
+          emailRedirectTo: 'familycube://auth/callback',
         },
       }));
     } catch (e: any) {
@@ -141,7 +141,7 @@ export default function SignupScreen() {
         if (error) showAlert('Sign-up failed', friendlyAuthError(error.message));
       } else {
         const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
-        const redirectUri = isExpoGo ? 'exp://127.0.0.1:8081/--/auth/callback' : 'pawbond://auth/callback';
+        const redirectUri = isExpoGo ? 'exp://127.0.0.1:8081/--/auth/callback' : 'familycube://auth/callback';
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider: 'apple',
           options: { redirectTo: redirectUri, skipBrowserRedirect: true },
@@ -175,7 +175,7 @@ export default function SignupScreen() {
     const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
     const redirectUri = (Platform.OS === 'android' && isExpoGo)
       ? 'exp://127.0.0.1:8081/--/auth/callback'
-      : 'pawbond://auth/callback';
+      : 'familycube://auth/callback';
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {

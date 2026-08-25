@@ -64,6 +64,25 @@ export interface GroceryRun {
   runItems?: GroceryRunItem[];
 }
 
+// Combines two free-text quantities ("2 kg" + "1 kg") when addItem finds a
+// genuine duplicate (same name + same store, still pending). Quantity is
+// deliberately free text throughout this store (supports "1 dozen", "3
+// packets"), so this can't just add two numbers — it sums leading numeric
+// quantities when BOTH sides parse as a bare number (the common case: "2"
+// + "1" → "3"), and otherwise falls back to a human-readable combination
+// ("2 kg + 1 kg") rather than silently dropping either side.
+function mergeQuantities(existing?: string, incoming?: string): string | undefined {
+  const a = existing?.trim();
+  const b = incoming?.trim();
+  if (!b) return a;
+  if (!a) return b;
+  if (a === b) return a; // identical — nothing to merge
+  const numA = /^\d+$/.test(a) ? parseInt(a, 10) : null;
+  const numB = /^\d+$/.test(b) ? parseInt(b, 10) : null;
+  if (numA !== null && numB !== null) return String(numA + numB);
+  return `${a} + ${b}`;
+}
+
 // ─── DB helpers ───────────────────────────────────────────────────────────────
 
 function rowToItem(r: any): GroceryItem {
@@ -139,6 +158,7 @@ interface GroceryState {
   cleanup: () => void;
 
   addItem:    (params: { familyId: string; name: string; quantity?: string; category?: string; storePreference?: string; addedBy: string; notes?: string; aiGenerated?: boolean }) => Promise<GroceryItem | null>;
+  updateItem:    (itemId: string, patch: Partial<Pick<GroceryItem, 'quantity' | 'category' | 'storePreference' | 'notes'>>) => Promise<void>;
   removeItem:    (itemId: string) => Promise<void>;
   buyItem:       (itemId: string, memberId: string) => Promise<void>;
   restoreItem:   (itemId: string) => Promise<void>;
@@ -212,12 +232,18 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
 
       set({ items: pendingItems, runs: recentRuns, loading: false });
 
-      // Build autocomplete caches in the background (non-blocking)
+      // Build autocomplete caches in the background (non-blocking). Store
+      // suggestions used to come ONLY from grocery_runs.store (past
+      // shopping TRIPS) — a store a family only ever typed into an ITEM's
+      // own store field, without ever turning it into a Run, never
+      // surfaced as a suggestion anywhere. Now merges both sources.
       Promise.all([
         supabase.from('grocery_runs').select('store').eq('family_id', familyId).order('created_at', { ascending: false }).limit(100),
-        supabase.from('grocery_items').select('name').eq('family_id', familyId).order('created_at', { ascending: false }).limit(500),
+        supabase.from('grocery_items').select('name, store_preference').eq('family_id', familyId).order('created_at', { ascending: false }).limit(500),
       ]).then(([storesRes, namesRes]) => {
-        const uniqueStores = [...new Set((storesRes.data ?? []).map((r: any) => r.store as string).filter(Boolean))];
+        const runStores  = (storesRes.data ?? []).map((r: any) => r.store as string);
+        const itemStores = (namesRes.data ?? []).map((r: any) => r.store_preference as string | null).filter((s): s is string => !!s);
+        const uniqueStores = [...new Set([...runStores, ...itemStores].filter(Boolean))];
         const uniqueNames  = [...new Set((namesRes.data ?? []).map((r: any) => r.name as string).filter(Boolean))];
         set({ pastStores: uniqueStores, pastItemNames: uniqueNames });
       });
@@ -295,11 +321,30 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
   // ── Items ─────────────────────────────────────────────────────────────────
 
   addItem: async (params) => {
-    // Skip if same name already in the pending list
+    // Was name-only, case-insensitive against not-yet-bought items — two
+    // real problems: (1) "Milk" for Costco and "Milk" for Walmart are
+    // legitimately different pending items (different store, different
+    // trip), but got silently collapsed into one; (2) any actual
+    // duplicate (same name AND same store) just returned the existing
+    // row unchanged — a second "Milk, 2" add after an existing "Milk, 1"
+    // dropped the new quantity entirely instead of merging it. Dedupe
+    // key is now name + store (normalized; "no store set" is its own
+    // bucket, not merged with an explicit store), and a genuine duplicate
+    // now merges quantities instead of no-opping.
+    const normStore = (s?: string) => (s ?? '').toLowerCase().trim();
     const existing = get().items.find(
-      i => !i.isBought && i.name.toLowerCase().trim() === params.name.toLowerCase().trim()
+      i => !i.isBought
+        && i.name.toLowerCase().trim() === params.name.toLowerCase().trim()
+        && normStore(i.storePreference) === normStore(params.storePreference)
     );
-    if (existing) return existing;
+    if (existing) {
+      const mergedQty = mergeQuantities(existing.quantity, params.quantity);
+      if (mergedQty !== existing.quantity) {
+        await get().updateItem(existing.id, { quantity: mergedQty });
+        return { ...existing, quantity: mergedQty };
+      }
+      return existing;
+    }
 
     const id  = uuid();
     const now = new Date().toISOString();
@@ -333,6 +378,17 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
       return null;
     }
     return optimistic;
+  },
+
+  updateItem: async (itemId, patch) => {
+    set(s => ({ items: s.items.map(i => i.id === itemId ? { ...i, ...patch } : i) }));
+    const row: Record<string, unknown> = {};
+    if ('quantity' in patch) row.quantity = patch.quantity ?? null;
+    if ('category' in patch) row.category = patch.category ?? null;
+    if ('storePreference' in patch) row.store_preference = patch.storePreference ?? null;
+    if ('notes' in patch) row.notes = patch.notes ?? null;
+    const { error } = await supabase.from('grocery_items').update(row).eq('id', itemId);
+    if (error) console.warn('[groceryStore] updateItem error', error);
   },
 
   removeItem: async (itemId) => {

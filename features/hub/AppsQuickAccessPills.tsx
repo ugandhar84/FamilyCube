@@ -23,6 +23,25 @@ import type { MemberRole } from '@/store/familyStore';
 
 type PillId = 'gps' | 'school' | 'health' | 'records' | 'meals' | 'memories' | 'ledger' | 'roster' | 'grocery' | 'store';
 
+// A curated "silky" pastel set (user-picked), one per pill, replacing the
+// single flat beige (#F2ECE1) every pill previously shared regardless of
+// feature — Radar and Grocery (and everything else) looked identical at
+// a glance. Each entry pairs the light pastel (background) with a
+// deeper-saturated version of the same hue (icon/text) — the raw pastel
+// alone is too washed out to read as icon/text color at this size.
+export const PILL_COLORS: Record<PillId, { light: string; deep: string }> = {
+  gps:      { light: '#C9E0F5', deep: '#4776A6' }, // Powder Blue — was Sky Blue, too close to Records' Light Cyan Blue
+  school:   { light: '#D9CCF0', deep: '#7860AD' }, // Soft Lavender — was Pale Periwinkle, too close to Memories' pink-purple
+  health:   { light: '#F6C4BE', deep: '#B14A3A' }, // Coral Pink, softened toward pastel — full-saturation #F28B82 read too loud/cheap next to the other silky pastels
+  grocery:  { light: '#C8ECD9', deep: '#3F9A6E' }, // Mint Green
+  meals:    { light: '#F8E0B8', deep: '#C08A2E' }, // Sandy Peach
+  ledger:   { light: '#F7E6A8', deep: '#B79A1E' }, // Buttercup Yellow
+  memories: { light: '#F5D6DC', deep: '#C46B85' }, // Rose Pink
+  records:  { light: '#C6E5F0', deep: '#3E86A0' }, // Light Cyan Blue
+  roster:   { light: '#C7EDE0', deep: '#3A9683' }, // Seafoam Mint
+  store:    { light: '#F4D4CE', deep: '#C97656' }, // Salmon Cream
+};
+
 const PILLS: { id: PillId; label: string; Icon: any; roles: MemberRole[] }[] = [
   { id: 'gps',      label: 'Radar',    Icon: Radio,        roles: ['parent', 'kid'] },
   { id: 'school',   label: 'School',   Icon: BookOpen,     roles: ['parent', 'kid'] },
@@ -152,7 +171,7 @@ function DraggableRow({ id, pill, total, positions, draggingId, onRemove, onComm
             <GripVertical size={16} color={colors.textTertiary} />
           </View>
         </GestureDetector>
-        <pill.Icon size={16} color={colors.textPrimary} />
+        <pill.Icon size={16} color={PILL_COLORS[pill.id].deep} />
         <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{pill.label}</Text>
         <Pressable onPress={() => onRemove(id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <X size={16} color={colors.danger} />
@@ -232,7 +251,7 @@ function PillOrderSheet({ visible, onClose, available, order, onSave, colors, is
                     <Pressable key={pill.id} onPress={() => toggle(pill.id)}
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12,
                         borderWidth: 1.5, borderColor: colors.border, backgroundColor: isDark ? colors.surface : '#F8FAFC', padding: 10, opacity: 0.6 }}>
-                      <pill.Icon size={16} color={colors.textSecondary} />
+                      <pill.Icon size={16} color={PILL_COLORS[pill.id].deep} />
                       <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>{pill.label}</Text>
                       <Check size={16} color={colors.textTertiary} />
                     </Pressable>
@@ -275,20 +294,28 @@ export function AppsQuickAccessPills({ role, colors, isDark }: {
         // context, clipping the pills' tops (icons/text cut off).
         style={{ height: 40, flexGrow: 0 }}
         contentContainerStyle={{ paddingHorizontal: 16, gap: 7, alignItems: 'center' }}>
-        {visible.map(p => (
-          <TouchableOpacity key={p.id} activeOpacity={0.75}
-            onPress={() => router.push({ pathname: '/(tabs)/profile', params: { openFeature: p.id } } as any)}
-            onLongPress={() => setEditing(true)}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: 5,
-              paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999,
-              backgroundColor: isDark ? colors.surface : '#F2ECE1',
-              borderWidth: 1, borderColor: isDark ? colors.border : '#E5DFC8',
-            }}>
-            <p.Icon size={12} color={colors.textPrimary} />
-            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textPrimary, lineHeight: 15 }}>{p.label}</Text>
-          </TouchableOpacity>
-        ))}
+        {visible.map(p => {
+          const { light, deep } = PILL_COLORS[p.id];
+          return (
+            <TouchableOpacity key={p.id} activeOpacity={0.75}
+              onPress={() => router.push({ pathname: '/(tabs)/profile', params: { openFeature: p.id } } as any)}
+              onLongPress={() => setEditing(true)}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 5,
+                paddingHorizontal: 12, paddingVertical: 9, borderRadius: 999,
+                // Was one flat beige for every pill regardless of feature
+                // (#F2ECE1) — Radar and Grocery (and everything else) were
+                // visually identical. Each pill now gets its own curated
+                // pastel background (dimmed slightly in dark mode) with a
+                // deeper-saturated icon/text color from the same hue.
+                backgroundColor: isDark ? deep + '30' : light,
+                borderWidth: 1, borderColor: isDark ? deep + '50' : deep + '25',
+              }}>
+              <p.Icon size={12} color={isDark ? light : deep} />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? light : deep, lineHeight: 15 }}>{p.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
         <TouchableOpacity activeOpacity={0.75} onPress={() => setEditing(true)}
           hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
           style={{

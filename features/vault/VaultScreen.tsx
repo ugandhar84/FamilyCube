@@ -22,6 +22,7 @@ import AppHeader from '@/components/AppHeader';
 import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
 
+import { PILL_COLORS } from '@/features/hub/AppsQuickAccessPills';
 import GpsTabComp      from './tabs/GpsTab';
 import HealthTabComp   from './tabs/HealthTab';
 import MealsTabComp    from './tabs/MealsTab';
@@ -58,16 +59,20 @@ interface Feature {
 // matches their existing sponsor/ride/errand capabilities in
 // features/hub/senior/*, which assume they can see family location and
 // redeem/send rewards.
+// accent/bg/bgDark now derive from AppsQuickAccessPills' PILL_COLORS (the
+// same "silky" pastel set the Hub's quick-access pills use) so a feature's
+// tile, detail-header icon, and name-chip all match the pill that deep-links
+// into it, instead of carrying their own separate, unrelated hex set.
 const FEATURES: Feature[] = [
-  { id: 'gps',      label: 'Radar',    subtitle: 'Live family locations',   emoji: '📡', Icon: Radio,        accent: '#14B8A6', bg: '#ECFDF5', bgDark: '#0D2E2A', roles: ['parent', 'kid', 'teen', 'senior'] },
-  { id: 'school',   label: 'School',   subtitle: 'Timetable · Terms',       emoji: '📚', Icon: BookOpen,     accent: '#9261C7', bg: '#F5F3FF', bgDark: '#1A1030', roles: ['parent', 'kid', 'teen'] },
-  { id: 'health',   label: 'Health',   subtitle: 'My Active Medications',    emoji: '💊', Icon: Heart,        accent: '#F43F5E', bg: '#FFF1F2', bgDark: '#2D1019', roles: ['parent', 'kid', 'teen', 'senior'] },
-  { id: 'grocery',  label: 'Grocery',  subtitle: 'Runs · Lists · Receipts', emoji: '🛒', Icon: ShoppingCart, accent: '#10B981', bg: '#ECFDF5', bgDark: '#0D2A1E', roles: ['parent'] },
-  { id: 'meals',    label: 'Meals',    subtitle: 'Recipes · Nutrition',     emoji: '🍽️', Icon: ChefHat,      accent: '#F59E0B', bg: '#FFFBEB', bgDark: '#2D2008', roles: ['parent'] },
-  { id: 'memories', label: 'Memories', subtitle: 'Photos · Moments',        emoji: '📸', Icon: ImageIcon,    accent: '#EC4899', bg: '#FDF2F8', bgDark: '#2D0D1F', roles: ['parent', 'kid', 'teen', 'senior'] },
-  { id: 'records',  label: 'Records',  subtitle: 'Documents · Files',       emoji: '📁', Icon: FolderOpen,   accent: '#6366F1', bg: '#EEF2FF', bgDark: '#1A1A38', roles: ['parent'] },
-  { id: 'roster',   label: 'Roster',   subtitle: 'Members · Roles',         emoji: '👥', Icon: Users,        accent: '#3B82F6', bg: '#EFF6FF', bgDark: '#0D1A2D', roles: ['parent'] },
-  { id: 'store',    label: 'Perks',    subtitle: 'Rewards · Redeem',        emoji: '🎁', Icon: Gift,         accent: '#7C3AED', bg: '#F5F3FF', bgDark: '#1A1030', roles: ['parent', 'kid', 'teen', 'senior'] },
+  { id: 'gps',      label: 'Radar',    subtitle: 'Live family locations',   emoji: '📡', Icon: Radio,        accent: PILL_COLORS.gps.deep,      bg: PILL_COLORS.gps.light,      bgDark: PILL_COLORS.gps.deep      + '30', roles: ['parent', 'kid', 'teen', 'senior'] },
+  { id: 'school',   label: 'School',   subtitle: 'Timetable · Terms',       emoji: '📚', Icon: BookOpen,     accent: PILL_COLORS.school.deep,   bg: PILL_COLORS.school.light,   bgDark: PILL_COLORS.school.deep   + '30', roles: ['parent', 'kid', 'teen'] },
+  { id: 'health',   label: 'Health',   subtitle: 'My Active Medications',    emoji: '💊', Icon: Heart,        accent: PILL_COLORS.health.deep,   bg: PILL_COLORS.health.light,   bgDark: PILL_COLORS.health.deep   + '30', roles: ['parent', 'kid', 'teen', 'senior'] },
+  { id: 'grocery',  label: 'Grocery',  subtitle: 'Runs · Lists · Receipts', emoji: '🛒', Icon: ShoppingCart, accent: PILL_COLORS.grocery.deep,  bg: PILL_COLORS.grocery.light,  bgDark: PILL_COLORS.grocery.deep  + '30', roles: ['parent'] },
+  { id: 'meals',    label: 'Meals',    subtitle: 'Recipes · Nutrition',     emoji: '🍽️', Icon: ChefHat,      accent: PILL_COLORS.meals.deep,    bg: PILL_COLORS.meals.light,    bgDark: PILL_COLORS.meals.deep    + '30', roles: ['parent'] },
+  { id: 'memories', label: 'Memories', subtitle: 'Photos · Moments',        emoji: '📸', Icon: ImageIcon,    accent: PILL_COLORS.memories.deep, bg: PILL_COLORS.memories.light, bgDark: PILL_COLORS.memories.deep + '30', roles: ['parent', 'kid', 'teen', 'senior'] },
+  { id: 'records',  label: 'Records',  subtitle: 'Documents · Files',       emoji: '📁', Icon: FolderOpen,   accent: PILL_COLORS.records.deep,  bg: PILL_COLORS.records.light,  bgDark: PILL_COLORS.records.deep  + '30', roles: ['parent'] },
+  { id: 'roster',   label: 'Roster',   subtitle: 'Members · Roles',         emoji: '👥', Icon: Users,        accent: PILL_COLORS.roster.deep,   bg: PILL_COLORS.roster.light,   bgDark: PILL_COLORS.roster.deep   + '30', roles: ['parent'] },
+  { id: 'store',    label: 'Perks',    subtitle: 'Rewards · Redeem',        emoji: '🎁', Icon: Gift,         accent: PILL_COLORS.store.deep,    bg: PILL_COLORS.store.light,    bgDark: PILL_COLORS.store.deep    + '30', roles: ['parent', 'kid', 'teen', 'senior'] },
 ];
 
 // ─── Feature Detail View (inline, bottom nav stays visible) ──────────────────
@@ -156,9 +161,9 @@ function Tile({
   const TIcon = feature.Icon;
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.82}
-      style={[tileS.tile, { backgroundColor: colors.card, borderColor: feature.accent + (isDark ? '40' : '30'), shadowColor: feature.accent }]}>
+      style={[tileS.tile, { backgroundColor: colors.card, borderColor: feature.accent + (isDark ? '60' : '55'), shadowColor: feature.accent }]}>
       <LinearGradient
-        colors={[feature.accent + '16', feature.accent + '00']}
+        colors={[feature.accent + '30', feature.accent + '00']}
         start={{ x: 0, y: 0 }} end={{ x: 0.6, y: 1 }}
         style={StyleSheet.absoluteFillObject}
         pointerEvents="none"
@@ -177,7 +182,7 @@ function Tile({
       )}
       {/* Icon circle */}
       <View style={{ width: 38, height: 38, borderRadius: 12, marginBottom: 7,
-        backgroundColor: feature.accent + '1C', borderWidth: 1, borderColor: feature.accent + '35',
+        backgroundColor: feature.accent + '35', borderWidth: 1, borderColor: feature.accent + '55',
         alignItems: 'center', justifyContent: 'center' }}>
         <TIcon size={17} color={feature.accent} />
       </View>

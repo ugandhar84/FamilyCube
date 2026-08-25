@@ -248,7 +248,7 @@ serve(async (req) => {
           emailSent = true;
         } catch (e) {
           emailError = (e as Error).message;
-          console.error('[generate-invite-code] Zoho SMTP error:', emailError);
+          console.error('[generate-invite-code] Gmail SMTP error:', emailError);
         } finally {
           try { await smtpClient?.close(); } catch { /* ignore */ }
         }

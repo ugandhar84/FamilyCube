@@ -406,6 +406,17 @@ function InviteMemberSheet({
   const [regenerating, setRegenerating] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // Closing the sheet while the DOB picker is still open left its native
+  // inline DateTimePicker mounted underneath the parent AppBottomSheet's
+  // Modal while that Modal tried to unmount — confirmed live as a total
+  // touch-freeze after closing the invite sheet, same class of bug as the
+  // earlier photo-picker-over-Modal freeze this session already fixed
+  // elsewhere. The picker isn't itself a Modal here, so nothing else resets
+  // it on close.
+  useEffect(() => {
+    if (!visible) setShowDobPicker(false);
+  }, [visible]);
+
   // ── Validation ──────────────────────────────────────────────────────────
   // Name: required, trimmed, reasonable max length. Relationship/role: role
   // always has a value (chip default 'kid'), so it's never actually
@@ -791,6 +802,13 @@ function EditMyProfileSheet({
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
+
+  // Same fix as InviteMemberSheet's identical showDobPicker — closing this
+  // sheet while the DOB picker was still open left its native inline
+  // DateTimePicker mounted underneath the closing Modal, freezing all touch.
+  useEffect(() => {
+    if (!visible) setShowDobPicker(false);
+  }, [visible]);
 
   // A member with a real Supabase Auth account (signed up themselves,
   // rather than a PIN-only profile someone else created) already has a

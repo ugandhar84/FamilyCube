@@ -72,12 +72,13 @@ export function KidHeroCard({
         <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "coin balance" on "KidHeroCard" → navigate to /(tabs)/store [features/hub/kid/KidHeroCard.tsx:62]`); router.push('/(tabs)/store' as any); }}
           style={{ alignItems: 'center', gap: 3, flexShrink: 0 }}>
           <View style={{
-            backgroundColor: BRAND.amber, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9,
+            backgroundColor: isDark ? BRAND.amber + '26' : BRAND.amber + '18',
+            borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9,
             flexDirection: 'row', alignItems: 'center', gap: 6,
-            shadowColor: BRAND.amber, shadowOpacity: isDark ? 0 : 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3,
+            borderWidth: 1.5, borderColor: BRAND.amber + '60',
           }}>
             <Text style={{ fontSize: KID.body }}>🪙</Text>
-            <Text style={{ fontSize: KID.title, fontWeight: '900', color: '#fff' }} numberOfLines={1}>{mainCoins}</Text>
+            <Text style={{ fontSize: KID.title, fontWeight: '900', color: BRAND.amber }} numberOfLines={1}>{mainCoins}</Text>
           </View>
           {gpCoins > 0 && <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: colors.textSecondary }}>+{gpCoins} ⭐ GP</Text>}
         </Pressable>
@@ -86,23 +87,23 @@ export function KidHeroCard({
       <View style={{ gap: 6 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: colors.kid + '20', alignItems: 'center', justifyContent: 'center' }}>
-              <Zap size={10} color={colors.kid} fill={colors.kid} />
+            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: colors.accent + '20', alignItems: 'center', justifyContent: 'center' }}>
+              <Zap size={10} color={colors.accent} fill={colors.accent} />
             </View>
             <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.textSecondary }}>XP to level {level + 1}</Text>
           </View>
-          <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.kid }}>{xp % xpForNext}/{xpForNext}</Text>
+          <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.accent }}>{xp % xpForNext}/{xpForNext}</Text>
         </View>
-        <View style={{ height: 10, borderRadius: 5, backgroundColor: colors.kid + '15', overflow: 'hidden' }}>
-          <View style={{ height: 10, borderRadius: 5, width: `${Math.max(6, Math.round(xpPct * 100))}%` as any, backgroundColor: colors.kid }} />
+        <View style={{ height: 10, borderRadius: 5, backgroundColor: colors.accent + '15', overflow: 'hidden' }}>
+          <View style={{ height: 10, borderRadius: 5, width: `${Math.max(6, Math.round(xpPct * 100))}%` as any, backgroundColor: colors.accent }} />
         </View>
       </View>
 
       <View style={{ gap: 6 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: (goalMet ? MONEY_GREEN : BRAND.amber) + '20', alignItems: 'center', justifyContent: 'center' }}>
-              <Target size={10} color={goalMet ? MONEY_GREEN : BRAND.amber} />
+            <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: (goalMet ? MONEY_GREEN : colors.teal) + '20', alignItems: 'center', justifyContent: 'center' }}>
+              <Target size={10} color={goalMet ? MONEY_GREEN : colors.teal} />
             </View>
             <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.textSecondary }}>Today's quest goal</Text>
           </View>
@@ -113,8 +114,8 @@ export function KidHeroCard({
             </Text>
           </View>
         </View>
-        <View style={{ height: 10, borderRadius: 5, backgroundColor: (goalMet ? MONEY_GREEN : BRAND.amber) + '15', overflow: 'hidden' }}>
-          <View style={{ height: 10, borderRadius: 5, width: `${Math.max(6, Math.round(questPct * 100))}%` as any, backgroundColor: goalMet ? MONEY_GREEN : BRAND.amber }} />
+        <View style={{ height: 10, borderRadius: 5, backgroundColor: (goalMet ? MONEY_GREEN : colors.teal) + '15', overflow: 'hidden' }}>
+          <View style={{ height: 10, borderRadius: 5, width: `${Math.max(6, Math.round(questPct * 100))}%` as any, backgroundColor: goalMet ? MONEY_GREEN : colors.teal }} />
         </View>
       </View>
 

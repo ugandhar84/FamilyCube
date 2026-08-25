@@ -77,9 +77,14 @@ export function MyQuestsSection({
               {combined.length > 0 ? `${combined.length} chore${combined.length !== 1 ? 's' : ''} — what to do first` : 'All caught up'}
             </Text>
           </Pressable>
-          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "All Chores →" on "MyQuestsSection" → navigate to /(tabs)/quests [features/hub/kid/MyQuestsSection.tsx:79]`); router.push('/(tabs)/quests'); }}>
-            <Text style={{ fontSize: KID.sub, fontWeight: '700', color: BRAND.purple }}>All Chores →</Text>
-          </Pressable>
+          {todoQuests.length > 0 && (
+            <View style={{ backgroundColor: colors.danger + '18', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
+              flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={{ fontSize: KID.tiny, fontWeight: '900', color: colors.danger }}>
+                {todoQuests.length} pending
+              </Text>
+            </View>
+          )}
           <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "chevron" on "MyQuestsSection" → toggle expanded from ${expanded} to ${!expanded} [features/hub/kid/MyQuestsSection.tsx:82]`); setExpanded(e => !e); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             {expanded ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
           </Pressable>

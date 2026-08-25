@@ -1,4 +1,4 @@
-import { View, Text, Alert } from 'react-native';
+import { View, Text, Alert, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GroceryItem, useGroceryStore } from '@/store/groceryStore';
 import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
@@ -13,6 +13,7 @@ export function GroceryItemsSection({
   selectedIds, setSelectedIds, isSelecting, priceMap,
   setDetailItem, handleBuyItem, setEditingItem, setShowAddItem, removeItem,
   isKid, members, colors, isDark,
+  pinnedStores, onPinStore,
 }: {
   groceryItems: GroceryItem[];
   groupedItems: [string, GroceryItem[]][];
@@ -29,6 +30,11 @@ export function GroceryItemsSection({
   isKid: boolean;
   members: any[];
   colors: any; isDark: boolean;
+  // store_proximity_reminders (feature-flagged) — omitted entirely when the
+  // flag is off, so no pin affordance renders and this section behaves
+  // exactly as it did before the feature existed.
+  pinnedStores?: Record<string, { lat: number; lng: number }>;
+  onPinStore?: (store: string) => void;
 }) {
   const P = colors.primary;
   const updateItem = useGroceryStore(s => s.updateItem);
@@ -82,9 +88,18 @@ export function GroceryItemsSection({
                 {store === 'Any store' ? 'Any Store' : store}
               </Text>
             </View>
-            <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary }}>
-              {storeItems.filter(i => !i.isBought).length} left
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {onPinStore && store !== 'Any store' && storeItems.filter(i => !i.isBought).length >= 2 && !pinnedStores?.[store] && (
+                <Pressable onPress={() => onPinStore(store)} hitSlop={6}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <Ionicons name="location-outline" size={11} color={colors.textTertiary} />
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textTertiary }}>Pin</Text>
+                </Pressable>
+              )}
+              <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textTertiary }}>
+                {storeItems.filter(i => !i.isBought).length} left
+              </Text>
+            </View>
           </View>
           <View>
             {storeItems.map((item, idx) => (

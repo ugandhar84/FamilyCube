@@ -25,6 +25,9 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useFamilyStore } from '@/store/familyStore';
 import { useGroceryStore, GroceryItem, GroceryRun } from '@/store/groceryStore';
 import { useQuestStore } from '@/store/choreAdapter';
+import { registerStoreGeofences } from '@/lib/storeGeofencing';
+import { PinStoreLocationSheet } from './components/PinStoreLocationSheet';
+import { useFeatureFlag } from '@/lib/featureFlags';
 
 import { AddItemSheet } from './components/AddItemSheet';
 import { CreateRunSheet } from './components/CreateRunSheet';
@@ -48,7 +51,7 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { members, activeMemberId } = useFamilyStore();
-  const { items, runs, loading, load, addItem, buyItem, removeItem, deleteRun, markReturning } = useGroceryStore();
+  const { items, runs, loading, load, addItem, buyItem, removeItem, deleteRun, markReturning, loadPinnedStores, pinnedStores, pinStoreLocation } = useGroceryStore();
 
   const [tab, setTab]                   = useState<'list' | 'runs' | 'history' | 'insights'>('list');
   const [showAddItem, setShowAddItem]   = useState(false);
@@ -148,9 +151,15 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
   const isKid = (activeMember as any)?.role === 'kid';
   const familyId = (activeMember as any)?.familyId ?? 'family-1';
 
+  const geofencingEnabled = useFeatureFlag('store_proximity_reminders');
+  const [pinningStore, setPinningStore] = useState<string | null>(null);
+
   useEffect(() => {
     load(familyId);
-  }, [familyId]);
+    if (!geofencingEnabled) return;
+    loadPinnedStores(familyId);
+    if (activeMemberId) registerStoreGeofences(familyId, activeMemberId).catch(() => {});
+  }, [familyId, activeMemberId, geofencingEnabled]);
 
   // Recently bought items (last 7 days)
   const [boughtItems, setBoughtItems]       = useState<GroceryItem[]>([]);
@@ -462,6 +471,8 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
             members={members}
             colors={colors}
             isDark={isDark}
+            pinnedStores={geofencingEnabled ? pinnedStores : undefined}
+            onPinStore={geofencingEnabled ? (store) => setPinningStore(store) : undefined}
           />
 
           <RecentlyBoughtSection
@@ -575,6 +586,18 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
         colors={colors}
         isDark={isDark}
       />
+      {geofencingEnabled && (
+        <PinStoreLocationSheet
+          visible={!!pinningStore}
+          store={pinningStore ?? ''}
+          onClose={() => setPinningStore(null)}
+          onPin={async (lat, lng) => {
+            if (!pinningStore || !activeMemberId) return;
+            await pinStoreLocation({ familyId, store: pinningStore, latitude: lat, longitude: lng, pinnedBy: activeMemberId });
+            registerStoreGeofences(familyId, activeMemberId).catch(() => {});
+          }}
+        />
+      )}
       <ItemDetailSheet
         item={detailItem}
         members={members}

@@ -29,7 +29,8 @@ export type FeatureFlagKey =
   | 'seasonal_events'      // Time-limited holiday challenges
   | 'rewards_marketplace' // Partner coupons redeemable with coins
   | 'sponsored_ads'       // Sponsored partner listings on home screen
-  | 'per_device_e2e';     // Multi-device chat encryption envelope (see lib/chatCrypto.ts)
+  | 'per_device_e2e'      // Multi-device chat encryption envelope (see lib/chatCrypto.ts)
+  | 'store_proximity_reminders'; // Geofence a pinned store location, notify when nearby with pending items on that store's list
 
 /** Default state when no remote override exists. All OFF until you're ready. */
 const DEFAULTS: Record<FeatureFlagKey, boolean> = {
@@ -42,6 +43,7 @@ const DEFAULTS: Record<FeatureFlagKey, boolean> = {
   rewards_marketplace: false,
   sponsored_ads:       true,
   per_device_e2e:      false,
+  store_proximity_reminders: false,
 };
 
 /**

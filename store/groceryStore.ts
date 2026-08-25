@@ -148,6 +148,10 @@ interface GroceryState {
   pastStores:    string[];   // distinct store names from past runs
   pastItemNames: string[];   // distinct item names ever added (incl. bought)
 
+  // store_proximity_reminders (feature-flagged) — which stores this family
+  // has pinned a real-world location for, keyed by store name.
+  pinnedStores: Record<string, { lat: number; lng: number }>;
+
   // Realtime subscriptions
   _itemSub: any | null;
   _runSub:  any | null;
@@ -178,6 +182,9 @@ interface GroceryState {
 
   // Update autocomplete caches after new items/runs are added externally
   appendToCache: (newItemNames: string[], newStores: string[]) => void;
+
+  loadPinnedStores:  (familyId: string) => Promise<void>;
+  pinStoreLocation:  (params: { familyId: string; store: string; latitude: number; longitude: number; pinnedBy: string }) => Promise<void>;
 }
 
 function uuid() {
@@ -196,6 +203,7 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
   familyId:      null,
   pastStores:    [],
   pastItemNames: [],
+  pinnedStores:  {},
   _itemSub:      null,
   _runSub:       null,
 
@@ -585,5 +593,24 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
       pastItemNames: [...new Set([...newItemNames, ...s.pastItemNames])],
       pastStores:    [...new Set([...newStores,    ...s.pastStores])],
     }));
+  },
+
+  loadPinnedStores: async (familyId) => {
+    const { data, error } = await supabase
+      .from('store_locations')
+      .select('store, latitude, longitude')
+      .eq('family_id', familyId);
+    if (error) { console.warn('[groceryStore] loadPinnedStores error', error); return; }
+    const map: Record<string, { lat: number; lng: number }> = {};
+    for (const row of data ?? []) map[row.store] = { lat: row.latitude, lng: row.longitude };
+    set({ pinnedStores: map });
+  },
+
+  pinStoreLocation: async ({ familyId, store, latitude, longitude, pinnedBy }) => {
+    set(s => ({ pinnedStores: { ...s.pinnedStores, [store]: { lat: latitude, lng: longitude } } }));
+    const { error } = await supabase.from('store_locations').upsert({
+      family_id: familyId, store, latitude, longitude, pinned_by: pinnedBy,
+    }, { onConflict: 'family_id,store' });
+    if (error) console.warn('[groceryStore] pinStoreLocation error', error);
   },
 }));

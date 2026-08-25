@@ -9,6 +9,7 @@
  */
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, Dimensions, Modal, Switch, Linking, Animated, PanResponder } from 'react-native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import MapView, { Marker, PROVIDER_DEFAULT, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Radio, MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw, Car, Footprints } from 'lucide-react-native';
@@ -89,6 +90,14 @@ const MOVEMENT_META: Record<MovementKind, { label: string; Icon: typeof Car }> =
 };
 
 export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolean }) {
+  // Real tab bar height (includes the safe-area bottom inset the custom
+  // CustomTabBar already factors in) — without this, the sheet's min-height
+  // snap point and its content's bottom padding were computed against the
+  // full screen height, so the last roster row and the sheet itself at its
+  // minimum size both ended up hidden behind the tab bar.
+  let tabBarHeight = 0;
+  try { tabBarHeight = useBottomTabBarHeight(); } catch { /* not inside a bottom-tabs navigator (e.g. some embedded contexts) — no bar to clear */ }
+
   const { members, activeMemberId } = useFamilyStore();
   const [locations, setLocations]   = useState<MemberLocation[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -427,8 +436,17 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   // used to sit after it, which only ran them once loading finished,
   // violating the Rules of Hooks ("Rendered more hooks than during the
   // previous render") the moment loading flipped from true to false.
-  const { height: SCREEN_H } = Dimensions.get('window');
-  const SHEET_MIN = Math.round(SCREEN_H * 0.12);
+  const { height: SCREEN_H_RAW } = Dimensions.get('window');
+  // The tab bar sits below this whole screen and eats into the visible
+  // area — using the raw screen height for the map/sheet split let the
+  // sheet's own "MIN" snap point end up SHORTER than the tab bar itself,
+  // so at min-height the entire sheet rendered underneath the bar instead
+  // of just being smaller. Usable height is screen minus the tab bar; and
+  // SHEET_MIN has its own floor (not just a percentage) so it's always at
+  // least tall enough to show the grabber + "Family (N)" header, confirmed
+  // live as too easy to accidentally drag the whole sheet out of view.
+  const SCREEN_H = SCREEN_H_RAW - tabBarHeight;
+  const SHEET_MIN = Math.max(110, Math.round(SCREEN_H * 0.12));
   const SHEET_DEFAULT = Math.round(SCREEN_H * 0.48);
   const SHEET_MAX = Math.round(SCREEN_H * 0.86);
   const SNAP_POINTS = [SHEET_MIN, SHEET_DEFAULT, SHEET_MAX];

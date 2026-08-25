@@ -115,10 +115,34 @@ serve(async (req) => {
       .in('family_id', familyIds.length ? familyIds : ['__none__']);
     const memberMap: Record<string, any> = {};
     for (const m of (members ?? [])) memberMap[m.id] = m;
+
+    // Per-(member, device) tokens — see member_device_tokens migration.
+    // Shared devices leave members.expo_push_token stale for everyone but
+    // the most-recently-active profile, so resolve from the new table first
+    // and fall back to the single column only for members with no rows yet.
+    const allMemberIds = (members ?? []).map((m: any) => m.id);
+    const { data: deviceTokenRows } = await supabase
+      .from('member_device_tokens')
+      .select('member_id, expo_push_token')
+      .in('member_id', allMemberIds.length ? allMemberIds : ['__none__']);
+    const tokensByMemberId: Record<string, string[]> = {};
+    for (const row of (deviceTokenRows ?? []) as any[]) {
+      if (!row.expo_push_token) continue;
+      (tokensByMemberId[row.member_id] ??= []).push(row.expo_push_token);
+    }
+    for (const m of (members ?? [])) {
+      if (!tokensByMemberId[m.id] && m.expo_push_token) {
+        tokensByMemberId[m.id] = [m.expo_push_token];
+      }
+    }
+    const tokensForMember = (id: string | null | undefined): string[] =>
+      id ? (tokensByMemberId[id] ?? []) : [];
+
     const parentTokensByFamily: Record<string, string[]> = {};
     for (const m of (members ?? [])) {
-      if (m.role === 'parent' && m.expo_push_token) {
-        (parentTokensByFamily[m.family_id] ??= []).push(m.expo_push_token);
+      if (m.role === 'parent') {
+        const t = tokensByMemberId[m.id];
+        if (t?.length) (parentTokensByFamily[m.family_id] ??= []).push(...t);
       }
     }
 
@@ -212,7 +236,7 @@ serve(async (req) => {
       if (updateErr) { errors.push(`${chore.id}: ${updateErr.message}`); continue; }
 
       const paid = await payOut(chore, `Auto-approved (48h, unresponded escalation): ${chore.title}`);
-      await notify('coins_awarded', assignee?.expo_push_token ? [assignee.expo_push_token] : [], chore.family_id, {
+      await notify('coins_awarded', tokensForMember(chore.assigned_to_id), chore.family_id, {
         coins: paid, reason: `"${chore.title}" auto-approved after 48h with no parent response`,
       });
       approved.push(chore.id);

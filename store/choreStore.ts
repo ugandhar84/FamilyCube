@@ -342,7 +342,9 @@ export interface GrandparentMatch {
 }
 
 export interface HouseholdSettings {
-  pointsToFiatRatio: number;   // 0.01 = 100 pts → $1.00
+  pointsToFiatRatio: number;   // 0.01 = 100 pts → 1 unit of currencyCode below
+  currencyCode: string;    // ISO 4217, e.g. 'USD', 'EUR', 'INR' — parent-editable in Profile settings
+  currencySymbol: string;  // e.g. '$', '€', '₹' — shown wherever coins are converted to real money
   spendAllocationPct: number;  // Default 50
   saveAllocationPct: number;   // Default 40
   giveAllocationPct: number;   // Default 10
@@ -995,6 +997,8 @@ interface ChoreState {
 
 const DEFAULT_SETTINGS: HouseholdSettings = {
   pointsToFiatRatio:            0.01,
+  currencyCode:                 'USD',
+  currencySymbol:               '$',
   spendAllocationPct:           50,
   saveAllocationPct:            40,
   giveAllocationPct:            10,
@@ -1251,7 +1255,7 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
         // with zero cross-device sync.
         supabase
           .from('families')
-          .select('points_to_fiat_ratio, spend_allocation_pct, save_allocation_pct, give_allocation_pct, allow_child_allocation_override, auto_approve_timeout_hours, min_cashout_points, teen_reward_cosign_threshold, allow_unilateral_reversal')
+          .select('points_to_fiat_ratio, currency_code, currency_symbol, spend_allocation_pct, save_allocation_pct, give_allocation_pct, allow_child_allocation_override, auto_approve_timeout_hours, min_cashout_points, teen_reward_cosign_threshold, allow_unilateral_reversal')
           .eq('id', familyId)
           .single(),
       ]);
@@ -1262,6 +1266,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
       const parentAssignments = (assignmentsData ?? []).map(parentAssignmentFromRow);
       const householdSettings: HouseholdSettings = familyRow ? {
         pointsToFiatRatio:            familyRow.points_to_fiat_ratio            ?? DEFAULT_SETTINGS.pointsToFiatRatio,
+        currencyCode:                 familyRow.currency_code                   ?? DEFAULT_SETTINGS.currencyCode,
+        currencySymbol:               familyRow.currency_symbol                 ?? DEFAULT_SETTINGS.currencySymbol,
         spendAllocationPct:           familyRow.spend_allocation_pct            ?? DEFAULT_SETTINGS.spendAllocationPct,
         saveAllocationPct:            familyRow.save_allocation_pct             ?? DEFAULT_SETTINGS.saveAllocationPct,
         giveAllocationPct:            familyRow.give_allocation_pct             ?? DEFAULT_SETTINGS.giveAllocationPct,
@@ -4471,6 +4477,8 @@ export const useChoreStore = create<ChoreState>()((set, get) => ({
     if (familyId) {
       supabase.from('families').update({
         points_to_fiat_ratio:             settings.pointsToFiatRatio,
+        currency_code:                    settings.currencyCode,
+        currency_symbol:                  settings.currencySymbol,
         spend_allocation_pct:             settings.spendAllocationPct,
         save_allocation_pct:              settings.saveAllocationPct,
         give_allocation_pct:              settings.giveAllocationPct,

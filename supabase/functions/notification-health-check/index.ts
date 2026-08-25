@@ -93,6 +93,14 @@ serve(async (req) => {
     }
 
     // ── 4. Clear stale push tokens ────────────────────────────────────────────
+    // Only clears members.expo_push_token (the legacy single-column fallback)
+    // — the notifications row only carries member_id, not which specific
+    // device's token the DeviceNotRegistered receipt was for, so there's no
+    // safe way to know which single row in member_device_tokens to delete
+    // (a member can have several real devices; deleting all of them on one
+    // stale receipt could wrongly drop a still-valid second device's token).
+    // A per-device analog of this cleanup would need the notification row to
+    // record which token it was actually sent to.
     if (staleTokenMemberIds.length) {
       await supabase
         .from('members')

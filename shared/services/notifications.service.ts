@@ -307,13 +307,55 @@ export async function savePushToken(userId: string): Promise<void> {
 }
 
 // ── Save token to members table (FamilyCube) ──────────────────────────────────
-// Called whenever the active member switches. Stores the device's Expo push token
-// on members.expo_push_token so family-notifier can look it up by member ID.
+// Called whenever the active member switches. Writes the device's Expo push
+// token to member_device_tokens, keyed on (member_id, device_id) — the fix
+// for shared devices, where multiple members PIN-switch through the day and
+// a single members.expo_push_token column can only ever hold the most
+// recently active member's token, leaving everyone else stale. Also keeps
+// writing members.expo_push_token as a "last known" fallback for edge
+// functions / transition period — additive, not a replacement.
 
 export async function saveTokenToMember(memberId: string): Promise<void> {
   const token = await registerForPushNotifications();
   if (!token || !memberId) return;
   try {
+    const { getDeviceId } = await import('@/lib/chatCrypto');
+    const deviceId = await getDeviceId();
+    const platform = Platform.OS === 'ios' ? 'ios' : 'android';
+
+    // Look up this member's family_id — member_device_tokens.family_id is
+    // required (RLS scoping, same pattern as device_keys).
+    const { data: memberRow } = await supabase
+      .from('members')
+      .select('family_id')
+      .eq('id', memberId)
+      .single();
+    const familyId = (memberRow as { family_id?: string } | null)?.family_id;
+
+    if (familyId) {
+      await supabase.from('member_device_tokens').upsert(
+        {
+          member_id: memberId,
+          device_id: deviceId,
+          family_id: familyId,
+          expo_push_token: token,
+          platform,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'member_id,device_id' }
+      );
+
+      // Only one member can be "active" on this physical device at a time —
+      // any OTHER member's row for this exact device_id is now stale and
+      // would falsely claim the device still belongs to them.
+      await supabase
+        .from('member_device_tokens')
+        .delete()
+        .eq('device_id', deviceId)
+        .neq('member_id', memberId);
+    }
+
+    // Keep the old column updated too — see comment above.
     await supabase.from('members').update({ expo_push_token: token }).eq('id', memberId);
   } catch (e) {
     console.warn('[notifications] saveTokenToMember failed:', e);

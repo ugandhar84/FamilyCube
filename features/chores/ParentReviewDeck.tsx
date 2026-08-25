@@ -319,6 +319,7 @@ function CashOutCard({ req, member, colors, isDark }: {
 }) {
   const { approveCashOut, denyCashOut } = useChoreStore();
   const ratio = useChoreStore(s => s.householdSettings.pointsToFiatRatio);
+  const currencySymbol = useChoreStore(s => s.householdSettings.currencySymbol);
 
   return (
     <View style={{
@@ -333,7 +334,7 @@ function CashOutCard({ req, member, colors, isDark }: {
           <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>{member?.name?.split(' ')[0] ?? req.userId}</Text>
         </View>
         <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: '#059669' }}>
-          ${(req.amount * ratio).toFixed(2)}
+          {currencySymbol}{(req.amount * ratio).toFixed(2)}
         </Text>
       </View>
 
@@ -346,7 +347,7 @@ function CashOutCard({ req, member, colors, isDark }: {
           <View key={j.l} style={{ flexDirection: 'row', marginBottom: 4 }}>
             <Text style={{ flex: 1, fontSize: TYPO.caption, color: colors.textSecondary }}>{j.l}</Text>
             <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: '#059669' }}>
-              {j.v} pts (${(j.v * ratio).toFixed(2)})
+              {j.v} pts ({currencySymbol}{(j.v * ratio).toFixed(2)})
             </Text>
           </View>
         ))}

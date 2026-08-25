@@ -97,11 +97,34 @@ serve(async (req) => {
     const memberMap: Record<string, any> = {};
     for (const m of (members ?? [])) memberMap[m.id] = m;
 
+    // Per-(member, device) tokens — a shared-device household can have many
+    // members whose members.expo_push_token column is stale (last-written
+    // by whichever member was active on that device most recently). Query
+    // member_device_tokens for every member up front and fall back to the
+    // single column only for members with zero rows there yet.
+    const allMemberIds = (members ?? []).map((m: any) => m.id);
+    const { data: deviceTokenRows } = await supabase
+      .from('member_device_tokens')
+      .select('member_id, expo_push_token')
+      .in('member_id', allMemberIds.length ? allMemberIds : ['__none__']);
+    const tokensByMemberId: Record<string, string[]> = {};
+    for (const row of (deviceTokenRows ?? []) as any[]) {
+      if (!row.expo_push_token) continue;
+      (tokensByMemberId[row.member_id] ??= []).push(row.expo_push_token);
+    }
+    for (const m of (members ?? [])) {
+      if (!tokensByMemberId[m.id] && m.expo_push_token) {
+        tokensByMemberId[m.id] = [m.expo_push_token];
+      }
+    }
+    const tokensForMember = (id: string | null | undefined): string[] =>
+      id ? (tokensByMemberId[id] ?? []) : [];
+
     const parentTokensByFamily: Record<string, string[]> = {};
     for (const m of (members ?? [])) {
-      if (m.role === 'parent' && m.expo_push_token) {
-        if (!parentTokensByFamily[m.family_id]) parentTokensByFamily[m.family_id] = [];
-        parentTokensByFamily[m.family_id].push(m.expo_push_token);
+      if (m.role === 'parent') {
+        const t = tokensByMemberId[m.id];
+        if (t?.length) (parentTokensByFamily[m.family_id] ??= []).push(...t);
       }
     }
 
@@ -134,7 +157,7 @@ serve(async (req) => {
       const isSameDayMiss = daysOverdue === 0 || c.due_date === today;
       const shouldEscalateToParent = assigneeIsMinor && isSameDayMiss;
       const parentTokens = parentTokensByFamily[c.family_id] ?? [];
-      const kidTokens = assignee?.expo_push_token ? [assignee.expo_push_token] : [];
+      const kidTokens = tokensForMember(c.assigned_to_id);
 
       // ── status=todo, not pool, due today or overdue → remind the kid ────
       if (c.status === 'todo' && !c.is_pool) {

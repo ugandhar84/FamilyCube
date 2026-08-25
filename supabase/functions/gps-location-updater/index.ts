@@ -142,27 +142,31 @@ serve(async (req) => {
     // ── 6. Load member name for notification copy ─────────────────────────────
     const { data: member } = await supabase
       .from('members')
-      .select('name, expo_push_token')
+      .select('name')
       .eq('id', memberId)
       .single();
 
     const memberName = member?.name ?? 'A family member';
 
-    // Parent tokens for geofence alerts
+    // Parent member ids for geofence alerts — token resolution
+    // (member_device_tokens, falling back to members.expo_push_token) now
+    // happens inside family-notifier itself, given just memberIds. Avoids
+    // this function's own snapshot of the single-column token, which is
+    // stale for any parent who isn't the most recently active profile on a
+    // shared device.
     const { data: parents } = await supabase
       .from('members')
-      .select('expo_push_token')
+      .select('id')
       .eq('family_id', familyId)
-      .eq('role', 'parent')
-      .not('expo_push_token', 'is', null);
-    const parentTokens = (parents ?? []).map((p: any) => p.expo_push_token).filter(Boolean);
+      .eq('role', 'parent');
+    const parentMemberIds = (parents ?? []).map((p: any) => p.id);
 
     const fireNotif = async (type: string, payload: Record<string, unknown>) => {
-      if (!parentTokens.length) return;
+      if (!parentMemberIds.length) return;
       await fetch(notifierUrl, {
         method: 'POST',
         headers: notifierHeaders,
-        body: JSON.stringify({ type, tokens: parentTokens, familyId, payload, persist: true }),
+        body: JSON.stringify({ type, memberIds: parentMemberIds, familyId, payload, persist: true }),
       });
     };
 

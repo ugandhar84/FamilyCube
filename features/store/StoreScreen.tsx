@@ -325,6 +325,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
   const { members, activeMemberId, loaded, loadFromStorage, deductCoins, awardCoins } = useFamilyStore();
   const { rewards, redemptions, loadFromStorage: loadRewards, addReward, updateReward, deleteReward, redeemReward, approveRedemption, rejectRedemption } = useRewardStore();
   const pointsToFiatRatio = useChoreStore(s => s.householdSettings.pointsToFiatRatio);
+  const currencySymbol = useChoreStore(s => s.householdSettings.currencySymbol);
 
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const unreadNotifCount = useNotifStore(s => s.unreadCount);
@@ -610,7 +611,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
                       {kid.name.split(' ')[0]}
                     </Text>
                     <Text style={{ fontSize: 22, fontWeight: '900', color: BRAND.teal, marginBottom: 8 }}>
-                      ${dollars}
+                      {currencySymbol}{dollars}
                     </Text>
                     {streak > 0 && (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 12,

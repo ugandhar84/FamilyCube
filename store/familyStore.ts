@@ -157,6 +157,21 @@ export interface FamilyMember {
   // existing behavior before this field existed); only `false` mutes a
   // category. See migration 20260924010000_member_notification_prefs.sql.
   notificationPrefs?: Partial<Record<'chores' | 'family' | 'chat' | 'rewards' | 'requests' | 'grocery', boolean>>;
+  // Quiet hours + call-alert opt-out (migration
+  // 20260924030000_member_quiet_hours_call_prefs.sql) — family-notifier
+  // checks these before sending a push (still persists to the notifications
+  // table either way, so the in-app bell always has it even when quiet
+  // hours suppressed the push itself).
+  quietHoursEnabled?: boolean;
+  quietHoursStart?: string; // 'HH:MM' 24h, local to timezone below
+  quietHoursEnd?: string;   // 'HH:MM' 24h
+  // IANA zone (e.g. 'America/New_York') — set whenever quiet hours are
+  // configured (features/profile's NotificationsSheet), so family-notifier
+  // can convert its own UTC clock into this member's actual local time
+  // instead of assuming quiet_hours_start/end are already in UTC (which
+  // they never are — the picker shows the device's local clock).
+  timezone?: string;
+  callAlertsEnabled?: boolean;
 }
 
 interface FamilyState {
@@ -242,6 +257,16 @@ function fromRow(row: any): FamilyMember {
     storeProximityRemindersEnabled: row.store_proximity_reminders_enabled ?? true,
     authUserId:         row.auth_user_id ?? undefined,
     deletedAt:          row.deleted_at ?? undefined,
+    // notification_prefs was added to the type but never actually wired
+    // into fromRow/toRow — every toggle write via updateMember() was
+    // silently dropped before this fix (never reached the DB, so it also
+    // never came back on the next load).
+    notificationPrefs:  row.notification_prefs ?? undefined,
+    quietHoursEnabled:  row.quiet_hours_enabled ?? false,
+    quietHoursStart:    row.quiet_hours_start ?? undefined,
+    quietHoursEnd:      row.quiet_hours_end ?? undefined,
+    timezone:           row.timezone ?? undefined,
+    callAlertsEnabled:  row.call_alerts_enabled ?? true,
   };
 }
 
@@ -280,6 +305,12 @@ function toRow(m: FamilyMember) {
     date_of_birth:         m.dateOfBirth ?? null,
     pill_order:            m.pillOrder ?? null,
     store_proximity_reminders_enabled: m.storeProximityRemindersEnabled ?? true,
+    notification_prefs: m.notificationPrefs ?? {},
+    quiet_hours_enabled: m.quietHoursEnabled ?? false,
+    quiet_hours_start:   m.quietHoursStart ?? null,
+    quiet_hours_end:     m.quietHoursEnd ?? null,
+    timezone:            m.timezone ?? null,
+    call_alerts_enabled: m.callAlertsEnabled ?? true,
   };
 }
 

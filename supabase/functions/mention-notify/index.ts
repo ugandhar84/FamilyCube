@@ -148,7 +148,11 @@ serve(async (req) => {
       'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
     };
 
-    const tokens    = mentionedMembers.map((m: any) => m.expo_push_token).filter(Boolean);
+    // No `tokens` here — family-notifier resolves per-device tokens from
+    // member_device_tokens (falling back to members.expo_push_token) itself,
+    // given just memberIds. Avoids this function's own snapshot of the
+    // single-column token, which is stale for any member who isn't the most
+    // recently active profile on a shared device.
     const memberIds = mentionedMembers.map((m: any) => m.id);
 
     await fetch(notifierUrl, {
@@ -156,7 +160,6 @@ serve(async (req) => {
       headers: notifierHeaders,
       body: JSON.stringify({
         type: 'chat_mention',
-        tokens,
         memberIds,
         familyId: sender.family_id,
         persist: true,

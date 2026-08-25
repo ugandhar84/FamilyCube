@@ -828,7 +828,7 @@ function WalletStrip({ memberId, colors, isDark, onCashOut }: {
             <jar.Icon size={17} color={jar.color} style={{ marginBottom: 4 }} />
             <Text style={{ fontSize: TYPO.heading, fontWeight: '900', color: jar.color }}>{jar.value}</Text>
             <Text style={{ fontSize: 9, fontWeight: '600', color: colors.textTertiary }}>{jar.label}</Text>
-            <Text style={{ fontSize: 9, color: colors.textTertiary, marginTop: 1 }}>${(jar.value * ratio).toFixed(2)}</Text>
+            <Text style={{ fontSize: 9, color: colors.textTertiary, marginTop: 1 }}>{householdSettings.currencySymbol}{(jar.value * ratio).toFixed(2)}</Text>
           </View>
         ))}
       </View>
@@ -938,7 +938,7 @@ function CashOutSheet({ memberId, visible, onClose, isDark, colors }: {
             {/* Jar preview */}
             <View style={{ backgroundColor: isDark ? colors.surface : '#F9FAFB', borderRadius: 14, padding: 16, marginBottom: 16 }}>
               <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary, marginBottom: 10 }}>
-                Split across jars — ${dollars} total
+                Split across jars — {householdSettings.currencySymbol}{dollars} total
               </Text>
               {[
                 { label: 'Spend (50%)', Icon: Wallet,    amt: spendAmt, color: BRAND.purple },
@@ -949,7 +949,7 @@ function CashOutSheet({ memberId, visible, onClose, isDark, colors }: {
                   <j.Icon size={15} color={j.color} style={{ marginRight: 8 }} />
                   <Text style={{ flex: 1, fontSize: TYPO.caption, color: colors.textSecondary }}>{j.label}</Text>
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: j.color }}>
-                    {j.amt} pts (${(j.amt * ratio).toFixed(2)})
+                    {j.amt} pts ({householdSettings.currencySymbol}{(j.amt * ratio).toFixed(2)})
                   </Text>
                 </View>
               ))}
@@ -994,7 +994,7 @@ function CashOutSheet({ memberId, visible, onClose, isDark, colors }: {
           <>
             <View style={{ backgroundColor: isDark ? colors.surface : '#F0FDF4', borderRadius: 14, padding: 16, marginBottom: 20 }}>
               <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textPrimary, marginBottom: 12 }}>
-                Ready to cash out {amount} pts (${dollars})
+                Ready to cash out {amount} pts ({householdSettings.currencySymbol}{dollars})
               </Text>
               {[
                 { label: 'Spend Jar', Icon: Wallet,    sub: 'immediate / debit',    amt: spendAmt, color: BRAND.purple },
@@ -1008,7 +1008,7 @@ function CashOutSheet({ memberId, visible, onClose, isDark, colors }: {
                     <Text style={{ fontSize: 10, color: colors.textTertiary }}>{j.sub}</Text>
                   </View>
                   <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: j.color }}>
-                    ${(j.amt * ratio).toFixed(2)}
+                    {householdSettings.currencySymbol}{(j.amt * ratio).toFixed(2)}
                   </Text>
                 </View>
               ))}

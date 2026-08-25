@@ -85,15 +85,18 @@ serve(async (req) => {
 
     const { data: members } = await supabase
       .from('members')
-      .select('id, name, role, family_id, expo_push_token')
+      .select('id, name, role, family_id')
       .in('family_id', familyIds.length ? familyIds : ['__none__']);
 
-    // Parent tokens per family (parents get the alert)
-    const parentsByFamily: Record<string, { id: string; token: string }[]> = {};
+    // Parent member ids per family (parents get the alert) — token
+    // resolution (member_device_tokens, falling back to
+    // members.expo_push_token) now happens inside family-notifier itself,
+    // given just the memberIds below.
+    const parentsByFamily: Record<string, { id: string }[]> = {};
     for (const m of (members ?? [])) {
-      if (m.role === 'parent' && m.expo_push_token) {
+      if (m.role === 'parent') {
         if (!parentsByFamily[m.family_id]) parentsByFamily[m.family_id] = [];
-        parentsByFamily[m.family_id].push({ id: m.id, token: m.expo_push_token });
+        parentsByFamily[m.family_id].push({ id: m.id });
       }
     }
 
@@ -156,17 +159,16 @@ serve(async (req) => {
       const title = `🚗 No driver for ${ev.title}`;
       const notifBody = `${kidName}'s ${ev.title} at ${timeLabel} needs a driver — ${hoursLabel} away`;
 
-      const tokens = parents.map(p => p.token);
       const memberIds = parents.map(p => p.id);
 
       if (!dryRun) {
-        // Send via family-notifier (handles push + DB persist)
+        // Send via family-notifier (handles push + DB persist) — no
+        // `tokens` here; family-notifier resolves per-device tokens itself.
         await fetch(notifierUrl, {
           method: 'POST',
           headers: authHeader,
           body: JSON.stringify({
             type: 'schedule_alert',
-            tokens,
             memberIds,
             familyId: fId,
             payload: {

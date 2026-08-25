@@ -66,14 +66,11 @@ serve(async (req) => {
     // ── Resolve members ────────────────────────────────────────────────────────
     const { data: members } = await supabase
       .from('members')
-      .select('id, name, role, expo_push_token')
+      .select('id, name, role')
       .eq('family_id', familyId);
 
     const memberMap: Record<string, any> = {};
     for (const m of (members ?? [])) memberMap[m.id] = m;
-
-    const tokens = (ids: (string | undefined | null)[]) =>
-      ids.filter(Boolean).map(id => memberMap[id!]?.expo_push_token).filter(Boolean) as string[];
 
     const memberIds = (ids: (string | undefined | null)[]) =>
       ids.filter(Boolean) as string[];
@@ -100,13 +97,17 @@ serve(async (req) => {
       'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
     };
 
+    // Token resolution (per-device member_device_tokens, falling back to
+    // members.expo_push_token) now happens inside family-notifier itself —
+    // pass memberIds only, not tokens, so family-notifier's own lookup (and
+    // its category-preference filter) is the single source of truth instead
+    // of this function racing it with a stale single-column snapshot.
     const fire = (type: string, targetIds: string[], payload: Record<string, unknown>) =>
       fetch(notifierUrl, {
         method: 'POST',
         headers: notifierHeaders,
         body: JSON.stringify({
           type,
-          tokens: tokens(targetIds),
           memberIds: memberIds(targetIds),
           familyId,
           payload,

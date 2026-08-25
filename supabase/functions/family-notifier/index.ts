@@ -26,6 +26,55 @@ const json = (body: unknown, status = 200) =>
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
+// ─── Per-device token resolution (member_device_tokens) ───────────────────────
+// members.expo_push_token is a single column per member row — on a shared
+// device (PIN-switched by several family members through the day) it can
+// only ever hold the most-recently-active member's token, so every other
+// member's stored token goes stale. member_device_tokens keys tokens on
+// (member_id, device_id) instead, so a member gets one row per real device
+// they've been active on (all of which should receive the push — correct
+// multi-device behavior). Falls back to members.expo_push_token only for a
+// member with zero rows in the new table yet (pre-migration device that
+// hasn't re-registered under the new scheme).
+async function resolveTokensForMembers(
+  supabase: ReturnType<typeof createClient>,
+  memberIds: string[],
+): Promise<string[]> {
+  if (!memberIds.length) return [];
+
+  const { data: deviceRows } = await supabase
+    .from('member_device_tokens')
+    .select('member_id, expo_push_token')
+    .in('member_id', memberIds);
+
+  const tokensByMember = new Map<string, Set<string>>();
+  for (const row of (deviceRows ?? []) as any[]) {
+    if (!row.expo_push_token) continue;
+    const set = tokensByMember.get(row.member_id) ?? new Set<string>();
+    set.add(row.expo_push_token);
+    tokensByMember.set(row.member_id, set);
+  }
+
+  const membersWithNoDeviceRows = memberIds.filter(id => !tokensByMember.has(id));
+  if (membersWithNoDeviceRows.length) {
+    const { data: fallbackMembers } = await supabase
+      .from('members')
+      .select('id, expo_push_token')
+      .in('id', membersWithNoDeviceRows)
+      .not('expo_push_token', 'is', null);
+    for (const m of (fallbackMembers ?? []) as any[]) {
+      if (!m.expo_push_token) continue;
+      const set = tokensByMember.get(m.id) ?? new Set<string>();
+      set.add(m.expo_push_token);
+      tokensByMember.set(m.id, set);
+    }
+  }
+
+  const all = new Set<string>();
+  for (const set of tokensByMember.values()) for (const t of set) all.add(t);
+  return [...all];
+}
+
 // ─── Notification type definitions ────────────────────────────────────────────
 // Each type maps to a canonical title + body template.
 // Caller passes `payload` which fills the template variables.
@@ -98,6 +147,40 @@ function categoryFor(type: NotifType, payload: Record<string, unknown>): NotifCa
   if (data.type === 'shopping_trip_started' || data.type === 'store_proximity') return 'grocery';
   if (data.screen === 'Roster') return 'family';
   return 'family';
+}
+
+// True if right now, converted into the member's own IANA timezone (set
+// alongside quiet_hours_start/end whenever the Profile page's time picker
+// is used — the picker itself shows the device's local clock, so the HH:MM
+// values are only meaningful paired with that zone, never as bare UTC).
+// Falls back to UTC only if a member enabled quiet hours before this field
+// existed and hasn't touched the picker since — same graceful-degrade
+// PawBond's own inQuietHours() in supabase/functions/_shared/prefs.ts uses
+// when no timezone is on file, not a design choice specific to this file.
+// Handles the overnight-wraparound case (e.g. 21:00–07:00).
+function inQuietWindow(start: string, end: string, timezone: string | null): boolean {
+  const now = new Date();
+  let nowMins: number;
+  if (timezone) {
+    try {
+      const parts = Intl.DateTimeFormat('en-US', {
+        hour: '2-digit', minute: '2-digit', hour12: false, timeZone: timezone,
+      }).formatToParts(now);
+      const h = parseInt(parts.find(p => p.type === 'hour')?.value ?? '0', 10);
+      const m = parseInt(parts.find(p => p.type === 'minute')?.value ?? '0', 10);
+      nowMins = h * 60 + m;
+    } catch {
+      nowMins = now.getUTCHours() * 60 + now.getUTCMinutes();
+    }
+  } else {
+    nowMins = now.getUTCHours() * 60 + now.getUTCMinutes();
+  }
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  const startMins = sh * 60 + sm;
+  const endMins = eh * 60 + em;
+  if (startMins >= endMins) return nowMins >= startMins || nowMins < endMins;
+  return nowMins >= startMins && nowMins < endMins;
 }
 
 interface NotifShape {
@@ -441,25 +524,19 @@ serve(async (req) => {
         // never stores 'senior', only 'grandparent'.
         const { data: parents } = await supabase
           .from('members')
-          .select('id, expo_push_token')
+          .select('id')
           .eq('family_id', familyId)
-          .in('role', ['parent', 'grandparent'])
-          .not('expo_push_token', 'is', null);
+          .in('role', ['parent', 'grandparent']);
         resolvedMemberIds = (parents ?? []).map((m: any) => m.id);
-        pushTokens = (parents ?? []).map((m: any) => m.expo_push_token).filter(Boolean);
+        // pushTokens deliberately left empty here — resolved from
+        // member_device_tokens (with expo_push_token fallback) further down,
+        // after the category-preference filter has had a chance to narrow
+        // resolvedMemberIds.
       } else if (NOTIFY_SPECIFIC.includes(type)) {
         // For member-specific types, the payload should carry memberId or fromMemberId
         const specificId = (payload.memberId ?? payload.fromMemberId ?? payload.assigneeId) as string | undefined;
         if (specificId) {
-          const { data: member } = await supabase
-            .from('members')
-            .select('id, expo_push_token')
-            .eq('id', specificId)
-            .single();
-          if (member?.expo_push_token) {
-            resolvedMemberIds = [member.id];
-            pushTokens = [member.expo_push_token];
-          }
+          resolvedMemberIds = [specificId];
         }
       }
     }
@@ -501,23 +578,39 @@ serve(async (req) => {
       pushTokens = [];
     }
 
-    if (!pushTokens.length && resolvedMemberIds.length) {
-      const { data: members } = await supabase
+    // Quiet hours — suppresses the PUSH only, not the in-app notifications-
+    // table row (persisted below regardless), so a muted push during quiet
+    // hours still shows up in the bell once the recipient opens the app.
+    // Deliberately a SEPARATE id list from resolvedMemberIds (which still
+    // feeds the persist step further down unfiltered by quiet hours) — a
+    // person shouldn't lose the notification entirely just because it
+    // arrived at 2am, only the buzz/sound.
+    let pushEligibleIds = resolvedMemberIds;
+    if (pushEligibleIds.length) {
+      const { data: quietRows } = await supabase
         .from('members')
-        .select('expo_push_token')
-        .in('id', resolvedMemberIds)
-        .not('expo_push_token', 'is', null);
-      pushTokens = (members ?? []).map((m: any) => m.expo_push_token).filter(Boolean);
+        .select('id, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, timezone')
+        .in('id', pushEligibleIds);
+      pushEligibleIds = pushEligibleIds.filter(id => {
+        const m = (quietRows ?? []).find((r: any) => r.id === id);
+        if (!m?.quiet_hours_enabled || !m.quiet_hours_start || !m.quiet_hours_end) return true;
+        return !inQuietWindow(m.quiet_hours_start, m.quiet_hours_end, m.timezone ?? null);
+      });
+      pushTokens = [];
+    }
+
+    if (!pushTokens.length && pushEligibleIds.length) {
+      pushTokens = await resolveTokensForMembers(supabase, pushEligibleIds);
     } else if (excludeMemberId && tokens?.length) {
       // Caller passed raw tokens directly (rare path) — can't map a token
       // back to a member id here to exclude by id, so exclude by re-deriving
-      // from members instead when this happens; in practice every current
-      // caller passes memberIds, not raw tokens, so this is a defensive
-      // fallback rather than a hit path.
-      const { data: excludedMember } = await supabase
-        .from('members').select('expo_push_token').eq('id', excludeMemberId).single();
-      if (excludedMember?.expo_push_token) {
-        pushTokens = pushTokens.filter(t => t !== excludedMember.expo_push_token);
+      // from that member's known tokens (member_device_tokens, falling back
+      // to members.expo_push_token) instead when this happens; in practice
+      // every current caller passes memberIds, not raw tokens, so this is a
+      // defensive fallback rather than a hit path.
+      const excludedTokens = await resolveTokensForMembers(supabase, [excludeMemberId]);
+      if (excludedTokens.length) {
+        pushTokens = pushTokens.filter(t => !excludedTokens.includes(t));
       }
     }
 

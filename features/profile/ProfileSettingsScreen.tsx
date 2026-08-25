@@ -9,17 +9,48 @@
 //
 // Role-gating follows the same `roles: MemberRole[]` convention VaultScreen's
 // own FEATURES array and Hub's role views already use — no new pattern.
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Switch, ActivityIndicator, TextInput } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Switch, ActivityIndicator, TextInput, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '@/lib/ThemeContext';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { useTheme, type ThemeMode } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore, type MemberRole } from '@/store/familyStore';
+import { useChoreStore } from '@/store/choreStore';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
 import { showAlert } from '@/components/AppAlert';
+import AppBottomSheet from '@/components/AppBottomSheet';
+import {
+  isBiometricAvailable, isBiometricEnabled, setBiometricEnabled, getBiometricLabel,
+} from '@/lib/biometrics';
+
+// Same category buckets family-notifier's own categoryFor() groups every
+// real notification type into (supabase/functions/family-notifier/index.ts)
+// — keep these two lists in sync if categories ever change on either side.
+const NOTIF_CATEGORIES: { key: 'chores' | 'family' | 'chat' | 'rewards' | 'requests' | 'grocery'; label: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'chores',   label: 'Chores & Schedules', subtitle: 'Assignments, approvals, deadlines, bonuses', icon: 'checkbox-outline' },
+  { key: 'family',   label: 'Family & Location',  subtitle: 'Arrivals, low battery, safety alerts',        icon: 'people-circle-outline' },
+  { key: 'chat',     label: 'Chat',               subtitle: 'Mentions in family chat',                      icon: 'chatbubble-outline' },
+  { key: 'rewards',  label: 'Rewards',             subtitle: 'Coins earned, redemption decisions',           icon: 'gift-outline' },
+  { key: 'requests', label: 'Requests',            subtitle: 'Kid requests, help requests',                  icon: 'hand-left-outline' },
+  { key: 'grocery',  label: 'Grocery',             subtitle: 'Shopping trips, store proximity',              icon: 'cart-outline' },
+];
+
+// A short, common list — not exhaustive ISO 4217, just enough that a
+// parent picks their real currency instead of typing a code by hand.
+const CURRENCIES: { code: string; symbol: string; label: string }[] = [
+  { code: 'USD', symbol: '$', label: 'US Dollar' },
+  { code: 'EUR', symbol: '€', label: 'Euro' },
+  { code: 'GBP', symbol: '£', label: 'British Pound' },
+  { code: 'INR', symbol: '₹', label: 'Indian Rupee' },
+  { code: 'CAD', symbol: 'CA$', label: 'Canadian Dollar' },
+  { code: 'AUD', symbol: 'AU$', label: 'Australian Dollar' },
+  { code: 'JPY', symbol: '¥', label: 'Japanese Yen' },
+  { code: 'MXN', symbol: 'MX$', label: 'Mexican Peso' },
+];
 
 // ─── Small shared primitives (local — this screen's own chrome, matching
 // FamilySettingsScreen/RosterTab's inline-style house convention rather
@@ -75,6 +106,254 @@ function Row({
   );
 }
 
+// ─── Notifications sheet ────────────────────────────────────────────────────
+// Was 6+ toggle rows sitting flat inline on the main page, pushing
+// everything else down — collapsed into one summary row that opens this
+// sheet instead, matching the app's existing "tap a row → bottom sheet with
+// the full picker" pattern elsewhere (e.g. PillOrderSheet). Category
+// toggles, quiet hours, and call alerts all live here together since
+// they're all "how do I want to be notified", not separable concerns.
+
+function fmt12Hour(hhmm: string | undefined): string {
+  if (!hhmm) return '--:--';
+  const [h, m] = hhmm.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function NotificationsSheet({
+  visible, onClose, activeMember, notifPrefs, setNotifPrefs,
+  storeReminders, setStoreReminders, updateMember, colors, isDark,
+}: {
+  visible: boolean; onClose: () => void; activeMember: any;
+  notifPrefs: Partial<Record<string, boolean>>;
+  setNotifPrefs: (p: Partial<Record<string, boolean>>) => void;
+  storeReminders: boolean; setStoreReminders: (v: boolean) => void;
+  updateMember: (id: string, patch: any) => void;
+  colors: any; isDark: boolean;
+}) {
+  const [quietEnabled, setQuietEnabled] = useState(activeMember.quietHoursEnabled ?? false);
+  const [quietStart, setQuietStart] = useState(activeMember.quietHoursStart ?? '21:00');
+  const [quietEnd, setQuietEnd] = useState(activeMember.quietHoursEnd ?? '07:00');
+  const [callAlertsEnabled, setCallAlertsEnabled] = useState(activeMember.callAlertsEnabled ?? true);
+  const [pickerTarget, setPickerTarget] = useState<'start' | 'end' | null>(null);
+
+  const toTimeDate = (hhmm: string) => {
+    const [h, m] = hhmm.split(':').map(Number);
+    const d = new Date();
+    d.setHours(h, m, 0, 0);
+    return d;
+  };
+
+  const onPickTime = (target: 'start' | 'end', date: Date | undefined) => {
+    setPickerTarget(null);
+    if (!date) return;
+    const hhmm = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    // The picker shows this device's local clock — save the device's real
+    // IANA zone alongside the HH:MM so family-notifier can convert its own
+    // UTC clock into this member's actual local time, instead of the two
+    // ends silently disagreeing about what "9 PM" means.
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (target === 'start') { setQuietStart(hhmm); updateMember(activeMember.id, { quietHoursStart: hhmm, timezone }); }
+    else { setQuietEnd(hhmm); updateMember(activeMember.id, { quietHoursEnd: hhmm, timezone }); }
+  };
+
+  return (
+    <AppBottomSheet visible={visible} onClose={onClose} title="Notifications"
+      subtitle="Choose what you hear about, and when" minHeight="60%" maxHeight="90%">
+      <SectionHeader label="Categories" colors={colors} />
+      {NOTIF_CATEGORIES.map(cat => {
+        const enabled = notifPrefs[cat.key] !== false;
+        return (
+          <Row
+            key={cat.key}
+            icon={cat.icon}
+            label={cat.label}
+            subtitle={cat.subtitle}
+            colors={colors} isDark={isDark}
+            right={
+              <Switch
+                value={enabled}
+                onValueChange={(next) => {
+                  const nextPrefs = { ...notifPrefs, [cat.key]: next };
+                  setNotifPrefs(nextPrefs);
+                  updateMember(activeMember.id, { notificationPrefs: nextPrefs });
+                }}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor="#fff"
+              />
+            }
+          />
+        );
+      })}
+      <Row
+        icon="navigate-outline"
+        label="Store proximity reminders"
+        subtitle="Nudge me when I'm near a store with pending items"
+        colors={colors} isDark={isDark}
+        right={
+          <Switch
+            value={storeReminders}
+            onValueChange={(next) => {
+              setStoreReminders(next);
+              updateMember(activeMember.id, { storeProximityRemindersEnabled: next });
+            }}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor="#fff"
+          />
+        }
+      />
+
+      <View style={{ marginTop: 18 }}>
+        <SectionHeader label="Call Alerts" colors={colors} />
+        <Row
+          icon="call-outline"
+          label="Call-style reminders"
+          subtitle="Chores/events with a phone-call-style alert enabled"
+          colors={colors} isDark={isDark}
+          right={
+            <Switch
+              value={callAlertsEnabled}
+              onValueChange={(next) => {
+                setCallAlertsEnabled(next);
+                updateMember(activeMember.id, { callAlertsEnabled: next });
+              }}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor="#fff"
+            />
+          }
+        />
+      </View>
+
+      <View style={{ marginTop: 18 }}>
+        <SectionHeader label="Quiet Hours" colors={colors} />
+        <Row
+          icon="moon-outline"
+          label="Enable quiet hours"
+          subtitle="Pause push notifications during this window"
+          colors={colors} isDark={isDark}
+          right={
+            <Switch
+              value={quietEnabled}
+              onValueChange={(next) => {
+                setQuietEnabled(next);
+                updateMember(activeMember.id, { quietHoursEnabled: next });
+              }}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor="#fff"
+            />
+          }
+        />
+        {quietEnabled && (
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity onPress={() => setPickerTarget('start')} style={{
+              flex: 1, paddingVertical: 12, borderRadius: RADIUS.md, backgroundColor: colors.card,
+              borderWidth: 1, borderColor: colors.border, alignItems: 'center',
+            }}>
+              <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginBottom: 2 }}>From</Text>
+              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>{fmt12Hour(quietStart)}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setPickerTarget('end')} style={{
+              flex: 1, paddingVertical: 12, borderRadius: RADIUS.md, backgroundColor: colors.card,
+              borderWidth: 1, borderColor: colors.border, alignItems: 'center',
+            }}>
+              <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginBottom: 2 }}>Until</Text>
+              <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>{fmt12Hour(quietEnd)}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {pickerTarget && (
+          <DateTimePicker
+            value={toTimeDate(pickerTarget === 'start' ? quietStart : quietEnd)}
+            mode="time"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={(_e, date) => onPickTime(pickerTarget, date)}
+          />
+        )}
+      </View>
+    </AppBottomSheet>
+  );
+}
+
+// ─── Currency sheet ─────────────────────────────────────────────────────────
+// Parent-only (gated at the call site, isParent) — sets both which currency
+// symbol is shown and the coins-per-unit ratio those wallet/cash-out
+// screens already convert with. Reuses updateHouseholdSettings, the same
+// real, working updater those screens' balances read from — this was only
+// ever missing a UI, not backing logic.
+
+function CurrencySheet({
+  visible, onClose, householdSettings, updateHouseholdSettings, colors, isDark,
+}: {
+  visible: boolean; onClose: () => void;
+  householdSettings: { currencyCode: string; currencySymbol: string; pointsToFiatRatio: number };
+  updateHouseholdSettings: (updates: Partial<{ currencyCode: string; currencySymbol: string; pointsToFiatRatio: number }>) => void;
+  colors: any; isDark: boolean;
+}) {
+  // 1 / ratio = coins per unit of currency — easier for a parent to reason
+  // about ("100 coins per dollar") than the raw ratio (0.01) itself.
+  const [coinsPerUnit, setCoinsPerUnit] = useState(
+    String(householdSettings.pointsToFiatRatio > 0 ? Math.round(1 / householdSettings.pointsToFiatRatio) : 100)
+  );
+
+  const applyCoinsPerUnit = (text: string) => {
+    setCoinsPerUnit(text);
+    const n = parseInt(text, 10);
+    if (n > 0) updateHouseholdSettings({ pointsToFiatRatio: 1 / n });
+  };
+
+  return (
+    <AppBottomSheet visible={visible} onClose={onClose} title="Currency"
+      subtitle="How coins convert to real money for the whole family" minHeight="55%" maxHeight="85%">
+      <SectionHeader label="Currency" colors={colors} />
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
+        {CURRENCIES.map(c => {
+          const active = householdSettings.currencyCode === c.code;
+          return (
+            <TouchableOpacity
+              key={c.code}
+              onPress={() => updateHouseholdSettings({ currencyCode: c.code, currencySymbol: c.symbol })}
+              style={{
+                paddingHorizontal: 12, paddingVertical: 9, borderRadius: RADIUS.md,
+                backgroundColor: active ? colors.primary : colors.card,
+                borderWidth: 1, borderColor: active ? colors.primary : colors.border,
+              }}
+            >
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: active ? '#fff' : colors.textPrimary }}>
+                {c.symbol} {c.code}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <SectionHeader label="Conversion Rate" colors={colors} />
+      <View style={{
+        flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14,
+        borderRadius: RADIUS.md, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+      }}>
+        <TextInput
+          value={coinsPerUnit}
+          onChangeText={applyCoinsPerUnit}
+          keyboardType="number-pad"
+          style={{
+            flex: 1, fontSize: TYPO.heading, fontWeight: '800', color: colors.textPrimary,
+            borderWidth: 1.5, borderColor: colors.border, borderRadius: RADIUS.sm,
+            paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.surface,
+          }}
+        />
+        <Text style={{ fontSize: TYPO.body, color: colors.textSecondary }}>
+          coins = 1 {householdSettings.currencySymbol}
+        </Text>
+      </View>
+      <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginTop: 10 }}>
+        Example: 250 coins = {householdSettings.currencySymbol}{(250 * householdSettings.pointsToFiatRatio).toFixed(2)}
+      </Text>
+    </AppBottomSheet>
+  );
+}
+
 // ─── Delete flows ───────────────────────────────────────────────────────────
 
 // Type-to-confirm — matches the "scary enough" bar the spec asks for, one
@@ -107,9 +386,12 @@ function TypeToConfirmRow({
 }
 
 export default function ProfileSettingsScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors, isDark, mode, setMode } = useTheme();
   const { members, activeMemberId, updateMember, removeMember } = useFamilyStore();
   const { signOut } = useAuthStore();
+  const householdSettings = useChoreStore(s => s.householdSettings);
+  const updateHouseholdSettings = useChoreStore(s => s.updateHouseholdSettings);
+  const [showCurrencySheet, setShowCurrencySheet] = useState(false);
 
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const role: MemberRole = activeMember?.role ?? 'parent';
@@ -117,10 +399,23 @@ export default function ProfileSettingsScreen() {
   const isAuthLinked = !!activeMember?.authUserId;
 
   const [storeReminders, setStoreReminders] = useState(activeMember?.storeProximityRemindersEnabled ?? true);
-  const [pushEnabled, setPushEnabled] = useState(true);
+  const [notifPrefs, setNotifPrefs] = useState(activeMember?.notificationPrefs ?? {});
+  const [showNotifSheet, setShowNotifSheet] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [showDangerConfirm, setShowDangerConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Biometric app-lock — real, already-wired-at-the-app-level preference
+  // (app/_layout.tsx gates foreground/session-resume locking on this exact
+  // stored value already); this screen just needed a UI for it.
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [bioLabel, setBioLabel] = useState('Biometrics');
+  const [bioEnabled, setBioEnabled] = useState(false);
+  useEffect(() => {
+    isBiometricAvailable().then(setBioAvailable);
+    getBiometricLabel().then(setBioLabel);
+    isBiometricEnabled().then(setBioEnabled);
+  }, []);
 
   if (!activeMember) {
     return (
@@ -234,41 +529,122 @@ export default function ProfileSettingsScreen() {
           />
         </View>
 
-        {/* Notifications */}
+        {/* Notifications — was 6+ toggle rows sitting flat on this page;
+            collapsed into one summary row that opens NotificationsSheet
+            (categories, quiet hours, call alerts all together), same
+            "tap a row → bottom sheet" pattern the app uses elsewhere. */}
         <View style={{ marginBottom: 24 }}>
           <SectionHeader label="Notifications" colors={colors} />
           <Row
             icon="notifications-outline"
-            label="Push notifications"
-            subtitle="Chores, chat, calendar, and family alerts"
-            colors={colors} isDark={isDark}
-            right={
-              <Switch
-                value={pushEnabled}
-                onValueChange={setPushEnabled}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor="#fff"
-              />
+            label="Notifications"
+            subtitle={
+              Object.values(notifPrefs).some(v => v === false)
+                ? 'Some categories muted — tap to review'
+                : 'All categories on · tap to customize'
             }
-          />
-          <Row
-            icon="navigate-outline"
-            label="Store proximity reminders"
-            subtitle="Nudge me when I'm near a store with pending items"
+            onPress={() => setShowNotifSheet(true)}
             colors={colors} isDark={isDark}
-            right={
-              <Switch
-                value={storeReminders}
-                onValueChange={(next) => {
-                  setStoreReminders(next);
-                  updateMember(activeMember.id, { storeProximityRemindersEnabled: next });
-                }}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor="#fff"
-              />
-            }
           />
         </View>
+
+        <NotificationsSheet
+          visible={showNotifSheet}
+          onClose={() => setShowNotifSheet(false)}
+          activeMember={activeMember}
+          notifPrefs={notifPrefs}
+          setNotifPrefs={setNotifPrefs}
+          storeReminders={storeReminders}
+          setStoreReminders={setStoreReminders}
+          updateMember={updateMember}
+          colors={colors} isDark={isDark}
+        />
+
+        {/* Appearance */}
+        <View style={{ marginBottom: 24 }}>
+          <SectionHeader label="Appearance" colors={colors} />
+          <View style={{
+            flexDirection: 'row', borderRadius: RADIUS.md, backgroundColor: colors.card,
+            borderWidth: 1, borderColor: colors.border, padding: 4, gap: 4,
+          }}>
+            {([
+              { key: 'system', label: 'System', icon: 'phone-portrait-outline' },
+              { key: 'light',  label: 'Light',  icon: 'sunny-outline' },
+              { key: 'dark',   label: 'Dark',   icon: 'moon-outline' },
+            ] as { key: ThemeMode; label: string; icon: keyof typeof Ionicons.glyphMap }[]).map(opt => {
+              const active = mode === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  onPress={() => setMode(opt.key)}
+                  style={{
+                    flex: 1, alignItems: 'center', gap: 4, paddingVertical: 10, borderRadius: RADIUS.sm,
+                    backgroundColor: active ? colors.primary : 'transparent',
+                  }}
+                >
+                  <Ionicons name={opt.icon} size={18} color={active ? '#fff' : colors.textSecondary} />
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: active ? '#fff' : colors.textSecondary }}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Security */}
+        {bioAvailable && (
+          <View style={{ marginBottom: 24 }}>
+            <SectionHeader label="Security" colors={colors} />
+            <Row
+              icon="finger-print-outline"
+              label={`Require ${bioLabel}`}
+              subtitle="Lock the app when it's backgrounded or reopened"
+              colors={colors} isDark={isDark}
+              right={
+                <Switch
+                  value={bioEnabled}
+                  onValueChange={async (next) => {
+                    setBioEnabled(next);
+                    await setBiometricEnabled(next);
+                  }}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#fff"
+                />
+              }
+            />
+          </View>
+        )}
+
+        {/* Currency — the coins-to-real-money conversion every kid's wallet/
+            cash-out screen already displays (StoreScreen, ChildChoreBoard,
+            ParentReviewDeck) was hardcoded to a bare $ with no setting to
+            change it at all. Parent-editable; everyone else sees the same
+            row as read-only display, per explicit request. */}
+        <View style={{ marginBottom: 24 }}>
+          <SectionHeader label="Currency" colors={colors} />
+          <Row
+            icon="cash-outline"
+            label={`${householdSettings.currencyCode} (${householdSettings.currencySymbol})`}
+            subtitle={
+              isParent
+                ? `100 coins = ${householdSettings.currencySymbol}${(100 * householdSettings.pointsToFiatRatio).toFixed(2)} · tap to change`
+                : `100 coins = ${householdSettings.currencySymbol}${(100 * householdSettings.pointsToFiatRatio).toFixed(2)}`
+            }
+            onPress={isParent ? () => setShowCurrencySheet(true) : undefined}
+            colors={colors} isDark={isDark}
+          />
+        </View>
+
+        {isParent && (
+          <CurrencySheet
+            visible={showCurrencySheet}
+            onClose={() => setShowCurrencySheet(false)}
+            householdSettings={householdSettings}
+            updateHouseholdSettings={updateHouseholdSettings}
+            colors={colors} isDark={isDark}
+          />
+        )}
 
         {/* Legal */}
         <View style={{ marginBottom: 24 }}>

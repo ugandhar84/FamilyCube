@@ -16,12 +16,12 @@ import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, runOnJS, type SharedValue,
 } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
-import { Radio, BookOpen, Heart, ShoppingCart, ChefHat, Coins, Image as ImageIcon, FolderOpen, Users, Gift, SlidersHorizontal, X, GripVertical, Check } from 'lucide-react-native';
+import { BookOpen, Heart, ShoppingCart, ChefHat, Coins, Image as ImageIcon, FolderOpen, Gift, SlidersHorizontal, X, GripVertical, Check } from 'lucide-react-native';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
 import type { MemberRole } from '@/store/familyStore';
 
-type PillId = 'gps' | 'school' | 'health' | 'records' | 'meals' | 'memories' | 'ledger' | 'roster' | 'grocery' | 'store';
+type PillId = 'school' | 'health' | 'records' | 'meals' | 'memories' | 'ledger' | 'grocery' | 'store';
 
 // A curated "silky" pastel set (user-picked), one per pill, replacing the
 // single flat beige (#F2ECE1) every pill previously shared regardless of
@@ -30,7 +30,6 @@ type PillId = 'gps' | 'school' | 'health' | 'records' | 'meals' | 'memories' | '
 // deeper-saturated version of the same hue (icon/text) — the raw pastel
 // alone is too washed out to read as icon/text color at this size.
 export const PILL_COLORS: Record<PillId, { light: string; deep: string }> = {
-  gps:      { light: '#C9E0F5', deep: '#4776A6' }, // Powder Blue — was Sky Blue, too close to Records' Light Cyan Blue
   school:   { light: '#D9CCF0', deep: '#7860AD' }, // Soft Lavender — was Pale Periwinkle, too close to Memories' pink-purple
   health:   { light: '#F6C4BE', deep: '#B14A3A' }, // Coral Pink, softened toward pastel — full-saturation #F28B82 read too loud/cheap next to the other silky pastels
   grocery:  { light: '#C8ECD9', deep: '#3F9A6E' }, // Mint Green
@@ -38,12 +37,14 @@ export const PILL_COLORS: Record<PillId, { light: string; deep: string }> = {
   ledger:   { light: '#F7E6A8', deep: '#B79A1E' }, // Buttercup Yellow
   memories: { light: '#F5D6DC', deep: '#C46B85' }, // Rose Pink
   records:  { light: '#C6E5F0', deep: '#3E86A0' }, // Light Cyan Blue
-  roster:   { light: '#C7EDE0', deep: '#3A9683' }, // Seafoam Mint
   store:    { light: '#F4D4CE', deep: '#C97656' }, // Salmon Cream
 };
 
+// 'gps'/Radar removed — now a dedicated top-level tab for parents (FindFam),
+// no longer needed as a Hub pill too. 'roster' removed — the family tree/
+// member management surface it opened is already reachable from Profile's
+// own "See full family tree" link, so this was a duplicate entry point.
 const PILLS: { id: PillId; label: string; Icon: any; roles: MemberRole[] }[] = [
-  { id: 'gps',      label: 'Radar',    Icon: Radio,        roles: ['parent', 'kid'] },
   { id: 'school',   label: 'School',   Icon: BookOpen,     roles: ['parent', 'kid'] },
   { id: 'health',   label: 'Health',   Icon: Heart,        roles: ['parent', 'kid'] },
   { id: 'grocery',  label: 'Grocery',  Icon: ShoppingCart, roles: ['parent'] },
@@ -51,7 +52,6 @@ const PILLS: { id: PillId; label: string; Icon: any; roles: MemberRole[] }[] = [
   { id: 'ledger',   label: 'Ledger',   Icon: Coins,        roles: ['parent', 'kid'] },
   { id: 'memories', label: 'Memories', Icon: ImageIcon,    roles: ['parent', 'kid', 'senior'] },
   { id: 'records',  label: 'Records',  Icon: FolderOpen,   roles: ['parent'] },
-  { id: 'roster',   label: 'Roster',   Icon: Users,        roles: ['parent'] },
   { id: 'store',    label: 'Perks',    Icon: Gift,         roles: ['parent', 'kid'] },
 ];
 

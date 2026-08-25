@@ -8,8 +8,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
-  Radio, Pill, ChefHat, Image as ImageIcon, ScrollText,
-  Users, LogOut, FolderOpen, Gift, ChevronRight,
+  Pill, ChefHat, Image as ImageIcon, ScrollText,
+  LogOut, FolderOpen, Gift, ChevronRight,
   ShoppingCart, Coins, Heart, BookOpen,
 } from 'lucide-react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,11 +23,9 @@ import NotificationPanel from '@/components/NotificationPanel';
 import { useNotifStore } from '@/store/notifStore';
 
 import { PILL_COLORS } from '@/features/hub/AppsQuickAccessPills';
-import GpsTabComp      from './tabs/GpsTab';
 import HealthTabComp   from './tabs/HealthTab';
 import MealsTabComp    from './tabs/MealsTab';
 import MemoriesTabComp from './tabs/MemoriesTab';
-import RosterTabComp   from './tabs/RosterTab';
 import RecordsTabComp  from './tabs/RecordsTab';
 import SchoolTabComp   from './tabs/SchoolTab';
 import GroceryScreen   from '@/features/grocery/GroceryScreen';
@@ -35,7 +33,7 @@ import StoreScreen     from '@/features/store/StoreScreen';
 
 // ─── Feature definitions ──────────────────────────────────────────────────────
 
-type FeatureId = 'gps' | 'school' | 'health' | 'records' | 'meals' | 'memories' | 'roster' | 'grocery' | 'store';
+type FeatureId = 'school' | 'health' | 'records' | 'meals' | 'memories' | 'grocery' | 'store';
 
 interface Feature {
   id: FeatureId;
@@ -63,15 +61,18 @@ interface Feature {
 // same "silky" pastel set the Hub's quick-access pills use) so a feature's
 // tile, detail-header icon, and name-chip all match the pill that deep-links
 // into it, instead of carrying their own separate, unrelated hex set.
+// 'gps'/Radar removed — now a dedicated top-level tab for parents (FindFam,
+// app/(tabs)/gps.tsx), no longer needed as an Apps tile too. 'roster'
+// removed — the family tree/member management surface it opened is already
+// reachable from Profile's own "See full family tree" link (RosterTab.tsx),
+// so this was a duplicate entry point, not the only one.
 const FEATURES: Feature[] = [
-  { id: 'gps',      label: 'Radar',    subtitle: 'Live family locations',   emoji: '📡', Icon: Radio,        accent: PILL_COLORS.gps.deep,      bg: PILL_COLORS.gps.light,      bgDark: PILL_COLORS.gps.deep      + '30', roles: ['parent', 'kid', 'teen', 'senior'] },
   { id: 'school',   label: 'School',   subtitle: 'Timetable · Terms',       emoji: '📚', Icon: BookOpen,     accent: PILL_COLORS.school.deep,   bg: PILL_COLORS.school.light,   bgDark: PILL_COLORS.school.deep   + '30', roles: ['parent', 'kid', 'teen'] },
   { id: 'health',   label: 'Health',   subtitle: 'My Active Medications',    emoji: '💊', Icon: Heart,        accent: PILL_COLORS.health.deep,   bg: PILL_COLORS.health.light,   bgDark: PILL_COLORS.health.deep   + '30', roles: ['parent', 'kid', 'teen', 'senior'] },
   { id: 'grocery',  label: 'Grocery',  subtitle: 'Runs · Lists · Receipts', emoji: '🛒', Icon: ShoppingCart, accent: PILL_COLORS.grocery.deep,  bg: PILL_COLORS.grocery.light,  bgDark: PILL_COLORS.grocery.deep  + '30', roles: ['parent'] },
   { id: 'meals',    label: 'Meals',    subtitle: 'Recipes · Nutrition',     emoji: '🍽️', Icon: ChefHat,      accent: PILL_COLORS.meals.deep,    bg: PILL_COLORS.meals.light,    bgDark: PILL_COLORS.meals.deep    + '30', roles: ['parent'] },
   { id: 'memories', label: 'Memories', subtitle: 'Photos · Moments',        emoji: '📸', Icon: ImageIcon,    accent: PILL_COLORS.memories.deep, bg: PILL_COLORS.memories.light, bgDark: PILL_COLORS.memories.deep + '30', roles: ['parent', 'kid', 'teen', 'senior'] },
   { id: 'records',  label: 'Records',  subtitle: 'Documents · Files',       emoji: '📁', Icon: FolderOpen,   accent: PILL_COLORS.records.deep,  bg: PILL_COLORS.records.light,  bgDark: PILL_COLORS.records.deep  + '30', roles: ['parent'] },
-  { id: 'roster',   label: 'Roster',   subtitle: 'Members · Roles',         emoji: '👥', Icon: Users,        accent: PILL_COLORS.roster.deep,   bg: PILL_COLORS.roster.light,   bgDark: PILL_COLORS.roster.deep   + '30', roles: ['parent'] },
   { id: 'store',    label: 'Perks',    subtitle: 'Rewards · Redeem',        emoji: '🎁', Icon: Gift,         accent: PILL_COLORS.store.deep,    bg: PILL_COLORS.store.light,    bgDark: PILL_COLORS.store.deep    + '30', roles: ['parent', 'kid', 'teen', 'senior'] },
 ];
 
@@ -111,7 +112,7 @@ function FeatureDetail({
             {role === 'kid' && feature.id === 'health' ? 'My Active Medications' : feature.subtitle}
           </Text>
         </View>
-        {feature.id !== 'gps' && feature.id !== 'health' && (
+        {feature.id !== 'health' && (
           <View style={{ backgroundColor: isDark ? feature.bgDark : feature.bg,
             borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
             borderWidth: 1, borderColor: feature.accent + '30' }}>
@@ -127,11 +128,6 @@ function FeatureDetail({
         <GroceryScreen hideHeader />
       ) : feature.id === 'store' ? (
         <StoreScreen hideHeader />
-      ) : feature.id === 'gps' ? (
-        // Own layout, not the shared ScrollView — the map wants to fill
-        // most of the screen at the top with details scrollable below it,
-        // not be squeezed into a padded scroll column like the other tabs.
-        <GpsTabComp colors={colors} isDark={isDark} />
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 80, paddingTop: 14 }}>
@@ -140,7 +136,6 @@ function FeatureDetail({
           {feature.id === 'records'  && <RecordsTabComp  colors={colors} isDark={isDark} />}
           {feature.id === 'meals'    && <MealsTabComp    colors={colors} isDark={isDark} />}
           {feature.id === 'memories' && <MemoriesTabComp colors={colors} isDark={isDark} readOnly={role === 'senior'} />}
-          {feature.id === 'roster'   && <RosterTabComp   colors={colors} isDark={isDark} />}
         </ScrollView>
       )}
     </View>

@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { View, Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useChoreStore, type ChoreTask } from '@/store/choreStore';
 import type { Quest } from '@/store/questStore';
@@ -8,26 +7,24 @@ import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssi
 import { useRewardStore } from '@/store/rewardStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { useKidRequestStore } from '@/store/kidRequestStore';
+import { useDismissedHubItemsStore } from '@/store/dismissedHubItemsStore';
 import { withinLast24h } from '@/lib/dates';
 import { KidRequestModal } from '@/features/calendar/KidRequestModal';
 import { useChatStore } from '@/store/chatStore';
 import { localToday, fmtTime, hoursUntilEvent, useCountdown } from './hubUtils';
 import { driverLabelByName } from '@/lib/format';
+import { BRAND } from '@/components/FamilyCubeLogo';
 
 // Encoding helpers and modals live in KidModals.tsx
 export { GROCERY_PREFIX, SUPPLIES_PREFIX, encodeGroceryRequest, decodeGroceryRequest } from './KidModals';
 import { SUPPLIES_PREFIX, encodeRideLate, decodeRideLate } from './KidModals';
 import { GroceryModal, SuppliesModal, AskModal, KidRequestHistoryModal, QuestProposalModal } from './KidModals';
-import { HubTimelineSection } from './HubTimelineSection';
+import AppBottomSheet from '@/components/AppBottomSheet';
 import { useUpcomingOpenEvents } from './useUpcomingOpenEvents';
-import { PickupRadarStatus } from './hubComponents';
 
 import { KidHeroCard } from './kid/KidHeroCard';
-import { KidRideBanner } from './kid/KidRideBanner';
-import { AwaitingDriverBanner } from './kid/AwaitingDriverBanner';
-import { KidUrgentAlerts } from './kid/KidUrgentAlerts';
-import { KidCheckinRow } from './kid/KidCheckinRow';
-import { KidActionRow } from './kid/KidActionRow';
+import { KidNeedsYouSection } from './kid/KidNeedsYouSection';
+import { KidTodaySection } from './kid/KidTodaySection';
 import { MyQuestsSection } from './kid/MyQuestsSection';
 import { KidMoreRow } from './kid/KidMoreRow';
 import { KidLeaderboard } from './kid/KidLeaderboard';
@@ -80,13 +77,15 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   const [questProposalModal, setQuestProposalModal] = useState(false);
   const [choreProposalModal, setChoreProposalModal] = useState(false);
   const [lateNudgeSent,   setLateNudgeSent]   = useState<Record<string, boolean>>({});
-  const [dismissedReplies, setDismissedReplies] = useState<Set<string>>(new Set());
-  const [dismissedActions,  setDismissedActions]  = useState<Set<string>>(new Set());
-  const [dismissedRideIds, setDismissedRideIds] = useState<Set<string>>(new Set());
   const [declineQuest,    setDeclineQuest]    = useState<ChoreTask | null>(null);
   // Submitting a photo-required quest — "Take Photo to Get Paid" must not pay
   // out on a bare tap; the photo IS the proof, so collect it before submitting.
   const [submitProofQuest, setSubmitProofQuest] = useState<Quest | null>(null);
+  // Leaderboard/Cheer Squad used to be their own always-visible blocks;
+  // they're now reachable from KidMoreRow as sheets instead, so they don't
+  // permanently occupy scroll space.
+  const [leaderboardSheet, setLeaderboardSheet] = useState(false);
+  const [cheerSquadSheet,  setCheerSquadSheet]  = useState(false);
 
   // KidView can render without ParentView ever having mounted this session
   // (e.g. app opened straight into Kid Mode), so it must hydrate the kid
@@ -95,30 +94,15 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
     if (!kidRequestsLoaded) loadKidRequests();
   }, [kidRequestsLoaded]);
 
-  // Persist dismissed state
+  // Dismiss state for the "Needs You" list — DB-backed (dismissed_hub_items
+  // table), not AsyncStorage: survives reinstall and syncs across a
+  // shared/second device. dismissItem() is optimistic (updates local state
+  // immediately) so a dismissed row disappears instantly, same feel as the
+  // old local-only state, just actually persisted now.
+  const { dismissedIds, load: loadDismissedHubItems, dismissItem } = useDismissedHubItemsStore();
   useEffect(() => {
-    AsyncStorage.getItem(`dismissed_replies_${active.id}`).then(val => {
-      if (val) setDismissedReplies(new Set(JSON.parse(val)));
-    });
-    AsyncStorage.getItem(`dismissed_actions_${active.id}`).then(val => {
-      if (val) setDismissedActions(new Set(JSON.parse(val)));
-    });
-    AsyncStorage.getItem(`dismissed_rides_${active.id}`).then(val => {
-      if (val) setDismissedRideIds(new Set(JSON.parse(val)));
-    });
+    loadDismissedHubItems(active.id);
   }, [active.id]);
-
-  useEffect(() => {
-    AsyncStorage.setItem(`dismissed_replies_${active.id}`, JSON.stringify([...dismissedReplies]));
-  }, [dismissedReplies, active.id]);
-
-  useEffect(() => {
-    AsyncStorage.setItem(`dismissed_actions_${active.id}`, JSON.stringify([...dismissedActions]));
-  }, [dismissedActions, active.id]);
-
-  useEffect(() => {
-    AsyncStorage.setItem(`dismissed_rides_${active.id}`, JSON.stringify([...dismissedRideIds]));
-  }, [dismissedRideIds, active.id]);
 
   const today       = localToday();
   // Scenarios 2.6/5.4/5.5 — a sensitive/private/Medical event about a
@@ -349,77 +333,60 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
   const recentReplies = myRequests.filter(r =>
     ['approved', 'declined'].includes(r.status) &&
     ['permission', 'question', 'medication', 'checkin', 'tutor', 'cheer'].includes(r.type) &&
-    r.respondedAt && !dismissedReplies.has(r.id) &&
+    r.respondedAt && !dismissedIds.has(r.id) &&
     new Date(r.respondedAt).getTime() > cutoff
   );
-  const dismissedAll = new Set([...dismissedReplies, ...dismissedActions]);
-  const dismissAlert = (id: string) => {
-    if (recentReplies.some(r => r.id === id)) setDismissedReplies(prev => new Set([...prev, id]));
-    else setDismissedActions(prev => new Set([...prev, id]));
-  };
 
   return (
     <>
+      {/* 1. Hero — identity/progress at a glance, plus the single most
+          time-sensitive fact (confirmed ride or next event countdown). */}
       <KidHeroCard
         active={active} colors={colors} isDark={isDark}
         mainCoins={mainCoins} gpCoins={gpCoins} streak={streak} level={level}
         xp={xp} xpForNext={xpForNext} xpPct={xpPct}
         doneToday={doneToday} questGoal={questGoal} questPct={questPct}
-        confirmedRide={confirmedRide}
+        confirmedRide={confirmedRide} rideCountdown={rideCountdown} members={members}
         nextEvent={nextEvent} nextCountdown={nextCountdown}
       />
 
-      <KidUrgentAlerts
-        declinedRides={myDeclinedRides} pendingRides={myPendingRides}
-        declinedQuests={declinedQuests} approvedQuests={approvedQuests}
-        cheersForMe={cheersForMe} recentReplies={recentReplies}
-        members={members} colors={colors} isDark={isDark}
-        dismissedIds={dismissedAll} onDismiss={dismissAlert}
-      />
-
-      {/* -180 (3hr), not -30 — a pickup that ran late relative to the
-          scheduled time is exactly when this window mattered most (a
-          parent's "Pickup Done" tap and the kid's actual pickup often
+      {/* 2. Needs You — merges what were 4 separate pieces (urgent alerts,
+          confirmed-ride banner, awaiting-driver banner, live Pick-up Radar)
+          into one list. Renders nothing when there's nothing to show.
+          -180 (3hr), not -30, on the ride window — a pickup that ran late
+          relative to the scheduled time is exactly when this mattered most
+          (a parent's "Pickup Done" tap and the kid's actual pickup often
           diverge from the original schedule by more than 30 min), and the
           confirm option was disappearing before a delayed pickup even
           finished. Trip-completion itself isn't a signal this view can
           react to (tripStore.complete() only deletes local state, nothing
           persisted for the kid's Hub to read), so widening the schedule-
           based window is the fix instead of wiring a new signal. */}
-      {confirmedRide && rideCountdown !== null && rideCountdown > -180 && !dismissedRideIds.has(confirmedRide.id) && (
-        <KidRideBanner
-          ev={confirmedRide} rideCountdown={rideCountdown} colors={colors} isDark={isDark}
-          active={active} members={members}
-          onConfirmPickup={confirmPickup}
-          onDismiss={(id) => setDismissedRideIds(prev => new Set([...prev, id]))}
-          onSendDriverLate={sendDriverLate} lateNudgeSent={lateNudgeSent}
-        />
-      )}
+      <KidNeedsYouSection
+        declinedRides={myDeclinedRides} pendingRides={myPendingRides}
+        declinedQuests={declinedQuests} approvedQuests={approvedQuests}
+        cheersForMe={cheersForMe} recentReplies={recentReplies}
+        confirmedRide={confirmedRide} rideCountdown={rideCountdown}
+        awaitingDriverRide={awaitingDriverRide} activeTrips={activeTrips}
+        active={active} members={members} colors={colors} isDark={isDark}
+        dismissedIds={dismissedIds} onDismiss={dismissItem}
+        onConfirmPickup={confirmPickup}
+        onSendDriverLate={sendDriverLate} lateNudgeSent={lateNudgeSent}
+      />
 
-      {/* No confirmed ride yet, but a driver HAS been named and just
-          hasn't tapped confirm — distinct from myPendingRides in
-          KidUrgentAlerts ("nobody's looked at this yet"). Without this, a
-          kid whose parent assigned Grandpa as driver had no way to know
-          that had even happened until Grandpa confirmed, sometimes not
-          until the day of. */}
-      {!confirmedRide && awaitingDriverRide && !dismissedRideIds.has(`awaiting-${awaitingDriverRide.id}`) && (
-        <AwaitingDriverBanner
-          ev={awaitingDriverRide} colors={colors} isDark={isDark}
-          onDismiss={(id) => setDismissedRideIds(prev => new Set([...prev, id]))}
-        />
-      )}
-
-      {activeTrips?.map(trip => (
-        <PickupRadarStatus key={trip.tripId} colors={colors} isDark={isDark} activeTrip={trip} />
-      ))}
-
-      <KidCheckinRow colors={colors} onCheckin={sendCheckin} />
-      <KidActionRow colors={colors} isDark={isDark}
+      {/* 3. Today — the timeline strip, with "I'm safe" check-ins and
+          Ask Parent/Need a Ride folded in as inline actions instead of
+          their own standalone rows. */}
+      <KidTodaySection
+        active={active} members={members} events={visibleEvents} updateEvent={updateEvent}
+        colors={colors} isDark={isDark}
+        onCheckin={sendCheckin}
         onAskParent={() => setAskParentSheetFromTile(true)}
-        onNeedRide={() => setAddEventModal(true)} />
+        onNeedRide={() => setAddEventModal(true)}
+      />
 
-      <HubTimelineSection active={active} members={members} events={visibleEvents} updateEvent={updateEvent} colors={colors} isDark={isDark} />
-
+      {/* 4. My Quests — the actual point of the screen; gets the most
+          visual weight now that everything above it is lighter. */}
       <MyQuestsSection
         todoQuests={todoQuests} inProgressQuests={inProgressQuests} reviewQuests={reviewQuests}
         poolQuests={poolQuests} cancelledToday={cancelledQuestsToday} declinedQuests={declinedQuests} allQuests={quests}
@@ -443,11 +410,25 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
         }}
       />
 
+      {/* 5. More — Piggy Bank / Rewards / My Requests / Full Calendar, plus
+          Leaderboard and Cheer Squad moved in as sheet-opening entries
+          instead of their own always-visible blocks. */}
+      <KidMoreRow
+        onPiggyBank={() => setPiggyBankModal(true)} onHistory={() => setHistoryModal(true)}
+        onLeaderboard={() => setLeaderboardSheet(true)} onCheerSquad={() => setCheerSquadSheet(true)}
+        cheerBadge={siblingCheerable.length}
+      />
 
-      <KidMoreRow onPiggyBank={() => setPiggyBankModal(true)} onHistory={() => setHistoryModal(true)} />
-      <KidLeaderboard activeId={active.id} kids={allKids} colors={colors} isDark={isDark} />
-      <CheerSquadSection cheerable={siblingCheerable} siblingKids={siblingKids} colors={colors} isDark={isDark}
-        onCheer={(id) => cheerQuest(id, active.id)} />
+      {/* 6. Leaderboard + Cheer Squad — same components as before, now
+          reachable one tap away from the More row instead of permanently
+          occupying scroll space. */}
+      <AppBottomSheet visible={leaderboardSheet} onClose={() => setLeaderboardSheet(false)} title="Family Leaderboard" accentColor={BRAND.purple}>
+        <KidLeaderboard activeId={active.id} kids={allKids} colors={colors} isDark={isDark} />
+      </AppBottomSheet>
+      <AppBottomSheet visible={cheerSquadSheet} onClose={() => setCheerSquadSheet(false)} title="Cheer Squad" accentColor="#10B981">
+        <CheerSquadSection cheerable={siblingCheerable} siblingKids={siblingKids} colors={colors} isDark={isDark}
+          onCheer={(id) => cheerQuest(id, active.id)} />
+      </AppBottomSheet>
 
       <AskParentSheet
         visible={askParentSheetOpen} onClose={closeAskParentSheet} colors={colors} isDark={isDark}

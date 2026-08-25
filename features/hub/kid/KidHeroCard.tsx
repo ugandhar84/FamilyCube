@@ -1,12 +1,18 @@
 import { View, Text, Pressable } from 'react-native';
 import { router } from 'expo-router';
-import { Zap, Target, CheckCircle2, Calendar, Flame } from 'lucide-react-native';
+import { Zap, Target, CheckCircle2, Calendar, Flame, Car } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { KID } from './kidTheme';
+import { fmtTime } from '../hubUtils';
+import { eventAssignee } from '@/store/eventStore';
+import { driverLabelByName } from '@/lib/format';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
-// Money-green — "goal met" positive accent on the quest-progress bar.
+// Money-green — "goal met" positive accent on the quest-progress bar; also
+// matches the "ride" accent used throughout the Kid Hub (KidNeedsYouSection's
+// ride row) so the hero's own ride chip reads as the same fact, not a
+// differently-colored duplicate.
 const MONEY_GREEN = '#10B981';
 
 // Identity + progress at a glance: level, streak, coin balance, XP bar,
@@ -16,13 +22,19 @@ const MONEY_GREEN = '#10B981';
 // instead of a flat enclosing container.
 export function KidHeroCard({
   active, colors, isDark, mainCoins, gpCoins, streak, level, xp, xpForNext, xpPct,
-  doneToday, questGoal, questPct, confirmedRide, nextEvent, nextCountdown,
+  doneToday, questGoal, questPct, confirmedRide, rideCountdown, members, nextEvent, nextCountdown,
 }: {
   active: FamilyMember; colors: any; isDark: boolean;
   mainCoins: number; gpCoins: number; streak: number; level: number;
   xp: number; xpForNext: number; xpPct: number;
   doneToday: number; questGoal: number; questPct: number;
   confirmedRide: FamilyEvent | undefined;
+  // The single most time-sensitive fact belongs right here in the
+  // glanceable hero card, not only competing for space in the "Needs You"
+  // list below — that list keeps the full actionable ride banner (confirm
+  // pickup / alert my parent), this is just the at-a-glance countdown.
+  rideCountdown?: number | null;
+  members?: FamilyMember[];
   nextEvent: FamilyEvent | undefined; nextCountdown: number | null;
 }) {
   const goalMet = doneToday >= questGoal;
@@ -109,7 +121,18 @@ export function KidHeroCard({
         </View>
       </View>
 
-      {!confirmedRide && nextEvent && nextCountdown !== null && nextCountdown > 0 && (
+      {confirmedRide && rideCountdown != null && rideCountdown > 0 ? (
+        <View style={{ borderRadius: 16, backgroundColor: isDark ? MONEY_GREEN + '1f' : '#ECFDF5',
+          padding: 12, flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+          <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: MONEY_GREEN + '25', alignItems: 'center', justifyContent: 'center' }}>
+            <Car size={15} color={MONEY_GREEN} />
+          </View>
+          <Text style={{ fontSize: KID.sub, fontWeight: '800', color: MONEY_GREEN, flex: 1 }} numberOfLines={1}>
+            {driverLabelByName(eventAssignee(confirmedRide).name, members ?? []) ?? 'Ride'} picks you up
+            {rideCountdown >= 60 ? ` at ${fmtTime(confirmedRide.time)}` : ` in ${rideCountdown}m`}
+          </Text>
+        </View>
+      ) : nextEvent && nextCountdown !== null && nextCountdown > 0 && (
         <View style={{ borderRadius: 16, backgroundColor: colors.tealLight,
           padding: 12, flexDirection: 'row', alignItems: 'center', gap: 9 }}>
           <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: colors.teal + '25', alignItems: 'center', justifyContent: 'center' }}>

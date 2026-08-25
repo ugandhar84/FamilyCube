@@ -1,0 +1,312 @@
+import { useState } from 'react';
+import { View, Text, Pressable } from 'react-native';
+import { router } from 'expo-router';
+import {
+  X, AlertTriangle, Clock, RotateCcw, PartyPopper, ThumbsUp, CheckCircle2, XCircle, Car,
+  UserCheck, Check, Navigation, MapPin,
+} from 'lucide-react-native';
+import { BRAND } from '@/components/FamilyCubeLogo';
+import { KID } from './kidTheme';
+import CelebrationBurst from '@/components/CelebrationBurst';
+import { fmtTime, hoursUntilEvent } from '../hubUtils';
+import { eventAssignee } from '@/store/eventStore';
+import { driverLabelByName } from '@/lib/format';
+import type { FamilyMember } from '@/store/familyStore';
+import type { FamilyEvent } from '@/store/eventStore';
+import type { Quest, QuestCheer } from '@/store/questStore';
+
+// Money-green — positive/confirmed accent used throughout this section
+// (approved quest, cheer, confirmed pickup, en-route trip). Not
+// colors.success (which IS brand teal in this app) — kept as one local
+// constant, matching every component this section merges.
+const MONEY_GREEN = '#10B981';
+
+// ─── Shared row shell ──────────────────────────────────────────────────────
+// Every "Needs You" row — alert, reply, ride banner, awaiting-driver,
+// live trip — renders through this one shell so the merged list reads as
+// ONE consistent kind of thing, not four components stitched together.
+function NeedsYouRow({ Icon, accent, colors, isDark, title, detail, onPress, onDismiss, tone = 'flat', children }: {
+  Icon: typeof AlertTriangle; accent: string; colors: any; isDark: boolean; title: string; detail?: string;
+  onPress?: () => void; onDismiss?: () => void;
+  // 'flat' — tinted background (default, matches old AlertRow/reply cards).
+  // 'solid' — full-color background with white text, reserved for the ride
+  // banner's overdue/here states which need to read as more urgent/alive
+  // than a flat tinted row.
+  tone?: 'flat' | 'solid';
+  children?: React.ReactNode;
+}) {
+  const Wrapper = onPress ? Pressable : View;
+  const solid = tone === 'solid';
+  return (
+    <View style={{ borderRadius: 16, backgroundColor: solid ? accent : (isDark ? colors.card : accent + '14'),
+      borderWidth: 1.5, borderColor: solid ? accent : accent + '50', padding: 14, gap: 10 }}>
+      <Wrapper onPress={onPress} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+        <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: solid ? 'rgba(255,255,255,0.2)' : accent + '20', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon size={17} color={solid ? '#fff' : accent} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: KID.body, fontWeight: '900', color: solid ? '#fff' : accent }}>{title}</Text>
+          {!!detail && <Text style={{ fontSize: KID.sub, color: solid ? 'rgba(255,255,255,0.85)' : colors.textSecondary, marginTop: 2 }} numberOfLines={2}>{detail}</Text>}
+        </View>
+        {onDismiss && (
+          <Pressable onPress={onDismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <X size={16} color={solid ? '#fff' : colors.textTertiary} />
+          </Pressable>
+        )}
+      </Wrapper>
+      {children}
+    </View>
+  );
+}
+
+// ─── Live Pick-up Radar row — was PickupRadarStatus (hubComponents.tsx) ────
+// Not dismissible — it reflects a trip that's actually in progress right
+// now, not a stale notification; it disappears on its own once the trip
+// ends (activeTrips no longer includes it), same as before.
+function NeedsYouTripRow({ colors, isDark, activeTrip }: {
+  colors: any; isDark: boolean;
+  activeTrip: { kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; etaMinutes: number; startedAtMs?: number };
+}) {
+  const elapsedMin = activeTrip.startedAtMs ? (Date.now() - activeTrip.startedAtMs) / 60_000 : 0;
+  const isOverdue = elapsedMin - activeTrip.etaMinutes >= 5;
+  const activeColor = isOverdue ? colors.danger : MONEY_GREEN;
+
+  return (
+    <NeedsYouRow
+      Icon={Navigation} accent={activeColor} colors={colors} isDark={isDark}
+      title={`${activeTrip.driverName} picking up ${activeTrip.kidName}`}
+      detail={isOverdue ? 'Running behind — trip is still on the way' : 'En route now'}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Text style={{ fontSize: 18 }}>{activeTrip.driverEmoji ?? '🚗'}</Text>
+        <MapPin size={12} color={activeColor} />
+        <Text style={{ fontSize: 18 }}>{activeTrip.kidEmoji ?? '🧒'}</Text>
+      </View>
+    </NeedsYouRow>
+  );
+}
+
+// ─── Confirmed-ride row — was KidRideBanner.tsx ────────────────────────────
+function rideState(rideCountdown: number, confirmed: boolean) {
+  if (confirmed) return 'confirmed' as const;
+  if (rideCountdown > 15) return 'counting' as const;
+  if (rideCountdown > -2) return 'here' as const;
+  if (rideCountdown > -30) return 'overdue' as const;
+  return 'stale' as const;
+}
+
+function NeedsYouRideRow({ ev, rideCountdown, colors, isDark, active, members, onConfirmPickup, onDismiss, onSendDriverLate, lateNudgeSent }: {
+  ev: FamilyEvent; rideCountdown: number; colors: any; isDark: boolean;
+  active: FamilyMember; members: FamilyMember[];
+  onConfirmPickup: (ev: FamilyEvent) => void;
+  onDismiss: (evId: string) => void;
+  onSendDriverLate?: (ev: FamilyEvent) => void;
+  lateNudgeSent?: Record<string, boolean>;
+}) {
+  const confirmed = !!ev.pickupConfirmedAt;
+  const state = rideState(rideCountdown, confirmed);
+  if (state === 'stale' && !confirmed) return null; // nothing left to say, no dismiss needed — it's just gone
+
+  const rideHere   = state === 'here';
+  const isOverdue  = state === 'overdue';
+  const canDismiss = rideCountdown <= -30 || confirmed;
+
+  const Icon = confirmed ? Check : isOverdue ? AlertTriangle : rideHere ? PartyPopper : Car;
+  const accent = confirmed ? MONEY_GREEN : isOverdue ? colors.danger : MONEY_GREEN;
+  const tone: 'flat' | 'solid' = (isOverdue || rideHere) ? 'solid' : 'flat';
+
+  const driverFirst = driverLabelByName(eventAssignee(ev).name, members);
+  const headline = confirmed
+    ? `Pickup confirmed — you're all set`
+    : isOverdue
+      ? `${driverFirst ?? 'Your ride'} hasn't arrived yet`
+      : rideHere
+        ? `${driverFirst ?? 'Your ride'} is HERE!`
+        : rideCountdown <= 15
+          ? `${driverFirst ?? 'Your ride'} arrives in ${rideCountdown} min!`
+          : rideCountdown < 60
+            ? `${driverFirst ?? 'Your ride'} picks you up in ${rideCountdown}m`
+            : `${driverFirst ?? 'Your ride'} picks you up at ${fmtTime(ev.time)}`;
+
+  const alertSent = !!lateNudgeSent?.[ev.id];
+
+  return (
+    <NeedsYouRow
+      Icon={Icon} accent={accent} colors={colors} isDark={isDark} tone={tone}
+      title={headline} detail={`${ev.title} · ${fmtTime(ev.time)}`}
+      onDismiss={canDismiss ? () => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "dismiss" on "KidNeedsYouSection ride row" (id=${ev.id}) → onDismiss("${ev.id}") [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(ev.id); } : undefined}
+    >
+      {!confirmed && (rideHere || isOverdue) && (
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidNeedsYouSection.tsx]`); onConfirmPickup(ev); }}
+            style={{ flex: 1, backgroundColor: tone === 'solid' ? 'rgba(255,255,255,0.9)' : MONEY_GREEN, borderRadius: 12, paddingVertical: 9, alignItems: 'center' }}>
+            <Text style={{ fontSize: KID.sub, fontWeight: '900', color: tone === 'solid' ? accent : '#fff' }}>I'm picked up</Text>
+          </Pressable>
+          {onSendDriverLate && (
+            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "${alertSent ? 'Sent' : 'Alert my parent'}" on "${ev.title}" (id=${ev.id}) → onSendDriverLate [features/hub/kid/KidNeedsYouSection.tsx]`); onSendDriverLate(ev); }}
+              style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 1.5, borderColor: tone === 'solid' ? 'rgba(255,255,255,0.6)' : accent + '60', borderRadius: 12, paddingVertical: 9, alignItems: 'center', opacity: alertSent ? 0.7 : 1 }}>
+              <Text style={{ fontSize: KID.sub, fontWeight: '900', color: tone === 'solid' ? '#fff' : accent }}>{alertSent ? 'Sent ✓' : 'Alert my parent'}</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+    </NeedsYouRow>
+  );
+}
+
+// ─── Main merged section ────────────────────────────────────────────────────
+// Merges what were 4 separate conditionally-rendered pieces (KidUrgentAlerts,
+// KidRideBanner, AwaitingDriverBanner, PickupRadarStatus) into ONE "Needs
+// You" list — every entry here is fundamentally "something needs the kid's
+// attention," just triggered by a different condition. Renders nothing (no
+// empty state / no header) when there's nothing to show, so it never takes
+// up space on a quiet day.
+export function KidNeedsYouSection({
+  declinedRides, pendingRides, declinedQuests, approvedQuests, cheersForMe, recentReplies,
+  confirmedRide, rideCountdown, awaitingDriverRide, activeTrips,
+  active, members, colors, isDark, dismissedIds, onDismiss,
+  onConfirmPickup, onSendDriverLate, lateNudgeSent,
+}: {
+  declinedRides: FamilyEvent[]; pendingRides: FamilyEvent[];
+  declinedQuests: Quest[]; approvedQuests: Quest[];
+  cheersForMe: { quest: Quest; cheer: QuestCheer }[];
+  recentReplies: any[];
+  confirmedRide: FamilyEvent | undefined; rideCountdown: number | null;
+  awaitingDriverRide: FamilyEvent | undefined;
+  activeTrips?: { tripId: string; kidName: string; kidEmoji?: string; driverName: string; driverEmoji?: string; driverMemberId?: string; etaMinutes: number; startedAtMs?: number }[];
+  members: FamilyMember[]; active: FamilyMember; colors: any; isDark: boolean;
+  dismissedIds: Set<string>;
+  onDismiss: (id: string) => void;
+  onConfirmPickup: (ev: FamilyEvent) => void;
+  onSendDriverLate: (ev: FamilyEvent) => void;
+  lateNudgeSent: Record<string, boolean>;
+}) {
+  const filteredDeclinedRides = declinedRides.filter(ev => !dismissedIds.has(`ride-${ev.id}`));
+  const filteredPendingRides  = pendingRides.filter(ev => !dismissedIds.has(`pending-${ev.id}`));
+  const filteredDeclinedQuests = declinedQuests.filter(q => !dismissedIds.has(`quest-${q.id}`));
+  const filteredApprovedQuests = approvedQuests.filter(q => !dismissedIds.has(`quest-approved-${q.id}`));
+  const filteredCheersForMe = cheersForMe.filter(({ quest, cheer }) => !dismissedIds.has(`cheer-${quest.id}-${cheer.memberId}`));
+  const showConfirmedRide = !!confirmedRide && rideCountdown !== null && rideCountdown > -180 && !dismissedIds.has(confirmedRide.id);
+  const showAwaitingDriver = !confirmedRide && !!awaitingDriverRide && !dismissedIds.has(`awaiting-${awaitingDriverRide.id}`);
+
+  const hasAnything = filteredDeclinedRides.length > 0 || filteredPendingRides.length > 0 ||
+    filteredDeclinedQuests.length > 0 || filteredApprovedQuests.length > 0 || filteredCheersForMe.length > 0 ||
+    recentReplies.length > 0 || showConfirmedRide || showAwaitingDriver || !!activeTrips?.length;
+
+  if (!hasAnything) return null;
+
+  return (
+    <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 4 }}>
+      {showConfirmedRide && (
+        <NeedsYouRideRow
+          ev={confirmedRide!} rideCountdown={rideCountdown!} colors={colors} isDark={isDark}
+          active={active} members={members}
+          onConfirmPickup={onConfirmPickup}
+          onDismiss={(id) => onDismiss(id)}
+          onSendDriverLate={onSendDriverLate} lateNudgeSent={lateNudgeSent}
+        />
+      )}
+
+      {showAwaitingDriver && (() => {
+        const driverFirst = eventAssignee(awaitingDriverRide!).name?.split(' ')[0] ?? 'Someone';
+        return (
+          <NeedsYouRow
+            Icon={UserCheck} accent={BRAND.purple} colors={colors} isDark={isDark}
+            title={`${driverFirst} was asked to drive you`}
+            detail={`${awaitingDriverRide!.title} · ${fmtTime(awaitingDriverRide!.time)} · waiting for ${driverFirst} to confirm`}
+            onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "KidNeedsYouSection awaiting-driver row" (id=awaiting-${awaitingDriverRide!.id}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(`awaiting-${awaitingDriverRide!.id}`); }}
+          />
+        );
+      })()}
+
+      {activeTrips?.map(trip => (
+        <NeedsYouTripRow key={trip.tripId} colors={colors} isDark={isDark} activeTrip={trip} />
+      ))}
+
+      {filteredDeclinedRides.map(ev => (
+        <NeedsYouRow key={ev.id} Icon={Car} accent={colors.danger} colors={colors} isDark={isDark}
+          title={`No driver — ${ev.title}`}
+          detail={ev.declinedBy ? `${ev.declinedBy} can't make it` : 'Your parent is finding someone'}
+          onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "No driver — ${ev.title}" (id=ride-${ev.id}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(`ride-${ev.id}`); }} />
+      ))}
+
+      {filteredPendingRides.map(ev => {
+        const h = hoursUntilEvent(ev.date, ev.time);
+        const isUrgent = h >= 0 && h < 2;
+        return (
+          <NeedsYouRow key={ev.id} Icon={isUrgent ? AlertTriangle : Clock} accent={isUrgent ? colors.danger : BRAND.amber} colors={colors} isDark={isDark}
+            title={isUrgent ? 'Still no driver — getting close!' : 'Waiting on driver…'}
+            detail={`${ev.title} · ${fmtTime(ev.time)}`}
+            onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "Waiting on driver" (id=pending-${ev.id}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(`pending-${ev.id}`); }} />
+        );
+      })}
+
+      {filteredDeclinedQuests.map(q => {
+        const note = q.history?.slice().reverse().find((h: any) => h.action === 'declined')?.note;
+        return (
+          <NeedsYouRow key={q.id} Icon={RotateCcw} accent={BRAND.purple} colors={colors} isDark={isDark}
+            title="Quest sent back" detail={note ? `"${note}"` : q.title}
+            onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "Quest sent back" on "${q.title}" (id=${q.id}) → navigate to /(tabs)/quests [features/hub/kid/KidNeedsYouSection.tsx]`); router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); onDismiss(`quest-${q.id}`); }}
+            onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "Quest sent back: ${q.title}" (id=quest-${q.id}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(`quest-${q.id}`); }} />
+        );
+      })}
+
+      {filteredApprovedQuests.map(q => (
+        <NeedsYouRow key={`approved-${q.id}`} Icon={PartyPopper} accent={MONEY_GREEN} colors={colors} isDark={isDark}
+          title="Quest approved!" detail={`${q.title} · +${q.coins} coins`}
+          onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "Quest approved!" on "${q.title}" (id=${q.id}) → navigate to /(tabs)/quests [features/hub/kid/KidNeedsYouSection.tsx]`); router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); onDismiss(`quest-approved-${q.id}`); }}
+          onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "Quest approved!: ${q.title}" (id=quest-approved-${q.id}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(`quest-approved-${q.id}`); }} />
+      ))}
+
+      {filteredCheersForMe.map(({ quest, cheer }) => {
+        const cheerer = members.find(m => m.id === cheer.memberId);
+        const key = `cheer-${quest.id}-${cheer.memberId}`;
+        return (
+          <View key={key} style={{ position: 'relative' }}>
+            <CelebrationBurst visible />
+            <NeedsYouRow Icon={PartyPopper} accent={BRAND.purple} colors={colors} isDark={isDark}
+              title={`${cheerer?.name?.split(' ')[0] ?? 'Someone'} cheered for you!`}
+              detail={`${quest.title}${cheer.coins ? ` · +${cheer.coins} bonus 🪙` : ''}`}
+              onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "cheered for you: ${quest.title}" (id=${key}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(key); }} />
+          </View>
+        );
+      })}
+
+      {recentReplies.map(r => {
+        const approved = r.status === 'approved';
+        const isCheckin = r.type === 'checkin';
+        const accent = isCheckin ? BRAND.teal : approved ? MONEY_GREEN : colors.danger;
+        const ReplyIcon = isCheckin ? ThumbsUp : approved ? CheckCircle2 : XCircle;
+        const label = isCheckin ? 'Seen!' : approved ? 'Yes!' : 'No';
+        const typeLabel = isCheckin ? 'Check-in' : r.type === 'medication' ? 'Medical' : r.type === 'permission' ? 'Permission'
+          : r.type === 'tutor' ? 'Tutor Offer' : r.type === 'cheer' ? 'Cheer' : 'Question';
+        const responder = r.respondedBy ? members.find(m => m.id === r.respondedBy) : null;
+        const responderName = responder ? responder.name.split(' ')[0] : 'Parent';
+        let timeAgo = '';
+        if (r.respondedAt) {
+          const diffMins = Math.floor((Date.now() - new Date(r.respondedAt).getTime()) / 60000);
+          timeAgo = diffMins < 60 ? `${diffMins}m ago` : diffMins < 1440 ? `${Math.floor(diffMins / 60)}h ago` : `${Math.floor(diffMins / 1440)}d ago`;
+        }
+        return (
+          <NeedsYouRow key={r.id} Icon={ReplyIcon} accent={accent} colors={colors} isDark={isDark}
+            title={`${label} — ${typeLabel}`}
+            onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "${label} — ${typeLabel}" (id=${r.id}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(r.id); }}
+          >
+            <View>
+              <Text style={{ fontSize: KID.tiny, color: colors.textTertiary }}>
+                {responderName}{timeAgo && ` · ${timeAgo}`}
+              </Text>
+              <Text style={{ fontSize: KID.sub, color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>"{r.detail}"</Text>
+              {r.parentNote ? (
+                <Text style={{ fontSize: KID.sub, fontStyle: 'italic', marginTop: 4 }}>
+                  <Text style={{ color: accent, fontStyle: 'normal', fontWeight: '700' }}>Parent: </Text>
+                  <Text style={{ color: colors.textPrimary }}>"{r.parentNote}"</Text>
+                </Text>
+              ) : null}
+            </View>
+          </NeedsYouRow>
+        );
+      })}
+    </View>
+  );
+}

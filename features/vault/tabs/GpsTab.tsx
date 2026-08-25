@@ -443,16 +443,23 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
   // so at min-height the entire sheet rendered underneath the bar instead
   // of just being smaller. Usable height is screen minus the tab bar; and
   // SHEET_MIN has its own floor (not just a percentage) so it's always at
-  // least tall enough to show the grabber + "Family (N)" header, confirmed
-  // live as too easy to accidentally drag the whole sheet out of view.
+  // least tall enough to show the grabber + "Family (N)" header AND read as
+  // an obvious, easy-to-grab sheet edge — confirmed live as too easy to
+  // drag down to where the sheet became invisible against the map with
+  // nothing left to grab it by. 140px (not 110) leaves real visible margin.
   const SCREEN_H = SCREEN_H_RAW - tabBarHeight;
-  const SHEET_MIN = Math.max(110, Math.round(SCREEN_H * 0.12));
+  const SHEET_MIN = Math.max(140, Math.round(SCREEN_H * 0.16));
   const SHEET_DEFAULT = Math.round(SCREEN_H * 0.48);
   const SHEET_MAX = Math.round(SCREEN_H * 0.86);
   const SNAP_POINTS = [SHEET_MIN, SHEET_DEFAULT, SHEET_MAX];
 
   const sheetHeight = useRef(new Animated.Value(SHEET_DEFAULT)).current;
   const sheetHeightAtGestureStart = useRef(SHEET_DEFAULT);
+  // Tracks which snap point the sheet is CURRENTLY resting at (updated on
+  // every settle, drag or tap) — lets the grabber's plain-tap fallback
+  // cycle to "the next one up" without re-deriving it from the live
+  // Animated.Value (which needs an async listener/stopAnimation to read).
+  const currentSnapRef = useRef(SHEET_DEFAULT);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -467,6 +474,18 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
         sheetHeight.setValue(Math.max(SHEET_MIN, Math.min(SHEET_MAX, next)));
       },
       onPanResponderRelease: (_e, gesture) => {
+        // A near-zero-movement release is a TAP, not a drag — cycles to the
+        // next snap point up (wrapping to MIN past MAX) instead of just
+        // re-snapping to wherever it already was, which is what made the
+        // grabber feel unresponsive/"stuck" when a drag attempt was too
+        // small to register as real movement. This is the safety net for
+        // recovering the sheet without needing a precise drag gesture.
+        if (Math.abs(gesture.dy) < 6 && Math.abs(gesture.dx) < 6) {
+          const next = SNAP_POINTS.find(p => p > currentSnapRef.current + 4) ?? SNAP_POINTS[0];
+          currentSnapRef.current = next;
+          Animated.spring(sheetHeight, { toValue: next, useNativeDriver: false, tension: 220, friction: 26 }).start();
+          return;
+        }
         const released = sheetHeightAtGestureStart.current - gesture.dy;
         // Snap to whichever of the three points is nearest, with a little
         // velocity bias so a quick flick commits to the next point even
@@ -474,6 +493,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
         const biased = released - gesture.vy * 60;
         const nearest = SNAP_POINTS.reduce((best, p) =>
           Math.abs(p - biased) < Math.abs(best - biased) ? p : best, SNAP_POINTS[0]);
+        currentSnapRef.current = nearest;
         Animated.spring(sheetHeight, {
           toValue: nearest, useNativeDriver: false, tension: 220, friction: 26,
         }).start();
@@ -566,12 +586,20 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           own small non-scrolling header row so dragging it never fights
           with scrolling the roster list. */}
       <Animated.View style={[g.sheet, { backgroundColor: colors.background, marginTop: -18, height: sheetHeight, overflow: 'hidden' }]}>
-        <View {...panResponder.panHandlers} style={{ paddingTop: 8 }}>
+        {/* Grabber row — generous fixed-height pan target (not just the 4px
+            bar itself) so it's easy to grab without precision. A plain View
+            with the raw panHandlers, NOT a Touchable — layering
+            TouchableOpacity's own gesture responder on top of PanResponder
+            here made them fight each other and broke dragging entirely
+            (confirmed live). The tap-to-cycle safety net lives inside
+            panResponder's own onPanResponderRelease instead (a near-zero-
+            movement release counts as a tap there). */}
+        <View {...panResponder.panHandlers} style={{ paddingTop: 10, paddingBottom: 10, alignItems: 'center' }}>
           <View style={g.grabber} />
         </View>
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 90 }}
           showsVerticalScrollIndicator={false}>
         <Text style={{ fontSize: 13, fontWeight: '900', color: colors.textPrimary, marginBottom: 10 }}>
           Family ({roster.length})

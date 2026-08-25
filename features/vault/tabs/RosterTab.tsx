@@ -11,6 +11,7 @@ import { useFeatureFlag } from '@/lib/featureFlags';
 import { SCard, CardHeader, MemberAvatar, StatusPill, BRAND } from './shared';
 import { FamilyTreeView } from './FamilyTreeView';
 import { MemberProfileSheet } from './MemberProfileSheet';
+import { saveMemberEdit } from './memberActions';
 
 // ─── SVG Icons ────────────────────────────────────────────────────────────────
 const I = {
@@ -36,7 +37,12 @@ interface Invite {
 
 // ─── PIN management modal ─────────────────────────────────────────────────────
 
-function PinModal({ member, onClose, onSave, colors, isDark }: {
+// Exported so Profile's own member carousel (features/profile/
+// ProfileSettingsScreen.tsx) can reuse the exact same PIN/edit flows
+// instead of duplicating ~250 lines of near-identical modal — both screens
+// ultimately just call updateMember/removeMember, no Roster-local state
+// dependency to untangle.
+export function PinModal({ member, onClose, onSave, colors, isDark }: {
   member: any; onClose: () => void;
   onSave: (memberId: string, pin: string) => Promise<void>;
   colors: any; isDark: boolean;
@@ -117,7 +123,7 @@ function PinModal({ member, onClose, onSave, colors, isDark }: {
 
 // ─── Edit-Member Modal ────────────────────────────────────────────────────────
 
-function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, onDelete, onToggleStoreReminders, colors, isDark }: {
+export function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, onDelete, onToggleStoreReminders, colors, isDark }: {
   member: any; allMembers: any[]; onClose: () => void;
   onSave: (memberId: string, name: string, role: string, hasCar: boolean, rideEarnings: number, groceryEarnings: number, subRole?: string, relationship?: string) => Promise<void>;
   onLinkParent: (memberId: string, parentId: string) => void;
@@ -517,28 +523,8 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
   };
 
   const saveMember = async (memberId: string, name: string, role: string, hasCar: boolean, rideEarningsPerRun: number, groceryEarningsPerRun: number, subRole?: string, relationship?: string) => {
-    // EditMemberModal's role chips use 'senior' (matching this app's own
-    // MemberRole vocabulary), but the DB's members_role_check only allows
-    // 'grandparent' — writing 'senior' straight through failed the
-    // constraint silently every time (the .update() call below never
-    // checked its own result), which is exactly why editing Maya to
-    // "teenager" appeared to do nothing. Translate here the same way
-    // familyStore's toRow does, so this raw write stays consistent with
-    // the one canonical DB vocabulary instead of inventing a second one.
-    const dbRole = role === 'senior' ? 'grandparent' : role;
-    const { error } = await supabase.from('members').update({
-      name, role: dbRole, has_car: hasCar,
-      ride_earnings_per_run: rideEarningsPerRun, grocery_earnings_per_run: groceryEarningsPerRun,
-      sub_role: subRole ?? null,
-      relationship: relationship ?? null,
-    }).eq('id', memberId);
-    if (error) {
-      console.warn('[RosterTab] saveMember failed', error.message);
-      Alert.alert('Couldn\'t save changes', error.message);
-      return;
-    }
-    const appRole: MemberRole = role === 'child' ? 'kid' : role === 'teenager' ? 'teen' : role as MemberRole;
-    updateMember(memberId, { name, role: appRole, hasCar, rideEarningsPerRun, groceryEarningsPerRun, subRole, relationship });
+    const { error } = await saveMemberEdit(updateMember, memberId, name, role, hasCar, rideEarningsPerRun, groceryEarningsPerRun, subRole, relationship);
+    if (error) Alert.alert('Couldn\'t save changes', error);
   };
 
   const togglePin = (id: string) => setShowPins(s => ({ ...s, [id]: !s[id] }));

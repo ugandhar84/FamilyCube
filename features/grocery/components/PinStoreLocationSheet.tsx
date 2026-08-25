@@ -6,7 +6,7 @@
  * for that store. Skippable — a store with no pin just never geofences.
  */
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, Modal, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, Pressable, Modal, ActivityIndicator, StyleSheet, TextInput, Keyboard } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,6 +24,9 @@ export function PinStoreLocationSheet({ visible, store, onClose, onPin }: {
   const [marker, setMarker] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locating, setLocating] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -49,6 +52,33 @@ export function PinStoreLocationSheet({ visible, store, onClose, onPin }: {
     onClose();
   };
 
+  // Forward-geocode typed text ("123 Main St, Springfield" or just
+  // "Walmart Springfield") to coordinates via expo-location — no Places API
+  // needed for this (per user: manual pin now, Places lookup later); this
+  // resolves a real address/place string the user already knows, it just
+  // doesn't do brand-name "nearest Walmart" search the way Places would.
+  const searchAddress = async () => {
+    if (!searchText.trim()) return;
+    Keyboard.dismiss();
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const results = await Location.geocodeAsync(searchText.trim());
+      if (results.length === 0) {
+        setSearchError('No location found for that address.');
+      } else {
+        const { latitude, longitude } = results[0];
+        const r = { latitude, longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 };
+        setRegion(r);
+        setMarker({ latitude, longitude });
+        mapRef.current?.animateToRegion(r, 500);
+      }
+    } catch {
+      setSearchError('Could not search that address.');
+    }
+    setSearching(false);
+  };
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
@@ -61,6 +91,35 @@ export function PinStoreLocationSheet({ visible, store, onClose, onPin }: {
               Tap the map to drop a pin. We'll remind whoever's nearby about items still on the list for this store.
             </Text>
           </View>
+
+          <View style={{ flexDirection: 'row', gap: 8, marginHorizontal: 20, marginBottom: 12 }}>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+              backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border,
+              paddingHorizontal: 12 }}>
+              <Ionicons name="search" size={15} color={colors.textTertiary} />
+              <TextInput
+                value={searchText}
+                onChangeText={(t) => { setSearchText(t); setSearchError(null); }}
+                onSubmitEditing={searchAddress}
+                placeholder="Search an address"
+                placeholderTextColor={colors.textTertiary}
+                returnKeyType="search"
+                style={{ flex: 1, fontSize: 14, color: colors.textPrimary, paddingVertical: 10 }}
+              />
+            </View>
+            <Pressable onPress={searchAddress} disabled={!searchText.trim() || searching}
+              style={{ width: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: (!searchText.trim() || searching) ? colors.textDisabled : colors.primary }}>
+              {searching
+                ? <ActivityIndicator color={colors.textInverse} size="small" />
+                : <Ionicons name="arrow-forward" size={16} color={colors.textInverse} />}
+            </Pressable>
+          </View>
+          {searchError && (
+            <Text style={{ fontSize: 12, color: colors.danger, marginHorizontal: 20, marginTop: -6, marginBottom: 10 }}>
+              {searchError}
+            </Text>
+          )}
 
           <View style={{ height: 260, marginHorizontal: 20, borderRadius: 16, overflow: 'hidden' }}>
             {locating || !region ? (

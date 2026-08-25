@@ -295,13 +295,35 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
   const scrollRef = useRef<ScrollView>(null);
   const [showFab, setShowFab] = useState(false);
   const fabOpacity = useRef(new Animated.Value(0)).current;
+  const scrollYRef = useRef(0);
   const onScroll = (e: any) => {
     const y = e.nativeEvent.contentOffset.y;
+    scrollYRef.current = y;
     const visible = y > 200;
     if (visible !== showFab) {
       setShowFab(visible);
       Animated.timing(fabOpacity, { toValue: visible ? 1 : 0, duration: 200, useNativeDriver: true }).start();
     }
+  };
+
+  // Auto-scroll while dragging a grocery item between store sections
+  // (GroceryItemsSection has no ref to this ScrollView, only this screen
+  // does) — a fixed-interval nudge relative to the last known scroll
+  // offset, since RN's ScrollView only exposes an absolute scrollTo, not a
+  // relative "scroll by" call.
+  const autoScrollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoScrollDelta = useRef(0);
+  const handleAutoScroll = (delta: number | null) => {
+    if (delta === null) {
+      if (autoScrollTimer.current) { clearInterval(autoScrollTimer.current); autoScrollTimer.current = null; }
+      return;
+    }
+    autoScrollDelta.current = delta;
+    if (autoScrollTimer.current) return; // already running — direction/speed read fresh from the ref each tick
+    autoScrollTimer.current = setInterval(() => {
+      scrollYRef.current = Math.max(0, scrollYRef.current + autoScrollDelta.current);
+      scrollRef.current?.scrollTo({ y: scrollYRef.current, animated: false });
+    }, 16);
   };
 
   return (
@@ -473,6 +495,7 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
             isDark={isDark}
             pinnedStores={geofencingEnabled ? pinnedStores : undefined}
             onPinStore={geofencingEnabled ? (store) => setPinningStore(store) : undefined}
+            onAutoScroll={handleAutoScroll}
           />
 
           <RecentlyBoughtSection

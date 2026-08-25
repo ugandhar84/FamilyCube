@@ -82,13 +82,17 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
     if (alreadyNotified.has(region.identifier)) return;
 
     try {
-      const { data: pending } = await supabase
+      // count(exact) for the real total, but only fetch 2 names — the
+      // notification should read as a quick, glanceable nudge ("Milk, Eggs
+      // + 3 more"), not a dump of the whole list crammed into one line.
+      const { data: pending, count } = await supabase
         .from('grocery_items')
-        .select('name')
+        .select('name', { count: 'exact' })
         .eq('family_id', meta.familyId)
         .eq('is_bought', false)
         .eq('store_preference', meta.store)
-        .limit(5);
+        .order('created_at', { ascending: false })
+        .limit(2);
 
       if (!pending || pending.length === 0) return;
 
@@ -97,13 +101,15 @@ function ensureTaskDefined(tm: TaskManagerAPI) {
       const notifs = getNotifications();
       if (!notifs) return;
 
+      const total = count ?? pending.length;
       const names = pending.map((p: any) => p.name).join(', ');
+      const extra = total - pending.length;
+      const body = extra > 0 ? `${names} + ${extra} more on your list` : `${names} on your list`;
+
       await notifs.scheduleNotificationAsync({
         content: {
           title: `🛒 You're near ${meta.store}`,
-          body: pending.length > 3
-            ? `${pending.length} items on your list: ${names}…`
-            : `On your list: ${names}`,
+          body,
           data: { type: 'store_proximity', store: meta.store },
           sound: true,
         },

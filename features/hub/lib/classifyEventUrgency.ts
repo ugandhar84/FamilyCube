@@ -47,7 +47,13 @@ export function classifyEventUrgency(
     const a = eventAssignee(e);
 
     if (!a.name) {
-      if (hoursUntilEvent(e.date, e.time) >= 0) unassigned.push(e);
+      // Action Needed is for "figure this out soon," not a preview of every
+      // unassigned event on the calendar — an unassigned ride 5 months out
+      // (e.g. a school-calendar flyer import) has no business competing for
+      // attention there yet. Bounded to the next 48h; anything further out
+      // still shows up fine on its actual date via Schedule.
+      const h = hoursUntilEvent(e.date, e.time);
+      if (h >= 0 && h <= 48) unassigned.push(e);
       continue;
     }
 

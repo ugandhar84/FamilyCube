@@ -4,6 +4,7 @@
  * Correct PIN → switch. Wrong → shake + clear.
  */
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { router } from 'expo-router';
 import {
   View, Text, Modal, TouchableOpacity, ScrollView, Pressable,
   TextInput, Animated as RNAnimated,
@@ -455,6 +456,10 @@ export default function PersonaSwitcherSheet({ visible, onClose }: { visible: bo
     } else {
       setActiveMember(m.id);
       onClose();
+      // Land on Hub after switching profiles — whatever tab was open for
+      // the PREVIOUS member (e.g. Profile & Settings) is rarely where the
+      // person who just switched in wants to land.
+      router.replace('/(tabs)');
     }
   };
 
@@ -462,6 +467,7 @@ export default function PersonaSwitcherSheet({ visible, onClose }: { visible: bo
     if (pinTarget) setActiveMember(pinTarget.id);
     setPinTarget(null);
     onClose();
+    router.replace('/(tabs)');
   };
 
   const handleClose = () => {

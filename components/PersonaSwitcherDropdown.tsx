@@ -6,6 +6,7 @@
  * flow for locked non-active profiles.
  */
 import React, { useState, useRef, useCallback } from 'react';
+import { router } from 'expo-router';
 import { View, Text, TouchableOpacity, ScrollView, Animated as RNAnimated, Modal, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
@@ -240,6 +241,10 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
     } else {
       setActiveMember(m.id);
       onClose();
+      // Land on Hub after switching profiles — whatever tab was open for
+      // the PREVIOUS member is rarely where the person who just switched
+      // in wants to land.
+      router.replace('/(tabs)');
     }
   };
 
@@ -247,6 +252,7 @@ export default function PersonaSwitcherDropdown({ visible, onClose }: { visible:
     if (pinTarget) setActiveMember(pinTarget.id);
     setPinTarget(null);
     onClose();
+    router.replace('/(tabs)');
   };
 
   const handleClose = () => {

@@ -7,7 +7,6 @@ export * from './vaccines';
 export * from './weight';
 export * from './daily';
 export * from './notifications';
-export * from './social';     // feed queries only
 export * from './posts';      // post/comment/event mutations
 export * from './follows';
 export * from './playdates';

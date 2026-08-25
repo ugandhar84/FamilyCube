@@ -19,7 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { todayLocal, fmtDateShort } from '@/lib/dates';
 import { supabase, uploadFamilyMemoryPhoto } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
-import { MediaViewer } from '@/features/social/components/MediaComponents';
+import { MediaViewer } from '@/components/MediaComponents';
 import { saveMediaToDevice } from '@/lib/saveMedia';
 import CubeSpinner from '@/components/CubeSpinner';
 import FamilyAvatar from '@/components/FamilyAvatar';

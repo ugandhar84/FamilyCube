@@ -76,6 +76,13 @@ export const TYPE_META: Record<string, { icon: string; label: string; tint: stri
   system:                        { icon: '🔔', label: 'System',           tint: '#6B7280', gradient: ['#6B728022','#6B728008'] },
 };
 
+// Note: lost/pet-found/social/playdate/family-invite/event notification types
+// (lost_alert, pet_found, lost_owner_checkin, post_*, follow, mention, new_post,
+// playdate_*, invite*, family_update, event_rsvp, event_update) used to route
+// into the SOS/Connect/social/playdates product surface. That surface has been
+// removed — those types no longer have a screen to route to. Any pre-existing
+// notification_logs rows of those types still display (see TYPE_META below)
+// but fall through to the generic notifications list on tap instead of 404ing.
 export const ALERT_NAV: Record<string, string> = {
   // Health
   appointment_reminder:        '/health/appointments',
@@ -93,45 +100,7 @@ export const ALERT_NAV: Record<string, string> = {
   birthday_notif:              '/(tabs)/care',
   memorial_notif:              '/(tabs)/care',
   daily_tip:                   '/(tabs)/notifications',
-  // Alerts
-  lost_alert:                  '/(tabs)/sos',
-  pet_found:                   '/(tabs)/sos',
-  lost_owner_checkin:          '/(tabs)/sos',
-  // Social — posts
-  post_like:                   '/(tabs)/social',
-  post_comment:                '/(tabs)/social',
-  post_comment_reply:          '/(tabs)/social',
-  follow:                      '/(tabs)/social',
-  mention:                     '/(tabs)/social',
-  new_post:                    '/(tabs)/social',
-  // Social — playdates
-  playdate_request:            '/my-playdates',
-  playdate_resend:             '/my-playdates',
-  playdate_proposal:           '/my-playdates',
-  playdate_counter_proposal:   '/my-playdates',
-  playdate_accepted:           '/my-playdates',
-  playdate_confirmed:          '/my-playdates',
-  playdate_declined:           '/my-playdates',
-  playdate_proposal_declined:  '/my-playdates',
-  playdate_proposal_cancelled: '/my-playdates',
-  playdate_withdrawal:         '/my-playdates',
-  playdate_cancelled:          '/my-playdates',
-  playdate_rescheduled:        '/my-playdates',
-  playdate_reminder:           '/my-playdates',
-  playdate_completion:         '/my-playdates',
-  playdate_expired:            '/my-playdates',
-  playdate_chat_message:       '/my-playdates',
-  playdate_message:            '/my-playdates',
-  chat_message:                '/(tabs)/connect',
-  // Family
-  invite:                      '/(tabs)/connect',
-  family_invite:               '/(tabs)/connect',
-  family_invite_sent:          '/(tabs)/connect',
-  invite_accepted:             '/(tabs)/connect',
-  family_update:               '/(tabs)/connect',
-  // Events
-  event_rsvp:                  '/(tabs)/social-notifications',
-  event_update:                '/(tabs)/social-notifications',
+  chat_message:                '/(tabs)/chat',
   // System
   upgrade_nudge:               '/(tabs)/notifications',
   broadcast:                   '/(tabs)/notifications',

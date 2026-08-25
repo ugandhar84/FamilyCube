@@ -36,64 +36,6 @@ interface Section {
 
 const SECTIONS: Section[] = [
   {
-    title: 'Connect — sub-tabs',
-    subtitle: 'Show or hide individual tabs inside the Connect screen.',
-    flags: [
-      {
-        key: 'connect_feed_enabled',
-        label: 'Feed',
-        description: 'Community post feed — photos, updates, and stories from nearby pet parents.',
-      },
-      {
-        key: 'connect_playdates_enabled',
-        label: 'Playdates',
-        description: 'Send and receive playdate requests via proposal flow.',
-      },
-      {
-        key: 'connect_playdates_chat_enabled',
-        label: 'Playdates Chat',
-        description: 'Full real-time chat screen for playdate negotiation. Off = proposal-only flow.',
-      },
-      {
-        key: 'connect_family_enabled',
-        label: 'Family',
-        description: 'Invite family members to co-manage a pet — shared care logs and notifications.',
-      },
-    ],
-  },
-  {
-    title: 'Media',
-    subtitle: 'Control media upload and viewing capabilities.',
-    flags: [
-      {
-        key: 'video_posts_enabled',
-        label: 'Video posts',
-        description: 'Let users attach a video to social posts (autoplay muted in the feed, tap to unmute). Capped at 100 MB.',
-      },
-      {
-        key: 'media_fullscreen_download_enabled',
-        label: 'Full-screen media + download',
-        description: "Let users tap a post's photo or video to view it full-screen and save it to their device.",
-      },
-    ],
-  },
-  {
-    title: 'Community',
-    subtitle: 'Community safety and event features.',
-    flags: [
-      {
-        key: 'sos_enabled',
-        label: 'SOS — lost pet alerts',
-        description: 'Allow users to trigger a lost pet alert and notify nearby pet parents.',
-      },
-      {
-        key: 'events_enabled',
-        label: 'Community events',
-        description: 'Let users create and RSVP to local pet events.',
-      },
-    ],
-  },
-  {
     title: 'Care & Health',
     subtitle: 'Pet care tracking and AI health features.',
     flags: [
@@ -215,8 +157,7 @@ export default function AdminSettingsScreen() {
       ]);
       const parsed: Record<string, boolean> = {};
       for (const f of ALL_FLAGS) {
-        const defaultOn = f.key.startsWith('connect_');
-        parsed[f.key] = data[f.key] !== undefined ? data[f.key] === true : defaultOn;
+        parsed[f.key] = data[f.key] !== undefined ? data[f.key] === true : false;
       }
       setValues(parsed);
       if (data['upgrade_nudge_enabled'] !== undefined)      setNudgeEnabled(data['upgrade_nudge_enabled'] as boolean);

@@ -10,7 +10,6 @@ import { useLocalSearchParams } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { usePetStore } from '@/store/petStore';
 import { useShallow } from 'zustand/react/shallow';
-import { useFeatureFlag } from '@/lib/hooks/useAppSettings';
 import { useTheme } from '@/lib/ThemeContext';
 import { RADIUS, TYPO} from '@/constants/theme';
 import PawBondLoader from '@/components/PawBondLoader';
@@ -29,14 +28,10 @@ export default function NotificationsScreen({ hideHeader = false, onUnreadChange
   const { fetchPets }      = usePetStore(useShallow(s => ({ fetchPets: s.fetchPets })));
   const params = useLocalSearchParams<{ petId?: string }>();
 
-  const sosEnabled    = useFeatureFlag('sos_enabled', true);
-  const familyEnabled = useFeatureFlag('connect_family_enabled', false);
-  const hiddenTypes   = useMemo(() => {
-    const s = new Set<string>();
-    if (!sosEnabled)    { s.add('lost_alert'); s.add('pet_found'); }
-    if (!familyEnabled) { s.add('invite'); s.add('family_update'); }
-    return s;
-  }, [sosEnabled, familyEnabled]);
+  // SOS/lost-pet alerts and the Connect (family/social) surface were removed —
+  // always hide any pre-existing notification_logs rows of those types rather
+  // than gating on the (now similarly dead) sos_enabled/connect_family_enabled flags.
+  const hiddenTypes = useMemo(() => new Set<string>(['lost_alert', 'pet_found', 'invite', 'family_update']), []);
 
   const [petFilter,  setPetFilter]  = useState(params.petId ?? 'all');
   const [dateFilter, setDateFilter] = useState('all');

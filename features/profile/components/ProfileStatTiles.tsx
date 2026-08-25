@@ -7,7 +7,6 @@ import React from 'react';
 import { TYPO } from '@/constants/theme';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 
 interface ProfileStatTilesProps {
   petsCount: number;
@@ -34,16 +33,6 @@ const ProfileStatTiles = React.memo(function ProfileStatTiles({ petsCount, moodS
           <Text style={{ fontSize: TYPO.body, color: colors.textSecondary }}>{st.lbl}</Text>
         </View>
       ))}
-      {sosEnabled && (
-        <TouchableOpacity activeOpacity={0.82} onPress={() => router.push('/(tabs)/sos?from=profile')}
-          style={{ flex: 1, backgroundColor: colors.dangerLight ?? '#FEF2F2', borderRadius: 14,
-            borderWidth: StyleSheet.hairlineWidth, borderColor: `${colors.danger}35`,
-            paddingVertical: 14, alignItems: 'center', gap: 4 }}>
-          <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
-          <Text style={{ fontSize: TYPO.title, fontWeight: '700', color: colors.danger }}>SOS</Text>
-          <Text style={{ fontSize: TYPO.body, color: colors.danger, opacity: 0.75 }}>Emergency</Text>
-        </TouchableOpacity>
-      )}
     </View>
   );
 });

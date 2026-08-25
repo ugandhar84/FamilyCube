@@ -11,7 +11,6 @@ import { TYPO } from '@/constants/theme';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 import LazyImage from '@/components/LazyImage';
 import SubscriptionBadge from '@/components/SubscriptionBadge';
 import { hero } from '@/features/profile/styles';
@@ -109,16 +108,6 @@ const ProfileHeroCard = memo(function ProfileHeroCard({
             <Text style={{ fontSize: TYPO.body, color: colors.textSecondary }}>{st.lbl}</Text>
           </View>
         ))}
-        {sosEnabled && (
-          <TouchableOpacity activeOpacity={0.82} onPress={() => router.push('/(tabs)/sos?from=profile')}
-            style={{ flex: 1, backgroundColor: colors.dangerLight ?? '#FEF2F2', borderRadius: 14,
-              borderWidth: StyleSheet.hairlineWidth, borderColor: `${colors.danger}35`,
-              paddingVertical: 14, alignItems: 'center', gap: 4 }}>
-            <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
-            <Text style={{ fontSize: TYPO.title, fontWeight: '700', color: colors.danger }}>SOS</Text>
-            <Text style={{ fontSize: TYPO.body, color: colors.danger, opacity: 0.75 }}>Emergency</Text>
-          </TouchableOpacity>
-        )}
       </View>
     </>
   );

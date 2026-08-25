@@ -42,7 +42,7 @@ import StreakBanner from './today/StreakBanner';
 import WeatherNudge from './today/WeatherNudge';
 import TomorrowPreview from './today/TomorrowPreview';
 import NoteModal from './today/NoteModal';
-import { TodayScheduleCard } from '@/features/home/components/TodayScheduleCard';
+import { TodayScheduleCard } from '@/features/care/components/TodayScheduleCard';
 import {
   dateStr, URGENCY_ORDER, type Urgency, type PriorityCard, type DoneEntry,
   groomInterval, GROOM_META, GROOM_SPECIES_DEFAULTS, GROOM_GLOBAL,

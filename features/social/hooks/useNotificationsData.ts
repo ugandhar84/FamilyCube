@@ -185,34 +185,11 @@ export function useNotificationsData(
         router.push({ pathname: '/(tabs)/care', params: { section: 'daily' } } as any);
       } else if (item.type === 'birthday_notif' || item.type === 'memorial_notif') {
         router.push({ pathname: '/(tabs)/care', params: { section: 'notes' } } as any);
-      } else if (item.type === 'family_update') {
-        router.push({ pathname: '/(tabs)/connect', params: { tab: 'Family' } } as any);
-      } else if (['post_like', 'post_comment', 'post_comment_reply', 'mention', 'new_post'].includes(item.type)) {
-        const openComments = ['post_comment', 'post_comment_reply', 'mention'].includes(item.type) ? '1' : '0';
-        if (d?.post_id) {
-          const focusId = d?.comment_id ?? (item.type === 'post_comment_reply' ? d?.reply_to_comment_id : null);
-          router.push({ pathname: '/post/[id]', params: { id: d.post_id, open_comments: openComments, ...(focusId ? { focus_comment_id: focusId } : {}) } } as any);
-        } else if (d?.actor_pet_id) {
-          router.push({ pathname: '/pet/[id]', params: { id: d.actor_pet_id } } as any);
-        } else {
-          router.push('/(tabs)/social-notifications' as any);
-        }
-      } else if (item.type === 'follow') {
-        if (d?.actor_pet_id) {
-          router.push({ pathname: '/pet/[id]', params: { id: d.actor_pet_id } } as any);
-        } else {
-          router.push('/(tabs)/social-notifications' as any);
-        }
-      } else if (item.type?.startsWith('playdate')) {
-        const reqId = d?.request_id;
-        const chatId = d?.chat_id;
-        if (chatId) {
-          router.push({ pathname: '/playdate-chat/[chatId]', params: { chatId } } as any);
-        } else if (reqId) {
-          router.push({ pathname: '/playdate/[id]', params: { id: reqId } } as any);
-        } else {
-          router.push('/my-playdates' as any);
-        }
+      } else if (d?.actor_pet_id && (item.type === 'follow' || ['post_like', 'post_comment', 'post_comment_reply', 'mention', 'new_post'].includes(item.type))) {
+        // Legacy social notification row (feature removed) — the actor pet
+        // profile is still a live, reachable screen, so route there instead
+        // of into the deleted post/social-notifications screens.
+        router.push({ pathname: '/pet/[id]', params: { id: d.actor_pet_id } } as any);
       } else if (ALERT_NAV[item.type]) {
         router.push(ALERT_NAV[item.type] as any);
       } else {

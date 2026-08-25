@@ -299,19 +299,13 @@ export default function TabLayout() {
         <Tabs.Screen name="quests"   options={{ href: null }} />
         <Tabs.Screen name="calendar" options={{ href: null }} />
         {/* Hidden routes — not in tab bar */}
-        <Tabs.Screen name="gps"                  options={{ href: null }} />
         <Tabs.Screen name="grocery"              options={{ href: null }} />
         <Tabs.Screen name="notifications"        options={{ href: null }} />
         <Tabs.Screen name="care"                 options={{ href: null }} />
-        <Tabs.Screen name="connect"              options={{ href: null }} />
         <Tabs.Screen name="memories"             options={{ href: null }} />
         <Tabs.Screen name="health"               options={{ href: null }} />
         <Tabs.Screen name="journal"              options={{ href: null }} />
-        <Tabs.Screen name="social"               options={{ href: null }} />
-        <Tabs.Screen name="sos"                  options={{ href: null }} />
-        <Tabs.Screen name="playdates"            options={{ href: null }} />
         <Tabs.Screen name="all-notifications"    options={{ href: null }} />
-        <Tabs.Screen name="social-notifications" options={{ href: null }} />
       </Tabs>
 
       {/* Shared FAB — Ask Cube (sparkle) everywhere except Chat/Tasks;

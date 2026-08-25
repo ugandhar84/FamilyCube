@@ -25,7 +25,12 @@
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { SMTPClient } from 'https://deno.land/x/smtp@v0.7.0/mod.ts';
+// deno.land/x/smtp@v0.7.0 no longer exports SMTPClient at all (confirmed
+// live: "worker boot error: ... does not provide an export named
+// 'SMTPClient'" — the function never even booted, let alone sent an
+// email). Switched to denomailer, the actively maintained successor;
+// same connection-options shape, just re-exported under a different name.
+import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -146,6 +151,12 @@ serve(async (req) => {
 
     let code: string;
 
+    // created_by references auth.users, NOT members — confirmed live via
+    // "insert or update on table family_invites violates foreign key
+    // constraint family_invites_created_by_fkey" when this passed
+    // `memberId` (a members.id, a valid row, just the wrong table). Use the
+    // authenticated auth.users id (`user.id`, already verified above)
+    // instead.
     if (existing) {
       // Refresh expiry + regenerate the code itself — "new invite for that
       // person" per spec, not just a TTL bump on the same string (an old,
@@ -163,7 +174,7 @@ serve(async (req) => {
       } while (++attempts < 10);
       await supabase
         .from('family_invites')
-        .update({ code, expires_at: expiresAt, created_by: memberId })
+        .update({ code, expires_at: expiresAt, created_by: user.id })
         .eq('id', existing.id);
     } else {
       // Generate a unique code (retry on collision)
@@ -183,7 +194,7 @@ serve(async (req) => {
         member_id:  scopedMemberId,
         code,
         status:     'pending',
-        created_by: memberId,
+        created_by: user.id,
         expires_at: expiresAt,
       });
       if (error) throw new Error(error.message);
@@ -233,7 +244,6 @@ serve(async (req) => {
             to: targetMember.email,
             subject: `Your Family Cube invite code`,
             html: inviteCodeEmailTemplate({ memberName: targetMember.name, familyName: family?.name, code }),
-            content: 'text/html',
           });
           emailSent = true;
         } catch (e) {

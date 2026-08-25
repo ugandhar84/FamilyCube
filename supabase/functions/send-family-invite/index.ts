@@ -5,7 +5,12 @@
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { SMTPClient } from 'https://deno.land/x/smtp@v0.7.0/mod.ts';
+// deno.land/x/smtp@v0.7.0 no longer exports SMTPClient — this function
+// never even booted (confirmed live on generate-invite-code's identical
+// import: "worker boot error... does not provide an export named
+// 'SMTPClient'"). Switched to denomailer, the actively maintained
+// successor; same connection-options shape, re-exported under this name.
+import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts';
 import { canNotify } from './prefs.ts';
 import { requirePro } from '../_shared/requirePro.ts';
 
@@ -119,7 +124,6 @@ serve(async (req) => {
           to: email,
           subject: `${inviterName} invited you to care for ${pet.emoji} ${pet.name} on PawBond`,
           html: emailTemplate({ inviterName, petName: pet.name, petEmoji: pet.emoji, role, message, inviteUrl, deepLink }),
-          content: 'text/html',
         });
         emailSent = true;
       } catch (e) {

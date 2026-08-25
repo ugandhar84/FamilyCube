@@ -7,7 +7,12 @@
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { SMTPClient } from 'https://deno.land/x/smtp@v0.7.0/mod.ts';
+// deno.land/x/smtp@v0.7.0 no longer exports SMTPClient — this function
+// never even booted (confirmed live on generate-invite-code's identical
+// import: "worker boot error... does not provide an export named
+// 'SMTPClient'"). Switched to denomailer, the actively maintained
+// successor; same connection-options shape, re-exported under this name.
+import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts';
 import { canNotify } from '../_shared/prefs.ts';
 
 const corsHeaders = {
@@ -121,29 +126,34 @@ serve(async (req) => {
     let emailError: string | null = null;
     let pushSent = false;
 
-    // ── Send email via Zoho Mail SMTP ────────────────────────────────────────
-    const zohoEmail    = Deno.env.get('ZOHO_EMAIL');
-    const zohoPassword = Deno.env.get('ZOHO_APP_PASSWORD');
-    if (!zohoEmail || !zohoPassword) {
-      emailError = 'ZOHO_EMAIL or ZOHO_APP_PASSWORD not configured';
-      console.warn('[send-member-invite] Zoho SMTP credentials missing');
+    // ── Send email via Gmail SMTP ─────────────────────────────────────────────
+    // Same GMAIL_EMAIL/GMAIL_APP_PASSWORD secrets generate-invite-code uses —
+    // switched from Zoho (never configured on this project) per explicit
+    // request to put both real Family Cube invite paths on Gmail.
+    const gmailEmail    = Deno.env.get('GMAIL_EMAIL');
+    const gmailPassword = Deno.env.get('GMAIL_APP_PASSWORD');
+    if (!gmailEmail || !gmailPassword) {
+      emailError = 'GMAIL_EMAIL or GMAIL_APP_PASSWORD not configured';
+      console.warn('[send-member-invite] Gmail SMTP credentials missing');
     } else {
       let smtpClient: SMTPClient | null = null;
       try {
         smtpClient = new SMTPClient({
           connection: {
-            hostname: 'smtp.zoho.com',
+            hostname: 'smtp.gmail.com',
             port: 465,
             tls: true,
-            auth: { username: zohoEmail, password: zohoPassword },
+            auth: { username: gmailEmail, password: gmailPassword },
           },
         });
         await smtpClient.send({
-          from: `FamilyCube <connect@peopleontech.com>`,
+          // Gmail SMTP generally rejects/flags a From address that doesn't
+          // match the authenticated account, unlike Zoho which allowed an
+          // arbitrary From — same fix already applied in generate-invite-code.
+          from: `Family Cube <${gmailEmail}>`,
           to: normalizedEmail,
           subject: `${inviterName} invited you to join ${familyName} on FamilyCube`,
           html: emailTemplate({ inviterName, familyName, role, message, inviteUrl, deepLink }),
-          content: 'text/html',
         });
         emailSent = true;
       } catch (e) {

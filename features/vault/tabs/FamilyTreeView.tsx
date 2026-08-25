@@ -7,6 +7,7 @@
  * old connector-line diagram with plain cards — clearer at this scale and
  * far less brittle than hand-computed x/y connector math.
  */
+import { memo } from 'react';
 import { View, Text } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Heart } from 'lucide-react-native';
@@ -38,7 +39,7 @@ function GenDivider({ from, to, align = 'center' }: { from: string; to: string; 
   );
 }
 
-export function FamilyTreeView({ members, activeMemberId, isParent, colors, isDark, onView, onEdit, onPin }: {
+function FamilyTreeViewImpl({ members, activeMemberId, isParent, colors, isDark, onView, onEdit, onPin }: {
   members: FamilyMember[]; activeMemberId: string | null | undefined; isParent: boolean;
   colors: any; isDark: boolean;
   onView: (m: FamilyMember) => void; onEdit: (m: FamilyMember) => void; onPin: (m: FamilyMember) => void;
@@ -147,3 +148,16 @@ export function FamilyTreeView({ members, activeMemberId, isParent, colors, isDa
     </View>
   );
 }
+
+// Memoized with the default shallow prop comparator — onView/onEdit/onPin
+// are stable setState setters at every real call site (RosterTab.tsx/
+// ProfileSettingsScreen.tsx both pass setViewTarget/setEditTarget/
+// setPinTarget directly, not a wrapping inline arrow), so shallow equality
+// on props is sufficient here (unlike MemberCard/CarouselMemberCard, which
+// needed a custom comparator because THEIR callers — this component's own
+// renderCard — wrap those same setters in a fresh inline arrow per card).
+// Matters most in RosterTab.tsx, where this is always mounted (unlike
+// Profile's own showFullTree-gated usage, which unmounts it entirely when
+// collapsed) — every unrelated store tick there used to re-run all four
+// .filter()/.map() calls and the whole generation-grouped JSX tree.
+export const FamilyTreeView = memo(FamilyTreeViewImpl);

@@ -26,19 +26,33 @@ export async function saveMemberEdit(
   groceryEarningsPerRun: number,
   subRole?: string,
   relationship?: string,
+  // Avatar edit — `avatar` is a single DB column doubling as either an
+  // emoji string or an uploaded photo URL (see familyStore's fromRow/toRow:
+  // isUrl = avatar.startsWith('http') decides which). Only one of these two
+  // is ever passed by a caller (EditMemberModal's own emoji-vs-photo
+  // choice), never both — whichever is set wins; passing neither leaves the
+  // existing avatar untouched.
+  avatarEmoji?: string,
+  avatarUrl?: string,
 ): Promise<{ error?: string }> {
   const dbRole = role === 'senior' ? 'grandparent' : role;
+  const newAvatar = avatarUrl ?? avatarEmoji;
   const { error } = await supabase.from('members').update({
     name, role: dbRole, has_car: hasCar,
     ride_earnings_per_run: rideEarningsPerRun, grocery_earnings_per_run: groceryEarningsPerRun,
     sub_role: subRole ?? null,
     relationship: relationship ?? null,
+    ...(newAvatar ? { avatar: newAvatar } : {}),
   }).eq('id', memberId);
   if (error) {
     console.warn('[memberActions] saveMemberEdit failed', error.message);
     return { error: error.message };
   }
   const appRole: MemberRole = role === 'child' ? 'kid' : role === 'teenager' ? 'teen' : role as MemberRole;
-  await updateMember(memberId, { name, role: appRole, hasCar, rideEarningsPerRun, groceryEarningsPerRun, subRole, relationship });
+  await updateMember(memberId, {
+    name, role: appRole, hasCar, rideEarningsPerRun, groceryEarningsPerRun, subRole, relationship,
+    ...(avatarUrl ? { avatarUrl, emoji: undefined } : {}),
+    ...(avatarEmoji ? { emoji: avatarEmoji, avatarUrl: undefined } : {}),
+  });
   return {};
 }

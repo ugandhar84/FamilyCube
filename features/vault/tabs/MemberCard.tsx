@@ -5,6 +5,7 @@
  * of the mock's like-counter, since PIN management is this app's
  * equivalent small per-card action). Frosted-glass shell for the card body.
  */
+import { memo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { BlurView } from 'expo-blur';
@@ -12,6 +13,36 @@ import { LinearGradient } from 'expo-linear-gradient';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { BRAND } from './shared';
 import type { FamilyMember } from '@/store/familyStore';
+
+// Every call site (FamilyTreeView's renderCard, Profile's carousel .map())
+// passes onPress/onLongPress/onPinPress as fresh inline arrow functions —
+// their identity changes every render regardless of whether the underlying
+// member data did. A plain React.memo would see those as "changed props"
+// on every single render and never actually skip re-rendering, so this
+// comparator deliberately ignores the three callback props and only
+// compares what actually determines this card's appearance: the member
+// record itself (shallow key check covers every field that changes on
+// edit/PIN-set/avatar-upload), active/viewer flags, theme, and the
+// siblings list (only MemberCard uses it, for FamilyAvatar's disambiguation
+// logic — a new array each render would otherwise defeat the memo too).
+function memberPropsEqual(prev: { m: FamilyMember; isActive: boolean; isParentViewer: boolean; colors: any; isDark: boolean; siblings?: string[]; sidePrefix?: string }, next: typeof prev) {
+  if (prev.m !== next.m) return false; // reference check — familyStore replaces the object on any change
+  if (prev.isActive !== next.isActive) return false;
+  if (prev.isParentViewer !== next.isParentViewer) return false;
+  if (prev.isDark !== next.isDark) return false;
+  if (prev.colors !== next.colors) return false;
+  if (prev.sidePrefix !== next.sidePrefix) return false;
+  if (prev.siblings !== next.siblings) {
+    // Fall back to a length+order shallow compare — Profile's carousel
+    // passes members.map(m => m.name) freshly each render (new array
+    // identity even when the underlying names haven't changed), so a bare
+    // reference check alone would still defeat the memo for that call site.
+    const a = prev.siblings, b = next.siblings;
+    if (!a || !b || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
 
 export const roleColor = (role: string) =>
   role === 'parent' ? BRAND.purple : role === 'senior' ? BRAND.blue : role === 'teen' ? BRAND.amber : BRAND.emerald;
@@ -25,7 +56,7 @@ const I = {
 const GEN_LABEL: Record<string, string> = { senior: 'G1', parent: 'G2', teen: 'G3', kid: 'G3' };
 const ROLE_LABEL: Record<string, string> = { parent: 'Parent', senior: 'Grandparent', teen: 'Teen', kid: 'Kid' };
 
-export function MemberCard({ m, isActive, isParentViewer, colors, isDark, siblings, sidePrefix, onPress, onLongPress, onPinPress }: {
+function MemberCardImpl({ m, isActive, isParentViewer, colors, isDark, siblings, sidePrefix, onPress, onLongPress, onPinPress }: {
   m: FamilyMember; isActive: boolean; isParentViewer: boolean; colors: any; isDark: boolean;
   siblings: string[];
   /** "Paternal"/"Maternal" — set only for grandparent cards, once their
@@ -102,3 +133,84 @@ export function MemberCard({ m, isActive, isParentViewer, colors, isDark, siblin
     </TouchableOpacity>
   );
 }
+
+/** Memoized — see memberPropsEqual's own comment above for why a plain
+ * React.memo wouldn't have worked here (inline callback props). */
+export const MemberCard = memo(MemberCardImpl, memberPropsEqual);
+
+/**
+ * CarouselMemberCard — square variant for Profile's own horizontal-scroll
+ * member carousel (features/profile/ProfileSettingsScreen.tsx). MemberCard
+ * above stays untouched (its wide side-by-side layout is tuned for
+ * FamilyTreeView's generation-grouped grid and reads fine there) — this is
+ * a separate component for a context that explicitly wants a square,
+ * avatar-forward tile instead: avatar centered near the top, first name
+ * below it, a small role/relation chip underneath, PIN-lock as a corner
+ * badge (same corner-badge language MemberCard's key icon already uses).
+ * Same three actions, same wiring shape as MemberCard: tap → view
+ * (MemberProfileSheet), long-press parent-only → edit (EditMemberModal),
+ * key icon → PIN (PinModal) — purely a layout change, not a new
+ * interaction model.
+ */
+function CarouselMemberCardImpl({ m, isActive, isParentViewer, colors, isDark, onPress, onLongPress, onPinPress }: {
+  m: FamilyMember; isActive: boolean; isParentViewer: boolean; colors: any; isDark: boolean;
+  /** Tap — opens the read-only profile sheet. */
+  onPress: () => void;
+  /** Long-press — parents only, opens the edit modal. */
+  onLongPress: () => void; onPinPress: () => void;
+}) {
+  const rc = roleColor(m.role);
+  const hasPin = !!m.pin;
+  const label = m.relationship ?? ROLE_LABEL[m.role] ?? m.role;
+
+  return (
+    <TouchableOpacity activeOpacity={0.85} onPress={onPress} onLongPress={onLongPress} delayLongPress={500}
+      style={{
+        width: 96, borderRadius: 16, position: 'relative', overflow: 'hidden',
+        borderWidth: isActive ? 1.5 : 1, borderColor: isActive ? rc : colors.border,
+      }}>
+      <LinearGradient
+        colors={[rc + '14', rc + '00']}
+        start={{ x: 0, y: 0 }} end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      />
+      {Platform.OS === 'ios' ? (
+        <BlurView intensity={16} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+      ) : (
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.card + (isDark ? 'CC' : 'E6') }]} pointerEvents="none" />
+      )}
+
+      <View style={{ paddingTop: 14, paddingBottom: 10, paddingHorizontal: 8, alignItems: 'center' }}>
+        <FamilyAvatar name={m.name} emoji={m.emoji} avatarUrl={m.avatarUrl}
+          siblings={[]} size={44} ringColor={rc} ringWidth={1.5} />
+        <Text style={{ fontSize: 12, fontWeight: '800', color: colors.textPrimary, marginTop: 8 }} numberOfLines={1}>
+          {isActive ? 'You' : m.name.split(' ')[0]}
+        </Text>
+        <View style={{ marginTop: 3, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1.5, backgroundColor: rc + '18' }}>
+          <Text style={{ fontSize: 9, fontWeight: '700', color: rc }} numberOfLines={1}>{label}</Text>
+        </View>
+      </View>
+
+      {/* Corner badges — key icon (PIN action, parents/self only, same
+          gate MemberCard uses) top-right, PIN-set indicator top-left when
+          set (mirrors MemberCard's inline lock icon, just relocated to a
+          corner badge to fit the square footprint). */}
+      {hasPin && (
+        <View style={{ position: 'absolute', top: 6, left: 6, width: 16, height: 16, borderRadius: 8,
+          backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' }}>
+          <I.Lock c={colors.success} />
+        </View>
+      )}
+      {(isParentViewer || isActive) && (
+        <TouchableOpacity onPress={onPinPress} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={{ position: 'absolute', top: 6, right: 6, padding: 4 }}>
+          <I.Key c={colors.textTertiary} />
+        </TouchableOpacity>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+/** Memoized — same rationale as MemberCard above. */
+export const CarouselMemberCard = memo(CarouselMemberCardImpl, memberPropsEqual);

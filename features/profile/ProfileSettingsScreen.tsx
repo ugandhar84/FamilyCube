@@ -9,23 +9,32 @@
 //
 // Role-gating follows the same `roles: MemberRole[]` convention VaultScreen's
 // own FEATURES array and Hub's role views already use — no new pattern.
-import { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Switch, ActivityIndicator, TextInput, Platform } from 'react-native';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Switch, ActivityIndicator, TextInput, Platform, Share, Image, InteractionManager } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTheme, type ThemeMode } from '@/lib/ThemeContext';
 import { TYPO, RADIUS } from '@/constants/theme';
-import { useFamilyStore, type MemberRole } from '@/store/familyStore';
+import { useFamilyStore, RELATIONSHIPS_BY_ROLE, type MemberRole, type FamilyMember } from '@/store/familyStore';
 import { useChoreStore } from '@/store/choreStore';
 import { useAuthStore } from '@/store/authStore';
-import { supabase } from '@/lib/supabase';
+import { supabase, uploadMemberAvatar } from '@/lib/supabase';
 import { showAlert } from '@/components/AppAlert';
 import AppBottomSheet from '@/components/AppBottomSheet';
 import {
   isBiometricAvailable, isBiometricEnabled, setBiometricEnabled, getBiometricLabel,
 } from '@/lib/biometrics';
+import { CarouselMemberCard } from '@/features/vault/tabs/MemberCard';
+import { FamilyTreeView } from '@/features/vault/tabs/FamilyTreeView';
+import { MemberProfileSheet } from '@/features/vault/tabs/MemberProfileSheet';
+import { PinModal, EditMemberModal, PhotoPickerSheet } from '@/features/vault/tabs/RosterTab';
+import { saveMemberEdit } from '@/features/vault/tabs/memberActions';
+import { localDateStr, fmtDate } from '@/lib/dates';
+import { showPickerLoading, hidePickerLoading } from '@/lib/pickerLoading';
 
 // Same category buckets family-notifier's own categoryFor() groups every
 // real notification type into (supabase/functions/family-notifier/index.ts)
@@ -354,6 +363,622 @@ function CurrencySheet({
   );
 }
 
+// ─── Invite Member sheet ────────────────────────────────────────────────────
+// Per-invitee invite system: a form to pre-create a family member's row
+// (name/relationship/role, invite_status='pending') BEFORE any code exists,
+// then a list of every pending/claimed invitee with a regenerate-code
+// action per pending person. Each code is scoped to that ONE member id
+// (generate-invite-code's targetMemberId) — redeeming it claims that exact
+// row (join-family) rather than creating a new one, and dies on claim.
+// Reuses the same copy-to-clipboard UX RosterTab's own invite card started
+// (visual "Copied!" swap) but with a real Clipboard write this time, plus a
+// native Share sheet for handing the code off some other way (text/email).
+
+interface PendingInvite {
+  id: string; member_id: string | null; code: string;
+  status: 'pending' | 'accepted' | 'expired'; expires_at: string;
+}
+
+const INVITE_ROLES: { value: MemberRole; label: string; emoji: string }[] = [
+  { value: 'kid',    label: 'Kid',         emoji: '🧒' },
+  { value: 'teen',   label: 'Teen',        emoji: '🧑' },
+  { value: 'parent', label: 'Parent',      emoji: '👤' },
+  { value: 'senior', label: 'Grandparent', emoji: '🧓' },
+];
+
+function InviteMemberSheet({
+  visible, onClose, familyId, callerMemberId, members, colors, isDark,
+}: {
+  visible: boolean; onClose: () => void; familyId: string; callerMemberId: string;
+  members: FamilyMember[]; colors: any; isDark: boolean;
+}) {
+  const addPendingMember = useFamilyStore(s => s.addPendingMember);
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<MemberRole>('kid');
+  const [relationship, setRelationship] = useState<string | undefined>(undefined);
+  const [dob, setDob] = useState<Date | null>(null);
+  const [showDobPicker, setShowDobPicker] = useState(false);
+  const [email, setEmail] = useState('');
+  const [touched, setTouched] = useState<{ name?: boolean; email?: boolean }>({});
+  const [creating, setCreating] = useState(false);
+  const [invitesByMember, setInvitesByMember] = useState<Record<string, PendingInvite>>({});
+  const [loadingInvites, setLoadingInvites] = useState(true);
+  const [regenerating, setRegenerating] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // ── Validation ──────────────────────────────────────────────────────────
+  // Name: required, trimmed, reasonable max length. Relationship/role: role
+  // always has a value (chip default 'kid'), so it's never actually
+  // invalid — only relationship is optional. DOB: optional, but if set must
+  // be a real past date, not in the future, not absurdly old (matches
+  // CompleteProfileScreen's own ~120y MIN_DOB sanity bound, tightened
+  // slightly to the ~110y this form was asked to enforce). Email: optional,
+  // but if provided must pass real format validation.
+  const MAX_DOB = new Date();
+  const MIN_DOB = new Date(Date.now() - 110 * 365.25 * 24 * 3600_000);
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  const nameError = !name.trim() ? 'Name is required.' : name.trim().length > 60 ? 'Name is too long.' : undefined;
+  const emailError = email.trim() && !EMAIL_RE.test(email.trim()) ? 'Enter a valid email address.' : undefined;
+  const dobError = dob && (dob > MAX_DOB ? 'Date of birth can\'t be in the future.' : dob < MIN_DOB ? 'That date seems too far in the past.' : undefined);
+  const formValid = !nameError && !emailError && !dobError;
+
+  const pendingMembers = members.filter(m => m.inviteStatus === 'pending' && !m.deletedAt);
+  const claimedInvitees = members.filter(m => m.inviteStatus !== 'pending' && !m.deletedAt && m.id !== callerMemberId);
+
+  const loadInvites = useCallback(async () => {
+    setLoadingInvites(true);
+    const { data } = await supabase.from('family_invites').select('id, member_id, code, status, expires_at')
+      .eq('family_id', familyId).not('member_id', 'is', null)
+      .order('expires_at', { ascending: false });
+    if (data) {
+      const byMember: Record<string, PendingInvite> = {};
+      for (const inv of data as PendingInvite[]) {
+        // Latest row per member_id wins (query is already newest-expiry-first).
+        if (inv.member_id && !byMember[inv.member_id]) byMember[inv.member_id] = inv;
+      }
+      setInvitesByMember(byMember);
+    }
+    setLoadingInvites(false);
+  }, [familyId]);
+
+  useEffect(() => { if (visible) loadInvites(); }, [visible, loadInvites]);
+
+  const relationshipOptions = RELATIONSHIPS_BY_ROLE[role] ?? [];
+
+  const generateCodeFor = async (targetMemberId: string) => {
+    setRegenerating(targetMemberId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+      const anonKey     = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+      const res = await fetch(`${supabaseUrl}/functions/v1/generate-invite-code`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json', 'apikey': anonKey,
+          ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ familyId, memberId: callerMemberId, targetMemberId }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        await loadInvites();
+      } else {
+        showAlert("Couldn't generate code", json.error ?? 'Something went wrong.');
+      }
+    } catch (e: any) {
+      showAlert("Couldn't generate code", e?.message ?? 'Network error.');
+    } finally {
+      setRegenerating(null);
+    }
+  };
+
+  const handleAddMember = async () => {
+    setTouched({ name: true, email: true });
+    if (!formValid) return;
+    setCreating(true);
+    try {
+      const created = await addPendingMember(name, role, relationship, dob ? localDateStr(dob) : undefined, email.trim() || undefined);
+      if (!created) { showAlert("Couldn't add family member", 'That email may already be in use in your family, or something else went wrong. Please try again.'); return; }
+      setName(''); setRelationship(undefined); setRole('kid'); setDob(null); setEmail(''); setTouched({});
+      await generateCodeFor(created.id);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const copyCode = async (id: string, code: string) => {
+    await Clipboard.setStringAsync(code);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const shareCode = async (name: string, code: string) => {
+    try {
+      await Share.share({ message: `Join our family on Family Cube! Use invite code ${code} to set up ${name}'s profile.` });
+    } catch { /* user cancelled — no-op */ }
+  };
+
+  const fmtExpiry = (iso: string) => {
+    try {
+      const diffH = Math.round((new Date(iso).getTime() - Date.now()) / 3600000);
+      if (diffH < 0) return 'Expired';
+      if (diffH < 24) return `${diffH}h left`;
+      return `${Math.floor(diffH / 24)}d left`;
+    } catch { return '--'; }
+  };
+
+  return (
+    <AppBottomSheet visible={visible} onClose={onClose} title="Invite Family Member"
+      subtitle="Add their details, then share the code they'll use to join" minHeight="65%" maxHeight="92%">
+
+      <SectionHeader label="Add Someone New" colors={colors} />
+      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>Name</Text>
+      <TextInput
+        value={name} onChangeText={setName} onBlur={() => setTouched(t => ({ ...t, name: true }))}
+        placeholder="e.g. Emma" maxLength={60}
+        placeholderTextColor={colors.textTertiary}
+        style={{
+          borderWidth: 1.5, borderColor: (touched.name && nameError) ? colors.danger : colors.border, borderRadius: RADIUS.sm,
+          paddingHorizontal: 12, paddingVertical: 10, fontSize: TYPO.body,
+          color: colors.textPrimary, backgroundColor: colors.surface,
+        }}
+      />
+      {touched.name && nameError ? (
+        <Text style={{ fontSize: TYPO.caption, color: colors.danger, marginTop: 4 }}>{nameError}</Text>
+      ) : null}
+      <View style={{ marginBottom: 14 }} />
+
+      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>Role</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+        {INVITE_ROLES.map(r => {
+          const active = role === r.value;
+          return (
+            <TouchableOpacity key={r.value}
+              onPress={() => { setRole(r.value); setRelationship(undefined); }}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                paddingHorizontal: 12, paddingVertical: 9, borderRadius: RADIUS.md,
+                backgroundColor: active ? colors.primary : colors.card,
+                borderWidth: 1, borderColor: active ? colors.primary : colors.border,
+              }}>
+              <Text style={{ fontSize: 14 }}>{r.emoji}</Text>
+              <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: active ? '#fff' : colors.textPrimary }}>{r.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {relationshipOptions.length > 0 && (
+        <>
+          <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>
+            Relationship <Text style={{ fontWeight: '400' }}>(optional)</Text>
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+            {relationshipOptions.map(opt => {
+              const picked = relationship === opt;
+              return (
+                <TouchableOpacity key={opt} onPress={() => setRelationship(picked ? undefined : opt)}
+                  style={{
+                    paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.md,
+                    backgroundColor: picked ? colors.teal : colors.card,
+                    borderWidth: 1, borderColor: picked ? colors.teal : colors.border,
+                  }}>
+                  <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: picked ? '#fff' : colors.textPrimary }}>{opt}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </>
+      )}
+
+      {/* Date of birth — same inline-spinner pattern CompleteProfileScreen
+          already uses (DateTimePicker, mode="date", display="spinner"),
+          reusing FamilyMember.dateOfBirth's own 'YYYY-MM-DD' format
+          (localDateStr) rather than inventing a second date representation.
+          Optional — skipping it is a real, supported choice, same as it is
+          post-onboarding. */}
+      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>
+        Date of birth <Text style={{ fontWeight: '400' }}>(optional)</Text>
+      </Text>
+      <TouchableOpacity
+        onPress={() => setShowDobPicker(v => !v)}
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: 8,
+          borderWidth: 1.5, borderColor: (dobError) ? colors.danger : (showDobPicker ? colors.primary : colors.border),
+          borderRadius: RADIUS.sm, paddingHorizontal: 12, paddingVertical: 10,
+          backgroundColor: colors.surface,
+        }}>
+        <Ionicons name="calendar-outline" size={15} color={colors.textSecondary} />
+        <Text style={{ fontSize: TYPO.body, color: dob ? colors.textPrimary : colors.textTertiary }}>
+          {dob ? fmtDate(localDateStr(dob)) : 'Tap to choose a date'}
+        </Text>
+      </TouchableOpacity>
+      {dobError ? (
+        <Text style={{ fontSize: TYPO.caption, color: colors.danger, marginTop: 4 }}>{dobError}</Text>
+      ) : null}
+      {showDobPicker && (
+        <View style={{ borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, marginTop: 8 }}>
+          <DateTimePicker
+            value={dob ?? new Date(MIN_DOB.getFullYear() + 30, 0, 1)}
+            mode="date"
+            display="spinner"
+            minimumDate={MIN_DOB}
+            maximumDate={MAX_DOB}
+            onChange={(_e, d) => { if (d) setDob(d); }}
+            textColor={colors.textPrimary}
+            style={{ height: 180, width: '100%' }}
+          />
+          <TouchableOpacity onPress={() => setShowDobPicker(false)} style={{ alignSelf: 'flex-end', padding: 12 }}>
+            <Text style={{ color: colors.primary, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      <View style={{ marginBottom: 14 }} />
+
+      {/* Email — optional, informational contact only (this app doesn't
+          send a verification link to it here — that's the SEPARATE
+          member_invitations/send-member-invite email system). Reuses
+          FamilyMember.email, the same field an accepted email invite or a
+          code-joined member ends up with. */}
+      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>
+        Email <Text style={{ fontWeight: '400' }}>(optional)</Text>
+      </Text>
+      <TextInput
+        value={email} onChangeText={setEmail} onBlur={() => setTouched(t => ({ ...t, email: true }))}
+        placeholder="e.g. emma@example.com" placeholderTextColor={colors.textTertiary}
+        autoCapitalize="none" autoCorrect={false} keyboardType="email-address"
+        style={{
+          borderWidth: 1.5, borderColor: (touched.email && emailError) ? colors.danger : colors.border, borderRadius: RADIUS.sm,
+          paddingHorizontal: 12, paddingVertical: 10, fontSize: TYPO.body,
+          color: colors.textPrimary, backgroundColor: colors.surface,
+        }}
+      />
+      {touched.email && emailError ? (
+        <Text style={{ fontSize: TYPO.caption, color: colors.danger, marginTop: 4 }}>{emailError}</Text>
+      ) : null}
+      <View style={{ marginBottom: 14 }} />
+
+      <TouchableOpacity onPress={handleAddMember} disabled={creating || !formValid}
+        style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+          borderRadius: RADIUS.md, paddingVertical: 12, marginBottom: 24,
+          backgroundColor: colors.primary, opacity: (creating || !formValid) ? 0.5 : 1,
+        }}>
+        {creating ? <ActivityIndicator size="small" color="#fff" /> : (
+          <>
+            <Ionicons name="person-add-outline" size={16} color="#fff" />
+            <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: '#fff' }}>Add & Generate Code</Text>
+          </>
+        )}
+      </TouchableOpacity>
+
+      <SectionHeader label={`Pending Invites (${pendingMembers.length})`} colors={colors} />
+      {loadingInvites ? (
+        <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
+      ) : pendingMembers.length === 0 ? (
+        <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, textAlign: 'center', paddingVertical: 12 }}>
+          No pending invites — add someone above.
+        </Text>
+      ) : (
+        pendingMembers.map(m => {
+          const inv = invitesByMember[m.id];
+          const isLive = inv && inv.status === 'pending';
+          return (
+            <View key={m.id} style={{
+              borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border,
+              backgroundColor: colors.card, padding: 12, marginBottom: 10,
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontSize: 18 }}>{m.emoji ?? '👤'}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: colors.textPrimary }}>{m.name}</Text>
+                  <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary }}>
+                    {m.relationship ?? m.role} · Not yet joined
+                  </Text>
+                </View>
+              </View>
+
+              {isLive ? (
+                <View style={{ marginTop: 10, gap: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                    borderRadius: RADIUS.sm, borderWidth: 1, borderColor: colors.primary + '40',
+                    backgroundColor: colors.primaryLight, paddingHorizontal: 12, paddingVertical: 10 }}>
+                    <Text style={{ fontSize: 18, fontWeight: '900', letterSpacing: 3, color: colors.textPrimary }}>{inv.code}</Text>
+                    <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>{fmtExpiry(inv.expires_at)}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity onPress={() => copyCode(m.id, inv.code)}
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        paddingVertical: 9, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: colors.border }}>
+                      <Ionicons name={copiedId === m.id ? 'checkmark' : 'copy-outline'} size={14} color={colors.textPrimary} />
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>
+                        {copiedId === m.id ? 'Copied' : 'Copy'}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => shareCode(m.name, inv.code)}
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        paddingVertical: 9, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: colors.border }}>
+                      <Ionicons name="share-outline" size={14} color={colors.textPrimary} />
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>Share</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => generateCodeFor(m.id)} disabled={regenerating === m.id}
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        paddingVertical: 9, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: colors.border }}>
+                      {regenerating === m.id
+                        ? <ActivityIndicator size="small" color={colors.textPrimary} />
+                        : <><Ionicons name="refresh-outline" size={14} color={colors.textPrimary} />
+                            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>New Code</Text></>}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <TouchableOpacity onPress={() => generateCodeFor(m.id)} disabled={regenerating === m.id}
+                  style={{ marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    paddingVertical: 10, borderRadius: RADIUS.sm, backgroundColor: colors.primary,
+                    opacity: regenerating === m.id ? 0.6 : 1 }}>
+                  {regenerating === m.id ? <ActivityIndicator size="small" color="#fff" /> : (
+                    <>
+                      <Ionicons name="key-outline" size={14} color="#fff" />
+                      <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: '#fff' }}>
+                        {inv?.status === 'expired' ? 'Generate New Code' : 'Generate Code'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        })
+      )}
+
+      {claimedInvitees.length > 0 && (
+        <View style={{ marginTop: 8 }}>
+          <SectionHeader label={`Already Joined (${claimedInvitees.length})`} colors={colors} />
+          {claimedInvitees.map(m => (
+            <View key={m.id} style={{
+              flexDirection: 'row', alignItems: 'center', gap: 8,
+              paddingVertical: 8, paddingHorizontal: 12, borderRadius: RADIUS.sm,
+              backgroundColor: colors.surface, marginBottom: 6,
+            }}>
+              <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+              <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{m.name}</Text>
+              <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>{m.relationship ?? m.role}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </AppBottomSheet>
+  );
+}
+
+// ─── Edit My Profile sheet ──────────────────────────────────────────────────
+// Self-service — the CURRENTLY ACTIVE member editing their OWN name/DOB/
+// email/avatar. Distinct from EditMemberModal (RosterTab.tsx), which is the
+// parent-edits-a-DIFFERENT-member flow with its own role/relationship/
+// driving-earnings fields that don't apply to editing yourself. Same avatar
+// picker pattern as CompleteProfileScreen (emoji grid or a real photo via
+// expo-image-picker + uploadMemberAvatar) and the same DOB/email validation
+// InviteMemberSheet's add-form uses. Saves go straight through
+// updateMember() — a member always has permission to write their own row,
+// no saveMemberEdit role-vocabulary translation needed since role isn't
+// editable here.
+const AVATAR_EMOJIS = ['🧒','👦','👧','🧑','👩','👨','🧓','👴','👵','🦸','🧙','🧜','🦊','🐶','🐱','⭐'];
+
+function EditMyProfileSheet({
+  visible, onClose, member, colors, isDark,
+}: {
+  visible: boolean; onClose: () => void; member: FamilyMember; colors: any; isDark: boolean;
+}) {
+  const updateMember = useFamilyStore(s => s.updateMember);
+  const [name, setName] = useState(member.name);
+  const [email, setEmail] = useState(member.email ?? '');
+  const [dob, setDob] = useState<Date | null>(member.dateOfBirth ? new Date(member.dateOfBirth + 'T00:00:00') : null);
+  const [showDobPicker, setShowDobPicker] = useState(false);
+  const [pickedEmoji, setPickedEmoji] = useState<string | undefined>(undefined);
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [touched, setTouched] = useState<{ name?: boolean; email?: boolean }>({});
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [showPhotoPicker, setShowPhotoPicker] = useState(false);
+
+  const MAX_DOB = new Date();
+  const MIN_DOB = new Date(Date.now() - 110 * 365.25 * 24 * 3600_000);
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const nameError = !name.trim() ? 'Name is required.' : name.trim().length > 60 ? 'Name is too long.' : undefined;
+  const emailError = email.trim() && !EMAIL_RE.test(email.trim()) ? 'Enter a valid email address.' : undefined;
+  const dobError = dob && (dob > MAX_DOB ? 'Date of birth can\'t be in the future.' : dob < MIN_DOB ? 'That date seems too far in the past.' : undefined);
+  const formValid = !nameError && !emailError && !dobError;
+
+  const currentAvatarPreview = photoUri ?? (pickedEmoji ? undefined : member.avatarUrl);
+  const currentEmojiPreview = pickedEmoji ?? (member.avatarUrl ? undefined : member.emoji);
+
+  // Close the picker sheet fully BEFORE launching the native camera/library
+  // UI — same deliberate ordering as RosterTab.tsx's EditMemberModal (this
+  // sheet is itself an AppBottomSheet, i.e. an RN <Modal>; stacking a
+  // second native picker presentation on top of one still visible is a
+  // known iOS freeze/deadlock).
+  const pickPhoto = async (fromCamera: boolean) => {
+    setShowPhotoPicker(false);
+    const permission = fromCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permission.status !== 'granted') {
+      showAlert('Permission needed', `Allow ${fromCamera ? 'camera' : 'photo library'} access to change your photo.`);
+      return;
+    }
+    try {
+      await showPickerLoading(fromCamera ? 'Waiting for camera…' : 'Opening library…');
+      const result = fromCamera
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.8 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.8 });
+      hidePickerLoading();
+      if (!result.canceled && result.assets[0]) { setPhotoUri(result.assets[0].uri); setPickedEmoji(undefined); }
+    } catch (e: any) {
+      hidePickerLoading();
+      showAlert(`Could not open ${fromCamera ? 'camera' : 'library'}`, e?.message);
+    }
+  };
+
+  const handleSave = async () => {
+    setTouched({ name: true, email: true });
+    if (!formValid) return;
+    setSaving(true);
+    let avatarUrl: string | undefined;
+    if (photoUri && member.familyId) {
+      setUploading(true);
+      try {
+        avatarUrl = await uploadMemberAvatar(member.familyId, member.id, photoUri);
+      } catch (e: any) {
+        showAlert('Photo upload failed', "Couldn't upload the photo — other changes will still be saved.");
+      }
+      setUploading(false);
+    }
+    // Dismiss FIRST, defer the store write (updateMember) until after the
+    // dismiss animation settles — same fix as RosterTab.tsx's EditMemberModal
+    // Save handler (see its comment for the full why: this member's card
+    // renders in BOTH the carousel below and the identity card above on
+    // this same screen, so updateMember here re-renders more of this screen
+    // than almost any other save path in the app).
+    const patch = {
+      name: name.trim(),
+      email: email.trim() ? email.trim().toLowerCase() : undefined,
+      dateOfBirth: dob ? localDateStr(dob) : undefined,
+      ...(avatarUrl ? { avatarUrl, emoji: undefined } : {}),
+      ...(pickedEmoji ? { emoji: pickedEmoji, avatarUrl: undefined } : {}),
+    };
+    onClose();
+    InteractionManager.runAfterInteractions(() => {
+      setSaving(false);
+      updateMember(member.id, patch);
+    });
+  };
+
+  return (
+    <AppBottomSheet visible={visible} onClose={onClose} title="Edit My Profile"
+      subtitle="Your own name, photo, birthday, and email" minHeight="65%" maxHeight="92%">
+
+      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>Photo</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <TouchableOpacity
+          onPress={() => setShowPhotoPicker(true)}
+          style={{ width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center',
+            backgroundColor: colors.primaryLight, borderWidth: 2, borderColor: colors.primary, overflow: 'hidden' }}>
+          {currentAvatarPreview ? (
+            <Image source={{ uri: currentAvatarPreview }} style={{ width: 64, height: 64 }} />
+          ) : (
+            <Text style={{ fontSize: 30 }}>{currentEmojiPreview ?? '👤'}</Text>
+          )}
+        </TouchableOpacity>
+        {(photoUri || pickedEmoji) && (
+          <TouchableOpacity onPress={() => { setPhotoUri(null); setPickedEmoji(undefined); }}>
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>Reset</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 18 }}>
+        {AVATAR_EMOJIS.map(e => (
+          <TouchableOpacity key={e}
+            onPress={() => { setPickedEmoji(e); setPhotoUri(null); }}
+            style={{ width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: pickedEmoji === e ? colors.primaryLight : 'transparent',
+              borderWidth: pickedEmoji === e ? 1.5 : 0, borderColor: colors.primary }}>
+            <Text style={{ fontSize: 18 }}>{e}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>Name</Text>
+      <TextInput
+        value={name} onChangeText={setName} onBlur={() => setTouched(t => ({ ...t, name: true }))}
+        maxLength={60} placeholderTextColor={colors.textTertiary}
+        style={{
+          borderWidth: 1.5, borderColor: (touched.name && nameError) ? colors.danger : colors.border, borderRadius: RADIUS.sm,
+          paddingHorizontal: 12, paddingVertical: 10, fontSize: TYPO.body,
+          color: colors.textPrimary, backgroundColor: colors.surface,
+        }}
+      />
+      {touched.name && nameError ? (
+        <Text style={{ fontSize: TYPO.caption, color: colors.danger, marginTop: 4 }}>{nameError}</Text>
+      ) : null}
+      <View style={{ marginBottom: 14 }} />
+
+      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>
+        Date of birth <Text style={{ fontWeight: '400' }}>(optional)</Text>
+      </Text>
+      <TouchableOpacity
+        onPress={() => setShowDobPicker(v => !v)}
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: 8,
+          borderWidth: 1.5, borderColor: dobError ? colors.danger : (showDobPicker ? colors.primary : colors.border),
+          borderRadius: RADIUS.sm, paddingHorizontal: 12, paddingVertical: 10,
+          backgroundColor: colors.surface,
+        }}>
+        <Ionicons name="calendar-outline" size={15} color={colors.textSecondary} />
+        <Text style={{ fontSize: TYPO.body, color: dob ? colors.textPrimary : colors.textTertiary }}>
+          {dob ? fmtDate(localDateStr(dob)) : 'Tap to choose a date'}
+        </Text>
+      </TouchableOpacity>
+      {dobError ? (
+        <Text style={{ fontSize: TYPO.caption, color: colors.danger, marginTop: 4 }}>{dobError}</Text>
+      ) : null}
+      {showDobPicker && (
+        <View style={{ borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, marginTop: 8 }}>
+          <DateTimePicker
+            value={dob ?? new Date(MIN_DOB.getFullYear() + 30, 0, 1)}
+            mode="date"
+            display="spinner"
+            minimumDate={MIN_DOB}
+            maximumDate={MAX_DOB}
+            onChange={(_e, d) => { if (d) setDob(d); }}
+            textColor={colors.textPrimary}
+            style={{ height: 180, width: '100%' }}
+          />
+          <TouchableOpacity onPress={() => setShowDobPicker(false)} style={{ alignSelf: 'flex-end', padding: 12 }}>
+            <Text style={{ color: colors.primary, fontWeight: '900', fontSize: TYPO.body }}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      <View style={{ marginBottom: 14 }} />
+
+      <Text style={{ fontSize: TYPO.caption, color: colors.textSecondary, marginBottom: 8 }}>
+        Email <Text style={{ fontWeight: '400' }}>(optional)</Text>
+      </Text>
+      <TextInput
+        value={email} onChangeText={setEmail} onBlur={() => setTouched(t => ({ ...t, email: true }))}
+        placeholder="e.g. you@example.com" placeholderTextColor={colors.textTertiary}
+        autoCapitalize="none" autoCorrect={false} keyboardType="email-address"
+        style={{
+          borderWidth: 1.5, borderColor: (touched.email && emailError) ? colors.danger : colors.border, borderRadius: RADIUS.sm,
+          paddingHorizontal: 12, paddingVertical: 10, fontSize: TYPO.body,
+          color: colors.textPrimary, backgroundColor: colors.surface,
+        }}
+      />
+      {touched.email && emailError ? (
+        <Text style={{ fontSize: TYPO.caption, color: colors.danger, marginTop: 4 }}>{emailError}</Text>
+      ) : null}
+
+      <TouchableOpacity onPress={handleSave} disabled={saving || !formValid}
+        style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+          borderRadius: RADIUS.md, paddingVertical: 12, marginTop: 20, marginBottom: 12,
+          backgroundColor: colors.primary, opacity: (saving || !formValid) ? 0.5 : 1,
+        }}>
+        {saving ? <ActivityIndicator size="small" color="#fff" /> : (
+          <Text style={{ fontSize: TYPO.body, fontWeight: '800', color: '#fff' }}>{uploading ? 'Uploading…' : 'Save Changes'}</Text>
+        )}
+      </TouchableOpacity>
+
+      <PhotoPickerSheet
+        visible={showPhotoPicker} onClose={() => setShowPhotoPicker(false)}
+        onTakePhoto={() => pickPhoto(true)} onChooseLibrary={() => pickPhoto(false)}
+        onRemove={currentAvatarPreview ? () => { setShowPhotoPicker(false); setPhotoUri(null); setPickedEmoji(undefined); } : undefined}
+        avatarUri={currentAvatarPreview} avatarEmoji={currentEmojiPreview} name={member.name}
+        colors={colors} isDark={isDark} />
+    </AppBottomSheet>
+  );
+}
+
 // ─── Delete flows ───────────────────────────────────────────────────────────
 
 // Type-to-confirm — matches the "scary enough" bar the spec asks for, one
@@ -387,16 +1012,109 @@ function TypeToConfirmRow({
 
 export default function ProfileSettingsScreen() {
   const { colors, isDark, mode, setMode } = useTheme();
-  const { members, activeMemberId, updateMember, removeMember } = useFamilyStore();
+  // Narrow, individually-selected subscriptions — was a bare useFamilyStore()
+  // with no selector, which subscribes to the ENTIRE store object and
+  // re-renders this whole screen (carousel, FamilyTreeView, and whichever
+  // sheet happens to be open, since every sheet is a conditionally-rendered
+  // sibling here, not lazily mounted) on every unrelated store tick:
+  // familyStore's realtime members-table subscription firing, AsyncStorage
+  // cache writes, syncFromDB polling, even loaded/familyName changing.
+  // None of that has anything to do with what's on screen most of the time,
+  // but the old bare call meant this component re-rendered anyway — and
+  // with a several-member carousel of un-memoized <Image> avatars underneath
+  // whatever sheet is open, that re-render (re-decoding several avatar
+  // images synchronously) landing in the same frame as a sheet's own
+  // layout/animation work (AppBottomSheet re-measures on every
+  // onContentSizeChange, e.g. a validation error appearing) is exactly the
+  // kind of stacked-heavy-work freeze already diagnosed once this session
+  // for the photo-picker-over-Modal and save-then-close cases.
+  const allMembers = useFamilyStore(s => s.members);
+  const activeMemberId = useFamilyStore(s => s.activeMemberId);
+  const updateMember = useFamilyStore(s => s.updateMember);
+  const removeMember = useFamilyStore(s => s.removeMember);
   const { signOut } = useAuthStore();
   const householdSettings = useChoreStore(s => s.householdSettings);
   const updateHouseholdSettings = useChoreStore(s => s.updateHouseholdSettings);
   const [showCurrencySheet, setShowCurrencySheet] = useState(false);
 
-  const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
+  // Same "who's actually in this family right now" filter RosterTab uses —
+  // soft-deleted members and not-yet-claimed pending invitees stay out of
+  // the live carousel/tree (pending invitees get their own list, inside
+  // InviteMemberSheet). Memoized: a bare .filter() on every render produces
+  // a brand-new array identity even when `allMembers` itself hasn't
+  // changed, which would silently defeat CarouselMemberCard/FamilyTreeView's
+  // own React.memo below (their `members`/`siblings` props never being
+  // reference-equal across renders means memo never short-circuits).
+  const members = useMemo(
+    () => allMembers.filter(m => !m.deletedAt && m.inviteStatus !== 'pending'),
+    [allMembers]
+  );
+
+  const activeMember = allMembers.find(m => m.id === activeMemberId) ?? allMembers[0];
   const role: MemberRole = activeMember?.role ?? 'parent';
   const isParent = role === 'parent';
   const isAuthLinked = !!activeMember?.authUserId;
+  const familyId = activeMember?.familyId ?? '';
+
+  // Member carousel + inline family tree — same view/edit/pin wiring
+  // RosterTab.tsx already uses (setViewTarget/setEditTarget/setPinTarget →
+  // MemberProfileSheet/EditMemberModal/PinModal), reusing those exact
+  // exported components so behavior can't drift between the Roster tab and
+  // this page's own first-class version of the same experience.
+  const [viewTarget, setViewTarget] = useState<FamilyMember | null>(null);
+  const [editTarget, setEditTarget] = useState<FamilyMember | null>(null);
+  const [pinTarget, setPinTarget] = useState<FamilyMember | null>(null);
+  const [showFullTree, setShowFullTree] = useState(false);
+  const [showInviteSheet, setShowInviteSheet] = useState(false);
+  const [showEditMyProfile, setShowEditMyProfile] = useState(false);
+
+  const savePin = async (memberId: string, pin: string) => {
+    const { error } = await supabase.from('members').update({ pin }).eq('id', memberId);
+    if (error) { showAlert("Couldn't save PIN", error.message); return; }
+    updateMember(memberId, { pin });
+  };
+
+  const saveMember = async (memberId: string, name: string, mRole: string, hasCar: boolean, rideEarningsPerRun: number, groceryEarningsPerRun: number, subRole?: string, relationship?: string, avatarEmoji?: string, avatarUrl?: string) => {
+    const { error } = await saveMemberEdit(updateMember, memberId, name, mRole, hasCar, rideEarningsPerRun, groceryEarningsPerRun, subRole, relationship, avatarEmoji, avatarUrl);
+    if (error) showAlert("Couldn't save changes", error);
+  };
+
+  const deleteFamilyMember = async (memberId: string) => {
+    try {
+      await removeMember(memberId);
+    } catch (e: any) {
+      showAlert('Could Not Remove Member', e?.message || 'Something went wrong removing this family member.');
+    }
+  };
+
+  // Member-scoped resend, mirroring RosterTab.tsx's own resendInviteFor —
+  // used by EditMemberModal's GP-only "Resend Invite" action. Generates a
+  // brand-new code tied to that member's row (targetMemberId), same
+  // per-invitee model InviteMemberSheet uses.
+  const resendInviteFor = async (targetMember: FamilyMember) => {
+    if (!familyId || !activeMember?.id) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+      const anonKey     = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+      const res = await fetch(`${supabaseUrl}/functions/v1/generate-invite-code`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json', 'apikey': anonKey,
+          ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ familyId, memberId: activeMember.id, targetMemberId: targetMember.id }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        showAlert('New code generated', `${targetMember.name}'s new invite code is ${json.code}. Share it with them to sign in.`);
+      } else {
+        showAlert("Couldn't generate code", json.error ?? 'Something went wrong.');
+      }
+    } catch (e: any) {
+      showAlert("Couldn't generate code", e?.message ?? 'Network error.');
+    }
+  };
 
   const [storeReminders, setStoreReminders] = useState(activeMember?.storeProximityRemindersEnabled ?? true);
   const [notifPrefs, setNotifPrefs] = useState(activeMember?.notificationPrefs ?? {});
@@ -496,17 +1214,25 @@ export default function ProfileSettingsScreen() {
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
 
-        {/* Identity card */}
-        <View style={{
+        {/* Identity card — tappable, opens EditMyProfileSheet (self-service:
+            name/DOB/email/avatar for the CURRENTLY ACTIVE member only,
+            available to everyone regardless of role). Distinct from
+            EditMemberModal below, which is the parent-edits-someone-ELSE
+            flow. */}
+        <TouchableOpacity onPress={() => setShowEditMyProfile(true)} activeOpacity={0.75} style={{
           flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16,
           borderRadius: RADIUS.lg, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
           marginBottom: 24,
         }}>
           <View style={{
             width: 52, height: 52, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center',
-            backgroundColor: role === 'parent' ? colors.parentLight : colors.kidLight,
+            backgroundColor: role === 'parent' ? colors.parentLight : colors.kidLight, overflow: 'hidden',
           }}>
-            <Text style={{ fontSize: 26 }}>{activeMember.emoji ?? '👤'}</Text>
+            {activeMember.avatarUrl ? (
+              <Image source={{ uri: activeMember.avatarUrl }} style={{ width: 52, height: 52 }} />
+            ) : (
+              <Text style={{ fontSize: 26 }}>{activeMember.emoji ?? '👤'}</Text>
+            )}
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: TYPO.heading, fontWeight: '800', color: colors.textPrimary }}>{activeMember.name}</Text>
@@ -515,19 +1241,90 @@ export default function ProfileSettingsScreen() {
               {isAuthLinked ? ' · Signed in' : ' · PIN profile'}
             </Text>
           </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        </TouchableOpacity>
+
+        <EditMyProfileSheet visible={showEditMyProfile} onClose={() => setShowEditMyProfile(false)}
+          member={activeMember} colors={colors} isDark={isDark} />
+
+        {/* Family — member carousel + expandable full tree, the same
+            underlying components (MemberCard/FamilyTreeView/
+            MemberProfileSheet/EditMemberModal/PinModal) RosterTab.tsx uses,
+            so this page offers a first-class version of the same
+            experience instead of just linking out to the Roster tab.
+            Tap a card → read-only MemberProfileSheet (never switches
+            activeMemberId — an admin views without impersonating). Long-
+            press (parents only) → EditMemberModal. Key icon → PinModal. */}
+        <View style={{ marginBottom: 24 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+            <SectionHeader label="Family" colors={colors} />
+            {isParent && (
+              <TouchableOpacity onPress={() => setShowInviteSheet(true)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 'auto', marginBottom: 10 }}>
+                <Ionicons name="person-add-outline" size={14} color={colors.primary} />
+                <Text style={{ fontSize: TYPO.caption, fontWeight: '800', color: colors.primary }}>Invite</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
+            {members.map(m => (
+              <CarouselMemberCard key={m.id} m={m} isActive={m.id === activeMemberId} isParentViewer={isParent}
+                colors={colors} isDark={isDark}
+                onPress={() => setViewTarget(m)}
+                onLongPress={() => { if (isParent) setEditTarget(m); }}
+                onPinPress={() => setPinTarget(m)} />
+            ))}
+          </ScrollView>
+
+          <TouchableOpacity onPress={() => setShowFullTree(v => !v)}
+            style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+              marginTop: 12, paddingVertical: 10, borderRadius: RADIUS.md,
+              backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+            }}>
+            <Ionicons name={showFullTree ? 'chevron-up' : 'git-network-outline'} size={15} color={colors.textSecondary} />
+            <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textSecondary }}>
+              {showFullTree ? 'Hide full family tree' : 'See full family tree'}
+            </Text>
+          </TouchableOpacity>
+
+          {showFullTree && (
+            <View style={{ marginTop: 14 }}>
+              <FamilyTreeView
+                members={members} activeMemberId={activeMemberId} isParent={isParent}
+                colors={colors} isDark={isDark}
+                onView={setViewTarget} onEdit={setEditTarget} onPin={setPinTarget}
+              />
+            </View>
+          )}
         </View>
 
-        {/* Roster link */}
-        <View style={{ marginBottom: 24 }}>
-          <SectionHeader label="Family" colors={colors} />
-          <Row
-            icon="people-outline"
-            label="Roster"
-            subtitle="Manage everyone in your family"
-            onPress={() => router.push('/(tabs)/profile?openFeature=roster')}
-            colors={colors} isDark={isDark}
-          />
-        </View>
+        {viewTarget && (
+          <MemberProfileSheet member={viewTarget} siblings={members.map(m => m.name)}
+            visible onClose={() => setViewTarget(null)}
+            isParentViewer={isParent}
+            onEdit={(m) => { setViewTarget(null); setEditTarget(m); }}
+            onChangePin={(m) => { setViewTarget(null); setPinTarget(m); }}
+            colors={colors} isDark={isDark} />
+        )}
+        {editTarget && (
+          <EditMemberModal member={editTarget} allMembers={members} onClose={() => setEditTarget(null)}
+            onSave={saveMember} onLinkParent={(id, parentId) => updateMember(id, { linkedParentId: parentId })}
+            onDelete={deleteFamilyMember}
+            onResetPin={(m) => { setEditTarget(null); setPinTarget(m); }}
+            onResendInvite={(m) => resendInviteFor(m)}
+            colors={colors} isDark={isDark} />
+        )}
+        {pinTarget && (
+          <PinModal member={pinTarget} onClose={() => setPinTarget(null)}
+            onSave={savePin} colors={colors} isDark={isDark} />
+        )}
+        {isParent && familyId && (
+          <InviteMemberSheet visible={showInviteSheet} onClose={() => setShowInviteSheet(false)}
+            familyId={familyId} callerMemberId={activeMember.id} members={allMembers}
+            colors={colors} isDark={isDark} />
+        )}
 
         {/* Notifications — was 6+ toggle rows sitting flat on this page;
             collapsed into one summary row that opens NotificationsSheet
@@ -657,6 +1454,29 @@ export default function ProfileSettingsScreen() {
             colors={colors} isDark={isDark}
           />
         </View>
+
+        {/* Sign out — plain, reversible action, distinct from the danger
+            zone's "Delete account" below (that's permanent; this just ends
+            the device session, same signOut()+redirect the delete-account
+            handler already runs after its own soft-delete). Only shown for
+            an auth-linked member — a PIN-only kid/senior profile has no
+            independent session of their own to sign out of; they switch
+            profiles instead. No confirmation needed, unlike the delete
+            flows — signing out is normal, everyday UX. */}
+        {isAuthLinked && (
+          <View style={{ marginBottom: 24 }}>
+            <Row
+              icon="log-out-outline"
+              label="Sign Out"
+              subtitle="You can sign back in anytime"
+              onPress={async () => {
+                await signOut();
+                router.replace('/(auth)/login');
+              }}
+              colors={colors} isDark={isDark}
+            />
+          </View>
+        )}
 
         {/* Danger zone */}
         {canShowDangerZone && (

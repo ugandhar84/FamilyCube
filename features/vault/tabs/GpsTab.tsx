@@ -11,7 +11,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, Dimensions, Modal, Switch, Linking } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
-import { Radio, MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw } from 'lucide-react-native';
+import { Radio, MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw, Car, Footprints } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { encryptLocationText, decryptLocationText } from '@/lib/locationCrypto';
 import { useFamilyStore } from '@/store/familyStore';
@@ -67,6 +67,25 @@ const STATUS_COLORS: Record<LocStatus, string> = {
   at_work:     BRAND.purple,
   in_transit:  BRAND.amber,
   at_activity: BRAND.emerald,
+};
+
+// Speed-based movement badge — same rough heuristic Life360-style apps use
+// under the hood (no separate motion-activity API on either platform is
+// worth the added native dependency here): under ~1.5mph reads as GPS
+// jitter on a stationary phone, not real walking; 1.5–8mph is a normal
+// walking/jogging pace; above that is a vehicle. Only shown for a LIVE
+// location (isLive gate at the call site) — a stale/no-GPS row has no
+// current speed reading to classify.
+type MovementKind = 'driving' | 'walking' | 'stationary';
+function classifyMovement(speedMph: number): MovementKind {
+  if (speedMph > 8) return 'driving';
+  if (speedMph > 1.5) return 'walking';
+  return 'stationary';
+}
+const MOVEMENT_META: Record<MovementKind, { label: string; Icon: typeof Car }> = {
+  driving:    { label: 'Driving',  Icon: Car },
+  walking:    { label: 'Walking',  Icon: Footprints },
+  stationary: { label: 'Still',    Icon: MapPin },
 };
 
 export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolean }) {
@@ -255,6 +274,10 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
       }
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const { latitude: lat, longitude: lng } = pos.coords;
+      // Was never captured here — only the background task wrote speed_mph,
+      // so a manual refresh silently left it stale/zero. GPS speed is
+      // meters/sec; negative/null readings happen at low accuracy, clamp to 0.
+      const speedMph = pos.coords.speed && pos.coords.speed > 0 ? Math.round(pos.coords.speed * 2.237) : 0;
       let coarseAddress = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
       let preciseAddress = coarseAddress;
       let neighborhood = coarseAddress;
@@ -289,6 +312,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
       const { error: upsertErr } = await supabase.from('member_locations').upsert({
         member_id: memberId, family_id: familyId, lat, lng, address: encAddress,
         neighborhood: encNeighborhood, share_exact_address: shareExact,
+        speed_mph: speedMph,
         ...(batteryLevel !== null ? { battery_level: batteryLevel } : {}),
         ...(isCharging !== null ? { is_charging: isCharging } : {}),
         last_updated: now,
@@ -536,6 +560,20 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                   </Text>
                 )}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
+                  {isLive && (() => {
+                    const movement = classifyMovement(loc.speed_mph ?? 0);
+                    // "Still" is the common case (most people most of the
+                    // time) — only surface the badge for actual movement,
+                    // otherwise it's just noise on nearly every row.
+                    if (movement === 'stationary') return null;
+                    const { label, Icon } = MOVEMENT_META[movement];
+                    return (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                        <Icon size={10} color={BRAND.blue} />
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: BRAND.blue }}>{label}</Text>
+                      </View>
+                    );
+                  })()}
                   {isLive && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                       {loc.is_charging

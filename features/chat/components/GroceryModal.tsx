@@ -2,25 +2,34 @@ import { useEffect, useState } from 'react';
 import { View, Text, Pressable, TextInput, Modal, ScrollView } from 'react-native';
 import { X, ShoppingCart, Plus } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
-import { GroceryCategory, GroceryStore } from '@/store/groceryStore';
-import { GROCERY_CATS, GROCERY_STORES } from './constants';
+import { GroceryCategory, useGroceryStore } from '@/store/groceryStore';
+import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
+import { GROCERY_CATS } from './constants';
 
 // ─── Grocery modal ────────────────────────────────────────────────────────────
 
-export function GroceryModal({ visible, initialName, addedByMemberId, onClose, onAdd }: {
-  visible: boolean; initialName: string; addedByMemberId: string;
-  onClose: () => void; onAdd: (item: any) => void;
+export function GroceryModal({ visible, initialName, onClose, onAdd }: {
+  visible: boolean; initialName: string;
+  onClose: () => void;
+  // Was (item: any) with the modal building its own storePreference/addedBy
+  // keys that never actually matched groceryStore.addItem's real param
+  // shape (it sent `store`/`estimatedPrice`/`addedByMemberId`, none of
+  // which addItem reads) — item silently landed with no store and no
+  // addedBy every time. Now hands back exactly addItem's own partial
+  // param shape so the caller can spread it straight in.
+  onAdd: (item: { name: string; quantity?: string; category?: string; storePreference?: string }) => void;
 }) {
   const { colors } = useTheme();
+  const pastStores = useGroceryStore(s => s.pastStores);
+  const storePool = [...new Set([...pastStores, ...DEFAULT_GROCERY_STORES])].slice(0, 9);
   const [name,  setName]  = useState(initialName);
   const [qty,   setQty]   = useState('1');
   const [cat,   setCat]   = useState<GroceryCategory>('Household');
-  const [store, setStore] = useState<GroceryStore>('Costco');
-  const [price, setPrice] = useState('5.99');
+  const [store, setStore] = useState('');
   useEffect(() => { if (visible) setName(initialName); }, [visible, initialName]);
   const submit = () => {
     if (!name.trim()) return;
-    onAdd({ name: name.trim(), quantity: qty, category: cat, store, estimatedPrice: parseFloat(price)||5, addedByMemberId });
+    onAdd({ name: name.trim(), quantity: qty, category: cat, storePreference: store.trim() || undefined });
     onClose();
   };
   return (
@@ -38,15 +47,9 @@ export function GroceryModal({ visible, initialName, addedByMemberId, onClose, o
             <Text style={gm.label(colors)}>Item Name</Text>
             <TextInput style={gm.input(colors)} value={name} onChangeText={setName} autoFocus />
           </View>
-          <View style={{ flexDirection: 'row', gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={gm.label(colors)}>Quantity</Text>
-              <TextInput style={gm.input(colors)} value={qty} onChangeText={setQty} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={gm.label(colors)}>Est. Price ($)</Text>
-              <TextInput style={gm.input(colors)} value={price} onChangeText={setPrice} keyboardType="numeric" />
-            </View>
+          <View>
+            <Text style={gm.label(colors)}>Quantity</Text>
+            <TextInput style={gm.input(colors)} value={qty} onChangeText={setQty} />
           </View>
           <View>
             <Text style={gm.label(colors)}>Category</Text>
@@ -61,10 +64,11 @@ export function GroceryModal({ visible, initialName, addedByMemberId, onClose, o
             </ScrollView>
           </View>
           <View>
-            <Text style={gm.label(colors)}>Store</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-              {GROCERY_STORES.map(s => (
-                <Pressable key={s} onPress={() => setStore(s)}
+            <Text style={gm.label(colors)}>Store (optional)</Text>
+            <TextInput style={gm.input(colors)} value={store} onChangeText={setStore} placeholder="Type a store or pick below" placeholderTextColor={colors.textTertiary} />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, marginTop: 8 }}>
+              {storePool.map(s => (
+                <Pressable key={s} onPress={() => setStore(store === s ? '' : s)}
                   style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1.5,
                     backgroundColor: store===s ? colors.primaryLight : colors.surface, borderColor: store===s ? colors.primary : colors.border }}>
                   <Text style={{ fontSize: 12, fontWeight: '700', color: store===s ? colors.primary : colors.textSecondary }}>{s}</Text>

@@ -16,18 +16,20 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
   onCreated: (run: GroceryRun) => void;
 }) {
   const createRun = useGroceryStore(s => s.createRun);
+  const pastStores = useGroceryStore(s => s.pastStores);
   const [name,    setName]   = useState('');
   const [store,   setStore]  = useState('');
   const [saving,  setSaving] = useState(false);
 
-  const STORE_SUGGESTIONS = ['Costco', 'Walmart', 'Whole Foods', 'Trader Joe\'s', 'Patel Brothers', 'Aldi', 'Target', 'Kroger', 'Sprouts'];
+  const DEFAULT_STORE_SUGGESTIONS = ['Costco', 'Walmart', 'Whole Foods', 'Trader Joe\'s', 'Patel Brothers', 'Aldi', 'Target', 'Kroger', 'Sprouts'];
+  const STORE_SUGGESTIONS = [...new Set([...pastStores, ...DEFAULT_STORE_SUGGESTIONS])].slice(0, 9);
 
   const handleSave = async () => {
     if (!store.trim()) return;
     setSaving(true);
     const run = await createRun({
       familyId,
-      name: name.trim() || `${store.trim()} run`,
+      name: name.trim() || `${store.trim()} trip`,
       store: store.trim(),
       createdBy: memberId,
       shopperId: memberId,
@@ -53,7 +55,8 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 12,
               borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary }}>New Shopping Run</Text>
+                <Text style={{ fontSize: 20, fontWeight: '900', letterSpacing: -0.3, color: colors.textPrimary }}>Start a Shopping Trip</Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>Which store are you heading to?</Text>
               </View>
               <TouchableOpacity
                 onPress={dismiss}
@@ -92,7 +95,7 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
 
           <TextInput
             style={[sh.input, { backgroundColor: inputBg, borderColor: border, color: colors.textPrimary }]}
-            placeholder="Run name (optional — e.g. Diwali party groceries)"
+            placeholder="Give this trip a name (optional — e.g. Diwali party groceries)"
             placeholderTextColor={colors.textTertiary}
             value={name} onChangeText={setName}
           />
@@ -107,7 +110,7 @@ export function CreateRunSheet({ visible, onClose, familyId, memberId, colors, i
               >
                 {saving
                   ? <ActivityIndicator color={colors.textInverse} size="small" />
-                  : <Text style={[sh.btnText, { color: colors.textInverse }]}>Create Run</Text>}
+                  : <Text style={[sh.btnText, { color: colors.textInverse }]}>Start Trip</Text>}
               </Pressable>
             </View>
 

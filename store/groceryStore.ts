@@ -446,6 +446,28 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
       set(s => ({ runs: s.runs.filter(r => r.id !== id) }));
       return null;
     }
+
+    // Was: every trip started empty — even items already explicitly tagged
+    // with this exact store's name had to be manually re-added one at a
+    // time from the "Add" tab, live-reported as pointless busywork when the
+    // list was already store-aware. Auto-join on creation instead.
+    // Deliberately narrow to an EXPLICIT match only, not "no preference ==
+    // fits anywhere" — a first attempt at this included untagged items too
+    // and a real list (1 item actually tagged Walmart, 50 untagged) dumped
+    // all 51 into a Walmart trip, which read as broken grouping rather than
+    // helpful (live-reported: "only one item under walmart... why 12
+    // pushed?"). Untagged items stay reachable via the Add tab's search,
+    // same as items tagged to a genuinely different store.
+    const normStore = (s?: string | null) => (s ?? '').toLowerCase().trim();
+    const matching = get().items.filter(i =>
+      !i.isBought && !!i.storePreference && normStore(i.storePreference) === normStore(params.store)
+    );
+    if (matching.length) {
+      const rows = matching.map(i => ({ run_id: id, item_id: i.id, checked_in_run: false }));
+      const { error: joinError } = await supabase.from('grocery_run_items').upsert(rows, { onConflict: 'run_id,item_id' });
+      if (joinError) console.warn('[groceryStore] createRun auto-join error', joinError);
+    }
+
     return optimistic;
   },
 
@@ -500,9 +522,13 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
   },
 
   loadRunDetail: async (runId) => {
+    // Was select('*') with no join — rowToRunItem's `item` field always
+    // reads r.grocery_items, which a bare '*' never populates, so `ri.item`
+    // was always undefined and every item row silently fell back to
+    // showing its raw UUID instead of its name/quantity (live-reported).
     const { data, error } = await supabase
       .from('grocery_run_items')
-      .select('*')
+      .select('*, grocery_items(*)')
       .eq('run_id', runId);
 
     if (error) { console.warn('[groceryStore] loadRunDetail error', error); return null; }

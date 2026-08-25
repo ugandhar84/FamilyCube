@@ -1114,9 +1114,16 @@ export default function ChatScreen() {
       <GroceryModal
         visible={!!groceryMsg}
         initialName={groceryMsg?.text ?? ''}
-        addedByMemberId={activeMemberId ?? ''}
         onClose={() => setGroceryMsg(null)}
-        onAdd={item => { addGrocery(item); Alert.alert('✅ Added!', `"${item.name}" added to the shopping list.`); }}
+        onAdd={item => {
+          // Was passing the raw modal payload straight to addItem, whose
+          // required familyId/addedBy keys never matched what the modal
+          // sent (store/estimatedPrice/addedByMemberId) — item silently
+          // saved with no family link and no attribution every time.
+          if (!activeMember?.familyId) return;
+          addGrocery({ ...item, familyId: activeMember.familyId, addedBy: activeMemberId ?? '' });
+          Alert.alert('✅ Added!', `"${item.name}" added to the shopping list.`);
+        }}
       />
 
       {/* ── Image lightbox ── */}

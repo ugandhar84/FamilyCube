@@ -24,6 +24,8 @@ import { BRAND } from '@/components/FamilyCubeLogo';
 import { TYPO } from '@/constants/theme';
 import { useKidRequestStore } from '@/store/kidRequestStore';
 import type { KidRequestItem } from '@/store/kidRequestStore';
+import { useGroceryStore } from '@/store/groceryStore';
+import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { useFamilyStore } from '@/store/familyStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { fmtDateTime, parseDbTime, fmtDate, localDateStr } from '@/lib/dates';
@@ -258,14 +260,16 @@ function ItemNameField({ value, onChangeText, onFocus, onBlur, style, flex = 2.5
 
 // ─── GroceryModal — multi-item (EventFormModal style) ────────────────────────
 
-type GroceryLine = { name: string; qty: string; category: string; emoji: string };
-const emptyLine = (): GroceryLine => ({ name: '', qty: '', category: 'Snacks', emoji: '🛒' });
+type GroceryLine = { name: string; qty: string; category: string; emoji: string; store: string };
+const emptyLine = (): GroceryLine => ({ name: '', qty: '', category: 'Snacks', emoji: '🛒', store: '' });
 
 export function GroceryModal({ visible, onClose, active }: {
   visible: boolean; onClose: () => void; active: FamilyMember;
 }) {
   const { colors, isDark } = useTheme();
   const { sendRequest, requests, appendItems } = useKidRequestStore();
+  const pastStores = useGroceryStore(s => s.pastStores);
+  const storePool = [...new Set([...pastStores, ...DEFAULT_GROCERY_STORES])].slice(0, 6);
 
   const [lines,          setLines]          = useState<GroceryLine[]>([emptyLine()]);
   const [focusedLineIdx, setFocusedLineIdx] = useState<number | null>(null);
@@ -293,6 +297,7 @@ export function GroceryModal({ visible, onClose, active }: {
       name: l.name.trim(),
       qty: l.qty.trim(),
       category: l.category || globalCat,
+      store: l.store.trim() || undefined,
       emoji: l.emoji,
       status: 'pending',
       requestedBy: active.id,
@@ -417,6 +422,26 @@ export function GroceryModal({ visible, onClose, active }: {
                           <Text style={{ fontSize: 16, color: colors.textTertiary }}>✕</Text>
                         </Pressable>
                       </View>
+                      {/* Store chips — optional, same pool AddItemSheet's
+                          own store field pulls from (past runs + defaults).
+                          Tap to set, tap again to clear ("no preference"). */}
+                      {storePool.length > 0 && (
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 6 }}>
+                          <View style={{ flexDirection: 'row', gap: 6 }}>
+                            {storePool.map(st => {
+                              const picked = line.store === st;
+                              return (
+                                <Pressable key={st} onPress={() => updateLine(idx, { store: picked ? '' : st })}
+                                  style={{ borderRadius: 14, paddingHorizontal: 9, paddingVertical: 4,
+                                    backgroundColor: picked ? BRAND.teal + '20' : (isDark ? colors.surface : '#F5F4FA'),
+                                    borderWidth: 1, borderColor: picked ? BRAND.teal : (isDark ? colors.border : '#E2E8F0') }}>
+                                  <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: picked ? BRAND.teal : colors.textSecondary }}>🏪 {st}</Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                        </ScrollView>
+                      )}
                       {/* Name suggestions — always visible */}
                       {showNameSuggs && (
                         <View style={{ marginBottom: 8 }}>

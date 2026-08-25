@@ -6,12 +6,14 @@
  * proposal is a list of items, a meal is a recipe-style hero, etc).
  */
 import { useState } from 'react';
-import { View, Text, Pressable, Image } from 'react-native';
-import { Calendar, ClipboardList, ShoppingCart, ChefHat, Coins, Clock, User, Camera, X, Repeat } from 'lucide-react-native';
+import { View, Text, Pressable, Image, TextInput } from 'react-native';
+import { Calendar, ClipboardList, ShoppingCart, ChefHat, Coins, Clock, User, Camera, X, Repeat, Store } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
 import type { AskCubeProposal } from '@/lib/askCubeService';
 import type { FamilyMember } from '@/store/familyStore';
+import { useGroceryStore } from '@/store/groceryStore';
+import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 
 // Shared hero for meal cards/sheets — a real dish photo when the model gave
 // one (Wikimedia Commons only, enforced server-side), falling back to the
@@ -132,8 +134,64 @@ function ReminderPicker({ leadMinutes, hasReminder, accent, colors, onChange }: 
   );
 }
 
+// Lets the user pick an existing store (past runs + this item's own
+// storePreference field + the app's default list) or type a new one for a
+// still-pending grocery proposal's whole item batch — reuses the same two
+// data sources AddItemSheet's own store field pulls from (pastStores +
+// DEFAULT_GROCERY_STORES), just rendered as tappable chips instead of a
+// suggestions dropdown since this card is a compact chat bubble, not a form.
+function StorePicker({ store, accent, colors, onChange }: {
+  store?: string | null; accent: string; colors: any; onChange: (store: string) => void;
+}) {
+  const pastStores = useGroceryStore(s => s.pastStores);
+  const [typing, setTyping] = useState(false);
+  const [text, setText] = useState(store ?? '');
+  const options = [...new Set([...pastStores, ...DEFAULT_GROCERY_STORES])].slice(0, 6);
+
+  if (typing) {
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Store size={12} color={colors.textSecondary} />
+        <TextInput
+          value={text}
+          onChangeText={setText}
+          placeholder="Store name"
+          placeholderTextColor={colors.textTertiary}
+          autoFocus
+          onBlur={() => { setTyping(false); onChange(text.trim()); }}
+          onSubmitEditing={() => { setTyping(false); onChange(text.trim()); }}
+          style={{ flex: 1, fontSize: TYPO.label, color: colors.textPrimary, paddingVertical: 2 }}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      <Store size={12} color={colors.textSecondary} />
+      {options.map(s => {
+        const active = store === s;
+        return (
+          <Pressable key={s} onPress={() => onChange(active ? '' : s)}
+            style={{ borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
+              backgroundColor: active ? accent + '20' : 'transparent',
+              borderWidth: 1, borderColor: active ? accent : colors.border }}>
+            <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: active ? accent : colors.textSecondary }}>{s}</Text>
+          </Pressable>
+        );
+      })}
+      <Pressable onPress={() => { setText(store ?? ''); setTyping(true); }}
+        style={{ borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed' }}>
+        <Text style={{ fontSize: TYPO.micro, fontWeight: '700', color: colors.textSecondary }}>
+          {store && !options.includes(store) ? store : 'Other…'}
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export default function AskCubeProposalCard({
-  proposal, members, onDiscard, onCreate, onExpand, compact, onChangeReminder, added,
+  proposal, members, onDiscard, onCreate, onExpand, compact, onChangeReminder, onChangeStore, added,
 }: {
   proposal: AskCubeProposal;
   members: FamilyMember[];
@@ -148,6 +206,10 @@ export default function AskCubeProposalCard({
   // display — omitted entirely for proposal kinds with no reminder concept
   // (grocery/meal), so those never render a picker.
   onChangeReminder?: (leadMinutes: number) => void;
+  // Lets the grocery card's store row become an editable picker — same
+  // pending-proposal-in-place-edit pattern as onChangeReminder, only ever
+  // passed for proposal.kind === 'grocery'.
+  onChangeStore?: (store: string) => void;
   // Once accepted, the card previously vanished entirely — replaced by a
   // single bare "✓ Title" text line, which read as the meal/event itself
   // disappearing rather than a confirmation (user-reported: "it just
@@ -296,7 +358,11 @@ export default function AskCubeProposalCard({
   }
 
   if (proposal.kind === 'grocery') {
-    const items: { name: string; quantity?: string; category?: string }[] = d.items ?? [];
+    const items: { name: string; quantity?: string; category?: string; store?: string | null }[] = d.items ?? [];
+    // Only shown when no item already carries its own explicit store (the
+    // model only ever fills that in when the user named one per-item) — a
+    // batch picker for a per-item field would be misleading otherwise.
+    const anyItemHasStore = items.some(it => !!it.store);
     return (
       <View style={cardBase}>
         {Header}
@@ -308,12 +374,18 @@ export default function AskCubeProposalCard({
               <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '600', color: colors.textPrimary }} numberOfLines={1}>
                 {it.name}
               </Text>
+              {!!it.store && (
+                <Text style={{ fontSize: TYPO.micro, color: colors.textTertiary }}>{it.store}</Text>
+              )}
               {!!it.quantity && (
                 <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>{it.quantity}</Text>
               )}
             </View>
           ))}
         </View>
+        {!anyItemHasStore && onChangeStore && (
+          <StorePicker store={d.store} accent={accent} colors={colors} onChange={onChangeStore} />
+        )}
         {Actions}
       </View>
     );

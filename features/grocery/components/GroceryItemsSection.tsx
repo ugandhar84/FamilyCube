@@ -1,6 +1,7 @@
 import { View, Text, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { GroceryItem } from '@/store/groceryStore';
+import { GroceryItem, useGroceryStore } from '@/store/groceryStore';
+import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 import { FlatSectionHeader } from './FlatSectionHeader';
 import { ItemCard } from './ItemCard';
 import { s } from './styles';
@@ -30,6 +31,30 @@ export function GroceryItemsSection({
   colors: any; isDark: boolean;
 }) {
   const P = colors.primary;
+  const updateItem = useGroceryStore(s => s.updateItem);
+  const pastStores = useGroceryStore(s => s.pastStores);
+
+  // Every store currently in play on this list, plus past-run stores and
+  // the app defaults — the full pool a "move to store" prompt should offer,
+  // not just the handful already grouped here.
+  const knownStores = [...new Set([
+    ...groupedItems.map(([store]) => store).filter(s => s !== 'Any store'),
+    ...pastStores,
+    ...DEFAULT_GROCERY_STORES,
+  ])];
+
+  const promptMoveStore = (item: GroceryItem) => {
+    const others = knownStores.filter(s => s !== item.storePreference);
+    Alert.alert(
+      'Move to Store',
+      `"${item.name}" — pick where it belongs:`,
+      [
+        ...(item.storePreference ? [{ text: 'Any store (no preference)', onPress: () => updateItem(item.id, { storePreference: undefined }) }] : []),
+        ...others.map(store => ({ text: store, onPress: () => updateItem(item.id, { storePreference: store }) })),
+        { text: 'Cancel', style: 'cancel' as const },
+      ]
+    );
+  };
 
   if (groceryItems.length === 0 && !hasSuppliesOrClothing) {
     return (
@@ -84,6 +109,7 @@ export function GroceryItemsSection({
                   { text: 'Cancel', style: 'cancel' },
                   { text: 'Remove', style: 'destructive', onPress: () => removeItem(item.id) },
                 ])}
+                onMoveStore={isKid ? undefined : () => promptMoveStore(item)}
                 colors={colors}
                 isDark={isDark}
               />

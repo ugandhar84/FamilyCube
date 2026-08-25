@@ -391,6 +391,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
           name: item.name,
           quantity: item.qty || undefined,
           category: isSuppliesReq ? 'Supplies' : (item.category ?? 'Other'),
+          storePreference: item.store,
           addedBy: req.fromMemberId,
         });
       }

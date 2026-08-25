@@ -318,7 +318,7 @@ export default function GroceryScreen({ hideHeader = false }: { hideHeader?: boo
         <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingBottom: 12 }}>
           {([
             { key: 'list',     icon: 'list' as const,          label: 'List',     badge: items.filter(i => !i.isBought).length },
-            { key: 'runs',     icon: 'walk' as const,          label: 'Runs',     badge: runs.filter(r => r.status === 'active').length },
+            { key: 'runs',     icon: 'walk' as const,          label: 'Trips',    badge: runs.filter(r => r.status === 'active').length },
             { key: 'history',  icon: 'receipt-outline' as const, label: 'History',  badge: 0 },
             { key: 'insights', icon: 'bar-chart' as const,     label: 'Insights', badge: 0 },
           ] as const).map(t => {

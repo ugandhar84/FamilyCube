@@ -368,6 +368,7 @@ const TOOLS = [
                 name:     { type: 'string' },
                 quantity: { type: 'string', description: 'Free text, e.g. "2 lbs", "1 dozen" — omit if not implied' },
                 category: { type: 'string', enum: ['Produce', 'Dairy & Eggs', 'Bakery', 'Pantry', 'Frozen', 'Household', 'Snacks', 'Pharmacy', 'Pet Store', 'Other'] },
+                store:    { type: 'string', description: 'Store name, only if the user named one explicitly (e.g. "add milk from Costco") — omit entirely if no store was mentioned, do not guess one' },
               },
               required: ['name'],
             },
@@ -1013,6 +1014,7 @@ async function executeTool(
       __proposal: 'grocery',
       items: (args.items ?? []).map((it: any) => ({
         name: it.name, quantity: it.quantity ?? null, category: it.category ?? 'Other',
+        store: typeof it.store === 'string' && it.store.trim() ? it.store.trim() : null,
       })),
     };
   }

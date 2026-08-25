@@ -353,6 +353,18 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
     }));
   };
 
+  // Lets the user pick/type a store for a still-pending grocery proposal —
+  // same in-place-edit pattern as updateProposalReminder above. Sets one
+  // store for the whole batch of proposed items (d.store), which addItem
+  // above falls back to per-item when an individual item has none of its own.
+  const updateProposalStore = (msgId: string, index: number, store: string) => {
+    setMessages(prev => prev.map(m => {
+      if (m.id !== msgId || !m.proposals) return m;
+      const nextProposals = m.proposals.map((p, i) => i === index ? { ...p, data: { ...p.data, store } } : p);
+      return { ...m, proposals: nextProposals };
+    }));
+  };
+
   const createProposal = async (msgId: string, index: number, proposal: AskCubeProposal) => {
     if (proposal.kind === 'meal') {
       setPendingMealCreate({ msgId, index, proposal });
@@ -397,6 +409,7 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
         await addGroceryItem({
           familyId: activeMember.familyId!, name: it.name, quantity: it.quantity ?? undefined,
           category: it.category ?? 'Other', addedBy: activeMember.id, aiGenerated: true,
+          storePreference: it.store ?? d.store ?? undefined,
         });
       }
     } else if (proposal.kind === 'redemption') {
@@ -555,6 +568,11 @@ export default function AskCubeChat({ visible, onClose, activeMember, members }:
                                   onChangeReminder={
                                     ['event', 'quest', 'update_event', 'update_chore'].includes(p.kind)
                                       ? (leadMinutes: number) => updateProposalReminder(m.id, i, leadMinutes)
+                                      : undefined
+                                  }
+                                  onChangeStore={
+                                    p.kind === 'grocery'
+                                      ? (store: string) => updateProposalStore(m.id, i, store)
                                       : undefined
                                   }
                                 />

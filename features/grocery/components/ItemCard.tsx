@@ -5,11 +5,18 @@ import { CatIcon, catDotColor } from './types';
 
 // ─── Item Card ────────────────────────────────────────────────────────────────
 
-export function ItemCard({ item, members, selected, selecting, onBuy, onLongPress, onToggleSelect, onPress, onEdit, onDelete, colors, isDark, priceInfo, isLast }: {
+export function ItemCard({ item, members, selected, selecting, onBuy, onLongPress, onToggleSelect, onPress, onEdit, onDelete, onMoveStore, colors, isDark, priceInfo, isLast }: {
   item: GroceryItem; members: any[];
   selected: boolean; selecting: boolean; isLast?: boolean;
   onBuy: () => void; onLongPress: () => void; onToggleSelect: () => void;
   onPress: () => void; onEdit: () => void; onDelete?: () => void;
+  // Tap-to-move to a different store's section — a one-tap store picker
+  // instead of a drag gesture (KISS: dragging a row between store sections
+  // that may be scrolled off-screen is fragile on a phone; tapping a fixed
+  // button and picking from a list works the same regardless of scroll
+  // position or how many sections there are). Omitted entirely wherever
+  // moving doesn't make sense (kid view, bulk-select mode).
+  onMoveStore?: () => void;
   colors: any; isDark: boolean;
   priceInfo?: { price: number | null; unit: string | null; source: 'kroger' | 'estimate' | 'unknown' };
 }) {
@@ -68,6 +75,12 @@ export function ItemCard({ item, members, selected, selecting, onBuy, onLongPres
           <Text style={{ fontSize: 12, fontWeight: '800', color: priceInfo.source === 'kroger' ? colors.success : colors.warningDark }}>
             ${priceInfo.price.toFixed(2)}
           </Text>
+        )}
+        {onMoveStore && !isBought && !selecting && (
+          <Pressable onPress={onMoveStore} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={{ width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="storefront-outline" size={16} color={colors.textTertiary} />
+          </Pressable>
         )}
         <Pressable onPress={onBuy} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isBought ? colors.successLight : colors.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: isBought ? colors.success : colors.border }}>
           <Ionicons name="checkmark" size={15} color={isBought ? colors.success : colors.textTertiary} />

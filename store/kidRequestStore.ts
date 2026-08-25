@@ -129,6 +129,7 @@ export interface KidRequestItem {
   name:        string;
   qty:         string;
   category:    string;
+  store?:      string;   // optional store preference, carried through to groceryStore.addItem on approval
   emoji?:      string;
   status:      ItemStatus;
   requestedBy: string;   // kid memberId

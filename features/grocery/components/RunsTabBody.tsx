@@ -21,8 +21,8 @@ export function RunsTabBody({
       {runs.length === 0 ? (
         <View style={s.empty}>
           <Text style={s.emptyEmoji}>🗓️</Text>
-          <Text style={[s.emptyTitle, { color: colors.textPrimary }]}>No runs yet</Text>
-          <Text style={[s.emptyDesc, { color: colors.textSecondary }]}>Create a run when you're heading to a store. Items in your list will be ready to add.</Text>
+          <Text style={[s.emptyTitle, { color: colors.textPrimary }]}>No shopping trips yet</Text>
+          <Text style={[s.emptyDesc, { color: colors.textSecondary }]}>Start a trip when you're heading to a store — your list items will be ready to check off as you shop.</Text>
         </View>
       ) : (
         <>

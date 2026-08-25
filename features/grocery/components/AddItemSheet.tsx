@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { useGroceryStore, GroceryItem } from '@/store/groceryStore';
 import { CATEGORIES, CAT_EMOJI, QUICK_SUGGESTIONS } from './types';
+import { DEFAULT_GROCERY_STORES } from '@/lib/groceryDefaults';
 
 // ─── Add Item Sheet ───────────────────────────────────────────────────────────
 
@@ -17,12 +18,14 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
   editItem?: GroceryItem;
 }) {
   const addItem = useGroceryStore(s => s.addItem);
+  const pastStores = useGroceryStore(s => s.pastStores);
   const isEdit = !!editItem;
 
   const [name, setName]   = useState('');
   const [qty,  setQty]    = useState('');
   const [cat,  setCat]    = useState('');
   const [store, setStore] = useState('');
+  const [storeFocused, setStoreFocused] = useState(false);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<{ name: string; cat: string; emoji: string }[]>(QUICK_SUGGESTIONS);
@@ -95,6 +98,16 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
     : aiSuggestions;
 
   const dismiss = () => { Keyboard.dismiss(); onClose(); };
+
+  // Same two sources AskCubeProposalCard's own store picker and
+  // AddQuestGrocerySection's inline chips both pull from — real past runs
+  // first (what this family actually shops at), the app's generic default
+  // list filling in the rest. Filtered by typed text, own current value
+  // excluded so it doesn't suggest re-picking what's already typed.
+  const storePool = [...new Set([...pastStores, ...DEFAULT_GROCERY_STORES])];
+  const storeSuggestions = storePool
+    .filter(s => s.toLowerCase() !== store.trim().toLowerCase() && (store.trim().length === 0 || s.toLowerCase().includes(store.toLowerCase())))
+    .slice(0, 8);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
@@ -197,9 +210,30 @@ export function AddItemSheet({ visible, onClose, familyId, memberId, colors, isD
                 placeholder="Store (optional)"
                 placeholderTextColor={colors.textTertiary}
                 value={store} onChangeText={setStore}
+                onFocus={() => setStoreFocused(true)}
+                onBlur={() => setStoreFocused(false)}
               />
             </View>
           </View>
+
+          {/* Store suggestions — past-run stores + app defaults, filtered by
+              typed text. Was plain free-text with no suggestions at all;
+              a user had to remember/retype the exact same store name every
+              time to keep grocery dedupe (name+store match) actually
+              merging instead of splitting into near-duplicate rows. */}
+          {storeFocused && storeSuggestions.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10, marginTop: -4 }}>
+              <View style={{ flexDirection: 'row', gap: 7 }}>
+                {storeSuggestions.map(s => (
+                  <Pressable key={s} onPress={() => setStore(s)}
+                    style={{ paddingHorizontal: 11, paddingVertical: 6, borderRadius: 20,
+                      backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textSecondary }}>{s}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+          )}
 
           {/* Category chips */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>

@@ -207,8 +207,8 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
     const others = members.filter(m => m.id !== memberId);
     if (others.length === 0) { Alert.alert('No other family members'); return; }
     Alert.alert(
-      'Hand Off Run',
-      'Who is taking over this shopping run?',
+      'Hand Off Trip',
+      'Who is taking over this shopping trip?',
       [
         ...others.map(m => ({
           text: `${m.emoji ?? '👤'} ${m.name}`,
@@ -263,10 +263,10 @@ export function RunDetailSheet({ run, visible, onClose, memberId, pendingItems, 
       ? `${checkedCount} items will be marked bought. ${notFoundCount} "not found" item${notFoundCount > 1 ? 's' : ''} stay on your list for next time.`
       : `${checkedCount} items will be marked bought.`;
 
-    Alert.alert('Complete Run', msg, [
+    Alert.alert('Finish Trip', msg, [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Complete', style: 'default', onPress: async () => {
+        text: 'Finish', style: 'default', onPress: async () => {
           // Remove "not found" items from this run so they stay on the list
           for (const itemId of notFoundIds) {
             await removeItemFromRun(run.id, itemId);

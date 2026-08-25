@@ -84,6 +84,7 @@ export function GroceryRequestCard({
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{item.name}</Text>
                   {item.qty ? <Text style={{ fontSize: TYPO.label, color: colors.textSecondary }}>Qty: {item.qty}</Text> : null}
+                  {item.store ? <Text style={{ fontSize: TYPO.label, color: colors.textTertiary }}>🏪 {item.store}</Text> : null}
                 </View>
                 {item.status === 'pending' ? (
                   <View style={{ flexDirection: 'row', gap: 6 }}>

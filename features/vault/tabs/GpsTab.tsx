@@ -547,7 +547,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           ScrollView's own scroll gesture below it — the grabber sits in its
           own small non-scrolling header row so dragging it never fights
           with scrolling the roster list. */}
-      <Animated.View style={[g.sheet, { backgroundColor: colors.background, marginTop: -18, height: sheetHeight }]}>
+      <Animated.View style={[g.sheet, { backgroundColor: colors.background, marginTop: -18, height: sheetHeight, overflow: 'hidden' }]}>
         <View {...panResponder.panHandlers} style={{ paddingTop: 8 }}>
           <View style={g.grabber} />
         </View>

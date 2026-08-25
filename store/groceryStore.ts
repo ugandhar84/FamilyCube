@@ -494,6 +494,14 @@ export const useGroceryStore = create<GroceryState>((set, get) => ({
   startRun: async (runId, shopperId) => {
     set(s => ({ runs: s.runs.map(r => r.id === runId ? { ...r, status: 'active', shopperId } : r) }));
     await supabase.from('grocery_runs').update({ status: 'active', shopper_id: shopperId }).eq('id', runId);
+    // Best-effort — a partner not knowing shopping started shouldn't block
+    // the trip itself. Was: no signal at all that shopping had begun; a
+    // partner would only find out by opening the app and checking
+    // (live-reported: "do the partner get notification if the other
+    // partner start shopping?").
+    supabase.functions.invoke('notify-shopping-trip-started', {
+      body: { run_id: runId, shopper_member_id: shopperId },
+    }).catch(() => {});
   },
 
   completeRun: async (runId) => {

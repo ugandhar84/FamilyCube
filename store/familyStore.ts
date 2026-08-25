@@ -113,6 +113,7 @@ export interface FamilyMember {
   gpDriveWindowEnd?: string;          // 'HH:MM' 24h
   gpWeeklyRideCap?: number;           // Max rides they'll take per calendar week
   linkedParentId?: string;            // Which parent this GP belongs to (e.g. Priya's mother -> Priya's id) — informational, both parents can still review either side's GP quests
+  storeProximityRemindersEnabled?: boolean; // Opt-out for the geofenced "you're near X, items pending" reminder (store_proximity_reminders feature flag) — defaults true
   // A kid/teen's self-chosen savings goal (a specific Reward id from the
   // Perks Store) — previously auto-derived as "whichever reward you're
   // closest to affording," which the kid never actually picked; this lets
@@ -218,6 +219,7 @@ function fromRow(row: any): FamilyMember {
     email:              row.email ?? undefined,
     dateOfBirth:        row.date_of_birth ?? undefined,
     pillOrder:          row.pill_order ?? undefined,
+    storeProximityRemindersEnabled: row.store_proximity_reminders_enabled ?? true,
   };
 }
 
@@ -255,6 +257,7 @@ function toRow(m: FamilyMember) {
     goal_reward_id:        m.goalRewardId ?? null,
     date_of_birth:         m.dateOfBirth ?? null,
     pill_order:            m.pillOrder ?? null,
+    store_proximity_reminders_enabled: m.storeProximityRemindersEnabled ?? true,
   };
 }
 

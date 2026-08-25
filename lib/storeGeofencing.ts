@@ -132,6 +132,20 @@ export async function registerStoreGeofences(familyId: string, memberId: string)
   const tm = getTaskManager();
   if (!tm) return;
 
+  // Per-member opt-out (EditMemberModal, Roster tab) — the geofence fires a
+  // LOCAL notification on whichever device is physically nearby, so this is
+  // inherently a per-device/per-active-member check, not something the
+  // server side can gate.
+  const { data: memberRow } = await supabase
+    .from('members')
+    .select('store_proximity_reminders_enabled')
+    .eq('id', memberId)
+    .single();
+  if (memberRow?.store_proximity_reminders_enabled === false) {
+    await stopStoreGeofences();
+    return;
+  }
+
   activeMemberIdRef = memberId;
 
   const { data: locations } = await supabase

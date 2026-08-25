@@ -7,6 +7,7 @@ import Svg, { Path, Circle, Rect, Polyline, Line } from 'react-native-svg';
 import { Users, Mail } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useFamilyStore, MemberRole, RELATIONSHIPS_BY_ROLE } from '@/store/familyStore';
+import { useFeatureFlag } from '@/lib/featureFlags';
 import { SCard, CardHeader, MemberAvatar, StatusPill, BRAND } from './shared';
 import { FamilyTreeView } from './FamilyTreeView';
 import { MemberProfileSheet } from './MemberProfileSheet';
@@ -116,11 +117,15 @@ function PinModal({ member, onClose, onSave, colors, isDark }: {
 
 // ─── Edit-Member Modal ────────────────────────────────────────────────────────
 
-function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, onDelete, colors, isDark }: {
+function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, onDelete, onToggleStoreReminders, colors, isDark }: {
   member: any; allMembers: any[]; onClose: () => void;
   onSave: (memberId: string, name: string, role: string, hasCar: boolean, rideEarnings: number, groceryEarnings: number, subRole?: string, relationship?: string) => Promise<void>;
   onLinkParent: (memberId: string, parentId: string) => void;
   onDelete: (memberId: string) => Promise<void>;
+  // Store proximity reminders (store_proximity_reminders feature flag) —
+  // a self-service opt-out, same direct-to-store pattern as onLinkParent
+  // rather than threading a 9th positional arg through onSave.
+  onToggleStoreReminders: (memberId: string, enabled: boolean) => void;
   colors: any; isDark: boolean;
 }) {
   const [name, setName]   = useState(member.name ?? '');
@@ -151,6 +156,8 @@ function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, on
   // a different role's list can't linger (e.g. "Grandmother" surviving a
   // switch from senior to parent).
   const [relationship, setRelationship] = useState(member.relationship as string | undefined);
+  const [storeRemindersEnabled, setStoreRemindersEnabled] = useState(member.storeProximityRemindersEnabled ?? true);
+  const storeGeofencingFlag = useFeatureFlag('store_proximity_reminders');
   const [saving, setSaving] = useState(false);
   const parentOptions = allMembers.filter(m => m.role === 'parent');
 
@@ -318,6 +325,39 @@ function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, on
                 })}
               </View>
             </View>
+          )}
+
+          {/* Store proximity reminders — self-service opt-out for the
+              geofenced "you're near X, items pending" notification. Only
+              shown at all while the feature flag is on; a member who never
+              sees this setting simply never gets the reminder either
+              (registerStoreGeofences no-ops on the flag). */}
+          {storeGeofencingFlag && (
+            <TouchableOpacity
+              onPress={() => {
+                const next = !storeRemindersEnabled;
+                setStoreRemindersEnabled(next);
+                onToggleStoreReminders(member.id, next);
+              }}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                marginTop: 14, padding: 12, borderRadius: 12, borderWidth: 1.5,
+                borderColor: storeRemindersEnabled ? BRAND.teal : colors.border,
+                backgroundColor: storeRemindersEnabled ? BRAND.teal + '12' : 'transparent' }}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: storeRemindersEnabled ? BRAND.teal : colors.textPrimary }}>
+                  Store proximity reminders
+                </Text>
+                <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+                  Notify when near a pinned store with pending items
+                </Text>
+              </View>
+              <View style={{ width: 38, height: 22, borderRadius: 11,
+                backgroundColor: storeRemindersEnabled ? BRAND.teal : colors.border,
+                justifyContent: 'center', paddingHorizontal: 2 }}>
+                <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
+                  alignSelf: storeRemindersEnabled ? 'flex-end' : 'flex-start' }} />
+              </View>
+            </TouchableOpacity>
           )}
 
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
@@ -616,6 +656,7 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
       {editTarget && (
         <EditMemberModal member={editTarget} allMembers={members} onClose={() => setEditTarget(null)}
           onSave={saveMember} onLinkParent={(id, parentId) => updateMember(id, { linkedParentId: parentId })}
+          onToggleStoreReminders={(id, enabled) => updateMember(id, { storeProximityRemindersEnabled: enabled })}
           onDelete={deleteMember} colors={colors} isDark={isDark} />
       )}
       {viewTarget && (

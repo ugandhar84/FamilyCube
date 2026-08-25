@@ -8,7 +8,7 @@
  * show in the list below with the existing manual status picker.
  */
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, Dimensions, Modal, Switch, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, Dimensions, Modal, Switch, Linking, Animated, PanResponder } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Radio, MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw, Car, Footprints } from 'lucide-react-native';
@@ -415,22 +415,68 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
     mapRef.current?.animateToRegion(initialRegion, 650);
   }, [initialRegion, pinned.length]);
 
+  // Map fills most of the screen, but leaves real room below for the roster
+  // — a pure 80%-of-screen map left only a sliver for family member rows.
+  // Draggable between three snap points via the grabber handle: MIN (mostly
+  // collapsed, map fills nearly the whole screen), DEFAULT (this original
+  // 48%-of-screen split), and MAX (sheet fills most of the screen, map
+  // reduced to a strip up top) — previously a static height with a grabber
+  // handle that looked draggable but did nothing.
+  //
+  // All hooks here MUST stay above the `if (loading) return` below — they
+  // used to sit after it, which only ran them once loading finished,
+  // violating the Rules of Hooks ("Rendered more hooks than during the
+  // previous render") the moment loading flipped from true to false.
+  const { height: SCREEN_H } = Dimensions.get('window');
+  const SHEET_MIN = Math.round(SCREEN_H * 0.12);
+  const SHEET_DEFAULT = Math.round(SCREEN_H * 0.48);
+  const SHEET_MAX = Math.round(SCREEN_H * 0.86);
+  const SNAP_POINTS = [SHEET_MIN, SHEET_DEFAULT, SHEET_MAX];
+
+  const sheetHeight = useRef(new Animated.Value(SHEET_DEFAULT)).current;
+  const sheetHeightAtGestureStart = useRef(SHEET_DEFAULT);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_e, gesture) => Math.abs(gesture.dy) > 4,
+      onPanResponderGrant: () => {
+        sheetHeight.stopAnimation(v => { sheetHeightAtGestureStart.current = v; });
+      },
+      onPanResponderMove: (_e, gesture) => {
+        // Dragging UP (negative dy) grows the sheet — invert dy.
+        const next = sheetHeightAtGestureStart.current - gesture.dy;
+        sheetHeight.setValue(Math.max(SHEET_MIN, Math.min(SHEET_MAX, next)));
+      },
+      onPanResponderRelease: (_e, gesture) => {
+        const released = sheetHeightAtGestureStart.current - gesture.dy;
+        // Snap to whichever of the three points is nearest, with a little
+        // velocity bias so a quick flick commits to the next point even
+        // from partway there rather than snapping back to where it started.
+        const biased = released - gesture.vy * 60;
+        const nearest = SNAP_POINTS.reduce((best, p) =>
+          Math.abs(p - biased) < Math.abs(best - biased) ? p : best, SNAP_POINTS[0]);
+        Animated.spring(sheetHeight, {
+          toValue: nearest, useNativeDriver: false, tension: 220, friction: 26,
+        }).start();
+      },
+    })
+  ).current;
+
   if (loading) return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
       <CubeSpinner size={28} />
     </View>
   );
 
-  const { height: SCREEN_H } = Dimensions.get('window');
-  // Map fills most of the screen, but leaves real room below for the roster
-  // — a pure 80%-of-screen map left only a sliver for family member rows.
-  const MAP_HEIGHT = Math.round(SCREEN_H * 0.52);
   const roster = [...pinned, ...unpinned];
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Full-bleed map — Apple-Maps style. */}
-      <View style={{ height: MAP_HEIGHT, overflow: 'hidden' }}>
+      {/* Full-bleed map — Apple-Maps style. Height derived from the sheet's
+          animated height so it grows/shrinks in lockstep as the sheet is
+          dragged. */}
+      <Animated.View style={{ height: Animated.subtract(SCREEN_H, sheetHeight), overflow: 'hidden' }}>
         <MapView
           ref={mapRef}
           provider={PROVIDER_DEFAULT}
@@ -493,14 +539,22 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                 : <Navigation size={18} color={BRAND.teal} />}
           </View>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
 
       {/* Bottom sheet — pulls up over the map with a rounded top, plain rows
-          (no cards). Person, address, battery, last refreshed, manual refresh. */}
-      <ScrollView style={[g.sheet, { backgroundColor: colors.background, marginTop: -18 }]}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 40 }}
-        showsVerticalScrollIndicator={false}>
-        <View style={g.grabber} />
+          (no cards). Person, address, battery, last refreshed, manual refresh.
+          Draggable via the grabber handle (panResponder), independent of the
+          ScrollView's own scroll gesture below it — the grabber sits in its
+          own small non-scrolling header row so dragging it never fights
+          with scrolling the roster list. */}
+      <Animated.View style={[g.sheet, { backgroundColor: colors.background, marginTop: -18, height: sheetHeight }]}>
+        <View {...panResponder.panHandlers} style={{ paddingTop: 8 }}>
+          <View style={g.grabber} />
+        </View>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }}
+          showsVerticalScrollIndicator={false}>
         <Text style={{ fontSize: 13, fontWeight: '900', color: colors.textPrimary, marginBottom: 10 }}>
           Family ({roster.length})
         </Text>
@@ -599,7 +653,8 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
             </TouchableOpacity>
           );
         })}
-      </ScrollView>
+        </ScrollView>
+      </Animated.View>
 
       <Modal visible={!!historyFor} animationType="slide" transparent onRequestClose={() => setHistoryFor(null)}>
         <View style={g.historyBackdrop}>
@@ -668,7 +723,7 @@ const g = StyleSheet.create({
   trackFabInner: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
                    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
 
-  sheet:        { flex: 1, borderTopLeftRadius: 22, borderTopRightRadius: 22,
+  sheet:        { borderTopLeftRadius: 22, borderTopRightRadius: 22,
                   shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: -3 }, elevation: 6 },
   grabber:      { width: 36, height: 4, borderRadius: 2, backgroundColor: '#00000020', alignSelf: 'center', marginTop: 8, marginBottom: 12 },
   exactToggleRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1,

@@ -25,6 +25,7 @@
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SMTPClient } from 'https://deno.land/x/smtp@v0.7.0/mod.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -118,7 +119,7 @@ serve(async (req) => {
     // working code for someone else's pre-created member row.
     const { data: targetMember, error: targetErr } = await supabase
       .from('members')
-      .select('id, family_id, name, invite_status')
+      .select('id, family_id, name, invite_status, email')
       .eq('id', scopedMemberId)
       .single();
     if (targetErr || !targetMember || targetMember.family_id?.toString() !== familyId) {
@@ -197,10 +198,86 @@ serve(async (req) => {
     }
 
     console.log(`[generate-invite-code] family=${familyId} member=${scopedMemberId} code=${code} expires=${expiresAt}`);
-    return json({ ok: true, code, expiresAt, memberId: scopedMemberId, memberName: targetMember.name });
+
+    // Best-effort email — only if this target member has an email on file
+    // (the invite form's own "optional" field; PIN-only kids/GPs without
+    // one just never get this, same as before). Never blocks/fails the
+    // code-generation response — the code is already live in the DB
+    // regardless of whether the email actually sends, same "best-effort,
+    // report the outcome" pattern send-member-invite already uses for its
+    // own Zoho SMTP send.
+    let emailSent = false;
+    let emailError: string | null = null;
+    if (targetMember.email) {
+      const zohoEmail    = Deno.env.get('ZOHO_EMAIL');
+      const zohoPassword = Deno.env.get('ZOHO_APP_PASSWORD');
+      if (!zohoEmail || !zohoPassword) {
+        emailError = 'ZOHO_EMAIL or ZOHO_APP_PASSWORD not configured';
+        console.warn('[generate-invite-code] Zoho SMTP credentials missing');
+      } else {
+        let smtpClient: SMTPClient | null = null;
+        try {
+          smtpClient = new SMTPClient({
+            connection: {
+              hostname: 'smtp.zoho.com',
+              port: 465,
+              tls: true,
+              auth: { username: zohoEmail, password: zohoPassword },
+            },
+          });
+          await smtpClient.send({
+            from: `FamilyCube <connect@peopleontech.com>`,
+            to: targetMember.email,
+            subject: `Your Family Cube invite code`,
+            html: inviteCodeEmailTemplate({ memberName: targetMember.name, familyName: family?.name, code }),
+            content: 'text/html',
+          });
+          emailSent = true;
+        } catch (e) {
+          emailError = (e as Error).message;
+          console.error('[generate-invite-code] Zoho SMTP error:', emailError);
+        } finally {
+          try { await smtpClient?.close(); } catch { /* ignore */ }
+        }
+      }
+    }
+
+    return json({ ok: true, code, expiresAt, memberId: scopedMemberId, memberName: targetMember.name, emailSent, emailError });
 
   } catch (e: any) {
     console.error('[generate-invite-code]', e);
     return json({ ok: false, error: e.message }, 500);
   }
 });
+
+function inviteCodeEmailTemplate({ memberName, familyName, code }: { memberName: string; familyName: string | null | undefined; code: string }) {
+  return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #FAF8F4; margin: 0; padding: 20px; }
+  .card { background: white; border-radius: 20px; padding: 40px; max-width: 500px; margin: 0 auto; }
+  .logo { font-size: 48px; text-align: center; margin-bottom: 4px; }
+  .app { font-size: 28px; font-weight: 700; color: #DF613C; text-align: center; margin-bottom: 24px; }
+  .title { font-size: 24px; font-weight: 700; color: #2C2722; text-align: center; margin-bottom: 8px; }
+  .desc { font-size: 15px; color: #6B5F52; text-align: center; margin-bottom: 24px; line-height: 1.6; }
+  .code { background: #FBEADF; border-radius: 12px; padding: 20px; margin-bottom: 24px; text-align: center;
+          font-size: 32px; font-weight: 900; letter-spacing: 4px; color: #DF613C; }
+  .footer { font-size: 12px; color: #A69A8A; text-align: center; margin-top: 24px; }
+</style></head>
+<body>
+<div class="card">
+  <div class="logo">🧩</div>
+  <div class="app">Family Cube</div>
+  <div class="title">Hi ${memberName}! 👋</div>
+  <div class="desc">
+    ${familyName ? `You've been invited to join <strong>${familyName}</strong> on Family Cube.` : "You've been invited to join a family on Family Cube."}
+    Open the app, tap "Join a Family," and enter this code to get started.
+  </div>
+  <div class="code">${code}</div>
+  <div class="footer">This code expires in 7 days · Family Cube</div>
+</div>
+</body>
+</html>
+  `.trim();
+}

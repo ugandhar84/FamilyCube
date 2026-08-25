@@ -463,6 +463,16 @@ function InviteMemberSheet({
       const json = await res.json();
       if (json.ok) {
         await loadInvites();
+        // Only worth telling the parent about email delivery when this
+        // member actually HAS an email on file (the invite form's optional
+        // field) — generate-invite-code silently skips the email step
+        // entirely when there's none, which is the normal/expected case
+        // for PIN-only kids/GPs, not something to alert about.
+        if (json.emailError) {
+          showAlert('Code generated', `The code was created, but the email couldn't be sent (${json.emailError}). Share the code directly instead.`);
+        } else if (json.emailSent) {
+          showAlert('Invite sent', 'The code was emailed to them.');
+        }
       } else {
         showAlert("Couldn't generate code", json.error ?? 'Something went wrong.');
       }
@@ -1120,7 +1130,7 @@ export default function ProfileSettingsScreen() {
   // MemberProfileSheet's still-open bottom sheet (a Modal), and firing an
   // alert while that Modal is visible reproduced a real on-device freeze;
   // the sheet renders the result inline (code + copy/share) instead.
-  const resendInviteFor = async (targetMember: FamilyMember): Promise<{ ok: true; code: string } | { ok: false; error: string }> => {
+  const resendInviteFor = async (targetMember: FamilyMember): Promise<{ ok: true; code: string; emailSent?: boolean; emailError?: string | null } | { ok: false; error: string }> => {
     if (!familyId || !activeMember?.id) return { ok: false, error: 'Not ready yet — try again in a moment.' };
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -1135,7 +1145,7 @@ export default function ProfileSettingsScreen() {
         body: JSON.stringify({ familyId, memberId: activeMember.id, targetMemberId: targetMember.id }),
       });
       const json = await res.json();
-      if (json.ok) return { ok: true, code: json.code };
+      if (json.ok) return { ok: true, code: json.code, emailSent: json.emailSent, emailError: json.emailError };
       return { ok: false, error: json.error ?? 'Something went wrong.' };
     } catch (e: any) {
       return { ok: false, error: e?.message ?? 'Network error.' };

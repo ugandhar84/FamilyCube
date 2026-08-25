@@ -226,7 +226,7 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
   // a native Alert firing while that Modal is visible is the exact
   // Alert-over-Modal freeze already found and fixed once this session for
   // the photo picker. The caller renders the result inline instead.
-  const resendInviteFor = async (targetMember: any): Promise<{ ok: true; code: string } | { ok: false; error: string }> => {
+  const resendInviteFor = async (targetMember: any): Promise<{ ok: true; code: string; emailSent?: boolean; emailError?: string | null } | { ok: false; error: string }> => {
     if (!familyId || !activeMemberId) return { ok: false, error: 'Not ready yet — try again in a moment.' };
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -241,7 +241,7 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
         body: JSON.stringify({ familyId, memberId: activeMemberId, targetMemberId: targetMember.id }),
       });
       const json = await res.json();
-      if (json.ok) return { ok: true, code: json.code };
+      if (json.ok) return { ok: true, code: json.code, emailSent: json.emailSent, emailError: json.emailError };
       return { ok: false, error: json.error ?? 'Something went wrong.' };
     } catch (e: any) {
       return { ok: false, error: e?.message ?? 'Network error.' };

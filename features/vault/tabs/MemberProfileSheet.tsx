@@ -84,7 +84,7 @@ export function MemberProfileSheet({ member, siblings, allMembers, visible, onCl
    * copy/share actions. A native Alert.alert fired here while this sheet's
    * Modal is still visible was the exact freeze already found and fixed
    * once this session for the photo picker; this avoids the same bug. */
-  onResendInvite?: (member: FamilyMember) => Promise<{ ok: true; code: string } | { ok: false; error: string }>;
+  onResendInvite?: (member: FamilyMember) => Promise<{ ok: true; code: string; emailSent?: boolean; emailError?: string | null } | { ok: false; error: string }>;
   /** Gates the Edit entry point — parent-only, same as before. */
   isParentViewer?: boolean;
   /** Gates the Change PIN entry point — parent or the member themself. */
@@ -165,11 +165,11 @@ function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentView
   onSave?: (...args: any[]) => Promise<void>;
   onDelete?: (memberId: string) => Promise<void>;
   onResetPin?: (member: FamilyMember) => void;
-  onResendInvite?: (member: FamilyMember) => Promise<{ ok: true; code: string } | { ok: false; error: string }>;
+  onResendInvite?: (member: FamilyMember) => Promise<{ ok: true; code: string; emailSent?: boolean; emailError?: string | null } | { ok: false; error: string }>;
   onEdit: () => void; onChangePin: () => void; onRequestRemove: () => void;
   colors: any; isDark: boolean;
 }) {
-  const [inviteResult, setInviteResult] = useState<{ code: string } | { error: string } | null>(null);
+  const [inviteResult, setInviteResult] = useState<{ code: string; emailSent?: boolean; emailError?: string | null } | { error: string } | null>(null);
   const [resending, setResending] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -179,7 +179,7 @@ function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentView
     setInviteResult(null);
     const result = await onResendInvite(member);
     setResending(false);
-    setInviteResult(result.ok ? { code: result.code } : { error: result.error });
+    setInviteResult(result.ok ? { code: result.code, emailSent: result.emailSent, emailError: result.emailError } : { error: result.error });
   };
 
   const copyInviteCode = async (code: string) => {
@@ -327,6 +327,14 @@ function ViewSection({ member, siblings, rc, isKidOrTeen, isSenior, isParentView
               <Text style={{ fontSize: 22, fontWeight: '900', letterSpacing: 2, color: colors.textPrimary }}>
                 {inviteResult.code}
               </Text>
+              {inviteResult.emailSent && (
+                <Text style={{ fontSize: 11, color: BRAND.teal, fontWeight: '700' }}>✓ Emailed to them</Text>
+              )}
+              {inviteResult.emailError && (
+                <Text style={{ fontSize: 11, color: colors.textTertiary }}>
+                  Email couldn't be sent ({inviteResult.emailError}) — share the code directly instead.
+                </Text>
+              )}
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <TouchableOpacity onPress={() => copyInviteCode(inviteResult.code)}
                   style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,

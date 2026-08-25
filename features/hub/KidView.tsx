@@ -383,14 +383,15 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
       )}
 
       {/* 3. Today — the timeline strip, with "I'm safe" check-ins and
-          Ask Parent/Need a Ride folded in as inline actions instead of
-          their own standalone rows. */}
+          Ask Parent folded in as an inline action instead of its own
+          standalone row — "Need a Ride?" was removed entirely (it opened
+          the identical KidRequestModal AskParentSheet's own "Ask for a
+          Ride" choice already does). */}
       <KidTodaySection
         active={active} members={members} events={visibleEvents} updateEvent={updateEvent}
         colors={colors} isDark={isDark}
         onCheckin={sendCheckin}
         onAskParent={() => setAskParentSheetFromTile(true)}
-        onNeedRide={() => setAddEventModal(true)}
       />
 
       {/* 4. My Quests — the actual point of the screen; gets the most

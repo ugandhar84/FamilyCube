@@ -1,5 +1,5 @@
 import { View, Text, Pressable } from 'react-native';
-import { Home, Backpack, Timer, MessageCircle, Car } from 'lucide-react-native';
+import { Home, Backpack, Timer, MessageCircle } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { KID } from './kidTheme';
 import { HubTimelineSection } from '../HubTimelineSection';
@@ -13,19 +13,21 @@ import type { FamilyEvent } from '@/store/eventStore';
 const MONEY_GREEN = '#10B981';
 
 // "Today" — HubTimelineSection's existing strip, with KidCheckinRow's
-// "I'm safe" one-tap check-ins and KidActionRow's "Ask Parent"/"Need a
-// Ride" buttons folded in as inline actions right above the strip, instead
-// of three separate standalone rows stacked above it.
+// "I'm safe" one-tap check-ins and "Ask Parent" folded in as one row of
+// inline actions right above the strip. "Need a Ride?" used to sit next to
+// Ask Parent as its own separate button, but it opened the exact same
+// KidRequestModal AskParentSheet's own "Ask for a Ride" choice already
+// does — a genuine duplicate, not two different things — so it's gone and
+// Ask Parent joined the check-in row instead of keeping its own.
 export function KidTodaySection({
   active, members, events, updateEvent, colors, isDark,
-  onCheckin, onAskParent, onNeedRide,
+  onCheckin, onAskParent,
 }: {
   active: FamilyMember; members: FamilyMember[]; events: FamilyEvent[];
   updateEvent: (id: string, patch: Partial<FamilyEvent>) => void;
   colors: any; isDark: boolean;
   onCheckin: (type: 'home' | 'ready' | 'late') => void;
   onAskParent: () => void;
-  onNeedRide: () => void;
 }) {
   return (
     // No marginBottom here — HubTimelineSection (the last child) already
@@ -33,37 +35,21 @@ export function KidTodaySection({
     // gap before My Chores (confirmed live: visibly too much padding above
     // the My Chores card).
     <View>
-      <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 14 }}>
+      <View style={{ paddingHorizontal: 16, marginBottom: 14 }}>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           {([
-            { type: 'home',  label: "I'm Home!",   Icon: Home,     color: MONEY_GREEN,  bg: `${MONEY_GREEN}15`, border: `${MONEY_GREEN}40` },
-            { type: 'ready', label: "I'm Ready!",   Icon: Backpack, color: BRAND.amber,  bg: BRAND.amber + '15', border: BRAND.amber + '40' },
-            { type: 'late',  label: 'Running Late', Icon: Timer,    color: colors.danger, bg: `${colors.danger}15`, border: `${colors.danger}40` },
-          ] as const).map(({ type, label, Icon, color, bg, border }) => (
-            <Pressable key={type} onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "${label}" on "KidTodaySection checkin" (id=${type}) → onCheckin("${type}") [features/hub/kid/KidTodaySection.tsx]`); onCheckin(type); }}
+            { key: 'home',  label: "I'm Home!",   Icon: Home,     color: MONEY_GREEN,  bg: `${MONEY_GREEN}15`, border: `${MONEY_GREEN}40`, onPress: () => onCheckin('home') },
+            { key: 'ready', label: "I'm Ready!",   Icon: Backpack, color: BRAND.amber,  bg: BRAND.amber + '15', border: BRAND.amber + '40', onPress: () => onCheckin('ready') },
+            { key: 'late',  label: 'Running Late', Icon: Timer,    color: colors.danger, bg: `${colors.danger}15`, border: `${colors.danger}40`, onPress: () => onCheckin('late') },
+            { key: 'ask',   label: 'Ask Parent',   Icon: MessageCircle, color: BRAND.purple, bg: BRAND.purple + '15', border: BRAND.purple + '60', onPress: onAskParent },
+          ] as const).map(({ key, label, Icon, color, bg, border, onPress }) => (
+            <Pressable key={key} onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "${label}" on "KidTodaySection" (id=${key}) [features/hub/kid/KidTodaySection.tsx]`); onPress(); }}
               style={{ flex: 1, borderRadius: 16, paddingVertical: 12, alignItems: 'center', gap: 5,
                 backgroundColor: bg, borderWidth: 1.5, borderColor: border }}>
               <Icon size={19} color={color} strokeWidth={2.2} />
-              <Text style={{ fontSize: KID.tiny, fontWeight: '900', color, textAlign: 'center' }}>{label}</Text>
+              <Text style={{ fontSize: KID.tiny, fontWeight: '900', color, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
             </Pressable>
           ))}
-        </View>
-
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "Ask Parent" on "KidTodaySection" [features/hub/kid/KidTodaySection.tsx]`); onAskParent(); }}
-            style={{ flex: 1, borderRadius: 16, paddingVertical: 13, alignItems: 'center', gap: 5, flexDirection: 'row', justifyContent: 'center',
-              backgroundColor: isDark ? BRAND.purple + '26' : BRAND.purple + '15',
-              borderWidth: 1.5, borderColor: BRAND.purple + '60' }}>
-            <MessageCircle size={17} color={BRAND.purple} />
-            <Text style={{ fontSize: KID.sub, fontWeight: '900', color: BRAND.purple }}>Ask Parent</Text>
-          </Pressable>
-          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "Need a Ride?" on "KidTodaySection" [features/hub/kid/KidTodaySection.tsx]`); onNeedRide(); }}
-            style={{ flex: 1, borderRadius: 16, paddingVertical: 13, alignItems: 'center', gap: 5, flexDirection: 'row', justifyContent: 'center',
-              backgroundColor: isDark ? colors.card : '#fff',
-              borderWidth: 1.5, borderColor: BRAND.teal + '60' }}>
-            <Car size={17} color={BRAND.teal} />
-            <Text style={{ fontSize: KID.sub, fontWeight: '900', color: BRAND.teal }}>Need a Ride?</Text>
-          </Pressable>
         </View>
       </View>
 

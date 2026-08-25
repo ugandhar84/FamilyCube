@@ -1,11 +1,18 @@
 /**
  * GlobalCelebration — mounts once at a screen's root (outside any
- * ScrollView) and plays a full-screen CelebrationBurst whenever
+ * ScrollView) and plays a full-screen congratulations effect whenever
  * useCelebrationStore().trigger() fires, e.g. a parent approving & paying
- * out a chore several component layers deep.
+ * out a chore several component layers deep, or a kid seeing a fresh
+ * cheer/approved-permission/approved-chore land on their own Hub.
+ *
+ * Uses the iMessage-style balloon rise (BalloonCelebration) rather than the
+ * older confetti-from-center burst (FullScreenCelebration) — requested
+ * specifically for genuinely congratulatory moments; kept FullScreenCelebration
+ * as a separate component rather than deleting it in case a non-congratulatory
+ * celebration need comes up later that wants the punchier confetti-pop feel.
  */
 import { useEffect, useRef, useState } from 'react';
-import FullScreenCelebration from './FullScreenCelebration';
+import BalloonCelebration from './BalloonCelebration';
 import { useCelebrationStore } from '@/store/celebrationStore';
 
 export default function GlobalCelebration() {
@@ -21,7 +28,7 @@ export default function GlobalCelebration() {
   if (!visible) return null;
 
   return (
-    <FullScreenCelebration
+    <BalloonCelebration
       visible={visible}
       onDone={() => setVisible(false)}
     />

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import {
@@ -7,7 +7,7 @@ import {
 } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { KID } from './kidTheme';
-import CelebrationBurst from '@/components/CelebrationBurst';
+import { useCelebrationStore } from '@/store/celebrationStore';
 import { fmtTime, hoursUntilEvent } from '../hubUtils';
 import { eventAssignee } from '@/store/eventStore';
 import { driverLabelByName } from '@/lib/format';
@@ -190,6 +190,37 @@ export function KidNeedsYouSection({
   const filteredDeclinedQuests = declinedQuests.filter(q => !dismissedIds.has(`quest-${q.id}`));
   const filteredApprovedQuests = approvedQuests.filter(q => !dismissedIds.has(`quest-approved-${q.id}`));
   const filteredCheersForMe = cheersForMe.filter(({ quest, cheer }) => !dismissedIds.has(`cheer-${quest.id}-${cheer.memberId}`));
+
+  // Full-screen celebration (same one Parent's chore-approval flow uses —
+  // GlobalCelebration, mounted once at HubScreen's root) instead of the old
+  // small in-row confetti burst, which looked cramped/"dumping" confined to
+  // a single list row. Fires once per genuinely congratulatory item the kid
+  // hasn't already seen: a cheer landing, a chore/quest getting approved,
+  // or a permission request getting approved (declines/other reply types
+  // don't celebrate — nothing to celebrate there). celebratedKeys tracks
+  // what's already played THIS session so re-renders while a row is still
+  // visible (un-dismissed) don't replay it, and so anything already
+  // dismissed in an earlier session never plays again on login.
+  const celebratedKeys = useRef<Set<string>>(new Set());
+  const approvedPermissionReplies = recentReplies.filter(r => r.status === 'approved' && r.type === 'permission');
+  useEffect(() => {
+    const freshKeys = [
+      ...filteredCheersForMe.map(({ quest, cheer }) => `cheer-${quest.id}-${cheer.memberId}`),
+      ...filteredApprovedQuests.map(q => `quest-approved-${q.id}`),
+      ...approvedPermissionReplies.map(r => `reply-${r.id}`),
+    ];
+    for (const key of freshKeys) {
+      if (!celebratedKeys.current.has(key)) {
+        celebratedKeys.current.add(key);
+        useCelebrationStore.getState().trigger();
+      }
+    }
+  }, [
+    filteredCheersForMe.map(({ quest, cheer }) => `${quest.id}-${cheer.memberId}`).join(','),
+    filteredApprovedQuests.map(q => q.id).join(','),
+    approvedPermissionReplies.map(r => r.id).join(','),
+  ]);
+
   const showConfirmedRide = !!confirmedRide && rideCountdown !== null && rideCountdown > -180 && !dismissedIds.has(confirmedRide.id);
   const showAwaitingDriver = !confirmedRide && !!awaitingDriverRide && !dismissedIds.has(`awaiting-${awaitingDriverRide.id}`);
 
@@ -266,13 +297,10 @@ export function KidNeedsYouSection({
         const cheerer = members.find(m => m.id === cheer.memberId);
         const key = `cheer-${quest.id}-${cheer.memberId}`;
         return (
-          <View key={key} style={{ position: 'relative' }}>
-            <CelebrationBurst visible />
-            <NeedsYouRow Icon={PartyPopper} accent={BRAND.purple} colors={colors} isDark={isDark}
-              title={`${cheerer?.name?.split(' ')[0] ?? 'Someone'} cheered for you!`}
-              detail={`${quest.title}${cheer.coins ? ` · +${cheer.coins} bonus 🪙` : ''}`}
-              onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "cheered for you: ${quest.title}" (id=${key}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(key); }} />
-          </View>
+          <NeedsYouRow key={key} Icon={PartyPopper} accent={BRAND.purple} colors={colors} isDark={isDark}
+            title={`${cheerer?.name?.split(' ')[0] ?? 'Someone'} cheered for you!`}
+            detail={`${quest.title}${cheer.coins ? ` · +${cheer.coins} bonus 🪙` : ''}`}
+            onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "cheered for you: ${quest.title}" (id=${key}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(key); }} />
         );
       })}
 

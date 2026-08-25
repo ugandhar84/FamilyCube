@@ -1,11 +1,8 @@
 import { View, Text, Pressable } from 'react-native';
 import { router } from 'expo-router';
-import { Zap, Target, CheckCircle2, Calendar, Flame, Car } from 'lucide-react-native';
+import { Zap, Target, CheckCircle2, Calendar, Flame } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { KID } from './kidTheme';
-import { fmtTime } from '../hubUtils';
-import { eventAssignee } from '@/store/eventStore';
-import { driverLabelByName } from '@/lib/format';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
@@ -121,18 +118,14 @@ export function KidHeroCard({
         </View>
       </View>
 
-      {confirmedRide && rideCountdown != null && rideCountdown > 0 ? (
-        <View style={{ borderRadius: 16, backgroundColor: isDark ? MONEY_GREEN + '1f' : '#ECFDF5',
-          padding: 12, flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-          <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: MONEY_GREEN + '25', alignItems: 'center', justifyContent: 'center' }}>
-            <Car size={15} color={MONEY_GREEN} />
-          </View>
-          <Text style={{ fontSize: KID.sub, fontWeight: '800', color: MONEY_GREEN, flex: 1 }} numberOfLines={1}>
-            {driverLabelByName(eventAssignee(confirmedRide).name, members ?? []) ?? 'Ride'} picks you up
-            {rideCountdown >= 60 ? ` at ${fmtTime(confirmedRide.time)}` : ` in ${rideCountdown}m`}
-          </Text>
-        </View>
-      ) : nextEvent && nextCountdown !== null && nextCountdown > 0 && (
+      {/* A confirmed ride gets its own full row (with confirm/dismiss/send-
+          driver-late actions) in KidNeedsYouSection right below this card —
+          showing the identical "picks you up at X" line here too was pure
+          duplication (confirmed live: the same banner rendered twice on
+          screen, one with no way to dismiss it). This card only shows the
+          next-event fallback now, for whatever's coming up that ISN'T
+          already covered by a Needs You ride row. */}
+      {!confirmedRide && nextEvent && nextCountdown !== null && nextCountdown > 0 && (
         <View style={{ borderRadius: 16, backgroundColor: colors.tealLight,
           padding: 12, flexDirection: 'row', alignItems: 'center', gap: 9 }}>
           <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: colors.teal + '25', alignItems: 'center', justifyContent: 'center' }}>

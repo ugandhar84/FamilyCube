@@ -872,18 +872,32 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
               const isExpanded  = expanded.has(req.id);
               const isSupplies  = req.detail.startsWith(SUPPLIES_PREFIX);
               const isGrocery   = req.type === 'delegation' && !isSupplies;
+              const isRideLate  = req.detail.startsWith(RIDE_LATE_PREFIX);
               const hasItems    = (req.items?.length ?? 0) > 0;
               const approvedCount = req.items?.filter(i => i.status === 'approved').length ?? 0;
               const rejectedCount = req.items?.filter(i => i.status === 'rejected').length ?? 0;
               const pendingCount  = req.items?.filter(i => i.status === 'pending').length ?? 0;
 
-              // Decode supplies detail for display
+              // Every request type whose `detail` is a JSON-encoded internal
+              // payload (SUPPLIES_REQUEST:/GROCERY_REQUEST:/RIDE_LATE:) needs
+              // decoding for display here — this list previously only
+              // decoded the Supplies case, so Grocery requests and "driver
+              // hasn't arrived" alerts both rendered their literal encoded
+              // string instead of readable text.
               const suppliesDetail = isSupplies ? (() => {
                 try {
                   const p = JSON.parse(req.detail.slice(SUPPLIES_PREFIX.length));
                   const names = (p.items as { name: string }[]).map(i => i.name).join(', ');
                   return names || req.detail;
                 } catch { return req.detail; }
+              })() : isGrocery ? (() => {
+                const g = decodeGroceryRequest(req.detail);
+                if (!g) return req.detail;
+                return [g.name, g.notes].filter(Boolean).join(' — ');
+              })() : isRideLate ? (() => {
+                const r = decodeRideLate(req.detail);
+                if (!r) return req.detail;
+                return [`${r.title} — driver hasn't arrived`, r.driver ? `Driver: ${r.driver}` : null, r.location].filter(Boolean).join(' · ');
               })() : req.detail;
 
               return (
@@ -899,7 +913,7 @@ export function KidRequestHistoryModal({ visible, onClose, active }: {
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <Text style={{ fontSize: TYPO.caption, fontWeight: '900', color: colors.textPrimary }}>
-                          {isGrocery ? '🛒 Grocery' : isSupplies ? '📚 Supplies' : req.type === 'delegation' ? '📋 Request' : req.type === 'checkin' ? '🎒 Check-in' : req.type === 'question' ? '❓ Question' : req.type === 'medication' ? '💊 Medical' : req.type === 'tutor' ? '🎒 Tutor Offer' : req.type === 'cheer' ? '✋ Cheer' : req.type === 'ride' ? '🚗 Ride' : '🔓 Permission'}
+                          {isGrocery ? '🛒 Grocery' : isSupplies ? '📚 Supplies' : isRideLate ? '🚗 Ride Late' : req.type === 'delegation' ? '📋 Request' : req.type === 'checkin' ? '🎒 Check-in' : req.type === 'question' ? '❓ Question' : req.type === 'medication' ? '💊 Medical' : req.type === 'tutor' ? '🎒 Tutor Offer' : req.type === 'cheer' ? '✋ Cheer' : req.type === 'ride' ? '🚗 Ride' : '🔓 Permission'}
                           {hasItems ? ` · ${req.items!.length} item${req.items!.length > 1 ? 's' : ''}` : ''}
                         </Text>
                         <View style={{ borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2,

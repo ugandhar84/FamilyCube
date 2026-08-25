@@ -109,7 +109,6 @@ function NeedsYouRideRow({ ev, rideCountdown, colors, isDark, active, members, o
 
   const rideHere   = state === 'here';
   const isOverdue  = state === 'overdue';
-  const canDismiss = rideCountdown <= -30 || confirmed;
 
   const Icon = confirmed ? Check : isOverdue ? AlertTriangle : rideHere ? PartyPopper : Car;
   const accent = confirmed ? MONEY_GREEN : isOverdue ? colors.danger : MONEY_GREEN;
@@ -134,7 +133,12 @@ function NeedsYouRideRow({ ev, rideCountdown, colors, isDark, active, members, o
     <NeedsYouRow
       Icon={Icon} accent={accent} colors={colors} isDark={isDark} tone={tone}
       title={headline} detail={`${ev.title} · ${fmtTime(ev.time)}`}
-      onDismiss={canDismiss ? () => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "dismiss" on "KidNeedsYouSection ride row" (id=${ev.id}) → onDismiss("${ev.id}") [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(ev.id); } : undefined}
+      // Always dismissible — this is meant to be a temporary "heads up"
+      // banner, not a fixture sitting on screen for hours until the ride
+      // is overdue. Dismissal is per-item and DB-backed
+      // (dismissedHubItemsStore), so dismissing an early reminder doesn't
+      // lose anything — the ride itself is still on Timeline/Schedule.
+      onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "dismiss" on "KidNeedsYouSection ride row" (id=${ev.id}) → onDismiss("${ev.id}") [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(ev.id); }}
     >
       {!confirmed && (rideHere || isOverdue) && (
         <View style={{ flexDirection: 'row', gap: 8 }}>

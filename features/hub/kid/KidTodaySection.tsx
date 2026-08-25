@@ -48,9 +48,10 @@ export function KidTodaySection({
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "Ask Parent" on "KidTodaySection" [features/hub/kid/KidTodaySection.tsx]`); onAskParent(); }}
             style={{ flex: 1, borderRadius: 16, paddingVertical: 13, alignItems: 'center', gap: 5, flexDirection: 'row', justifyContent: 'center',
-              backgroundColor: BRAND.purple, shadowColor: BRAND.purple, shadowOpacity: isDark ? 0 : 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 4 }}>
-            <MessageCircle size={17} color="#fff" />
-            <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>Ask Parent</Text>
+              backgroundColor: isDark ? BRAND.purple + '26' : BRAND.purple + '15',
+              borderWidth: 1.5, borderColor: BRAND.purple + '60' }}>
+            <MessageCircle size={17} color={BRAND.purple} />
+            <Text style={{ fontSize: KID.sub, fontWeight: '900', color: BRAND.purple }}>Ask Parent</Text>
           </Pressable>
           <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "Need a Ride?" on "KidTodaySection" [features/hub/kid/KidTodaySection.tsx]`); onNeedRide(); }}
             style={{ flex: 1, borderRadius: 16, paddingVertical: 13, alignItems: 'center', gap: 5, flexDirection: 'row', justifyContent: 'center',

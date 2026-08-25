@@ -91,6 +91,29 @@ function getBattery(): BatteryAPI | null {
   return _battery;
 }
 
+/**
+ * Reads the device's current battery level/charging state — exported so the
+ * manual "refresh my location" tap (GpsTab.tsx) can write a REAL value
+ * instead of leaving battery_level/is_charging stale from whatever the
+ * background task last wrote (or never wrote at all, for someone who's
+ * never left movement-radius since enabling tracking). Same lazy-load/
+ * safe-wrapper pattern as the background task's own read above.
+ */
+export async function readBatteryStatus(): Promise<{ level: number | null; isCharging: boolean | null }> {
+  const battery = getBattery();
+  if (!battery) return { level: null, isCharging: null };
+  try {
+    const level = await battery.getBatteryLevelAsync();
+    const state = await battery.getBatteryStateAsync();
+    return {
+      level: level >= 0 ? Math.round(level * 100) : null,
+      isCharging: state === battery.BatteryState.CHARGING || state === battery.BatteryState.FULL,
+    };
+  } catch {
+    return { level: null, isCharging: null };
+  }
+}
+
 // Registered once, lazily, the first time getTaskManager() succeeds (rather
 // than at module load) — the task body itself reads the member id from a
 // small in-memory ref since TaskManager callbacks can't accept closures

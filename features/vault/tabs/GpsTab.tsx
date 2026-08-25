@@ -8,7 +8,7 @@
  * show in the list below with the existing manual status picker.
  */
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, Dimensions, Modal, Switch } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform, ScrollView, Dimensions, Modal, Switch, Linking } from 'react-native';
 import MapView, { Marker, PROVIDER_DEFAULT, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Radio, MapPin, Battery, Zap, Navigation, Check, ChevronDown, LocateFixed, ShieldOff, RefreshCw } from 'lucide-react-native';
@@ -16,7 +16,7 @@ import { supabase } from '@/lib/supabase';
 import { encryptLocationText, decryptLocationText } from '@/lib/locationCrypto';
 import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
-import { startBackgroundLocationTracking, stopBackgroundLocationTracking, isBackgroundLocationTracking, setBackgroundLocationMemberId, setBackgroundLocationFamilyId, isBackgroundLocationSupported } from '@/lib/locationTracking';
+import { startBackgroundLocationTracking, stopBackgroundLocationTracking, isBackgroundLocationTracking, setBackgroundLocationMemberId, setBackgroundLocationFamilyId, isBackgroundLocationSupported, readBatteryStatus } from '@/lib/locationTracking';
 import CubeSpinner from '@/components/CubeSpinner';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { CardHeader, StatusPill, MemberAvatar, BRAND } from './shared';
@@ -278,18 +278,26 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
       const now = new Date().toISOString();
       const encAddress = await encryptLocationText(memberId, familyId, address);
       const encNeighborhood = await encryptLocationText(memberId, familyId, neighborhood);
-      console.log('[GpsTab] refreshMyLocation upserting', { memberId, familyId, lat, lng, shareExact });
+      // Was never read here at all — every manual refresh left
+      // battery_level/is_charging whatever the background task last wrote
+      // (or nothing, for someone who's never moved far enough to trigger
+      // it), so the % shown was frequently stale or a hardcoded fallback,
+      // not this refresh's actual reading. Read it fresh, same as the
+      // background task does.
+      const { level: batteryLevel, isCharging } = await readBatteryStatus();
+      console.log('[GpsTab] refreshMyLocation upserting', { memberId, familyId, lat, lng, shareExact, batteryLevel, isCharging });
       const { error: upsertErr } = await supabase.from('member_locations').upsert({
         member_id: memberId, family_id: familyId, lat, lng, address: encAddress,
         neighborhood: encNeighborhood, share_exact_address: shareExact,
+        ...(batteryLevel !== null ? { battery_level: batteryLevel } : {}),
+        ...(isCharging !== null ? { is_charging: isCharging } : {}),
         last_updated: now,
       }, { onConflict: 'member_id' });
       if (upsertErr) console.error('[GpsTab] member_locations upsert failed:', upsertErr.message);
       if (familyId) {
-        const loc = locations.find(l => l.member_id === memberId);
         const { error: histErr } = await supabase.from('member_location_history').insert({
           member_id: memberId, family_id: familyId, lat, lng, address: encAddress,
-          battery_level: loc?.battery_level ?? null, is_charging: loc?.is_charging ?? null,
+          battery_level: batteryLevel, is_charging: isCharging,
           recorded_at: now,
         });
         if (histErr) console.error('[GpsTab] member_location_history insert failed:', histErr.message);
@@ -320,6 +328,29 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
     })));
     setHistory(decrypted);
     setHistoryLoading(false);
+  };
+
+  // Tapping a member's address opens turn-by-turn directions in the
+  // platform's native maps app (Apple Maps on iOS, Google Maps on
+  // Android) — previously the address was just static text, no way to
+  // actually navigate to where someone is. Falls back to Google Maps'
+  // web URL (works from any platform/browser) if the native scheme fails
+  // to open (e.g. Apple Maps not installed/available).
+  const openDirections = async (lat: number, lng: number, label: string) => {
+    const encodedLabel = encodeURIComponent(label);
+    const nativeUrl = Platform.select({
+      ios: `maps://?daddr=${lat},${lng}&q=${encodedLabel}`,
+      android: `google.navigation:q=${lat},${lng}`,
+      default: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`,
+    })!;
+    const webFallback = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+    try {
+      const canOpen = await Linking.canOpenURL(nativeUrl);
+      await Linking.openURL(canOpen ? nativeUrl : webFallback);
+    } catch {
+      try { await Linking.openURL(webFallback); }
+      catch { Alert.alert('Could not open maps', 'Please try again.'); }
+    }
   };
 
   const pinned = useMemo(() => locations.filter(l => l.lat != null && l.lng != null), [locations]);
@@ -493,9 +524,17 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
                 <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>
                   {loc.name}{isMe && <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textTertiary }}> (you)</Text>}
                 </Text>
-                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
-                  {loc.address && loc.address !== 'Unknown' ? loc.address : (loc.status_text ?? STATUS_LABELS[loc.status])}
-                </Text>
+                {isLive ? (
+                  <TouchableOpacity onPress={() => openDirections(loc.lat!, loc.lng!, loc.address || loc.name)} hitSlop={{ top: 4, bottom: 4 }}>
+                    <Text style={{ fontSize: 12, color: BRAND.teal, fontWeight: '600', marginTop: 2, textDecorationLine: 'underline' }} numberOfLines={1}>
+                      {loc.address && loc.address !== 'Unknown' ? loc.address : (loc.status_text ?? STATUS_LABELS[loc.status])}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
+                    {loc.address && loc.address !== 'Unknown' ? loc.address : (loc.status_text ?? STATUS_LABELS[loc.status])}
+                  </Text>
+                )}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
                   {isLive && (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>

@@ -61,7 +61,7 @@ Return:
     "events": [
       {
         "title": "event name",
-        "category": one of: School, Sports, Medical, Work, Event, Study, Holiday,
+        "category": one of: Medical, Sports, Study, Ride, Event, Birthday, Errand, Other — use Study for school/academic activities (classes, homework, school events, holidays/breaks on a school calendar), Event for general gatherings/celebrations that aren't school-specific, Other only if nothing else fits,
         "date": "YYYY-MM-DD or null",
         "time": "HH:MM 24h or null",
         "end_time": "HH:MM 24h or null",
@@ -82,7 +82,7 @@ Return:
   "type": "event",
   "event": {
     "title": "event name",
-    "category": one of: School, Sports, Medical, Work, Event, Study, Holiday,
+    "category": one of: Medical, Sports, Study, Ride, Event, Birthday, Errand, Other — use Study for school/academic activities, Birthday for birthday parties, Event for general gatherings/celebrations, Other only if nothing else fits,
     "date": "YYYY-MM-DD or null",
     "time": "HH:MM 24h or null",
     "end_time": "HH:MM 24h or null",

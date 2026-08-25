@@ -91,9 +91,13 @@ type FlyerResult =
 
 type Step = 'capture' | 'processing' | 'review' | 'timetable' | 'multi';
 
-const CATEGORIES = ['School', 'Sports', 'Medical', 'Work', 'Event', 'Study', 'Holiday'];
+// Same category vocabulary the rest of the app uses (features/calendar/components/eventForm/types.ts's
+// CATEGORIES) — a scanned flyer's category must be one of these or the calendar_events_category_fk
+// foreign key rejects the insert (confirmed: 'School'/'Work'/'Holiday' were never real categories,
+// just something the flyer-parsing prompt invented independently of the app's actual category set).
+const CATEGORIES = ['Medical', 'Sports', 'Study', 'Ride', 'Event', 'Birthday', 'Errand', 'Other'];
 const CAT_EMOJI: Record<string, string> = {
-  School: '🏫', Sports: '⚽', Medical: '🏥', Work: '💼', Event: '🎉', Study: '📚', Holiday: '🎌',
+  Medical: '🏥', Sports: '🏅', Study: '📚', Ride: '🚗', Event: '🎉', Birthday: '🎂', Errand: '🛒', Other: '✨',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

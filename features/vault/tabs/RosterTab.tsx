@@ -381,7 +381,7 @@ function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, on
             onPress={() => {
               Alert.alert(
                 `Remove ${member.name}?`,
-                'This will remove them from your family. This cannot be undone.',
+                `${member.name} will be removed from your family right away. Their profile is kept for 7 days in case you change your mind — switching back to them with their PIN restores everything. After 7 days it's permanently deleted.`,
                 [
                   { text: 'Cancel', style: 'cancel' },
                   { text: 'Remove', style: 'destructive', onPress: async () => {
@@ -403,7 +403,13 @@ function EditMemberModal({ member, allMembers, onClose, onSave, onLinkParent, on
 // ─── Main RosterTab ───────────────────────────────────────────────────────────
 
 export default function RosterTab({ colors, isDark }: { colors: any; isDark: boolean }) {
-  const { members, activeMemberId, updateMember, removeMember } = useFamilyStore();
+  const { members: allMembers, activeMemberId, updateMember, removeMember } = useFamilyStore();
+  // Soft-deleted members (Roster's own "Remove" below, or a self-deleted
+  // account via Profile's danger zone) stay in the store — restorable via
+  // PIN re-entry within 7 days (familyStore.setActiveMember) — but drop out
+  // of every member-facing list here so a "removed" person doesn't keep
+  // showing up in the family tree as if nothing happened.
+  const members = allMembers.filter(m => !m.deletedAt);
   const activeMember = members.find(m => m.id === activeMemberId) ?? members[0];
   const isParent = activeMember?.role === 'parent';
   // Was members[0]?.familyId — assumed the first member in the array shared
@@ -493,22 +499,19 @@ export default function RosterTab({ colors, isDark }: { colors: any; isDark: boo
   };
 
   const deleteMember = async (memberId: string) => {
-    // removeMember() now does the DB delete itself and throws on failure
-    // (e.g. the member still has an assigned chore/quest — chore_tasks.
-    // assigned_to_id -> members has no ON DELETE clause, so Postgres
-    // rejects it). This used to double-delete (once here, once inside
-    // removeMember) with neither call checking its result, so a blocked
-    // deletion silently removed the member from local state/AsyncStorage
-    // while the DB row — and their in-flight quests — stayed behind
-    // forever, reappearing on the next sync with no explanation (spec 6.2).
+    // removeMember() soft-deletes (members.deleted_at = now()) rather than
+    // hard-deleting — chore/event cleanup still runs first (see its own
+    // comments), but the row itself sticks around for 7 days so the member
+    // can be restored, and member-purge-sweep only removes it for good
+    // after that window. Still throws on a genuine DB failure so a blocked
+    // update doesn't silently vanish the member from local state while the
+    // DB row stays behind.
     try {
       await removeMember(memberId);
     } catch (e: any) {
       Alert.alert(
         'Could Not Remove Member',
-        e?.message?.includes('foreign key') || e?.code === '23503'
-          ? `${'This person still has an assigned chore, quest, or event. Reassign or cancel it first, then try removing them again.'}`
-          : (e?.message || 'Something went wrong removing this family member.')
+        e?.message || 'Something went wrong removing this family member.'
       );
     }
   };

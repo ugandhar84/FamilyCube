@@ -1,12 +1,26 @@
-// PawBond — Edge Function: delete-account
-// Soft-deletes a user account. Data is kept for 30 days.
-// If the user logs back in within 30 days their account is fully restored.
-// The purge-deleted-accounts cron permanently removes data after 30 days.
+// FamilyCube — Edge Function: delete-account
+// Self-service "Delete account" for an auth-linked member (Profile's danger
+// zone — features/profile). Soft-deletes: profiles.deleted_at = now(). Data
+// is kept for 7 days; logging back in within that window restores
+// everything automatically (see app/_layout.tsx's onAuthStateChange/
+// getSession soft-delete-restore branch). member-purge-sweep permanently
+// removes anything past 7 days.
+//
+// Adapted from PawBond's own delete-account function (same profiles.
+// deleted_at column, same JWT-validate-then-soft-delete shape) — window
+// shortened from 30 days to 7 to match Family Cube's own soft-delete spec
+// (see migration 20260908230000_member_soft_delete.sql), copy reframed
+// away from PawBond branding, and the reminder notice now goes through
+// family-notifier (Family Cube's real notification path) instead of a
+// raw Expo push call, so the rest of the family — not just the leaving
+// member — is told via the same 'custom' type familyStore.removeMember
+// uses for the parallel Roster "delete profile" flow. One consistent
+// delete behavior everywhere a member can be removed, per user direction.
 //
 // Steps:
 //   1. Validate JWT — caller must be the same user as user_id
 //   2. Set profiles.deleted_at = now()  (soft delete marker)
-//   3. Send a push notification reminding the user they can restore within 30 days
+//   3. Notify the rest of the family via family-notifier
 //   4. Return success — client signs out after this call
 //
 // Deploy: supabase functions deploy delete-account
@@ -18,7 +32,6 @@ const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -61,35 +74,45 @@ serve(async (req) => {
       return json({ error: 'Could not schedule account deletion. Please try again.' }, 500);
     }
 
-    // ── 3. Push notification — send before the client signs out ──────────────
-    const { data: tokenRows } = await db
-      .from('push_tokens')
-      .select('token')
-      .eq('user_id', user_id);
+    // ── 3. Notify the rest of the family via family-notifier ────────────────
+    // Best-effort — the account is already soft-deleted regardless of
+    // whether this notice goes out.
+    try {
+      const { data: memberRow } = await db
+        .from('members')
+        .select('id, name, family_id')
+        .eq('auth_user_id', user_id)
+        .maybeSingle();
 
-    const tokens = (tokenRows ?? [])
-      .map((r: { token: string }) => r.token)
-      .filter((t: string) => t.startsWith('ExponentPushToken'));
+      if (memberRow?.family_id) {
+        const { data: family } = await db
+          .from('members')
+          .select('id')
+          .eq('family_id', memberRow.family_id)
+          .neq('id', memberRow.id)
+          .is('deleted_at', null);
 
-    if (tokens.length > 0) {
-      const messages = tokens.map((to: string) => ({
-        to,
-        sound: 'default',
-        title: '🐾 Account scheduled for deletion',
-        body: 'Your data is safe for 30 days. Just log back in and everything will be restored automatically.',
-        data: { type: 'account_deletion_scheduled' },
-        priority: 'high',
-        channelId: 'default',
-      }));
-
-      await fetch(EXPO_PUSH_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(messages),
-      }).catch((e) => console.warn('[delete-account] push failed:', e.message));
+        const memberIds = (family ?? []).map((m: { id: string }) => m.id);
+        if (memberIds.length) {
+          await db.functions.invoke('family-notifier', {
+            body: {
+              type: 'custom',
+              familyId: memberRow.family_id,
+              memberIds,
+              payload: {
+                title: 'Account scheduled for deletion',
+                body: `${memberRow.name ?? 'A family member'}'s account will be permanently deleted in 7 days unless they log back in.`,
+                data: { screen: 'Roster', memberId: memberRow.id },
+              },
+            },
+          });
+        }
+      }
+    } catch (e: any) {
+      console.warn('[delete-account] family-notifier notice failed:', e?.message);
     }
 
-    console.log(`[delete-account] ✅ soft-deleted user=${user_id}`);
+    console.log(`[delete-account] soft-deleted user=${user_id}`);
     return json({ success: true });
 
   } catch (err: any) {

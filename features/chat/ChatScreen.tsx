@@ -853,7 +853,14 @@ export default function ChatScreen() {
                   <MessageBubble
                     msg={msg} isMe={isMe}
                     isGroupFirst={isGroupFirst} isGroupLast={isGroupLast}
-                    senderName={sender?.name?.split(' ')[0] ?? 'Family'}
+                    // A sender lookup miss here means the member row is
+                    // genuinely gone (member-purge-sweep permanently
+                    // removed a soft-deleted profile past its 7-day
+                    // window) — chat_messages.sender_id is deliberately
+                    // never nulled/deleted by that sweep, so old messages
+                    // stay readable with an honest "Removed member" label
+                    // instead of a misleading blank/generic name.
+                    senderName={sender?.name?.split(' ')[0] ?? 'Removed member'}
                     senderEmoji={sender?.emoji ?? '👤'}
                     senderColor={accentColor(msg.senderId)}
                     // The quoted message's OWN sender's color, not the

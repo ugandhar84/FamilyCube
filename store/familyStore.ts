@@ -137,6 +137,26 @@ export interface FamilyMember {
   // another member's session. Purely informational client-side (e.g. a
   // "joined via invite" badge); never a permission gate.
   email?: string;
+  // members.auth_user_id — set only for members who personally ran a real
+  // Supabase Auth login/signup on some device (founding parent, or anyone
+  // who joined independently via invite code/email). Undefined for a
+  // PIN-only profile created by someone else's session (typically kids,
+  // often seniors). This is THE gate Profile's danger zone uses to decide
+  // "Delete account" (self-service, auth-linked) vs "Delete profile"
+  // (parent-initiated, PIN-only) — see features/profile.
+  authUserId?: string;
+  // members.deleted_at — soft-delete marker (see migration
+  // 20260908230000_member_soft_delete.sql). Set means this member is
+  // scheduled for permanent purge 7 days from this timestamp unless
+  // restored (PIN re-entry or, for auth-linked members, a fresh login).
+  deletedAt?: string;
+  // Per-category push/panel notification opt-outs (Profile page's
+  // Notifications section) — keyed by the same NotifCategory buckets
+  // family-notifier's own categoryFor() groups every real notification
+  // type into. A missing key means enabled (matches every member's
+  // existing behavior before this field existed); only `false` mutes a
+  // category. See migration 20260924010000_member_notification_prefs.sql.
+  notificationPrefs?: Partial<Record<'chores' | 'family' | 'chat' | 'rewards' | 'requests' | 'grocery', boolean>>;
 }
 
 interface FamilyState {
@@ -220,6 +240,8 @@ function fromRow(row: any): FamilyMember {
     dateOfBirth:        row.date_of_birth ?? undefined,
     pillOrder:          row.pill_order ?? undefined,
     storeProximityRemindersEnabled: row.store_proximity_reminders_enabled ?? true,
+    authUserId:         row.auth_user_id ?? undefined,
+    deletedAt:          row.deleted_at ?? undefined,
   };
 }
 
@@ -289,6 +311,29 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     import('@/lib/notifications').then(({ saveTokenToMember }) => {
       saveTokenToMember(id).catch(() => {});
     });
+    // ── Restore-on-return: a soft-deleted (Roster "delete profile" or
+    // Profile "delete account") member whose PIN gets used again within 7
+    // days is fully restored — mirrors app/_layout.tsx's symmetric restore
+    // for auth-linked accounts on session resume. Fire-and-forget: never
+    // block the (already-instant, local) profile switch on a network round
+    // trip — the switch has already happened above by the time this lands.
+    const switched = get().members.find(m => m.id === id);
+    if (switched?.deletedAt) {
+      const deletedMs = new Date(switched.deletedAt).getTime();
+      const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+      if (Date.now() - deletedMs < SEVEN_DAYS_MS) {
+        supabase.from('members').update({ deleted_at: null, deletion_notified_at: null }).eq('id', id)
+          .then(({ error }) => {
+            if (error) { console.warn('[familyStore] restore-on-return failed', error.message); return; }
+            set(s => ({ members: s.members.map(m => m.id === id ? { ...m, deletedAt: undefined } : m) }));
+            AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(get().members));
+          });
+      }
+      // Past 7 days: the member-purge-sweep cron will have already removed
+      // this row server-side (or is about to) — nothing to restore, and no
+      // special-case needed here since the row simply won't come back on
+      // the next syncFromDB().
+    }
   },
 
   addMember: async (member) => {
@@ -401,21 +446,53 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       console.warn('[familyStore] removeMember event cleanup failed', e);
     }
 
-    const next = prev.filter(m => m.id !== id);
-    set({ members: next, activeMemberId: prevActiveId === id ? (next[0]?.id ?? null) : prevActiveId });
+    // Soft-delete, not hard-delete — same pattern as Profile's own danger
+    // zone (features/profile), so a member removed from Roster and one
+    // removed from their own account settings behave identically: 7 days
+    // to be restored (PIN re-entry for a non-auth member, a fresh login
+    // for an auth-linked one — see setActiveMember/app/_layout.tsx), then
+    // member-purge-sweep permanently deletes the row. This also sidesteps
+    // the audit-trail-FK failures the old hard-delete could hit (comment
+    // this replaced) since the row isn't actually removed yet.
+    const removedMember = prev.find(m => m.id === id);
+    const deletedAtIso = new Date().toISOString();
+    const next = prev.map(m => m.id === id ? { ...m, deletedAt: deletedAtIso } : m);
+    set({ members: next, activeMemberId: prevActiveId === id ? (next.find(m => !m.deletedAt)?.id ?? next[0]?.id ?? null) : prevActiveId });
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    // A handful of audit-trail columns (calendar_events.created_by/
-    // updated_by/deleted_by, vault/grocery assigned_by/added_by/scanned_by)
-    // still carry a hard-blocking FK with no cascade/set-null clause — those
-    // are historical record columns, not live assignments, so this is
-    // intentionally left as a surfaced failure (below) rather than silently
-    // clearing someone's audit trail.
-    const { error } = await supabase.from('members').delete().eq('id', id);
+
+    const { error } = await supabase.from('members')
+      .update({ deleted_at: deletedAtIso })
+      .eq('id', id);
     if (error) {
-      console.warn('[familyStore] removeMember failed (likely still referenced in an audit-trail column):', error.message);
+      console.warn('[familyStore] removeMember (soft-delete) failed:', error.message);
       set({ members: prev, activeMemberId: prevActiveId });
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(prev));
       throw error;
+    }
+
+    // Notify the rest of the family this member will be permanently
+    // deleted in 7 days unless restored. Sent to every remaining member
+    // (not just parents) — a removed kid's siblings/grandparent may also
+    // want to know/react, and this is a low-frequency, high-significance
+    // event where over-notifying the family is the safer default versus a
+    // kid's account quietly vanishing with only parents ever told.
+    if (removedMember) {
+      const familyId = removedMember.familyId ?? get().members[0]?.familyId;
+      const remainingMemberIds = next.filter(m => m.id !== id && !m.deletedAt).map(m => m.id);
+      if (familyId && remainingMemberIds.length) {
+        supabase.functions.invoke('family-notifier', {
+          body: {
+            type: 'custom',
+            familyId,
+            memberIds: remainingMemberIds,
+            payload: {
+              title: 'Profile removed',
+              body: `${removedMember.name}'s profile will be permanently deleted in 7 days unless restored.`,
+              data: { screen: 'Roster', memberId: id },
+            },
+          },
+        }).catch((e: any) => console.warn('[familyStore] removeMember notify failed', e?.message));
+      }
     }
   },
 

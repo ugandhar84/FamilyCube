@@ -164,9 +164,14 @@ function RootNavigator() {
               .eq('id', session.user.id)
               .single();
             if (profile?.deleted_at) {
-              const deletedAt  = new Date(profile.deleted_at).getTime();
-              const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-              if (Date.now() - deletedAt < thirtyDays) {
+              // Family Cube's own soft-delete window is 7 days (Profile's
+              // "Delete account" danger-zone action) — see the symmetric
+              // 7-day restore in store/familyStore.ts's setActiveMember
+              // (PIN-switch path) and member-purge-sweep (the cron that
+              // permanently removes anything past this window).
+              const deletedAt = new Date(profile.deleted_at).getTime();
+              const sevenDays = 7 * 24 * 60 * 60 * 1000;
+              if (Date.now() - deletedAt < sevenDays) {
                 const { error: restoreErr } = await supabase
                   .from('profiles')
                   .update({ deleted_at: null })
@@ -176,7 +181,7 @@ function RootNavigator() {
                   hideSplashThen(() => router.replace('/(auth)/login'));
                   return;
                 }
-                showAlert('Welcome back! 🐾', 'Your account and all your data have been fully restored. Nothing was lost.');
+                showAlert('Welcome back!', 'Your account and all your data have been fully restored. Nothing was lost.');
               }
             }
             if (profileErr || !profile?.terms_accepted || !profile?.onboarding_completed) {
@@ -283,30 +288,33 @@ function RootNavigator() {
         });
 
         // ── Soft-delete restore ──────────────────────────────────────────────
-        // If the account was scheduled for deletion but the user logged back in
-        // within 30 days, restore it automatically.
+        // If the account was scheduled for deletion (Profile's "Delete
+        // account") but the user logged back in within 7 days, restore it
+        // automatically. Symmetric with familyStore.setActiveMember's
+        // restore-on-PIN-switch for non-auth members, and with the same
+        // window member-purge-sweep uses to permanently purge past it.
         if (profile?.deleted_at) {
-          const deletedAt  = new Date(profile.deleted_at).getTime();
-          const thirtyDays = 30 * 24 * 60 * 60 * 1000;
-          if (Date.now() - deletedAt < thirtyDays) {
+          const deletedAt = new Date(profile.deleted_at).getTime();
+          const sevenDays = 7 * 24 * 60 * 60 * 1000;
+          if (Date.now() - deletedAt < sevenDays) {
             // Restore: clear the deleted_at flag
             const { error: restoreErr } = await supabase
               .from('profiles')
               .update({ deleted_at: null })
               .eq('id', session.user.id);
             if (restoreErr) {
-              console.error('[PawBond:Restore] Failed to restore account:', restoreErr.message);
+              console.error('[FamilyCube:Restore] Failed to restore account:', restoreErr.message);
               showAlert('Restore failed', "We couldn't restore your account right now. Please try signing in again.");
               await supabase.auth.signOut({ scope: 'local' });
               return;
             } else {
               showAlert(
-                'Welcome back! 🐾',
+                'Welcome back!',
                 'Your account and all your data have been fully restored. Nothing was lost.',
               );
             }
           }
-          // If past 30 days the purge cron already deleted the auth user,
+          // If past 7 days the purge cron already deleted the auth user,
           // so this branch is unreachable — but guard anyway.
         }
 
@@ -805,7 +813,8 @@ function RootNavigator() {
         <Stack.Screen name="pet/edit" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="health/appointments" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="health/weights" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="profile/edit" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="profile-settings" options={{ animation: 'slide_from_right' }} />
+        <Stack.Screen name="profile-settings/terms" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="pet/card" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="hub/help-history" options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="call-alert" options={{ headerShown: false, presentation: 'fullScreenModal', animation: 'fade', gestureEnabled: false }} />

@@ -169,9 +169,13 @@ interface AppHeaderProps {
   notifCount?:      number;
   onPersonaPress?:  () => void;
   onBellPress?:     () => void;
-  // Only passed by roles that don't have a dedicated Profile/settings tab in
-  // their bottom nav (currently: senior/GP, which trades that tab slot for
-  // Memories) — omitted everywhere else so the icon doesn't appear twice.
+  // Two distinct callers: HubScreen passes this only for senior/GP (whose
+  // bottom nav trades the Profile tab slot for Memories) to jump straight
+  // to the Apps grid at /(tabs)/profile. VaultScreen — the screen that IS
+  // the Profile tab's content for every role — passes it unconditionally
+  // to open the new account/settings page (/profile-settings, see
+  // features/profile), which every role reaches through the same gear icon
+  // regardless of whether they also have a dedicated Profile tab slot.
   onSettingsPress?: () => void;
   // Real rendered height of this header instance, measured via onLayout —
   // NotificationPanel (a screen-independent Modal with no knowledge of any

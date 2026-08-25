@@ -10,7 +10,12 @@ import BackButton from '@/components/BackButton';
 import { useAuthStore } from '@/store/authStore';
 import { TYPO } from '@/constants/theme';
 
-const TERMS_CONTENT = `FAMILY CUBE — TERMS OF SERVICE, PRIVACY POLICY & AI DISCLOSURE
+// Exported so Profile's read-only "Terms & Privacy" link (features/profile)
+// can reuse the same real legal copy instead of inventing new text — this
+// screen's own onboarding accept-flow (checkbox + CTA + back-to-onboarding
+// button below) isn't reusable as-is for a signed-in user just wanting to
+// re-read the terms.
+export const TERMS_CONTENT = `FAMILY CUBE — TERMS OF SERVICE, PRIVACY POLICY & AI DISCLOSURE
 
 Last updated: August 2026 | Version 1.0
 

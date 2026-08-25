@@ -6,7 +6,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import {
   Radio, Pill, ChefHat, Image as ImageIcon, ScrollText,
   Users, LogOut, FolderOpen, Gift, ChevronRight,
@@ -260,6 +260,7 @@ export default function VaultScreen() {
         notifCount={unreadNotifCount}
         onBellPress={() => setNotifPanelOpen(true)}
         onPersonaPress={() => {}}
+        onSettingsPress={() => router.push('/profile-settings')}
       />
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 

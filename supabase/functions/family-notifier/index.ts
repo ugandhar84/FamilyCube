@@ -62,6 +62,44 @@ type NotifType =
   | 'kid_request_decision'
   | 'custom';
 
+// Category a member's notification_prefs toggles by — coarser than
+// NotifType's 20+ individual values, since that's the granularity a person
+// actually thinks in terms of ("chores", not "bonus_expired_penalty").
+type NotifCategory = 'chores' | 'family' | 'chat' | 'rewards' | 'requests' | 'grocery';
+
+const CATEGORY_BY_TYPE: Partial<Record<NotifType, NotifCategory>> = {
+  quest_approved: 'chores', quest_declined: 'chores', quest_claimed: 'chores',
+  quest_submitted: 'chores', bonus_activated: 'chores', bonus_expiring: 'chores',
+  bonus_expired_penalty: 'chores', deadline_reminder: 'chores', deadline_overdue: 'chores',
+  penalty_applied: 'chores', force_assigned: 'chores', chore_ghosted: 'chores',
+  chore_still_on: 'chores', chore_auto_released: 'chores',
+  geofence_exit: 'family', geofence_arrive: 'family', low_battery: 'family',
+  chat_mention: 'chat',
+  coins_awarded: 'rewards', reward_redeemed: 'rewards', reward_decision: 'rewards',
+  help_requested: 'requests', help_resolved: 'requests',
+  kid_request: 'requests', kid_request_decision: 'requests',
+  // 'custom' has no fixed category — only two callers exist today
+  // (groceryStore.ts's shopping-trip-started push, familyStore.ts's
+  // profile-removed safety notice), discriminated below by payload shape
+  // rather than lumped into one bucket, since they mean very different
+  // things to a user picking what to mute.
+};
+
+// 'custom' payloads carry no NotifType-level signal, only whatever the
+// caller put in payload.data — resolve by the same markers those two
+// callers already set. Falls back to 'family' (never silently suppressed)
+// for any future custom caller that doesn't match a known shape, since an
+// unrecognized account-safety-adjacent notice is the wrong thing to risk
+// dropping.
+function categoryFor(type: NotifType, payload: Record<string, unknown>): NotifCategory {
+  const known = CATEGORY_BY_TYPE[type];
+  if (known) return known;
+  const data = (payload?.data ?? {}) as Record<string, unknown>;
+  if (data.type === 'shopping_trip_started' || data.type === 'store_proximity') return 'grocery';
+  if (data.screen === 'Roster') return 'family';
+  return 'family';
+}
+
 interface NotifShape {
   title: string;
   body: string;
@@ -433,6 +471,34 @@ serve(async (req) => {
     // every possible recipient list itself.
     if (excludeMemberId) {
       resolvedMemberIds = resolvedMemberIds.filter(id => id !== excludeMemberId);
+    }
+
+    // Per-member category opt-out (Profile page's notification settings —
+    // was previously a UI-only toggle with no real backing at all). A
+    // missing key defaults to enabled (get(prefs, category, true) below),
+    // matching every member's existing behavior until they explicitly mute
+    // a category, not an opt-in that would silently break notifications for
+    // everyone who already had a members row before this column existed.
+    if (resolvedMemberIds.length) {
+      const category = categoryFor(type, payload ?? {});
+      const { data: prefRows } = await supabase
+        .from('members')
+        .select('id, notification_prefs')
+        .in('id', resolvedMemberIds);
+      const allowedIds = new Set(
+        (prefRows ?? [])
+          .filter((m: any) => (m.notification_prefs ?? {})[category] !== false)
+          .map((m: any) => m.id)
+      );
+      // Any id with no matching row at all (shouldn't happen, but don't let
+      // a lookup gap silently drop a real recipient) stays included.
+      const rowIds = new Set((prefRows ?? []).map((m: any) => m.id));
+      resolvedMemberIds = resolvedMemberIds.filter(id => allowedIds.has(id) || !rowIds.has(id));
+      // pushTokens may already be populated from an earlier branch (explicit
+      // tokens passed, or an auto-route branch above) — re-derive from the
+      // now-filtered id list instead of trying to filter tokens directly,
+      // since a token can't be mapped back to which member opted out of what.
+      pushTokens = [];
     }
 
     if (!pushTokens.length && resolvedMemberIds.length) {

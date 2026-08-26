@@ -72,9 +72,9 @@ export const lightColors = {
   accentDark:   '#75699A',
 
   // ── Surfaces — warm cashmere neutrals ───────────────────────────────────
-  background:   '#FBF7F0',
-  surface:      '#F4EEE3',
-  card:         '#FFFEFC',
+  background:   '#FDFBF7',
+  surface:      '#F8F3EA',
+  card:         '#FFFFFF',
   overlay:      'rgba(44,39,34,0.45)',
 
   // ── Borders ───────────────────────────────────────────────────────────

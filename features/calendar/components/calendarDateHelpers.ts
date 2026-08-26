@@ -95,6 +95,7 @@ export function timeToMinutes(t?: string): number | null {
 // single day's timeline both need the real individual occurrence for that
 // specific date, not a collapsed stand-in.
 export function collapseSeries<T extends { id: string; seriesId?: string; date: string; time?: string }>(events: T[]): T[] {
+  const todayStr = toDateStr(new Date());
   const bySeriesId = new Map<string, T[]>();
   const result: T[] = [];
   for (const ev of events) {
@@ -104,8 +105,17 @@ export function collapseSeries<T extends { id: string; seriesId?: string; date: 
   }
   for (const group of bySeriesId.values()) {
     const sorted = [...group].sort((a, b) => a.date === b.date ? (a.time ?? '').localeCompare(b.time ?? '') : a.date.localeCompare(b.date));
-    const upcoming = sorted.find(ev => !isEventPast(ev.date, ev.time));
-    result.push(upcoming ?? sorted[sorted.length - 1]);
+    // Today's own occurrence always gets shown even once its time has
+    // passed — collapsing straight to "next upcoming" silently hid a
+    // same-day occurrence the moment its time ticked past, so a row a
+    // parent tapped believing it was "today" (Agenda's own TODAY header
+    // sat right above it) was actually tomorrow's occurrence underneath —
+    // an edit meant for today landed on the wrong date instead.
+    const todaysOwn = sorted.find(ev => ev.date === todayStr);
+    const upcoming = sorted.find(ev => !isEventPast(ev.date, ev.time) && ev.date !== todayStr);
+    if (todaysOwn) result.push(todaysOwn);
+    if (upcoming) result.push(upcoming);
+    if (!todaysOwn && !upcoming) result.push(sorted[sorted.length - 1]);
   }
   return result.sort((a, b) => a.date === b.date ? (a.time ?? '').localeCompare(b.time ?? '') : a.date.localeCompare(b.date));
 }

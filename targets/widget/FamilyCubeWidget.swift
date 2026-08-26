@@ -211,15 +211,24 @@ private struct ParentWidgetView: View {
     }
 
     // Pending approvals is the ONE number a parent actually glances at
-    // this widget for — always leads, large. A bare "0" with a truncated
-    // caption underneath reads as broken, not as "all caught up" — so 0
-    // gets its own reassuring state instead of just being the smallest
-    // possible version of the number.
-    @ViewBuilder private var pendingBlock: some View {
+    // this widget for — always leads. A bare "0" with a truncated caption
+    // underneath reads as broken, not as "all caught up" — so 0 gets its
+    // own reassuring state. On small, the checkmark state is compact
+    // (icon + label on one row) instead of a big stacked block, since
+    // "all caught up" has nothing further to say and the freed vertical
+    // space is better spent on other info below (see secondaryRow).
+    @ViewBuilder private func pendingBlock(compact: Bool) -> some View {
         if data.pendingApprovals == 0 {
-            VStack(alignment: .leading, spacing: 2) {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 26)).foregroundColor(.white)
-                Text("All caught up").font(.caption).bold().foregroundColor(.white.opacity(0.9))
+            if compact {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 16)).foregroundColor(.white)
+                    Text("All caught up").font(.system(size: 13, weight: .bold)).foregroundColor(.white.opacity(0.95))
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 26)).foregroundColor(.white)
+                    Text("All caught up").font(.caption).bold().foregroundColor(.white.opacity(0.9))
+                }
             }
         } else {
             VStack(alignment: .leading, spacing: 0) {
@@ -227,6 +236,25 @@ private struct ParentWidgetView: View {
                 Text(data.pendingApprovals == 1 ? "needs your review" : "need your review")
                     .font(.caption).foregroundColor(.white.opacity(0.8))
             }
+        }
+    }
+
+    // Small widget's second line when all caught up — unread messages and
+    // today's event count are both already flowing into this payload
+    // (unreadMessages was previously only a tiny header badge, eventsToday
+    // was thrown away entirely in the 0-pending branch) — more useful than
+    // a static "up next" line that has nothing to show most of the time.
+    @ViewBuilder private func miniStat(_ icon: String, _ text: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon).font(.system(size: 10)).foregroundColor(.white.opacity(0.85))
+            Text(text).font(.system(size: 11, weight: .semibold)).foregroundColor(.white.opacity(0.9)).lineLimit(1)
+        }
+    }
+
+    @ViewBuilder private var secondaryRow: some View {
+        HStack(spacing: 10) {
+            if data.unreadMessages > 0 { miniStat("bubble.left.fill", "\(data.unreadMessages) unread") }
+            if data.eventsToday > 0 { miniStat("calendar", "\(data.eventsToday) today") }
         }
     }
 
@@ -243,7 +271,7 @@ private struct ParentWidgetView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     header(showUnreadBadge: true)
                     Spacer(minLength: 4)
-                    pendingBlock
+                    pendingBlock(compact: false)
                     Spacer(minLength: 4)
                     // Member count is static and rarely worth a glance —
                     // "Today" is the one mini-stat that actually changes
@@ -260,17 +288,22 @@ private struct ParentWidgetView: View {
             .padding()
             .containerBackground(brandTeal, for: .widget)
         } else {
-            // Small widget's ~110pt of height fits the hero pending-approval
-            // block plus one slim up-next line below it — pending approvals
-            // still leads (that's the reason this widget exists), no unread
-            // badge (chat has its own badge already), and up-next drops its
-            // icon and shows just the event name + time to keep it slim.
-            VStack(alignment: .leading, spacing: 8) {
+            // Was: big centered checkmark block with two Spacers around it,
+            // eating the whole tile for one binary "all caught up" state and
+            // leaving real vertical room unused — every family-relevant
+            // number this payload already carries (unread messages, today's
+            // event count, up-next) got compressed into a single optional
+            // line or dropped. Header stays top; the checkmark row is now
+            // compact (icon + label inline) so the freed space actually
+            // shows something instead of just being emptier padding.
+            VStack(alignment: .leading, spacing: 6) {
+                // No unread badge here — secondaryRow below already spells
+                // out the same number as "N unread," a badge next to it
+                // would just repeat it.
                 header(showUnreadBadge: false)
-                Spacer()
-                pendingBlock
+                pendingBlock(compact: true)
+                secondaryRow
                 if let title = data.nextEventTitle, !title.isEmpty {
-                    Spacer(minLength: 2)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(title).font(.system(size: 11, weight: .semibold)).foregroundColor(.white).lineLimit(1)
                         if let time = data.nextEventTime {
@@ -278,6 +311,7 @@ private struct ParentWidgetView: View {
                         }
                     }
                 }
+                Spacer(minLength: 0)
             }
             .padding()
             .containerBackground(brandTeal, for: .widget)

@@ -685,6 +685,14 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
         )}
 
         <View style={{ padding: 12 }}>
+          {/* This row (AI Perks/Add Perk) and everything below it is the
+              actual perks catalog — previously had no heading at all, so
+              the buttons floated with no context for what section they
+              belonged to. */}
+          <Text style={{ fontSize: TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
+            textTransform: 'uppercase', letterSpacing: LETTER_SPACING.sectionLabel, marginBottom: 10 }}>
+            Available Perks
+          </Text>
           {isParent && (
             <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
               <Pressable onPress={() => setShowAiPanel(v => !v)}

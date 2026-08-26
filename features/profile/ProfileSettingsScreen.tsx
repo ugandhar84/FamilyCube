@@ -28,6 +28,7 @@ import AppBottomSheet from '@/components/AppBottomSheet';
 import {
   isBiometricAvailable, isBiometricEnabled, setBiometricEnabled, getBiometricLabel,
 } from '@/lib/biometrics';
+import PinEntryModal from '@/components/PinEntryModal';
 import { CarouselMemberCard } from '@/features/vault/tabs/MemberCard';
 import { FamilyTreeView } from '@/features/vault/tabs/FamilyTreeView';
 import { MemberProfileSheet } from '@/features/vault/tabs/MemberProfileSheet';
@@ -1090,7 +1091,12 @@ export default function ProfileSettingsScreen() {
   const activeMemberId = useFamilyStore(s => s.activeMemberId);
   const updateMember = useFamilyStore(s => s.updateMember);
   const removeMember = useFamilyStore(s => s.removeMember);
+  const setActiveMember = useFamilyStore(s => s.setActiveMember);
   const { signOut } = useAuthStore();
+  // Pending PIN check when locking back to the real auth-owner's profile
+  // from a PIN-switched sub-profile (Flow B below) — null when no lock
+  // attempt is in progress.
+  const [lockPinTarget, setLockPinTarget] = useState<FamilyMember | null>(null);
   const householdSettings = useChoreStore(s => s.householdSettings);
   const updateHouseholdSettings = useChoreStore(s => s.updateHouseholdSettings);
   const [showCurrencySheet, setShowCurrencySheet] = useState(false);
@@ -1108,11 +1114,25 @@ export default function ProfileSettingsScreen() {
     [allMembers]
   );
 
-  const activeMember = allMembers.find(m => m.id === activeMemberId) ?? allMembers[0];
+  // No ?? allMembers[0] fallback — that silently substituted a DIFFERENT
+  // member (almost always the real parent/auth-owner) whenever
+  // activeMemberId failed to resolve, which could flip isAuthLinked to
+  // true while viewing what should be a PIN-only sub-profile's screen —
+  // a real security-relevant bug (showed "Sign Out" for the wrong
+  // identity instead of the Lock/switch-back flow below).
+  const activeMember = allMembers.find(m => m.id === activeMemberId);
   const role: MemberRole = activeMember?.role ?? 'parent';
   const isParent = role === 'parent';
   const isAuthLinked = !!activeMember?.authUserId;
   const familyId = activeMember?.familyId ?? '';
+  // The real signed-in Supabase user, regardless of which member is
+  // currently active — used to distinguish "I'm looking at my OWN
+  // profile" (Sign Out is real) from "I PIN-switched into someone else's
+  // profile" (only a Lock/switch-back is safe here, never a real
+  // Supabase sign-out).
+  const authUserId = useAuthStore(s => s.session?.user?.id);
+  const authOwnerMember = allMembers.find(m => m.authUserId === authUserId);
+  const viewingOwnProfile = !!activeMember && activeMember.id === authOwnerMember?.id;
   // Cheap RLS-scoped self-lookup (app_admins_select_self) — a kid/senior
   // profile's auth session (if any) simply won't have a matching row, so
   // this always resolves to false for them; gated below on isParent too.
@@ -1545,7 +1565,7 @@ export default function ProfileSettingsScreen() {
             independent session of their own to sign out of; they switch
             profiles instead. No confirmation needed, unlike the delete
             flows — signing out is normal, everyday UX. */}
-        {isAuthLinked && (
+        {isAuthLinked && viewingOwnProfile && (
           <View style={{ marginBottom: 24 }}>
             <Row
               icon="log-out-outline"
@@ -1566,6 +1586,37 @@ export default function ProfileSettingsScreen() {
             />
           </View>
         )}
+
+        {/* PIN-switched into a sub-profile (GP/kid/teen/etc, no authUserId
+            of their own) — never show a real Sign Out here, since tapping
+            it would end the REAL account's session while looking at
+            someone else's profile. Only a Lock/"Switch back" is safe:
+            purely a local activeMemberId swap gated by the real owner's
+            own PIN, no Supabase call at all. */}
+        {!viewingOwnProfile && authOwnerMember && (
+          <View style={{ marginBottom: 24 }}>
+            <Row
+              icon="lock-closed-outline"
+              label="Lock & Switch Back"
+              subtitle={`Return to ${authOwnerMember.name.split(' ')[0]}'s profile`}
+              onPress={() => {
+                if (authOwnerMember.pinEnabled && authOwnerMember.pin) {
+                  setLockPinTarget(authOwnerMember);
+                } else {
+                  setActiveMember(authOwnerMember.id);
+                }
+              }}
+              colors={colors} isDark={isDark}
+            />
+          </View>
+        )}
+
+        <PinEntryModal
+          visible={lockPinTarget !== null}
+          member={lockPinTarget}
+          onSuccess={(member) => { setActiveMember(member.id); setLockPinTarget(null); }}
+          onCancel={() => setLockPinTarget(null)}
+        />
 
         {/* Danger zone */}
         {canShowDangerZone && (

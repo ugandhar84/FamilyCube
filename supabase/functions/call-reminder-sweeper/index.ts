@@ -183,6 +183,7 @@ serve(async (req) => {
       }
     }
 
+    const dueEvents: { id: string; title: string; dueAt: Date; memberIds: string[] }[] = [];
     for (const e of (events ?? [])) {
       if (!e.start_time) continue;
       const t24 = to24Hour(e.start_time);
@@ -191,7 +192,34 @@ serve(async (req) => {
       const ringAt = new Date(dueAt.getTime() - (e.alert_call_lead_minutes ?? 10) * 60_000);
       if (ringAt <= now && now.getTime() - ringAt.getTime() < 90_000) {
         const ids = e.member_id ? [e.member_id] : (e.member_ids ?? []);
-        targets.push({ itemType: 'event', itemId: e.id, title: e.title, dueAt, memberIds: ids });
+        dueEvents.push({ id: e.id, title: e.title, dueAt, memberIds: ids });
+      }
+    }
+
+    // A "Pick up Leo from Soccer" event's member_id is Leo (the event is
+    // ABOUT him) — but Leo is a kid with no VoIP token; the person who
+    // actually needs to be reminded to go get him is whoever confirmed as
+    // driver/helper on event_participants (reassign_event RPC's target).
+    // Ring both: the confirmed driver/helper (the one who has to act) AND
+    // the event's own member_id/member_ids (a teen with their own ride
+    // reminder still wants their own phone to ring too). Passenger/
+    // requester/approver roles are deliberately excluded — they aren't the
+    // ones who need to physically show up.
+    if (dueEvents.length > 0) {
+      const { data: participantRows } = await supabase
+        .from('event_participants')
+        .select('event_id, member_id, role')
+        .in('event_id', dueEvents.map(e => e.id))
+        .in('role', ['driver', 'helper'])
+        .eq('status', 'confirmed')
+        .not('member_id', 'is', null);
+      const participantsByEvent: Record<string, string[]> = {};
+      for (const row of (participantRows ?? [])) {
+        (participantsByEvent[row.event_id] ??= []).push(row.member_id as string);
+      }
+      for (const e of dueEvents) {
+        const ids = [...new Set([...(participantsByEvent[e.id] ?? []), ...e.memberIds])];
+        targets.push({ itemType: 'event', itemId: e.id, title: e.title, dueAt: e.dueAt, memberIds: ids });
       }
     }
 

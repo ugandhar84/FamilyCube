@@ -40,19 +40,21 @@ function NeedsYouRow({ Icon, accent, colors, isDark, title, detail, onPress, onD
   const Wrapper = onPress ? Pressable : View;
   const solid = tone === 'solid';
   return (
-    <View style={{ borderRadius: 16, backgroundColor: solid ? accent : (isDark ? colors.card : accent + '14'),
-      borderWidth: 1.5, borderColor: solid ? accent : accent + '50', padding: 14, gap: 10 }}>
-      <Wrapper onPress={onPress} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-        <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: solid ? 'rgba(255,255,255,0.2)' : accent + '20', alignItems: 'center', justifyContent: 'center' }}>
-          <Icon size={17} color={solid ? '#fff' : accent} />
-        </View>
+    // Tighter padding/gaps and a smaller inline icon (no separate chip
+    // circle) than before — these are temporary "heads up" notifications,
+    // not primary content, so the card shouldn't take as much vertical
+    // space as an actual action tile.
+    <View style={{ borderRadius: 14, backgroundColor: solid ? accent : (isDark ? colors.card : accent + '14'),
+      borderWidth: 1.5, borderColor: solid ? accent : accent + '50', padding: 10, gap: 6 }}>
+      <Wrapper onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+        <Icon size={16} color={solid ? '#fff' : accent} />
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: KID.body, fontWeight: '900', color: solid ? '#fff' : accent }}>{title}</Text>
-          {!!detail && <Text style={{ fontSize: KID.sub, color: solid ? 'rgba(255,255,255,0.85)' : colors.textSecondary, marginTop: 2 }} numberOfLines={2}>{detail}</Text>}
+          <Text style={{ fontSize: KID.sub, fontWeight: '900', color: solid ? '#fff' : accent }} numberOfLines={2}>{title}</Text>
+          {!!detail && <Text style={{ fontSize: KID.tiny, color: solid ? 'rgba(255,255,255,0.85)' : colors.textSecondary, marginTop: 1 }} numberOfLines={2}>{detail}</Text>}
         </View>
         {onDismiss && (
           <Pressable onPress={onDismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <X size={16} color={solid ? '#fff' : colors.textTertiary} />
+            <X size={15} color={solid ? '#fff' : colors.textTertiary} />
           </Pressable>
         )}
       </Wrapper>

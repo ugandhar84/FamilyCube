@@ -27,9 +27,16 @@ struct WidgetParentSummary: Codable {
 struct WidgetMemberSummary: Codable {
     var memberName: String
     var memberEmoji: String
-    var pendingQuests: Int
-    var coins: Int
-    var streak: Int
+    // Kid/teen only — a grandparent never earns coins or builds a streak
+    // (always 0 in the DB, no UI anywhere treats it as their own stat), so
+    // the JS side omits these for role 'senior' entirely rather than
+    // sending misleading zeros.
+    var pendingQuests: Int?
+    var coins: Int?
+    var streak: Int?
+    // Senior only — today's active, not-yet-taken medication count
+    // (family_medications table, same source Vault/Health reads/writes).
+    var medsPending: Int?
     var nextEventTitle: String?
     var nextEventTime: String?
     var upcomingEvents: [WidgetEvent]?
@@ -82,7 +89,7 @@ struct FamilyCubeProvider: TimelineProvider {
         FamilyCubeEntry(date: Date(), payload: WidgetPayload(
             enabled: true, kind: "member",
             parentSummary: nil,
-            memberSummary: WidgetMemberSummary(memberName: "Leo", memberEmoji: "🧒", pendingQuests: 3, coins: 120, streak: 7, nextEventTitle: nil, nextEventTime: nil),
+            memberSummary: WidgetMemberSummary(memberName: "Leo", memberEmoji: "🧒", pendingQuests: 3, coins: 120, streak: 7, medsPending: nil, nextEventTitle: nil, nextEventTime: nil),
             lastSyncedAt: nil
         ))
     }
@@ -351,24 +358,47 @@ private struct MemberWidgetView: View {
         }
     }
 
-    @ViewBuilder private var statsRow: some View {
-        HStack(spacing: 12) {
-            StatColumn(value: "\(data.pendingQuests)", label: data.pendingQuests == 1 ? "Quest" : "Quests")
-            StatColumn(value: "🪙 \(data.coins)", label: "Coins")
-            StatColumn(value: "🔥\(data.streak)d", label: "Streak")
+    // medsPending being non-nil is how the JS side signals "this is a
+    // senior" — a grandparent's coins/streak are omitted from the payload
+    // entirely rather than sent as misleading zeros (they never earn
+    // either), so checking for medsPending is more reliable than checking
+    // pendingQuests == nil (which could coincidentally also be unset).
+    private var isSenior: Bool { data.medsPending != nil }
+
+    @ViewBuilder private func statsRow(compact: Bool) -> some View {
+        if isSenior {
+            let pending = data.medsPending ?? 0
+            if compact {
+                HStack(spacing: 5) {
+                    Image(systemName: pending == 0 ? "checkmark" : "pills.fill")
+                        .font(.system(size: pending == 0 ? 12 : 13, weight: .bold)).foregroundColor(.white)
+                    Text(pending == 0 ? "Meds done" : "\(pending) med\(pending == 1 ? "" : "s") due")
+                        .font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                }
+            } else {
+                StatColumn(value: "\(pending)", label: pending == 1 ? "Med due" : "Meds due")
+            }
+        } else {
+            HStack(spacing: 12) {
+                StatColumn(value: "\(data.pendingQuests ?? 0)", label: (data.pendingQuests ?? 0) == 1 ? "Quest" : "Quests")
+                StatColumn(value: "🪙 \(data.coins ?? 0)", label: "Coins")
+                if !compact { StatColumn(value: "🔥\(data.streak ?? 0)d", label: "Streak") }
+            }
         }
     }
 
     var body: some View {
         if family == .systemMedium {
             // Same fill-the-space approach as the parent view: left is the
-            // kid's own glance (name + quests/coins/streak), right is a
-            // real agenda list instead of one squeezed-in "next event" line.
+            // kid/teen/senior's own glance, right is a real agenda list
+            // instead of one squeezed-in "next event" line.
             HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 0) {
                     header
-                    Spacer(minLength: 4)
-                    statsRow
+                    Spacer(minLength: 8)
+                    statsRow(compact: false)
+                    Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -380,13 +410,15 @@ private struct MemberWidgetView: View {
             .padding()
             .containerBackground(brandAmber, for: .widget)
         } else {
-            VStack(alignment: .leading, spacing: 6) {
+            // Was: spacing:6 + one plain Spacer() — same top-heavy dead-
+            // space pattern the parent view's small widget had before this
+            // session's fix. Real Spacer()s between sections now distribute
+            // content across the tile instead of clumping it at the top.
+            VStack(alignment: .leading, spacing: 0) {
                 header
-                Spacer()
-                HStack(spacing: 12) {
-                    StatColumn(value: "\(data.pendingQuests)", label: data.pendingQuests == 1 ? "Quest" : "Quests")
-                    StatColumn(value: "🪙 \(data.coins)", label: "Coins")
-                }
+                Spacer(minLength: 8)
+                statsRow(compact: true)
+                Spacer(minLength: 8)
                 if let title = data.nextEventTitle, !title.isEmpty {
                     // Small widget has no room for a full agenda list — a
                     // single compact "up next" line is the one extra thing
@@ -399,6 +431,7 @@ private struct MemberWidgetView: View {
                         }
                     }
                 }
+                Spacer(minLength: 0)
             }
             .padding()
             .containerBackground(brandAmber, for: .widget)

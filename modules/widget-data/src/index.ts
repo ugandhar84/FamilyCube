@@ -25,9 +25,18 @@ export interface WidgetParentSummary {
 export interface WidgetMemberSummary {
   memberName: string;
   memberEmoji: string;
-  pendingQuests: number;
-  coins: number;
-  streak: number;
+  // Kid/teen only — a grandparent never earns coins or builds a streak
+  // (always 0 in the DB, no UI anywhere treats it as their own stat), so
+  // these are omitted entirely for role 'senior' rather than shipped as
+  // misleading zeros.
+  pendingQuests?: number;
+  coins?: number;
+  streak?: number;
+  // Senior only — count of today's active, not-yet-taken medications
+  // (family_medications table, same source features/vault/tabs/HealthTab.tsx
+  // reads/writes — SeniorView.tsx's own Hub card used to be a disconnected
+  // local-only duplicate of this).
+  medsPending?: number;
   nextEventTitle?: string | null;  // mirrors upcomingEvents[0]
   nextEventTime?: string | null;   // pre-formatted, e.g. "Today · 4:30 PM"
   upcomingEvents?: WidgetEvent[];  // up to 3, for the medium widget's Calendar-style list

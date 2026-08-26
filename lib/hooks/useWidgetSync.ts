@@ -28,6 +28,7 @@ import { useEventStore } from '@/store/eventStore';
 import { useNotifStore } from '@/store/notifStore';
 import { syncWidget, clearWidget, type WidgetPayload } from 'widget-data';
 import { localToday, hoursUntilEvent, fmtTime } from '@/features/hub/hubUtils';
+import { supabase } from '@/lib/supabase';
 
 export function useWidgetSync() {
   if (Platform.OS !== 'ios') return;
@@ -102,10 +103,23 @@ function useWidgetSyncInner() {
           lastSyncedAt: now.toISOString(),
         };
       } else {
-        const pendingQuests = chores.filter(c =>
-          c.assignedToId === active.id && ['todo', 'in_progress'].includes(c.status)
-        ).length;
         const upcomingEvents = upcomingEventsFor(e => e.memberId === active.id || !!e.memberIds?.includes(active.id));
+        const isSenior = active.role === 'senior';
+
+        // A grandparent never earns coins or builds a streak (always 0 in
+        // the DB — no UI anywhere treats it as their own stat), so those
+        // fields are omitted rather than shipped as misleading zeros.
+        // Medications is the senior-relevant glance instead — same
+        // family_medications table features/vault/tabs/HealthTab.tsx
+        // reads/writes, not the disconnected local-only card SeniorView.tsx
+        // used to have.
+        let medsPending: number | undefined;
+        if (isSenior && active.familyId) {
+          const { data } = await supabase.from('family_medications')
+            .select('id, taken_date')
+            .eq('family_id', active.familyId).eq('member_id', active.id).eq('is_active', true);
+          medsPending = (data ?? []).filter(m => m.taken_date !== localToday()).length;
+        }
 
         payload = {
           enabled: true,
@@ -113,9 +127,13 @@ function useWidgetSyncInner() {
           memberSummary: {
             memberName: active.name,
             memberEmoji: active.emoji ?? '🙂',
-            pendingQuests,
-            coins: active.mainCoins ?? active.coins ?? 0,
-            streak: active.streak ?? 0,
+            ...(isSenior ? { medsPending } : {
+              pendingQuests: chores.filter(c =>
+                c.assignedToId === active.id && ['todo', 'in_progress'].includes(c.status)
+              ).length,
+              coins: active.mainCoins ?? active.coins ?? 0,
+              streak: active.streak ?? 0,
+            }),
             nextEventTitle: upcomingEvents[0]?.title ?? null,
             nextEventTime: upcomingEvents[0]?.time ?? null,
             upcomingEvents,

@@ -211,10 +211,44 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const [gpAmount, setGpAmount]   = useState<15 | 25 | 50>(25);
   const [gpNote, setGpNote]       = useState('');
   const [gpSent, setGpSent]       = useState(false);
-  const [medsTaken, setMedsTaken] = useState<Record<string, boolean>>({});
+  // Was: local useState + AsyncStorage only (@familycube_meds_*), seeded
+  // with 3 hardcoded placeholder pills on first use and never synced
+  // anywhere else — a completely disconnected duplicate of the REAL,
+  // already-built medication system (family_medications table, used by
+  // features/vault/tabs/HealthTab.tsx: dosage, pharmacy, refill dates,
+  // escalation, multi-device realtime sync). A grandparent's "taken" taps
+  // here never showed up in Vault/Health, and vice versa — two medication
+  // lists that could silently disagree about the same person's meds.
+  // Now reads/writes family_medications directly, matching HealthTab's own
+  // query/update shape exactly so both surfaces stay one source of truth.
   const [meds, setMeds] = useState<Medication[]>([]);
-  const MEDS_KEY = `@familycube_meds_${active.id}`;
-  const MEDS_TAKEN_KEY = `@familycube_meds_taken_${active.id}_${today}`;
+  const loadMeds = useCallback(async () => {
+    if (!familyId) return;
+    const { data } = await supabase.from('family_medications')
+      .select('id, name, frequency_times, taken_date, is_active')
+      .eq('family_id', familyId).eq('member_id', active.id).eq('is_active', true)
+      .order('created_at', { ascending: false });
+    if (data) setMeds(data.map((m: any) => ({
+      id: m.id, name: m.name, time: m.frequency_times?.[0] ?? 'Anytime', takenDate: m.taken_date,
+    })) as any);
+  }, [familyId, active.id]);
+  useEffect(() => { loadMeds(); }, [loadMeds]);
+  useEffect(() => {
+    if (!familyId) return;
+    const channel = supabase
+      .channel(`meds-${familyId}-${active.id}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'family_medications',
+        filter: `member_id=eq.${active.id}`,
+      }, () => { loadMeds(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [familyId, active.id, loadMeds]);
+  // medsTaken derived straight from each row's own taken_date instead of a
+  // separate local map — the DB is the single source of "taken today" now.
+  const medsTaken = Object.fromEntries(
+    meds.map(m => [m.id, (m as any).takenDate === today])
+  ) as Record<string, boolean>;
 
   // SeniorView can render without ParentView ever having mounted this session,
   // so it must hydrate the kid request store itself (GP Welcome requests etc.)
@@ -222,49 +256,34 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     if (!kidRequestsLoaded) loadKidRequests();
   }, [kidRequestsLoaded]);
 
-  useEffect(() => {
-    AsyncStorage.multiGet([MEDS_KEY, MEDS_TAKEN_KEY]).then(([[, medsJson], [, takenJson]]) => {
-      if (medsJson) setMeds(JSON.parse(medsJson));
-      else setMeds([
-        { id: 'med1', name: 'Blood pressure pill', time: '8:00 AM' },
-        { id: 'med2', name: 'Vitamin D',           time: '8:00 AM' },
-        { id: 'med3', name: 'Omega-3',             time: '12:00 PM' },
-      ]);
-      if (takenJson) setMedsTaken(JSON.parse(takenJson));
-    });
-  }, [active.id]);
-
   const toggleMed = useCallback(async (id: string) => {
-    logAction('Toggle Medication', 'AsyncStorage.setItem(medsTaken) [local only, no DB write]', { targetId: id, at: '177' });
-    const next = (prev: Record<string, boolean>) => ({ ...prev, [id]: !prev[id] });
-    setMedsTaken(prev => {
-      const updated = next(prev);
-      AsyncStorage.setItem(MEDS_TAKEN_KEY, JSON.stringify(updated));
-      return updated;
-    });
-  }, [MEDS_TAKEN_KEY]);
+    const med = meds.find(m => m.id === id) as any;
+    if (!med) return;
+    const alreadyTaken = med.takenDate === today;
+    logAction('Toggle Medication', 'family_medications.taken_date [shared with Vault/Health]', { targetId: id, at: '177' });
+    const { error } = await supabase.from('family_medications')
+      .update({ taken_date: alreadyTaken ? null : today, modified_by: active.id, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (!error) loadMeds();
+  }, [meds, today, active.id, loadMeds]);
 
-  const addMed = useCallback((name: string, time: string) => {
-    setMeds(prev => {
-      const updated = [...prev, { id: 'med' + Date.now(), name, time }];
-      AsyncStorage.setItem(MEDS_KEY, JSON.stringify(updated));
-      return updated;
+  const addMed = useCallback(async (name: string, time: string) => {
+    if (!familyId) return;
+    await supabase.from('family_medications').insert({
+      family_id: familyId, member_id: active.id, assigned_by: active.id,
+      name, frequency_times: [time], frequency: 'daily', category: 'other',
+      dosage: '', dosage_unit: '', is_ongoing: true, is_active: true,
+      escalation_enabled: false, escalation_after_min: 30, escalation_to: [],
     });
-  }, [MEDS_KEY]);
+    loadMeds();
+  }, [familyId, active.id, loadMeds]);
 
-  const removeMed = useCallback((id: string) => {
-    setMeds(prev => {
-      const updated = prev.filter(m => m.id !== id);
-      AsyncStorage.setItem(MEDS_KEY, JSON.stringify(updated));
-      return updated;
-    });
-    setMedsTaken(prev => {
-      if (!(id in prev)) return prev;
-      const { [id]: _removed, ...rest } = prev;
-      AsyncStorage.setItem(MEDS_TAKEN_KEY, JSON.stringify(rest));
-      return rest;
-    });
-  }, [MEDS_KEY, MEDS_TAKEN_KEY]);
+  const removeMed = useCallback(async (id: string) => {
+    await supabase.from('family_medications')
+      .update({ is_active: false, deleted_by: active.id, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    loadMeds();
+  }, [active.id, loadMeds]);
 
   const pendingGpApproval = chores.filter(c => c.status === 'pending_grandparent_approval' && c.sponsorUserId === active.id);
   const [cheerSticker, setCheerSticker] = useState('⭐');

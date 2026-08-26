@@ -129,26 +129,12 @@ function PerkCard({ reward, myCoins, isKid, isParent, canRedeemSelf, colors, isD
     <Pressable
       onLongPress={isParent ? () => onEdit(reward) : undefined}
       delayLongPress={350}
-      style={[s.perkCard, { backgroundColor: colors.card, borderColor: accent + (isDark ? '55' : '40'), shadowColor: accent, overflow: 'hidden' }]}>
-      <LinearGradient
-        colors={[accent + '22', accent + '00']}
-        start={{ x: 0, y: 0 }} end={{ x: 0.6, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
-        pointerEvents="none"
-      />
-      {Platform.OS === 'ios' ? (
-        <BlurView intensity={18} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFillObject} pointerEvents="none" />
-      ) : (
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.card + (isDark ? 'CC' : 'E6') }]} pointerEvents="none" />
-      )}
-      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1,
-        backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)' }} pointerEvents="none" />
+      style={[s.perkCard, { backgroundColor: isDark ? accent + '20' : accent + '1E', borderColor: accent + (isDark ? '55' : '40'), shadowColor: accent, overflow: 'hidden' }]}>
 
-      {/* Icon circle — matches VaultScreen's Tile treatment (icon-in-a-
-          tinted-circle) instead of a bare floating emoji, so Store's cards
-          read as the same "glossy tile" family as every Apps-grid tile. */}
+      {/* Icon circle — solid-tint chip matching the Hub quick-action tiles'
+          bold "badge" treatment, not a bare floating emoji on a wash. */}
       <View style={{ width: 44, height: 44, borderRadius: 14, marginBottom: 8,
-        backgroundColor: accent + '30', borderWidth: 1, borderColor: accent + '50',
+        backgroundColor: accent,
         alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ fontSize: 22 }}>{reward.emoji ?? '🎁'}</Text>
       </View>

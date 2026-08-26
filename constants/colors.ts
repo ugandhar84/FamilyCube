@@ -160,22 +160,32 @@ export const darkColors: typeof lightColors = {
   accentLight:  'rgba(172,155,199,0.20)',
   accentDark:   '#C8BADB',
 
-  background:   '#0E0C13',
-  surface:      '#17151D',
-  card:         '#1D1A24',
+  // "Deep navy-charcoal" — a faint cool undertone instead of a neutral
+  // near-black, the classic premium-dark-mode move (Linear/Things 3):
+  // reads as pure black at a glance but feels deliberate, and makes the
+  // warm accent colors pop harder by contrast than a neutral base does.
+  background:   '#12141C',
+  surface:      '#181B24',   // faint solid lift for section rows — was flush with background
+  card:         '#1B1E28',
   overlay:      'rgba(0,0,0,0.65)',
 
   border:       'rgba(219,146,112,0.18)',
   borderMed:    'rgba(219,146,112,0.32)',
   borderStrong: 'rgba(219,146,112,0.50)',
 
-  textPrimary:   '#FDFCF9',
+  // Dimmed a step off pure white — max-contrast white-on-near-black is
+  // the classic eye-strain combo; a slightly dimmer, warm-tinted white
+  // is easier to read for long sessions while staying plenty legible.
+  textPrimary:   '#EDE8E0',
   textSecondary: '#B8AC9C',
   textTertiary:  '#7A6E60',
   textInverse:   '#1A1714',
   textDisabled:  '#4A4038',
 
-  tabBar:       '#17151D',
+  // Distinctly darker than the page body — anchors the nav the way
+  // light-mode's Hub tiles anchor against their canvas, instead of
+  // blending into a page that's nearly the same shade.
+  tabBar:       '#090A10',
   tabBarBorder: 'rgba(219,146,112,0.14)',
   tabActive:    '#DB9270',
   tabInactive:  '#7A6E60',

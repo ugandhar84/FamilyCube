@@ -248,7 +248,9 @@ function PerkModal({ visible, editing, colors, onClose, onSave, onDelete }: {
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
           <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: '90%', backgroundColor: colors.card }}>
+            maxHeight: '90%', backgroundColor: colors.card,
+            borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
+            shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }}>
 
             {/* Drag handle */}
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />
@@ -761,7 +763,9 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
       {/* Grant Coins — relocated from the removed standalone Ledger tab. */}
       <Modal visible={!!grantTarget} transparent animationType="fade" onRequestClose={() => setGrantTarget(null)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}>
-          <View style={{ borderRadius: 18, padding: 20, backgroundColor: colors.card }}>
+          <View style={{ borderRadius: 18, padding: 20, backgroundColor: colors.card,
+            borderWidth: 1, borderColor: colors.border,
+            shadowColor: '#000', shadowOpacity: isDark ? 0 : 0.12, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 6 }}>
             <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 4 }}>
               Grant Coins
             </Text>
@@ -816,7 +820,9 @@ function JarPickerModal({ reward, mainCoins, gpCoins, colors, isDark, onClose, o
       <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }}
         activeOpacity={1} onPress={onClose}>
         <TouchableOpacity activeOpacity={1} onPress={() => {}}
-          style={{ backgroundColor: colors.card, borderRadius: 20, padding: 20, gap: 14 }}>
+          style={{ backgroundColor: colors.card, borderRadius: 20, padding: 20, gap: 14,
+            borderWidth: 1, borderColor: colors.border,
+            shadowColor: '#000', shadowOpacity: isDark ? 0 : 0.12, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 6 }}>
           <Text style={{ fontSize: 17, fontWeight: '900', color: colors.textPrimary }}>Pay with which jar?</Text>
           <Text style={{ fontSize: 13, color: colors.textSecondary }}>
             "{reward.title}" costs {reward.cost} 🪙

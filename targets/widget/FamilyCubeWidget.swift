@@ -151,11 +151,21 @@ private struct ParentWidgetView: View {
             }
             Spacer()
             // Pending approvals is the ONE number a parent actually
-            // glances at this widget for — always leads, large.
-            VStack(alignment: .leading, spacing: 0) {
-                Text("\(data.pendingApprovals)").font(.system(size: 34, weight: .bold)).foregroundColor(.white)
-                Text(data.pendingApprovals == 1 ? "needs your review" : "need your review")
-                    .font(.caption).foregroundColor(.white.opacity(0.8))
+            // glances at this widget for — always leads, large. A bare "0"
+            // with a truncated caption underneath reads as broken, not as
+            // "all caught up" — so 0 gets its own reassuring state instead
+            // of just being the smallest possible version of the number.
+            if data.pendingApprovals == 0 {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("✓").font(.system(size: 28, weight: .bold)).foregroundColor(.white)
+                    Text("All caught up").font(.caption).bold().foregroundColor(.white.opacity(0.9))
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("\(data.pendingApprovals)").font(.system(size: 34, weight: .bold)).foregroundColor(.white)
+                    Text(data.pendingApprovals == 1 ? "needs your review" : "need your review")
+                        .font(.caption).foregroundColor(.white.opacity(0.8))
+                }
             }
             if family == .systemMedium {
                 Spacer()
@@ -171,6 +181,17 @@ private struct ParentWidgetView: View {
                         if let time = data.nextEventTime {
                             Text("· \(time)").font(.caption2).foregroundColor(.white.opacity(0.75))
                         }
+                    }
+                }
+            } else if let title = data.nextEventTitle, !title.isEmpty {
+                // Small widget has no room for the medium size's full stats
+                // row + divider — a single compact "up next" line is the
+                // one extra thing worth showing here.
+                HStack(spacing: 3) {
+                    Text("📅").font(.system(size: 9))
+                    Text(title).font(.system(size: 10)).bold().foregroundColor(.white).lineLimit(1)
+                    if let time = data.nextEventTime {
+                        Text("· \(time)").font(.system(size: 9)).foregroundColor(.white.opacity(0.75)).lineLimit(1)
                     }
                 }
             }
@@ -208,6 +229,17 @@ private struct MemberWidgetView: View {
                     Text(title).font(.caption).bold().foregroundColor(.white).lineLimit(1)
                     if let time = data.nextEventTime {
                         Text("· \(time)").font(.caption2).foregroundColor(.white.opacity(0.75))
+                    }
+                }
+            } else if let title = data.nextEventTitle, !title.isEmpty {
+                // Small widget has no room for the medium size's streak
+                // column + divider — a single compact "up next" line is
+                // the one extra thing worth showing here.
+                HStack(spacing: 3) {
+                    Text("📅").font(.system(size: 9))
+                    Text(title).font(.system(size: 10)).bold().foregroundColor(.white).lineLimit(1)
+                    if let time = data.nextEventTime {
+                        Text("· \(time)").font(.system(size: 9)).foregroundColor(.white.opacity(0.75)).lineLimit(1)
                     }
                 }
             }

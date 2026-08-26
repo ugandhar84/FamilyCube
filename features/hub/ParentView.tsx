@@ -269,7 +269,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     if (e.pickupConfirmedAt) return false;
     if (activeTripDriverNames.has(a.name)) return false; // a trip IS running, just use the normal overdue path
     const h = hoursUntilEvent(e.date, e.time);
-    return h < 0 && h > -2; // 2hr outer bound so a days-old stale row doesn't linger forever
+    return h < 0 && h > -1; // 1hr outer bound — auto-clears itself instead of lingering all day
   });
 
   const showBanner     = conflictEvents.length > 0 || neverDispatchedOverdue.length > 0;

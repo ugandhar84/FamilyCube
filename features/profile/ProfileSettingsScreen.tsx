@@ -79,13 +79,18 @@ function SectionHeader({ label, colors }: { label: string; colors: any }) {
 }
 
 function Row({
-  icon, label, subtitle, onPress, right, danger, colors, isDark,
+  icon, label, subtitle, onPress, right, danger, accent, colors, isDark,
 }: {
   icon: keyof typeof Ionicons.glyphMap; label: string; subtitle?: string;
   onPress?: () => void; right?: React.ReactNode; danger?: boolean;
+  // Optional per-row brand tint (Hub tile treatment) — falls back to
+  // colors.primary so every row still differentiates from the card/
+  // background instead of the old flat neutral-grey border every row
+  // shared regardless of what it was about.
+  accent?: string;
   colors: any; isDark: boolean;
 }) {
-  const tint = danger ? colors.danger : colors.textPrimary;
+  const tint = danger ? colors.danger : (accent ?? colors.primary);
   const Wrapper = onPress ? TouchableOpacity : View;
   return (
     <Wrapper
@@ -94,19 +99,19 @@ function Row({
       style={{
         flexDirection: 'row', alignItems: 'center', gap: 12,
         paddingVertical: 13, paddingHorizontal: 14,
-        borderRadius: RADIUS.md, backgroundColor: colors.card,
-        borderWidth: 1, borderColor: danger ? colors.danger + '30' : colors.border,
+        borderRadius: RADIUS.md, backgroundColor: isDark ? tint + '16' : tint + '14',
+        borderWidth: 1, borderColor: tint + (isDark ? '40' : '30'),
         marginBottom: 8,
       }}
     >
       <View style={{
         width: 32, height: 32, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center',
-        backgroundColor: danger ? colors.danger + '18' : colors.primaryLight,
+        backgroundColor: tint + 'D9',
       }}>
-        <Ionicons name={icon} size={17} color={tint} />
+        <Ionicons name={icon} size={17} color="#fff" />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: tint }}>{label}</Text>
+        <Text style={{ fontSize: TYPO.body, fontWeight: '700', color: danger ? colors.danger : colors.textPrimary }}>{label}</Text>
         {subtitle ? (
           <Text style={{ fontSize: TYPO.caption, color: colors.textTertiary, marginTop: 1 }}>{subtitle}</Text>
         ) : null}

@@ -51,6 +51,16 @@ export function useUpcomingOpenEvents(familyId: string | undefined) {
 
   useEffect(() => {
     if (!familyId) return;
+    // Same hot-reload defensive sweep as familyStore.ts's/choreStore.ts's
+    // ensureRealtime — a dev-mode Fast Refresh (or this hook mounting
+    // twice in quick succession) resets this effect's own closure but the
+    // Supabase client socket can still hold a channel under this exact
+    // topic name, which then throws "cannot add postgres_changes callbacks
+    // ... after subscribe()" the next time .channel(...).on(...) runs
+    // against the same topic (live-reported crash, this exact hook).
+    const staleTopic = `realtime:hub-open-events:${familyId}`;
+    supabase.getChannels().filter(c => c.topic === staleTopic).forEach(c => supabase.removeChannel(c));
+
     const channel = supabase
       .channel(`hub-open-events:${familyId}`)
       .on(

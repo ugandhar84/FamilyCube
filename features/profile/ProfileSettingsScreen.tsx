@@ -1093,10 +1093,6 @@ export default function ProfileSettingsScreen() {
   const removeMember = useFamilyStore(s => s.removeMember);
   const setActiveMember = useFamilyStore(s => s.setActiveMember);
   const { signOut } = useAuthStore();
-  // Pending PIN check when locking back to the real auth-owner's profile
-  // from a PIN-switched sub-profile (Flow B below) — null when no lock
-  // attempt is in progress.
-  const [lockPinTarget, setLockPinTarget] = useState<FamilyMember | null>(null);
   const householdSettings = useChoreStore(s => s.householdSettings);
   const updateHouseholdSettings = useChoreStore(s => s.updateHouseholdSettings);
   const [showCurrencySheet, setShowCurrencySheet] = useState(false);
@@ -1600,23 +1596,20 @@ export default function ProfileSettingsScreen() {
               label="Lock & Switch Back"
               subtitle={`Return to ${authOwnerMember.name.split(' ')[0]}'s profile`}
               onPress={() => {
-                if (authOwnerMember.pinEnabled && authOwnerMember.pin) {
-                  setLockPinTarget(authOwnerMember);
-                } else {
-                  setActiveMember(authOwnerMember.id);
-                }
+                // Always lands on the shared-device profile picker instead
+                // of going straight back into the owner's own Hub — any
+                // family member can tap their own avatar next, kiosk-style.
+                // Deliberately does NOT touch activeMemberId here: the
+                // picker screen owns the actual member swap (same
+                // tap-avatar-then-PIN flow PersonaSwitcherSheet already
+                // uses), so there's never a moment where activeMemberId is
+                // null/invalid for the rest of the app's code to trip over.
+                router.replace('/(auth)/profile-picker' as any);
               }}
               colors={colors} isDark={isDark}
             />
           </View>
         )}
-
-        <PinEntryModal
-          visible={lockPinTarget !== null}
-          member={lockPinTarget}
-          onSuccess={(member) => { setActiveMember(member.id); setLockPinTarget(null); }}
-          onCancel={() => setLockPinTarget(null)}
-        />
 
         {/* Danger zone */}
         {canShowDangerZone && (

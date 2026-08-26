@@ -9,6 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
+import { useAuthStore } from '@/store/authStore';
 import {
   IlloWelcome, IlloHealth, IlloReminders, IlloAIHealth,
   IlloSocial, IlloAI, IlloGetStarted, IlloPlaydates,
@@ -117,6 +118,17 @@ export default function OnboardingScreen() {
   const [index, setIndex] = useState(0);
   const illoScrollRef  = useRef<ScrollView>(null);
   const cardScrollRef  = useRef<ScrollView>(null);
+  // Terms are now accepted via the checkbox on the signup screen itself —
+  // the dedicated full-screen Terms wall this used to route to
+  // unconditionally is a fallback now, not the default path. Most users
+  // reaching this tour already have terms_accepted=true and should go
+  // straight to family setup; /onboarding/terms stays reachable for any
+  // path that didn't go through the checkbox (e.g. an existing account
+  // from before this change, or an OAuth signup not yet wired to it).
+  const afterTour = () => {
+    const accepted = useAuthStore.getState().profile?.terms_accepted;
+    router.replace(accepted ? '/onboarding/family-choice' : '/onboarding/terms');
+  };
 
   const goTo = (i: number) => {
     setIndex(i);
@@ -133,7 +145,7 @@ export default function OnboardingScreen() {
       }
       goTo(index + 1);
     } else {
-      router.replace('/onboarding/terms');
+      afterTour();
     }
   };
 
@@ -194,7 +206,7 @@ export default function OnboardingScreen() {
           </TouchableOpacity>
           <View style={{ flex: 1 }} />
           {index < SLIDES.length - 1 && (
-            <TouchableOpacity onPress={() => router.replace('/onboarding/terms')} style={s.floatBtn}>
+            <TouchableOpacity onPress={afterTour} style={s.floatBtn}>
               <Text style={s.skipTxt}>Skip</Text>
             </TouchableOpacity>
           )}

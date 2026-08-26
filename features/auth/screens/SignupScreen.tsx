@@ -15,6 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import GoogleIcon from '@/components/GoogleIcon';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useTheme } from '@/lib/ThemeContext';
+import { useAuthStore } from '@/store/authStore';
+import { markPendingTermsAcceptance } from '@/lib/biometrics';
 import { AnimatedCubeMark } from '@/components/FamilyCubeLogo';
 import { RADIUS, SPACING , TYPO } from '@/constants/theme';
 
@@ -37,12 +39,29 @@ export default function SignupScreen() {
   const [loading, setLoading] = useState(false);
   const isIOS = Platform.OS === 'ios';
   const [appleAvailable, setAppleAvailable] = useState(true); // Default true to show all buttons immediately
+  // Checkbox on this screen, not a dedicated full-screen Terms wall — the
+  // wall was a real drop-off point (a long legal document was the very
+  // first thing a new user hit, before they'd even created an account).
+  // acceptTermsOnly() (authStore.ts) persists the real acceptance once a
+  // session exists (right after signUp succeeds) — the checkbox itself is
+  // just gating whether signup can proceed at all.
+  const [termsAgreed, setTermsAgreed] = useState(false);
 
   useEffect(() => {
     AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => {});
   }, []);
+
+  const recordTermsAcceptance = async () => {
+    try { await useAuthStore.getState().acceptTermsOnly(); }
+    catch (e: any) { console.warn('[SignupScreen] acceptTermsOnly failed', e?.message ?? e); }
+  };
+
   const handleSignup = async () => {
     if (loading) return;
+    if (!termsAgreed) {
+      showAlert('Terms required', 'Please agree to the Terms & Privacy Policy to continue.');
+      return;
+    }
     const trimName  = fullName.trim();
     const trimEmail = email.trim().toLowerCase();
     if (!trimName || !trimEmail || !password) {
@@ -108,6 +127,10 @@ export default function SignupScreen() {
       return;
     }
     if (data?.user && !data.session) {
+      // No session yet — acceptTermsOnly() needs one. Mark it pending so
+      // _layout.tsx's post-verification profile fetch can record it once a
+      // real session exists (after the user clicks the emailed link).
+      await markPendingTermsAcceptance();
       showAlert(
         'Verify your email',
         'We sent a confirmation link to your email. Click it to activate your account.',
@@ -115,11 +138,17 @@ export default function SignupScreen() {
       );
       return;
     }
-    // Auto-confirmed: don't navigate here — _layout.tsx onAuthStateChange will
-    // check terms_accepted and route to /onboarding, then through the full flow.
+    // Auto-confirmed — a real session exists right now, record acceptance
+    // directly. Don't navigate here — _layout.tsx onAuthStateChange will
+    // route to /onboarding, then through the full flow.
+    await recordTermsAcceptance();
   };
 
   const handleAppleSignup = async () => {
+    if (!termsAgreed) {
+      showAlert('Terms required', 'Please agree to the Terms & Privacy Policy to continue.');
+      return;
+    }
     setLoading(true);
     try {
       if (Platform.OS === 'ios') {
@@ -139,6 +168,7 @@ export default function SignupScreen() {
           token: credential.identityToken,
         });
         if (error) showAlert('Sign-up failed', friendlyAuthError(error.message));
+        else await recordTermsAcceptance();
       } else {
         const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
         const redirectUri = isExpoGo ? 'exp://127.0.0.1:8081/--/auth/callback' : 'familycube://auth/callback';
@@ -157,9 +187,11 @@ export default function SignupScreen() {
           if (accessToken) {
             const { error: se } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
             if (se) showAlert('Sign-up failed', friendlyAuthError(se.message));
+            else await recordTermsAcceptance();
           } else if (code) {
             const { error: ce } = await supabase.auth.exchangeCodeForSession(result.url);
             if (ce) showAlert('Sign-up failed', friendlyAuthError(ce.message));
+            else await recordTermsAcceptance();
           }
         }
       }
@@ -171,6 +203,10 @@ export default function SignupScreen() {
 
   const handleGoogleSignup = async () => {
     if (loading) return;
+    if (!termsAgreed) {
+      showAlert('Terms required', 'Please agree to the Terms & Privacy Policy to continue.');
+      return;
+    }
     setLoading(true);
     const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
     const redirectUri = (Platform.OS === 'android' && isExpoGo)
@@ -208,6 +244,7 @@ export default function SignupScreen() {
                 showAlert('Sign-up failed', friendlyAuthError(sessionError.message));
                 return;
               }
+              await recordTermsAcceptance();
               setLoading(false);
               // Don't navigate here — let onAuthStateChange in _layout.tsx route based on profile state
             } else {
@@ -320,8 +357,39 @@ export default function SignupScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Checkbox here instead of a dedicated full-screen Terms wall
+                — the wall was a real onboarding drop-off point (a long
+                legal document as the very first thing a new user saw,
+                before they'd even created an account). "Terms & Privacy"
+                opens a read-only viewer (app/terms.tsx) that pops back
+                here on close. */}
             <TouchableOpacity
-              style={[s.btn, loading && { opacity: 0.7 }]}
+              style={s.checkRow}
+              onPress={() => setTermsAgreed(!termsAgreed)}
+              activeOpacity={0.7}
+            >
+              <View style={[
+                s.checkbox,
+                {
+                  borderColor: termsAgreed ? colors.primary : colors.inputBorder,
+                  backgroundColor: termsAgreed ? colors.primary : 'transparent',
+                },
+              ]}>
+                {termsAgreed && <Ionicons name="checkmark" size={13} color="#fff" />}
+              </View>
+              <Text style={s.checkLabel}>
+                I agree to the{' '}
+                <Text
+                  style={{ color: colors.primaryText ?? colors.primary, fontWeight: '600' }}
+                  onPress={() => router.push('/terms' as any)}
+                >
+                  Terms & Privacy Policy
+                </Text>
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[s.btn, (loading || !termsAgreed) && { opacity: 0.5 }]}
               onPress={handleSignup}
               disabled={loading}
             >
@@ -404,6 +472,9 @@ const makeStyles = (colors: ReturnType<typeof import('@/lib/ThemeContext').useTh
       backgroundColor: colors.inputBg,
       alignItems: 'center', justifyContent: 'center',
     },
+    checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: SPACING.sm, paddingVertical: 4 },
+    checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+    checkLabel: { flex: 1, fontSize: TYPO.caption, color: colors.textSecondary, lineHeight: 18 },
     btn: {
       height: 52,
       backgroundColor: colors.primary,

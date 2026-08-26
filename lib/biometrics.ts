@@ -48,6 +48,24 @@ export async function consumePendingOwnerReset(): Promise<boolean> {
   return pending;
 }
 
+// Set when a user checks "I agree" on SignupScreen.tsx but signUp() lands
+// on the email-verification path (no session yet — Supabase requires
+// clicking the emailed link first). authStore.acceptTermsOnly() needs a
+// real session, which doesn't exist at that moment, so the checkbox's
+// "yes" can't be written to the profile right there. Consumed once
+// _layout.tsx's post-verification session/profile fetch actually runs.
+const PENDING_TERMS_ACCEPTANCE_KEY = '@familycube_pending_terms_acceptance';
+
+export async function markPendingTermsAcceptance(): Promise<void> {
+  await AsyncStorage.setItem(PENDING_TERMS_ACCEPTANCE_KEY, '1');
+}
+
+export async function consumePendingTermsAcceptance(): Promise<boolean> {
+  const pending = (await AsyncStorage.getItem(PENDING_TERMS_ACCEPTANCE_KEY)) === '1';
+  if (pending) await AsyncStorage.removeItem(PENDING_TERMS_ACCEPTANCE_KEY);
+  return pending;
+}
+
 // ── Hardware & enrollment check ──────────────────────────────────
 
 export async function isBiometricAvailable(): Promise<boolean> {

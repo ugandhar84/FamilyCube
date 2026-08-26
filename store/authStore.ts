@@ -53,6 +53,7 @@ interface AuthState {
   fetchProfile: (userId?: string) => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   acceptTerms: () => Promise<void>;
+  acceptTermsOnly: () => Promise<void>;
   acceptAiConsent: (accepted: boolean) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   // forceGlobal: skip the biometric-preserve branch entirely and always do
@@ -153,6 +154,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { data, error } = await supabase
       .from('profiles')
       .update({ terms_accepted: true, terms_accepted_at: now, terms_version: TERMS_VERSION, onboarding_completed: true })
+      .eq('id', uid)
+      .select(PROFILE_COLS)
+      .single();
+    if (error) throw new Error(error.message);
+    if (data) set({ profile: data as UserProfile });
+  },
+
+  // Records just the Terms checkbox — no onboarding_completed touch,
+  // unlike acceptTerms() above (kept as-is; other flows depend on it
+  // setting both together). Used right after signup succeeds and a real
+  // session exists, but before the user has created/joined a family —
+  // completeOnboarding() below is still the real end-of-flow marker.
+  acceptTermsOnly: async () => {
+    const uid = get().user?.id;
+    if (!uid) throw new Error('Not signed in');
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ terms_accepted: true, terms_accepted_at: now, terms_version: TERMS_VERSION })
       .eq('id', uid)
       .select(PROFILE_COLS)
       .single();

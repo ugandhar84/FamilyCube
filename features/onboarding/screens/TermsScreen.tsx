@@ -18,226 +18,187 @@ import { TYPO } from '@/constants/theme';
 // re-read the terms.
 export const TERMS_CONTENT = `FAMILY CUBE — TERMS OF SERVICE, PRIVACY POLICY & AI DISCLOSURE
 
-Last updated: August 2026 | Version 1.0
+Last updated: August 2026 | Version 2.0
 
-THESE TERMS GOVERN YOUR ENTIRE LEGAL RELATIONSHIP WITH PEOPLEONTECH LLC. THEY INCLUDE MANDATORY ARBITRATION (§15), CLASS ACTION WAIVER (§15.4), AND FULL RELEASES OF LIABILITY (§§4–6, 12). READ EVERY SECTION BEFORE USING THIS APP.
+THESE TERMS GOVERN YOUR ENTIRE LEGAL RELATIONSHIP WITH PEOPLEONTECH LLC. THEY INCLUDE MANDATORY ARBITRATION (§14), CLASS ACTION WAIVER (§14.4), AND LIMITATIONS OF LIABILITY (§11). READ EVERY SECTION BEFORE USING THIS APP.
 
 BY TAPPING "ACCEPT & CONTINUE", CREATING AN ACCOUNT, OR ACCESSING ANY PART OF THE SERVICE, YOU REPRESENT THAT YOU HAVE READ, UNDERSTOOD, AND AGREE TO BE LEGALLY BOUND BY THESE TERMS IN THEIR ENTIRETY. IF YOU DO NOT AGREE, DO NOT USE THIS APP.
 
 
-1. PARTIES, ACCEPTANCE & ELIGIBILITY
+1. WHAT FAMILY CUBE IS
 
-1.1 Agreement. These Terms of Service ("Terms") are a binding legal contract between you ("User", "you") and PeopleOnTech LLC, a Delaware limited liability company ("Company", "we", "us"). "Family Cube" is our brand name for the Service.
+1.1 The Service. Family Cube ("Service", "App") is a family organization app. It lets members of a household share a private "family" space to coordinate chores and rewards ("Quests"), a shared calendar and event scheduling, group and direct messaging ("Chat"), real-time family location sharing ("FindFam"), a coin-based reward store, a photo memories feed, and an AI assistant ("Ask Cube") that can answer questions and help create/manage the above from natural-language requests.
 
-1.2 Electronic acceptance. Tapping "Accept & Continue," creating an account, or using any part of the Service constitutes full, unconditional acceptance of these Terms. Electronic acceptance carries the same legal force as a handwritten signature.
-
-1.3 Eligibility. You must be (a) at least 18 years old, or (b) 13–17 years old with a parent or legal guardian who has accepted these Terms on your behalf and takes full legal responsibility for your use. BY ACCEPTING, YOU WARRANT THAT YOU MEET THESE REQUIREMENTS. If you are under 13, you may not use this Service under any circumstances.
-
-1.4 Authority. You warrant that you have full legal capacity to enter into binding contracts, that you are not barred from using the Service under any applicable law, and that all information you provide is truthful, accurate, and current.
-
-1.5 Rejection. If you disagree with any provision, stop using the Service immediately and delete the App. Continued use is irrevocable acceptance.
+1.2 Not a general social network. Family Cube is designed for private use within one self-organized family group. It has no public feed, no stranger-matching, and no discovery of other users outside a family the account holder creates or is invited into.
 
 
-2. CHANGES TO TERMS AND SERVICE
+2. PARTIES, ACCEPTANCE & ELIGIBILITY
 
-2.1 We may amend these Terms, the Service, or any feature at any time, in our sole discretion, effective upon posting in the App. YOUR CONTINUED USE AFTER POSTING CONSTITUTES BINDING ACCEPTANCE OF THE REVISED TERMS WHETHER OR NOT YOU READ THEM. We may, but are not obligated to, provide advance notice of changes.
+2.1 Agreement. These Terms of Service ("Terms") are a binding legal contract between you ("User", "you") and PeopleOnTech LLC, a Delaware limited liability company ("Company", "we", "us"). "Family Cube" is our brand name for the Service.
 
-2.2 We may at any time, without notice or liability: modify, suspend, or permanently discontinue any feature (including features available on free or paid tiers); change pricing; restrict access; or terminate the Service entirely. No such action creates any liability to you or any third party.
+2.2 Electronic acceptance. Tapping "Accept & Continue," creating an account, or using any part of the Service constitutes full, unconditional acceptance of these Terms. Electronic acceptance carries the same legal force as a handwritten signature.
 
-2.3 The version displayed in the App always governs. We are not obligated to archive or provide prior versions. It is your sole responsibility to review the Terms periodically.
+2.3 Account holder eligibility. The person who creates a family and manages its settings ("Account Holder", typically a parent or guardian) must be at least 18 years old and have full legal capacity to enter into binding contracts.
 
+2.4 Family member accounts, including minors. An Account Holder may create or approve additional profiles within their family for other household members, including children. A parent or legal guardian who adds a child's profile: (a) is providing verifiable parental consent for that child's use of the Service, as required by the Children's Online Privacy Protection Act ("COPPA") and comparable laws; (b) is responsible for supervising that child's use of the Service; and (c) may view, manage, and delete that child's profile and data at any time from the App. A child's profile and data are visible only within that child's own family, never publicly or to any other family.
 
-3. INTELLECTUAL PROPERTY
+2.5 Authority. You warrant that all information you provide is truthful, accurate, and current, and that you have the authority to add and consent on behalf of any minor profile you create.
 
-3.1 Ownership. The App, its code, design, graphics, trademarks, logos, trade names, and all content are the exclusive property of PeopleOnTech LLC or its licensors, protected by U.S. and international intellectual property law. No ownership interest is transferred to you.
-
-3.2 Licence to you. Subject to full compliance with these Terms, we grant you a limited, personal, non-exclusive, non-transferable, non-sublicensable, revocable licence to use the App on a device you own or control for lawful personal use only. This licence terminates automatically upon any breach of these Terms.
-
-3.3 Restrictions. You shall not: reverse-engineer, decompile, or disassemble any part of the Service; create derivative works; frame or mirror the Service; remove proprietary notices; use automated tools to scrape data; or use the Service for any commercial purpose without written consent.
-
-3.4 User Content licence. You retain ownership of content you submit ("User Content"). By submitting User Content you grant PeopleOnTech LLC a perpetual, irrevocable, worldwide, royalty-free, fully sublicensable licence to use, reproduce, store, adapt, modify, translate, publish, distribute, display, and create derivative works from your User Content in any media, for any purpose relating to operating, improving, promoting, or providing the Service. This licence survives account deletion to the extent copies exist in backup systems or are required by law.
-
-3.5 AI-processed content. When User Content (including veterinary documents, photos, or health data) is processed by an AI Feature, any structured output, extraction, or derivative generated by that process is the property of PeopleOnTech LLC. You grant us full rights to that output.
-
-3.6 User Content warranties. By submitting User Content you represent and warrant that: (a) you own or control all rights necessary to grant the licence above; (b) the content does not infringe any intellectual property, privacy, or publicity right; (c) the content does not depict animal cruelty, abuse, or illegal activity; (d) you have obtained all required consents from identifiable persons depicted; and (e) the content is not false, misleading, or defamatory.
+2.6 Rejection. If you disagree with any provision, stop using the Service immediately and delete the App. Continued use is acceptance of the then-current Terms.
 
 
-4. PLAYDATES — TECHNOLOGY PLATFORM ONLY — FULL RELEASE
+3. CHANGES TO TERMS AND SERVICE
 
-4.1 Platform only. The Playdates feature is a pure digital interface: it displays a registered user's profile to another registered user. PeopleOnTech LLC has no role whatsoever in arranging, organising, hosting, supervising, monitoring, or attending any in-person meeting. The Company is not a party to any physical arrangement between users. Every meeting is a wholly private, voluntary agreement between independent adults.
+3.1 We may amend these Terms, the Service, or any feature at any time, effective upon posting in the App. Material changes will be presented for re-acceptance the next time you open the App. We may, but are not obligated to, provide advance notice beyond that.
 
-4.2 Zero screening or verification. PeopleOnTech LLC does not — and will never — conduct background checks, identity verification, criminal history checks, vaccination verification, temperament assessment, or any other vetting of users or their animals. All user-supplied information is entirely self-reported and wholly unverified. We make no representation of any kind about any other user or their animal.
+3.2 We may modify, suspend, or discontinue any feature (including features available on free or paid tiers), change pricing, or restrict access, subject to §9 (Subscriptions) for paid-tier commitments already in effect.
 
-4.3 Acknowledged risks. By using Playdates you acknowledge that: (a) you voluntarily choose to meet strangers and unknown animals; (b) all animals — regardless of how described — are inherently unpredictable and may bite, scratch, attack, or transmit disease without warning or provocation; (c) unknown individuals present inherent personal safety risks; (d) you are solely and exclusively responsible for your own safety and the safety of your animals at all times before, during, and after any meeting; and (e) you will independently verify any information provided by other users before relying on it.
-
-4.4 FULL ASSUMPTION OF RISK. YOU VOLUNTARILY, KNOWINGLY, AND IRREVOCABLY ASSUME ALL RISKS — KNOWN AND UNKNOWN, FORESEEN AND UNFORESEEN, INCLUDING RISKS ARISING FROM THE COMPANY'S OWN NEGLIGENCE — ARISING FROM USE OF THE PLAYDATES FEATURE OR ANY IN-PERSON MEETING, INCLUDING: BODILY INJURY, PERMANENT DISABILITY, ILLNESS, PSYCHOLOGICAL HARM, OR DEATH TO YOU OR ANY OTHER PERSON; INJURY, ILLNESS, OR DEATH OF ANY ANIMAL; HARM CAUSED BY YOUR ANIMAL TO ANY PERSON, ANIMAL, OR PROPERTY; EXPOSURE TO ZOONOTIC, INFECTIOUS, OR PARASITIC DISEASE; PROPERTY LOSS OR DAMAGE; AND ANY RISK ARISING FROM MEETING AN UNVERIFIED INDIVIDUAL.
-
-4.5 IRREVOCABLE RELEASE. IN CONSIDERATION OF ACCESS TO THE PLAYDATES FEATURE, YOU UNCONDITIONALLY RELEASE, WAIVE, AND FOREVER DISCHARGE PEOPLEONTECH LLC AND ITS MEMBERS, MANAGERS, OFFICERS, EMPLOYEES, CONTRACTORS, AGENTS, INSURERS, SUCCESSORS, AND ASSIGNS ("RELEASED PARTIES") FROM ALL CLAIMS, DEMANDS, SUITS, LOSSES, DAMAGES, AND LIABILITY OF ANY KIND — WHETHER KNOWN OR UNKNOWN, CURRENT OR FUTURE — ARISING FROM: (a) YOUR DECISION TO USE PLAYDATES; (b) ANY IN-PERSON MEETING OR DECISION NOT TO MEET; (c) THE CONDUCT OF ANY OTHER USER OR ANIMAL; (d) ANY INACCURACY IN ANOTHER USER'S PROFILE; OR (e) ANY FAILURE BY THE COMPANY TO SCREEN, VERIFY, MONITOR, OR WARN. THIS RELEASE APPLIES EVEN WHERE THE RELEASED PARTIES WERE NEGLIGENT OR GROSSLY NEGLIGENT. TO THE EXTENT APPLICABLE LAW DOES NOT PERMIT RELEASE OF GROSS NEGLIGENCE, THIS RELEASE APPLIES TO ALL ORDINARY NEGLIGENCE AND ALL OTHER CLAIMS.
-
-4.6 INDEMNIFICATION — PLAYDATES. You agree to indemnify, defend (at your expense with counsel acceptable to us), and hold harmless all Released Parties from any and all third-party claims, suits, judgments, losses, damages, fines, penalties, costs, and expenses (including actual attorneys' fees at all tribunal levels) arising from: (a) your use of Playdates; (b) any harm caused by you or your animal to any person, animal, or property; (c) any dispute with another user; (d) your breach of these Terms; or (e) your violation of any law or third-party right.
-
-4.7 Safety guidance (no duty). We encourage — but have no duty to ensure — that you: meet in busy public spaces only; notify a trusted contact of your plans; keep animals on a lead or in a secure carrier; verify the other party independently; and carry pet liability insurance adequate for your jurisdiction.
+3.3 The version displayed in the App always governs.
 
 
-5. SOCIAL FEED AND USER INTERACTIONS
+4. YOUR CONTENT AND DATA
 
-5.1 You are solely and fully responsible for all User Content you submit. Prohibited content includes: content infringing any intellectual property or privacy right; defamatory, harassing, abusive, threatening, or obscene material; content depicting or promoting animal cruelty; spam or commercial solicitation; false or misleading information; and anything otherwise unlawful.
+4.1 Ownership. You (and your family) retain ownership of the content you submit — messages, photos, event details, chore/quest text, and similar ("User Content"). We do not claim ownership of it.
 
-5.2 Passive hosting. PeopleOnTech LLC is a passive platform host. We do not endorse, verify, or adopt any User Content. We disclaim all liability for User Content and for any reliance placed on it by any person. You interact with other users entirely at your own risk.
+4.2 Licence to operate the Service. You grant PeopleOnTech LLC a limited, non-exclusive licence to store, process, transmit, and display your User Content solely as necessary to provide the Service to you and the other members of your family (e.g., delivering a chat message, showing a calendar event to family members, rendering a photo in the Memories feed). This licence ends when the content or your account is deleted, subject to §7.6 (backup retention).
 
-5.3 Moderation. We have the right — but not the obligation — to review, remove, restrict, or modify any User Content at any time without notice and without liability. Non-removal is not endorsement.
+4.3 No use of your content to train third-party AI models without consent. We do not send your identifiable family data to a third-party AI provider for model-training purposes. See §6.7 for how Ask Cube processes what you send it.
 
-5.4 User disputes. PeopleOnTech LLC bears no responsibility for harm, misrepresentation, harassment, or illegal conduct arising from any user-to-user interaction anywhere in the App.
+4.4 User Content standards. You are responsible for content you or your family members submit. You must not submit content that is unlawful, infringes another person's rights, or that you do not have the right to share (e.g., a photo of someone outside your family without their consent, where consent is legally required).
+
+4.5 App ownership. The App itself — its code, design, graphics, trademarks, and logos — is the property of PeopleOnTech LLC or its licensors. You receive a limited, personal, non-transferable licence to use the App on a device you own or control; you may not reverse-engineer, decompile, resell, or use it for any commercial purpose without our written consent.
 
 
-6. AI FEATURES — FURAI, PETDOC CHAT, SYMPTOM SCAN, MOOD SCAN
+5. LOCATION SHARING (FINDFAM)
 
-6.1 Nature of AI Features. The Service includes AI-powered features (collectively "AI Features"): FurAI (document analysis and health record extraction); PetDoc Chat (pet health information chatbot); Symptom Scan (symptom assessment tool); and Mood Scan (emotional state inference from images). All AI Features are powered exclusively by third-party large language models and computer vision services. They are provided strictly for general informational and educational purposes.
+5.1 Opt-in and scope. Family location sharing is only active for a family member whose profile has enabled it (directly, or via parental configuration for a minor's profile). Location is shared only with members of that same family — never with any other family, the public, or advertisers.
 
-6.2 NOT VETERINARY SERVICES. AI FEATURES ARE NOT, AND SHALL NEVER BE CONSTRUED AS, VETERINARY SERVICES, VETERINARY ADVICE, CLINICAL DIAGNOSIS, CLINICAL PROGNOSIS, OR CLINICAL TREATMENT RECOMMENDATIONS. PEOPLEONTECH LLC DOES NOT EMPLOY, ENGAGE, OR SUPERVISE ANY LICENSED VETERINARY PROFESSIONAL. NO VETERINARIAN-CLIENT-PATIENT RELATIONSHIP IS CREATED BY USE OF ANY AI FEATURE OR BY USE OF THE SERVICE.
+5.2 Accuracy and reliability. Location data depends on device GPS, network conditions, and OS-level background permissions, and may be delayed, inaccurate, or unavailable at times. Family Cube's location features are a convenience tool, not a guaranteed real-time tracking or emergency-response system, and must not be relied upon as the sole means of locating a family member in an emergency — call local emergency services directly for any genuine emergency.
 
-6.3 Inherent AI limitations — critical disclosures. AI outputs are generated by statistical probabilistic models. They WILL contain errors. Specifically: (a) AI models routinely generate outputs that are factually incorrect, invented, or internally inconsistent — commonly known as "hallucinations" — which may appear credible and authoritative but are fabricated; (b) AI cannot physically examine your animal, obtain a medical history through examination, order or interpret diagnostic tests, or apply clinical judgment to your pet's specific presentation; (c) AI outputs may be outdated and do not reflect the current standard of veterinary care; (d) symptom descriptions you provide may be misinterpreted or matched to incorrect conditions; and (e) breed-specific, age-specific, or condition-specific nuances may not be reflected in any output.
+5.3 Turning it off. Any family member (or, for a minor's profile, their parent/guardian) may disable location sharing for that profile at any time in Settings.
 
-6.4 EXPRESS ACKNOWLEDGEMENTS. BY USING ANY AI FEATURE YOU EXPRESSLY AND IRREVOCABLY ACKNOWLEDGE THAT: (a) YOU WILL NOT RELY ON ANY AI OUTPUT AS VETERINARY ADVICE OR AS A BASIS FOR ANY HEALTH DECISION REGARDING YOUR PET WITHOUT FIRST CONSULTING A LICENSED VETERINARIAN; (b) ALL AI OUTPUTS MUST BE INDEPENDENTLY VERIFIED BY A LICENSED VETERINARIAN WHO HAS PHYSICALLY EXAMINED YOUR PET BEFORE ANY ACTION IS TAKEN; (c) YOU ASSUME ALL RISK FROM YOUR USE OF OR RELIANCE ON ANY AI OUTPUT; AND (d) ANY ACTION YOU TAKE — INCLUDING ADMINISTERING, ALTERING, OR WITHHOLDING MEDICATION OR TREATMENT — BASED ON AN AI OUTPUT WITHOUT VETERINARY VERIFICATION IS ENTIRELY AT YOUR OWN RISK.
 
-6.5 No diagnosis or treatment. Nothing generated by any AI Feature constitutes a veterinary diagnosis, prognosis, or recommendation to administer, withhold, alter, or discontinue any medication, supplement, treatment, procedure, or care. Decisions regarding your pet's health belong exclusively to a licensed veterinarian who has physically examined your animal.
+6. CHAT, CALLS, AND NOTIFICATIONS
 
-6.6 Emergencies — do not use AI. AI Features must not be used in any emergency or urgent situation. If your pet shows signs of: difficulty breathing; collapse or unresponsiveness; seizure or tremors; suspected poisoning or ingestion of a toxic substance; severe or uncontrolled bleeding; trauma or broken bones; inability to stand or walk; severe pain; or any other life-threatening condition — CALL A LICENSED VETERINARIAN OR EMERGENCY ANIMAL HOSPITAL IMMEDIATELY. DO NOT USE AN AI FEATURE.
+6.1 Private to your family. Chat, voice/video attachments, and call-style reminders in the App are visible only within your own family's account, subject to each member's role-based permissions inside the App (e.g., a parent may have oversight of a child's activity within the family).
 
-6.7 Mood Scan. Results are generated for general awareness and entertainment only. They have no clinical, welfare, behavioural science, or legal standing. They are not a behavioural or psychological assessment.
+6.2 Call-style reminders. The App may use call-alert style notifications (including via CallKit-style native call UI) to deliver time-sensitive reminders (e.g., pickup or medication reminders) you or another family member configured. These are app-generated alerts, not real telephone calls, and are not routed through emergency services.
 
-6.8 FurAI document analysis. AI extraction of veterinary documents may be imprecise, incomplete, or incorrect. You are solely responsible for verifying all extracted data against original source documents before recording, sharing, or acting on it.
-
-6.9 AI data processing and third-party providers. When you use any AI Feature, your text, images, documents, and relevant pet data are transmitted over encrypted connections to one or more third-party AI service providers solely to generate a response. By using AI Features you expressly consent to this transmission. PEOPLEONTECH LLC HAS NO CONTROL OVER HOW THIRD-PARTY AI PROVIDERS PROCESS, RETAIN, OR USE DATA SUBMITTED TO THEM. THEIR INDEPENDENT PRIVACY POLICIES AND TERMS GOVERN SUCH PROCESSING AND PEOPLEONTECH LLC BEARS NO LIABILITY FOR THEIR ACTS OR OMISSIONS.
-
-6.10 No training without consent. PeopleOnTech LLC will not use your personal data, pet health records, conversation content, or submitted photos to train AI models without your separate explicit consent.
-
-6.11 Beta and experimental AI features. Some AI Features may be designated as beta, experimental, or in testing. Such features may produce a higher rate of errors, may be withdrawn without notice, and are provided on a strictly as-is basis with no warranty of any kind.
-
-6.12 WAIVER OF AI CLAIMS. YOU EXPRESSLY AND IRREVOCABLY WAIVE AND RELEASE ALL CLAIMS AGAINST PEOPLEONTECH LLC AND ITS MEMBERS, OFFICERS, EMPLOYEES, AGENTS, AND PARTNERS ARISING FROM YOUR USE OF OR RELIANCE ON ANY AI FEATURE OR AI-GENERATED OUTPUT, INCLUDING ALL CLAIMS FOR: INJURY OR ILLNESS OF YOUR PET; DEATH OF YOUR PET; VETERINARY COSTS OR EXPENSES; PSYCHOLOGICAL DISTRESS; FINANCIAL LOSS; MISDIAGNOSIS; DELAYED OR INCORRECT TREATMENT; OR ANY OTHER HARM HOWEVER CAUSED — INCLUDING HARM ATTRIBUTABLE TO AI HALLUCINATIONS, MODEL ERRORS, OR THIRD-PARTY AI PROVIDER FAILURES.
+6.3 Content responsibility. Each family member is responsible for what they post in Chat. We do not pre-screen messages; automated content-safety checks may flag certain content for a parent's visibility, but this is a best-effort safety aid, not a guarantee that no inappropriate content will ever appear.
 
 
 7. DATA, PRIVACY, AND SECURITY
 
-7.1 Data we collect. We collect and process: account credentials and profile information; pet profiles and all data you enter (health records, medications, weight, mood, appointments, photos, and notes); User Content; Playdate and messaging data; device identifiers and anonymised usage analytics; and subscription/payment status. Payment card data is processed exclusively by Apple or Google — we never process or store it.
+7.1 Data we collect. We collect and process: account credentials and profile information for each family member; family organizational data you enter (events, chores/quests, chat messages, coin balances, reward redemptions, photos, and notes); location data if you enable FindFam; device identifiers and anonymised usage analytics; and subscription/payment status. Payment card data is processed exclusively by Apple or Google — we never process or store it.
 
-7.2 How we use your data. To operate, personalise, secure, and improve the Service; to facilitate user connections; to process subscriptions and send receipts; to send opted-in notifications and reminders; to generate anonymised analytics; and to comply with legal obligations. We do not use identifiable personal or pet data to train AI models.
+7.2 How we use your data. To operate, personalise, secure, and improve the Service; to deliver notifications and reminders you or your family configured; to process subscriptions and send receipts; to generate anonymised analytics; and to comply with legal obligations.
 
-7.3 Aggregate data. We may freely use de-identified, aggregated data derived from your use of the Service for any commercial purpose — including analytics, research, product development, and marketing — without restriction and without any obligation to compensate you.
+7.3 Aggregate data. We may use de-identified, aggregated data derived from Service usage (e.g., "average number of chores completed per week") for analytics, research, and product development. This data cannot reasonably be used to re-identify you or your family.
 
-7.4 Data sharing. We do not sell your personal data. We share data only: with Supabase (infrastructure and authentication provider); with third-party AI providers as described in §6.9; with Apple or Google for subscription processing; with a successor entity in any merger, acquisition, or asset sale (see §7.5); with professional advisers under confidentiality; and where required by law, court order, or regulatory demand.
+7.4 Data sharing. We do not sell your personal data. We share data only: with Supabase (our database/infrastructure and authentication provider); with third-party AI providers as described in §6.7 (Ask Cube), scoped to what's needed to generate a response; with Apple, Google, or RevenueCat for subscription processing; with a successor entity in any merger or acquisition (§7.5); and where required by law or valid legal process.
 
-7.5 Business transfers. In any merger, acquisition, restructuring, or sale of assets, your data may be transferred to the acquiring or successor entity without notice to you. Your continued use of the Service after any such transfer constitutes consent to the transfer and to the successor's terms.
+7.5 Business transfers. In any merger, acquisition, or sale of assets, your data may be transferred to the successor entity, who will remain bound to protect it under materially equivalent terms.
 
-7.6 Security. We implement industry-standard technical and organisational measures including TLS encryption in transit and access-controlled databases at rest. NO SECURITY MEASURE IS INFALLIBLE. WE DO NOT AND CANNOT GUARANTEE THAT THE SERVICE IS COMPLETELY SECURE OR THAT UNAUTHORISED ACCESS, DISCLOSURE, ALTERATION, OR DESTRUCTION OF YOUR DATA WILL NEVER OCCUR. TO THE MAXIMUM EXTENT PERMITTED BY LAW, WE DISCLAIM ALL LIABILITY FOR ANY DATA BREACH, UNAUTHORISED ACCESS, OR SECURITY INCIDENT EXCEPT WHERE SUCH LIABILITY CANNOT BE EXCLUDED UNDER MANDATORY APPLICABLE LAW (E.G. CALIFORNIA CIVIL CODE §1798.150). You are solely responsible for maintaining the confidentiality of your login credentials.
+7.6 Security. We use industry-standard technical measures including encryption in transit and access-controlled databases at rest, and per-device end-to-end encryption for chat message content where the feature is enabled. No security measure is infallible; we cannot guarantee the Service will never experience unauthorised access. You are responsible for keeping your login credentials and device PIN/biometric lock secure.
 
-7.7 Retention and deletion. Data is retained while your account is active and for such additional period as required by law, legal proceedings, legitimate business obligations, or dispute resolution. Upon account deletion, personal data and pet profiles will be removed from active systems within 30 days. Encrypted residual copies may persist in backup systems for up to 90 days. We may retain anonymised, de-identified data indefinitely.
+7.7 Retention and deletion. Data is retained while your account is active. Upon account deletion, personal data is removed from active systems within 30 days; encrypted residual copies may persist in backup systems for up to 90 days before permanent deletion. A parent may delete a child's profile and its data from within the App at any time.
 
-7.8 Your rights. Depending on your jurisdiction, you may have rights to access, correct, restrict processing of, or delete your personal data. You can delete your account and associated data directly within the App at any time. California residents may have additional rights under the California Consumer Privacy Act (CCPA/CPRA). For any other data requests, contact us through the App's support channel. We are not obligated to comply with requests that are manifestly unfounded, excessive, or repetitive.
+7.8 Your rights. You may access, correct, or delete your personal data, and your family's data, directly within the App (Settings → Profile / Family). California residents may have additional rights under the CCPA/CPRA. For any other data request, contact us through the App's support channel.
 
-7.9 International users. The Service is operated from the United States. If you access the Service from outside the United States, you do so on your own initiative and are responsible for compliance with local laws. By using the Service you consent to the transfer, storage, and processing of your data in the United States and any country where our service providers operate. We do not specifically target users in the European Economic Area; if you are an EEA resident you should be aware that EEA data protection standards may not apply.
+7.9 International users. The Service is operated from the United States. By using the Service you consent to your data being processed in the United States and in any country where our service providers (e.g., Supabase, our AI providers) operate.
 
-7.10 Analytics. The App uses anonymised, aggregated analytics tools. No personally identifiable information is shared with analytics providers. We do not use advertising tracking SDKs.
-
-7.11 Children (COPPA). We do not knowingly collect personal information from children under 13. If you believe a child under 13 has created an account or submitted data, notify us through the App's support channel immediately. We will promptly delete such data upon verified notice.
+7.10 Children's privacy (COPPA). We do not knowingly allow a child under 13 to create their own independent account outside a family a parent or guardian has set up and consented to. A parent/guardian creating a child's profile is providing the verifiable consent COPPA requires, and may review, edit, or delete that child's data at any time. If you believe a child's data was collected without appropriate parental consent, contact us through the App's support channel and we will investigate and delete it promptly.
 
 
-8. HEALTH RECORDS
+8. ASK CUBE (AI ASSISTANT)
 
-Health records, logs, reminders, schedules, and tracking data within the App are personal organisational tools only. PeopleOnTech LLC does not verify the accuracy of any data you enter. No content within the App constitutes veterinary advice. WE EXPRESSLY DISCLAIM ALL LIABILITY FOR ANY HEALTH, WELFARE, OR VETERINARY DECISION MADE ON THE BASIS OF DATA STORED IN, DISPLAYED BY, OR GENERATED BY THE APP.
+8.1 Nature of the feature. Ask Cube is an AI-powered assistant that can answer questions and help create or manage chores, events, and other in-app items from natural-language requests. It is powered by a third-party large language model.
+
+8.2 Not professional advice. Ask Cube is a convenience and organizational tool. It does not provide medical, legal, financial, or safety-critical advice, and nothing it generates should be treated as such. For any medical, legal, or emergency matter, consult an appropriate licensed professional or contact emergency services directly.
+
+8.3 Accuracy. Like any AI system, Ask Cube can occasionally produce inaccurate, incomplete, or nonsensical responses ("hallucinations"). Review anything Ask Cube creates or suggests (e.g., a scheduled event, an assigned chore) before relying on it.
+
+8.4 Data sent to the AI provider. When you use Ask Cube, the text of your request and relevant context needed to answer it (such as your family's upcoming events or chore list) is sent to our third-party AI provider to generate a response. We configure this integration so that data is used only to generate your response, not to train the provider's general-purpose models. The provider's own terms govern their handling of data in transit to and processing by their systems.
+
+8.5 Beta features. Some AI-assisted features may be labelled beta or experimental, may have a higher error rate, and may be changed or withdrawn without notice.
 
 
 9. SUBSCRIPTIONS, BILLING, REFUNDS
 
-9.1 Subscription plans. Family Cube offers three tiers: Free (no charge), Pro, and Ultimate. Pro and Ultimate are paid subscriptions billed through the Apple App Store or Google Play Store. All purchases are governed by those platforms' own terms and refund policies. Plan features, usage limits, and pricing are described in the App and may change at any time per §9.4 and §9.5.
+9.1 Subscription plans. Family Cube offers three tiers: Free (no charge), Pro, and Ultimate. Pro and Ultimate are paid subscriptions billed through the Apple App Store or Google Play Store. All purchases are governed by those platforms' own terms and refund policies. Plan features, usage limits, and pricing are described in the App.
 
 9.2 Platform billing. All paid subscriptions are billed and managed exclusively through the Apple App Store or Google Play Store.
 
-9.3 Auto-renewal. Subscriptions automatically renew at the then-current price for successive billing periods unless cancelled through your device's app store settings at least 24 hours before the end of the current billing period. The subscription fee is charged to your payment method through the applicable app store upon confirmation of purchase and at the start of each renewal period. You may manage and cancel subscriptions through your App Store or Google Play account settings. PeopleOnTech LLC cannot cancel subscriptions or process refunds directly.
+9.3 Auto-renewal. Subscriptions automatically renew at the then-current price unless cancelled through your device's app store settings at least 24 hours before the end of the current billing period. You may manage and cancel subscriptions through your App Store or Google Play account settings. PeopleOnTech LLC cannot cancel subscriptions or process refunds directly — that's handled by Apple/Google per their own policies.
 
-9.4 NO REFUNDS. WE DO NOT OFFER REFUNDS FOR ANY REASON EXCEPT WHERE STRICTLY REQUIRED BY THE MANDATORY POLICY OF THE APPLICABLE APP STORE OR BY MANDATORY APPLICABLE LAW THAT CANNOT BE CONTRACTUALLY EXCLUDED. Non-use, dissatisfaction, accidental purchase, feature changes, or account termination for breach do not entitle you to any refund.
+9.4 Refunds. Refunds are handled by Apple or Google per their standard policies for in-app purchases; we do not separately process refunds outside those platforms.
 
-9.5 Price changes. We may change subscription pricing at any time. Changes take effect at the next renewal. Continued use after a price change constitutes acceptance.
+9.5 Price and feature changes. We may change subscription pricing or the features/limits included in a tier going forward; changes take effect at your next renewal, and continued use after a price change constitutes acceptance of the new price. If you don't accept a change, you may cancel before the next renewal.
 
-9.6 Feature changes. ALL FEATURES, USAGE LIMITS, STORAGE QUOTAS, AND AI CALL ALLOWANCES INCLUDED IN ANY TIER — FREE, PRO, OR ULTIMATE — MAY BE CHANGED, REDUCED, MOVED BETWEEN TIERS, OR REMOVED AT ANY TIME WITH OR WITHOUT NOTICE AND WITHOUT REFUND, CREDIT, OR COMPENSATION. If you do not accept a change, your sole remedy is to cancel before the next renewal.
-
-9.7 Service continuity. We make no guarantee of uninterrupted service. Scheduled or unscheduled downtime, feature unavailability, and data inaccessibility do not entitle you to any credit, refund, or compensation.
+9.6 Service continuity. We aim for reliable uptime but do not guarantee uninterrupted service; scheduled or unscheduled downtime does not by itself entitle you to a refund or credit.
 
 
 10. PROHIBITED CONDUCT
 
-You must not: use the Service for any unlawful purpose; infringe any intellectual property, privacy, or publicity right; impersonate any person or entity; post false, misleading, or fraudulent content; harass, stalk, threaten, or harm any user or animal; collect or harvest personal data about other users without consent; attempt unauthorised access to our systems or any other user's account; probe or test system vulnerabilities; interfere with or disrupt the Service; use automated tools to scrape or access the Service; reverse-engineer the App; resell or redistribute the Service; solicit commercially via the social or Playdates features; or introduce malicious code. Violation of this section may result in immediate termination without notice or liability, and may subject you to civil and criminal penalties.
+You must not: use the Service for any unlawful purpose; harass, threaten, or endanger another user, including another family member; attempt unauthorised access to any account or our systems; probe or test system vulnerabilities; interfere with or disrupt the Service; use automated tools to scrape or access the Service; reverse-engineer the App; resell or redistribute the Service; or introduce malicious code. Violation of this section may result in suspension or termination of your account.
 
 
-11. DISCLAIMER OF WARRANTIES
+11. DISCLAIMER OF WARRANTIES AND LIMITATION OF LIABILITY
 
-THE SERVICE IS PROVIDED STRICTLY "AS IS" AND "AS AVAILABLE." TO THE MAXIMUM EXTENT PERMITTED BY LAW, PEOPLEONTECH LLC EXPRESSLY DISCLAIMS ALL WARRANTIES — EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE — INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, ACCURACY, NON-INFRINGEMENT, SYSTEM COMPATIBILITY, AND FREEDOM FROM VIRUSES OR HARMFUL COMPONENTS. WE DO NOT WARRANT THAT THE SERVICE WILL MEET YOUR REQUIREMENTS, BE UNINTERRUPTED, TIMELY, SECURE, OR ERROR-FREE, OR THAT DEFECTS WILL BE CORRECTED. AI OUTPUTS ARE EXPRESSLY EXCLUDED FROM ANY WARRANTY OF ACCURACY, COMPLETENESS, OR FITNESS FOR ANY PURPOSE. NO ADVICE OR INFORMATION — ORAL OR WRITTEN — PROVIDED BY PEOPLEONTECH LLC OR ITS REPRESENTATIVES CREATES ANY WARRANTY NOT EXPRESSLY STATED IN THESE TERMS.
+11.1 "As is." THE SERVICE IS PROVIDED "AS IS" AND "AS AVAILABLE." TO THE MAXIMUM EXTENT PERMITTED BY LAW, WE DISCLAIM ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. WE DO NOT WARRANT THAT THE SERVICE WILL BE UNINTERRUPTED, TIMELY, OR ERROR-FREE.
 
+11.2 Limitation of liability. TO THE MAXIMUM EXTENT PERMITTED BY LAW, PEOPLEONTECH LLC IS NOT LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES ARISING FROM YOUR USE OF THE SERVICE. OUR TOTAL AGGREGATE LIABILITY TO YOU FOR ALL CLAIMS COMBINED WILL NOT EXCEED THE GREATER OF (A) THE SUBSCRIPTION FEES YOU PAID US DIRECTLY (NOT THROUGH APPLE/GOOGLE) IN THE THREE MONTHS BEFORE THE CLAIM AROSE, OR (B) TEN US DOLLARS (USD $10.00).
 
-12. LIMITATION OF LIABILITY
-
-12.1 EXCLUSION OF DAMAGES. TO THE MAXIMUM EXTENT PERMITTED BY LAW, PEOPLEONTECH LLC AND ITS MEMBERS, MANAGERS, OFFICERS, EMPLOYEES, CONTRACTORS, AGENTS, SUCCESSORS, AND ASSIGNS SHALL NOT BE LIABLE UNDER ANY LEGAL THEORY — CONTRACT, TORT (INCLUDING ORDINARY AND GROSS NEGLIGENCE), STRICT LIABILITY, STATUTE, OR OTHERWISE — FOR ANY: (a) INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES; (b) LOSS OF PROFITS, REVENUE, DATA, BUSINESS, REPUTATION, OR GOODWILL; (c) PERSONAL INJURY, PSYCHOLOGICAL HARM, OR PROPERTY DAMAGE; (d) INJURY, ILLNESS, OR DEATH OF ANY ANIMAL; (e) COST OF SUBSTITUTE GOODS OR SERVICES; (f) HARM ARISING FROM AI FEATURE OUTPUTS, INCLUDING HALLUCINATIONS OR MODEL ERRORS; OR (g) ANY OTHER LOSS — ARISING OUT OF OR RELATING TO THESE TERMS, THE SERVICE, ANY PLAYDATE, ANY AI OUTPUT, ANY USER CONTENT, ANY DATA BREACH OR SECURITY INCIDENT, OR ANY THIRD-PARTY ACT OR OMISSION — EVEN WHERE ADVISED OF THE POSSIBILITY AND EVEN WHERE A LIMITED REMEDY FAILS OF ITS ESSENTIAL PURPOSE.
-
-12.2 AGGREGATE CAP. OUR TOTAL AGGREGATE LIABILITY TO YOU FOR ALL CLAIMS COMBINED SHALL NOT EXCEED THE GREATER OF: (A) TOTAL SUBSCRIPTION FEES YOU ACTUALLY PAID TO PEOPLEONTECH LLC — NOT THROUGH APPLE OR GOOGLE — IN THE THREE CALENDAR MONTHS IMMEDIATELY BEFORE THE EVENT GIVING RISE TO THE CLAIM; OR (B) TEN US DOLLARS (USD $10.00). MULTIPLE CLAIMS DO NOT ENLARGE THIS CAP.
-
-12.3 Essential allocation. These limitations reflect a reasonable, negotiated allocation of risk. They are an essential element of the basis of the bargain. PeopleOnTech LLC would not provide the Service without them.
-
-12.4 Jurisdictional savings. Some jurisdictions do not allow exclusion or limitation of certain categories of liability (e.g. death or personal injury caused by fraud or wilful misconduct). In such jurisdictions, our liability is limited to the minimum extent required by mandatory law. All other limitations in this Section remain in full force.
+11.3 Jurisdictional savings. Some jurisdictions do not allow certain exclusions or limitations of liability (e.g., for death, personal injury, or fraud). In those jurisdictions, our liability is limited to the minimum extent required by mandatory law; all other limitations in this Section remain in force.
 
 
-13. INDEMNIFICATION
+12. INDEMNIFICATION
 
-You agree to indemnify, defend (with counsel pre-approved by us), and hold harmless PeopleOnTech LLC and its members, managers, officers, employees, contractors, successors, and assigns from all third-party claims, suits, proceedings, judgments, losses, damages, fines, penalties, costs, and expenses (including actual attorneys' fees and costs at all levels of litigation and appeal) arising from or relating to: (a) your access to or use of the Service; (b) any Playdate; (c) any harm caused by you or your pet to any person, animal, or property; (d) any User Content you submit; (e) any breach of these Terms; (f) your violation of any law; or (g) your violation of any third-party right. We may assume exclusive control and defence of any matter at your expense, and you must cooperate fully.
-
-
-14. ACCOUNT SUSPENSION & TERMINATION
-
-14.1 By us. We may suspend, restrict, or permanently terminate your account at any time, in our sole and absolute discretion, without prior notice or liability, for any reason or no reason — including suspected breach, harmful conduct, complaint from another user, or business reasons.
-
-14.2 Survival. Upon termination your licence ceases immediately. The following survive: §§ 3.4, 3.5, 4.4, 4.5, 4.6, 6.4, 6.12, 7, 8, 11, 12, 13, 15, 16, and any accrued liability.
-
-14.3 By you. You may delete your account via Settings at any time. Deletion carries no entitlement to a refund. §7.7 governs data removal. Deletion does not release you from obligations or liabilities that arose before deletion.
+You agree to indemnify and hold harmless PeopleOnTech LLC from third-party claims arising from: your breach of these Terms; your violation of any law; or content you submitted that violates another person's rights. We will notify you of any such claim and you agree to cooperate in its defense.
 
 
-15. GOVERNING LAW, ARBITRATION & CLASS WAIVER
+13. ACCOUNT SUSPENSION & TERMINATION
 
-15.1 Governing law. These Terms are governed by the laws of the State of Delaware, USA, excluding conflict-of-laws rules. The UN Convention on Contracts for the International Sale of Goods does not apply.
+13.1 By us. We may suspend or terminate an account for a clear violation of these Terms (e.g., harassment, unlawful use, security abuse). We will make reasonable efforts to notify the Account Holder of the reason, except where notice would itself create a safety or security risk.
 
-15.2 Mandatory pre-dispute notice. Before initiating any arbitration or litigation, you must send written notice to us through the App's support channel specifying the nature of the dispute, the relief sought, and the relevant facts. We have 45 days from receipt to attempt informal resolution. This notice is a non-waivable condition precedent to any claim. Filing any proceeding without completing this step is grounds for dismissal.
+13.2 By you. You may delete your account, or a family member's profile, via Settings at any time. §7.7 governs how quickly data is removed.
 
-15.3 BINDING ARBITRATION. IF INFORMAL RESOLUTION FAILS, ALL DISPUTES, CLAIMS, AND CONTROVERSIES BETWEEN YOU AND PEOPLEONTECH LLC — INCLUDING DISPUTES ABOUT THE INTERPRETATION, VALIDITY, OR ENFORCEABILITY OF THESE TERMS OR ANY PART THEREOF — SHALL BE RESOLVED BY FINAL AND BINDING ARBITRATION ADMINISTERED BY THE AMERICAN ARBITRATION ASSOCIATION ("AAA") UNDER ITS CONSUMER ARBITRATION RULES THEN IN EFFECT, EXCEPT WHERE PROHIBITED BY MANDATORY APPLICABLE LAW. THE ARBITRATION SHALL BE CONDUCTED IN ENGLISH, IN DELAWARE OR VIRTUALLY AT OUR ELECTION. THE ARBITRATOR'S DECISION IS FINAL AND MAY BE ENTERED AS A JUDGMENT IN ANY COURT OF COMPETENT JURISDICTION. EACH PARTY BEARS ITS OWN COSTS; IF THE ARBITRATOR FINDS A CLAIM FRIVOLOUS, THE CLAIMANT SHALL PAY OUR REASONABLE ATTORNEYS' FEES.
-
-15.4 CLASS ACTION AND JURY TRIAL WAIVER. TO THE MAXIMUM EXTENT PERMITTED BY LAW: (a) YOU WAIVE YOUR RIGHT TO PARTICIPATE AS PLAINTIFF OR CLASS MEMBER IN ANY CLASS ACTION, CONSOLIDATED ACTION, REPRESENTATIVE ACTION, OR CLASS-WIDE ARBITRATION; (b) THE ARBITRATOR MAY NOT CONSOLIDATE CLAIMS OF MORE THAN ONE PERSON OR ENTITY; AND (c) YOU WAIVE ALL RIGHTS TO A JURY TRIAL. IF ANY PART OF THIS WAIVER IS FOUND UNENFORCEABLE, THE UNENFORCEABLE PORTION SHALL BE SEVERED AND THE REMAINING PORTIONS OF THIS SECTION SHALL REMAIN IN FULL FORCE. IF THE CLASS ACTION WAIVER ALONE IS FOUND UNENFORCEABLE, THE DISPUTE SHALL PROCEED IN ARBITRATION ON AN INDIVIDUAL BASIS ONLY — NOT AS A CLASS.
-
-15.5 Limitation period. ANY CLAIM ARISING UNDER THESE TERMS OR RELATED TO THE SERVICE MUST BE FILED WITHIN SIX (6) MONTHS OF THE DATE THE CLAIMANT FIRST KNEW OR REASONABLY SHOULD HAVE KNOWN OF THE CAUSE OF ACTION. ALL CLAIMS NOT FILED WITHIN THIS PERIOD ARE PERMANENTLY AND IRREVOCABLY BARRED, REGARDLESS OF ANY APPLICABLE STATUTE OF LIMITATIONS. THIS PERIOD CANNOT BE TOLLED BY NEGOTIATIONS, DISPUTE NOTICES, OR ANY OTHER CONDUCT.
-
-15.6 Injunctive and IP relief. Nothing in this Section prevents PeopleOnTech LLC from seeking immediate injunctive or equitable relief in any court of competent jurisdiction to protect our intellectual property, confidential information, or to prevent imminent irreparable harm. Such application does not waive the right to arbitrate other claims.
+13.3 Survival. Provisions that by their nature should survive termination (including §§4.2–4.5, 7, 11, 12, 14) continue to apply after your account is closed.
 
 
-16. GENERAL PROVISIONS
+14. GOVERNING LAW, ARBITRATION & CLASS WAIVER
 
-16.1 Entire agreement. These Terms constitute the entire agreement between you and PeopleOnTech LLC regarding the Service and supersede all prior agreements, representations, and understandings. No representation by any employee, agent, or partner creates any warranty or obligation not expressly stated herein.
+14.1 Governing law. These Terms are governed by the laws of the State of Delaware, USA, excluding conflict-of-laws rules.
 
-16.2 Severability. If any provision is found invalid or unenforceable, it shall be modified to the minimum extent necessary to make it valid; all other provisions remain in full force. Severability of one provision does not affect the validity of any other.
+14.2 Informal resolution first. Before initiating arbitration or litigation, send written notice to us through the App's support channel describing the dispute and the relief you're seeking. We will attempt to resolve it informally within 45 days.
 
-16.3 No waiver. Failure to enforce any right does not constitute a waiver. No single or partial exercise of any right precludes further exercise of the same right.
+14.3 Arbitration. If informal resolution fails, disputes will be resolved by binding arbitration administered by the American Arbitration Association ("AAA") under its Consumer Arbitration Rules, except where prohibited by mandatory law, or except that either party may bring an individual claim in small-claims court instead if it qualifies.
 
-16.4 Assignment. You may not assign these Terms or any rights hereunder without our prior written consent. We may assign, transfer, or delegate all or any part of our rights and obligations without restriction and without notice to you.
+14.4 Class action waiver. To the extent permitted by law, disputes must be brought individually, not as a plaintiff or class member in any class, consolidated, or representative action. If this class-action waiver is found unenforceable as to a particular claim, that claim (only) may proceed in court rather than arbitration, and the rest of this Section remains in force for all other claims.
 
-16.5 Force majeure. We are not liable for any failure or delay caused by events beyond our reasonable control, including natural disasters, governmental acts, war, terrorism, pandemic, cyberattacks, infrastructure failures, or third-party service disruptions.
-
-16.6 Third-party services. The Service may integrate with third-party platforms. PeopleOnTech LLC is not responsible for any third party's content, availability, privacy practices, or conduct. YOUR INTERACTION WITH ANY THIRD-PARTY SERVICE IS GOVERNED SOLELY BY THAT THIRD PARTY'S OWN TERMS AND IS ENTIRELY AT YOUR OWN RISK.
-
-16.7 No third-party beneficiaries. These Terms are for the sole benefit of you and PeopleOnTech LLC. No third party has any right to enforce any provision hereof.
-
-16.8 Headings. Section headings are for convenience only and do not affect interpretation.
-
-16.9 Language. These Terms are written in English. If a translation is produced, the English version controls in any conflict.
-
-16.10 Feedback. Any feedback, suggestions, or ideas you submit to us may be used by PeopleOnTech LLC without restriction, compensation, or attribution, and you assign to us all rights in such submissions.
+14.5 Injunctive relief. Nothing here prevents either party from seeking injunctive relief in court to prevent imminent irreparable harm (e.g., to protect intellectual property or respond to a security incident).
 
 
-© 2026 PeopleOnTech LLC. All rights reserved. Family Cube is a trademark of PeopleOnTech LLC. Unauthorised use is strictly prohibited.`;
+15. GENERAL PROVISIONS
+
+15.1 Entire agreement. These Terms are the entire agreement between you and PeopleOnTech LLC regarding the Service.
+
+15.2 Severability. If a provision is found invalid, it will be modified to the minimum extent necessary to make it valid, and the rest of the Terms remain in force.
+
+15.3 No waiver. Our failure to enforce a right doesn't waive it.
+
+15.4 Assignment. You may not assign these Terms without our written consent. We may assign or transfer our rights and obligations, including as part of a merger, acquisition, or sale of assets.
+
+15.5 Force majeure. We're not liable for delays or failures caused by events beyond our reasonable control (e.g., natural disasters, internet infrastructure failures, third-party service outages).
+
+15.6 Third-party services. The Service may integrate with third-party platforms (e.g., Apple, Google, our AI and infrastructure providers). We're not responsible for those third parties' own content, availability, or conduct; your use of them is governed by their own terms.
+
+15.7 Headings. Section headings are for convenience only.
+
+15.8 Contact. Questions about these Terms can be sent through the App's support channel.
+
+
+© 2026 PeopleOnTech LLC. All rights reserved. Family Cube is a trademark of PeopleOnTech LLC.`;
 
 export default function TermsScreen() {
   const { colors, isDark } = useTheme();

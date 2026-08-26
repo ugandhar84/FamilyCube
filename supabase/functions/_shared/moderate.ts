@@ -1,5 +1,5 @@
 /**
- * Content moderation for PawBond AI endpoints.
+ * Content moderation for Family Cube AI endpoints.
  *
  * Two-layer approach:
  *   1. Local pattern filter — always runs, zero latency, catches the clearest cases.

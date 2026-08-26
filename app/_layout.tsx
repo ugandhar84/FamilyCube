@@ -330,7 +330,22 @@ function RootNavigator() {
         // guard below is unrelated to the data source and still protects
         // against THIS handler firing more than once in overlapping fashion.
         await useAuthStore.getState().fetchProfile(session.user.id);
-        const profile = useAuthStore.getState().profile;
+        let profile = useAuthStore.getState().profile;
+        // Consumes SignupScreen.tsx's markPendingTermsAcceptance() — set
+        // when the checkbox was checked but signUp() landed on the
+        // email-verification path (no session existed yet to record
+        // acceptance against). This is that session, now that the user
+        // clicked the emailed link — apply the pending "yes" before the
+        // routing check below reads terms_accepted.
+        const { consumePendingTermsAcceptance } = await import('@/lib/biometrics');
+        if (profile && !profile.terms_accepted && await consumePendingTermsAcceptance()) {
+          try {
+            await useAuthStore.getState().acceptTermsOnly();
+            profile = useAuthStore.getState().profile;
+          } catch (e: any) {
+            console.warn('[_layout] pending terms acceptance failed to apply', e?.message ?? e);
+          }
+        }
         const profileError = profile ? null : new Error('Profile not found after fetchProfile');
         // A newer check already started (and may have already navigated)
         // while this one was in flight — this result is stale, don't act

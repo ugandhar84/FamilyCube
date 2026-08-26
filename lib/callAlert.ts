@@ -66,13 +66,21 @@ export async function setupCallAlerts(): Promise<void> {
 // context is guaranteed to exist yet when PushKit first hands it over.
 
 export async function saveVoipTokenToMember(memberId: string, familyId: string, token: string): Promise<void> {
-  if (!token || !memberId) return;
+  if (!token || !memberId) {
+    console.log('[callAlert] saveVoipTokenToMember: skipped, missing', { hasToken: !!token, memberId });
+    return;
+  }
   const platform = Platform.OS === 'ios' ? 'ios' : 'android';
   try {
-    await supabase.from('voip_push_tokens').upsert(
+    const { error } = await supabase.from('voip_push_tokens').upsert(
       { member_id: memberId, family_id: familyId, token, platform, updated_at: new Date().toISOString() },
       { onConflict: 'token' },
     );
+    if (error) {
+      console.warn('[callAlert] saveVoipTokenToMember: upsert error', error.message);
+    } else {
+      console.log('[callAlert] saveVoipTokenToMember: registered', { memberId, tokenPrefix: token.slice(0, 8) });
+    }
   } catch (e) {
     console.warn('[callAlert] saveVoipTokenToMember failed:', e);
   }
@@ -89,22 +97,30 @@ export async function saveVoipTokenToMember(memberId: string, familyId: string, 
 // the live listener still matters for token refreshes that happen later
 // while the app is running.
 export function listenForVoipToken(onToken: (token: string) => void): () => void {
-  if (Platform.OS !== 'ios' || !NativeModules.RNCallKeep) return () => {};
+  if (Platform.OS !== 'ios' || !NativeModules.RNCallKeep) {
+    console.log('[callAlert] listenForVoipToken: skipped', { platform: Platform.OS, hasCallKeep: !!NativeModules.RNCallKeep });
+    return () => {};
+  }
   try {
     if (NativeModules.FCVoipToken?.getCachedToken) {
       NativeModules.FCVoipToken.getCachedToken((token: string) => {
+        console.log('[callAlert] getCachedToken resolved', { hasToken: !!token, tokenPrefix: token?.slice(0, 8) });
         if (token) onToken(token);
       });
+    } else {
+      console.log('[callAlert] listenForVoipToken: FCVoipToken native module not present');
     }
     // Plain NSNotificationCenter posts (not tied to a specific native
     // module's own event emitter) — DeviceEventEmitter is the correct API
     // for these; `new NativeEventEmitter()` with no module argument throws
     // an Invariant Violation on newer React Native versions.
     const sub = DeviceEventEmitter.addListener('VoipTokenUpdated', (e: { token: string }) => {
+      console.log('[callAlert] VoipTokenUpdated event received', { hasToken: !!e?.token });
       if (e?.token) onToken(e.token);
     });
     return () => sub.remove();
-  } catch {
+  } catch (e) {
+    console.warn('[callAlert] listenForVoipToken threw', e);
     return () => {};
   }
 }

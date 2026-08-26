@@ -755,8 +755,10 @@ function RootNavigator() {
   }, []);
 
   useEffect(() => {
+    console.log('[_layout] voip-token effect firing for activeMemberId=', activeMemberId);
     if (!activeMemberId) return;
     const familyId = useFamilyStore.getState().members.find(m => m.id === activeMemberId)?.familyId;
+    console.log('[_layout] voip-token effect resolved familyId=', familyId);
     if (!familyId) return;
     if (Platform.OS === 'ios') {
       const unlisten = listenForVoipToken((token) => saveVoipTokenToMember(activeMemberId, familyId, token));

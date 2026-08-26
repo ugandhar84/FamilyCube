@@ -17,59 +17,59 @@
 // CONNECT. ORGANIZE. CARE. GROW.
 
 export const lightColors = {
-  // ── Brand primaries — Terracotta ──────────────────────────────────────
-  primary:      '#DF613C',        // Terracotta (main brand, primary actions)
-  primaryLight: '#FBEADF',
-  primaryDark:  '#C54A27',
-  primaryMid:   '#EE8058',
-  primaryText:  '#C54A27',
+  // ── Brand primaries — Dusty Terracotta ──────────────────────────────────
+  primary:      '#C98A6E',        // Dusty terracotta (main brand, primary actions) — kept a shade richer than the other three since it still carries CTA weight
+  primaryLight: '#F3E8E2',
+  primaryDark:  '#A8664B',
+  primaryMid:   '#D8A088',
+  primaryText:  '#A8664B',
 
-  // ── Teal slot — Sage (Connect / calm / parent) ─────────────────────────
-  teal:         '#3D7A5A',
-  tealLight:    '#E1EFE7',
-  tealDark:     '#2E5F45',
+  // ── Teal slot — Muted Sage (Connect / calm / parent) ────────────────────
+  teal:         '#7FA593',
+  tealLight:    '#E9F0EC',
+  tealDark:     '#5D8873',
 
-  // ── Amber — Organize (kids earn coins) ─────────────────────────────────
-  amber:        '#D97706',
-  amberLight:   '#FDF1D6',
-  amberDark:    '#B45309',
+  // ── Amber — Organize (kids earn coins), dustier gold not lightened orange
+  amber:        '#D3A76C',
+  amberLight:   '#F5EDDF',
+  amberDark:    '#B08549',
 
-  // ── Pink slot — Lavender (Care / third accent) ─────────────────────────
-  pink:         '#7B5EA7',
-  pinkLight:    '#EFE8F8',
-  pinkDark:     '#62468C',
+  // ── Pink slot — Muted Lavender (Care / third accent) ────────────────────
+  pink:         '#A79BC4',
+  pinkLight:    '#EDE9F4',
+  pinkDark:     '#8676AA',
 
   // ── Navy slot — warm near-black (wordmark / text) ──────────────────────
   navy:         '#2C2722',
   navyLight:    '#F2ECE1',
 
   // ── Role accents (mapped to brand) ────────────────────────────────────
-  parent:       '#3D7A5A',        // Sage = Connect = parents
-  parentLight:  '#E1EFE7',
-  parentDark:   '#2E5F45',
+  parent:       '#7FA593',        // Sage = Connect = parents
+  parentLight:  '#E9F0EC',
+  parentDark:   '#5D8873',
 
-  kid:          '#D97706',        // Amber = Organize = kids earn coins
-  kidLight:     '#FDF1D6',
-  kidDark:      '#B45309',
+  kid:          '#D3A76C',        // Amber = Organize = kids earn coins
+  kidLight:     '#F5EDDF',
+  kidDark:      '#B08549',
 
   // ── Semantics ─────────────────────────────────────────────────────────
-  danger:       '#C54A27',
-  dangerLight:  '#FBEADF',
-  dangerDark:   '#9A3A1E',
-  warning:      '#D97706',
-  warningLight: '#FDF1D6',
-  warningDark:  '#B45309',
-  success:      '#3D7A5A',
-  successLight: '#E1EFE7',
-  successDark:  '#2E5F45',
-  info:         '#3B82F6',
-  infoLight:    '#DBEAFE',
-  infoDark:     '#1D4ED8',
+  danger:       '#C1705A',
+  dangerLight:  '#F3E8E2',
+  dangerDark:   '#9A5643',
+  warning:      '#D3A76C',
+  warningLight: '#F5EDDF',
+  warningDark:  '#B08549',
+  success:      '#7FA593',
+  successLight: '#E9F0EC',
+  successDark:  '#5D8873',
+  info:         '#7FA0C4',
+  infoLight:    '#E7EEF6',
+  infoDark:     '#5C80A8',
 
   // ── Accent (lavender / care) ────────────────────────────────────────────
-  accent:       '#7B5EA7',
-  accentLight:  '#EFE8F8',
-  accentDark:   '#62468C',
+  accent:       '#A79BC4',
+  accentLight:  '#EDE9F4',
+  accentDark:   '#8676AA',
 
   // ── Surfaces — warm cashmere neutrals ───────────────────────────────────
   background:   '#FAF8F4',
@@ -78,9 +78,9 @@ export const lightColors = {
   overlay:      'rgba(44,39,34,0.45)',
 
   // ── Borders ───────────────────────────────────────────────────────────
-  border:       'rgba(223,97,60,0.15)',
-  borderMed:    'rgba(223,97,60,0.28)',
-  borderStrong: 'rgba(223,97,60,0.50)',
+  border:       'rgba(201,138,110,0.15)',
+  borderMed:    'rgba(201,138,110,0.28)',
+  borderStrong: 'rgba(201,138,110,0.50)',
 
   // ── Text ──────────────────────────────────────────────────────────────
   textPrimary:   '#2C2722',
@@ -91,8 +91,8 @@ export const lightColors = {
 
   // ── Tab bar ───────────────────────────────────────────────────────────
   tabBar:       '#FFFFFF',
-  tabBarBorder: 'rgba(223,97,60,0.12)',
-  tabActive:    '#DF613C',
+  tabBarBorder: 'rgba(201,138,110,0.12)',
+  tabActive:    '#C98A6E',
   tabInactive:  '#A69A8A',
 
   // ── Status bar ────────────────────────────────────────────────────────
@@ -100,7 +100,7 @@ export const lightColors = {
 
   // ── Inputs ────────────────────────────────────────────────────────────
   inputBg:      '#F2ECE1',
-  inputBorder:  'rgba(223,97,60,0.25)',
+  inputBorder:  'rgba(201,138,110,0.25)',
   placeholder:  '#A69A8A',
 
   // ── Skeleton ──────────────────────────────────────────────────────────
@@ -108,66 +108,66 @@ export const lightColors = {
   skeletonHighlight: '#F2ECE1',
 
   // ── Legacy compat (aliases old "purple" name to the new primary hue) ───
-  purple:      '#DF613C',
-  purpleLight: '#FBEADF',
-  purpleDark:  '#C54A27',
+  purple:      '#C98A6E',
+  purpleLight: '#F3E8E2',
+  purpleDark:  '#A8664B',
 };
 
 export const darkColors: typeof lightColors = {
-  primary:      '#EE8058',
-  primaryLight: 'rgba(238,128,88,0.18)',
-  primaryDark:  '#F5A87E',
-  primaryMid:   '#F0946A',
-  primaryText:  '#F5A87E',
+  primary:      '#D8A088',
+  primaryLight: 'rgba(216,160,136,0.18)',
+  primaryDark:  '#E5BBA6',
+  primaryMid:   '#DCAC97',
+  primaryText:  '#E5BBA6',
 
-  teal:         '#5FA37D',
-  tealLight:    'rgba(95,163,125,0.18)',
-  tealDark:     '#8AC4A5',
+  teal:         '#96B7A6',
+  tealLight:    'rgba(150,183,166,0.18)',
+  tealDark:     '#B5CFC2',
 
-  amber:        '#F5A85A',
-  amberLight:   'rgba(245,168,90,0.18)',
-  amberDark:    '#FBCB94',
+  amber:        '#DDBB89',
+  amberLight:   'rgba(221,187,137,0.18)',
+  amberDark:    '#E9D0AB',
 
-  pink:         '#A78BC9',
-  pinkLight:    'rgba(167,139,201,0.18)',
-  pinkDark:     '#CBB8E0',
+  pink:         '#BBB0D2',
+  pinkLight:    'rgba(187,176,210,0.18)',
+  pinkDark:     '#D2C9E2',
 
   navy:         '#EDE7DE',
   navyLight:    'rgba(237,231,222,0.12)',
 
-  parent:       '#5FA37D',
-  parentLight:  'rgba(95,163,125,0.18)',
-  parentDark:   '#8AC4A5',
+  parent:       '#96B7A6',
+  parentLight:  'rgba(150,183,166,0.18)',
+  parentDark:   '#B5CFC2',
 
-  kid:          '#F5A85A',
-  kidLight:     'rgba(245,168,90,0.18)',
-  kidDark:      '#FBCB94',
+  kid:          '#DDBB89',
+  kidLight:     'rgba(221,187,137,0.18)',
+  kidDark:      '#E9D0AB',
 
-  danger:       '#EE8058',
-  dangerLight:  'rgba(238,128,88,0.18)',
-  dangerDark:   '#F5A87E',
-  warning:      '#F5A85A',
-  warningLight: 'rgba(245,168,90,0.18)',
-  warningDark:  '#FBCB94',
-  success:      '#5FA37D',
-  successLight: 'rgba(95,163,125,0.18)',
-  successDark:  '#8AC4A5',
-  info:         '#60A5FA',
-  infoLight:    'rgba(96,165,250,0.18)',
-  infoDark:     '#93C5FD',
+  danger:       '#D0917E',
+  dangerLight:  'rgba(208,145,126,0.18)',
+  dangerDark:   '#DFAFA1',
+  warning:      '#DDBB89',
+  warningLight: 'rgba(221,187,137,0.18)',
+  warningDark:  '#E9D0AB',
+  success:      '#96B7A6',
+  successLight: 'rgba(150,183,166,0.18)',
+  successDark:  '#B5CFC2',
+  info:         '#96B4D2',
+  infoLight:    'rgba(150,180,210,0.18)',
+  infoDark:     '#B9CEE3',
 
-  accent:       '#A78BC9',
-  accentLight:  'rgba(167,139,201,0.18)',
-  accentDark:   '#CBB8E0',
+  accent:       '#BBB0D2',
+  accentLight:  'rgba(187,176,210,0.18)',
+  accentDark:   '#D2C9E2',
 
   background:   '#0E0C13',
   surface:      '#17151D',
   card:         '#1D1A24',
   overlay:      'rgba(0,0,0,0.65)',
 
-  border:       'rgba(238,128,88,0.15)',
-  borderMed:    'rgba(238,128,88,0.28)',
-  borderStrong: 'rgba(238,128,88,0.45)',
+  border:       'rgba(216,160,136,0.15)',
+  borderMed:    'rgba(216,160,136,0.28)',
+  borderStrong: 'rgba(216,160,136,0.45)',
 
   textPrimary:   '#FDFCF9',
   textSecondary: '#B8AC9C',
@@ -176,22 +176,22 @@ export const darkColors: typeof lightColors = {
   textDisabled:  '#4A4038',
 
   tabBar:       '#17151D',
-  tabBarBorder: 'rgba(238,128,88,0.12)',
-  tabActive:    '#EE8058',
+  tabBarBorder: 'rgba(216,160,136,0.12)',
+  tabActive:    '#D8A088',
   tabInactive:  '#7A6E60',
 
   statusBar:    'light' as const,
 
   inputBg:      '#1D1A24',
-  inputBorder:  'rgba(238,128,88,0.25)',
+  inputBorder:  'rgba(216,160,136,0.25)',
   placeholder:  '#7A6E60',
 
   skeleton:          '#1D1A24',
   skeletonHighlight: '#2A2632',
 
-  purple:      '#EE8058',
-  purpleLight: 'rgba(238,128,88,0.18)',
-  purpleDark:  '#F5A87E',
+  purple:      '#D8A088',
+  purpleLight: 'rgba(216,160,136,0.18)',
+  purpleDark:  '#E5BBA6',
 };
 
 export type ThemeColors = typeof lightColors;

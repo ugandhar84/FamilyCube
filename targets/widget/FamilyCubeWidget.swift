@@ -262,21 +262,24 @@ private struct ParentWidgetView: View {
         if family == .systemMedium {
             // Two columns fill the medium widget's full width instead of
             // stacking everything down the left with dead space on the
-            // right: left is the household glance (header + headline stat
-            // + family/today counts), right is a real agenda list — the
-            // same "fill the space with actual upcoming items" approach
-            // iOS Calendar's own widget takes, rather than one buried
-            // "next event" caption.
+            // right: left is the household glance, right is a real agenda
+            // list — the same "fill the space with actual upcoming items"
+            // approach iOS Calendar's own widget takes, rather than one
+            // buried "next event" caption.
+            //
+            // Left column was: header, then loose Spacers around one big
+            // vertical checkmark block, then a single lone stat at the
+            // bottom — same wasted-space problem the small widget had.
+            // Caught-up now uses the compact checkmark row (matches small),
+            // and secondaryRow (unread + today's count) replaces the lone
+            // "Events today" StatColumn so the freed room shows both
+            // numbers instead of one.
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
-                    header(showUnreadBadge: true)
-                    Spacer(minLength: 4)
-                    pendingBlock(compact: false)
-                    Spacer(minLength: 4)
-                    // Member count is static and rarely worth a glance —
-                    // "Today" is the one mini-stat that actually changes
-                    // day to day and earns its place next to the headline.
-                    StatColumn(value: "\(data.eventsToday)", label: data.eventsToday == 1 ? "Event today" : "Events today")
+                    header(showUnreadBadge: false)
+                    pendingBlock(compact: data.pendingApprovals == 0)
+                    secondaryRow
+                    Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 

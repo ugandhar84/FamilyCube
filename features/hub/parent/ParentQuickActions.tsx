@@ -32,11 +32,16 @@ export function ParentQuickActions({ colors, isDark, groceryCount, onScanFlyer, 
         const Icon = t.icon;
         return (
           <Pressable key={t.key} onPress={t.onPress} style={{
-            flex: 1, borderRadius: 18, paddingVertical: 14, paddingHorizontal: 4, alignItems: 'center', gap: 6,
+            flex: 1, borderRadius: 18, paddingVertical: 14, paddingHorizontal: 4, alignItems: 'center', gap: 8,
             backgroundColor: isDark ? t.tint + '32' : t.tint + '2E',
             borderWidth: 1, borderColor: isDark ? t.tint + '45' : t.tint + '3A',
           }}>
-            <Icon size={19} color={t.tint} />
+            {/* Solid-tint icon chip with a white icon — bolder "badge" look
+                instead of a thin outline icon floating on the wash. */}
+            <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: t.tint }}>
+              <Icon size={17} color="#fff" strokeWidth={2.4} />
+            </View>
             <Text style={{ fontSize: TYPO.label - 1, fontWeight: '800', color: t.tint }} numberOfLines={1}>
               {t.label}
             </Text>

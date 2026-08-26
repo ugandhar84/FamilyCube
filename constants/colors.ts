@@ -18,58 +18,58 @@
 
 export const lightColors = {
   // ── Brand primaries — Dusty Terracotta ──────────────────────────────────
-  primary:      '#C98A6E',        // Dusty terracotta (main brand, primary actions) — kept a shade richer than the other three since it still carries CTA weight
-  primaryLight: '#F3E8E2',
-  primaryDark:  '#A8664B',
-  primaryMid:   '#D8A088',
-  primaryText:  '#A8664B',
+  primary:      '#CD7B57',        // Dusty terracotta (main brand, primary actions) — deepened a step, still short of the original loud version
+  primaryLight: '#F3E1D6',
+  primaryDark:  '#A05939',
+  primaryMid:   '#DA9977',
+  primaryText:  '#A05939',
 
   // ── Teal slot — Muted Sage (Connect / calm / parent) ────────────────────
-  teal:         '#7FA593',
-  tealLight:    '#E9F0EC',
-  tealDark:     '#5D8873',
+  teal:         '#69927C',
+  tealLight:    '#E3EDE8',
+  tealDark:     '#4F7562',
 
   // ── Amber — Organize (kids earn coins), dustier gold not lightened orange
-  amber:        '#D3A76C',
-  amberLight:   '#F5EDDF',
-  amberDark:    '#B08549',
+  amber:        '#C9964F',
+  amberLight:   '#F2E6CE',
+  amberDark:    '#A17638',
 
   // ── Pink slot — Muted Lavender (Care / third accent) ────────────────────
-  pink:         '#A79BC4',
-  pinkLight:    '#EDE9F4',
-  pinkDark:     '#8676AA',
+  pink:         '#9686B5',
+  pinkLight:    '#E9E3F1',
+  pinkDark:     '#75699A',
 
   // ── Navy slot — warm near-black (wordmark / text) ──────────────────────
   navy:         '#2C2722',
   navyLight:    '#F2ECE1',
 
   // ── Role accents (mapped to brand) ────────────────────────────────────
-  parent:       '#7FA593',        // Sage = Connect = parents
-  parentLight:  '#E9F0EC',
-  parentDark:   '#5D8873',
+  parent:       '#69927C',        // Sage = Connect = parents
+  parentLight:  '#E3EDE8',
+  parentDark:   '#4F7562',
 
-  kid:          '#D3A76C',        // Amber = Organize = kids earn coins
-  kidLight:     '#F5EDDF',
-  kidDark:      '#B08549',
+  kid:          '#C9964F',        // Amber = Organize = kids earn coins
+  kidLight:     '#F2E6CE',
+  kidDark:      '#A17638',
 
   // ── Semantics ─────────────────────────────────────────────────────────
-  danger:       '#C1705A',
-  dangerLight:  '#F3E8E2',
-  dangerDark:   '#9A5643',
-  warning:      '#D3A76C',
-  warningLight: '#F5EDDF',
-  warningDark:  '#B08549',
-  success:      '#7FA593',
-  successLight: '#E9F0EC',
-  successDark:  '#5D8873',
-  info:         '#7FA0C4',
-  infoLight:    '#E7EEF6',
-  infoDark:     '#5C80A8',
+  danger:       '#B85F45',
+  dangerLight:  '#F3E1D6',
+  dangerDark:   '#8E4632',
+  warning:      '#C9964F',
+  warningLight: '#F2E6CE',
+  warningDark:  '#A17638',
+  success:      '#69927C',
+  successLight: '#E3EDE8',
+  successDark:  '#4F7562',
+  info:         '#5F8CB8',
+  infoLight:    '#DEE9F2',
+  infoDark:     '#456A8E',
 
   // ── Accent (lavender / care) ────────────────────────────────────────────
-  accent:       '#A79BC4',
-  accentLight:  '#EDE9F4',
-  accentDark:   '#8676AA',
+  accent:       '#9686B5',
+  accentLight:  '#E9E3F1',
+  accentDark:   '#75699A',
 
   // ── Surfaces — warm cashmere neutrals ───────────────────────────────────
   background:   '#F7F0E4',
@@ -78,9 +78,9 @@ export const lightColors = {
   overlay:      'rgba(44,39,34,0.45)',
 
   // ── Borders ───────────────────────────────────────────────────────────
-  border:       'rgba(201,138,110,0.15)',
-  borderMed:    'rgba(201,138,110,0.28)',
-  borderStrong: 'rgba(201,138,110,0.50)',
+  border:       'rgba(205,123,87,0.18)',
+  borderMed:    'rgba(205,123,87,0.32)',
+  borderStrong: 'rgba(205,123,87,0.55)',
 
   // ── Text ──────────────────────────────────────────────────────────────
   textPrimary:   '#2C2722',
@@ -91,8 +91,8 @@ export const lightColors = {
 
   // ── Tab bar ───────────────────────────────────────────────────────────
   tabBar:       '#FFFFFF',
-  tabBarBorder: 'rgba(201,138,110,0.12)',
-  tabActive:    '#C98A6E',
+  tabBarBorder: 'rgba(205,123,87,0.14)',
+  tabActive:    '#CD7B57',
   tabInactive:  '#A69A8A',
 
   // ── Status bar ────────────────────────────────────────────────────────
@@ -100,7 +100,7 @@ export const lightColors = {
 
   // ── Inputs ────────────────────────────────────────────────────────────
   inputBg:      '#F2ECE1',
-  inputBorder:  'rgba(201,138,110,0.25)',
+  inputBorder:  'rgba(205,123,87,0.28)',
   placeholder:  '#A69A8A',
 
   // ── Skeleton ──────────────────────────────────────────────────────────
@@ -108,66 +108,66 @@ export const lightColors = {
   skeletonHighlight: '#F2ECE1',
 
   // ── Legacy compat (aliases old "purple" name to the new primary hue) ───
-  purple:      '#C98A6E',
-  purpleLight: '#F3E8E2',
-  purpleDark:  '#A8664B',
+  purple:      '#CD7B57',
+  purpleLight: '#F3E1D6',
+  purpleDark:  '#A05939',
 };
 
 export const darkColors: typeof lightColors = {
-  primary:      '#D8A088',
-  primaryLight: 'rgba(216,160,136,0.18)',
-  primaryDark:  '#E5BBA6',
-  primaryMid:   '#DCAC97',
-  primaryText:  '#E5BBA6',
+  primary:      '#DB9270',
+  primaryLight: 'rgba(219,146,112,0.20)',
+  primaryDark:  '#E9B199',
+  primaryMid:   '#E1A183',
+  primaryText:  '#E9B199',
 
-  teal:         '#96B7A6',
-  tealLight:    'rgba(150,183,166,0.18)',
-  tealDark:     '#B5CFC2',
+  teal:         '#86AC97',
+  tealLight:    'rgba(134,172,151,0.20)',
+  tealDark:     '#A9C7B5',
 
-  amber:        '#DDBB89',
-  amberLight:   'rgba(221,187,137,0.18)',
-  amberDark:    '#E9D0AB',
+  amber:        '#D9AF74',
+  amberLight:   'rgba(217,175,116,0.20)',
+  amberDark:    '#E7C695',
 
-  pink:         '#BBB0D2',
-  pinkLight:    'rgba(187,176,210,0.18)',
-  pinkDark:     '#D2C9E2',
+  pink:         '#AC9BC7',
+  pinkLight:    'rgba(172,155,199,0.20)',
+  pinkDark:     '#C8BADB',
 
   navy:         '#EDE7DE',
   navyLight:    'rgba(237,231,222,0.12)',
 
-  parent:       '#96B7A6',
-  parentLight:  'rgba(150,183,166,0.18)',
-  parentDark:   '#B5CFC2',
+  parent:       '#86AC97',
+  parentLight:  'rgba(134,172,151,0.20)',
+  parentDark:   '#A9C7B5',
 
-  kid:          '#DDBB89',
-  kidLight:     'rgba(221,187,137,0.18)',
-  kidDark:      '#E9D0AB',
+  kid:          '#D9AF74',
+  kidLight:     'rgba(217,175,116,0.20)',
+  kidDark:      '#E7C695',
 
-  danger:       '#D0917E',
-  dangerLight:  'rgba(208,145,126,0.18)',
-  dangerDark:   '#DFAFA1',
-  warning:      '#DDBB89',
-  warningLight: 'rgba(221,187,137,0.18)',
-  warningDark:  '#E9D0AB',
-  success:      '#96B7A6',
-  successLight: 'rgba(150,183,166,0.18)',
-  successDark:  '#B5CFC2',
-  info:         '#96B4D2',
-  infoLight:    'rgba(150,180,210,0.18)',
-  infoDark:     '#B9CEE3',
+  danger:       '#CC8064',
+  dangerLight:  'rgba(204,128,100,0.20)',
+  dangerDark:   '#DEA48D',
+  warning:      '#D9AF74',
+  warningLight: 'rgba(217,175,116,0.20)',
+  warningDark:  '#E7C695',
+  success:      '#86AC97',
+  successLight: 'rgba(134,172,151,0.20)',
+  successDark:  '#A9C7B5',
+  info:         '#82A6CC',
+  infoLight:    'rgba(130,166,204,0.20)',
+  infoDark:     '#AAC3DE',
 
-  accent:       '#BBB0D2',
-  accentLight:  'rgba(187,176,210,0.18)',
-  accentDark:   '#D2C9E2',
+  accent:       '#AC9BC7',
+  accentLight:  'rgba(172,155,199,0.20)',
+  accentDark:   '#C8BADB',
 
   background:   '#0E0C13',
   surface:      '#17151D',
   card:         '#1D1A24',
   overlay:      'rgba(0,0,0,0.65)',
 
-  border:       'rgba(216,160,136,0.15)',
-  borderMed:    'rgba(216,160,136,0.28)',
-  borderStrong: 'rgba(216,160,136,0.45)',
+  border:       'rgba(219,146,112,0.18)',
+  borderMed:    'rgba(219,146,112,0.32)',
+  borderStrong: 'rgba(219,146,112,0.50)',
 
   textPrimary:   '#FDFCF9',
   textSecondary: '#B8AC9C',
@@ -176,22 +176,22 @@ export const darkColors: typeof lightColors = {
   textDisabled:  '#4A4038',
 
   tabBar:       '#17151D',
-  tabBarBorder: 'rgba(216,160,136,0.12)',
-  tabActive:    '#D8A088',
+  tabBarBorder: 'rgba(219,146,112,0.14)',
+  tabActive:    '#DB9270',
   tabInactive:  '#7A6E60',
 
   statusBar:    'light' as const,
 
   inputBg:      '#1D1A24',
-  inputBorder:  'rgba(216,160,136,0.25)',
+  inputBorder:  'rgba(219,146,112,0.28)',
   placeholder:  '#7A6E60',
 
   skeleton:          '#1D1A24',
   skeletonHighlight: '#2A2632',
 
-  purple:      '#D8A088',
-  purpleLight: 'rgba(216,160,136,0.18)',
-  purpleDark:  '#E5BBA6',
+  purple:      '#DB9270',
+  purpleLight: 'rgba(219,146,112,0.20)',
+  purpleDark:  '#E9B199',
 };
 
 export type ThemeColors = typeof lightColors;

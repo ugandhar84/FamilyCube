@@ -28,14 +28,14 @@ import Animated, {
 // useTheme() should prefer colors.primary/colors.parent/etc. over BRAND.*
 // so they get the correct value per light/dark theme.
 export const BRAND = {
-  amber:  '#D3A76C',
-  amber2: '#DDBB89',
-  teal:   '#7FA593',
-  teal2:  '#96B7A6',
-  purple: '#C98A6E',
-  purple2:'#D8A088',
-  pink:   '#A79BC4',
-  pink2:  '#BBB0D2',
+  amber:  '#C9964F',
+  amber2: '#D9AF74',
+  teal:   '#69927C',
+  teal2:  '#86AC97',
+  purple: '#CD7B57',
+  purple2:'#DB9270',
+  pink:   '#9686B5',
+  pink2:  '#AC9BC7',
   navy:   '#2C2722',
   white:  '#FFFFFF',
 } as const;

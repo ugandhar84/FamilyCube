@@ -298,7 +298,11 @@ export function KidNeedsYouSection({
   if (!hasAnything) return null;
 
   return (
-    <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 4 }}>
+    // marginBottom bumped from 4 to 14 — these cards sat almost flush
+    // against the action-tile row directly below (KidTodaySection),
+    // reading as if they were part of the same group rather than two
+    // distinct sections.
+    <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 14 }}>
       {showConfirmedRide && (
         <NeedsYouRideRow
           ev={confirmedRide!} rideCountdown={rideCountdown!} colors={colors} isDark={isDark}

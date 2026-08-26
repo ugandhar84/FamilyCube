@@ -7,6 +7,26 @@ const BIOMETRIC_ENABLED_KEY_LEGACY   = '@furever_biometric_enabled';
 const BIOMETRIC_CREDENTIALS_KEY      = 'pawbond_biometric_creds';
 const BIOMETRIC_CREDENTIALS_KEY_LEGACY = 'furever_biometric_creds';
 const BIOMETRIC_SESSION_KEY = 'pawbond_biometric_session';
+// Set whenever authStore.signOut() preserves the Supabase session for
+// biometric restore instead of actually revoking it — Supabase's own client
+// storage still holds a technically-valid session in this case (skipping
+// signOut() entirely is what fixed the "saved token gets immediately
+// revoked by signOut({scope:'local'})'s own server-side call" bug), so
+// without this flag a cold app relaunch would find that still-valid session
+// and skip straight past Face ID/login with no prompt at all. Boot's own
+// getSession() gate checks this and treats a locked session as "no
+// session" for routing purposes even though it's technically restorable;
+// it's cleared only once Face ID/PIN successfully restores access.
+const LOCKED_KEY = '@familycube_locked';
+
+export async function setLocked(locked: boolean): Promise<void> {
+  if (locked) await AsyncStorage.setItem(LOCKED_KEY, '1');
+  else await AsyncStorage.removeItem(LOCKED_KEY);
+}
+
+export async function isLocked(): Promise<boolean> {
+  return (await AsyncStorage.getItem(LOCKED_KEY)) === '1';
+}
 
 // ── Hardware & enrollment check ──────────────────────────────────
 
@@ -92,20 +112,39 @@ export async function clearBiometricCredentials(): Promise<void> {
 // approach banking apps use for "Log in with Face ID".
 
 export async function saveBiometricSession(accessToken: string, refreshToken: string): Promise<void> {
-  await SecureStore.setItemAsync(
-    BIOMETRIC_SESSION_KEY,
-    JSON.stringify({ access_token: accessToken, refresh_token: refreshToken }),
-  );
+  try {
+    await SecureStore.setItemAsync(
+      BIOMETRIC_SESSION_KEY,
+      JSON.stringify({ access_token: accessToken, refresh_token: refreshToken }),
+    );
+    console.log('[Bio] saveBiometricSession: write completed for key', BIOMETRIC_SESSION_KEY);
+  } catch (e: any) {
+    // Was silently swallowed by the caller's own try/catch — reported live:
+    // sign-out logged "saved biometric session token ✓" (the caller's own
+    // log, which only confirms this function was CALLED, not that the write
+    // actually succeeded) yet the very next Face ID login attempt got
+    // "Sign in required," meaning getBiometricSession() found nothing.
+    // Logging the real failure here instead of let it vanish silently.
+    console.error('[Bio] saveBiometricSession FAILED:', e?.message, e);
+    throw e;
+  }
 }
 
 export async function getBiometricSession(): Promise<{ access_token: string; refresh_token: string } | null> {
   try {
     const raw = await SecureStore.getItemAsync(BIOMETRIC_SESSION_KEY);
-    if (!raw) return null;
+    if (!raw) {
+      console.warn('[Bio] getBiometricSession: no value stored for key', BIOMETRIC_SESSION_KEY);
+      return null;
+    }
     const parsed = JSON.parse(raw);
-    if (!parsed?.refresh_token) return null;
+    if (!parsed?.refresh_token) {
+      console.warn('[Bio] getBiometricSession: stored value present but missing refresh_token', parsed);
+      return null;
+    }
     return parsed;
-  } catch {
+  } catch (e: any) {
+    console.error('[Bio] getBiometricSession FAILED:', e?.message, e);
     return null;
   }
 }

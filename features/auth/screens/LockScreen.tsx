@@ -69,6 +69,13 @@ export default function LockScreen() {
         return;
       }
     }
+    // Clears the soft-lock flag set by authStore.signOut() when it preserves
+    // a biometric session (skipping the real Supabase signOut so Face ID can
+    // restore it) — without this, boot's getSession() gate would keep
+    // treating this valid-but-locked session as "locked" on every future
+    // cold launch, permanently stuck on this screen.
+    const { setLocked } = await import('@/lib/biometrics');
+    await setLocked(false);
     setBusy(false);
     inFlight.current = false;
     router.replace('/(tabs)');

@@ -166,7 +166,20 @@ function RootNavigator() {
         if (!navigated.current) {
           navigated.current = true;
           let destination = '/(auth)/login';
-          if (session) {
+          // A "local" sign-out (biometric preserved) deliberately never
+          // revokes this session server-side — Face ID needs it to still be
+          // valid to restore. But that also means Supabase's OWN client
+          // storage still holds a technically-valid session here, so
+          // without this check a cold relaunch right after that kind of
+          // sign-out would skip straight past the lock/login screen with no
+          // Face ID/PIN prompt at all. isLocked() is the explicit flag that
+          // makes boot treat this session as "no session" for routing
+          // purposes until Face ID/PIN actually clears it.
+          const { isLocked } = await import('@/lib/biometrics');
+          const sessionIsSoftLocked = session ? await isLocked() : false;
+          if (sessionIsSoftLocked) {
+            destination = '/(auth)/lock';
+          } else if (session) {
             // Reuse authStore's own fetchProfile() (already kicked off by
             // setSession() above) instead of a second, separate query for
             // the same row — fetchProfile has its own in-flight dedup (so

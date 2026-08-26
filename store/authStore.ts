@@ -203,16 +203,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       } catch { /* ignore */ }
     }
 
-    // If biometric login is enabled, sign out LOCALLY so the refresh token
-    // stays valid and Face ID can restore the session later. Otherwise do a
-    // full (global) sign-out that revokes the token server-side.
-    // Skipped entirely when forceGlobal is set (e.g. "sign in as a
-    // different account") — localOnly simply stays false, so the call below
-    // defaults to a global sign-out regardless of biometric state.
-    let localOnly = false;
+    // If biometric login is enabled, preserve the session for Face ID
+    // restore by NEVER calling supabase.auth.signOut() at all — only
+    // clearing this app's own local session state so the UI looks signed
+    // out. Otherwise do a full (global) Supabase sign-out that revokes the
+    // token server-side. Skipped entirely when forceGlobal is set (e.g.
+    // "sign in as a different account").
+    //
+    // Real bug found and fixed here: supabase.auth.signOut({scope:'local'})
+    // is NOT a client-only operation — auth-js's _signOut still calls
+    // this.admin.signOut(accessToken, 'local') server-side, which revokes
+    // the CURRENT session's own refresh token (Supabase's "local" scope
+    // means "don't sign out other devices," not "don't revoke this token").
+    // The previous code saved the refresh token via saveBiometricSession()
+    // and then IMMEDIATELY called signOut({scope:'local'}), which revoked
+    // that exact token before it was ever used — the saved token was dead
+    // on arrival. Reported live: Face ID prompt succeeded, but the restore
+    // attempt failed with "Sign in required" because getBiometricSession()
+    // had nothing usable to restore.
+    let preservedBiometricSession = false;
     if (!opts?.forceGlobal) {
       try {
-        const { isBiometricEnabled, saveBiometricSession } = await import('@/lib/biometrics');
+        const { isBiometricEnabled, saveBiometricSession, setLocked } = await import('@/lib/biometrics');
         const enabled = await isBiometricEnabled();
         console.log('[Bio] signOut: biometricEnabled =', enabled);
         if (enabled) {
@@ -223,13 +235,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           console.log('[Bio] signOut: hasLiveSession =', !!session, '| hasRefresh =', !!session?.refresh_token);
           if (session?.refresh_token) {
             await saveBiometricSession(session.access_token, session.refresh_token);
-            localOnly = true;
-            console.log('[Bio] signOut: saved biometric session token ✓ (local sign-out)');
+            // Marks the session as locked so boot's getSession() gate treats
+            // it as "no session" for routing purposes — without this, a cold
+            // relaunch would find Supabase's own still-valid client-side
+            // session (never revoked, by design, so Face ID can restore it)
+            // and skip straight past the lock/login screen with no prompt.
+            await setLocked(true);
+            preservedBiometricSession = true;
+            console.log('[Bio] signOut: saved biometric session token ✓ (skipping supabase signOut to keep it valid)');
           }
         }
       } catch { /* ignore */ }
     }
-    await supabase.auth.signOut(localOnly ? { scope: 'local' } : undefined);
+    if (!preservedBiometricSession) {
+      await supabase.auth.signOut();
+    }
     set({ session: null, user: null, profile: null, loading: false });
     useSubscriptionStore.getState().reset();
     usePreferenceStore.getState().reset();

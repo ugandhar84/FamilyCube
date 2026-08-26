@@ -750,11 +750,10 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     // show a loading/retry state instead of silently substituting fake
     // people.
     //
-    // Short retry with backoff specifically for the "no cache AND couldn't
-    // resolve this member's own family_id yet" case — this is exactly the
-    // auth.uid()-propagation window right after a fresh sign-in (a real,
-    // already-onboarded family with real members briefly reads back as
-    // empty). Without this, loaded:true + members:[] after a single failed
+    // Short retry with backoff for the "no cache AND the fetch came back
+    // empty" case — bridges a brief auth-propagation window right after a
+    // fresh sign-in where a real, already-onboarded family can transiently
+    // read back as empty. Without this, loaded:true + members:[] after one
     // attempt looked identical to "genuinely no family," which sent an
     // already-onboarded user through onboarding's Create/Join Family
     // screen (reported live).
@@ -775,46 +774,13 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       // (there are 3 independent call sites: ChildChoreBoard.tsx,
       // ParentReviewDeck.tsx, and familyStore's own loadFromStorage) pulled
       // the caller's own family over and over with no query-level bound.
-      let knownFamilyId = get().members.find(m => m.familyId)?.familyId;
-      // Cache-empty case (e.g. right after familyStore.reset() on sign-out,
-      // then a fresh sign-in as the same or a different account) previously
-      // fell through to an UNSCOPED `select('*')` across the whole members
-      // table with no family_id filter, relying entirely on RLS to narrow
-      // it — if auth.uid() hadn't fully propagated to Postgres yet (a real
-      // race right after a fresh sign-in), RLS could legitimately return
-      // zero rows, which then got treated as "this family really has no
-      // members," triggering the app's own onboarding redirect for an
-      // already-fully-onboarded account (reported live: correct DB profile
-      // state, but still bounced to onboarding right after logging back in).
-      // Resolving the real family via this member's own auth_user_id row
-      // first removes the dependency on the in-memory cache entirely.
-      let ownRowLookupAttempted = false;
-      if (!knownFamilyId) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          ownRowLookupAttempted = true;
-          const { data: ownRow } = await supabase.from('members').select('family_id').eq('auth_user_id', user.id).maybeSingle();
-          knownFamilyId = ownRow?.family_id ?? undefined;
-        }
-      }
-      // Never fall through to an unscoped `select('*')` across the whole
-      // members table — that was the actual root cause of a real,
-      // already-onboarded family being told it had "no members" (RLS/
-      // auth.uid() propagation race right after a fresh sign-in returning
-      // zero rows, misread as ground truth). If we genuinely can't resolve
-      // this member's own family_id after actually trying, bail out
-      // without touching `members`/`loaded` at all — the caller (
-      // loadFromStorage) still sets loaded:true afterward, but leaving
-      // `members` untouched here means it stays whatever it already was
-      // (freshly-reset [] right after sign-in, which is the honest "still
-      // loading" state) instead of getting overwritten by an unscoped
-      // query's unreliable result.
-      if (!knownFamilyId) {
-        if (ownRowLookupAttempted) {
-          console.warn('[familyStore] syncFromDB: could not resolve this member\'s own family_id — skipping sync rather than running an unscoped query');
-        }
-        return;
-      }
+      const knownFamilyId = get().members.find(m => m.familyId)?.familyId;
+      // Cache-empty case (e.g. right after familyStore.reset() on sign-out)
+      // falls through to an unscoped select('*') — this is still fully
+      // protected by Postgres RLS (which scopes by auth.uid() server-side
+      // regardless of any client-side filter), so it's safe on its own;
+      // the actual bug (see below) was a caller treating an empty RESULT
+      // as certain truth, not the query being unscoped.
       const [activeId, { data, error }] = await Promise.all([
         AsyncStorage.getItem(ACTIVE_KEY),
         // Secondary .order('id') breaks ties — two parents created in the
@@ -826,7 +792,9 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
         // id asc) uses, or a tie could make the client show/hide the wrong
         // seniors_a/seniors_b tab compared to what the server actually
         // enforces (live-DB QA verification finding, this session).
-        supabase.from('members').select('*').eq('family_id', knownFamilyId).order('created_at').order('id'),
+        knownFamilyId
+          ? supabase.from('members').select('*').eq('family_id', knownFamilyId).order('created_at').order('id')
+          : supabase.from('members').select('*').order('created_at').order('id'),
       ]);
       if (error || !data) return;
       const members = dedupeMembers(data.map(fromRow));

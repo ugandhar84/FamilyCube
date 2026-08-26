@@ -29,6 +29,7 @@ import { useNotifStore } from '@/store/notifStore';
 import { syncWidget, clearWidget, type WidgetPayload } from 'widget-data';
 import { localToday, hoursUntilEvent, fmtTime } from '@/features/hub/hubUtils';
 import { supabase } from '@/lib/supabase';
+import { useGroceryStore } from '@/store/groceryStore';
 
 export function useWidgetSync() {
   if (Platform.OS !== 'ios') return;
@@ -43,6 +44,11 @@ function useWidgetSyncInner() {
   const chores = useChoreStore(s => s.chores);
   const events = useEventStore(s => s.events);
   const unreadCount = useNotifStore(s => s.unreadCount);
+  // items is already "pending (not bought) items for the family" per
+  // groceryStore.ts's own type — no extra filtering needed. Loaded by
+  // ParentView.tsx's own mount effect (the Hub, always the parent's
+  // landing screen), so it's already populated by the time this syncs.
+  const groceryItems = useGroceryStore(s => s.items);
 
   const syncingRef = useRef(false);
 
@@ -96,6 +102,7 @@ function useWidgetSyncInner() {
             pendingApprovals,
             eventsToday,
             unreadMessages: unreadCount,
+            groceryPending: groceryItems.length,
             nextEventTitle: upcomingEvents[0]?.title ?? null,
             nextEventTime: upcomingEvents[0]?.time ?? null,
             upcomingEvents,
@@ -148,7 +155,7 @@ function useWidgetSyncInner() {
     } finally {
       syncingRef.current = false;
     }
-  }, [members, activeMemberId, familyName, familyLoaded, chores, events, unreadCount]);
+  }, [members, activeMemberId, familyName, familyLoaded, chores, events, unreadCount, groceryItems]);
 
   // Sync when the relevant data changes (including active-member switches).
   useEffect(() => { doSync(); }, [doSync]);

@@ -17,6 +17,7 @@ export interface WidgetParentSummary {
   pendingApprovals: number;  // chores sitting at pending_approval, awaiting this parent's review
   eventsToday: number;
   unreadMessages: number;
+  groceryPending: number;  // items on the family grocery list not yet bought
   nextEventTitle?: string | null;   // family's next upcoming event (any member), not just this parent's own — mirrors upcomingEvents[0]
   nextEventTime?: string | null;    // pre-formatted, e.g. "Today · 4:30 PM"
   upcomingEvents?: WidgetEvent[];   // up to 3, for the medium widget's Calendar-style list

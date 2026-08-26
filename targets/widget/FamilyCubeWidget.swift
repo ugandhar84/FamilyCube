@@ -19,6 +19,7 @@ struct WidgetParentSummary: Codable {
     var pendingApprovals: Int
     var eventsToday: Int
     var unreadMessages: Int
+    var groceryPending: Int  // items on the family grocery list not yet bought
     var nextEventTitle: String?
     var nextEventTime: String?
     var upcomingEvents: [WidgetEvent]?
@@ -264,14 +265,19 @@ private struct ParentWidgetView: View {
     @ViewBuilder private func miniStat(_ icon: String, _ text: String) -> some View {
         HStack(spacing: 3) {
             Image(systemName: icon).font(.system(size: 10)).foregroundColor(.white.opacity(0.85))
-            Text(text).font(.system(size: 11, weight: .semibold)).foregroundColor(.white.opacity(0.9)).lineLimit(1)
+            Text(text).font(.system(size: 11, weight: .semibold)).foregroundColor(.white.opacity(0.9))
+                .lineLimit(1).minimumScaleFactor(0.85)
         }
     }
 
+    // Each stat only renders when > 0, so in practice this rarely shows
+    // all three at once — minimumScaleFactor above is the safety net for
+    // when it does.
     @ViewBuilder private var secondaryRow: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             if data.unreadMessages > 0 { miniStat("bubble.left.fill", "\(data.unreadMessages) unread") }
             if data.eventsToday > 0 { miniStat("calendar", "\(data.eventsToday) events") }
+            if data.groceryPending > 0 { miniStat("cart.fill", "\(data.groceryPending) items") }
         }
     }
 

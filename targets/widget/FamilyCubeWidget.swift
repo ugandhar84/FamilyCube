@@ -285,9 +285,11 @@ private struct ParentWidgetView: View {
             // "Events today" StatColumn so the freed room shows both
             // numbers instead of one.
             HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 0) {
                     header(showUnreadBadge: false)
+                    Spacer(minLength: 8)
                     pendingBlock(compact: data.pendingApprovals == 0)
+                    Spacer(minLength: 8)
                     secondaryRow
                     Spacer(minLength: 0)
                 }

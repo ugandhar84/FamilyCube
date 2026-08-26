@@ -1,5 +1,5 @@
 import { View, Text, Pressable } from 'react-native';
-import { ChevronDown, Star, Coins, Users } from 'lucide-react-native';
+import { ChevronDown, Star, Coins } from 'lucide-react-native';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { withinLast24h } from '@/lib/dates';
 import { SectionCard } from '../../hubComponents';
@@ -34,7 +34,6 @@ export function SponsorQuestsSection({
   onOpenMatchModal: () => void;
   onOpenCreateQuestModal: () => void;
 }) {
-  const parents = members.filter(m => m.role === 'parent');
   const myMatches = grandparentMatches.filter(m => m.grandparentId === active.id && m.isActive);
   console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=SponsorQuestsSection.myMatches totalSource=${grandparentMatches.length} afterFilter=${myMatches.length} [features/hub/senior/sponsor/SponsorQuestsSection.tsx:38]`);
   const mySponsored = (status?: ChoreTask['status']) => chores.filter(c =>
@@ -100,33 +99,6 @@ export function SponsorQuestsSection({
           </View>
           <ChevronDown size={14} color={colors.textTertiary} />
         </Pressable>
-
-        {/* Whose parent am I? — informational only (both parents can still
-            review either side's GP quests), shown when there's more than
-            one parent so it's actually ambiguous which side this GP is on. */}
-        {parents.length > 1 && (
-          <View style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : '#F1F5F9', marginBottom: 4 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-              <Users size={13} color={colors.textTertiary} />
-              <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary }}>I'm whose parent?</Text>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              {parents.map(p => {
-                const picked = active.linkedParentId === p.id;
-                return (
-                  <Pressable key={p.id} onPress={() => { console.log(`[UserAction] FORM screen=Hub role=senior member=${active.name} selected "${p.name.split(' ')[0]}" for "I'm whose parent?" on "Chores I Sponsor" → updateMember(linkedParentId) [features/hub/senior/sponsor/SponsorQuestsSection.tsx:103]`); updateMember(active.id, { linkedParentId: p.id }); }}
-                    style={{ flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10,
-                      borderWidth: 1.5, borderColor: picked ? BRAND.teal : (isDark ? colors.border : '#E2E8F0'),
-                      backgroundColor: picked ? BRAND.teal + '15' : 'transparent' }}>
-                    <Text style={{ fontSize: GP.body, fontWeight: '700', color: picked ? BRAND.teal : colors.textPrimary }}>
-                      {p.name.split(' ')[0]}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-        )}
 
         <MatchRulesCard myMatches={myMatches} kids={kids} colors={colors} isDark={isDark} />
         <AwaitingParentCard quests={awaitingParent} colors={colors} isDark={isDark} active={active} />

@@ -1,8 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, View, Text, Pressable } from 'react-native';
-import { router } from 'expo-router';
-import { Gift, ChevronRight } from 'lucide-react-native';
 import * as Calendar from 'expo-calendar';
 import * as ImagePicker from 'expo-image-picker';
 import { BRAND } from '@/components/FamilyCubeLogo';
@@ -34,7 +32,6 @@ import { SavingsMatchModal } from './senior/SavingsMatchModal';
 import { CreateQuestModal } from './senior/CreateQuestModal';
 import { MySponsoredQuestsSection } from './senior/MySponsoredQuestsSection';
 import { ReceiptSubmissionModal } from './senior/ReceiptSubmissionModal';
-import { FamilyMemoriesCard } from './senior/FamilyMemoriesCard';
 import { SectionCard, PickupRadarStatus } from './hubComponents';
 import { KidRideBanner } from './kid/KidRideBanner';
 import { DirectPendingCard } from './parent/backlog/DirectPendingCard';
@@ -967,34 +964,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         active={active}
       />
 
-      {/* Perks — a senior's own Store redemption (canRedeemSelf, "My
-          Redemptions" — built this session) had no reachable path at all:
-          seniors get Memories instead of Apps in their 5th tab slot
-          (deliberate simplification), and Store's own Vault-tile entry
-          point is parent/kid-only. Rather than restructure the tab bar,
-          this is the same pattern every other senior feature already uses
-          — a Hub card that opens the screen directly (QA sweep,
-          grandparent-role audit, Critical C2). */}
-      <Pressable onPress={() => { logAction('Perks (navigate to Store)', "router.push('/(tabs)/store') [navigation only, no DB write]", { at: '903' }); router.push('/(tabs)/store' as any); }}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
-          backgroundColor: isDark ? colors.accent + '22' : colors.accent + '1E', borderRadius: 16,
-          borderWidth: 1, borderColor: colors.accent + (isDark ? '38' : '2C'), padding: 14 }}>
-        {/* Solid-tint icon chip with a white icon, matching the Parent Hub's
-            quick-action tiles — was a tint-only chip with a hardcoded raw
-            hex (#7C3AED) instead of colors.accent. */}
-        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.accent,
-          alignItems: 'center', justifyContent: 'center' }}>
-          <Gift size={20} color="#fff" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>Perks</Text>
-          <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
-            {(active as any).gpCoins ?? 0} 🪙 · redeem a reward
-          </Text>
-        </View>
-        <ChevronRight size={18} color={colors.textTertiary} />
-      </Pressable>
-
       <SponsorQuestsSection
         active={active} kids={kids} members={members} allNames={allNames} colors={colors} isDark={isDark}
         chores={chores} grandparentMatches={grandparentMatches} pendingGpApproval={pendingGpApproval}
@@ -1057,11 +1026,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
         updateQuest={updateQuest}
         addParentQuest={addParentQuest}
       />
-
-      {/* ══ MEMORIES ══ */}
-      <GroupBand label="Memories" color={BRAND.pink} colors={colors} />
-
-      <FamilyMemoriesCard colors={colors} isDark={isDark} />
 
       <SmartTaskComposer
         visible={composerVisible}

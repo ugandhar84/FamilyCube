@@ -11,7 +11,7 @@ export default function DayCard({ day, meals, onRecipe, onEdit, onDelete, onAdd,
   colors: any; isDark: boolean;
 }) {
   const isToday = new Date().toLocaleDateString('en-US', { weekday: 'short' }) === day;
-  const accentColor = isToday ? colors.accent : colors.pink;
+  const accentColor = isToday ? colors.accent : colors.danger;
 
   return (
     <View style={{ marginTop: 10 }}>

@@ -299,8 +299,8 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
 
   if (loading) return (
     <View>
-      <FlatSectionHeader Icon={ChefHat} title="Meal Planner" accent={colors.pink} colors={colors} />
-      <ActivityIndicator color={colors.pink} style={{ marginVertical: 24 }} />
+      <FlatSectionHeader Icon={ChefHat} title="Meal Planner" accent={colors.danger} colors={colors} />
+      <ActivityIndicator color={colors.danger} style={{ marginVertical: 24 }} />
     </View>
   );
 
@@ -336,9 +336,9 @@ export default function MealsTab({ colors, isDark }: { colors: any; isDark: bool
 
       <View>
         <FlatSectionHeader
-          Icon={ChefHat} title="Week Plan" accent={colors.pink} colors={colors}
+          Icon={ChefHat} title="Week Plan" accent={colors.danger} colors={colors}
           badge={`Wk of ${curWeek}`}
-          onAction={load} actionIcon={<RefreshCw size={14} color={colors.pink} />}
+          onAction={load} actionIcon={<RefreshCw size={14} color={colors.danger} />}
         />
 
         {/* Nutrition tip */}

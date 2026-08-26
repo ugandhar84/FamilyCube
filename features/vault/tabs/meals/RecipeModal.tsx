@@ -48,7 +48,7 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={[rm.modal, { backgroundColor: isDark ? colors.background : colors.pinkLight }]}>
+      <View style={[rm.modal, { backgroundColor: isDark ? colors.background : colors.dangerLight }]}>
         {/* Header */}
         <View style={[rm.header, { borderColor: colors.border }]}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, flex: 1 }}>
@@ -57,7 +57,7 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
               <Text style={{ fontSize: 17, fontWeight: '900', color: colors.textPrimary, lineHeight: 23 }} numberOfLines={3}>
                 {meal.title}
               </Text>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.pink, marginTop: 3 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.danger, marginTop: 3 }}>
                 {meal.day} · {meal.prep_minutes ?? '?'} min prep
               </Text>
             </View>
@@ -73,9 +73,9 @@ export default function RecipeModal({ meal, visible, onClose, onAddToGrocery, se
             {(meal.kid_friendly_rating ?? 0) > 0 && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                 {Array.from({ length: meal.kid_friendly_rating! }).map((_, i) => (
-                  <Star key={i} size={13} fill={colors.pink} color={colors.pink} />
+                  <Star key={i} size={13} fill={colors.danger} color={colors.danger} />
                 ))}
-                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.pink, marginLeft: 3 }}>Kid Approved</Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.danger, marginLeft: 3 }}>Kid Approved</Text>
               </View>
             )}
             {(meal.dietary_tags ?? []).map(tag => (

@@ -44,7 +44,7 @@ export default function MealSelectionPhase({
 
       {pendingOptions.map(dayOpt => (
         <View key={dayOpt.day} style={{ gap: 6 }}>
-          <Text style={{ fontSize: 12, fontWeight: '900', color: colors.pink, letterSpacing: 0.5 }}>{dayOpt.day.toUpperCase()}</Text>
+          <Text style={{ fontSize: 12, fontWeight: '900', color: colors.danger, letterSpacing: 0.5 }}>{dayOpt.day.toUpperCase()}</Text>
           {dayOpt.options.map((opt, idx) => {
             const daySel = selected[dayOpt.day] ?? [0];
             const isSelected = daySel.includes(idx);
@@ -78,12 +78,12 @@ export default function MealSelectionPhase({
                   <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary }} numberOfLines={1}>{opt.mealName}</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                      <Timer size={10} color={colors.pink} />
-                      <Text style={{ fontSize: 11, fontWeight: '700', color: colors.pink }}>{opt.prepMinutes}m</Text>
+                      <Timer size={10} color={colors.danger} />
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: colors.danger }}>{opt.prepMinutes}m</Text>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 1 }}>
                       {Array.from({ length: opt.kidFriendlyRating }).map((_, si) => (
-                        <Star key={si} size={9} fill={colors.pink} color={colors.pink} />
+                        <Star key={si} size={9} fill={colors.danger} color={colors.danger} />
                       ))}
                     </View>
                     {opt.dietaryTags.slice(0, 2).map(tag => (

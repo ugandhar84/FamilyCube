@@ -130,7 +130,7 @@ export function detectAlertTint(text: string): 'danger' | 'warning' | 'success' 
 }
 
 export const SHARE_KIND_META: Record<string, { label: string; icon: string; accentKey: string }> = {
-  meal:   { label: 'Meal',   icon: '🍽️', accentKey: 'pink' },
+  meal:   { label: 'Meal',   icon: '🍽️', accentKey: 'danger' },
   event:  { label: 'Event',  icon: '📅', accentKey: 'primary' },
   quest:  { label: 'Quest',  icon: '✅', accentKey: 'kid' },
 };

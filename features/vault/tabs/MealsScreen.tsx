@@ -38,9 +38,9 @@ export default function MealsScreen({ hideHeader = false }: { hideHeader?: boole
             <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
           <View style={{ width: 34, height: 34, borderRadius: 10,
-            backgroundColor: colors.pink + '18', borderWidth: 1, borderColor: colors.pink + '30',
+            backgroundColor: colors.danger + '18', borderWidth: 1, borderColor: colors.danger + '30',
             alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-            <ChefHat size={17} color={colors.pink} />
+            <ChefHat size={17} color={colors.danger} />
           </View>
           <Text style={{ fontSize: 22, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.3, flex: 1 }}>
             Meals

@@ -23,7 +23,7 @@ export function ParentQuickActions({ colors, isDark, groceryCount, onScanFlyer, 
     // Links straight to its own route (app/(tabs)/meals.tsx), same pattern
     // as Grocery below, rather than the shared VaultScreen openFeature
     // overlay — a real dedicated page per explicit direction.
-    { key: 'meals', label: 'Meals', icon: ChefHat, tint: colors.pink, onPress: () => { console.log(`[UserAction] screen=Hub role=parent tapped "Meals" quick action → router.push /(tabs)/meals [features/hub/parent/ParentQuickActions.tsx:24]`); router.push('/(tabs)/meals' as any); } },
+    { key: 'meals', label: 'Meals', icon: ChefHat, tint: colors.danger, onPress: () => { console.log(`[UserAction] screen=Hub role=parent tapped "Meals" quick action → router.push /(tabs)/meals [features/hub/parent/ParentQuickActions.tsx:24]`); router.push('/(tabs)/meals' as any); } },
   ];
 
   return (

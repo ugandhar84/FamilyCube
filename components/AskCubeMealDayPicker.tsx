@@ -52,7 +52,7 @@ export default function AskCubeMealDayPicker({
   onConfirm: (weekOf: string, day: string, mealType: string, date: Date) => void;
 }) {
   const { colors } = useTheme();
-  const accent = colors.pink;
+  const accent = colors.danger;
 
   const [date, setDate] = useState(() => resolveInitialDate(initialDay));
   const [mealType, setMealType] = useState(initialMealType ?? 'Dinner');

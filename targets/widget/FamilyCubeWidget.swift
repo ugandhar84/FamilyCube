@@ -220,14 +220,24 @@ private struct ParentWidgetView: View {
     @ViewBuilder private func pendingBlock(compact: Bool) -> some View {
         if data.pendingApprovals == 0 {
             if compact {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill").font(.system(size: 16)).foregroundColor(.white)
-                    Text("All caught up").font(.system(size: 13, weight: .bold)).foregroundColor(.white.opacity(0.95))
+                // Plain checkmark glyph, not .circle.fill — that variant
+                // renders as a solid white disc with the background color
+                // punched through for the check, which looked like a
+                // stray system badge next to plain white icons/text
+                // everywhere else on the tile (live-reported). minimumScale
+                // + lineLimit(1) stop "All caught up" from wrapping to two
+                // lines in the small widget's narrow width, which had
+                // silently eaten back all the vertical space this compact
+                // row was supposed to free up.
+                HStack(spacing: 5) {
+                    Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundColor(.white)
+                    Text("All clear").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                        .lineLimit(1).minimumScaleFactor(0.8)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 2) {
-                    Image(systemName: "checkmark.circle.fill").font(.system(size: 26)).foregroundColor(.white)
-                    Text("All caught up").font(.caption).bold().foregroundColor(.white.opacity(0.9))
+                    Image(systemName: "checkmark").font(.system(size: 20, weight: .bold)).foregroundColor(.white)
+                    Text("All clear").font(.caption).bold().foregroundColor(.white.opacity(0.9))
                 }
             }
         } else {
@@ -254,7 +264,7 @@ private struct ParentWidgetView: View {
     @ViewBuilder private var secondaryRow: some View {
         HStack(spacing: 10) {
             if data.unreadMessages > 0 { miniStat("bubble.left.fill", "\(data.unreadMessages) unread") }
-            if data.eventsToday > 0 { miniStat("calendar", "\(data.eventsToday) today") }
+            if data.eventsToday > 0 { miniStat("calendar", "\(data.eventsToday) events") }
         }
     }
 
@@ -299,14 +309,17 @@ private struct ParentWidgetView: View {
             // line or dropped. Header stays top; the checkmark row is now
             // compact (icon + label inline) so the freed space actually
             // shows something instead of just being emptier padding.
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 0) {
                 // No unread badge here — secondaryRow below already spells
                 // out the same number as "N unread," a badge next to it
                 // would just repeat it.
                 header(showUnreadBadge: false)
+                Spacer(minLength: 6)
                 pendingBlock(compact: true)
+                Spacer(minLength: 6)
                 secondaryRow
                 if let title = data.nextEventTitle, !title.isEmpty {
+                    Spacer(minLength: 6)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(title).font(.system(size: 11, weight: .semibold)).foregroundColor(.white).lineLimit(1)
                         if let time = data.nextEventTime {

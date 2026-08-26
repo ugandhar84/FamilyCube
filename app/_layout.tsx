@@ -167,11 +167,17 @@ function RootNavigator() {
           navigated.current = true;
           let destination = '/(auth)/login';
           if (session) {
-            const { data: profile, error: profileErr } = await supabase
-              .from('profiles')
-              .select('onboarding_completed, terms_accepted, deleted_at, handle')
-              .eq('id', session.user.id)
-              .single();
+            // Reuse authStore's own fetchProfile() (already kicked off by
+            // setSession() above) instead of a second, separate query for
+            // the same row — fetchProfile has its own in-flight dedup (so
+            // this either joins that same promise or is a fast no-op) and a
+            // 15s TTL cache, so this is not a redundant round trip. This
+            // also means every navigation gate now reads from the exact
+            // same fetch/cache, removing one more source of the kind of
+            // cross-gate staleness/race this session's other fixes closed.
+            await useAuthStore.getState().fetchProfile(session.user.id);
+            const profile = useAuthStore.getState().profile;
+            const profileErr = profile ? null : new Error('Profile not found after fetchProfile');
             if (profile?.deleted_at) {
               // Family Cube's own soft-delete window is 7 days (Profile's
               // "Delete account" danger-zone action) — see the symmetric
@@ -214,7 +220,6 @@ function RootNavigator() {
               console.warn('[FamilyCube:OnboardingGate] routing to /onboarding', {
                 userId: session.user.id,
                 profileErr: profileErr?.message,
-                profileErrCode: (profileErr as any)?.code,
                 terms_accepted: profile?.terms_accepted,
                 onboarding_completed: profile?.onboarding_completed,
                 profileFound: !!profile,
@@ -305,11 +310,14 @@ function RootNavigator() {
         // Only navigate from SIGNED_IN after boot is done (i.e. user signed in from the login screen).
         if (!bootCompleted.current) return;
         const mySeq = ++profileCheckSeq.current;
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('onboarding_completed, terms_accepted, deleted_at, handle')
-          .eq('id', session.user.id)
-          .single();
+        // Reuses authStore's own fetchProfile()/profile (dedup + 15s TTL
+        // cache) instead of a third independent query for the same row —
+        // same consolidation as the boot gate above. The profileCheckSeq
+        // guard below is unrelated to the data source and still protects
+        // against THIS handler firing more than once in overlapping fashion.
+        await useAuthStore.getState().fetchProfile(session.user.id);
+        const profile = useAuthStore.getState().profile;
+        const profileError = profile ? null : new Error('Profile not found after fetchProfile');
         // A newer check already started (and may have already navigated)
         // while this one was in flight — this result is stale, don't act
         // on it or risk stomping a correct navigation with an outdated read.

@@ -55,7 +55,13 @@ interface AuthState {
   acceptTerms: () => Promise<void>;
   acceptAiConsent: (accepted: boolean) => Promise<void>;
   completeOnboarding: () => Promise<void>;
-  signOut: () => Promise<void>;
+  // forceGlobal: skip the biometric-preserve branch entirely and always do
+  // a full/global sign-out, even if biometric is enabled — for "sign in as
+  // a different account" flows, where preserving a restorable token for the
+  // account being abandoned would be wrong. Every other side effect (push-
+  // token removal, all store resets including familyStore.reset(), cache
+  // clearing) still runs identically regardless of this flag.
+  signOut: (opts?: { forceGlobal?: boolean }) => Promise<void>;
   setBiometricEnabled: (enabled: boolean) => void;
 }
 
@@ -181,7 +187,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (data) set({ profile: data as UserProfile });
   },
 
-  signOut: async () => {
+  signOut: async (opts) => {
     set({ loading: true });
 
     const userId = get().user?.id ?? null;
@@ -200,24 +206,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // If biometric login is enabled, sign out LOCALLY so the refresh token
     // stays valid and Face ID can restore the session later. Otherwise do a
     // full (global) sign-out that revokes the token server-side.
+    // Skipped entirely when forceGlobal is set (e.g. "sign in as a
+    // different account") — localOnly simply stays false, so the call below
+    // defaults to a global sign-out regardless of biometric state.
     let localOnly = false;
-    try {
-      const { isBiometricEnabled, saveBiometricSession } = await import('@/lib/biometrics');
-      const enabled = await isBiometricEnabled();
-      console.log('[Bio] signOut: biometricEnabled =', enabled);
-      if (enabled) {
-        // Capture the CURRENT session tokens right now. Supabase rotates refresh
-        // tokens on every refresh, so a token saved earlier may already be
-        // stale — grabbing it at sign-out time gives the freshest valid one.
-        const { data: { session } } = await supabase.auth.getSession();
-        console.log('[Bio] signOut: hasLiveSession =', !!session, '| hasRefresh =', !!session?.refresh_token);
-        if (session?.refresh_token) {
-          await saveBiometricSession(session.access_token, session.refresh_token);
-          localOnly = true;
-          console.log('[Bio] signOut: saved biometric session token ✓ (local sign-out)');
+    if (!opts?.forceGlobal) {
+      try {
+        const { isBiometricEnabled, saveBiometricSession } = await import('@/lib/biometrics');
+        const enabled = await isBiometricEnabled();
+        console.log('[Bio] signOut: biometricEnabled =', enabled);
+        if (enabled) {
+          // Capture the CURRENT session tokens right now. Supabase rotates refresh
+          // tokens on every refresh, so a token saved earlier may already be
+          // stale — grabbing it at sign-out time gives the freshest valid one.
+          const { data: { session } } = await supabase.auth.getSession();
+          console.log('[Bio] signOut: hasLiveSession =', !!session, '| hasRefresh =', !!session?.refresh_token);
+          if (session?.refresh_token) {
+            await saveBiometricSession(session.access_token, session.refresh_token);
+            localOnly = true;
+            console.log('[Bio] signOut: saved biometric session token ✓ (local sign-out)');
+          }
         }
-      }
-    } catch { /* ignore */ }
+      } catch { /* ignore */ }
+    }
     await supabase.auth.signOut(localOnly ? { scope: 'local' } : undefined);
     set({ session: null, user: null, profile: null, loading: false });
     useSubscriptionStore.getState().reset();

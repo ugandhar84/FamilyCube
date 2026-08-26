@@ -6,6 +6,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/ThemeContext';
+import { useAuthStore } from '@/store/authStore';
 import { AnimatedCubeMark } from '@/components/FamilyCubeLogo';
 import {
   getBiometricLabel,
@@ -83,8 +84,16 @@ export default function LockScreen() {
 
   const signInDifferent = async () => {
     // Full switch-account: drop the stored biometric session and sign out.
+    // Routed through authStore.signOut({ forceGlobal: true }) instead of a
+    // raw supabase.auth.signOut() — the raw call bypassed familyStore.reset()
+    // entirely, a real cross-account data leak if the next sign-in on this
+    // device is a different account (familyStore caches members under fixed,
+    // non-user-scoped keys and would otherwise show the previous account's
+    // family). forceGlobal ensures this never preserves a biometric-
+    // restorable token for the account being abandoned, matching this
+    // action's own intent.
     await clearBiometricSession();
-    await supabase.auth.signOut();
+    await useAuthStore.getState().signOut({ forceGlobal: true });
     router.replace('/(auth)/login?signedOut=1' as any);
   };
 

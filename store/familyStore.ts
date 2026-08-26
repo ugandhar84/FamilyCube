@@ -201,6 +201,20 @@ interface FamilyState {
   members: FamilyMember[];
   activeMemberId: string | null;
   loaded: boolean;
+  // 'idle' before any load attempt; 'loading' while loadFromStorage's cache
+  // read / bounded retry loop is still running; 'confirmed' once either a
+  // non-empty cache hit landed, OR the bounded retry loop exhausted all
+  // attempts (whether it found members or not). Only loadFromStorage's own
+  // bounded loop may set 'confirmed' — syncFromDB's other direct call sites
+  // (ChildChoreBoard.tsx, ParentReviewDeck.tsx) never touch this, since only
+  // the bounded path is guaranteed to terminate. Consumers deciding "does
+  // this account have a family" (e.g. (tabs)/_layout.tsx's redirect) must
+  // gate on this being 'confirmed', never on `loaded` alone or on
+  // members.length===0 while still 'loading' — treating a still-resolving
+  // fetch as "confirmed empty" was the root cause of a real bug (a signed-in,
+  // already-onboarded user with a real family being bounced to onboarding's
+  // Create/Join Family screen because of a transient auth-propagation race).
+  familyLoadStatus: 'idle' | 'loading' | 'confirmed';
   familyName: string;
 
   setMembers: (members: FamilyMember[]) => void;
@@ -368,6 +382,7 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   members: [],
   activeMemberId: null,
   loaded: false,
+  familyLoadStatus: 'idle',
   familyName: 'Our Family',
 
   setFamilyName: (name) => set({ familyName: name }),
@@ -723,6 +738,7 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
   },
 
   loadFromStorage: async () => {
+    set({ familyLoadStatus: 'loading' });
     try {
       const [raw, activeId] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEY),
@@ -734,6 +750,7 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
           members: cached,
           activeMemberId: applyActive(cached, activeId, null),
           loaded: true,
+          familyLoadStatus: 'confirmed',
         });
         // Refresh in background
         get().syncFromDB();
@@ -762,7 +779,14 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       if (get().members.length > 0) break;
       if (attempt < 2) await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
     }
-    set({ loaded: true });
+    // Reached unconditionally once the bounded loop above ends — this is
+    // what guarantees familyLoadStatus always resolves to 'confirmed' in
+    // bounded time (≤3 attempts, ≤~1.5s backoff) regardless of what the
+    // query returned, so consumers gating on 'confirmed' can never be
+    // blocked indefinitely (unlike a since-reverted fix attempt that added
+    // an unbounded "can't verify, don't touch state" bail-out and caused a
+    // genuine infinite loop).
+    set({ loaded: true, familyLoadStatus: 'confirmed' });
   },
 
   syncFromDB: async () => {
@@ -827,6 +851,6 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       AsyncStorage.removeItem(STORAGE_KEY),
       AsyncStorage.removeItem(ACTIVE_KEY),
     ]);
-    set({ members: [], activeMemberId: null, loaded: false, familyName: '' });
+    set({ members: [], activeMemberId: null, loaded: false, familyLoadStatus: 'idle', familyName: '' });
   },
 }));

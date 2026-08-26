@@ -358,16 +358,34 @@ export default function TabLayout() {
   // sets members to [] with loaded:true, and this tab shell can still be
   // mounted for one more render before the sign-out navigation actually
   // swaps the stack — without this guard, that one-render window raced this
-  // effect straight to /onboarding for a user who just signed out cleanly
-  // (reported live: Sign Out landed on the onboarding Terms screen, which
-  // then threw "Not signed in" the moment Accept was tapped, confirming
-  // there was genuinely no session by the time this fired).
+  // effect straight to /onboarding for a user who just signed out cleanly.
+  //
+  // Gated on familyLoadStatus === 'confirmed' rather than familyLoaded: a
+  // still-resolving fetch (e.g. a transient auth-propagation race right
+  // after sign-in) previously looked identical to "genuinely no family" the
+  // instant familyLoaded flipped true, bouncing an already-onboarded user
+  // with a real family into onboarding's Create/Join Family screen.
+  // familyLoadStatus only reaches 'confirmed' once familyStore's bounded
+  // retry loop has actually finished, so this can no longer fire prematurely.
+  //
+  // One-shot via redirectedToOnboarding: without it, this effect could
+  // re-fire on every members.length/familyLoadStatus transition. Combined
+  // with SetupFamilyScreen's own existing-family check (which can bounce
+  // the user back to /(tabs), remounting this component), an unguarded
+  // effect risked a genuine ping-pong loop between the two route groups —
+  // a prior fix attempt at a related issue caused exactly this kind of
+  // infinite loop. A plain useRef (not module state) still gets a fresh
+  // guard on a genuine new mount of this component.
   const hasSession = useAuthStore(s => !!s.session);
+  const familyLoadStatus = useFamilyStore(s => s.familyLoadStatus);
+  const redirectedToOnboarding = useRef(false);
   useEffect(() => {
-    if (hasSession && familyLoaded && members.length === 0) {
+    if (redirectedToOnboarding.current) return;
+    if (hasSession && familyLoadStatus === 'confirmed' && members.length === 0) {
+      redirectedToOnboarding.current = true;
       router.replace('/onboarding');
     }
-  }, [hasSession, familyLoaded, members.length]);
+  }, [hasSession, familyLoadStatus, members.length]);
 
   // Prefetch the default chat channel at tab-shell mount, same as Hub/
   // Tasks' own stores above — Chat's ENTIRE data pipeline (message fetch,

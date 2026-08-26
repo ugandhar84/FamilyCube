@@ -186,7 +186,16 @@ function RootNavigator() {
                   .update({ deleted_at: null })
                   .eq('id', session.user.id);
                 if (restoreErr) {
-                  await supabase.auth.signOut({ scope: 'local' });
+                  // Routed through authStore.signOut({ forceGlobal: true })
+                  // instead of a raw scope:'local' call — the raw call
+                  // bypassed familyStore.reset() and every other store
+                  // reset, and never cleared a stale biometric token for an
+                  // account whose restore just failed (which would
+                  // otherwise keep silently offering Face ID into a broken
+                  // state on the next cold launch).
+                  const { clearBiometricSession } = await import('@/lib/biometrics');
+                  await clearBiometricSession().catch(() => {});
+                  await useAuthStore.getState().signOut({ forceGlobal: true });
                   hideSplashThen(() => router.replace('/(auth)/login'));
                   return;
                 }
@@ -333,7 +342,13 @@ function RootNavigator() {
             if (restoreErr) {
               console.error('[FamilyCube:Restore] Failed to restore account:', restoreErr.message);
               showAlert('Restore failed', "We couldn't restore your account right now. Please try signing in again.");
-              await supabase.auth.signOut({ scope: 'local' });
+              // Same consolidation as the boot-time restore-failure branch
+              // above — forceGlobal ensures a consistent full sign-out with
+              // familyStore.reset() and every other store reset applied,
+              // and clears any stale biometric token for this broken account.
+              const { clearBiometricSession } = await import('@/lib/biometrics');
+              await clearBiometricSession().catch(() => {});
+              await useAuthStore.getState().signOut({ forceGlobal: true });
               return;
             } else {
               showAlert(

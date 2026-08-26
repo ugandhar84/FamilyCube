@@ -67,7 +67,9 @@ export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCou
         color: colors.textPrimary,
         letterSpacing: LETTER_SPACING.display,
       }}>
-        {getGreeting(firstName)}
+        {getGreetingPrefix()}
+        {'\n'}
+        <Text style={{ fontWeight: '400' }}>{firstName}</Text>
       </Text>
       <Text style={{
         fontSize: TYPO.label, fontWeight: '600',
@@ -102,11 +104,11 @@ function getTimeOfDay(): 'morning' | 'afternoon' | 'evening' {
   return 'evening';
 }
 
-function getGreeting(firstName: string): string {
+function getGreetingPrefix(): string {
   const tod = getTimeOfDay();
-  if (tod === 'morning')   return `Good morning, ${firstName}`;
-  if (tod === 'afternoon') return `Good afternoon, ${firstName}`;
-  return `Good evening, ${firstName}`;
+  if (tod === 'morning')   return 'Good morning,';
+  if (tod === 'afternoon') return 'Good afternoon,';
+  return 'Good evening,';
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────

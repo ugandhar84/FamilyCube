@@ -173,8 +173,7 @@ function CustomTabBar({ state, navigation }: any) {
   // canvas, not a separate bar sitting on top of it — was hardcoded to
   // stale pre-Kinfolk-rebrand hex (#1A1428/#FFFFFF, purple border) that
   // never tracked the real theme tokens.
-  const bgColor     = colors.background;
-  const borderColor = colors.border;
+  const bgColor = colors.background;
 
   const [barHeight, setBarHeight] = useState(0);
   const totalHeight = barHeight + (insets.bottom || 16);
@@ -190,7 +189,7 @@ function CustomTabBar({ state, navigation }: any) {
       }],
     }}>
       <View
-        style={[styles.bar, { backgroundColor: bgColor, borderTopColor: borderColor }]}
+        style={[styles.bar, { backgroundColor: bgColor }]}
         onLayout={e => { setBarWidth(e.nativeEvent.layout.width); setBarHeight(e.nativeEvent.layout.height); }}
       >
         {/* Sliding gradient pill */}
@@ -504,14 +503,12 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   bar: {
+    // Flush with the canvas — no border/shadow/elevation seam. Nav should
+    // read as part of the same surface as the page above it, not a
+    // separate lifted bar (explicit direction, plus this shadowColor was
+    // leftover pre-Kinfolk-rebrand purple that never matched anything).
     flexDirection: 'row',
-    borderTopWidth: 1,
     paddingTop: 8,
-    shadowColor: '#6C5CE7',
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: -4 },
-    shadowRadius: 20,
-    elevation: 12,
     position: 'relative',
   },
   pillWrap: {

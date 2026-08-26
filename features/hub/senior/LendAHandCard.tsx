@@ -67,7 +67,7 @@ export function LendAHandCard({
       }}>
         {/* Header — tap to expand/collapse the dispatch list */}
         <Pressable
-          onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Lend a Hand header" (expand/collapse) → setHelperDispatchExpanded [features/hub/senior/LendAHandCard.tsx:77]`); setHelperDispatchExpanded(v => !v); }}
+          onPress={() => { setHelperDispatchExpanded(v => !v); }}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, paddingBottom: 12 }}>
           <View style={{ width: 40, height: 40, borderRadius: 20,
             backgroundColor: colors.amber + '20', alignItems: 'center', justifyContent: 'center' }}>
@@ -101,14 +101,14 @@ export function LendAHandCard({
           </View>
           {/* GP can raise their own request here — the standalone Help Queue
               section was removed, this is the one entry point left. */}
-          <Pressable onPress={(e) => { e.stopPropagation(); console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Ask" on "Lend a Hand" → onHelpRequest [features/hub/senior/LendAHandCard.tsx:111]`); onHelpRequest(); }}
+          <Pressable onPress={(e) => { e.stopPropagation(); onHelpRequest(); }}
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
               backgroundColor: colors.amber, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9 }}>
             <Hand size={14} color="#fff" />
             <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>Ask</Text>
           </Pressable>
-          <Pressable onPress={(e) => { e.stopPropagation(); console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Availability Settings toggle" on "Lend a Hand" → setAvailSettingsOpen [features/hub/senior/LendAHandCard.tsx:118]`); setAvailSettingsOpen(o => !o); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Pressable onPress={(e) => { e.stopPropagation(); setAvailSettingsOpen(o => !o); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             {availSettingsOpen ? <ChevronUp size={18} color={colors.textTertiary} /> : <ChevronDown size={18} color={colors.textTertiary} />}
           </Pressable>
         </Pressable>

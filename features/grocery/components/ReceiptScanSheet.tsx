@@ -9,7 +9,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+// SDK 54's default expo-file-system export dropped readAsStringAsync as a
+// hard runtime error, not just a deprecation warning — /legacy is the
+// documented migration path.
+import * as FileSystem from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import Svg, { Path, Rect, Circle, Polyline } from 'react-native-svg';
 import { BRAND } from '@/components/FamilyCubeLogo';

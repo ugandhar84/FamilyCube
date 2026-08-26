@@ -1,12 +1,29 @@
-import { useEffect, useRef, memo } from 'react';
+import { useEffect, useRef, useState, memo } from 'react';
 import { View, Text, Pressable, StyleSheet, Image, Animated, Alert, Linking } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
+import * as WebBrowser from 'expo-web-browser';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { Play, CheckCheck, AlertTriangle, MapPin, FileText } from 'lucide-react-native';
 import { ChatMessage } from '@/store/chatStore';
 import { VoiceNoteBubble } from './VoiceComponents';
 import { SwipeableBubble } from './SwipeableBubble';
 import { CollapsibleText } from './MentionText';
-import { formatTime, detectAlertTint, SHARE_KIND_META, BUBBLE_R, BUBBLE_SM } from './constants';
+import { formatTime, detectAlertTint, SHARE_KIND_META, REPLY_KIND_LABEL, BUBBLE_R, BUBBLE_SM } from './constants';
+
+// ─── Video thumbnail — first-frame still, not playing ──────────────────────
+// A video message's bubble preview used a plain <Image> pointed at the
+// video's own .mp4 URL — Image can't decode video, so it silently rendered
+// nothing (just the play-button overlay floating on empty space). No video-
+// thumbnail-generation package is installed; a paused VideoView renders the
+// first frame as a static image for free, reusing the exact same expo-video
+// dependency the fullscreen lightbox already depends on — no new package.
+function VideoThumbnail({ uri, width, height }: { uri: string; width: number; height: number }) {
+  const player = useVideoPlayer(uri, pl => { pl.pause(); });
+  return (
+    <VideoView player={player} style={{ width, height }} contentFit="cover"
+      nativeControls={false} pointerEvents="none" />
+  );
+}
 
 // ─── Shared card (read-only meal/event/quest share from Ask Cube) ─────────
 
@@ -15,15 +32,24 @@ export function SharedCardBubble({ payload, colors, onLongPress, onPress }: { pa
   const meta = SHARE_KIND_META[kind] ?? SHARE_KIND_META.meal;
   const accent = colors[meta.accentKey] ?? colors.primary;
   const d = payload?.data ?? {};
+  // A shared card's imageUrl is often a Supabase signed URL captured at
+  // share time — if it's since expired, or the request otherwise fails,
+  // the bare <Image> below rendered nothing at all (blank slot, live-
+  // reported: "that image is not showing"). Track failure and fall back
+  // to the emoji, same as MealHero (AskCubeProposalCard.tsx) already does
+  // for the identical card shown inside Ask Cube itself.
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImage = !!d.imageUrl && !imgFailed;
 
   return (
     <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={350}
       style={{ width: 260, backgroundColor: colors.card, borderRadius: 16,
         borderWidth: 1.5, borderColor: accent + '40', overflow: 'hidden' }}>
-      {(d.imageUrl || d.emoji) && (
+      {(showImage || d.emoji) && (
         <View style={{ height: 90, backgroundColor: accent + '18', alignItems: 'center', justifyContent: 'center' }}>
-          {d.imageUrl
-            ? <Image source={{ uri: d.imageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+          {showImage
+            ? <Image source={{ uri: d.imageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover"
+                onError={() => setImgFailed(true)} />
             : <Text style={{ fontSize: 44 }}>{d.emoji}</Text>}
         </View>
       )}
@@ -136,9 +162,14 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
       )}
       {msg.edited && <Text style={{ fontSize: 9, color: tsColor }}>edited · </Text>}
       <Text style={{ fontSize: 10, color: tsColor }}>{formatTime(msg.timestamp)}</Text>
+      {/* isMe read-receipt checkmark uses colors.info (the app's one true
+          blue) — was colors.parent, which is a role-accent color that means
+          "this is a parent's content" everywhere else in the app (Parents
+          Vault, role badges). Reusing it as a generic "read" tint was
+          confusing regardless of who actually read the message. */}
       {isMe && (
         <CheckCheck size={13} color={
-          (readers?.length ?? 0) > 0 ? colors.parent : 'rgba(255,255,255,0.55)'
+          (readers?.length ?? 0) > 0 ? colors.info : 'rgba(255,255,255,0.55)'
         } />
       )}
     </View>
@@ -293,7 +324,7 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
                   </Text>
                   <Text numberOfLines={2} style={{ fontSize: 12, lineHeight: 16,
                     color: isMe ? 'rgba(255,255,255,0.85)' : colors.textSecondary }}>
-                    {msg.replyTo.text || '🎙️ Voice note'}
+                    {msg.replyTo.text || REPLY_KIND_LABEL[msg.replyTo.kind ?? 'voice']}
                   </Text>
                 </View>
               </Pressable>
@@ -352,7 +383,19 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
                 )}
                 {/* Document attachment */}
                 {msg.documentUri && (
-                  <Pressable onPress={() => Linking.openURL(msg.documentUri!)}
+                  // Linking.openURL delegates entirely to an external app
+                  // registered for the URL's content type — for something
+                  // like a .md file, iOS has no default handler at all, so
+                  // it rejects even though the URL itself is completely
+                  // valid and reachable (confirmed live: the signed URL
+                  // 200'd with real content). That's not "file no longer
+                  // available," it's "no app knows how to open this" — the
+                  // error text was misleading about the real cause.
+                  // WebBrowser opens an in-app Safari view instead, which
+                  // can display/download most file types without needing
+                  // an external app handler to exist.
+                  <Pressable onPress={() => WebBrowser.openBrowserAsync(msg.documentUri!).catch(() =>
+                    Alert.alert("Couldn't open document", 'Please try again.'))}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
                     backgroundColor: isMe ? 'rgba(0,0,0,0.2)' : colors.surface,
                     borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, maxWidth: 220 }}>
@@ -375,7 +418,9 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
                   <Pressable
                     onPress={() => msg.mediaType === 'video' ? onOpenVideo?.(msg.imageUri!) : onOpenImage?.(msg.imageUri!)}
                     style={{ marginBottom: msg.text ? 6 : 0, borderRadius: 12, overflow: 'hidden' }}>
-                    <Image source={{ uri: msg.imageUri }} style={{ width: 210, height: 158 }} resizeMode="cover" />
+                    {msg.mediaType === 'video'
+                      ? <VideoThumbnail uri={msg.imageUri} width={210} height={158} />
+                      : <Image source={{ uri: msg.imageUri }} style={{ width: 210, height: 158 }} resizeMode="cover" />}
                     {msg.mediaType === 'video' && (
                       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,
                         alignItems: 'center', justifyContent: 'center' }}>

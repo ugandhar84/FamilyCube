@@ -18,7 +18,7 @@ export function KidCheckinRow({ colors, onCheckin }: { colors: any; onCheckin: (
           { type: 'ready', label: "I'm Ready!",    Icon: Backpack, color: BRAND.amber, bg: BRAND.amber + '15', border: BRAND.amber + '40' },
           { type: 'late',  label: 'Running Late',  Icon: Timer,   color: colors.danger, bg: `${colors.danger}15`, border: `${colors.danger}40` },
         ] as const).map(({ type, label, Icon, color, bg, border }) => (
-          <Pressable key={type} onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "${label}" on "KidCheckinRow" (id=${type}) → onCheckin("${type}") [features/hub/kid/KidCheckinRow.tsx:21]`); onCheckin(type); }}
+          <Pressable key={type} onPress={() => { onCheckin(type); }}
             style={{ flex: 1, borderRadius: 18, paddingVertical: 16, alignItems: 'center', gap: 6,
               backgroundColor: bg, borderWidth: 1.5, borderColor: border }}>
             <Icon size={24} color={color} strokeWidth={2.2} />

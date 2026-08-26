@@ -9,6 +9,7 @@ import type { FamilyMember } from '@/store/familyStore';
 import { useEventStore } from '@/store/eventStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { ChoreTask } from '@/store/choreStore';
+import { useKidRequestStore } from '@/store/kidRequestStore';
 import type { KidRequest } from '@/store/kidRequestStore';
 import { supabase } from '@/lib/supabase';
 import { showToast } from '@/components/AppToast';
@@ -44,11 +45,6 @@ export function FamilyNeedsHandSection({
 }) {
   if (openRequests.length === 0 && gpWelcomeRequests.length === 0 &&
       gpWelcomeChores.length === 0 && volunteerPool.length === 0) return null;
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=FamilyNeedsHandSection.openRequests totalSource=${openRequests.length} afterFilter=${openRequests.length} [features/hub/senior/FamilyNeedsHandSection.tsx:44]`);
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=FamilyNeedsHandSection.gpWelcomeRequests totalSource=${gpWelcomeRequests.length} afterFilter=${gpWelcomeRequests.length} [features/hub/senior/FamilyNeedsHandSection.tsx:44]`);
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=FamilyNeedsHandSection.gpWelcomeChores totalSource=${gpWelcomeChores.length} afterFilter=${gpWelcomeChores.length} [features/hub/senior/FamilyNeedsHandSection.tsx:44]`);
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=FamilyNeedsHandSection.volunteerPool totalSource=${volunteerPool.length} afterFilter=${volunteerPool.length} [features/hub/senior/FamilyNeedsHandSection.tsx:44]`);
-
   return (
     <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
       <Text style={{ fontSize: GP.sub, fontWeight: '800', color: colors.textSecondary }}>
@@ -85,14 +81,13 @@ export function FamilyNeedsHandSection({
                 // still unset) makes sure only the actual first-to-land
                 // claim sticks, rather than both devices' optimistic state
                 // showing themselves as the confirmed helper.
-                console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "I'll Drive" on "${ev.title}" (id=${ev.id}) → claimHelperSlot [features/hub/senior/FamilyNeedsHandSection.tsx:80]`);
                 useEventStore.getState().claimHelperSlot(ev.id, 'helper', active.name, { approvalPending: false }, () => showToast("You're driving ✓"));
               }}
                 style={{ flex: 1, backgroundColor: BRAND.purple, paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                 <Car size={14} color="#fff" />
                 <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Drive</Text>
               </Pressable>
-              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Pass" on "${ev.title}" (id=${ev.id}) → updateEvent(approvalPending=false) [features/hub/senior/FamilyNeedsHandSection.tsx:86]`); updateEvent(ev.id, { approvalPending: false }); }}
+              <Pressable onPress={() => { updateEvent(ev.id, { approvalPending: false }); }}
                 style={{ flex: 1, backgroundColor: colors.danger + '20', borderWidth: 1, borderColor: colors.danger + '40', borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
                 <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.danger }}>Pass</Text>
               </Pressable>
@@ -131,12 +126,18 @@ export function FamilyNeedsHandSection({
               </View>
             )}
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "I'll Help" on "${req.detail}" (id=${req.id}) → assignRequest [features/hub/senior/FamilyNeedsHandSection.tsx:125]`); assignRequest(req.id, active.id); showToast("You're on it ✓"); }}
+              <Pressable onPress={() => { assignRequest(req.id, active.id); showToast("You're on it ✓"); }}
                 style={{ flex: 1, backgroundColor: GP_WELCOME_GREEN, paddingVertical: 13, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                 <Hand size={14} color="#fff" />
                 <Text style={{ fontSize: GP.body, fontWeight: '800', color: '#fff' }}>I'll Help</Text>
               </Pressable>
-              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Pass" on "${req.detail}" (id=${req.id}) — no-op (GP passes) [features/hub/senior/FamilyNeedsHandSection.tsx:130]`); /* just close/ignore — GP passes */ }}
+              {/* Was a true no-op — no state change, no dismiss, nothing —
+                  so the card just sat there with no feedback that Pass had
+                  been tapped. Matches the ride card's own Pass right above
+                  (a real state change, not a per-viewer hide), declining
+                  the underlying request so it clears for everyone rather
+                  than silently staying open with no visible effect. */}
+              <Pressable onPress={() => { useKidRequestStore.getState().declineRequest(req.id, active.id); showToast('Passed'); }}
                 style={{ flex: 1, backgroundColor: colors.danger + '20', borderWidth: 1, borderColor: colors.danger + '40', borderRadius: 12, paddingVertical: 13, alignItems: 'center' }}>
                 <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.danger }}>Pass</Text>
               </Pressable>
@@ -177,7 +178,6 @@ export function FamilyNeedsHandSection({
             )}
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <Pressable onPress={() => {
-                console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "I'll Handle It" on "${c.title}" (id=${c.id}) → claim_gp_welcome_chore [features/hub/senior/FamilyNeedsHandSection.tsx:170]`);
                 // Was an unconditional updateChore with no CAS — two GPs
                 // tapping "I'll Handle It" on the same open_to_gp chore
                 // simultaneously could both succeed, last-writer-wins.
@@ -237,7 +237,6 @@ export function FamilyNeedsHandSection({
             </View>
             <Pressable
               onPress={() => {
-                console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "I'll Step In — Confirm Drive" on "${ev.title}" (id=${ev.id}) [features/hub/senior/FamilyNeedsHandSection.tsx:219]`);
                 Alert.alert(
                   'Step In as Driver?',
                   `You'll replace ${ev.helper} and be confirmed immediately. ${ev.helper} will be notified they're off the hook.`,
@@ -246,7 +245,6 @@ export function FamilyNeedsHandSection({
                     {
                       text: "Yes, I'll Drive",
                       onPress: () => {
-                        console.log(`[UserAction] screen=Hub role=senior member=${active.name} confirmed "Yes, I'll Drive" on "${ev.title}" (id=${ev.id}) → updateEvent(helper=${active.name}, helperStatus=confirmed) [features/hub/senior/FamilyNeedsHandSection.tsx:227]`);
                         updateEvent(ev.id, {
                           helper: active.name,
                           helperStatus: 'confirmed',

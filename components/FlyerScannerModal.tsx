@@ -23,7 +23,10 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+// SDK 54's default expo-file-system export dropped readAsStringAsync as a
+// hard runtime error, not just a deprecation warning — /legacy is the
+// documented migration path.
+import * as FileSystem from 'expo-file-system/legacy';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';

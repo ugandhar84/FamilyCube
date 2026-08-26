@@ -42,6 +42,19 @@ const pad = { paddingHorizontal: 16, marginBottom: 4 } as const;
 
 type SheetKey = 'rides' | 'gas' | 'tutor' | 'cashout' | 'history' | null;
 
+// Was three separate inline copies of the same expression (claimPickup,
+// dropPickup, confirmAssignment) deciding whether a teen is acting as
+// 'driver' vs 'helper' for a given event — a future edit to this
+// eligibility rule in one handler but not the others would silently desync
+// which RPC role param gets sent for otherwise-identical actions on the
+// same event. driverName is only meaningful once someone's already been
+// assigned (drop/confirm); claimPickup runs before that, so it's omitted
+// there via the optional param.
+function rideRoleFor(ev: { rideRequired?: boolean; category?: string; driverName?: string } | undefined, activeName: string): 'helper' | 'driver' {
+  if (ev?.driverName === activeName) return 'driver';
+  return ev?.rideRequired && ev.category !== 'Ride' ? 'driver' : 'helper';
+}
+
 export function TeenView({ active, members, colors, isDark, activeTrips, composerVisible, onCloseComposer }: {
   active: FamilyMember; members: FamilyMember[];
   colors: any; isDark: boolean;
@@ -149,7 +162,15 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
     return a.name === active.name && a.status === 'confirmed' && e.date >= today;
   });
   const [passedPickups, setPassedPickups] = useState<string[]>([]);
-  const urgentPickups = openPickups.filter(e => !passedPickups.includes(e.id) &&
+  // Single derivation — was independently recomputed here (badge count),
+  // in urgentPickups below, and a third time inside
+  // TeenCarDispatchSection.tsx's own openVisible, all as the identical
+  // `openPickups.filter(e => !passedPickups.includes(e.id))` expression.
+  // Three copies of the same filter risk silently diverging if any one of
+  // them is edited later without the others following — the tile's badge
+  // count could then stop matching what's actually inside the sheet.
+  const openPickupsVisible = openPickups.filter(e => !passedPickups.includes(e.id));
+  const urgentPickups = openPickupsVisible.filter(e =>
     hoursUntilEvent(e.date, e.time) >= 0 && hoursUntilEvent(e.date, e.time) < 1);
 
   // Confirmed ride where THIS teen is being picked up (the ride's subject/
@@ -177,7 +198,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   // A direct assignment awaiting confirmation is at least as urgent as an
   // open pickup up for grabs — it's already on this teen specifically —
   // so it counts toward the same "Rides" tile badge.
-  const openPickupCount = openPickups.filter(e => !passedPickups.includes(e.id)).length + myPendingAssignments.length;
+  const openPickupCount = openPickupsVisible.length + myPendingAssignments.length;
 
   const claimPickup = (evId: string) => {
     const ev = upcomingEvents.find(e => e.id === evId);
@@ -193,7 +214,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
     // Same fix as SeniorView's handleClaimRide — was hardcoded 'helper',
     // so claiming a driverName-based (rideRequired) pickup wrote to the
     // wrong column pair and never actually claimed the slot being shown.
-    const role: 'helper' | 'driver' = ev?.rideRequired && ev.category !== 'Ride' ? 'driver' : 'helper';
+    const role = rideRoleFor(ev, active.name);
     useEventStore.getState().claimHelperSlot(evId, role, active.name, undefined, () => {
       if (coins > 0) awardCoins(active.id, coins, 'mainCoins');
       showToast(coins > 0 ? `Got it — +${coins} coins ✓` : 'Got it ✓');
@@ -231,12 +252,22 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
     // deduction and let the teen keep the coins in exactly that case (QA
     // sweep, teen-role audit, Critical).
     const clawedBack = a?.name === active.name && paidCoins > 0;
-    if (clawedBack) clawbackCoins(active.id, paidCoins, 'mainCoins');
-    const isDriverPair = ev?.driverName === active.name || (ev?.rideRequired && ev.category !== 'Ride');
+    const role = rideRoleFor(ev, active.name);
     supabase.rpc('decline_event_assignment', {
-      p_event_id: evId, p_member_id: active.id, p_role: isDriverPair ? 'driver' : 'helper', p_reason: null,
+      p_event_id: evId, p_member_id: active.id, p_role: role, p_reason: null,
     }).then(({ error }) => {
-      if (error) { console.warn('[TeenView] dropPickup decline_event_assignment failed', error.message); return; }
+      if (error) {
+        console.warn('[TeenView] dropPickup decline_event_assignment failed', error.message);
+        // Was clawing back coins unconditionally BEFORE this RPC even
+        // fired — a failure here meant the teen's balance was already
+        // docked while the ride assignment never actually changed
+        // server-side, permanently underpaying them for a ride they were
+        // technically still on the hook for. Only claw back once the
+        // server confirms the drop actually went through.
+        showToast("Couldn't drop — try again", 'info');
+        return;
+      }
+      if (clawedBack) clawbackCoins(active.id, paidCoins, 'mainCoins');
       showToast(clawedBack ? `Dropped — ${paidCoins} coins clawed back` : 'Dropped ✓');
     });
   };
@@ -248,11 +279,15 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
   // invented here without a clear source of truth for the amount).
   const confirmAssignment = (evId: string) => {
     const ev = upcomingEvents.find(e => e.id === evId);
-    const isDriverPair = ev?.driverName === active.name || (ev?.rideRequired && ev.category !== 'Ride');
+    const role = rideRoleFor(ev, active.name);
     supabase.rpc('confirm_event_assignment', {
-      p_event_id: evId, p_member_id: active.id, p_role: isDriverPair ? 'driver' : 'helper',
+      p_event_id: evId, p_member_id: active.id, p_role: role,
     }).then(({ error }) => {
-      if (error) { console.warn('[TeenView] confirmAssignment failed', error.message); return; }
+      if (error) {
+        console.warn('[TeenView] confirmAssignment failed', error.message);
+        showToast("Couldn't confirm — try again", 'info');
+        return;
+      }
       showToast('Confirmed ✓');
     });
   };
@@ -286,7 +321,10 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
     const detail = `💵 Cash-out request: $${amount} via ${method} (balance: ${coins} coins)`;
     sendRequest({ type: 'delegation', fromMemberId: active.id, detail, urgency: 'normal' });
     sendMessage('all', active.id, `${active.name.split(' ')[0]} requested cash-out: $${amount} via ${method}`);
-    Alert.alert('Cash-Out Sent!', 'Your parent has been notified and will review the request.');
+    // Was Alert.alert — every other success path in this file (claim,
+    // confirm, drop, tutor request) uses showToast; a full blocking modal
+    // just for this one confirmation was inconsistent with itself.
+    showToast('Cash-out sent — your parent will review it ✓');
   };
 
   // ── Tile sheets ───────────────────────────────────────────────────────────────
@@ -320,15 +358,23 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
     <>
     <ScrollView showsVerticalScrollIndicator={false}>
 
+      {/* Amber, not danger-red — this is a heads-up about the shared pickup
+          pool ("someone should grab this"), not something already on this
+          teen personally. KidRideBanner below (this teen's OWN confirmed
+          ride) keeps its own styling as the "this concerns you directly"
+          signal — the two previously used near-identical red/alarm styling
+          despite meaning very different things, and could stack together
+          at the top of the scroll with no visual hierarchy telling them
+          apart. */}
       {urgentPickups.length > 0 && (
         <View style={pad}>
           <Pressable onPress={() => setOpenSheet('rides')}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-              backgroundColor: isDark ? colors.danger + '15' : colors.dangerLight,
-              borderWidth: 1.5, borderColor: colors.danger + '40',
+              backgroundColor: isDark ? BRAND.amber + '15' : BRAND.amber + '18',
+              borderWidth: 1.5, borderColor: BRAND.amber + '50',
               borderRadius: 16, padding: 12, marginBottom: 12 }}>
-            <Bell size={18} color={colors.danger} />
-            <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '800', color: colors.danger }}>
+            <Bell size={18} color={BRAND.amber} />
+            <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '800', color: isDark ? BRAND.amber : '#8A5A00' }}>
               {urgentPickups.length} pickup{urgentPickups.length > 1 ? 's' : ''} within the hour — needs a driver
             </Text>
           </Pressable>
@@ -403,7 +449,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
           // the badge even with the car toggle off — that assignment was
           // already made regardless, same reasoning as
           // TeenCarDispatchSection no longer hiding it behind hasCar.
-          badge={(hasCar ? openPickupCount : myPendingAssignments.length) || undefined}
+          badge={hasCar ? openPickupCount : myPendingAssignments.length}
           onPress={() => setOpenSheet('rides')} colors={colors} isDark={isDark}
         />
         <TeenTile
@@ -416,6 +462,17 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
           Icon={CreditCard} accent={BRAND.amber}
           onPress={() => setOpenSheet('cashout')} colors={colors} isDark={isDark}
         />
+        <TeenTile
+          label="My Requests" sublabel="History & status"
+          Icon={ClipboardList} accent={BRAND.purple}
+          onPress={() => setOpenSheet('history')} colors={colors} isDark={isDark}
+        />
+        {/* Conditional tile moved last — was positioned before "My
+            Requests", so toggling "I Have a Car" reflowed every tile after
+            it (row position shifted for the whole rest of the grid, not
+            just this one slot). Placing the only conditionally-rendered
+            tile at the end means its absence can only ever affect the
+            final row. */}
         {hasCar && (
           <TeenTile
             label="Gas & Vehicle" sublabel="Log fill-ups, report issues"
@@ -423,11 +480,6 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
             onPress={() => setOpenSheet('gas')} colors={colors} isDark={isDark}
           />
         )}
-        <TeenTile
-          label="My Requests" sublabel="History & status"
-          Icon={ClipboardList} accent={BRAND.purple}
-          onPress={() => setOpenSheet('history')} colors={colors} isDark={isDark}
-        />
       </View>
 
       {/* ── Sheets — static 75% height, no content-driven resize ── */}
@@ -435,7 +487,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
         title="Rides" accentColor={BRAND.amber} colors={colors} isDark={isDark}>
         <TeenCarDispatchSection
           hasCar={hasCar} onToggleCar={toggleCar}
-          openPickups={openPickups} myPickups={myPickups} myPendingAssignments={myPendingAssignments} passedPickups={passedPickups}
+          openPickups={openPickupsVisible} myPickups={myPickups} myPendingAssignments={myPendingAssignments}
           onPass={(id) => setPassedPickups(p => [...p, id])} onClaim={claimPickup} onDrop={dropPickup} onConfirmAssignment={confirmAssignment}
           rideEarnings={rideEarnings} members={members} colors={colors} isDark={isDark}
         />

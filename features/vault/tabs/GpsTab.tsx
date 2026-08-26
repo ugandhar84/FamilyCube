@@ -17,7 +17,7 @@ import { supabase } from '@/lib/supabase';
 import { encryptLocationText, decryptLocationText } from '@/lib/locationCrypto';
 import { useFamilyStore } from '@/store/familyStore';
 import { useUIStore } from '@/store/uiStore';
-import { startBackgroundLocationTracking, stopBackgroundLocationTracking, isBackgroundLocationTracking, setBackgroundLocationMemberId, setBackgroundLocationFamilyId, isBackgroundLocationSupported, readBatteryStatus } from '@/lib/locationTracking';
+import { startBackgroundLocationTracking, stopBackgroundLocationTracking, isBackgroundLocationTracking, setBackgroundLocationMemberId, setBackgroundLocationFamilyId, isBackgroundLocationSupported, readBatteryStatus, startBatteryPolling, stopBatteryPolling } from '@/lib/locationTracking';
 import CubeSpinner from '@/components/CubeSpinner';
 import FamilyAvatar from '@/components/FamilyAvatar';
 import { CardHeader, StatusPill, MemberAvatar } from './shared';
@@ -192,6 +192,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
     try {
       if (tracking) {
         await stopBackgroundLocationTracking();
+        stopBatteryPolling();
         setTracking(false);
       } else {
         const ok = await startBackgroundLocationTracking(activeMemberId, familyId);
@@ -207,6 +208,7 @@ export default function GpsTab({ colors, isDark }: { colors: any; isDark: boolea
           // thresholds — without this, turning sharing on leaves you
           // invisible on the map until you happen to walk 0.1mi.
           await refreshMyLocation(activeMemberId);
+          startBatteryPolling(activeMemberId);
         }
         setTracking(ok);
       }

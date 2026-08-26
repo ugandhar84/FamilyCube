@@ -114,13 +114,19 @@ private struct StatColumn: View {
 
 private struct EmptyStateView: View {
     var body: some View {
-        ZStack {
-            brandPurple
-            VStack(spacing: 6) {
-                Text("👨‍👩‍👧").font(.title)
-                Text("Open Family Cube").font(.caption).bold().foregroundColor(.white.opacity(0.9))
-            }
+        VStack(spacing: 6) {
+            Text("👨‍👩‍👧").font(.title)
+            Text("Open Family Cube").font(.caption).bold().foregroundColor(.white.opacity(0.9))
         }
+        // .containerBackground(for: .widget) is required on iOS 17+ (this
+        // app's own deployment target) — a widget that only paints its
+        // background via a plain Color inside ZStack, with no
+        // containerBackground modifier, is exactly the class of bug
+        // WidgetKit introduced this API to prevent: the system can decline
+        // to render the widget's content at all (shows blank), most
+        // reliably reproduced on Lock Screen/StandBy but not limited to
+        // it. All three views below had this same gap.
+        .containerBackground(brandPurple, for: .widget)
     }
 }
 
@@ -131,75 +137,33 @@ private struct ParentWidgetView: View {
     @Environment(\.widgetFamily) var family
 
     var body: some View {
-        ZStack {
-            brandTeal
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("🏠").font(.title3)
-                    Text(data.familyName).font(.subheadline).bold().foregroundColor(.white)
-                    Spacer()
-                    if data.unreadMessages > 0 {
-                        Text("\(data.unreadMessages)")
-                            .font(.caption2).bold().foregroundColor(brandTeal)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Circle().fill(.white))
-                    }
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("🏠").font(.title3)
+                Text(data.familyName).font(.subheadline).bold().foregroundColor(.white)
                 Spacer()
-                // Pending approvals is the ONE number a parent actually
-                // glances at this widget for — always leads, large.
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("\(data.pendingApprovals)").font(.system(size: 34, weight: .bold)).foregroundColor(.white)
-                    Text(data.pendingApprovals == 1 ? "needs your review" : "need your review")
-                        .font(.caption).foregroundColor(.white.opacity(0.8))
-                }
-                if family == .systemMedium {
-                    Spacer()
-                    HStack(spacing: 16) {
-                        StatColumn(value: "\(data.memberCount)", label: "Family")
-                        StatColumn(value: "\(data.eventsToday)", label: "Today")
-                    }
-                    if let title = data.nextEventTitle, !title.isEmpty {
-                        Divider().background(.white.opacity(0.3))
-                        HStack(spacing: 4) {
-                            Text("📅").font(.caption2)
-                            Text(title).font(.caption).bold().foregroundColor(.white).lineLimit(1)
-                            if let time = data.nextEventTime {
-                                Text("· \(time)").font(.caption2).foregroundColor(.white.opacity(0.75))
-                            }
-                        }
-                    }
+                if data.unreadMessages > 0 {
+                    Text("\(data.unreadMessages)")
+                        .font(.caption2).bold().foregroundColor(brandTeal)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Circle().fill(.white))
                 }
             }
-            .padding()
-        }
-    }
-}
-
-// MARK: - Kid/Teen/Senior widget view (own snapshot)
-
-private struct MemberWidgetView: View {
-    let data: WidgetMemberSummary
-    @Environment(\.widgetFamily) var family
-
-    var body: some View {
-        ZStack {
-            brandAmber
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(data.memberEmoji).font(.title2)
-                    Text(data.memberName).font(.headline).bold().foregroundColor(.white)
-                    Spacer()
-                }
+            Spacer()
+            // Pending approvals is the ONE number a parent actually
+            // glances at this widget for — always leads, large.
+            VStack(alignment: .leading, spacing: 0) {
+                Text("\(data.pendingApprovals)").font(.system(size: 34, weight: .bold)).foregroundColor(.white)
+                Text(data.pendingApprovals == 1 ? "needs your review" : "need your review")
+                    .font(.caption).foregroundColor(.white.opacity(0.8))
+            }
+            if family == .systemMedium {
                 Spacer()
-                HStack(spacing: 12) {
-                    StatColumn(value: "\(data.pendingQuests)", label: data.pendingQuests == 1 ? "Quest" : "Quests")
-                    StatColumn(value: "🪙 \(data.coins)", label: "Coins")
-                    if family == .systemMedium {
-                        StatColumn(value: "🔥\(data.streak)d", label: "Streak", alignment: .trailing)
-                    }
+                HStack(spacing: 16) {
+                    StatColumn(value: "\(data.memberCount)", label: "Family")
+                    StatColumn(value: "\(data.eventsToday)", label: "Today")
                 }
-                if family == .systemMedium, let title = data.nextEventTitle, !title.isEmpty {
+                if let title = data.nextEventTitle, !title.isEmpty {
                     Divider().background(.white.opacity(0.3))
                     HStack(spacing: 4) {
                         Text("📅").font(.caption2)
@@ -210,8 +174,46 @@ private struct MemberWidgetView: View {
                     }
                 }
             }
-            .padding()
         }
+        .padding()
+        .containerBackground(brandTeal, for: .widget)
+    }
+}
+
+// MARK: - Kid/Teen/Senior widget view (own snapshot)
+
+private struct MemberWidgetView: View {
+    let data: WidgetMemberSummary
+    @Environment(\.widgetFamily) var family
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(data.memberEmoji).font(.title2)
+                Text(data.memberName).font(.headline).bold().foregroundColor(.white)
+                Spacer()
+            }
+            Spacer()
+            HStack(spacing: 12) {
+                StatColumn(value: "\(data.pendingQuests)", label: data.pendingQuests == 1 ? "Quest" : "Quests")
+                StatColumn(value: "🪙 \(data.coins)", label: "Coins")
+                if family == .systemMedium {
+                    StatColumn(value: "🔥\(data.streak)d", label: "Streak", alignment: .trailing)
+                }
+            }
+            if family == .systemMedium, let title = data.nextEventTitle, !title.isEmpty {
+                Divider().background(.white.opacity(0.3))
+                HStack(spacing: 4) {
+                    Text("📅").font(.caption2)
+                    Text(title).font(.caption).bold().foregroundColor(.white).lineLimit(1)
+                    if let time = data.nextEventTime {
+                        Text("· \(time)").font(.caption2).foregroundColor(.white.opacity(0.75))
+                    }
+                }
+            }
+        }
+        .padding()
+        .containerBackground(brandAmber, for: .widget)
     }
 }
 

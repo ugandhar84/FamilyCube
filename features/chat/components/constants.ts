@@ -135,6 +135,17 @@ export const SHARE_KIND_META: Record<string, { label: string; icon: string; acce
   quest:  { label: 'Quest',  icon: '✅', accentKey: 'kid' },
 };
 
+// Reply-quote preview fallback when the quoted message has no text —
+// previously hardcoded to "🎙️ Voice note" for every case, mislabeling a
+// reply to a quoted photo/video/document/location the same way.
+export const REPLY_KIND_LABEL: Record<'voice' | 'image' | 'video' | 'document' | 'location', string> = {
+  voice:    '🎙️ Voice note',
+  image:    '📷 Photo',
+  video:    '🎥 Video',
+  document: '📄 Document',
+  location: '📍 Location',
+};
+
 // ─── Swipeable bubble thresholds ──────────────────────────────────────────────
 
 export const SWIPE_REPLY_THRESHOLD = 56;

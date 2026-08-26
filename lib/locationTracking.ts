@@ -114,6 +114,55 @@ export async function readBatteryStatus(): Promise<{ level: number | null; isCha
   }
 }
 
+const BATTERY_POLL_INTERVAL_MS = 5 * 60_000;
+
+let batteryPollTimer: ReturnType<typeof setInterval> | null = null;
+let batteryPollMemberId: string | null = null;
+
+async function writeBatteryStatus(memberId: string): Promise<void> {
+  const { level, isCharging } = await readBatteryStatus();
+  if (level === null && isCharging === null) return;
+  try {
+    await supabase.from('member_locations').upsert({
+      member_id: memberId,
+      ...(level !== null ? { battery_level: level } : {}),
+      ...(isCharging !== null ? { is_charging: isCharging } : {}),
+    }, { onConflict: 'member_id' });
+    if (!isCharging) maybeAlertLowBattery(memberId, level);
+  } catch { /* best-effort — next poll will retry */ }
+}
+
+/**
+ * Battery-only sampling, independent of the 0.1-mile movement gate that
+ * drives the background location task above. A stationary phone can
+ * legitimately lose real battery %/charging state for hours under that gate
+ * (e.g. sitting on a charger at home) — this fills in with a plain interval
+ * so the family's battery readout stays fresh without waiting on a real GPS
+ * move. Only touches battery_level/is_charging, never lat/lng, so it can't
+ * clobber a genuine location fix.
+ *
+ * Started/stopped from app/_layout.tsx (root-mounted for the app's whole
+ * lifetime), not from GpsTab.tsx — a plain setInterval only survives while
+ * its owning component stays mounted, so tying this to the GPS *screen*
+ * meant it silently stopped the moment the user navigated to another tab.
+ * Root-level start/stop keeps it running for as long as the app itself is
+ * alive; like any plain JS timer it still pauses once iOS fully suspends
+ * the app in the background and resumes on next foreground/wake.
+ */
+export function startBatteryPolling(memberId: string): void {
+  if (batteryPollTimer && batteryPollMemberId === memberId) return;
+  stopBatteryPolling();
+  batteryPollMemberId = memberId;
+  writeBatteryStatus(memberId);
+  batteryPollTimer = setInterval(() => writeBatteryStatus(memberId), BATTERY_POLL_INTERVAL_MS);
+}
+
+export function stopBatteryPolling(): void {
+  if (batteryPollTimer) clearInterval(batteryPollTimer);
+  batteryPollTimer = null;
+  batteryPollMemberId = null;
+}
+
 // Registered once, lazily, the first time getTaskManager() succeeds (rather
 // than at module load) — the task body itself reads the member id from a
 // small in-memory ref since TaskManager callbacks can't accept closures

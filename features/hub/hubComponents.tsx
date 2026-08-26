@@ -1228,9 +1228,21 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                         supabase.rpc('decline_event_assignment', {
                           p_event_id: ev.id, p_member_id: viewerMember.id, p_role: assigneeRole, p_reason: null,
                         }).then(({ error }) => {
-                          if (error) { console.warn('[EventDetailSheet] decline_event_assignment failed', error.message); return; }
+                          if (error) {
+                            console.warn('[EventDetailSheet] decline_event_assignment failed', error.message);
+                            // Was unconditionally closing the sheet/clearing
+                            // state right after firing this, success or not
+                            // — a network failure here looked identical to
+                            // a successful decline, with no feedback that
+                            // it hadn't actually gone through.
+                            showToast("Couldn't save — try again", 'info');
+                            return;
+                          }
                           showToast("Marked — you're off this one ✓");
+                          setChangeOpen(false);
+                          setCancelledSelfName(undefined);
                         });
+                        return;
                       }
                       setChangeOpen(false);
                       setCancelledSelfName(undefined);
@@ -1264,13 +1276,22 @@ export function EventDetailSheet({ ev, members, colors, isDark, activeName, upda
                         supabase.rpc('decline_event_assignment', {
                           p_event_id: ev.id, p_member_id: viewerMember.id, p_role: assigneeRole, p_reason: null,
                         }).then(({ error }) => {
-                          if (error) { console.warn('[EventDetailSheet] decline_event_assignment (open pool) failed', error.message); return; }
+                          if (error) {
+                            console.warn('[EventDetailSheet] decline_event_assignment (open pool) failed', error.message);
+                            // Was unconditionally closing the whole sheet
+                            // right after firing this regardless of outcome
+                            // — a failed decline looked identical to a
+                            // successful one, sheet closed either way.
+                            showToast("Couldn't save — try again", 'info');
+                            return;
+                          }
                           doneToast();
+                          onClose();
                         });
-                      } else {
-                        updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
-                        doneToast();
+                        return;
                       }
+                      updateEvent(ev.id, kind === 'gp' ? { isOpenToGrandparents: true } : { isOpenToTeens: true });
+                      doneToast();
                       onClose();
                     }}
                     onAssign={(name, reason) => {

@@ -40,9 +40,15 @@ export function InProgressCard({ quests, kids, colors, isDark, active }: {
               </Text>
             </View>
             {c.questMode === 'virtual' && (
-              <Pressable style={{ backgroundColor: IN_PROGRESS_GREEN, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "Join" on "${c.title}" (id=${c.id}) → router.push('/(tabs)/chat') [features/hub/senior/sponsor/InProgressCard.tsx:42]`); router.push('/(tabs)/chat'); }}>
-                <Phone size={11} color="#fff" />
+              // Bumped padding/text/icon size and added hitSlop — a "join a
+              // video call" action has a more significant consequence than
+              // a plain status chip, and was previously noticeably smaller
+              // than the 13-16px padding used almost everywhere else on
+              // this screen.
+              <Pressable style={{ backgroundColor: IN_PROGRESS_GREEN, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                onPress={() => router.push('/(tabs)/chat')}>
+                <Phone size={14} color="#fff" />
                 <Text style={{ fontSize: GP.tiny, fontWeight: '900', color: '#fff' }}>Join</Text>
               </Pressable>
             )}

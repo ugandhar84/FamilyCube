@@ -74,6 +74,15 @@ export function PiggyBankSheet({
   // since a picked goal is a real signal the kid cares about, not a guess.
   goalReward?: Reward;
 }) {
+  // Displayed balances/cash-value are clamped at 0 — a real data glitch, a
+  // pending penalty, or a race in coin-award logic could in principle
+  // produce a negative stored value, and this sheet had no floor anywhere,
+  // meaning a coin count or cash-out dollar figure could render as
+  // negative directly to a kid with no guard or explanation. Clamping once
+  // here covers every downstream display (balance number, cash-value math)
+  // instead of needing the same floor repeated at each call site.
+  mainCoins = Math.max(0, mainCoins);
+  gpCoins = Math.max(0, gpCoins);
   return (
     <AppBottomSheet
       visible={visible}
@@ -117,23 +126,31 @@ export function PiggyBankSheet({
           const remaining = Math.max(goalReward.cost - mainCoins, 0);
           const pct = Math.min(mainCoins / goalReward.cost, 1);
           return (
-            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${memberId} tapped "My Goal" on "PiggyBankSheet" (id=${goalReward.id}) → navigate to /(tabs)/store [features/hub/kid/PiggyBankSheet.tsx:120]`); onClose(); router.push('/(tabs)/store' as any); }}
+            <Pressable onPress={() => { onClose(); router.push('/(tabs)/store' as any); }}
               style={{ borderRadius: 14, padding: 13, backgroundColor: BRAND.purple + '10', borderWidth: 1.5, borderColor: BRAND.purple + '50', gap: 9 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Target size={14} color={BRAND.purple} />
                 <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: BRAND.purple }}>My Goal</Text>
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.textPrimary, flex: 1 }} numberOfLines={1}>
+              {/* Title gets flexShrink so it actually gives way to the
+                  trailing badge instead of both competing for the row's
+                  width with no clear priority — was flex:1 with no shrink
+                  behavior specified, which could let a long title crowd
+                  the "N more" text instead of truncating cleanly first. */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.textPrimary, flex: 1, flexShrink: 1 }} numberOfLines={1}>
                   {goalReward.emoji} {goalReward.title}
                 </Text>
-                <Text style={{ fontSize: KID.tiny, fontWeight: '700', color: BRAND.purple }}>
+                <Text style={{ fontSize: KID.tiny, fontWeight: '700', color: BRAND.purple, flexShrink: 0 }} numberOfLines={1}>
                   {remaining > 0 ? `${remaining} more 🪙` : 'Ready! 🎉'}
                 </Text>
               </View>
               <View style={{ height: 8, borderRadius: 4, backgroundColor: isDark ? colors.surface : '#F1F5F9', overflow: 'hidden' }}>
                 <View style={{ height: 8, borderRadius: 4, width: `${Math.round(pct * 100)}%` as any, backgroundColor: BRAND.purple }} />
               </View>
+              <Text style={{ fontSize: KID.tiny, fontWeight: '700', color: colors.textTertiary, alignSelf: 'flex-end' }}>
+                {Math.round(pct * 100)}%
+              </Text>
             </Pressable>
           );
         })()}
@@ -148,9 +165,9 @@ export function PiggyBankSheet({
               const pct = Math.min(mainCoins / r.cost, 1);
               return (
                 <View key={r.id} style={{ gap: 4 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={{ fontSize: KID.tiny, color: colors.textSecondary }}>{r.emoji} {r.title}</Text>
-                    <Text style={{ fontSize: KID.tiny, fontWeight: '700', color: BRAND.amber }}>Need {r.cost - mainCoins} more 🪙</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <Text style={{ fontSize: KID.tiny, color: colors.textSecondary, flex: 1, flexShrink: 1 }} numberOfLines={1}>{r.emoji} {r.title}</Text>
+                    <Text style={{ fontSize: KID.tiny, fontWeight: '700', color: BRAND.amber, flexShrink: 0 }} numberOfLines={1}>Need {r.cost - mainCoins} more 🪙</Text>
                   </View>
                   <View style={{ height: 6, borderRadius: 3, backgroundColor: isDark ? colors.surface : '#F1F5F9', overflow: 'hidden' }}>
                     <View style={{ height: 6, borderRadius: 3, width: `${Math.round(pct * 100)}%` as any, backgroundColor: BRAND.amber }} />

@@ -39,7 +39,7 @@ export function TurnedDownCard({ quests, members, colors, isDark, updateChore, a
                 "{c.rejectionReason}"
               </Text>
             ) : null}
-            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "Open it to any grandchild" on "${c.title}" (id=${c.id}) → updateChore(status=todo, isPool=true) [features/hub/senior/sponsor/TurnedDownCard.tsx:40]`); updateChore(c.id, {
+            <Pressable onPress={() => { updateChore(c.id, {
               status: 'todo', isPool: true, assignedToId: undefined,
               targetChildIds: [], rejectionReason: undefined,
             }); }}

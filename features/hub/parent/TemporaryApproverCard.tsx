@@ -31,12 +31,10 @@ export function TemporaryApproverCard({
   // Eligible grantees — any adult who isn't already a parent (GP is the
   // primary real-world case; a household could also delegate to a Teen).
   const eligible = members.filter(m => m.role === 'senior' || m.role === 'teen');
-  console.log(`[UserAction] FILTER screen=Hub role=parent member=${active.name} list=TemporaryApproverCard.eligible totalSource=${members.length} afterFilter=${eligible.length} [features/hub/parent/TemporaryApproverCard.tsx:33]`);
 
   if (eligible.length === 0 && activeGrants.length === 0) return null;
 
   const grant = (memberId: string, hours: number) => {
-    console.log(`[UserAction] FORM screen=Hub role=parent member=${active.name} selected window for "Grant Temporary Approver" on member (id=${memberId}) hours=${hours} → grantTemporaryApprover [features/hub/parent/TemporaryApproverCard.tsx:38]`);
     const expiresAt = new Date(Date.now() + hours * 3600_000).toISOString();
     grantTemporaryApprover(memberId, active.id, expiresAt);
     setPickingFor(null);
@@ -72,10 +70,10 @@ export function TemporaryApproverCard({
                   </Text>
                 </View>
                 <Pressable
-                  onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Revoke Access" on grant for ${grantee?.name ?? 'member'} (id=${g.id}) [features/hub/parent/TemporaryApproverCard.tsx:73]`); Alert.alert('Revoke Access', `End ${grantee?.name.split(' ')[0] ?? 'their'} temporary approval access now?`, [
+                  onPress={() => Alert.alert('Revoke Access', `End ${grantee?.name.split(' ')[0] ?? 'their'} temporary approval access now?`, [
                     { text: 'Cancel', style: 'cancel' },
-                    { text: 'Revoke', style: 'destructive', onPress: () => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} confirmed "Revoke Access" on grant for ${grantee?.name ?? 'member'} (id=${g.id}) → revokeTemporaryApprover [features/hub/parent/TemporaryApproverCard.tsx:75]`); revokeTemporaryApprover(g.id); } },
-                  ]); }}
+                    { text: 'Revoke', style: 'destructive', onPress: () => revokeTemporaryApprover(g.id) },
+                  ])}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   style={{ padding: 6, borderRadius: 8, backgroundColor: colors.danger + '15' }}>
                   <X size={14} color={colors.danger} />
@@ -86,28 +84,24 @@ export function TemporaryApproverCard({
         </View>
       )}
 
-      {(() => {
-        const notYetGranted = eligible.filter(m => !activeGrants.some(g => g.grantedToMemberId === m.id));
-        console.log(`[UserAction] FILTER screen=Hub role=parent member=${active.name} list=TemporaryApproverCard.notYetGranted totalSource=${eligible.length} afterFilter=${notYetGranted.length} [features/hub/parent/TemporaryApproverCard.tsx:87]`);
-        return notYetGranted;
-      })().map(m => (
+      {eligible.filter(m => !activeGrants.some(g => g.grantedToMemberId === m.id)).map(m => (
         <View key={m.id} style={{ marginBottom: 8 }}>
           {pickingFor === m.id ? (
             <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
               {WINDOWS.map(w => (
-                <Pressable key={w.hours} onPress={() => grant(m.id, w.hours)} /* logging inside grant() */
+                <Pressable key={w.hours} onPress={() => grant(m.id, w.hours)}
                   style={{ paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10,
                     backgroundColor: colors.primary + '15', borderWidth: 1, borderColor: colors.primary + '40' }}>
                   <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.primary }}>{w.label}</Text>
                 </Pressable>
               ))}
-              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Cancel" on grant-window picker for member (id=${m.id}) [features/hub/parent/TemporaryApproverCard.tsx:98]`); setPickingFor(null); }}
+              <Pressable onPress={() => setPickingFor(null)}
                 style={{ paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, backgroundColor: colors.surface }}>
                 <Text style={{ fontSize: TYPO.label, fontWeight: '700', color: colors.textTertiary }}>Cancel</Text>
               </Pressable>
             </View>
           ) : (
-            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=parent member=${active.name} tapped "Grant Access" on member (id=${m.id}) — opening window picker [features/hub/parent/TemporaryApproverCard.tsx:104]`); setPickingFor(m.id); }}
+            <Pressable onPress={() => setPickingFor(m.id)}
               style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                 paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10,
                 backgroundColor: isDark ? colors.surface : '#F8FAFC', borderWidth: 1, borderColor: colors.border }}>

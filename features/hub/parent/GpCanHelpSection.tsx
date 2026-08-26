@@ -10,8 +10,6 @@ export function GpCanHelpSection({ requests, members, colors, isDark, toggleGPWe
 }) {
   if (requests.length === 0) return null;
 
-  console.log(`[UserAction] FILTER screen=Hub role=parent list=GpCanHelpSection.requests totalSource=${requests.length} afterFilter=${requests.length} [features/hub/parent/GpCanHelpSection.tsx:13]`);
-
   return (
     <View style={{ paddingHorizontal: 16 }}>
       <SectionCard
@@ -47,8 +45,13 @@ export function GpCanHelpSection({ requests, members, colors, isDark, toggleGPWe
                   ) : null}
                 </View>
                 <Pressable
-                  onPress={() => { console.log(`[UserAction] screen=Hub role=parent tapped "${isOpen ? 'GP Open' : 'Offer GP'}" on "${req.detail}" (id=${req.id}) → toggleGPWelcome(${req.id}, ${!isOpen}) [features/hub/parent/GpCanHelpSection.tsx:48]`); toggleGPWelcome(req.id, !isOpen); }}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
+                  onPress={() => toggleGPWelcome(req.id, !isOpen)}
+                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+                    // Fixed minWidth — "Offer GP" and "GP Open" are
+                    // different lengths, so without this the pill (and the
+                    // whole row, since the text View next to it is flex:1)
+                    // visibly reflowed/jumped width every time it toggled.
+                    minWidth: 84,
                     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
                     backgroundColor: isOpen
                       ? (isDark ? colors.parent + '25' : colors.parentLight)

@@ -35,6 +35,7 @@ import { useNotifStore } from '@/store/notifStore';
 import { useChatStore } from '@/store/chatStore';
 import NotificationPanel, { routeForNotification } from '@/components/NotificationPanel';
 import { useFamilyStore } from '@/store/familyStore';
+import { isBackgroundLocationTracking, startBatteryPolling, stopBatteryPolling } from '@/lib/locationTracking';
 import {
   setupCallAlerts, listenForVoipToken, saveVoipTokenToMember,
   registerAndroidVoipToken, listenForForegroundCallReminder,
@@ -677,6 +678,25 @@ function RootNavigator() {
   // AppDelegate.swift before JS ever loads; this just keeps the token fresh
   // and routes to the post-answer screen once CallKit hands control to JS.
   const activeMemberId = useFamilyStore(s => s.activeMemberId);
+
+  // Battery-only polling (every 5 min, independent of the 0.1-mile location
+  // gate) — lives here instead of GpsTab.tsx so it keeps running as long as
+  // the app is alive, not just while the GPS tab happens to be mounted.
+  // GpsTab.tsx's own toggle still starts/stops the underlying background
+  // location task; this effect just re-checks whether that task is active
+  // for the current member and (re)starts/stops the battery timer to match,
+  // re-checked on every activeMemberId change (profile switch, sign-in).
+  useEffect(() => {
+    if (!activeMemberId) { stopBatteryPolling(); return; }
+    let cancelled = false;
+    isBackgroundLocationTracking().then(active => {
+      if (cancelled) return;
+      if (active) startBatteryPolling(activeMemberId);
+      else stopBatteryPolling();
+    });
+    return () => { cancelled = true; };
+  }, [activeMemberId]);
+
   useEffect(() => {
     console.log('[_layout] call-alert effect mounting');
     setupCallAlerts();

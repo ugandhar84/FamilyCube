@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, View, Text, Pressable } from 'react-native';
 import * as Calendar from 'expo-calendar';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { BRAND } from '@/components/FamilyCubeLogo';
 import { useEventStore, isEventSensitive, canViewSensitiveEventDetail, eventAssignee } from '@/store/eventStore';
 import { useFamilyStore } from '@/store/familyStore';
@@ -113,11 +114,10 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const logAction = (action: string, storeCall: string, opts?: { targetTitle?: string; targetId?: string; at?: string }) => {
     console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "${action}"${opts?.targetTitle ? ` on "${opts.targetTitle}"` : ''}${opts?.targetId ? ` (id=${opts.targetId})` : ''} → ${storeCall}${opts?.at ? ` [features/hub/SeniorView.tsx:${opts.at}]` : ''}`);
   };
-  const { requests: kidRequests, assignRequest, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests } = useKidRequestStore();
+  const { requests: kidRequests, assignRequest, loaded: kidRequestsLoaded, loadFromStorage: loadKidRequests, sendRequest: sendKidRequest } = useKidRequestStore();
   const gpWelcomeRequests = kidRequests.filter(r =>
     r.openToGP && r.status === 'approved' && !r.assignedHelper
   );
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=gpWelcomeRequests totalSource=${kidRequests.length} afterFilter=${gpWelcomeRequests.length}`);
   // Partner chores flagged openToGP — GP can buy supplies + scan receipt.
   // Bug (found via live-DB testing): 'in_progress' alone doesn't mean
   // still-open — it's also the status a chore lands in the MOMENT another
@@ -141,14 +141,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const gpWelcomeChores = chores.filter(c =>
     (c as any).openToGP && !c.inviteGrandparents && c.status === 'todo' && !c.assignedToId
   );
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=gpWelcomeChores totalSource=${chores.length} afterFilter=${gpWelcomeChores.length}`);
   // Scenario 1.6 — offers THIS GP made that are still waiting on a parent
   // to Accept/Decline (see claimGPErrand/PendingOffersSection).
   const myPendingOffers = chores.filter(c =>
     c.status === 'gp_offer_pending' && c.gpOfferById === active.id
   );
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=myPendingOffers totalSource=${chores.length} afterFilter=${myPendingOffers.length}`);
-
   const kids    = members.filter(m => m.role === 'kid');
   const allNames = members.map(m => m.name);
   const today   = localToday();
@@ -170,9 +167,44 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     const when = c.approvedAt ?? c.reviewedAt ?? c.createdAt;
     return withinLast24h(when);
   });
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=kidsCheerable totalSource=${chores.length} afterFilter=${kidsCheerable.length} [features/hub/SeniorView.tsx:132]`);
-
   const [sosActive, setSosActive]   = useState(false);
+  const [sosSending, setSosSending] = useState(false);
+  // EmergencySosCard's own copy claims "Parents have been notified with
+  // your location — help is on the way," but until now sosActive only ever
+  // flipped local component state — no notification, no location, nothing
+  // actually left this device. A grandparent in a real emergency was being
+  // told help was coming when it wasn't. Routes through the same
+  // sendRequest → notifyKidRequest → family-notifier path every other kid
+  // request already uses, with type 'emergency' (auto-sets
+  // urgency:'emergency', which family-notifier renders with a 🚨 EMERGENCY
+  // prefix and fans out to parents + grandparents).
+  const triggerSos = useCallback(async () => {
+    setSosSending(true);
+    let locationLabel = 'Location unavailable';
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const [geo] = await Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        locationLabel = geo
+          ? [geo.name, geo.street, geo.city, geo.region].filter(Boolean).join(', ')
+          : `${loc.coords.latitude.toFixed(5)}, ${loc.coords.longitude.toFixed(5)}`;
+      }
+    } catch { /* best-effort — an SOS with no location is still far better than none at all */ }
+    try {
+      sendKidRequest({
+        type: 'emergency', fromMemberId: active.id,
+        detail: `${active.name.split(' ')[0]} triggered Emergency SOS`,
+        location: locationLabel,
+      });
+      setSosActive(true);
+    } catch (e: any) {
+      console.warn('[SeniorView] SOS dispatch failed', e?.message ?? e);
+      Alert.alert("Couldn't send SOS", 'Please try again, or call a family member directly.');
+    } finally {
+      setSosSending(false);
+    }
+  }, [active.id, active.name, sendKidRequest]);
   const [declineId,  setDeclineId]  = useState<string | null>(null);
   const [declineText, setDeclineText] = useState('');
   const [gpKid, setGpKid]           = useState<FamilyMember | null>(null);
@@ -235,7 +267,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   }, [MEDS_KEY, MEDS_TAKEN_KEY]);
 
   const pendingGpApproval = chores.filter(c => c.status === 'pending_grandparent_approval' && c.sponsorUserId === active.id);
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=pendingGpApproval totalSource=${chores.length} afterFilter=${pendingGpApproval.length} [features/hub/SeniorView.tsx:210]`);
   const [cheerSticker, setCheerSticker] = useState('⭐');
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [matchKidId, setMatchKidId] = useState('');
@@ -275,8 +306,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     c.status === 'pending_parent_approval' &&
     c.sponsorUserId === active.id
   );
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=myPendingSponsoredQuests totalSource=${chores.length} afterFilter=${myPendingSponsoredQuests.length} [features/hub/SeniorView.tsx:234]`);
-
   // Coordinated live-DB QA (launch-readiness round) found a sponsored quest
   // vanished from the GP's own Hub the instant a parent approved it — the
   // GP's Quests tab (sponsorUserId scope, no status filter) kept tracking
@@ -290,8 +319,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     c.sponsorUserId === active.id &&
     ['todo', 'in_progress', 'pending_approval', 'redo_requested'].includes(c.status)
   );
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=mySponsoredQuestsInProgress totalSource=${chores.length} afterFilter=${mySponsoredQuestsInProgress.length} [features/hub/SeniorView.tsx:248]`);
-
   const openEditSponsoredQuest = (c: ChoreTask) => {
     setEditingQuestId(c.id);
     setNewQuestTitle(c.title);
@@ -375,8 +402,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     c.status === 'in_progress' &&
     c.assignedToId === active.id
   );
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=myActiveErrands totalSource=${chores.length} afterFilter=${myActiveErrands.length} [features/hub/SeniorView.tsx:303]`);
-
   // Coordinated live-DB QA (GP receipt round) found this GP's own Hub
   // dropped an errand entirely the moment she submitted its receipt — no
   // section anywhere covered pending_approval for a plain inviteGrandparents
@@ -390,8 +415,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     c.assignedToId === active.id &&
     (!!c.receiptPhotoUrl || c.receiptAmount != null || !!c.receiptNote)
   );
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=myErrandsAwaitingReview totalSource=${chores.length} afterFilter=${myErrandsAwaitingReview.length} [features/hub/SeniorView.tsx:323]`);
-
   // ── Helper Dispatch / Availability (persisted in FamilyMember) ──────────────
   const cheerleaderMode  = active.gpCheerleaderMode  ?? false;
   const driveWindowDays  = active.gpDriveWindowDays  ?? [2, 4];
@@ -412,8 +435,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const gpInvitations = chores.filter(c =>
     c.inviteGrandparents && c.status === 'todo' && !c.sponsorUserId
   );
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=gpInvitations totalSource=${chores.length} afterFilter=${gpInvitations.length} [features/hub/SeniorView.tsx:347]`);
-
   // Checks whether an event falls inside the GP's configured drive window
   const withinDriveWindow = useCallback((ev: typeof events[0]): boolean => {
     if (!ev.date) return true; // no date set — show it
@@ -459,8 +480,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     !isPastEvent(e) &&
     withinDriveWindow(e)
   );
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=openRides totalSource=${upcomingEvents.length} afterFilter=${openRides.length} [features/hub/SeniorView.tsx:391]`);
-
   // Rides this senior has already claimed (confirmed helper) — exact name
   // match. The previous fuzzy includes()-based match let two grandparents
   // sharing a first name/honorific ("Grandma Mary" / "Mary Johnson", or
@@ -473,7 +492,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     const a = eventAssignee(e);
     return a.name === active.name && a.status === 'confirmed';
   });
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=myClaimedRides totalSource=${upcomingEvents.length} afterFilter=${myClaimedRides.length} [features/hub/SeniorView.tsx:407]`);
   // Weekly cap counts everything claimed this week, past included; the list
   // shown in dispatch only carries what's still ahead.
   const upcomingClaimedRides = myClaimedRides.filter(e => !isPastEvent(e));
@@ -645,13 +663,11 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     const a = eventAssignee(e);
     return a.name === active.name && a.status === 'confirmed' && !isWorkEvent(e) && !isPastEvent(e);
   });
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=myDrivingToday totalSource=${upcomingEvents.length} afterFilter=${myDrivingToday.length} [features/hub/SeniorView.tsx:581]`);
   // Assigned to me but I haven't replied yet — not Work events
   const myPendingAssignments = upcomingEvents.filter(e => {
     const a = eventAssignee(e);
     return a.name === active.name && a.status === 'pending' && !e.approvalPending && !isWorkEvent(e) && !isPastEvent(e);
   });
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=myPendingAssignments totalSource=${upcomingEvents.length} afterFilter=${myPendingAssignments.length} [features/hub/SeniorView.tsx:586]`);
   // Spec 2.4: a kid/teen's still-pending request (approvalPending === true)
   // has not been reviewed by a parent yet — GP should not see it as an
   // actionable "family needs a hand" item at all, let alone be able to
@@ -675,7 +691,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     // placeholder for an already-scheduled event instead of hiding it.
     (!isEventSensitive(e) || canViewSensitiveEventDetail(e, 'senior', active.id, active.name) === 'full')
   );
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=openRequests totalSource=${events.length} afterFilter=${openRequests.length} [features/hub/SeniorView.tsx:606]`);
   // Confirmed ride where THIS grandparent is being picked up (the ride's
   // subject/rider — e.g. a parent or another family member driving them
   // somewhere), not one they're driving. Scoped to memberId/memberIds so
@@ -712,8 +727,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
   const urgentPending = myPendingAssignments.filter(e =>
     hoursUntilEvent(e.date, e.time) < 1 && hoursUntilEvent(e.date, e.time) >= 0
   );
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=urgentPending totalSource=${myPendingAssignments.length} afterFilter=${urgentPending.length} [features/hub/SeniorView.tsx:637]`);
-
   // GP volunteer pool: someone else is assigned (pending, not me) within 0–4 hrs
   // Exclude events where I'm already confirmed as driver within 30 min (would create a conflict)
   const myConfirmedTimes = myDrivingToday
@@ -738,8 +751,6 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
     }
     return true;
   });
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=volunteerPool totalSource=${events.length} afterFilter=${volunteerPool.length} [features/hub/SeniorView.tsx:660]`);
-
   // Driving Duty was a separate section from Helper Dispatch but drew from the
   // same events, so the same ride could show twice under different framing.
   // Both are now one "Helper Dispatch" section — dedupe by event id, most
@@ -807,7 +818,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       {/* ══ TODAY ══ */}
       <GroupBand label="Today" color={BRAND.teal} colors={colors} />
 
-      <EmergencySosCard sosActive={sosActive} setSosActive={setSosActive} colors={colors} isDark={isDark} />
+      <EmergencySosCard sosActive={sosActive} setSosActive={setSosActive} onTriggerSos={triggerSos} sosSending={sosSending} colors={colors} isDark={isDark} />
 
       {/* Scenarios 9.2/9.3 — visible ONLY while a parent-granted caregiver
           window is active; disappears the instant it expires or is
@@ -880,6 +891,7 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           title="Assigned To You"
           badge={myDirectPending.length + myOutgoingPending.length + myLockedItems.length}
           colors={colors} isDark={isDark}
+          large
         >
           {myDirectPending.map(a => {
             const chore = chores.find(c => c.id === a.choreId);

@@ -657,17 +657,19 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
                     )}
                     {goal && (
                       <View style={{ width: '100%', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 9 }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 }}>
-                          <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textSecondary }} numberOfLines={1}>
-                            Goal: {goal.title}
-                          </Text>
-                          <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textPrimary }}>
-                            {Math.round(pct * 100)}%
-                          </Text>
-                        </View>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textSecondary, marginBottom: 5 }} numberOfLines={1}>
+                          Goal: {goal.title}
+                        </Text>
                         <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.surface, overflow: 'hidden' }}>
                           <View style={{ height: '100%', width: `${pct * 100}%`, borderRadius: 3, backgroundColor: BRAND.teal }} />
                         </View>
+                        {/* % moved below the bar, right-aligned — was
+                            crammed into the same row as the goal title with
+                            no truncation guard on the title, so a longer
+                            goal name could crowd or push the percentage. */}
+                        <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textPrimary, textAlign: 'right', marginTop: 4 }}>
+                          {Math.round(pct * 100)}%
+                        </Text>
                       </View>
                     )}
                     <Pressable onPress={() => { setGrantAmount(''); setGrantTarget({ id: kid.id, name: kid.name }); }}

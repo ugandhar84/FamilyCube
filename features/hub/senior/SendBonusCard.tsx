@@ -52,7 +52,7 @@ export function SendBonusCard({
             <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>Select grandchild</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
               {kids.map(kid => (
-                <Pressable key={kid.id} onPress={() => { console.log(`[UserAction] FORM screen=Hub role=senior member=${actorName} selected "${kid.name.split(' ')[0]}" for "Select grandchild" on "Send Grandparent Bonus" [features/hub/senior/SendBonusCard.tsx:53]`); setGpKid(gpKid?.id === kid.id ? null : kid); }}
+                <Pressable key={kid.id} onPress={() => { setGpKid(gpKid?.id === kid.id ? null : kid); }}
                   style={{ borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: gpKid?.id === kid.id ? BRAND.purple : (isDark ? colors.surface : '#F5F0FF'), borderWidth: 1.5, borderColor: gpKid?.id === kid.id ? BRAND.purple : BRAND.purple + '30' }}>
                   <FamilyAvatar name={kid.name} emoji={kid.emoji} avatarUrl={kid.avatarUrl} siblings={allNames} size={26} ringColor={gpKid?.id === kid.id ? '#fff' : BRAND.purple} ringWidth={1} />
                   <Text style={{ fontSize: GP.body, fontWeight: '700', color: gpKid?.id === kid.id ? '#fff' : BRAND.purple }}>
@@ -64,7 +64,7 @@ export function SendBonusCard({
             <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>Amount</Text>
             <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
               {([15, 25, 50] as const).map(amt => (
-                <Pressable key={amt} onPress={() => { console.log(`[UserAction] FORM screen=Hub role=senior member=${actorName} selected "${amt}" for "Amount" on "Send Grandparent Bonus" [features/hub/senior/SendBonusCard.tsx:65]`); setGpAmount(amt); }} style={{ flex: 1, borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: gpAmount === amt ? BRAND.amber : (isDark ? colors.surface : '#FFF8E8'), borderWidth: 1.5, borderColor: gpAmount === amt ? BRAND.amber : BRAND.amber + '40' }}>
+                <Pressable key={amt} onPress={() => { setGpAmount(amt); }} style={{ flex: 1, borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: gpAmount === amt ? BRAND.amber : (isDark ? colors.surface : '#FFF8E8'), borderWidth: 1.5, borderColor: gpAmount === amt ? BRAND.amber : BRAND.amber + '40' }}>
                   <Text style={{ fontSize: GP.body, fontWeight: '900', color: gpAmount === amt ? '#0C0B14' : BRAND.amber }}>{amt}</Text>
                   <Text style={{ fontSize: GP.tiny, color: gpAmount === amt ? '#0C0B14' : colors.textTertiary, fontWeight: '600' }}>${(amt * 0.10).toFixed(2)}</Text>
                 </Pressable>
@@ -72,9 +72,9 @@ export function SendBonusCard({
             </View>
             <Text style={{ fontSize: GP.sub, fontWeight: '700', color: colors.textSecondary, marginBottom: 6 }}>Add a note (optional)</Text>
             <View style={{ borderRadius: 12, borderWidth: 1.5, borderColor: isDark ? colors.border : '#E8E8F0', backgroundColor: isDark ? colors.surface : '#FAFAFA', paddingHorizontal: 12, paddingVertical: 8, marginBottom: 14 }}>
-              <TextInput value={gpNote} onChangeText={setGpNote} onBlur={() => console.log(`[UserAction] FORM screen=Hub role=senior member=${actorName} field="Note" on "Send Grandparent Bonus" newValue=${gpNote} [features/hub/senior/SendBonusCard.tsx:73]`)} placeholder="Great job on your test!" placeholderTextColor={colors.textTertiary} style={{ fontSize: GP.sub, color: colors.textPrimary, minHeight: 36 }} multiline />
+              <TextInput value={gpNote} onChangeText={setGpNote}  placeholder="Great job on your test!" placeholderTextColor={colors.textTertiary} style={{ fontSize: GP.sub, color: colors.textPrimary, minHeight: 36 }} multiline />
             </View>
-            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "Send ${gpAmount} GP Coins" on "Send Grandparent Bonus" (to=${gpKid?.name ?? 'none'}) → onSend [features/hub/senior/SendBonusCard.tsx:75]`); onSend(); }} disabled={!gpKid} style={{ borderRadius: 14, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, backgroundColor: gpKid ? BRAND.purple : (isDark ? colors.surface : '#EEE'), opacity: gpKid ? 1 : 0.5 }}>
+            <Pressable onPress={() => { onSend(); }} disabled={!gpKid} style={{ borderRadius: 14, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, backgroundColor: gpKid ? BRAND.purple : (isDark ? colors.surface : '#EEE'), opacity: gpKid ? 1 : 0.5 }}>
               <Star size={18} color={gpKid ? '#fff' : colors.textTertiary} />
               <Text style={{ fontSize: GP.sub, fontWeight: '900', color: gpKid ? '#fff' : colors.textTertiary }}>
                 Send {gpAmount} GP Coins{gpKid ? ` to ${gpKid.name.split(' ')[0]}` : ''}

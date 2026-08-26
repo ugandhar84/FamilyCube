@@ -22,6 +22,7 @@ import type { Quest } from '@/store/questStore';
 import { useEventStore } from '@/store/eventStore';
 import { localDateStr } from '@/lib/dates';
 import { isWorkEvent, hoursUntilEvent } from './hubUtils';
+import { FamilyPhotoFrameCard } from './parent/FamilyPhotoFrameCard';
 
 // ── Greeting header — sits on the page background, no card boundary ────────
 
@@ -43,7 +44,7 @@ export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCou
 
   const now = new Date();
   const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
-  const monthDay = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+  const monthDay = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
   const todayEventsCount = useMemo(() =>
     events.filter(e => e.date === today && !isWorkEvent(e)).length,
@@ -61,35 +62,49 @@ export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCou
       : `${todayEventsCount} event${todayEventsCount !== 1 ? 's' : ''} today`;
 
   return (
-    <View style={{ paddingHorizontal: 16, marginTop: 10, marginBottom: 20 }}>
-      <Text style={{
-        fontSize: 24, fontWeight: '800',
-        color: colors.textPrimary,
-        letterSpacing: LETTER_SPACING.display,
-      }}>
-        {getGreetingPrefix()}
-        {'\n'}
-        <Text style={{ fontWeight: '600' }}>{firstName}</Text>
-      </Text>
-      <Text style={{
-        fontSize: TYPO.label, fontWeight: '600',
-        color: colors.textSecondary,
-        marginTop: 4,
-      }}>
-        {familyName.replace(/\s*family$/i, '')} Family  ·  {weekday}, {monthDay}
-      </Text>
-      <View style={{
-        marginTop: 14,
-        backgroundColor: colors.primaryLight,
-        borderRadius: 12, paddingHorizontal: 14, paddingVertical: 9,
-        alignSelf: 'flex-start',
-      }}>
+    <View style={{ paddingHorizontal: 16, marginTop: 4, marginBottom: 8,
+      flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <View style={{ flex: 1, paddingRight: 12 }}>
         <Text style={{
-          fontSize: TYPO.label, fontWeight: '700',
-          color: colors.primaryText,
+          fontSize: 24, fontWeight: '800',
+          color: colors.textPrimary,
+          letterSpacing: LETTER_SPACING.display,
         }}>
-          {summaryText}
+          {getGreetingPrefix()}
+          {'\n'}
+          <Text style={{ fontWeight: '600' }}>{firstName}</Text>
         </Text>
+        <Text style={{
+          fontSize: TYPO.label, fontWeight: '600',
+          color: colors.textSecondary,
+          marginTop: 4,
+        }}>
+          {familyName.replace(/\s*family$/i, '')} Family
+        </Text>
+        <Text style={{
+          fontSize: TYPO.label, fontWeight: '600',
+          color: colors.textSecondary,
+          marginTop: 2,
+        }}>
+          {weekday}, {monthDay}
+        </Text>
+        <View style={{
+          marginTop: 12,
+          backgroundColor: colors.primaryLight,
+          borderRadius: 10, paddingHorizontal: 11, paddingVertical: 6,
+          alignSelf: 'flex-start',
+        }}>
+          <Text style={{
+            fontSize: TYPO.micro, fontWeight: '700',
+            color: colors.primaryText,
+          }}>
+            {summaryText}
+          </Text>
+        </View>
+      </View>
+
+      <View>
+        <FamilyPhotoFrameCard colors={colors} isDark={isDark} width={196} height={132} />
       </View>
     </View>
   );
@@ -238,9 +253,13 @@ export function TodayView({
                 </>
               )}
 
-              {/* Completed events stay tucked away once there's something
-                  still ahead today — only surfaced once nothing's upcoming. */}
-              {past.length > 0 && upcoming.length === 0 && (
+              {/* Completed events stay tucked away by default (showPast
+                  starts false) — was also gated on upcoming.length === 0,
+                  so a day with 2 done + 1 still-ahead event never showed
+                  this toggle at all; the "N completed ▾" affordance existed
+                  in code but was unreachable for a day with any mix of
+                  past+upcoming events, which is the common case. */}
+              {past.length > 0 && (
                 <>
                   <Pressable
                     onPress={() => setShowPast(v => !v)}

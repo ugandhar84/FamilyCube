@@ -39,14 +39,18 @@ export function KidTodaySection({
             { key: 'late',  label: 'Running Late', Icon: Timer,    color: colors.danger, onPress: () => onCheckin('late') },
             { key: 'ask',   label: 'Ask Parent',   Icon: MessageCircle, color: colors.accent, onPress: onAskParent },
           ] as const).map(({ key, label, Icon, color, onPress }) => (
-            <Pressable key={key} onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "${label}" on "KidTodaySection" (id=${key}) [features/hub/kid/KidTodaySection.tsx]`); onPress(); }}
+            <Pressable key={key} onPress={onPress}
               style={{ flex: 1, borderRadius: 16, paddingVertical: 12, alignItems: 'center', gap: 6,
                 backgroundColor: isDark ? color + '22' : color + '1E', borderWidth: 1, borderColor: color + (isDark ? '38' : '2C') }}>
               {/* Solid-tint icon chip with a white icon — matches the Parent
                   Hub's quick-action tile treatment instead of a bare icon
-                  floating directly on the tinted wash. */}
-              <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: color }}>
-                <Icon size={17} color="#fff" strokeWidth={2.4} />
+                  floating directly on the tinted wash. Bumped from 34px —
+                  below the ~40px floor that matters more here than for an
+                  adult user (less precise motor control); the Pressable
+                  itself covers the whole tile already, so this is purely
+                  about the icon reading as a comfortably-sized target. */}
+              <View style={{ width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: color }}>
+                <Icon size={19} color="#fff" strokeWidth={2.4} />
               </View>
               <Text style={{ fontSize: KID.tiny, fontWeight: '900', color, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
             </Pressable>

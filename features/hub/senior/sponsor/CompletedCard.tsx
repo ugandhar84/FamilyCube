@@ -27,8 +27,6 @@ export function CompletedCard({ done, allChores, kids, allNames, colors, isDark,
     seenTeams.add(c.teamGroupId);
     return true;
   });
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${actorName} list=CompletedCard.cards totalSource=${done.length} afterFilter=${cards.length} [features/hub/senior/sponsor/CompletedCard.tsx:27]`);
-
   return (
     <View style={{ gap: 8, marginBottom: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

@@ -85,7 +85,7 @@ export function OpenRideRequestsList({
             {/* Action buttons */}
             <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: isDark ? '#854D0E30' : '#FDE68A' }}>
               <Pressable
-                onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "I'll Drive" on "${ev.title}" (id=${ev.id}) → onClaim [features/hub/senior/OpenRideRequestsList.tsx:86]`); onClaim(ev.id); }}
+                onPress={() => { onClaim(ev.id); }}
                 disabled={atWeeklyCap}
                 style={{ flex: 2, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', gap: 2,
                   backgroundColor: atWeeklyCap ? (isDark ? '#374151' : '#E5E7EB') : RIDE_AMBER }}>
@@ -102,7 +102,7 @@ export function OpenRideRequestsList({
               </Pressable>
               <View style={{ width: 1, backgroundColor: isDark ? '#854D0E30' : '#FDE68A' }} />
               <Pressable
-                onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "Pass" on "${ev.title}" (id=${ev.id}) → onPass [features/hub/senior/OpenRideRequestsList.tsx:103]`); onPass(ev.id); }}
+                onPress={() => { onPass(ev.id); }}
                 style={{ flex: 1, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', gap: 2 }}>
                 <Text style={{ fontSize: GP.body, fontWeight: '700', color: colors.textSecondary }}>
                   Pass

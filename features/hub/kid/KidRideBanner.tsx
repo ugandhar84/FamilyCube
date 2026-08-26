@@ -101,7 +101,7 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, membe
             ? `${driverFirst ?? 'Your ride'} picks you up in ${rideCountdown}m`
             : `${driverFirst ?? 'Your ride'} picks you up at ${fmtTime(ev.time)}`;
 
-  const dismiss = () => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "dismiss" on "KidRideBanner" (id=${ev.id}) → onDismiss("${ev.id}") [features/hub/kid/KidRideBanner.tsx:73]`); setDismissed(true); onDismiss(ev.id); };
+  const dismiss = () => { setDismissed(true); onDismiss(ev.id); };
 
   const alertSent = !!lateNudgeSent?.[ev.id];
 
@@ -151,12 +151,12 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, membe
             before they're allowed to say so themselves. */}
         {!confirmed && (rideHere || isOverdue || onTheWay) && (
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidRideBanner.tsx]`); onConfirmPickup(ev); }}
+            <Pressable onPress={() => { onConfirmPickup(ev); }}
               style={{ flex: 1, backgroundColor: colors.teal, borderRadius: 12, paddingVertical: 9, alignItems: 'center' }}>
               <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>I'm picked up</Text>
             </Pressable>
             {onSendDriverLate && (
-              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "${alertSent ? 'Sent' : 'Alert my parent'}" on "${ev.title}" (id=${ev.id}) → onSendDriverLate [features/hub/kid/KidRideBanner.tsx]`); onSendDriverLate(ev); }}
+              <Pressable onPress={() => { onSendDriverLate(ev); }}
                 style={{ flex: 1, backgroundColor: isOverdue ? colors.danger : 'transparent', borderWidth: isOverdue ? 0 : 1.5, borderColor: 'rgba(255,255,255,0.5)', borderRadius: 12, paddingVertical: 9, alignItems: 'center', opacity: alertSent ? 0.7 : 1 }}>
                 <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>{alertSent ? 'Sent ✓' : 'Alert my parent'}</Text>
               </Pressable>

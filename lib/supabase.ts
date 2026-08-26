@@ -441,6 +441,40 @@ export async function uploadFamilyMemoryPhoto(
   return signed.signedUrl;
 }
 
+// Hub's "Family Photo Frame" — deliberately a separate storage path (and,
+// via familyFrameStore.ts, a separate table) from family_memories/its
+// `memories/` path above. The frame is a single "what's on display right
+// now" slot, not a post in the family's Memories feed — uploading to the
+// frame must never create a Memories entry, and vice versa.
+export async function uploadFamilyFramePhoto(familyId: string, localUri: string): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('No session');
+  const compressed = await compressImage(localUri, COMPRESS.gallery);
+  const body = await encodeBody(compressed.uri, compressed.base64 ?? null);
+  const path = `${session.user.id}/${familyId}/photo-frame/${Date.now()}.jpg`;
+
+  const bodySize = body instanceof ArrayBuffer ? body.byteLength : (body as Blob).size;
+  if (bodySize === 0) throw new Error('Encoded upload body is 0 bytes — the source file may be empty or unreadable.');
+
+  const { error: upErr } = await supabase.storage
+    .from(MEMORIES_BUCKET)
+    .upload(path, body, { upsert: false, contentType: 'image/jpeg' });
+  if (upErr) throw new Error(upErr.message);
+
+  // Same read-after-write lag/retry as uploadFamilyMemoryPhoto above.
+  let signed: { signedUrl: string } | null = null;
+  let signErr: any = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 400 * attempt));
+    const res = await supabase.storage.from(MEMORIES_BUCKET).createSignedUrl(path, MEMORIES_SIGNED_URL_EXPIRY_SECONDS);
+    signed = res.data;
+    signErr = res.error;
+    if (signed?.signedUrl) break;
+  }
+  if (!signed?.signedUrl) throw new Error(signErr?.message ?? 'Failed to sign URL');
+  return signed.signedUrl;
+}
+
 // ── Recommendation / sponsored media (image, GIF, or video) ─────────────────
 // base64Data must be read at pick time via FileSystem.readAsStringAsync (legacy).
 // Callers must never re-read from the URI later — temp files may be gone by then.

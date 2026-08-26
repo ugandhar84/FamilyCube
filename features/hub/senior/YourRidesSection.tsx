@@ -6,6 +6,7 @@ import { fmtTime } from '../hubUtils';
 import { GP } from './seniorTheme';
 import { DeclineReasonPanel } from './DeclineReasonPanel';
 import { supabase } from '@/lib/supabase';
+import { showToast } from '@/components/AppToast';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 
@@ -38,19 +39,24 @@ export function YourRidesSection({
 }) {
   if (myPendingAssignments.length === 0 && myDrivingToday.length === 0 && myClaimedRides.length === 0) return null;
 
-  const beginDecline = (evId: string) => {
-    console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Decline" on ride (id=${evId}) → beginDecline (opens DeclineReasonPanel) [features/hub/senior/YourRidesSection.tsx:35]`);
-    setDeclineId(evId); setDeclineText('');
-  };
-  const cancelDecline = () => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Cancel" on decline panel (id=${declineId}) → setDeclineId(null) [features/hub/senior/YourRidesSection.tsx:36]`); setDeclineId(null); };
+  const beginDecline = (evId: string) => { setDeclineId(evId); setDeclineText(''); };
+  const cancelDecline = () => setDeclineId(null);
   const confirmDecline = (ev: FamilyEvent) => {
-    console.log(`[UserAction] screen=Hub role=senior member=${active.name} confirmed decline reason on "${ev.title}" (id=${ev.id}) → decline_event_assignment(helper) [features/hub/senior/YourRidesSection.tsx:38]`);
+    // Was closing the decline panel unconditionally, right after firing
+    // the RPC — a network failure looked identical to a successful
+    // decline, with the grandparent believing they'd declined a ride that
+    // server-side never actually changed. Only close/clear on success now;
+    // show an error toast otherwise so they know to retry.
     supabase.rpc('decline_event_assignment', {
       p_event_id: ev.id, p_member_id: active.id, p_role: 'helper', p_reason: declineText.trim() || null,
     }).then(({ error }) => {
-      if (error) console.warn('[YourRidesSection] decline_event_assignment failed', error.message);
+      if (error) {
+        console.warn('[YourRidesSection] decline_event_assignment failed', error.message);
+        showToast("Couldn't save — try again", 'info');
+        return;
+      }
+      setDeclineId(null); setDeclineText('');
     });
-    setDeclineId(null); setDeclineText('');
   };
 
   return (
@@ -94,9 +100,15 @@ export function YourRidesSection({
                 )}
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <Pressable onPress={() => {
-                    console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Accept Drive" on "${ev.title}" (id=${ev.id}) → confirm_event_assignment(helper) [features/hub/senior/YourRidesSection.tsx:82]`);
                     supabase.rpc('confirm_event_assignment', { p_event_id: ev.id, p_member_id: active.id, p_role: 'helper' })
-                      .then(({ error }) => { if (error) console.warn('[YourRidesSection] confirm_event_assignment failed', error.message); });
+                      .then(({ error }) => {
+                        if (error) {
+                          console.warn('[YourRidesSection] confirm_event_assignment failed', error.message);
+                          showToast("Couldn't save — try again", 'info');
+                          return;
+                        }
+                        showToast('Ride accepted ✓');
+                      });
                   }}
                     style={{ flex: 1, backgroundColor: MONEY_GREEN, borderRadius: 12, paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                     <Car size={14} color="#fff" />
@@ -144,7 +156,7 @@ export function YourRidesSection({
                   </View>
                 )}
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "I'm En Route" on "${ev.title}" (id=${ev.id}) → onEnRoute [features/hub/senior/YourRidesSection.tsx:122]`); onEnRoute(); }} style={{ flex: 1, backgroundColor: MONEY_GREEN, borderRadius: 12, paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
+                  <Pressable onPress={onEnRoute} style={{ flex: 1, backgroundColor: MONEY_GREEN, borderRadius: 12, paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 }}>
                     <Car size={14} color="#fff" />
                     <Text style={{ fontSize: GP.body, fontWeight: '700', color: '#fff' }}>I'm En Route</Text>
                   </Pressable>

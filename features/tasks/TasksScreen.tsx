@@ -118,8 +118,28 @@ export default function TasksScreen() {
   // file's own header comment). Pending = waiting on someone to act;
   // Active = already claimed/in progress. Good enough for a glance-count
   // badge, not a substitute for either screen's own filtered list.
+  const isSenior = activeMember?.role === 'senior';
   const scheduleCounts = useMemo(() => {
-    const upcoming = events.filter(e => e.date >= localDateStr());
+    const upcoming = events.filter(e => {
+      if (e.date < localDateStr()) return false;
+      // A senior/GP's own Agenda (CalendarScreen.tsx's scopedRangeEvents)
+      // only ever shows events they're actually assigned to, or unassigned
+      // events explicitly open to grandparents — everything else (a ride
+      // assigned to a parent, say) is invisible to them there. This badge
+      // was counting every family event unfiltered, so it could show "2
+      // active" while the GP's own Agenda below showed nothing at all —
+      // reported live via screenshot. Mirror the same visibility rule here
+      // so the count never promises more than the list underneath it has.
+      if (!isSenior) return true;
+      const isSubjectOrAssignee =
+        e.memberId === activeMemberId ||
+        e.memberIds?.includes(activeMemberId ?? '') ||
+        (e.helper && e.helper === activeMember?.name) ||
+        (e.driverName && e.driverName === activeMember?.name);
+      const isOpenUnassigned = !e.memberId && !e.memberIds?.length &&
+        (e.category !== 'Ride' && !e.rideRequired ? true : !!e.isOpenToGrandparents);
+      return isSubjectOrAssignee || isOpenUnassigned;
+    });
     let pending = 0, active = 0;
     for (const e of upcoming) {
       const a = eventAssignee(e);
@@ -128,7 +148,7 @@ export default function TasksScreen() {
       else if (a.status === 'confirmed') active++;
     }
     return { pending, active };
-  }, [events]);
+  }, [events, isSenior, activeMemberId, activeMember?.name]);
 
   // Reported live: a kid's "1 pending" badge here counted a chore assigned
   // to nobody (assignedToId: null) and not even in the pool (isPool:

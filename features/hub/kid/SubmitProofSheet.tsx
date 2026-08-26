@@ -81,20 +81,20 @@ export function SubmitProofSheet({ quest, colors, isDark, onClose, submitQuest }
         {uri ? (
           <View style={{ borderRadius: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: `${MONEY_GREEN}50` }}>
             <Image source={{ uri }} style={{ width: '100%', height: 200 }} resizeMode="cover" />
-            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${activeMemberId} tapped "Retake" on "SubmitProofSheet" (id=${quest?.id}) [features/hub/kid/SubmitProofSheet.tsx:84]`); pickPhoto(true); }}
+            <Pressable onPress={() => { pickPhoto(true); }}
               style={{ position: 'absolute', top: 8, right: 8, backgroundColor: '#00000090', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 }}>
               <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: '#fff' }}>Retake</Text>
             </Pressable>
           </View>
         ) : (
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${activeMemberId} tapped "Take Photo" on "SubmitProofSheet" (id=${quest?.id}) [features/hub/kid/SubmitProofSheet.tsx:91]`); pickPhoto(true); }}
+            <Pressable onPress={() => { pickPhoto(true); }}
               style={{ flex: 1, borderRadius: 14, paddingVertical: 20, alignItems: 'center', gap: 6,
                 borderWidth: 1.5, borderStyle: 'dashed', borderColor: `${MONEY_GREEN}60`, backgroundColor: `${MONEY_GREEN}10` }}>
               <Camera size={26} color={MONEY_GREEN} />
               <Text style={{ fontSize: KID.sub, fontWeight: '800', color: MONEY_GREEN }}>Take Photo</Text>
             </Pressable>
-            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${activeMemberId} tapped "Choose Photo" on "SubmitProofSheet" (id=${quest?.id}) [features/hub/kid/SubmitProofSheet.tsx:97]`); pickPhoto(false); }}
+            <Pressable onPress={() => { pickPhoto(false); }}
               style={{ flex: 1, borderRadius: 14, paddingVertical: 20, alignItems: 'center', gap: 6,
                 borderWidth: 1.5, borderStyle: 'dashed', borderColor: isDark ? colors.border : '#E2E8F0', backgroundColor: isDark ? colors.surface : '#FAFAFA' }}>
               <ImageIcon size={26} color={colors.textSecondary} />
@@ -105,7 +105,7 @@ export function SubmitProofSheet({ quest, colors, isDark, onClose, submitQuest }
         <View style={{ borderRadius: 12, borderWidth: 1.5, borderColor: isDark ? colors.border : '#E8E8F0',
           backgroundColor: isDark ? colors.surface : '#FAFAFA', paddingHorizontal: 12, paddingVertical: 10 }}>
           <TextInput value={note} onChangeText={setNote}
-            onBlur={() => { console.log(`[UserAction] FORM screen=Hub role=kid member=${activeMemberId} field="proof note" on "SubmitProofSheet" (id=${quest?.id}) newValue=${note} [features/hub/kid/SubmitProofSheet.tsx:109]`); }}
+            onBlur={() => { }}
             placeholder="Add a note (optional)…" placeholderTextColor={colors.textTertiary}
             style={{ fontSize: KID.body, color: colors.textPrimary, minHeight: 40 }} multiline />
         </View>
@@ -113,7 +113,6 @@ export function SubmitProofSheet({ quest, colors, isDark, onClose, submitQuest }
           disabled={!uri}
           onPress={() => {
             if (!quest || !uri) return;
-            console.log(`[UserAction] screen=Hub role=kid member=${activeMemberId} tapped "Submit for Review" on "${quest.title}" (id=${quest.id}) → submitQuest [features/hub/kid/SubmitProofSheet.tsx:117]`);
             submitQuest(quest.id, { photoUrl: uri, note: note.trim() || undefined }, activeMemberId ?? undefined);
             close();
           }}

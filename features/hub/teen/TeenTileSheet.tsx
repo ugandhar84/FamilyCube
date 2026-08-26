@@ -22,14 +22,14 @@ export function TeenTileSheet({ visible, onClose, title, accentColor, colors, is
     <Modal visible={visible} transparent animationType="slide" onRequestClose={dismiss}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={s.backdrop}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { console.log(`[UserAction] screen=Hub role=teen tapped "backdrop" on "TeenTileSheet: ${title}" → dismiss [features/hub/teen/TeenTileSheet.tsx:25]`); dismiss(); }} />
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { dismiss(); }} />
           <View style={[s.sheet, { backgroundColor: colors.card }]}>
             <View style={[s.handle, { backgroundColor: colors.border }]} />
 
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
               <Text style={[s.title, { color: colors.textPrimary, flex: 1 }]}>{title}</Text>
               <TouchableOpacity
-                onPress={() => { console.log(`[UserAction] screen=Hub role=teen tapped "close" on "TeenTileSheet: ${title}" → dismiss [features/hub/teen/TeenTileSheet.tsx:32]`); dismiss(); }}
+                onPress={() => { dismiss(); }}
                 hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
                 style={{ padding: 8, borderRadius: 20, backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }}>
                 <Ionicons name="close" size={18} color={colors.textSecondary} />

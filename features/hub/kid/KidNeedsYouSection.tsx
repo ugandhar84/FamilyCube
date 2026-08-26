@@ -160,7 +160,7 @@ function NeedsYouRideRow({ ev, rideCountdown, colors, isDark, active, members, o
       // is overdue. Dismissal is per-item and DB-backed
       // (dismissedHubItemsStore), so dismissing an early reminder doesn't
       // lose anything — the ride itself is still on Timeline/Schedule.
-      onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "dismiss" on "KidNeedsYouSection ride row" (id=${ev.id}) → onDismiss("${ev.id}") [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(ev.id); }}
+      onDismiss={() => { onDismiss(ev.id); }}
     >
       {!confirmed && conflictReason && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -172,12 +172,12 @@ function NeedsYouRideRow({ ev, rideCountdown, colors, isDark, active, members, o
       )}
       {!confirmed && (rideHere || isOverdue || onTheWay) && (
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidNeedsYouSection.tsx]`); onConfirmPickup(ev); }}
+          <Pressable onPress={() => { onConfirmPickup(ev); }}
             style={{ flex: 1, backgroundColor: tone === 'solid' ? 'rgba(255,255,255,0.9)' : MONEY_GREEN, borderRadius: 12, paddingVertical: 9, alignItems: 'center' }}>
             <Text style={{ fontSize: KID.sub, fontWeight: '900', color: tone === 'solid' ? accent : '#fff' }}>I'm picked up</Text>
           </Pressable>
           {onSendDriverLate && (
-            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "${alertSent ? 'Sent' : 'Alert my parent'}" on "${ev.title}" (id=${ev.id}) → onSendDriverLate [features/hub/kid/KidNeedsYouSection.tsx]`); onSendDriverLate(ev); }}
+            <Pressable onPress={() => { onSendDriverLate(ev); }}
               style={{ flex: 1, backgroundColor: 'transparent', borderWidth: 1.5, borderColor: tone === 'solid' ? 'rgba(255,255,255,0.6)' : accent + '60', borderRadius: 12, paddingVertical: 9, alignItems: 'center', opacity: alertSent ? 0.7 : 1 }}>
               <Text style={{ fontSize: KID.sub, fontWeight: '900', color: tone === 'solid' ? '#fff' : accent }}>{alertSent ? 'Sent ✓' : 'Alert my parent'}</Text>
             </Pressable>
@@ -322,7 +322,7 @@ export function KidNeedsYouSection({
             Icon={UserCheck} accent={BRAND.purple} colors={colors} isDark={isDark}
             title={`${driverFirst} was asked to drive you`}
             detail={`${awaitingDriverRide!.title} · ${fmtTime(awaitingDriverRide!.time)} · waiting for ${driverFirst} to confirm`}
-            onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "KidNeedsYouSection awaiting-driver row" (id=awaiting-${awaitingDriverRide!.id}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(`awaiting-${awaitingDriverRide!.id}`); }}
+            onDismiss={() => { onDismiss(`awaiting-${awaitingDriverRide!.id}`); }}
           />
         );
       })()}
@@ -335,7 +335,7 @@ export function KidNeedsYouSection({
         <NeedsYouRow key={ev.id} Icon={Car} accent={colors.danger} colors={colors} isDark={isDark}
           title={`No driver — ${ev.title}`}
           detail={ev.declinedBy ? `${ev.declinedBy} can't make it` : 'Your parent is finding someone'}
-          onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "No driver — ${ev.title}" (id=ride-${ev.id}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(`ride-${ev.id}`); }} />
+          onDismiss={() => { onDismiss(`ride-${ev.id}`); }} />
       ))}
 
       {filteredPendingRides.map(ev => {
@@ -345,7 +345,7 @@ export function KidNeedsYouSection({
           <NeedsYouRow key={ev.id} Icon={isUrgent ? AlertTriangle : Clock} accent={isUrgent ? colors.danger : BRAND.amber} colors={colors} isDark={isDark}
             title={isUrgent ? 'Still no driver — getting close!' : 'Waiting on driver…'}
             detail={`${ev.title} · ${fmtTime(ev.time)}`}
-            onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "Waiting on driver" (id=pending-${ev.id}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(`pending-${ev.id}`); }} />
+            onDismiss={() => { onDismiss(`pending-${ev.id}`); }} />
         );
       })}
 
@@ -354,16 +354,16 @@ export function KidNeedsYouSection({
         return (
           <NeedsYouRow key={q.id} Icon={RotateCcw} accent={BRAND.purple} colors={colors} isDark={isDark}
             title="Quest sent back" detail={note ? `"${note}"` : q.title}
-            onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "Quest sent back" on "${q.title}" (id=${q.id}) → navigate to /(tabs)/quests [features/hub/kid/KidNeedsYouSection.tsx]`); router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); onDismiss(`quest-${q.id}`); }}
-            onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "Quest sent back: ${q.title}" (id=quest-${q.id}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(`quest-${q.id}`); }} />
+            onPress={() => { router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); onDismiss(`quest-${q.id}`); }}
+            onDismiss={() => { onDismiss(`quest-${q.id}`); }} />
         );
       })}
 
       {filteredApprovedQuests.map(q => (
         <NeedsYouRow key={`approved-${q.id}`} Icon={PartyPopper} accent={MONEY_GREEN} colors={colors} isDark={isDark}
           title="Quest approved!" detail={`${q.title} · +${q.coins} coins`}
-          onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "Quest approved!" on "${q.title}" (id=${q.id}) → navigate to /(tabs)/quests [features/hub/kid/KidNeedsYouSection.tsx]`); router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); onDismiss(`quest-approved-${q.id}`); }}
-          onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "Quest approved!: ${q.title}" (id=quest-approved-${q.id}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(`quest-approved-${q.id}`); }} />
+          onPress={() => { router.push({ pathname: '/(tabs)/quests', params: { questId: q.id } } as any); onDismiss(`quest-approved-${q.id}`); }}
+          onDismiss={() => { onDismiss(`quest-approved-${q.id}`); }} />
       ))}
 
       {filteredCheersForMe.map(({ quest, cheer }) => {
@@ -373,7 +373,7 @@ export function KidNeedsYouSection({
           <NeedsYouRow key={key} Icon={PartyPopper} accent={BRAND.purple} colors={colors} isDark={isDark}
             title={`${cheerer?.name?.split(' ')[0] ?? 'Someone'} cheered for you!`}
             detail={`${quest.title}${cheer.coins ? ` · +${cheer.coins} bonus 🪙` : ''}`}
-            onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "cheered for you: ${quest.title}" (id=${key}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(key); }} />
+            onDismiss={() => { onDismiss(key); }} />
         );
       })}
 
@@ -397,7 +397,7 @@ export function KidNeedsYouSection({
         return (
           <NeedsYouRow key={r.id} Icon={ReplyIcon} accent={accent} colors={colors} isDark={isDark}
             title={`${label} — ${typeLabel}`}
-            onDismiss={() => { console.log(`[UserAction] screen=Hub role=kid tapped "dismiss" on "${label} — ${typeLabel}" (id=${r.id}) → onDismiss [features/hub/kid/KidNeedsYouSection.tsx]`); onDismiss(r.id); }}
+            onDismiss={() => { onDismiss(r.id); }}
           >
             <View>
               <Text style={{ fontSize: KID.tiny, color: colors.textTertiary }}>

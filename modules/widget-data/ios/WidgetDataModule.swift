@@ -7,9 +7,8 @@ private let kWidgetRefreshTaskId = "com.familycube.ios.widget-refresh"
 public class WidgetDataModule: Module {
     private let appGroup = "group.com.familycube.ios"
     private let fileName = "widget_data.json"
-    // Single widget kind (FamilyCubeWidget in targets/widget/PawBondWidget.swift
-    // — the .swift filename is stale, the actual `kind:` string is what
-    // matters here and is what this must match). Was two different,
+    // Single widget kind (FamilyCubeWidget in
+    // targets/widget/FamilyCubeWidget.swift). Was two different,
     // never-actually-declared kind strings ("PawBondWidget"/
     // "PawBondMediumWidget") — small/medium are variants of ONE
     // StaticConfiguration kind, not two separate widgets, so reloading a

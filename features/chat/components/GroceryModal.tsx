@@ -51,7 +51,7 @@ export function GroceryModal({ visible, initialName, onClose, onAdd }: {
           </View>
           <View>
             <Text style={gm.label(colors)}>Quantity</Text>
-            <TextInput style={gm.input(colors)} value={qty} onChangeText={setQty} />
+            <TextInput style={gm.input(colors)} value={qty} onChangeText={setQty} keyboardType="number-pad" />
           </View>
           <View>
             <Text style={gm.label(colors)}>Category</Text>

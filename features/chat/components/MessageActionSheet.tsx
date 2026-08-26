@@ -15,11 +15,20 @@ export function MessageActionSheet({ visible, msg, isMe, canEdit, colors, isDark
 }) {
   if (!msg) return null;
 
+  // "Copy Text" and "Add to List" both only make sense against a message
+  // that actually has text — shown unconditionally before, tapping either
+  // on a voice note/image/document/location message (all have text: '')
+  // copied nothing or opened a blank, nothing-prefilled grocery form with
+  // no indication of what the source message even was.
+  const hasText = !!msg.text?.trim();
+
   type Action = { Icon: LucideIcon; label: string; color: string; onPress: () => void };
   const actions: Action[] = [
     { Icon: CornerUpLeft,  label: 'Reply',        color: colors.primary,       onPress: onReply },
-    { Icon: Copy,          label: 'Copy Text',    color: colors.textSecondary, onPress: onCopy },
-    { Icon: ShoppingCart,  label: 'Add to List',  color: '#10b981',            onPress: onAddGrocery },
+    ...(hasText ? [
+      { Icon: Copy,        label: 'Copy Text',    color: colors.textSecondary, onPress: onCopy },
+      { Icon: ShoppingCart,label: 'Add to List',  color: '#10b981',            onPress: onAddGrocery },
+    ] : []),
     ...(isMe && canEdit ? [
       { Icon: Pencil,      label: 'Edit',         color: '#f59e0b',            onPress: onEdit },
     ] : []),

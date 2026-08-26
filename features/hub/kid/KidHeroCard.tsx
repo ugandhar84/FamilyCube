@@ -18,12 +18,20 @@ const MONEY_GREEN = '#10B981';
 // comes from shape, color, and a game-HUD-style avatar ring/coin pill
 // instead of a flat enclosing container.
 export function KidHeroCard({
-  active, colors, isDark, mainCoins, gpCoins, streak, level, xp, xpForNext, xpPct,
+  active, colors, isDark, mainCoins, gpCoins, streak, level, xp, xpIntoLevel, xpForNext, xpPct,
   doneToday, questGoal, questPct, confirmedRide, rideCountdown, members, nextEvent, nextCountdown,
 }: {
   active: FamilyMember; colors: any; isDark: boolean;
   mainCoins: number; gpCoins: number; streak: number; level: number;
-  xp: number; xpForNext: number; xpPct: number;
+  // xpIntoLevel is xp already-earned-within-the-current-level (KidView.tsx's
+  // cumulative-progression formula) — NOT the same as raw total `xp`, which
+  // is kept here only because a couple of other call sites still read it.
+  // The progress-bar text below was using `xp % xpForNext` as a shortcut,
+  // which only happens to equal xpIntoLevel at level 1 — past that it
+  // visibly disagreed with the bar fill (itself correctly driven by xpPct,
+  // which IS derived from xpIntoLevel), e.g. showing "150/200" text next
+  // to a bar only 25% full.
+  xp: number; xpIntoLevel: number; xpForNext: number; xpPct: number;
   doneToday: number; questGoal: number; questPct: number;
   confirmedRide: FamilyEvent | undefined;
   // The single most time-sensitive fact belongs right here in the
@@ -69,7 +77,7 @@ export function KidHeroCard({
           )}
         </View>
 
-        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "coin balance" on "KidHeroCard" → navigate to /(tabs)/store [features/hub/kid/KidHeroCard.tsx:62]`); router.push('/(tabs)/store' as any); }}
+        <Pressable onPress={() => { router.push('/(tabs)/store' as any); }}
           style={{ alignItems: 'center', gap: 3, flexShrink: 0 }}>
           <View style={{
             backgroundColor: isDark ? BRAND.amber + '26' : BRAND.amber + '18',
@@ -80,7 +88,16 @@ export function KidHeroCard({
             <Text style={{ fontSize: KID.body }}>🪙</Text>
             <Text style={{ fontSize: KID.title, fontWeight: '900', color: BRAND.amber }} numberOfLines={1}>{mainCoins}</Text>
           </View>
-          {gpCoins > 0 && <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: colors.textSecondary }}>+{gpCoins} ⭐ GP</Text>}
+          {/* Given a tinted pill like every other secondary badge on this
+              screen — was bare unboxed text under the main coin pill, easy
+              to miss entirely against everything else here getting a
+              background chip. */}
+          {gpCoins > 0 && (
+            <View style={{ backgroundColor: isDark ? BRAND.purple + '20' : BRAND.purple + '16',
+              borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
+              <Text style={{ fontSize: KID.tiny, fontWeight: '800', color: BRAND.purple }}>+{gpCoins} ⭐ GP</Text>
+            </View>
+          )}
         </Pressable>
       </View>
 
@@ -92,7 +109,7 @@ export function KidHeroCard({
             </View>
             <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.textSecondary }}>XP to level {level + 1}</Text>
           </View>
-          <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.accent }}>{xp % xpForNext}/{xpForNext}</Text>
+          <Text style={{ fontSize: KID.sub, fontWeight: '800', color: colors.accent }}>{Math.max(0, Math.round(xpIntoLevel))}/{xpForNext}</Text>
         </View>
         <View style={{ height: 10, borderRadius: 5, backgroundColor: colors.accent + '15', overflow: 'hidden' }}>
           <View style={{ height: 10, borderRadius: 5, width: `${Math.max(6, Math.round(xpPct * 100))}%` as any, backgroundColor: colors.accent }} />

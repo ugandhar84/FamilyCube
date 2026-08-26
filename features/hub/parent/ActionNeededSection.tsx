@@ -15,6 +15,7 @@ import { QuestProposalCard } from './QuestProposalCard';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
 import type { Quest } from '@/store/questStore';
+import { dedupeRideSeries } from '../lib/dedupeRideSeries';
 
 // Money-green — "grocery request" accent, distinct from brand teal used
 // elsewhere for confirmed/assigned state. Not colors.success (which IS
@@ -133,20 +134,6 @@ export function ActionNeededSection({
   // series surfaces; RideRequestCard's own assignment actions use
   // updateEventScoped('following') to carry the chosen driver forward to
   // every later occurrence in the same series, so deciding once is enough.
-  const seenSeries = new Set<string>();
-  const dedupBySeries = (evs: FamilyEvent[]) => [...evs]
-    .sort((a, b) => `${a.date}${a.time ?? ''}`.localeCompare(`${b.date}${b.time ?? ''}`))
-    .filter(ev => {
-      if (!ev.seriesId) return true;
-      if (seenSeries.has(ev.seriesId)) return false;
-      seenSeries.add(ev.seriesId);
-      return true;
-    });
-  // Shared `seenSeries` set across BOTH lists — a series can only ever be
-  // one or the other (a Ride-category event never also carries
-  // rideRequired), but sharing the set keeps the dedup pass a single
-  // consistent operation instead of two independently-correct-looking
-  // halves that happen to never collide today.
   // Was hardcoded severity:'soon' regardless of how close the ride
   // actually was — a still-unconfirmed ride 15 minutes out ranked
   // identically to one 3 days out, with no escalation as the deadline
@@ -163,8 +150,8 @@ export function ActionNeededSection({
     return { severity: 'normal', score: SEVERITY.normal };
   };
 
-  const dedupedPendingRequests = dedupBySeries(pendingRequests);
-  const dedupedRideRequiredEvents = dedupBySeries(pendingRideRequiredEvents ?? []);
+  const [dedupedPendingRequests, dedupedRideRequiredEvents] =
+    dedupeRideSeries(pendingRequests, pendingRideRequiredEvents ?? []);
   for (const ev of dedupedPendingRequests) {
     const age = ageMinutes(ev.date ? `${ev.date}T${ev.time ?? '00:00'}` : undefined);
     const { severity, score } = rideSeverity(ev);

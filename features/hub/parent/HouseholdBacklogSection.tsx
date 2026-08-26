@@ -174,7 +174,16 @@ export function HouseholdBacklogSection({
                     // exact semantics (a pool item, claimed directly).
                     supabase.rpc('claim_pool_quest', { p_chore_id: c.id, p_member_id: active.id })
                       .then(({ error }) => {
-                        if (error) { console.warn('[HouseholdBacklogSection] claim_pool_quest failed', error.message); return; }
+                        if (error) {
+                          console.warn('[HouseholdBacklogSection] claim_pool_quest failed', error.message);
+                          // Real scenario the RPC itself was built to guard
+                          // against (two parents tapping "Take It" on the
+                          // same pool item at once) — previously only
+                          // logged, so the loser of the race saw their tap
+                          // silently do nothing with zero feedback.
+                          showToast('Someone else already took that', 'info');
+                          return;
+                        }
                         showToast('Taken ✓');
                       });
                   } else {

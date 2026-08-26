@@ -15,15 +15,24 @@ export function ParentQuickActions({ colors, isDark, groceryCount, onScanFlyer, 
   // Kinfolk mock: each capsule gets its own soft-tinted background matching
   // the section it deep-links to — not one solid tile + three identical greys.
   const tiles = [
-    { key: 'scan', label: 'Scan Flyer', icon: Sparkles, tint: colors.accent, onPress: () => { console.log(`[UserAction] screen=Hub role=parent tapped "Scan Flyer" quick action → onScanFlyer [features/hub/parent/ParentQuickActions.tsx:16]`); onScanFlyer(); } },
-    { key: 'task', label: 'Add Task', icon: ListPlus, tint: colors.parent, onPress: () => { console.log(`[UserAction] screen=Hub role=parent tapped "Add Task" quick action → onAddTask [features/hub/parent/ParentQuickActions.tsx:17]`); onAddTask(); } },
-    { key: 'grocery', label: groceryCount > 0 ? `${groceryCount} items` : 'Grocery', icon: ShoppingCart, tint: colors.kid, onPress: () => { console.log(`[UserAction] screen=Hub role=parent tapped "Grocery" quick action (count=${groceryCount}) → router.push /(tabs)/grocery [features/hub/parent/ParentQuickActions.tsx:19]`); router.push('/(tabs)/grocery' as any); } },
+    { key: 'scan', label: 'Scan Flyer', icon: Sparkles, tint: colors.accent, onPress: onScanFlyer },
+    { key: 'task', label: 'Add Task', icon: ListPlus, tint: colors.parent, onPress: onAddTask },
+    // Label previously swapped between "Grocery" and "N items" depending on
+    // cart state — a parent scanning for "the grocery button" by its label
+    // saw inconsistent text, unlike every other tile in this row which
+    // never changes its label. Keep the label fixed; the count now shows as
+    // a small badge on the icon chip instead (see the badge render below).
+    { key: 'grocery', label: 'Grocery', icon: ShoppingCart, tint: colors.kid, badge: groceryCount, onPress: () => router.push('/(tabs)/grocery' as any) },
     // Re-added per explicit direction — was previously pulled from both the
     // Apps grid and this row (see VaultScreen.tsx's FEATURES comment).
     // Links straight to its own route (app/(tabs)/meals.tsx), same pattern
     // as Grocery below, rather than the shared VaultScreen openFeature
     // overlay — a real dedicated page per explicit direction.
-    { key: 'meals', label: 'Meals', icon: ChefHat, tint: colors.danger, onPress: () => { console.log(`[UserAction] screen=Hub role=parent tapped "Meals" quick action → router.push /(tabs)/meals [features/hub/parent/ParentQuickActions.tsx:24]`); router.push('/(tabs)/meals' as any); } },
+    // colors.danger (red) previously tinted this tile with no real reason —
+    // it isn't a warning/alert action, it just read as one sitting next to
+    // three calm tiles. amber reads as "food" without borrowing the app's
+    // one alert color.
+    { key: 'meals', label: 'Meals', icon: ChefHat, tint: colors.amber, onPress: () => { router.push('/(tabs)/meals' as any); } },
   ];
 
   return (
@@ -38,9 +47,18 @@ export function ParentQuickActions({ colors, isDark, groceryCount, onScanFlyer, 
           }}>
             {/* Solid-tint icon chip with a white icon — bolder "badge" look
                 instead of a thin outline icon floating on the wash. */}
-            <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
-              backgroundColor: t.tint }}>
-              <Icon size={17} color="#fff" strokeWidth={2.4} />
+            <View>
+              <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: t.tint }}>
+                <Icon size={17} color="#fff" strokeWidth={2.4} />
+              </View>
+              {!!(t as any).badge && (
+                <View style={{ position: 'absolute', top: -4, right: -6, minWidth: 17, height: 17, borderRadius: 9,
+                  paddingHorizontal: 3, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: colors.danger, borderWidth: 1.5, borderColor: isDark ? colors.card : '#fff' }}>
+                  <Text style={{ fontSize: 9, fontWeight: '800', color: '#fff' }}>{(t as any).badge}</Text>
+                </View>
+              )}
             </View>
             <Text style={{ fontSize: TYPO.label - 1, fontWeight: '800', color: t.tint }} numberOfLines={1}>
               {t.label}

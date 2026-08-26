@@ -10,6 +10,7 @@ import { ParentReviewDeck } from '@/features/chores/ParentReviewDeck';
 import { GpOfferReviewCard } from './GpOfferReviewCard';
 import { KidProposedChoreCard } from './KidProposedChoreCard';
 import { SectionCard } from '../hubComponents';
+import { ReasonPromptModal } from '@/components/ReasonPromptModal';
 import type { FamilyMember } from '@/store/familyStore';
 import type { ChoreTask } from '@/store/choreStore';
 
@@ -230,6 +231,7 @@ function TeenRewardReviewCard({ c, members, colors, isDark, active, approveTeenR
   const teen = members.find(m => m.id === c.createdById);
   const [adjusting, setAdjusting] = useState(false);
   const [amount, setAmount] = useState(String(c.coinsReward));
+  const [decliningOpen, setDecliningOpen] = useState(false);
   const requested = c.coinsReward + (c.bonusCoins ?? 0);
 
   const confirmAdjust = () => {
@@ -275,15 +277,7 @@ function TeenRewardReviewCard({ c, members, colors, isDark, active, approveTeenR
       ) : (
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable
-            onPress={() => Alert.prompt
-              ? Alert.prompt('Decline Reward',
-                  `${teen?.name.split(' ')[0] ?? 'The teen'}'s requested reward for "${c.title}" will be declined — the task itself is unaffected.`,
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Decline', style: 'destructive', onPress: (reason?: string) => declineTeenReward(c.id, active.id, reason?.trim() || undefined) },
-                  ],
-                  'plain-text')
-              : declineTeenReward(c.id, active.id)}
+            onPress={() => setDecliningOpen(true)}
             style={{ flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10,
               borderWidth: 1.5, borderColor: colors.danger + '50' }}>
             <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.danger }}>Decline</Text>
@@ -301,6 +295,16 @@ function TeenRewardReviewCard({ c, members, colors, isDark, active, approveTeenR
           </Pressable>
         </View>
       )}
+      <ReasonPromptModal
+        visible={decliningOpen}
+        title="Decline Reward"
+        message={`${teen?.name.split(' ')[0] ?? 'The teen'}'s requested reward for "${c.title}" will be declined — the task itself is unaffected.`}
+        confirmLabel="Decline"
+        destructive
+        colors={colors}
+        onCancel={() => setDecliningOpen(false)}
+        onConfirm={reason => { setDecliningOpen(false); declineTeenReward(c.id, active.id, reason); }}
+      />
     </View>
   );
 }
@@ -323,6 +327,8 @@ function DisputeApprovalCard({ c, members, colors, isDark, active, flagApprovalF
   const approver = members.find(m => m.id === c.reviewedById);
   const isOriginalApprover = active.id === c.reviewedById;
   const totalCoins = (c.basePoints > 0 ? c.basePoints : c.coinsReward) + (c.bonusCoins ?? 0);
+  const [flaggingOpen, setFlaggingOpen] = useState(false);
+  const [reversalOpen, setReversalOpen] = useState(false);
 
   if (c.disputeStatus === 'reversal_requested' && isOriginalApprover) {
     return (
@@ -442,34 +448,37 @@ function DisputeApprovalCard({ c, members, colors, isDark, active, flagApprovalF
       </View>
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <Pressable
-          onPress={() => Alert.prompt(
-            'Flag for Discussion',
-            `Let ${approver?.name.split(' ')[0] ?? 'the other parent'} know why you want to discuss "${c.title}" (optional).`,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Flag', onPress: (note?: string) => flagApprovalForDiscussion(c.id, active.id, note?.trim() || undefined) },
-            ],
-            'plain-text',
-          )}
+          onPress={() => setFlaggingOpen(true)}
           style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10,
             backgroundColor: `${colors.warning}15`, borderWidth: 1, borderColor: `${colors.warning}40` }}>
           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.warningDark }}>Flag for Discussion</Text>
         </Pressable>
         <Pressable
-          onPress={() => Alert.prompt(
-            'Request Reversal',
-            `This asks ${approver?.name.split(' ')[0] ?? 'the other parent'} to co-sign reversing the ${totalCoins}-coin payout for "${c.title}". Nothing changes until they agree. Why?`,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Request', style: 'destructive', onPress: (reason?: string) => requestApprovalReversal(c.id, active.id, reason?.trim() || 'No reason given') },
-            ],
-            'plain-text',
-          )}
+          onPress={() => setReversalOpen(true)}
           style={{ flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10,
             backgroundColor: `${colors.danger}15`, borderWidth: 1, borderColor: `${colors.danger}40` }}>
           <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.danger }}>Request Reversal</Text>
         </Pressable>
       </View>
+      <ReasonPromptModal
+        visible={flaggingOpen}
+        title="Flag for Discussion"
+        message={`Let ${approver?.name.split(' ')[0] ?? 'the other parent'} know why you want to discuss "${c.title}" (optional).`}
+        confirmLabel="Flag"
+        colors={colors}
+        onCancel={() => setFlaggingOpen(false)}
+        onConfirm={note => { setFlaggingOpen(false); flagApprovalForDiscussion(c.id, active.id, note); }}
+      />
+      <ReasonPromptModal
+        visible={reversalOpen}
+        title="Request Reversal"
+        message={`This asks ${approver?.name.split(' ')[0] ?? 'the other parent'} to co-sign reversing the ${totalCoins}-coin payout for "${c.title}". Nothing changes until they agree. Why?`}
+        confirmLabel="Request"
+        destructive
+        colors={colors}
+        onCancel={() => setReversalOpen(false)}
+        onConfirm={reason => { setReversalOpen(false); requestApprovalReversal(c.id, active.id, reason || 'No reason given'); }}
+      />
     </View>
   );
 }

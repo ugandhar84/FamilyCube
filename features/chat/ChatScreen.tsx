@@ -19,6 +19,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as DocumentPicker from 'expo-document-picker';
+// SDK 54's default expo-file-system export dropped readAsStringAsync as a
+// hard runtime error ("Method ... is deprecated"), not just a warning —
+// confirmed live, every upload here was throwing. /legacy is the
+// documented migration path and the exact API this codebase's other
+// upload flows (FlyerScannerModal.tsx, ReceiptScanSheet.tsx — also fixed
+// alongside this) already depend on.
+import * as FileSystem from 'expo-file-system/legacy';
 import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
 import {
   Send, Search, X, XCircle,
@@ -41,12 +48,13 @@ import AskCubeRecipeSheet from '@/components/AskCubeRecipeSheet';
 import { useGroceryStore } from '@/store/groceryStore';
 import { supabase } from '@/lib/supabase';
 import { RADIUS } from '@/constants/theme';
+import { showToast } from '@/components/AppToast';
 
 import { MessageBubble } from './components/MessageBubble';
 import { MessageActionSheet } from './components/MessageActionSheet';
 import { GroceryModal } from './components/GroceryModal';
 import { RecordingBar, VoiceReviewBar } from './components/VoiceComponents';
-import { formatDay, QUICK_REACTIONS, buildGroupChannels } from './components/constants';
+import { formatDay, QUICK_REACTIONS, buildGroupChannels, REPLY_KIND_LABEL } from './components/constants';
 import { s } from './components/styles';
 import { loadPinnedChannels, togglePinnedChannel, sortChannelIds } from '@/lib/chatChannelOrder';
 import { Pin, PinOff } from 'lucide-react-native';
@@ -208,8 +216,8 @@ export default function ChatScreen() {
       .map(id => rawGroupChannels.find(ch => ch.id === id))
       .filter((ch): ch is NonNullable<typeof ch> => !!ch);
 
-    const allChannels = [
-      ...groupChannels,
+    const rawAllChannels = [
+      ...rawGroupChannels,
       // CRITICAL FIX: a DM's id used to be just the OTHER party's member id
       // (`p.id`/`k.id`) — that value is identical no matter who's viewing,
       // so Alex's "DM with Priya" and Maya's "DM with Priya" resolved to the
@@ -223,6 +231,16 @@ export default function ChatScreen() {
       ...coParents.map(p => ({ id: dmChannelId(activeMemberId ?? '', p.id), otherId: p.id, label: p.name.split(' ')[0], isDM: true, lock: false })),
       ...kids.map(k => ({ id: dmChannelId(activeMemberId ?? '', k.id), otherId: k.id, label: k.name.split(' ')[0], isDM: true, lock: false })),
     ];
+    // sortChannelIds was only ever applied to groupChannels above — DM tabs
+    // got appended afterward in raw roster order and never re-sorted, so a
+    // DM someone just replied in sat wherever their roster position put
+    // them instead of surfacing near the front like an active group channel
+    // does. Re-sort the FULL combined list (group + DM) by the same
+    // pinned-then-most-recent-activity rule so DMs interleave correctly
+    // instead of always trailing after every group channel.
+    const allChannels = sortChannelIds(rawAllChannels.map(ch => ch.id), pinnedChannels, lastActivity)
+      .map(id => rawAllChannels.find(ch => ch.id === id))
+      .filter((ch): ch is NonNullable<typeof ch> => !!ch);
     const FULL_LABELS: Record<string, string> = Object.fromEntries(groupChannels.map(ch => [ch.id, ch.label]));
 
     return { memberMap, activeMember, isParent, isSenior, kids, coParents, rawGroupChannels, groupChannels, allChannels, FULL_LABELS };
@@ -233,6 +251,15 @@ export default function ChatScreen() {
   // allChannels entry's otherId instead.
   const dmOtherId = (allChannels.find(c => c.id === channelId) as any)?.otherId;
   const channelLabel = FULL_LABELS[channelId] ?? `💬 ${memberMap[dmOtherId ?? channelId]?.name?.split(' ')[0] ?? ''}`;
+  // channelLabel is the tab/header's stylized badge text ("🔒 #parents-vault",
+  // "#the-grand-squad") — reused verbatim as the input placeholder read as
+  // broken ("Message 🔒 #parents-vault…"). Strip the emoji/hash/hyphen
+  // styling down to a plain name for just the placeholder.
+  const composePlaceholderName = channelLabel
+    .replace(/^[^\w#]+/, '')
+    .replace(/^#/, '')
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
 
   // A senior landing on the default 'all' channel (e.g. fresh login) gets
   // bounced to the combined Grand Squad channel instead, since #all-family
@@ -446,10 +473,66 @@ export default function ChatScreen() {
       finalText = finalText.split(token).join(full);
     }
     pendingMentions.current = {};
-    sendMessage(channelId, activeMemberId, finalText, attachUri ?? undefined, attachUri ? attachType : undefined, replyingTo ?? undefined);
+    const localAttachUri = attachUri;
+    const localAttachType = attachType;
+    const sentMsgId = await sendMessage(channelId, activeMemberId, finalText, localAttachUri ?? undefined, localAttachUri ? localAttachType : undefined, replyingTo ?? undefined);
     setText(''); setAttachUri(null); setReplyingTo(null); setMentionQuery(null);
     // Scroll to newest (offset 0 on inverted list = visual bottom)
     requestAnimationFrame(() => flatRef.current?.scrollToOffset({ offset: 0, animated: true }));
+
+    if (localAttachUri && sentMsgId) {
+      try {
+        const ext = localAttachType === 'video' ? 'mp4' : 'jpg';
+        const fileName = `${localAttachType === 'video' ? 'videos' : 'images'}/${activeMemberId}_${Date.now()}.${ext}`;
+        // Same fetch(file://).blob() 0-byte gotcha as voice/document —
+        // read as base64 via expo-file-system instead.
+        const base64 = await FileSystem.readAsStringAsync(localAttachUri, { encoding: 'base64' as any });
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        const CHUNK = 65536;
+        for (let start = 0; start < binary.length; start += CHUNK) {
+          const end = Math.min(start + CHUNK, binary.length);
+          for (let i = start; i < end; i++) bytes[i] = binary.charCodeAt(i);
+          if (end < binary.length) await new Promise(resolve => setTimeout(resolve, 0));
+        }
+        const { error } = await supabase.storage.from('chat-media')
+          .upload(fileName, bytes.buffer, { contentType: localAttachType === 'video' ? 'video/mp4' : 'image/jpeg' });
+        if (!error) {
+          const { data } = await supabase.storage.from('chat-media').createSignedUrl(fileName, 31_536_000);
+          // Update by the message's own id — was a `created_at` time-window
+          // heuristic (`gte(..., now - 8s)`), which silently matched ZERO
+          // rows for anything slow enough to cross that window (a ~20MB
+          // video's base64 read + chunked decode + upload can easily run
+          // past 8s) — confirmed live: the file uploaded fine (real bytes
+          // in storage) but image_url stayed null on the row forever,
+          // which is exactly why it never rendered after reload. The
+          // message's real id is known and unambiguous — no heuristic
+          // needed at all.
+          if (data?.signedUrl) {
+            await supabase.from('chat_messages').update({ image_url: data.signedUrl }).eq('id', sentMsgId);
+          }
+        } else {
+          console.warn('[ChatScreen] image/video upload failed', error.message);
+        }
+      } catch (e) { console.warn('[ChatScreen] image/video upload failed', e); }
+    }
+  };
+
+  // Tapping a different channel tab left every piece of in-progress compose
+  // state (reply banner, edit banner, attachment preview, moderation
+  // warning, draft text) pointing at the OLD channel — none of it was ever
+  // reset on channel change. Sending would then post the draft into the
+  // NEW channel while still tagged as a reply to / edit of a message from
+  // a channel it doesn't even belong to. Route every channel switch
+  // through here instead of a bare setChannelId call.
+  const switchChannel = (id: string) => {
+    setChannelId(id);
+    setReplyingTo(null);
+    setEditingMsg(null);
+    setAttachUri(null);
+    setModerationWarning(false);
+    setText('');
+    setMentionQuery(null);
   };
 
   const pickImage = useCallback(async () => {
@@ -481,7 +564,51 @@ export default function ChatScreen() {
       const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
       if (result.canceled) return;
       const asset = result.assets[0];
-      sendMessage(channelId, activeMemberId, '', undefined, undefined, undefined, undefined, undefined, undefined, asset.uri, asset.name);
+      // asset.uri is a local file:// cache path — only ever valid on the
+      // sender's own device for as long as iOS keeps that cache file
+      // around. Sending it verbatim as document_url meant "Tap to open"
+      // worked nowhere but the sender's own device in the same session
+      // (live-reported: tapping a shared document does nothing). Same
+      // "send optimistically, then upload + patch the real URL in" pattern
+      // sendVoiceNote already uses below for voice notes.
+      const sentMsgId = await sendMessage(channelId, activeMemberId, '', undefined, undefined, undefined, undefined, undefined, undefined, asset.uri, asset.name);
+      if (!sentMsgId) return;
+      try {
+        const ext = asset.name?.includes('.') ? asset.name.split('.').pop() : undefined;
+        const fileName = `documents/${activeMemberId}_${Date.now()}${ext ? `.${ext}` : ''}`;
+        // fetch(uri).blob() on a local file:// path silently returns a
+        // 0-byte blob on Android (already documented in
+        // lib/supabase.ts's encodeBody — the exact reason every OTHER
+        // upload path in this app reads base64 via expo-file-system
+        // instead) — this was the actual reason nothing ever landed in
+        // the chat-media bucket (0 rows, confirmed via direct query),
+        // not a permissions/RLS issue. Same chunked-decode approach as
+        // encodeBody, since a multi-MB PDF's base64 string is too big to
+        // atob() in one blocking synchronous pass.
+        const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' as any });
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        const CHUNK = 65536;
+        for (let start = 0; start < binary.length; start += CHUNK) {
+          const end = Math.min(start + CHUNK, binary.length);
+          for (let i = start; i < end; i++) bytes[i] = binary.charCodeAt(i);
+          if (end < binary.length) await new Promise(resolve => setTimeout(resolve, 0));
+        }
+        const { error } = await supabase.storage.from('chat-media')
+          .upload(fileName, bytes.buffer, { contentType: asset.mimeType ?? 'application/octet-stream' });
+        if (!error) {
+          // chat-media is a private bucket — see sendVoiceNote's identical
+          // comment above for why this must be a signed URL, not
+          // getPublicUrl (which 400s on a private bucket regardless of RLS).
+          const { data } = await supabase.storage.from('chat-media').createSignedUrl(fileName, 31_536_000);
+          // By message id, not a created_at time-window heuristic — see
+          // handleSend's identical fix/comment for why that window could
+          // silently match zero rows on a slow enough upload.
+          if (data?.signedUrl) {
+            await supabase.from('chat_messages').update({ document_url: data.signedUrl }).eq('id', sentMsgId);
+          }
+        }
+      } catch (e) { console.warn('[ChatScreen] document upload failed', e); }
     } catch {
       Alert.alert('Could not open document picker');
     }
@@ -546,17 +673,39 @@ export default function ChatScreen() {
     if (!reviewUri || !activeMemberId) return;
     const localUri = reviewUri; const dur = reviewDur;
     setReviewing(false); setReviewUri(null); setReviewDur(0);
-    await sendMessage(channelId, activeMemberId, '', undefined, undefined, undefined, dur, undefined, localUri);
+    const sentMsgId = await sendMessage(channelId, activeMemberId, '', undefined, undefined, undefined, dur, undefined, localUri);
+    if (!sentMsgId) return;
     try {
       const fileName = `voice/${activeMemberId}_${Date.now()}.mp4`;
-      const response = await fetch(localUri);
-      const blob     = await response.blob();
-      const { error } = await supabase.storage.from('chat-media').upload(fileName, blob, { contentType: 'audio/mp4' });
+      // fetch(uri).blob() on a local file:// path silently returns a
+      // 0-byte blob on Android (see sendDocument's identical fix/comment
+      // above) — reading base64 via expo-file-system is the proven-working
+      // pattern every other upload path in this app already uses.
+      const base64 = await FileSystem.readAsStringAsync(localUri, { encoding: 'base64' as any });
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      const CHUNK = 65536;
+      for (let start = 0; start < binary.length; start += CHUNK) {
+        const end = Math.min(start + CHUNK, binary.length);
+        for (let i = start; i < end; i++) bytes[i] = binary.charCodeAt(i);
+        if (end < binary.length) await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      const { error } = await supabase.storage.from('chat-media').upload(fileName, bytes.buffer, { contentType: 'audio/mp4' });
       if (!error) {
-        const { data } = supabase.storage.from('chat-media').getPublicUrl(fileName);
-        const since    = new Date(Date.now() - 8000).toISOString();
-        await supabase.from('chat_messages').update({ voice_url: data.publicUrl })
-          .eq('channel_id', channelId).eq('sender_id', activeMemberId).gte('created_at', since).is('voice_url', null);
+        // chat-media is a private bucket (public: false) — getPublicUrl()
+        // builds a /object/public/... URL that only resolves on a public
+        // bucket and 400s here regardless of the "Auth read chat media"
+        // RLS policy, since that URL shape bypasses RLS-gated reads
+        // entirely rather than using them. createSignedUrl is the correct
+        // call for a private bucket (mirrors uploadFamilyMemoryPhoto in
+        // lib/supabase.ts, the proven-working private-bucket pattern).
+        const { data } = await supabase.storage.from('chat-media').createSignedUrl(fileName, 31_536_000);
+        // By message id, not a created_at time-window heuristic — see
+        // handleSend's identical fix/comment for why that window could
+        // silently match zero rows on a slow enough upload.
+        if (data?.signedUrl) {
+          await supabase.from('chat_messages').update({ voice_url: data.signedUrl }).eq('id', sentMsgId);
+        }
       }
     } catch (e) { console.warn('[ChatScreen] voice upload failed', e); }
   };
@@ -611,7 +760,7 @@ export default function ChatScreen() {
                 const pinned = !(ch as any).isDM && pinnedChannels.includes(ch.id);
                 const unread = act ? 0 : (unreadCounts[ch.id] ?? 0);
                 return (
-                  <Pressable key={ch.id} onPress={() => setChannelId(ch.id)}
+                  <Pressable key={ch.id} onPress={() => switchChannel(ch.id)}
                     style={[s.channelBtn, { backgroundColor: act ? ((ch as any).isDM ? colors.primary : colors.card) : 'transparent' }]}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                       {(ch as any).isDM && (
@@ -664,7 +813,11 @@ export default function ChatScreen() {
               which for a 1-1 DM misleadingly displayed "5 members" and
               every family member's avatar, undermining the fact that a
               DM is actually private. */}
-          {!dmOtherId && <Text style={{ fontSize: 10, color: colors.textTertiary }}>· {currentChannelMemberIds.length} members</Text>}
+          {/* Gated on `loaded` — before the family roster finishes loading,
+              currentChannelMemberIds is empty, which flashed "· 0 members"
+              for a moment on a fresh app open before settling to the real
+              count. */}
+          {!dmOtherId && loaded && <Text style={{ fontSize: 10, color: colors.textTertiary }}>· {currentChannelMemberIds.length} members</Text>}
         </View>
 
         {/* Avatar cluster — solid separator border so no ring bleed */}
@@ -777,6 +930,23 @@ export default function ChatScreen() {
                 appeared when scrolling up). Wrapping just the FlatList+
                 button pair fixes the positioning boundary. ── */}
             <View style={{ flex: 1 }}>
+            {/* channelLoading previously only drove the empty-state spinner
+                below — once a channel already had cached messages showing,
+                a background resync (e.g. reconnect after being
+                backgrounded) gave zero visual feedback at all, success or
+                failure. This small pill only shows while there's already
+                content on screen; the full centered spinner still owns the
+                true "nothing loaded yet" case via ListEmptyComponent. */}
+            {channelLoading && reversedItems.length > 0 && (
+              <View pointerEvents="none" style={{ position: 'absolute', top: 8, alignSelf: 'center', zIndex: 5,
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                backgroundColor: colors.card, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5,
+                borderWidth: 1, borderColor: colors.border,
+                shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textSecondary }}>Syncing…</Text>
+              </View>
+            )}
             <FlatList
               ref={flatRef}
               data={reversedItems}
@@ -819,9 +989,17 @@ export default function ChatScreen() {
                 }
               }}
               scrollEventThrottle={100}
-              onScrollToIndexFailed={({ index }) => {
-                // Item not yet rendered — scroll to approximate offset then retry
-                flatRef.current?.scrollToOffset({ offset: index * 80, animated: false });
+              onScrollToIndexFailed={({ index, averageItemLength }) => {
+                // Item not yet rendered — scroll to approximate offset then
+                // retry. Was a flat 80px guess regardless of what's
+                // actually in the list — rows vary wildly (a day separator
+                // ~30px vs an image bubble ~180px vs a location-pin map
+                // ~200px), so a long jump on a mixed-content channel could
+                // land far off target and need several retry passes.
+                // averageItemLength is FlatList's own measured average
+                // across already-rendered rows — a real number instead of
+                // a guess, so one retry reliably lands close enough.
+                flatRef.current?.scrollToOffset({ offset: index * (averageItemLength || 80), animated: false });
                 setTimeout(() => flatRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 }), 200);
               }}
               ListEmptyComponent={
@@ -936,7 +1114,15 @@ export default function ChatScreen() {
                 <CornerUpLeft size={16} color={colors.primary} />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary }}>Reply to {memberMap[replyingTo.senderId]?.name?.split(' ')[0]}</Text>
-                  <Text style={{ fontSize: 12, color: colors.textSecondary }} numberOfLines={1}>{replyingTo.text}</Text>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary }} numberOfLines={1}>
+                    {replyingTo.text ||
+                      (replyingTo.voiceUri ? REPLY_KIND_LABEL.voice
+                        : replyingTo.mediaType === 'video' ? REPLY_KIND_LABEL.video
+                        : replyingTo.imageUri ? REPLY_KIND_LABEL.image
+                        : replyingTo.documentUri ? REPLY_KIND_LABEL.document
+                        : replyingTo.locationPin ? REPLY_KIND_LABEL.location
+                        : '')}
+                  </Text>
                 </View>
                 <Pressable onPress={() => setReplyingTo(null)}><X size={18} color={colors.textTertiary} /></Pressable>
               </View>
@@ -1042,7 +1228,7 @@ export default function ChatScreen() {
                     ref={inputRef}
                     value={dictation.state === 'listening' ? (preDictationText.current + dictation.liveTranscript) : text}
                     onChangeText={handleTextChange}
-                    placeholder={`Message ${channelLabel}…`}
+                    placeholder={`Message ${composePlaceholderName}…`}
                     placeholderTextColor={colors.placeholder}
                     multiline
                     maxLength={1000}
@@ -1101,7 +1287,7 @@ export default function ChatScreen() {
 
       {/* ── Quick emoji (double-tap) ── */}
       <Modal visible={!!quickEmojiFor} transparent animationType="fade" onRequestClose={() => setQuickEmojiFor(null)}>
-        <Pressable style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)' }} onPress={() => setQuickEmojiFor(null)}>
+        <Pressable style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setQuickEmojiFor(null)}>
           <View style={{ flexDirection: 'row', backgroundColor: colors.card, borderRadius: RADIUS.xl, padding: 14, gap: 10, borderWidth: 1, borderColor: colors.border, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 12, elevation: 8 }}>
             {QUICK_REACTIONS.map(e => (
               <Pressable key={e} onPress={() => {
@@ -1124,7 +1310,7 @@ export default function ChatScreen() {
         onClose={() => setActionMsg(null)}
         onReact={emoji => { if (actionMsg && activeMemberId) addReaction(channelId, actionMsg.id, emoji, activeMemberId); }}
         onReply={() => { if (actionMsg) { setReplyingTo(actionMsg); inputRef.current?.focus(); } }}
-        onCopy={() => { if (actionMsg?.text) { Clipboard.setString(actionMsg.text); Alert.alert('Copied!'); } }}
+        onCopy={() => { if (actionMsg?.text) { Clipboard.setString(actionMsg.text); showToast('Copied!'); } }}
         onEdit={() => { if (actionMsg) { setEditingMsg(actionMsg); setText(actionMsg.text); inputRef.current?.focus(); } }}
         onDelete={() => { if (actionMsg) deleteMessage(channelId, actionMsg.id); }}
         onAddGrocery={() => { if (actionMsg) setGroceryMsg(actionMsg); }}
@@ -1142,7 +1328,7 @@ export default function ChatScreen() {
           // saved with no family link and no attribution every time.
           if (!activeMember?.familyId) return;
           addGrocery({ ...item, familyId: activeMember.familyId, addedBy: activeMemberId ?? '' });
-          Alert.alert('✅ Added!', `"${item.name}" added to the shopping list.`);
+          showToast(`"${item.name}" added to the shopping list.`);
         }}
       />
 
@@ -1150,8 +1336,14 @@ export default function ChatScreen() {
       <Modal visible={!!lightboxUri} transparent animationType="fade" onRequestClose={() => setLightboxUri(null)}>
         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' }}
           onPress={() => setLightboxUri(null)}>
+          {/* Was height: '80%' — a fixed shrink on top of resizeMode
+              "contain" (which already handles aspect-ratio fitting on its
+              own), adding an extra black margin above/below regardless of
+              the image's real proportions. Filling the modal and letting
+              contain do the actual fitting is the correct full-screen
+              behavior — same fix as the video lightbox. */}
           {lightboxUri && (
-            <Image source={{ uri: lightboxUri }} style={{ width: '100%', height: '80%' }} resizeMode="contain" />
+            <Image source={{ uri: lightboxUri }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
           )}
           <Pressable onPress={() => setLightboxUri(null)}
             style={{ position: 'absolute', top: 56, right: 20, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 20, padding: 8 }}>
@@ -1164,9 +1356,16 @@ export default function ChatScreen() {
       <Modal visible={!!videoLightboxUri} transparent animationType="fade"
         onRequestClose={() => setVideoLightboxUri(null)}>
         <View style={{ flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
+          {/* Was height: '55%' — a small fixed-height window floating in a
+              sea of black regardless of the video's own aspect ratio,
+              which is what actually produced the "black borders" look
+              (live-reported), not a real letterboxing/aspect-ratio bug.
+              Filling the whole modal and letting contentFit="contain"
+              handle aspect-ratio fitting is the correct full-screen
+              behavior. */}
           <VideoView
             player={videoPlayer}
-            style={{ width: '100%', height: '55%' }}
+            style={{ width: '100%', height: '100%' }}
             contentFit="contain"
             nativeControls
           />

@@ -7,8 +7,10 @@ export const GP = { title: 18, body: 16, sub: 14, tiny: 12 };
 
 export const DECLINE_PRESETS = ['Schedule conflict', 'Vehicle unavailable', 'Feeling unwell', 'Work commitment'];
 
-// Four plain-language bands break the Senior Hub into Today / Help Out /
-// My Grandkids / Memories, so there's one obvious place to look for each thing.
+// Three plain-language bands break the Senior Hub into Today / Help Out /
+// My Grandkids, so there's one obvious place to look for each thing.
+// (A fourth, Memories, was removed as redundant with the dedicated
+// Memories tab — see SeniorView.tsx's own history for that change.)
 export function GroupBand({ label, color, colors }: { label: string; color: string; colors: any }) {
   return (
     <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>

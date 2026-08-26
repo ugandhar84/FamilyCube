@@ -35,7 +35,6 @@ export function SponsorQuestsSection({
   onOpenCreateQuestModal: () => void;
 }) {
   const myMatches = grandparentMatches.filter(m => m.grandparentId === active.id && m.isActive);
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=SponsorQuestsSection.myMatches totalSource=${grandparentMatches.length} afterFilter=${myMatches.length} [features/hub/senior/sponsor/SponsorQuestsSection.tsx:38]`);
   const mySponsored = (status?: ChoreTask['status']) => chores.filter(c =>
     c.categoryType === 'grandparent_quest' &&
     c.sponsorUserId === active.id &&
@@ -45,10 +44,6 @@ export function SponsorQuestsSection({
   const turnedDown = mySponsored('declined');
   const approvedWaitingClaim = mySponsored('todo');
   const inProgress = mySponsored('in_progress');
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=SponsorQuestsSection.awaitingParent totalSource=${chores.length} afterFilter=${awaitingParent.length} [features/hub/senior/sponsor/SponsorQuestsSection.tsx:47]`);
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=SponsorQuestsSection.turnedDown totalSource=${chores.length} afterFilter=${turnedDown.length} [features/hub/senior/sponsor/SponsorQuestsSection.tsx:47]`);
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=SponsorQuestsSection.approvedWaitingClaim totalSource=${chores.length} afterFilter=${approvedWaitingClaim.length} [features/hub/senior/sponsor/SponsorQuestsSection.tsx:47]`);
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=SponsorQuestsSection.inProgress totalSource=${chores.length} afterFilter=${inProgress.length} [features/hub/senior/sponsor/SponsorQuestsSection.tsx:47]`);
   // grandparentApproveAndCheer sets 'completed', not 'approved' — this
   // filter must include all three verified statuses or a GP's own verified
   // quests never show up here at all. Only shown on the Hub for 24h after
@@ -62,8 +57,6 @@ export function SponsorQuestsSection({
     withinLast24h(c.approvedAt ?? c.reviewedAt ?? c.createdAt)
   );
   const totalSponsored = mySponsored().length;
-  console.log(`[UserAction] FILTER screen=Hub role=senior member=${active.name} list=SponsorQuestsSection.done totalSource=${chores.length} afterFilter=${done.length} [features/hub/senior/sponsor/SponsorQuestsSection.tsx:60]`);
-
   return (
     <View style={{ paddingHorizontal: 16 }}>
       <SectionCard
@@ -74,7 +67,7 @@ export function SponsorQuestsSection({
           ? `${pendingGpApproval.length} waiting for you to check`
           : 'Set up a chore or a savings match'}
         badge={(pendingGpApproval.length) || undefined} badgeColor={BRAND.teal}
-        actionBtn={{ label: 'New Chore', onPress: () => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "New Chore" on "Chores I Sponsor" → onOpenCreateQuestModal [features/hub/senior/sponsor/SponsorQuestsSection.tsx:72]`); onOpenCreateQuestModal(); } }}
+        actionBtn={{ label: 'New Chore', onPress: () => { onOpenCreateQuestModal(); } }}
         // Was pendingGpApproval.length > 0 only — missed real visible
         // content from awaitingParent/turnedDown/approvedWaitingClaim/
         // inProgress/done quests, each with their own card rendered
@@ -87,7 +80,7 @@ export function SponsorQuestsSection({
         colors={colors} isDark={isDark}>
 
         {/* Match Setup shortcut */}
-        <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Set up Savings Match" on "Chores I Sponsor" → onOpenMatchModal [features/hub/senior/sponsor/SponsorQuestsSection.tsx:77]`); onOpenMatchModal(); }}
+        <Pressable onPress={() => { onOpenMatchModal(); }}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14,
             borderBottomWidth: 1, borderBottomColor: isDark ? colors.border : '#F1F5F9', marginBottom: 4 }}>
           <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: BRAND.purple + '20', alignItems: 'center', justifyContent: 'center' }}>

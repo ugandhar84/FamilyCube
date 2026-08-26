@@ -23,7 +23,7 @@ export function TeenGroceryListSection({ items, colors, isDark }: {
           </View>
         ))
       )}
-      <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=teen tapped "Open Full List →" on "TeenGroceryListSection" → navigate to /(tabs)/grocery [features/hub/teen/TeenGroceryListSection.tsx:26]`); router.push('/(tabs)/grocery' as any); }}
+      <Pressable onPress={() => { router.push('/(tabs)/grocery' as any); }}
         style={{ marginTop: 10, borderRadius: 10, borderWidth: 1.5, borderColor: BRAND.teal + '50',
           paddingVertical: 8, alignItems: 'center' }}>
         <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: BRAND.teal }}>Open Full List →</Text>

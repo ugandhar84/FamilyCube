@@ -378,7 +378,7 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
       <KidHeroCard
         active={active} colors={colors} isDark={isDark}
         mainCoins={mainCoins} gpCoins={gpCoins} streak={streak} level={level}
-        xp={xp} xpForNext={xpForNext} xpPct={xpPct}
+        xp={xp} xpIntoLevel={xpIntoLevel} xpForNext={xpForNext} xpPct={xpPct}
         doneToday={doneToday} questGoal={questGoal} questPct={questPct}
         confirmedRide={confirmedRide} rideCountdown={rideCountdown} members={members}
         nextEvent={nextEvent} nextCountdown={nextCountdown}

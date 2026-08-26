@@ -582,16 +582,31 @@ serve(async (req) => {
     const NOTIFY_PARENTS = ['help_requested', 'reward_redeemed', 'kid_request', 'quest_claimed', 'quest_submitted', 'chore_ghosted', 'bonus_expired_penalty'];
     const NOTIFY_SPECIFIC = ['help_resolved', 'reward_decision', 'kid_request_decision', 'quest_approved', 'quest_declined', 'quest_assigned', 'force_assigned', 'bonus_activated', 'coins_awarded', 'penalty_applied', 'deadline_reminder', 'deadline_overdue'];
 
+    // kid_request fans out to every parent, but not every request TYPE is
+    // something a grandparent could act on — grocery/supplies (type
+    // 'delegation'), 'permission', 'appointment', and the RIDE_LATE
+    // escalation (detail-encoded, not its own type) are parent-only asks.
+    // Only these subtypes are things a GP could plausibly help with
+    // directly. Reported live: a GP's notification tray was filling up with
+    // grocery lists and "hasn't arrived" alerts for a pickup they had
+    // nothing to do with.
+    const GP_RELEVANT_REQUEST_TYPES = ['ride', 'cheer', 'emergency', 'checkin'];
+    const detail = typeof payload.detail === 'string' ? payload.detail : '';
+    const isRideLateEscalation = detail.startsWith('RIDE_LATE:');
+    const includeGrandparents = type !== 'kid_request' ||
+      (!isRideLateEscalation && GP_RELEVANT_REQUEST_TYPES.includes(payload.requestType as string));
+
     if (!pushTokens.length && !resolvedMemberIds.length && familyId) {
       if (NOTIFY_PARENTS.includes(type)) {
         // Raw DB role values, not app-level names — see
         // store/familyStore.ts fromRow()/toRow() for the mapping. The DB
         // never stores 'senior', only 'grandparent'.
+        const roles = includeGrandparents ? ['parent', 'grandparent'] : ['parent'];
         const { data: parents } = await supabase
           .from('members')
           .select('id')
           .eq('family_id', familyId)
-          .in('role', ['parent', 'grandparent']);
+          .in('role', roles);
         resolvedMemberIds = (parents ?? []).map((m: any) => m.id);
         // pushTokens deliberately left empty here — resolved from
         // member_device_tokens (with expo_push_token fallback) further down,

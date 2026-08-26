@@ -16,7 +16,14 @@ const DEFAULT_ETA = 10;
 const DISPATCH_WINDOW_HOURS = 1;
 
 function formatCountdown(hours: number): string {
-  const totalMin = Math.round(hours * 60);
+  // Floored at 0 — rideLocked's own `hoursUntil > DISPATCH_WINDOW_HOURS`
+  // gate should make (hoursUntil - DISPATCH_WINDOW_HOURS) always positive
+  // by construction, but hoursUntil is itself a live "time until" value
+  // that can tick past the boundary between the gate check and this render
+  // (or land exactly on it under float rounding) — a raw negative value
+  // here printed a confusing "opens in -30m" instead of just settling at
+  // the smallest sane display, "1m".
+  const totalMin = Math.max(Math.round(hours * 60), 0);
   if (totalMin >= 60) {
     const h = Math.floor(totalMin / 60);
     const m = totalMin % 60;

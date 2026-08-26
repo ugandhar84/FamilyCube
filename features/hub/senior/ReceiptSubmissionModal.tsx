@@ -39,7 +39,7 @@ export function ReceiptSubmissionModal({
                 Snap or upload your receipt — parents will reimburse you
               </Text>
             </View>
-            <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "X close" on "Submit Receipt" modal → onClose [features/hub/senior/ReceiptSubmissionModal.tsx:38]`); onClose(); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Pressable onPress={() => { onClose(); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <X size={20} color={colors.textTertiary} />
             </Pressable>
           </View>
@@ -48,7 +48,7 @@ export function ReceiptSubmissionModal({
           {receiptPhotoUri ? (
             <View style={{ borderRadius: 16, overflow: 'hidden', borderWidth: 1.5, borderColor: BRAND.teal + '60' }}>
               <Image source={{ uri: receiptPhotoUri }} style={{ width: '100%', height: 200 }} resizeMode="cover" />
-              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "Change" on receipt photo → setReceiptPhotoUri(null) [features/hub/senior/ReceiptSubmissionModal.tsx:47]`); setReceiptPhotoUri(null); }}
+              <Pressable onPress={() => { setReceiptPhotoUri(null); }}
                 style={{ position: 'absolute', top: 8, right: 8, backgroundColor: '#000a', borderRadius: 20,
                   paddingHorizontal: 12, paddingVertical: 5 }}>
                 <Text style={{ color: '#fff', fontSize: GP.sub, fontWeight: '700' }}>Change</Text>
@@ -56,7 +56,7 @@ export function ReceiptSubmissionModal({
             </View>
           ) : (
             <View style={{ flexDirection: 'row', gap: 10 }}>
-              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "Camera" on "Submit Receipt" modal → onTakePhoto [features/hub/senior/ReceiptSubmissionModal.tsx:55]`); onTakePhoto(); }}
+              <Pressable onPress={() => { onTakePhoto(); }}
                 style={{ flex: 1, borderRadius: 14, borderWidth: 1.5, borderStyle: 'dashed',
                   borderColor: BRAND.teal + '60', paddingVertical: 20, alignItems: 'center', gap: 6,
                   backgroundColor: isDark ? BRAND.teal + '10' : '#F0FDF4' }}>
@@ -64,7 +64,7 @@ export function ReceiptSubmissionModal({
                 <Text style={{ fontSize: GP.sub, fontWeight: '700', color: BRAND.teal }}>Camera</Text>
                 <Text style={{ fontSize: GP.tiny, color: colors.textTertiary }}>Scan receipt</Text>
               </Pressable>
-              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "Gallery" on "Submit Receipt" modal → onPickFromGallery [features/hub/senior/ReceiptSubmissionModal.tsx:63]`); onPickFromGallery(); }}
+              <Pressable onPress={() => { onPickFromGallery(); }}
                 style={{ flex: 1, borderRadius: 14, borderWidth: 1.5, borderStyle: 'dashed',
                   borderColor: BRAND.teal + '40', paddingVertical: 20, alignItems: 'center', gap: 6,
                   backgroundColor: isDark ? BRAND.teal + '08' : '#F0FDF4' }}>
@@ -87,7 +87,6 @@ export function ReceiptSubmissionModal({
               <TextInput
                 value={receiptAmountStr}
                 onChangeText={setReceiptAmountStr}
-                onBlur={() => console.log(`[UserAction] FORM screen=Hub role=senior member=${actorName} field="Amount spent" on "Submit Receipt" modal newValue=${receiptAmountStr} [features/hub/senior/ReceiptSubmissionModal.tsx:85]`)}
                 keyboardType="decimal-pad"
                 placeholder="0.00"
                 placeholderTextColor={colors.textTertiary}
@@ -104,7 +103,6 @@ export function ReceiptSubmissionModal({
             <TextInput
               value={receiptNote}
               onChangeText={setReceiptNote}
-              onBlur={() => console.log(`[UserAction] FORM screen=Hub role=senior member=${actorName} field="Note for parents" on "Submit Receipt" modal newValue=${receiptNote} [features/hub/senior/ReceiptSubmissionModal.tsx:101]`)}
               placeholder="e.g. bought the bread and milk, couldn't find the cereal brand"
               placeholderTextColor={colors.textTertiary}
               multiline numberOfLines={2}
@@ -116,7 +114,7 @@ export function ReceiptSubmissionModal({
 
           {/* Submit */}
           <Pressable
-            onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "Send to Parents" on "Submit Receipt" modal (amount=${receiptAmountStr}) → onSubmit [features/hub/senior/ReceiptSubmissionModal.tsx:113]`); onSubmit(); }}
+            onPress={onSubmit}
             style={{ backgroundColor: BRAND.teal, borderRadius: 14, paddingVertical: 15,
               alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8,
               opacity: ((!receiptPhotoUri && !receiptAmountStr.trim()) || isSubmitting) ? 0.5 : 1 }}
@@ -126,9 +124,15 @@ export function ReceiptSubmissionModal({
               {isSubmitting ? 'Uploading…' : `Send to Parents${receiptAmountStr.trim() ? ` · $${receiptAmountStr}` : ''}`}
             </Text>
           </Pressable>
-          <Text style={{ fontSize: GP.tiny, color: colors.textTertiary, textAlign: 'center' }}>
-            At least a photo or amount is required
-          </Text>
+          {/* Only shown while the requirement isn't yet satisfied — was
+              static regardless of state, so a grandparent who'd already
+              attached a photo still saw "is required" text implying
+              something was still missing even with the button enabled. */}
+          {!receiptPhotoUri && !receiptAmountStr.trim() && (
+            <Text style={{ fontSize: GP.tiny, color: colors.textTertiary, textAlign: 'center' }}>
+              At least a photo or amount is required
+            </Text>
+          )}
 
         </Pressable>
       </Pressable>

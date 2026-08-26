@@ -27,7 +27,11 @@ export interface ChatMessage {
   reactions?: Record<string, string[]>;
   imageUri?: string;
   mediaType?: 'image' | 'video';
-  replyTo?: { id: string; senderId: string; text: string };
+  // `kind` distinguishes what the quoted message actually was when its own
+  // `text` is empty — previously the reply-quote preview hardcoded every
+  // empty-text quote as "🎙️ Voice note" regardless of whether the original
+  // was a voice note, image, video, document, or location pin.
+  replyTo?: { id: string; senderId: string; text: string; kind?: 'voice' | 'image' | 'video' | 'document' | 'location' };
   edited?: boolean;
   // Voice note
   voiceUri?: string;
@@ -96,6 +100,21 @@ let _openChannelId: string | null = null;
 // directly when building its DM tiles.
 export function dmChannelId(idA: string, idB: string): string {
   return `dm_${[idA, idB].sort().join('_')}`;
+}
+
+// Reply-quote preview needs to know what an empty-text quoted message
+// actually was — the quote card previously assumed any empty `text` meant
+// a voice note, mislabeling replies to a quoted image/video/document/
+// location pin the same way. Checked in attachment-type order so a message
+// with more than one attachment field set still resolves to something
+// sensible.
+function deriveReplyKind(msg: ChatMessage): 'voice' | 'image' | 'video' | 'document' | 'location' | undefined {
+  if (msg.voiceUri) return 'voice';
+  if (msg.mediaType === 'video') return 'video';
+  if (msg.imageUri) return 'image';
+  if (msg.documentUri) return 'document';
+  if (msg.locationPin) return 'location';
+  return undefined;
 }
 
 // Fixed, non-DM channel ids — never rewritten, always used as-is. Matches
@@ -333,7 +352,7 @@ interface ChatState {
     voiceUri?: string,
     documentUri?: string, documentName?: string,
     systemEvent?: { type: string; payload: Record<string, any> },
-  ) => Promise<void>;
+  ) => Promise<string | undefined>;
 
   addReaction:   (channelId: string, messageId: string, emoji: string, memberId: string) => Promise<void>;
   deleteMessage: (channelId: string, messageId: string) => Promise<void>;
@@ -579,10 +598,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }
             if (payload.eventType === 'UPDATE') {
               const msg = await rowToMessage(payload.new as DBRow);
-              if (!msg.voiceUri) {
-                const existing = get().channels[channelId]?.messages.find(m => m.id === msg.id);
-                if (existing?.voiceUri) msg.voiceUri = existing.voiceUri;
-              }
+              const existing = get().channels[channelId]?.messages.find(m => m.id === msg.id);
+              // Same schema-cache-lag defense voiceUri already had below —
+              // document_url is patched in by a follow-up UPDATE after
+              // upload (same pattern as voice_url), and needed the
+              // identical protection: if this UPDATE's row doesn't yet
+              // reflect the real document_url, don't let it clobber
+              // whatever the optimistic/previous state already had.
+              if (!msg.voiceUri && existing?.voiceUri) msg.voiceUri = existing.voiceUri;
+              if (!msg.documentUri && existing?.documentUri) msg.documentUri = existing.documentUri;
+              if (!msg.imageUri && existing?.imageUri) msg.imageUri = existing.imageUri;
               get()._upsertMessage(channelId, msg);
             }
             if (payload.eventType === 'DELETE') {
@@ -717,7 +742,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       timestamp: new Date().toISOString(),
       imageUri,
       mediaType,
-      replyTo:      replyTo ? { id: replyTo.id, senderId: replyTo.senderId, text: replyTo.text } : undefined,
+      replyTo:      replyTo ? { id: replyTo.id, senderId: replyTo.senderId, text: replyTo.text, kind: deriveReplyKind(replyTo) } : undefined,
       voiceDuration,
       voiceUri,
       locationPin,
@@ -738,12 +763,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
         blind_index,
         timestamp:   now,
         created_at:  now,
-        image_url:   imageUri ?? null,
+        // Same local-path guard as document_url below — imageUri/videoUri
+        // was written here verbatim with NO upload step anywhere in the
+        // app at all (unlike voice/document, which at least attempted an
+        // upload) — every image/video sent in chat was 100% broken across
+        // devices, confirmed live: 0 rows ever landed in the chat-media
+        // bucket. ChatScreen.tsx's handleSend now uploads to chat-media
+        // and patches this in after, same pattern as voice/document.
+        image_url:   imageUri && !imageUri.startsWith('file://') ? imageUri : null,
         media_type:  mediaType ?? null,
-        reply_to:    replyTo ? { id: replyTo.id, senderId: replyTo.senderId, text: replyTo.text } : null,
+        reply_to:    replyTo ? { id: replyTo.id, senderId: replyTo.senderId, text: replyTo.text, kind: deriveReplyKind(replyTo) } : null,
         duration_sec: voiceDuration != null ? Math.round(voiceDuration) : null,
         location_pin: locationPin ?? null,
-        document_url:  documentUri ?? null,
+        // A documentUri starting with "file://" is a local cache path from
+        // the picker, not yet uploaded — writing it here made "Tap to open"
+        // point at a path that only ever existed on the sender's own
+        // device (live-reported: tapping a shared document does nothing on
+        // any other device/session). Same "omit until the real upload
+        // lands" treatment voice_url already gets below; ChatScreen.tsx's
+        // sendDocument() uploads to chat-media and patches this in after.
+        document_url:  documentUri && !documentUri.startsWith('file://') ? documentUri : null,
         document_name: documentName ?? null,
         system_event:  systemEvent ?? null,
         is_system:     !!systemEvent,
@@ -774,6 +813,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           .catch(e => console.warn('[chatStore] moderate-message failed:', e?.message));
       }
       // Realtime subscription will deliver the real row and upsert it (replacing optimistic)
+      return msgId;
     } catch (err) {
       // Remove optimistic message on failure
       get()._removeMessage(channelId, optimistic.id);
@@ -782,6 +822,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       offline.push({ channelId, senderId, ciphertext, blind_index, imageUri, mediaType });
       await AsyncStorage.setItem(OFFLINE_KEY, JSON.stringify(offline));
       console.warn('[chatStore] send failed, queued offline', err);
+      return undefined;
     }
   },
 

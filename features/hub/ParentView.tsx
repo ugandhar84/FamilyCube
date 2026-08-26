@@ -16,6 +16,7 @@ import { AlertBanner, PickupRadarStatus } from './hubComponents';
 import { localToday, hoursUntilEvent, isWorkEvent, minutesBetween, isHomeLocation } from './hubUtils';
 import { classifyEventUrgency } from './lib/classifyEventUrgency';
 import { detectAssigneeConflicts } from './lib/detectAssigneeConflicts';
+import { dedupeRideSeries } from './lib/dedupeRideSeries';
 import { decodeRideLate } from './KidModals';
 import { TodayView, GreetingHeader } from './TodayView';
 import { useChoreStore } from '@/store/choreStore';
@@ -329,16 +330,14 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     ['ride', 'tutor', 'cheer'].includes(r.type) &&
     !r.assignedHelper
   );
-  // Matches ActionNeededSection's own series dedup (only the soonest
-  // occurrence of a recurring ride series renders as a card there) — this
-  // badge count must agree with what's actually shown, or the "12 pending"
-  // badge and a list of 1 card look like a bug on their own. Both
-  // pendingRequests (Ride category) and pendingRideRequiredEvents (any
-  // other category's own ride need) go through the same series collapse.
-  const allPendingRides = [...pendingRequests, ...pendingRideRequiredEvents];
-  const dedupedSeriesCount = new Set(allPendingRides.filter(e => e.seriesId).map(e => e.seriesId)).size;
-  const seriesOverflowCount = allPendingRides.filter(e => e.seriesId).length - dedupedSeriesCount;
-  const actionCount = allPendingRides.length - seriesOverflowCount + pendingKidRequests.length;
+  // Runs through the exact same dedupeRideSeries helper ActionNeededSection
+  // itself renders from — this badge count and the actual card list can no
+  // longer structurally diverge (previously two independently-written
+  // dedup passes that happened to agree today; the "12 pending, but only 3
+  // cards" bug this could cause had already happened once).
+  const [dedupedPendingForCount, dedupedRideRequiredForCount] =
+    dedupeRideSeries(pendingRequests, pendingRideRequiredEvents);
+  const actionCount = dedupedPendingForCount.length + dedupedRideRequiredForCount.length + pendingKidRequests.length;
 
   const familyId = (active as any).familyId ?? 'family-1';
 

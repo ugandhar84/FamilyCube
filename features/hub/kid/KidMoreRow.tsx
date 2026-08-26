@@ -21,7 +21,11 @@ export function KidMoreRow({ onPiggyBank, onHistory, onLeaderboard, onCheerSquad
   const tiles: { Icon: typeof PiggyBank; label: string; color: string; onPress: () => void; badge?: number }[] = [
     { Icon: PiggyBank,     label: 'Piggy Bank',    color: colors.kid,    onPress: onPiggyBank },
     { Icon: Gift,          label: 'Rewards',       color: colors.accent, onPress: () => router.push('/(tabs)/store' as any) },
-    { Icon: Trophy,        label: 'Leaderboard',   color: colors.danger, onPress: onLeaderboard },
+    // colors.danger previously tinted this tile — a fun competitive
+    // feature rendered in the same alarm/red color as "Running Late" and
+    // decline actions elsewhere on this screen. colors.primary isn't used
+    // by any sibling tile in this row and reads naturally as "achievement".
+    { Icon: Trophy,        label: 'Leaderboard',   color: colors.primary, onPress: onLeaderboard },
     { Icon: PartyPopper,   label: 'Cheer Squad',   color: colors.parent, onPress: onCheerSquad, badge: cheerBadge },
     { Icon: ClipboardList, label: 'My Requests',   color: colors.accent, onPress: onHistory },
     { Icon: Calendar,      label: 'Full Calendar', color: colors.parent, onPress: () => router.push('/(tabs)/calendar') },
@@ -30,7 +34,7 @@ export function KidMoreRow({ onPiggyBank, onHistory, onLeaderboard, onCheerSquad
   return (
     <View style={{ paddingHorizontal: 16, marginBottom: 18, flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
       {tiles.map(({ Icon, label, color, onPress, badge }) => (
-        <Pressable key={label} onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "${label}" on "KidMoreRow" [features/hub/kid/KidMoreRow.tsx]`); onPress(); }}
+        <Pressable key={label} onPress={onPress}
           style={{ flexBasis: '31%', flexGrow: 1, borderRadius: 16, paddingVertical: 15, alignItems: 'center', gap: 7,
             backgroundColor: isDark ? color + '22' : color + '1E', borderWidth: 1, borderColor: color + (isDark ? '38' : '2C') }}>
           {/* Solid-tint icon chip with a white icon — matches the Parent

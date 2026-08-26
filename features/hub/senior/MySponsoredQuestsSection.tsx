@@ -58,7 +58,7 @@ export function MySponsoredQuestsSection({ quests, inProgressQuests = [], colors
                   {c.basePoints} pts · waiting on a parent
                 </Text>
               </View>
-              <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=senior member=${actorName} tapped "Edit" on "${c.title}" (id=${c.id}) → onEdit [features/hub/senior/MySponsoredQuestsSection.tsx:59]`); onEdit(c); }}
+              <Pressable onPress={() => { onEdit(c); }}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 4,
                   borderRadius: 10, borderWidth: 1.5, borderColor: BRAND.purple,
                   paddingHorizontal: 10, paddingVertical: 7 }}>

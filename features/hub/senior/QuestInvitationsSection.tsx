@@ -67,7 +67,6 @@ export function QuestInvitationsSection({
             <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: isDark ? BRAND.purple + '30' : BRAND.purple + '20' }}>
               <Pressable
                 onPress={() => {
-                  console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "${alreadyPassed ? 'Reconsider?' : "I'd Love To Help"}" on "${c.title}" (id=${c.id}) [features/hub/senior/QuestInvitationsSection.tsx:65]`);
                   if (alreadyPassed) {
                     // Now the set_gp_withdrawn RPC — atomic remove instead
                     // of a client-side filter, closing a real race two GPs
@@ -93,7 +92,6 @@ export function QuestInvitationsSection({
                   <View style={{ width: 1, backgroundColor: isDark ? BRAND.purple + '30' : BRAND.purple + '20' }} />
                   <Pressable
                     onPress={() => {
-                      console.log(`[UserAction] screen=Hub role=senior member=${active.name} tapped "Pass" on "${c.title}" (id=${c.id}) → set_gp_withdrawn [features/hub/senior/QuestInvitationsSection.tsx:88]`);
                       supabase.rpc('set_gp_withdrawn', { p_chore_id: c.id, p_gp_member_id: active.id, p_withdrawn: true })
                         .then(({ error }) => {
                           if (error) { console.warn('[QuestInvitationsSection] set_gp_withdrawn failed', error.message); return; }

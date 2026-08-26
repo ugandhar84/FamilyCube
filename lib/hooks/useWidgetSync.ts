@@ -58,17 +58,22 @@ function useWidgetSyncInner() {
       }
 
       const now = new Date();
-      const nextEventFor = (matchesEvent: (e: (typeof events)[number]) => boolean) => {
+      // Up to 3 upcoming events for the medium widget's Calendar-style list;
+      // the first one also doubles as nextEventTitle/nextEventTime for the
+      // small widget's single-line "up next".
+      const upcomingEventsFor = (matchesEvent: (e: (typeof events)[number]) => boolean) => {
         const upcoming = events
           .filter(e => matchesEvent(e) && hoursUntilEvent(e.date, e.time) >= 0)
-          .sort((a, b) => (a.date === b.date ? (a.time ?? '').localeCompare(b.time ?? '') : a.date.localeCompare(b.date)));
-        const next = upcoming[0];
-        if (!next) return { title: null, time: null };
-        const isToday = next.date === localToday();
-        return {
-          title: next.title,
-          time: next.time ? `${isToday ? 'Today' : next.date} · ${fmtTime(next.time)}` : (isToday ? 'Today' : next.date),
-        };
+          .sort((a, b) => (a.date === b.date ? (a.time ?? '').localeCompare(b.time ?? '') : a.date.localeCompare(b.date)))
+          .slice(0, 3)
+          .map(e => {
+            const isToday = e.date === localToday();
+            return {
+              title: e.title,
+              time: e.time ? `${isToday ? 'Today' : e.date} · ${fmtTime(e.time)}` : (isToday ? 'Today' : e.date),
+            };
+          });
+        return upcoming;
       };
 
       let payload: WidgetPayload;
@@ -79,7 +84,7 @@ function useWidgetSyncInner() {
           c.status === 'pending_approval' || c.status === 'pending_grandparent_approval' || c.status === 'pending_parent_approval'
         ).length;
         const eventsToday = events.filter(e => e.date === today).length;
-        const { title, time } = nextEventFor(() => true); // family-wide — any member's next event
+        const upcomingEvents = upcomingEventsFor(() => true); // family-wide — any member's next events
 
         payload = {
           enabled: true,
@@ -90,8 +95,9 @@ function useWidgetSyncInner() {
             pendingApprovals,
             eventsToday,
             unreadMessages: unreadCount,
-            nextEventTitle: title,
-            nextEventTime: time,
+            nextEventTitle: upcomingEvents[0]?.title ?? null,
+            nextEventTime: upcomingEvents[0]?.time ?? null,
+            upcomingEvents,
           },
           lastSyncedAt: now.toISOString(),
         };
@@ -99,7 +105,7 @@ function useWidgetSyncInner() {
         const pendingQuests = chores.filter(c =>
           c.assignedToId === active.id && ['todo', 'in_progress'].includes(c.status)
         ).length;
-        const { title, time } = nextEventFor(e => e.memberId === active.id || !!e.memberIds?.includes(active.id));
+        const upcomingEvents = upcomingEventsFor(e => e.memberId === active.id || !!e.memberIds?.includes(active.id));
 
         payload = {
           enabled: true,
@@ -110,8 +116,9 @@ function useWidgetSyncInner() {
             pendingQuests,
             coins: active.mainCoins ?? active.coins ?? 0,
             streak: active.streak ?? 0,
-            nextEventTitle: title,
-            nextEventTime: time,
+            nextEventTitle: upcomingEvents[0]?.title ?? null,
+            nextEventTime: upcomingEvents[0]?.time ?? null,
+            upcomingEvents,
           },
           lastSyncedAt: now.toISOString(),
         };

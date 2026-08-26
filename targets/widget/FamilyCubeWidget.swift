@@ -8,6 +8,11 @@ import SwiftUI
 // modules/widget-data/src/index.ts's WidgetParentSummary/
 // WidgetMemberSummary exactly (field names, "kind" discriminator).
 
+struct WidgetEvent: Codable {
+    var title: String
+    var time: String
+}
+
 struct WidgetParentSummary: Codable {
     var familyName: String
     var memberCount: Int
@@ -16,6 +21,7 @@ struct WidgetParentSummary: Codable {
     var unreadMessages: Int
     var nextEventTitle: String?
     var nextEventTime: String?
+    var upcomingEvents: [WidgetEvent]?
 }
 
 struct WidgetMemberSummary: Codable {
@@ -26,6 +32,7 @@ struct WidgetMemberSummary: Codable {
     var streak: Int
     var nextEventTitle: String?
     var nextEventTime: String?
+    var upcomingEvents: [WidgetEvent]?
 }
 
 enum WidgetSummary {
@@ -110,6 +117,55 @@ private struct StatColumn: View {
     }
 }
 
+// MARK: - Agenda list (medium widget's "UP NEXT" column)
+//
+// iOS Calendar's own widget fills its space with actual upcoming events
+// rather than leaving whitespace next to a single headline stat — this
+// mirrors that: a real 2-3 row agenda, each event getting its own line
+// with a leading time chip, instead of one cramped "next event" caption.
+
+private struct AgendaRow: View {
+    let event: WidgetEvent
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Circle()
+                .fill(.white.opacity(0.85))
+                .frame(width: 5, height: 5)
+                .padding(.top, 5)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(event.title).font(.system(size: 12, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                Text(event.time).font(.system(size: 10)).foregroundColor(.white.opacity(0.7)).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+private struct AgendaColumn: View {
+    let events: [WidgetEvent]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("UP NEXT").font(.system(size: 10, weight: .bold)).foregroundColor(.white.opacity(0.65))
+            if events.isEmpty {
+                Spacer()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("📭").font(.caption)
+                    Text("Nothing scheduled").font(.system(size: 11)).foregroundColor(.white.opacity(0.7))
+                }
+                Spacer()
+            } else {
+                ForEach(Array(events.prefix(3).enumerated()), id: \.offset) { _, event in
+                    AgendaRow(event: event)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+}
+
 // MARK: - Empty / signed-out state
 
 private struct EmptyStateView: View {
@@ -136,68 +192,90 @@ private struct ParentWidgetView: View {
     let data: WidgetParentSummary
     @Environment(\.widgetFamily) var family
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("🏠").font(.title3)
-                Text(data.familyName).font(.subheadline).bold().foregroundColor(.white)
-                Spacer()
-                if data.unreadMessages > 0 {
-                    Text("\(data.unreadMessages)")
-                        .font(.caption2).bold().foregroundColor(brandTeal)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Circle().fill(.white))
-                }
-            }
+    @ViewBuilder private var header: some View {
+        HStack {
+            Text("🏠").font(.title3)
+            Text(data.familyName).font(.subheadline).bold().foregroundColor(.white)
             Spacer()
-            // Pending approvals is the ONE number a parent actually
-            // glances at this widget for — always leads, large. A bare "0"
-            // with a truncated caption underneath reads as broken, not as
-            // "all caught up" — so 0 gets its own reassuring state instead
-            // of just being the smallest possible version of the number.
-            if data.pendingApprovals == 0 {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("✓").font(.system(size: 28, weight: .bold)).foregroundColor(.white)
-                    Text("All caught up").font(.caption).bold().foregroundColor(.white.opacity(0.9))
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("\(data.pendingApprovals)").font(.system(size: 34, weight: .bold)).foregroundColor(.white)
-                    Text(data.pendingApprovals == 1 ? "needs your review" : "need your review")
-                        .font(.caption).foregroundColor(.white.opacity(0.8))
-                }
+            if data.unreadMessages > 0 {
+                Text("\(data.unreadMessages)")
+                    .font(.caption2).bold().foregroundColor(brandTeal)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Circle().fill(.white))
             }
-            if family == .systemMedium {
-                Spacer()
-                HStack(spacing: 16) {
-                    StatColumn(value: "\(data.memberCount)", label: "Family")
-                    StatColumn(value: "\(data.eventsToday)", label: "Today")
+        }
+    }
+
+    // Pending approvals is the ONE number a parent actually glances at
+    // this widget for — always leads, large. A bare "0" with a truncated
+    // caption underneath reads as broken, not as "all caught up" — so 0
+    // gets its own reassuring state instead of just being the smallest
+    // possible version of the number.
+    @ViewBuilder private var pendingBlock: some View {
+        if data.pendingApprovals == 0 {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("✓").font(.system(size: 28, weight: .bold)).foregroundColor(.white)
+                Text("All caught up").font(.caption).bold().foregroundColor(.white.opacity(0.9))
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("\(data.pendingApprovals)").font(.system(size: 34, weight: .bold)).foregroundColor(.white)
+                Text(data.pendingApprovals == 1 ? "needs your review" : "need your review")
+                    .font(.caption).foregroundColor(.white.opacity(0.8))
+            }
+        }
+    }
+
+    var body: some View {
+        if family == .systemMedium {
+            // Two columns fill the medium widget's full width instead of
+            // stacking everything down the left with dead space on the
+            // right: left is the household glance (header + headline stat
+            // + family/today counts), right is a real agenda list — the
+            // same "fill the space with actual upcoming items" approach
+            // iOS Calendar's own widget takes, rather than one buried
+            // "next event" caption.
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
+                    header
+                    Spacer(minLength: 4)
+                    pendingBlock
+                    Spacer(minLength: 4)
+                    // Member count is static and rarely worth a glance —
+                    // "Today" is the one mini-stat that actually changes
+                    // day to day and earns its place next to the headline.
+                    StatColumn(value: "\(data.eventsToday)", label: data.eventsToday == 1 ? "Event today" : "Events today")
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Divider().background(.white.opacity(0.3))
+
+                AgendaColumn(events: data.upcomingEvents ?? [])
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding()
+            .containerBackground(brandTeal, for: .widget)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                header
+                Spacer()
+                pendingBlock
                 if let title = data.nextEventTitle, !title.isEmpty {
-                    Divider().background(.white.opacity(0.3))
-                    HStack(spacing: 4) {
-                        Text("📅").font(.caption2)
-                        Text(title).font(.caption).bold().foregroundColor(.white).lineLimit(1)
+                    // Small widget has no room for a full agenda list — a
+                    // single compact "up next" line is the one extra thing
+                    // worth showing here.
+                    HStack(spacing: 3) {
+                        Text("📅").font(.system(size: 9))
+                        Text(title).font(.system(size: 10)).bold().foregroundColor(.white).lineLimit(1)
                         if let time = data.nextEventTime {
-                            Text("· \(time)").font(.caption2).foregroundColor(.white.opacity(0.75))
+                            Text("· \(time)").font(.system(size: 9)).foregroundColor(.white.opacity(0.75)).lineLimit(1)
                         }
                     }
                 }
-            } else if let title = data.nextEventTitle, !title.isEmpty {
-                // Small widget has no room for the medium size's full stats
-                // row + divider — a single compact "up next" line is the
-                // one extra thing worth showing here.
-                HStack(spacing: 3) {
-                    Text("📅").font(.system(size: 9))
-                    Text(title).font(.system(size: 10)).bold().foregroundColor(.white).lineLimit(1)
-                    if let time = data.nextEventTime {
-                        Text("· \(time)").font(.system(size: 9)).foregroundColor(.white.opacity(0.75)).lineLimit(1)
-                    }
-                }
             }
+            .padding()
+            .containerBackground(brandTeal, for: .widget)
         }
-        .padding()
-        .containerBackground(brandTeal, for: .widget)
     }
 }
 
@@ -207,45 +285,66 @@ private struct MemberWidgetView: View {
     let data: WidgetMemberSummary
     @Environment(\.widgetFamily) var family
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(data.memberEmoji).font(.title2)
-                Text(data.memberName).font(.headline).bold().foregroundColor(.white)
-                Spacer()
-            }
+    @ViewBuilder private var header: some View {
+        HStack {
+            Text(data.memberEmoji).font(.title2)
+            Text(data.memberName).font(.headline).bold().foregroundColor(.white)
             Spacer()
-            HStack(spacing: 12) {
-                StatColumn(value: "\(data.pendingQuests)", label: data.pendingQuests == 1 ? "Quest" : "Quests")
-                StatColumn(value: "🪙 \(data.coins)", label: "Coins")
-                if family == .systemMedium {
-                    StatColumn(value: "🔥\(data.streak)d", label: "Streak", alignment: .trailing)
-                }
-            }
-            if family == .systemMedium, let title = data.nextEventTitle, !title.isEmpty {
-                Divider().background(.white.opacity(0.3))
-                HStack(spacing: 4) {
-                    Text("📅").font(.caption2)
-                    Text(title).font(.caption).bold().foregroundColor(.white).lineLimit(1)
-                    if let time = data.nextEventTime {
-                        Text("· \(time)").font(.caption2).foregroundColor(.white.opacity(0.75))
-                    }
-                }
-            } else if let title = data.nextEventTitle, !title.isEmpty {
-                // Small widget has no room for the medium size's streak
-                // column + divider — a single compact "up next" line is
-                // the one extra thing worth showing here.
-                HStack(spacing: 3) {
-                    Text("📅").font(.system(size: 9))
-                    Text(title).font(.system(size: 10)).bold().foregroundColor(.white).lineLimit(1)
-                    if let time = data.nextEventTime {
-                        Text("· \(time)").font(.system(size: 9)).foregroundColor(.white.opacity(0.75)).lineLimit(1)
-                    }
-                }
-            }
         }
-        .padding()
-        .containerBackground(brandAmber, for: .widget)
+    }
+
+    @ViewBuilder private var statsRow: some View {
+        HStack(spacing: 12) {
+            StatColumn(value: "\(data.pendingQuests)", label: data.pendingQuests == 1 ? "Quest" : "Quests")
+            StatColumn(value: "🪙 \(data.coins)", label: "Coins")
+            StatColumn(value: "🔥\(data.streak)d", label: "Streak")
+        }
+    }
+
+    var body: some View {
+        if family == .systemMedium {
+            // Same fill-the-space approach as the parent view: left is the
+            // kid's own glance (name + quests/coins/streak), right is a
+            // real agenda list instead of one squeezed-in "next event" line.
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
+                    header
+                    Spacer(minLength: 4)
+                    statsRow
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Divider().background(.white.opacity(0.3))
+
+                AgendaColumn(events: data.upcomingEvents ?? [])
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding()
+            .containerBackground(brandAmber, for: .widget)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                header
+                Spacer()
+                HStack(spacing: 12) {
+                    StatColumn(value: "\(data.pendingQuests)", label: data.pendingQuests == 1 ? "Quest" : "Quests")
+                    StatColumn(value: "🪙 \(data.coins)", label: "Coins")
+                }
+                if let title = data.nextEventTitle, !title.isEmpty {
+                    // Small widget has no room for a full agenda list — a
+                    // single compact "up next" line is the one extra thing
+                    // worth showing here.
+                    HStack(spacing: 3) {
+                        Text("📅").font(.system(size: 9))
+                        Text(title).font(.system(size: 10)).bold().foregroundColor(.white).lineLimit(1)
+                        if let time = data.nextEventTime {
+                            Text("· \(time)").font(.system(size: 9)).foregroundColor(.white.opacity(0.75)).lineLimit(1)
+                        }
+                    }
+                }
+            }
+            .padding()
+            .containerBackground(brandAmber, for: .widget)
+        }
     }
 }
 

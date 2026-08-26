@@ -6,14 +6,20 @@ import { requireNativeModule } from 'expo-modules-core';
 // content shapes, matching the two ways a person actually wants a glance
 // at this app: a parent wants the household's state, a kid/teen/senior
 // wants their own.
+export interface WidgetEvent {
+  title: string;
+  time: string;  // pre-formatted, e.g. "Today · 4:30 PM"
+}
+
 export interface WidgetParentSummary {
   familyName: string;
   memberCount: number;
   pendingApprovals: number;  // chores sitting at pending_approval, awaiting this parent's review
   eventsToday: number;
   unreadMessages: number;
-  nextEventTitle?: string | null;   // family's next upcoming event (any member), not just this parent's own
+  nextEventTitle?: string | null;   // family's next upcoming event (any member), not just this parent's own — mirrors upcomingEvents[0]
   nextEventTime?: string | null;    // pre-formatted, e.g. "Today · 4:30 PM"
+  upcomingEvents?: WidgetEvent[];   // up to 3, for the medium widget's Calendar-style list
 }
 
 export interface WidgetMemberSummary {
@@ -22,8 +28,9 @@ export interface WidgetMemberSummary {
   pendingQuests: number;
   coins: number;
   streak: number;
-  nextEventTitle?: string | null;
-  nextEventTime?: string | null;  // pre-formatted, e.g. "Today · 4:30 PM"
+  nextEventTitle?: string | null;  // mirrors upcomingEvents[0]
+  nextEventTime?: string | null;   // pre-formatted, e.g. "Today · 4:30 PM"
+  upcomingEvents?: WidgetEvent[];  // up to 3, for the medium widget's Calendar-style list
 }
 
 // Flat discriminator (kind) + two optional, mutually-exclusive summary

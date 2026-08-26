@@ -66,8 +66,8 @@ export function CardHeader({ Icon, iconColor, title, badge, badgeColor, colors, 
   return (
     <View style={[sh.cardHeaderRow, { justifyContent: 'space-between' }]}>
       <View style={[sh.cardHeaderRow, { flex: 1 }]}>
-        <View style={[sh.cardHeaderIconBox, { backgroundColor: ic + '20' }]}>
-          <Icon size={16} color={ic} />
+        <View style={[sh.cardHeaderIconBox, { backgroundColor: ic + 'D9' }]}>
+          <Icon size={16} color="#fff" />
         </View>
         <Text style={[sh.cardHeaderTitle, { color: colors.textPrimary }]}>{title}</Text>
         {badge ? (

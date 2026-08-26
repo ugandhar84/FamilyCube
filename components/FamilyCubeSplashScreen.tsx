@@ -1,218 +1,169 @@
 /**
- * FamilyCubeSplashScreen — v6
- * - Big glossy circle IS the container: cube + wordmark both live inside it
- * - Tagline + wave dots sit below the circle
- * - 5 dots swing in a continuous sine wave
- * - Dark-amber ♥ above the "i" in "Family"
- * - Dark + light theme
+ * FamilyCubeSplashScreen — v7
+ * Rebuilt to drop the v6 spotlight-circle container and the old cool-tone
+ * (teal/amber/pink/purple/navy) palette entirely in favor of the real
+ * Kinfolk BRAND tokens (mirrors constants/colors.ts) — the cube mark and
+ * tagline already read BRAND.* via FamilyCubeLogo.tsx's shared components,
+ * this file's own wordmark/background/motion are what needed rebuilding.
+ *
+ * Wordmark: only the leading "F" (Family) and "C" (Cube) carry brand color
+ * — every other letter is plain white/ink, per explicit direction.
+ *
+ * Motion: replaces the old 5-dot sine-wave row (disliked — "dot wave") with
+ * a soft outward "splash" — a few translucent brand-colored droplets ripple
+ * out from the cube and fade, evoking water rings rather than a bobbing
+ * wave. No spotlight circle behind the cube; it sits directly on the warm
+ * gradient background.
  */
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Dimensions, useColorScheme } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
-  useSharedValue, useAnimatedStyle, useDerivedValue,
+  useSharedValue, useAnimatedStyle,
   withTiming, withSpring, withDelay, withRepeat,
-  Easing, type SharedValue,
+  Easing,
 } from 'react-native-reanimated';
-import Svg, { Path } from 'react-native-svg';
-import { Tagline, IconCubeMark } from './FamilyCubeLogo';
+import { Tagline, IconCubeMark, BRAND } from './FamilyCubeLogo';
 
-// ── Brand palette ─────────────────────────────────────────────────────────────
-const TEAL      = '#00BBA4';
-const AMBER     = '#F5A623';
-const DARK_AMBER= '#D4870A';
-const PINK      = '#F04E98';
-const PURPLE    = '#9261C7';
-const NAVY      = '#1E2D6B';
+const CUBE_SIZE = 128;
+const { width: SCREEN_W } = Dimensions.get('window');
 
-const CUBE_SIZE  = 130;
-const CIRCLE_SZ  = Dimensions.get('window').width * 0.88;
-
-// ── Cube (shared IconCubeMark) ────────────────────────────────────────────────
-// SplashCubeMark is now IconCubeMark from FamilyCubeLogo (shared component)
-
-// ── Wordmark: "Family" unchanged; heart drops onto the "i" dot ───────────────
-//
-// dotless-i (ı U+0131) removes the competing dot.
-// Heart is absolutely positioned AT the dot level (positive top) — the "i"
-// character never moves, only the dot is replaced.
+// ── Wordmark — only F and C carry brand color, everything else is the
+// plain ink/white text color ──────────────────────────────────────────────
 function SplashWordmark({ textColor }: { textColor: string }) {
-  const FONT     = 44;
-  const HEART_SZ = 13;
-  // At 44px bold: "Fam" ≈ 90px; "i" center ≈ 97px from left of "Famıly "
-  // dot sits ~8px from top of the text's line box
-  const HEART_LEFT = 80;
-  const HEART_TOP  = 4;
-
+  const FONT = 40;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-      <View style={{ position: 'relative' }}>
-        {/* Heart lands on the dot — "i" stays at normal baseline */}
-        <Svg
-          width={HEART_SZ} height={HEART_SZ} viewBox="0 0 20 18"
-          style={{ position: 'absolute', left: HEART_LEFT, top: HEART_TOP, zIndex: 1 }}
-        >
-          <Path
-            d="M10,16 C7,13 0,9 0,5 C0,0 5,-1 10,6 C15,-1 20,0 20,5 C20,9 13,13 10,16 Z"
-            fill={DARK_AMBER}
-          />
-        </Svg>
-        {/* ı = dotless i (U+0131) hides the dot under the heart */}
-        <Text style={{ fontSize: FONT, fontWeight: '800', color: textColor, letterSpacing: -1.2 }}>
-          Famıly{' '}
-        </Text>
-      </View>
-
-      <Text style={{ fontSize: FONT, fontWeight: '800', letterSpacing: -1.2 }}>
-        <Text style={{ color: TEAL   }}>C</Text>
-        <Text style={{ color: AMBER  }}>u</Text>
-        <Text style={{ color: PINK   }}>b</Text>
-        <Text style={{ color: PURPLE }}>e</Text>
+      <Text style={{ fontSize: FONT, fontWeight: '800', letterSpacing: -1 }}>
+        <Text style={{ color: BRAND.purple }}>F</Text>
+        <Text style={{ color: textColor }}>amily </Text>
+        <Text style={{ color: BRAND.teal }}>C</Text>
+        <Text style={{ color: textColor }}>ube</Text>
       </Text>
     </View>
   );
 }
 
-// ── Sine-wave dots ────────────────────────────────────────────────────────────
-const DOT_COLORS = [TEAL, AMBER, PINK, PURPLE, TEAL];
-const DOT_SIZES  = [11, 11, 11, 11, 9];
-const WAVE_AMP   = 13;
-const WAVE_MS    = 1400;
+// ── Ripple — a single expanding, fading ring, offset by delay ────────────
+function Ripple({ color, delay }: { color: string; delay: number }) {
+  const scale = useSharedValue(0.4);
+  const op = useSharedValue(0.5);
 
-function WaveDot({ phase, index, total, color, size }: {
-  phase: SharedValue<number>;
-  index: number;
-  total: number;
-  color: string;
-  size: number;
-}) {
-  const ty = useDerivedValue(() => {
-    'worklet';
-    const p = (phase.value + index / total) % 1;
-    return -Math.sin(p * 2 * Math.PI) * WAVE_AMP;
-  });
-  const aStyle = useAnimatedStyle(() => ({ transform: [{ translateY: ty.value }] }));
+  useEffect(() => {
+    scale.value = withDelay(delay, withRepeat(
+      withTiming(2.4, { duration: 2200, easing: Easing.out(Easing.quad) }),
+      -1, false,
+    ));
+    op.value = withDelay(delay, withRepeat(
+      withTiming(0, { duration: 2200, easing: Easing.out(Easing.quad) }),
+      -1, false,
+    ));
+  }, []);
+
+  const aStyle = useAnimatedStyle(() => ({
+    opacity: op.value,
+    transform: [{ scale: scale.value }],
+  }));
+
   return (
-    <Animated.View style={[{ width: size, height: size, borderRadius: size / 2, backgroundColor: color, opacity: 0.88 }, aStyle]} />
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFillObject,
+        { alignItems: 'center', justifyContent: 'center' },
+        aStyle,
+      ]}
+    >
+      <View style={{
+        width: CUBE_SIZE * 1.15, height: CUBE_SIZE * 1.15,
+        borderRadius: CUBE_SIZE, borderWidth: 2, borderColor: color,
+      }} />
+    </Animated.View>
   );
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
 export default function FamilyCubeSplashScreen() {
   const scheme = useColorScheme();
   const isDark = scheme !== 'light';
 
-  const circleScale = useSharedValue(0.75);
-  const circleOp   = useSharedValue(0);
-  const cubeScale  = useSharedValue(0.5);
-  const cubeOp     = useSharedValue(0);
-  const wordOp     = useSharedValue(0);
-  const wordTY     = useSharedValue(18);
-  const tagOp      = useSharedValue(0);
-  const dotsOp     = useSharedValue(0);
-  const wavePhase  = useSharedValue(0);
+  const cubeScale = useSharedValue(0.5);
+  const cubeOp = useSharedValue(0);
+  const wordOp = useSharedValue(0);
+  const wordTY = useSharedValue(16);
+  const tagOp = useSharedValue(0);
 
   useEffect(() => {
-    circleScale.value = withSpring(1,  { damping: 18, stiffness: 120 });
-    circleOp.value    = withTiming(1,  { duration: 480 });
-    cubeOp.value      = withDelay(120, withTiming(1,  { duration: 420 }));
-    cubeScale.value   = withDelay(120, withSpring(1,  { damping: 12, stiffness: 140 }));
-    wordOp.value      = withDelay(400, withTiming(1,  { duration: 380 }));
-    wordTY.value      = withDelay(400, withSpring(0,  { damping: 20, stiffness: 200 }));
-    tagOp.value       = withDelay(620, withTiming(1,  { duration: 340 }));
-    dotsOp.value      = withDelay(820, withTiming(1,  { duration: 280 }));
-    wavePhase.value   = withRepeat(withTiming(1, { duration: WAVE_MS, easing: Easing.linear }), -1, false);
+    cubeOp.value = withTiming(1, { duration: 420 });
+    cubeScale.value = withSpring(1, { damping: 12, stiffness: 140 });
+    wordOp.value = withDelay(280, withTiming(1, { duration: 380 }));
+    wordTY.value = withDelay(280, withSpring(0, { damping: 20, stiffness: 200 }));
+    tagOp.value = withDelay(520, withTiming(1, { duration: 340 }));
   }, []);
 
-  const circleAStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: circleScale.value }],
-    opacity: circleOp.value,
-  }));
-  const cubeAStyle  = useAnimatedStyle(() => ({
+  const cubeAStyle = useAnimatedStyle(() => ({
     transform: [{ scale: cubeScale.value }],
     opacity: cubeOp.value,
   }));
-  const wordAStyle  = useAnimatedStyle(() => ({
+  const wordAStyle = useAnimatedStyle(() => ({
     opacity: wordOp.value,
     transform: [{ translateY: wordTY.value }],
   }));
-  const tagAStyle   = useAnimatedStyle(() => ({ opacity: tagOp.value }));
-  const dotsAStyle  = useAnimatedStyle(() => ({ opacity: dotsOp.value }));
+  const tagAStyle = useAnimatedStyle(() => ({ opacity: tagOp.value }));
 
-  const bgColors   = isDark
-    ? (['#100A2E', '#0D1A52', '#07101E'] as const)
-    : (['#F0EEFF', '#EAF8F5', '#EEF2FF'] as const);
-  const glassColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.72)';
+  // Exact constants/colors.ts values (not an approximation) — card/surface/
+  // background for each theme, so the splash reads as genuinely the same
+  // canvas the rest of the app uses, not just a similar warm/dark tone.
+  const bgColors = isDark
+    ? (['#1B1E28', '#181B24', '#12141C'] as const) // dark: card -> surface -> background
+    : (['#FFFFFF', '#F8F3EA', '#FDFBF7'] as const); // light: card -> surface -> background
+  // Matches constants/colors.ts's textPrimary exactly for each theme
+  // (BRAND.navy === light-mode textPrimary already).
+  const textColor = isDark ? '#EDE8E0' : BRAND.navy;
 
   return (
-    <LinearGradient colors={bgColors} locations={[0, 0.5, 1]} start={{ x: 0.3, y: 0 }} end={{ x: 0.7, y: 1 }} style={s.root}>
+    <LinearGradient colors={bgColors} locations={[0, 0.55, 1]} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={s.root}>
 
-      {/* ── Big glossy circle — cube + wordmark live inside it ── */}
-      <Animated.View style={[s.circle, { backgroundColor: glassColor }, circleAStyle]}>
-
-        {/* Cube — centered in upper portion of circle */}
-        <Animated.View style={[s.cubeWrap, cubeAStyle]}>
+      {/* ── Cube with outward ripple splash — no spotlight circle behind it ── */}
+      <View style={s.cubeStage}>
+        <Ripple color={BRAND.teal} delay={0} />
+        <Ripple color={BRAND.amber} delay={550} />
+        <Ripple color={BRAND.purple} delay={1100} />
+        <Animated.View style={cubeAStyle}>
           <IconCubeMark size={CUBE_SIZE} />
         </Animated.View>
+      </View>
 
-        {/* Wordmark */}
-        <Animated.View style={wordAStyle}>
-          <SplashWordmark textColor={isDark ? '#FFFFFF' : NAVY} />
-        </Animated.View>
-
+      {/* ── Wordmark ── */}
+      <Animated.View style={[s.wordWrap, wordAStyle]}>
+        <SplashWordmark textColor={textColor} />
       </Animated.View>
 
-      {/* ── Tagline below circle ── */}
+      {/* ── Tagline ── */}
       <Animated.View style={[s.tagWrap, tagAStyle]}>
         <Tagline fontSize={11} opacity={0.85} dark={isDark} />
-      </Animated.View>
-
-      {/* ── Wave dots ── */}
-      <Animated.View style={[s.dotsRow, dotsAStyle]}>
-        {DOT_COLORS.map((color, i) => (
-          <WaveDot key={i} phase={wavePhase} index={i} total={DOT_COLORS.length}
-            color={color} size={DOT_SIZES[i]} />
-        ))}
       </Animated.View>
 
     </LinearGradient>
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   root: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  circle: {
-    width: CIRCLE_SZ,
-    height: CIRCLE_SZ,
-    borderRadius: CIRCLE_SZ / 2,
+  cubeStage: {
+    width: SCREEN_W,
+    height: CUBE_SIZE * 1.7,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
-    // subtle inner shadow / ring on light theme via shadow
-    shadowColor: '#9261C7',
-    shadowOpacity: 0.10,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 4 },
+    marginBottom: 8,
   },
-  cubeWrap: {
-    marginBottom: 18,
-    shadowColor: '#9261C7',
-    shadowOpacity: 0.40,
-    shadowRadius: 28,
-    shadowOffset: { width: 0, height: 8 },
+  wordWrap: {
+    marginBottom: 14,
   },
   tagWrap: {
-    marginBottom: 32,
-  },
-  dotsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    height: WAVE_AMP * 2 + 12,
+    marginTop: 4,
   },
 });

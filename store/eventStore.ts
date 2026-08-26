@@ -626,6 +626,15 @@ function toRowPartial(ev: FamilyEvent, keys: Iterable<keyof FamilyEvent>): Recor
 // ── Realtime ──────────────────────────────────────────────────────────────────
 let _rtChannel: ReturnType<typeof supabase.channel> | null = null;
 let _rtFamilyId = '';
+// Buffers rangeEvents-side realtime payloads so a burst (e.g. every row of a
+// bulk recurring-series edit) applies as one setState instead of one per row.
+let _rtRangeBuffer: any[] = [];
+let _rtRangeFlushTimer: ReturnType<typeof setTimeout> | null = null;
+// Same buffering for the dayEvents/stripMap side's "date not in view, just
+// invalidate its cache entry" path — a bulk edit spanning many dates none of
+// which match currentDate would otherwise still fire one setState per row.
+let _rtCacheInvalidateBuffer: string[] = [];
+let _rtCacheInvalidateFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function ensureRealtime(
   familyId: string,
@@ -687,10 +696,19 @@ function ensureRealtime(
 
         // ── Day events update (only if rowDate === currentDate) ────────────
         if (rowDate !== currentDate) {
-          // Invalidate prefetch cache for that date so next visit re-fetches
-          const newCache = { ..._dayCache };
-          delete newCache[rowDate];
-          setState({ _dayCache: newCache });
+          // Invalidate prefetch cache for that date so next visit re-fetches.
+          // Buffered same as the rangeEvents handler below — a bulk edit
+          // across many dates (recurring series, none matching currentDate)
+          // would otherwise fire one setState per row here too.
+          if (rowDate) _rtCacheInvalidateBuffer.push(rowDate);
+          if (_rtCacheInvalidateFlushTimer) clearTimeout(_rtCacheInvalidateFlushTimer);
+          _rtCacheInvalidateFlushTimer = setTimeout(() => {
+            const dates = _rtCacheInvalidateBuffer.splice(0, _rtCacheInvalidateBuffer.length);
+            _rtCacheInvalidateFlushTimer = null;
+            const newCache = { ...getState()._dayCache };
+            for (const d of dates) delete newCache[d];
+            setState({ _dayCache: newCache });
+          }, 150);
           return;
         }
 
@@ -729,39 +747,55 @@ function ensureRealtime(
         // actions) — without this, a helper/driver assignment made by
         // someone else never appears in Agenda until the 5-minute cache
         // TTL expires or the user leaves and re-enters the view.
-        const { rangeEvents } = getState();
-        const newRow = payload.new as any;
-        const oldRow = payload.old as any;
-        const isDeleted = !!newRow?.deleted_at;
-
-        let next: FamilyEvent[];
-        if (payload.eventType === 'INSERT' && !isDeleted) {
-          const ev = fromRow(newRow);
-          if (rangeEvents.find(e => e.id === ev.id)) return;
-          // Only append if it falls within the currently-loaded range —
-          // matching addEvent's own optimistic-append reasoning (a date
-          // outside the loaded window just won't show in these views
-          // anyway, and we don't know the exact loaded bounds here).
-          next = sortByTime([...rangeEvents, ev]);
-        } else if (payload.eventType === 'UPDATE') {
-          if (isDeleted) {
-            next = rangeEvents.filter(e => e.id !== newRow.id);
-          } else {
-            const ev = fromRow(newRow);
-            // Only patch if this event is already part of the loaded range —
-            // an UPDATE to a row outside the window shouldn't pull it in.
-            if (!rangeEvents.find(e => e.id === ev.id)) return;
-            next = sortByTime(rangeEvents.map(e => e.id === ev.id ? ev : e));
+        //
+        // Was: applied each incoming row via its own setState call,
+        // immediately — a bulk edit across a recurring series (up to 84
+        // rows, RECURRENCE_WINDOW_DAYS) fires one realtime event PER ROW
+        // even when the write itself was a single batched SQL statement,
+        // so this handler alone could fire 84 synchronous setStates in a
+        // burst, each triggering a re-render of every Week/Agenda-
+        // subscribed component — enough to trip React's "Maximum update
+        // depth exceeded" guard (live-reported). Buffers incoming payloads
+        // and applies them all in one setState after a short quiet window
+        // instead of one setState per row.
+        _rtRangeBuffer.push(payload);
+        if (_rtRangeFlushTimer) clearTimeout(_rtRangeFlushTimer);
+        _rtRangeFlushTimer = setTimeout(() => {
+          const payloads = _rtRangeBuffer.splice(0, _rtRangeBuffer.length);
+          _rtRangeFlushTimer = null;
+          let next = getState().rangeEvents;
+          for (const p of payloads) {
+            const newRow = p.new as any;
+            const oldRow = p.old as any;
+            const isDeleted = !!newRow?.deleted_at;
+            if (p.eventType === 'INSERT' && !isDeleted) {
+              const ev = fromRow(newRow);
+              if (next.find(e => e.id === ev.id)) continue;
+              // Only append if it falls within the currently-loaded range —
+              // matching addEvent's own optimistic-append reasoning (a date
+              // outside the loaded window just won't show in these views
+              // anyway, and we don't know the exact loaded bounds here).
+              next = [...next, ev];
+            } else if (p.eventType === 'UPDATE') {
+              if (isDeleted) {
+                next = next.filter(e => e.id !== newRow.id);
+              } else {
+                const ev = fromRow(newRow);
+                // Only patch if this event is already part of the loaded
+                // range — an UPDATE to a row outside the window shouldn't
+                // pull it in.
+                if (!next.find(e => e.id === ev.id)) continue;
+                next = next.map(e => e.id === ev.id ? ev : e);
+              }
+            } else if (p.eventType === 'DELETE') {
+              next = next.filter(e => e.id !== oldRow.id);
+            }
           }
-        } else if (payload.eventType === 'DELETE') {
-          next = rangeEvents.filter(e => e.id !== oldRow.id);
-        } else return;
-
-        setState({ rangeEvents: next });
-        // Invalidate the range cache too so a fresh loadRange() call
-        // (e.g. switching view modes) doesn't clobber this with a stale
-        // cached copy before the TTL naturally expires.
-        setState({ _rangeCache: {} });
+          // Invalidate the range cache too so a fresh loadRange() call
+          // (e.g. switching view modes) doesn't clobber this with a stale
+          // cached copy before the TTL naturally expires.
+          setState({ rangeEvents: sortByTime(next), _rangeCache: {} });
+        }, 150);
       }
     )
     .subscribe((status) => {

@@ -1,4 +1,4 @@
-// PawBond — Push Notification Setup
+// Family Cube — Push Notification Setup
 // Gracefully degrades when native modules aren't available (Expo Go).
 
 import { Platform, AppState } from 'react-native';

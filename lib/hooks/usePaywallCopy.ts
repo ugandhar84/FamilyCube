@@ -16,7 +16,7 @@ export const DEFAULT_PAYWALL_COPY: PaywallCopy = {
   anchor_text:         'Skip the $150 emergency clinic waiting room. Get expert triage in seconds — any time, any night.',
   annual_save_label:   '🔥 Annual · save 44%',
   pro_feature_note:    'Multi-pet · family sharing',
-  ultimate_feature_note: '+ PetDoc AI · Symptom scan',
+  ultimate_feature_note: '+ Unlimited Ask Cube AI',
   trial_cta_text:      'Start 7-Day Free Trial',
   micro_copy:          'No payment until trial ends · cancel anytime in Settings',
 };

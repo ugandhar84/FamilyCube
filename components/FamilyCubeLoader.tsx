@@ -1,13 +1,13 @@
 /**
- * PawBondLoader — animated Family Cube logo + loading bars.
+ * FamilyCubeLoader — animated Family Cube logo + loading bars.
  * Drop-in loading indicator used throughout the app. Name kept for the ~50
  * existing call sites (import path unchanged); the mark itself is the real
  * FamilyCubeLogo cube, not the old PawBond paw icon.
  *
  * Usage:
- *   <PawBondLoader />                   // default 48px, with bars
- *   <PawBondLoader size={72} />
- *   <PawBondLoader size={32} bars={false} />  // logo only
+ *   <FamilyCubeLoader />                   // default 48px, with bars
+ *   <FamilyCubeLoader size={72} />
+ *   <FamilyCubeLoader size={32} bars={false} />  // logo only
  */
 import React, { useEffect } from 'react';
 import { View } from 'react-native';
@@ -84,7 +84,7 @@ function PulsingCube({ size }: { size: number }) {
   );
 }
 
-export default function PawBondLoader({ size = 48, bars = true, isDark = false }: Props) {
+export default function FamilyCubeLoader({ size = 48, bars = true, isDark = false }: Props) {
   return (
     <View style={{ alignItems: 'center', alignSelf: 'center', gap: 10 }}>
       <PulsingCube size={size} />

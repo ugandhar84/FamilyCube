@@ -204,7 +204,7 @@ function BottomSheet({ visible, title, onClose, colors, isDark, children }: {
             </Pressable>
           </View>
 
-          {/* Content — only mounted when visible (Petkoinia pattern) */}
+          {/* Content — only mounted when visible */}
           {visible && (
             <ScrollView
               style={{ flexGrow: 0 }}

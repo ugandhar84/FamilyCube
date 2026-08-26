@@ -60,7 +60,7 @@ export default function FeedbackSheet({ visible, onClose }: Props) {
   }, [visible]);
 
   const appVersion = Constants.expoConfig?.version ?? (Constants.manifest as any)?.version ?? '—';
-  const appName    = Constants.expoConfig?.name    ?? (Constants.manifest as any)?.name    ?? 'PawBond';
+  const appName    = Constants.expoConfig?.name    ?? (Constants.manifest as any)?.name    ?? 'Family Cube';
   const osName     = Platform.OS === 'ios' ? 'iOS' : 'Android';
   const osVersion  = Platform.Version?.toString() ?? '—';
   const deviceName = Device.modelName ?? Device.deviceName ?? '—';

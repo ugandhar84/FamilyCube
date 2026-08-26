@@ -1,4 +1,4 @@
-# Feature Specifications — PawBond
+# Feature Specifications — Family Cube
 
 Complete specification for all ~30 features. One-page summary per feature organized by domain.
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Petkoinia implements a three-layer notification system combining **preference gates** (user opt-in), **role-based access** (who can act), and **timezone-aware delivery** (local morning windows for non-urgent reminders).
+Family Cube implements a three-layer notification system combining **preference gates** (user opt-in), **role-based access** (who can act), and **timezone-aware delivery** (local morning windows for non-urgent reminders).
 
 All times in the database are stored as UTC. Client-side conversions happen at display time using the user's stored IANA timezone.
 

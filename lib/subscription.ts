@@ -69,7 +69,7 @@ export const LIMITS: Record<SubscriptionTier, {
     videoPostsPerMonth:     0,
     playdatesPerMonth:      2,
     historyDays:            14,   // PRD: fixed 14-day history view
-    vetChatPerDay:          0,    // PetDoc AI locked — Ultimate only
+    vetChatPerDay:          0,    // Ask Cube AI locked — Ultimate only
     symptomScansPerDay:     0,    // Symptom scanner locked — Ultimate only
     familyManagement:       0,
   },
@@ -82,7 +82,7 @@ export const LIMITS: Record<SubscriptionTier, {
     videoPostsPerMonth:     -1,
     playdatesPerMonth:      -1,
     historyDays:            -1,
-    vetChatPerDay:          0,    // PetDoc AI locked — Ultimate only per PRD
+    vetChatPerDay:          0,    // Ask Cube AI locked — Ultimate only per PRD
     symptomScansPerDay:     0,    // Symptom scanner locked — Ultimate only per PRD
     familyManagement:       1,
   },
@@ -95,7 +95,7 @@ export const LIMITS: Record<SubscriptionTier, {
     videoPostsPerMonth:     -1,
     playdatesPerMonth:      -1,
     historyDays:            -1,
-    vetChatPerDay:          50,   // Unlimited 24/7 PetDoc AI
+    vetChatPerDay:          50,   // Unlimited 24/7 Ask Cube AI
     symptomScansPerDay:     3,    // 3 photo scans/day
     familyManagement:       1,
   },
@@ -170,10 +170,10 @@ const DEV_MOCK_OFFERING: PurchasesOffering = {
   serverDescription: 'Dev mock offering',
   metadata: {},
   availablePackages: [
-    { identifier: '$rc_monthly', packageType: 'MONTHLY' as any, presentedOfferingContext: null as any, webCheckoutUrl: null, product: { identifier: 'pb_pro_monthly', productIdentifier: 'pb_pro_monthly', localizedTitle: 'PawBond Pro Monthly', localizedDescription: '', price: 5.99, priceString: '$5.99', currencyCode: 'USD', introPrice: { price: 0, priceString: 'Free', period: 'P1W', periodUnit: 'WEEK' as any, periodNumberOfUnits: 1, cycles: 1, paymentMode: 'FREE_TRIAL' as any }, subscriptionPeriod: 'P1M', discounts: [] } as any, offeringIdentifier: '$rc_default' },
-    { identifier: '$rc_annual',  packageType: 'ANNUAL'  as any, presentedOfferingContext: null as any, webCheckoutUrl: null, product: { identifier: 'pb_pro_annual', productIdentifier: 'pb_pro_annual', localizedTitle: 'PawBond Pro Annual', localizedDescription: '', price: 39.99, priceString: '$39.99', currencyCode: 'USD', introPrice: { price: 0, priceString: 'Free', period: 'P1W', periodUnit: 'WEEK' as any, periodNumberOfUnits: 1, cycles: 1, paymentMode: 'FREE_TRIAL' as any }, subscriptionPeriod: 'P1Y', discounts: [] } as any, offeringIdentifier: '$rc_default' },
-    { identifier: 'pb_ultimate_monthly', packageType: 'CUSTOM' as any, presentedOfferingContext: null as any, webCheckoutUrl: null, product: { identifier: 'pb_ultimate_monthly', productIdentifier: 'pb_ultimate_monthly', localizedTitle: 'PawBond Ultimate Monthly', localizedDescription: '', price: 9.99, priceString: '$9.99', currencyCode: 'USD', introPrice: { price: 0, priceString: 'Free', period: 'P1W', periodUnit: 'WEEK' as any, periodNumberOfUnits: 1, cycles: 1, paymentMode: 'FREE_TRIAL' as any }, subscriptionPeriod: 'P1M', discounts: [] } as any, offeringIdentifier: '$rc_default' },
-    { identifier: 'pb_ultimate_annual',  packageType: 'CUSTOM' as any, presentedOfferingContext: null as any, webCheckoutUrl: null, product: { identifier: 'pb_ultimate_annual', productIdentifier: 'pb_ultimate_annual', localizedTitle: 'PawBond Ultimate Annual', localizedDescription: '', price: 69.99, priceString: '$69.99', currencyCode: 'USD', introPrice: { price: 0, priceString: 'Free', period: 'P1W', periodUnit: 'WEEK' as any, periodNumberOfUnits: 1, cycles: 1, paymentMode: 'FREE_TRIAL' as any }, subscriptionPeriod: 'P1Y', discounts: [] } as any, offeringIdentifier: '$rc_default' },
+    { identifier: '$rc_monthly', packageType: 'MONTHLY' as any, presentedOfferingContext: null as any, webCheckoutUrl: null, product: { identifier: 'pb_pro_monthly', productIdentifier: 'pb_pro_monthly', localizedTitle: 'Family Cube Pro Monthly', localizedDescription: '', price: 5.99, priceString: '$5.99', currencyCode: 'USD', introPrice: { price: 0, priceString: 'Free', period: 'P1W', periodUnit: 'WEEK' as any, periodNumberOfUnits: 1, cycles: 1, paymentMode: 'FREE_TRIAL' as any }, subscriptionPeriod: 'P1M', discounts: [] } as any, offeringIdentifier: '$rc_default' },
+    { identifier: '$rc_annual',  packageType: 'ANNUAL'  as any, presentedOfferingContext: null as any, webCheckoutUrl: null, product: { identifier: 'pb_pro_annual', productIdentifier: 'pb_pro_annual', localizedTitle: 'Family Cube Pro Annual', localizedDescription: '', price: 39.99, priceString: '$39.99', currencyCode: 'USD', introPrice: { price: 0, priceString: 'Free', period: 'P1W', periodUnit: 'WEEK' as any, periodNumberOfUnits: 1, cycles: 1, paymentMode: 'FREE_TRIAL' as any }, subscriptionPeriod: 'P1Y', discounts: [] } as any, offeringIdentifier: '$rc_default' },
+    { identifier: 'pb_ultimate_monthly', packageType: 'CUSTOM' as any, presentedOfferingContext: null as any, webCheckoutUrl: null, product: { identifier: 'pb_ultimate_monthly', productIdentifier: 'pb_ultimate_monthly', localizedTitle: 'Family Cube Ultimate Monthly', localizedDescription: '', price: 9.99, priceString: '$9.99', currencyCode: 'USD', introPrice: { price: 0, priceString: 'Free', period: 'P1W', periodUnit: 'WEEK' as any, periodNumberOfUnits: 1, cycles: 1, paymentMode: 'FREE_TRIAL' as any }, subscriptionPeriod: 'P1M', discounts: [] } as any, offeringIdentifier: '$rc_default' },
+    { identifier: 'pb_ultimate_annual',  packageType: 'CUSTOM' as any, presentedOfferingContext: null as any, webCheckoutUrl: null, product: { identifier: 'pb_ultimate_annual', productIdentifier: 'pb_ultimate_annual', localizedTitle: 'Family Cube Ultimate Annual', localizedDescription: '', price: 69.99, priceString: '$69.99', currencyCode: 'USD', introPrice: { price: 0, priceString: 'Free', period: 'P1W', periodUnit: 'WEEK' as any, periodNumberOfUnits: 1, cycles: 1, paymentMode: 'FREE_TRIAL' as any }, subscriptionPeriod: 'P1Y', discounts: [] } as any, offeringIdentifier: '$rc_default' },
   ],
   lifetime: null,
   annual: null,

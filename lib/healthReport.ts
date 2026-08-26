@@ -929,7 +929,7 @@ function buildHTML(pet: Pet, ownerName: string | null, sections: ReportSection[]
     <div class="cover-inner">
       <div class="cover-emoji">${pet.avatar_url ? `<img src="${pet.avatar_url}" alt="${pet.name}"/>` : (pet.emoji ?? '🐾')}</div>
       <div class="cover-text">
-        <div class="cover-label">PawBond &nbsp;·&nbsp; Veterinary Health Report</div>
+        <div class="cover-label">Family Cube &nbsp;·&nbsp; Health Report</div>
         <div class="cover-petname">${pet.name}</div>
         <div class="cover-species">${[species, breed, gender].filter(Boolean).join(' · ')}</div>
         <div class="cover-chips">

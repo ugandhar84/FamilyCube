@@ -19,8 +19,9 @@ const ThemeContext = createContext<ThemeContextValue>({
   colors: lightColors,
 });
 
-const THEME_STORAGE_KEY        = '@pawbond_theme_mode';
-const THEME_STORAGE_KEY_LEGACY = '@furever_theme_mode';
+const THEME_STORAGE_KEY          = '@familycube_theme_mode';
+const THEME_STORAGE_KEY_LEGACY   = '@pawbond_theme_mode';
+const THEME_STORAGE_KEY_LEGACY_2 = '@furever_theme_mode';
 
 // Synchronous initial dark check — never null, works before hooks resolve.
 // useColorScheme() can return null on first render in some RN/Expo builds;
@@ -41,12 +42,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       let stored = await AsyncStorage.getItem(THEME_STORAGE_KEY);
       if (!stored) {
-        // One-time migration from the old key used before the app was renamed
-        const legacy = await AsyncStorage.getItem(THEME_STORAGE_KEY_LEGACY);
+        // One-time migration from the old keys used before the app was renamed
+        const legacy =
+          (await AsyncStorage.getItem(THEME_STORAGE_KEY_LEGACY)) ??
+          (await AsyncStorage.getItem(THEME_STORAGE_KEY_LEGACY_2));
         if (legacy) {
           stored = legacy;
           await AsyncStorage.setItem(THEME_STORAGE_KEY, legacy);
           await AsyncStorage.removeItem(THEME_STORAGE_KEY_LEGACY);
+          await AsyncStorage.removeItem(THEME_STORAGE_KEY_LEGACY_2);
         }
       }
       if (stored === 'light' || stored === 'dark' || stored === 'system') {

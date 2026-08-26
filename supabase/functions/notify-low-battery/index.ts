@@ -1,4 +1,4 @@
-// PawBond — Edge Function: notify-low-battery
+// Family Cube — Edge Function: notify-low-battery
 // Called (client-side, from GpsTab.tsx / the location task) when a family
 // member's device battery drops below 15%. Notifies every other member of
 // the same family so they know to check in / bring a charger.

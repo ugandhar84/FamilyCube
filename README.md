@@ -1,4 +1,4 @@
-# PawBond (Petkoinia)
+# Family Cube
 
 A comprehensive React Native pet care platform for iOS and Android, built with Expo, Supabase, and RevenueCat. Manage pet health, memories, playdates, social connections, and AI-powered insights in one unified app.
 
@@ -25,7 +25,7 @@ A comprehensive React Native pet care platform for iOS and Android, built with E
 ```bash
 # Clone repository
 git clone <repo-url>
-cd Petkoinia
+cd FamilyCubeApp
 
 # Install dependencies
 npm install
@@ -108,14 +108,14 @@ Edit `app.config.js` for:
 Critical settings:
 - `usesAppleSignIn: true` — required for App Store submission
 - `icon`, `splash` — must match app branding
-- `scheme: "pawbond"` — deep linking prefix
+- `scheme: "familycube"` — deep linking prefix
 
 ---
 
 ## 📁 Project Structure
 
 ```
-Petkoinia/
+FamilyCubeApp/
 ├── app/                              ← Expo Router (thin shells only)
 │   ├── (auth)/                       ← Auth routes (login, signup, lock)
 │   ├── (tabs)/                       ← Bottom tab navigation
@@ -490,7 +490,7 @@ Required (declared in `app.config.js`):
 
 ## 💳 Subscriptions & Feature Limits
 
-PawBond uses a **freemium model** with three tiers: **Free**, **Pro**, and **Ultimate**. All tiers include core pet management; premium tiers unlock advanced AI, analytics, and social features.
+Family Cube uses a **freemium model** with three tiers: **Free**, **Pro**, and **Ultimate**. All tiers include core family management; premium tiers unlock advanced AI, analytics, and social features.
 
 ### Subscription Tiers
 

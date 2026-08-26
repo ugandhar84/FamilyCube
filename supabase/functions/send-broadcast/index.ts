@@ -41,7 +41,7 @@ serve(async (req) => {
     // Check if user is a platform admin (app_admins allowlist, seeded
     // manually — see supabase/migrations/20260925090000_create_admin_console.sql).
     // Not profiles.is_admin — that column belongs to the unrelated, removed
-    // PawBond template admin section.
+    // Legacy template admin section.
     const { data: adminRow } = await supabase
       .from('app_admins')
       .select('auth_user_id')

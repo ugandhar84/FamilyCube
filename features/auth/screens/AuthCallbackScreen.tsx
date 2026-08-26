@@ -3,7 +3,7 @@ import { View, Text } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/ThemeContext';
-import PawBondLoader from '@/components/PawBondLoader';
+import FamilyCubeLoader from '@/components/FamilyCubeLoader';
 import { TYPO } from '@/constants/theme';
 
 // Handles the familycube://auth/callback deep link redirect from:
@@ -70,7 +70,7 @@ export default function AuthCallbackScreen() {
 
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
-      <PawBondLoader size={56} />
+      <FamilyCubeLoader size={56} />
       <Text style={{ marginTop: 14, fontSize: TYPO.body, color: colors.textSecondary }}>Signing you in…</Text>
     </View>
   );

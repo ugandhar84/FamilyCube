@@ -39,7 +39,7 @@ export async function saveMediaToDevice(
   const UTI = mediaType === 'video' ? 'public.movie' : 'public.image';
 
   // ── 2. Download to local cache ────────────────────────────────────────────
-  const localPath = `${FileSystem.cacheDirectory}pawbond_${Date.now()}.${ext}`;
+  const localPath = `${FileSystem.cacheDirectory}familycube_${Date.now()}.${ext}`;
   const { uri: localUri, status: httpStatus } = await FileSystem.downloadAsync(remoteUrl, localPath);
   if (httpStatus !== 200) throw new Error(`Download failed (HTTP ${httpStatus})`);
 
@@ -69,8 +69,8 @@ export async function saveMediaToDevice(
         showAlert(
           'Gallery access needed',
           Platform.OS === 'ios'
-            ? 'Go to Settings → PawBond → Photos and allow access to save directly to your gallery.'
-            : 'Go to Settings → Apps → PawBond → Permissions → Photos and allow access.',
+            ? 'Go to Settings → Family Cube → Photos and allow access to save directly to your gallery.'
+            : 'Go to Settings → Apps → Family Cube → Permissions → Photos and allow access.',
           [{ text: 'OK', onPress: () => resolve() }],
         )
       );

@@ -2,11 +2,14 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 
-const BIOMETRIC_ENABLED_KEY          = '@pawbond_biometric_enabled';
-const BIOMETRIC_ENABLED_KEY_LEGACY   = '@furever_biometric_enabled';
-const BIOMETRIC_CREDENTIALS_KEY      = 'pawbond_biometric_creds';
-const BIOMETRIC_CREDENTIALS_KEY_LEGACY = 'furever_biometric_creds';
-const BIOMETRIC_SESSION_KEY = 'pawbond_biometric_session';
+const BIOMETRIC_ENABLED_KEY            = '@familycube_biometric_enabled';
+const BIOMETRIC_ENABLED_KEY_LEGACY     = '@pawbond_biometric_enabled';
+const BIOMETRIC_ENABLED_KEY_LEGACY_2   = '@furever_biometric_enabled';
+const BIOMETRIC_CREDENTIALS_KEY        = 'familycube_biometric_creds';
+const BIOMETRIC_CREDENTIALS_KEY_LEGACY = 'pawbond_biometric_creds';
+const BIOMETRIC_CREDENTIALS_KEY_LEGACY_2 = 'furever_biometric_creds';
+const BIOMETRIC_SESSION_KEY            = 'familycube_biometric_session';
+const BIOMETRIC_SESSION_KEY_LEGACY     = 'pawbond_biometric_session';
 // Set whenever authStore.signOut() preserves the Supabase session for
 // biometric restore instead of actually revoking it — Supabase's own client
 // storage still holds a technically-valid session in this case (skipping
@@ -101,11 +104,14 @@ export async function getBiometricLabel(): Promise<string> {
 export async function isBiometricEnabled(): Promise<boolean> {
   let val = await AsyncStorage.getItem(BIOMETRIC_ENABLED_KEY);
   if (val === null) {
-    const legacy = await AsyncStorage.getItem(BIOMETRIC_ENABLED_KEY_LEGACY);
+    const legacy =
+      (await AsyncStorage.getItem(BIOMETRIC_ENABLED_KEY_LEGACY)) ??
+      (await AsyncStorage.getItem(BIOMETRIC_ENABLED_KEY_LEGACY_2));
     if (legacy !== null) {
       val = legacy;
       await AsyncStorage.setItem(BIOMETRIC_ENABLED_KEY, legacy);
       await AsyncStorage.removeItem(BIOMETRIC_ENABLED_KEY_LEGACY);
+      await AsyncStorage.removeItem(BIOMETRIC_ENABLED_KEY_LEGACY_2);
     }
   }
   return val === 'true';
@@ -125,11 +131,14 @@ export async function getBiometricCredentials(): Promise<{ email: string; passwo
   try {
     let raw = await SecureStore.getItemAsync(BIOMETRIC_CREDENTIALS_KEY);
     if (!raw) {
-      const legacy = await SecureStore.getItemAsync(BIOMETRIC_CREDENTIALS_KEY_LEGACY);
+      const legacy =
+        (await SecureStore.getItemAsync(BIOMETRIC_CREDENTIALS_KEY_LEGACY)) ??
+        (await SecureStore.getItemAsync(BIOMETRIC_CREDENTIALS_KEY_LEGACY_2));
       if (legacy) {
         raw = legacy;
         await SecureStore.setItemAsync(BIOMETRIC_CREDENTIALS_KEY, legacy);
         await SecureStore.deleteItemAsync(BIOMETRIC_CREDENTIALS_KEY_LEGACY);
+        await SecureStore.deleteItemAsync(BIOMETRIC_CREDENTIALS_KEY_LEGACY_2);
       }
     }
     if (!raw) return null;
@@ -142,6 +151,7 @@ export async function getBiometricCredentials(): Promise<{ email: string; passwo
 export async function clearBiometricCredentials(): Promise<void> {
   await SecureStore.deleteItemAsync(BIOMETRIC_CREDENTIALS_KEY);
   await SecureStore.deleteItemAsync(BIOMETRIC_CREDENTIALS_KEY_LEGACY);
+  await SecureStore.deleteItemAsync(BIOMETRIC_CREDENTIALS_KEY_LEGACY_2);
 }
 
 // ── Session-token storage (Face ID login, incl. after sign-out) ───
@@ -170,7 +180,15 @@ export async function saveBiometricSession(accessToken: string, refreshToken: st
 
 export async function getBiometricSession(): Promise<{ access_token: string; refresh_token: string } | null> {
   try {
-    const raw = await SecureStore.getItemAsync(BIOMETRIC_SESSION_KEY);
+    let raw = await SecureStore.getItemAsync(BIOMETRIC_SESSION_KEY);
+    if (!raw) {
+      const legacy = await SecureStore.getItemAsync(BIOMETRIC_SESSION_KEY_LEGACY);
+      if (legacy) {
+        raw = legacy;
+        await SecureStore.setItemAsync(BIOMETRIC_SESSION_KEY, legacy);
+        await SecureStore.deleteItemAsync(BIOMETRIC_SESSION_KEY_LEGACY);
+      }
+    }
     if (!raw) {
       console.warn('[Bio] getBiometricSession: no value stored for key', BIOMETRIC_SESSION_KEY);
       return null;
@@ -193,6 +211,7 @@ export async function hasBiometricSession(): Promise<boolean> {
 
 export async function clearBiometricSession(): Promise<void> {
   await SecureStore.deleteItemAsync(BIOMETRIC_SESSION_KEY);
+  await SecureStore.deleteItemAsync(BIOMETRIC_SESSION_KEY_LEGACY);
 }
 
 // ── Authenticate ──────────────────────────────────────────────────
@@ -208,7 +227,7 @@ export async function authenticateWithBiometricsDetailed(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: reason ?? 'Sign in to PawBond',
+      promptMessage: reason ?? 'Sign in to Family Cube',
       fallbackLabel: 'Use password',
       disableDeviceFallback: false,
       cancelLabel: 'Cancel',

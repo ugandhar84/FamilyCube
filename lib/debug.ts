@@ -1,4 +1,4 @@
-// ── PawBond Debug Logger ─────────────────────────────────────────────────────
+// ── Family Cube Debug Logger ─────────────────────────────────────────────────────
 // Console logs are grouped by tag for easy filtering in Metro / Xcode console.
 // All output is suppressed in production builds automatically.
 //
@@ -14,9 +14,9 @@ const IS_DEV = process.env.NODE_ENV !== 'production';
 export const dbg = (tag: string, message: string, ...data: unknown[]): void => {
   if (!IS_DEV) return;
   if (data.length > 0) {
-    console.log(`[PawBond:${tag}] ${message}`, ...data);
+    console.log(`[FamilyCube:${tag}] ${message}`, ...data);
   } else {
-    console.log(`[PawBond:${tag}] ${message}`);
+    console.log(`[FamilyCube:${tag}] ${message}`);
   }
 };
 
@@ -24,18 +24,18 @@ export const dbg = (tag: string, message: string, ...data: unknown[]): void => {
 export const dbgWarn = (tag: string, message: string, ...data: unknown[]): void => {
   if (!IS_DEV) return;
   if (data.length > 0) {
-    console.warn(`[PawBond:${tag}] ⚠️  ${message}`, ...data);
+    console.warn(`[FamilyCube:${tag}] ⚠️  ${message}`, ...data);
   } else {
-    console.warn(`[PawBond:${tag}] ⚠️  ${message}`);
+    console.warn(`[FamilyCube:${tag}] ⚠️  ${message}`);
   }
 };
 
 /** Error — always logged (prod + dev) */
 export const dbgError = (tag: string, message: string, ...data: unknown[]): void => {
   if (data.length > 0) {
-    console.error(`[PawBond:${tag}] ❌ ${message}`, ...data);
+    console.error(`[FamilyCube:${tag}] ❌ ${message}`, ...data);
   } else {
-    console.error(`[PawBond:${tag}] ❌ ${message}`);
+    console.error(`[FamilyCube:${tag}] ❌ ${message}`);
   }
 };
 
@@ -46,7 +46,7 @@ export const dbgSupabase = (
 ): void => {
   if (!error) return;
   console.error(
-    `[PawBond:Supabase] ❌ ${operation} failed`,
+    `[FamilyCube:Supabase] ❌ ${operation} failed`,
     { message: error.message, code: error.code, details: error.details }
   );
 };

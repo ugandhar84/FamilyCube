@@ -1,4 +1,4 @@
-# Subscription × Role Matrix — Petkoinia
+# Subscription × Role Matrix — Family Cube
 
 > **Last updated:** 2026-07-08  
 > Covers every combination of user tier × pet-owner tier × family role and what is allowed.

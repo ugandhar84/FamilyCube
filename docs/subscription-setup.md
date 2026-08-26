@@ -1,4 +1,4 @@
-# Petkoinia — In-App Purchase & Subscription Setup
+# Family Cube — In-App Purchase & Subscription Setup
 
 ## What's already done
 - [x] DB migration run (subscriptions + subscription_usage tables, RPCs, RLS)

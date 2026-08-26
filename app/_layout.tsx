@@ -352,7 +352,7 @@ function RootNavigator() {
         // on it or risk stomping a correct navigation with an outdated read.
         if (mySeq !== profileCheckSeq.current) return;
 
-        console.log('[PawBond:ProfileCheck]', {
+        console.log('[FamilyCube:ProfileCheck]', {
           userId: session.user.id,
           profileExists: !!profile,
           profileError: profileError?.message,
@@ -399,18 +399,18 @@ function RootNavigator() {
         }
 
         if (currentPathname.current.startsWith('/call-alert')) {
-          console.log('[PawBond:ProfileCheck] On call-alert screen, skipping post-auth redirect');
+          console.log('[FamilyCube:ProfileCheck] On call-alert screen, skipping post-auth redirect');
         } else if (!profile) {
-          console.log('[PawBond:ProfileCheck] No profile found, going to onboarding');
+          console.log('[FamilyCube:ProfileCheck] No profile found, going to onboarding');
           router.replace('/onboarding');
         } else if (!profile.terms_accepted) {
-          console.log('[PawBond:ProfileCheck] Terms not accepted, going to onboarding');
+          console.log('[FamilyCube:ProfileCheck] Terms not accepted, going to onboarding');
           router.replace('/onboarding');
         } else if (!profile.onboarding_completed) {
-          console.log('[PawBond:ProfileCheck] Onboarding not completed, going to onboarding');
+          console.log('[FamilyCube:ProfileCheck] Onboarding not completed, going to onboarding');
           router.replace('/onboarding');
         } else {
-          console.log('[PawBond:ProfileCheck] All done, going to home');
+          console.log('[FamilyCube:ProfileCheck] All done, going to home');
           router.replace('/(tabs)');
         }
       } else if (event === 'SIGNED_OUT') {
@@ -437,47 +437,47 @@ function RootNavigator() {
     });
 
     const handleDeepLink = ({ url }: { url: string }) => {
-      console.log('[PawBond:DeepLink] Received:', url);
+      console.log('[FamilyCube:DeepLink] Received:', url);
       // Widget tap — open home tab (only after boot completes)
       if (url === 'familycube:///' || url === 'familycube://' || url === 'familycube://home') {
         if (bootCompleted.current) {
           const { session: activeSession } = useAuthStore.getState();
           if (activeSession) {
-            console.log('[PawBond:DeepLink] Navigating to home');
+            console.log('[FamilyCube:DeepLink] Navigating to home');
             router.replace('/(tabs)');
           }
         } else {
           // Let boot handle routing — it always navigates to /(tabs) for logged-in users.
           // Store intent so boot can ensure home tab lands even if other conditions interfere.
-          console.log('[PawBond:DeepLink] Boot not ready — deferring widget tap to boot sequence');
+          console.log('[FamilyCube:DeepLink] Boot not ready — deferring widget tap to boot sequence');
           pendingWidgetTap.current = true;
         }
         return;
       }
       if (!url.startsWith('familycube://auth/callback') && !url.startsWith('pawbond://auth/callback') && !url.includes('/--/auth/callback') && !url.includes('auth/callback')) {
-        console.log('[PawBond:DeepLink] Not an auth callback, ignoring');
+        console.log('[FamilyCube:DeepLink] Not an auth callback, ignoring');
         return;
       }
-      console.log('[PawBond:DeepLink] Processing auth callback...');
+      console.log('[FamilyCube:DeepLink] Processing auth callback...');
       const fragment = url.split('#')[1] ?? url.split('?')[1] ?? '';
       const p = new URLSearchParams(fragment);
       const accessToken = p.get('access_token');
       const refreshToken = p.get('refresh_token') ?? '';
-      console.log('[PawBond:DeepLink] Tokens found:', { hasAccessToken: !!accessToken, hasRefreshToken: !!refreshToken });
+      console.log('[FamilyCube:DeepLink] Tokens found:', { hasAccessToken: !!accessToken, hasRefreshToken: !!refreshToken });
       if (accessToken) {
-        console.log('[PawBond:DeepLink] Setting session from callback...');
+        console.log('[FamilyCube:DeepLink] Setting session from callback...');
         supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
           .then(({ error }) => {
             if (error) {
               dbgError(TAG, 'deep-link setSession failed', error.message);
-              console.error('[PawBond:DeepLink] setSession error:', error.message);
+              console.error('[FamilyCube:DeepLink] setSession error:', error.message);
             } else {
-              console.log('[PawBond:DeepLink] Session set successfully');
+              console.log('[FamilyCube:DeepLink] Session set successfully');
             }
           })
           .catch((e) => {
             dbgError(TAG, 'deep-link setSession threw', e?.message);
-            console.error('[PawBond:DeepLink] setSession exception:', e?.message);
+            console.error('[FamilyCube:DeepLink] setSession exception:', e?.message);
           });
       }
     };
@@ -487,13 +487,13 @@ function RootNavigator() {
     const notifListener = addNotificationResponseListener((response) => {
       const data = response?.notification?.request?.content?.data as any;
       dbg(TAG, 'Notification tapped', data);
-      console.log('[PawBond:Notification] Type:', data?.type);
+      console.log('[FamilyCube:Notification] Type:', data?.type);
 
       // If no active session, the user is signed out. Don't deep-link into the
       // app — just navigate to login so they can authenticate first.
       const { session: activeSession } = useAuthStore.getState();
       if (!activeSession) {
-        console.log('[PawBond:Notification] No session — redirecting to login');
+        console.log('[FamilyCube:Notification] No session — redirecting to login');
         router.replace('/(auth)/login');
         return;
       }
@@ -503,10 +503,10 @@ function RootNavigator() {
       } else if (data?.type === 'shopping_trip_started' || data?.type === 'store_proximity') {
         // Family Cube grocery notifications (notify-shopping-trip-started
         // edge function / storeGeofencing.ts's local proximity reminder) —
-        // fell through to the PawBond-only fallback below with no case of
-        // its own, landing on /(tabs)/notifications (a different app's
-        // screen) instead of the actual grocery list (live-reported: "it
-        // is going to somewhere"). Grocery has its own dedicated route.
+        // used to fall through to the generic default case below with no
+        // case of its own, landing on /(tabs)/notifications instead of the
+        // actual grocery list (live-reported: "it is going to somewhere").
+        // Grocery has its own dedicated route.
         router.push('/(tabs)/grocery' as any);
       } else if (data?.type === 'schedule_conflict') {
         // schedule-conflict-sweep's server-side double-booking push —

@@ -1,4 +1,4 @@
-# PawBond — Agent & Developer Notes
+# Family Cube — Agent & Developer Notes
 
 ## Stack
 - Expo SDK 56 / React Native / TypeScript
@@ -36,7 +36,7 @@
 
 ```bash
 supabase secrets set RESEND_API_KEY=re_xxxx
-supabase secrets set RESEND_FROM="PawBond <rewards@pawbond.app>"
+supabase secrets set RESEND_FROM="Family Cube <rewards@familycube.app>"
 supabase secrets set PARTNER_SECRET_AMAZON=your_secret
 supabase secrets set PARTNER_SECRET_CHEWY=your_secret
 supabase secrets set PARTNER_SECRET_PETSMART=your_secret
@@ -226,7 +226,7 @@ https://amzn.to/your-link?coupon_id={USER_COUPON_UUID}
 **Secrets — set once per environment (not yet set — do this before going live):**
 ```bash
 supabase secrets set RESEND_API_KEY=re_xxxx
-supabase secrets set RESEND_FROM="PawBond <rewards@pawbond.app>"
+supabase secrets set RESEND_FROM="Family Cube <rewards@familycube.app>"
 supabase secrets set PARTNER_SECRET_AMAZON=your_amazon_shared_secret
 supabase secrets set PARTNER_SECRET_CHEWY=your_chewy_shared_secret
 supabase secrets set PARTNER_SECRET_PETSMART=your_petsmart_shared_secret

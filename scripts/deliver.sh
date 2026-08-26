@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# deliver.sh — upload the latest PawBond IPA to TestFlight via App Store Connect
+# deliver.sh — upload the latest Family Cube IPA to TestFlight via App Store Connect
 #
 # Usage:
 #   ./scripts/deliver.sh                     # auto-picks newest .ipa in project root

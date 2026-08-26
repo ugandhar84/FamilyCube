@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@/lib/ThemeContext';
 import { RADIUS, TYPO} from '@/constants/theme';
-import PawBondLoader from '@/components/PawBondLoader';
+import FamilyCubeLoader from '@/components/FamilyCubeLoader';
 import { NotifCard } from '@/features/social/components/NotifCard';
 import { useRouter } from 'expo-router';
 import { useNotifSelection } from '@/features/social/hooks/useNotifSelection';
@@ -107,7 +107,7 @@ export default function NotificationsScreen({ hideHeader = false, onUnreadChange
 
       {d.loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <PawBondLoader size={52} isDark={isDark} />
+          <FamilyCubeLoader size={52} isDark={isDark} />
         </View>
       ) : d.sections.length === 0 ? (
         <View style={styles.center}>

@@ -1,4 +1,4 @@
-# AGENT_CONTEXT — PawBond Project State
+# AGENT_CONTEXT — Family Cube Project State
 
 **Last Updated:** 2026-08-03 by Claude Sonnet 4.6  
 **Session:** PostDetailScreen UX overhaul + comment reply threading + photo frame fix + social feed UX

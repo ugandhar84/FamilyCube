@@ -1,4 +1,4 @@
-# PawBond Architecture & Technical Deep-Dive
+# Family Cube Architecture & Technical Deep-Dive
 
 **Last Updated:** 2026-08-02 (post-notification dedup + playdates + mood scan fixes)
 

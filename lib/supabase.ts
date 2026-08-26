@@ -10,7 +10,7 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
-    '⚠️  PawBond: Supabase credentials missing.\n' +
+    '⚠️  Family Cube: Supabase credentials missing.\n' +
     'Create a .env file with:\n' +
     '  EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co\n' +
     '  EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key'

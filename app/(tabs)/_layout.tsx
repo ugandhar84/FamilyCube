@@ -169,8 +169,12 @@ function CustomTabBar({ state, navigation }: any) {
     showTabBar();
   }, [activeTabIndex]);
 
-  const bgColor     = isDark ? '#1A1428' : '#FFFFFF';
-  const borderColor = isDark ? 'rgba(160,125,212,0.15)' : 'rgba(108,92,231,0.10)';
+  // Matches colors.background exactly so the nav reads as part of the same
+  // canvas, not a separate bar sitting on top of it — was hardcoded to
+  // stale pre-Kinfolk-rebrand hex (#1A1428/#FFFFFF, purple border) that
+  // never tracked the real theme tokens.
+  const bgColor     = colors.background;
+  const borderColor = colors.border;
 
   const [barHeight, setBarHeight] = useState(0);
   const totalHeight = barHeight + (insets.bottom || 16);

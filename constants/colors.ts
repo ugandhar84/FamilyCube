@@ -90,7 +90,9 @@ export const lightColors = {
   textDisabled:  '#D5CCBE',
 
   // ── Tab bar ───────────────────────────────────────────────────────────
-  tabBar:       '#FFFFFF',
+  // Matches background exactly — nav reads as part of the same canvas,
+  // not a separate white bar sitting on top of it.
+  tabBar:       '#FDFBF7',
   tabBarBorder: 'rgba(205,123,87,0.14)',
   tabActive:    '#CD7B57',
   tabInactive:  '#A69A8A',
@@ -182,10 +184,11 @@ export const darkColors: typeof lightColors = {
   textInverse:   '#1A1714',
   textDisabled:  '#4A4038',
 
-  // Distinctly darker than the page body — anchors the nav the way
-  // light-mode's Hub tiles anchor against their canvas, instead of
-  // blending into a page that's nearly the same shade.
-  tabBar:       '#090A10',
+  // Matches background exactly — nav reads as part of the same canvas,
+  // not a separate bar sitting on top of it (explicit direction: nav
+  // should match canvas in both themes, overriding the earlier "distinctly
+  // darker" treatment).
+  tabBar:       '#12141C',
   tabBarBorder: 'rgba(219,146,112,0.14)',
   tabActive:    '#DB9270',
   tabInactive:  '#7A6E60',

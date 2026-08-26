@@ -1576,7 +1576,16 @@ export default function ProfileSettingsScreen() {
                   // navigate to login regardless, since local state was likely
                   // still cleared even if the network signOut() call itself threw.
                 }
-                router.replace('/(auth)/login');
+                // Must match the SIGNED_OUT listener's own destination in
+                // app/_layout.tsx EXACTLY (same signedOut=1 param) — this was
+                // previously a bare '/(auth)/login' with no param, so if this
+                // navigation won a race against the listener's, LoginScreen
+                // mounted with justSignedOut=false and could auto-trigger its
+                // Face ID/biometric-restore effect right after an explicit
+                // sign-out (reported: sign-out skipped the login screen
+                // entirely and landed on /onboarding, consistent with a
+                // stale/racing session getting silently restored).
+                router.replace('/(auth)/login?signedOut=1' as any);
               }}
               colors={colors} isDark={isDark}
             />

@@ -762,7 +762,26 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       // (there are 3 independent call sites: ChildChoreBoard.tsx,
       // ParentReviewDeck.tsx, and familyStore's own loadFromStorage) pulled
       // the caller's own family over and over with no query-level bound.
-      const knownFamilyId = get().members.find(m => m.familyId)?.familyId;
+      let knownFamilyId = get().members.find(m => m.familyId)?.familyId;
+      // Cache-empty case (e.g. right after familyStore.reset() on sign-out,
+      // then a fresh sign-in as the same or a different account) previously
+      // fell through to an UNSCOPED `select('*')` across the whole members
+      // table with no family_id filter, relying entirely on RLS to narrow
+      // it — if auth.uid() hadn't fully propagated to Postgres yet (a real
+      // race right after a fresh sign-in), RLS could legitimately return
+      // zero rows, which then got treated as "this family really has no
+      // members," triggering the app's own onboarding redirect for an
+      // already-fully-onboarded account (reported live: correct DB profile
+      // state, but still bounced to onboarding right after logging back in).
+      // Resolving the real family via this member's own auth_user_id row
+      // first removes the dependency on the in-memory cache entirely.
+      if (!knownFamilyId) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: ownRow } = await supabase.from('members').select('family_id').eq('auth_user_id', user.id).maybeSingle();
+          knownFamilyId = ownRow?.family_id ?? undefined;
+        }
+      }
       const [activeId, { data, error }] = await Promise.all([
         AsyncStorage.getItem(ACTIVE_KEY),
         // Secondary .order('id') breaks ties — two parents created in the

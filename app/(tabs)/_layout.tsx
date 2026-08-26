@@ -13,6 +13,7 @@ import { useNotifStore } from '@/store/notifStore';
 import { useChatStore } from '@/store/chatStore';
 import { useRewardStore } from '@/store/rewardStore';
 import { useFamilyStore } from '@/store/familyStore';
+import { useAuthStore } from '@/store/authStore';
 import { useEventStore } from '@/store/eventStore';
 import { useQuestStore } from '@/store/choreAdapter';
 import { useHelpStore } from '@/store/helpStore';
@@ -352,11 +353,21 @@ export default function TabLayout() {
   // JoinFamilyScreen after accepting terms. Every tab screen assumes an
   // active member exists, so without this redirect the app renders a blank
   // screen behind the tab bar instead of sending them back to finish setup.
+  //
+  // Gated on a real session existing: familyStore.reset() (runs on sign-out)
+  // sets members to [] with loaded:true, and this tab shell can still be
+  // mounted for one more render before the sign-out navigation actually
+  // swaps the stack — without this guard, that one-render window raced this
+  // effect straight to /onboarding for a user who just signed out cleanly
+  // (reported live: Sign Out landed on the onboarding Terms screen, which
+  // then threw "Not signed in" the moment Accept was tapped, confirming
+  // there was genuinely no session by the time this fired).
+  const hasSession = useAuthStore(s => !!s.session);
   useEffect(() => {
-    if (familyLoaded && members.length === 0) {
+    if (hasSession && familyLoaded && members.length === 0) {
       router.replace('/onboarding');
     }
-  }, [familyLoaded, members.length]);
+  }, [hasSession, familyLoaded, members.length]);
 
   // Prefetch the default chat channel at tab-shell mount, same as Hub/
   // Tasks' own stores above — Chat's ENTIRE data pipeline (message fetch,

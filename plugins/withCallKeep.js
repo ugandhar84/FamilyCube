@@ -101,11 +101,20 @@ const SETUP_ADDITION = `RNCallKeep.setup([
   public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {
     guard type == .voIP else { return }
     let tokenHex = pushCredentials.token.map { String(format: "%02x", $0) }.joined()
+    // FCVoipToken.swift's getCachedToken() reads this key to cover the
+    // race where PushKit hands the token to iOS before JS has booted far
+    // enough to attach its listener, or to re-deliver the same token when
+    // the JS effect re-runs after a profile switch — this write was
+    // missing entirely, so getCachedToken() always returned empty and only
+    // a live NotificationCenter post (a one-time, easy-to-miss event) ever
+    // actually delivered a token to JS.
+    UserDefaults.standard.set(tokenHex, forKey: "familycube_voip_token")
     NotificationCenter.default.post(name: NSNotification.Name("VoipTokenUpdated"), object: nil, userInfo: ["token": tokenHex])
   }
 
   public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
     guard type == .voIP else { return }
+    UserDefaults.standard.removeObject(forKey: "familycube_voip_token")
     NotificationCenter.default.post(name: NSNotification.Name("VoipTokenUpdated"), object: nil, userInfo: ["token": ""])
   }
 
@@ -200,6 +209,30 @@ function withCallKeepAppDelegate(config) {
         'let callUUID = UUID().uuidString\n    RNCallKeep.reportNewIncomingCall(',
         'let callUUID = UUID().uuidString\n    UserDefaults.standard.set(itemType, forKey: "familycube_call_itemType_\\(callUUID)")\n    UserDefaults.standard.set(itemId, forKey: "familycube_call_itemId_\\(callUUID)")\n    RNCallKeep.reportNewIncomingCall(',
       );
+    }
+    // Upgrade path for installs that already have pushRegistry(didUpdate:)
+    // from before this fix — it only ever posted the live
+    // NotificationCenter event, never wrote the UserDefaults key
+    // FCVoipToken.swift's getCachedToken() reads. Confirmed live on a real
+    // device: getCachedToken() always resolved {hasToken:false}, even on a
+    // session whose voip_push_tokens DB row was already populated — that
+    // row could only have arrived via the live notification's lucky
+    // timing on some earlier cold launch, never via this "reliable"
+    // fallback path the surrounding comments describe. Breaks re-
+    // registration after a profile switch on a shared device, since the
+    // JS effect that re-runs on activeMemberId change relies on
+    // getCachedToken() to re-deliver the same physical token.
+    if (!contents.includes('UserDefaults.standard.set(tokenHex, forKey: "familycube_voip_token")')) {
+      const OLD_DIDUPDATE = 'public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {\n    guard type == .voIP else { return }\n    let tokenHex = pushCredentials.token.map { String(format: "%02x", $0) }.joined()\n    NotificationCenter.default.post(name: NSNotification.Name("VoipTokenUpdated"), object: nil, userInfo: ["token": tokenHex])\n  }';
+      const NEW_DIDUPDATE = 'public func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials, for type: PKPushType) {\n    guard type == .voIP else { return }\n    let tokenHex = pushCredentials.token.map { String(format: "%02x", $0) }.joined()\n    UserDefaults.standard.set(tokenHex, forKey: "familycube_voip_token")\n    NotificationCenter.default.post(name: NSNotification.Name("VoipTokenUpdated"), object: nil, userInfo: ["token": tokenHex])\n  }';
+      if (contents.includes(OLD_DIDUPDATE)) {
+        contents = contents.replace(OLD_DIDUPDATE, NEW_DIDUPDATE);
+      }
+      const OLD_DIDINVALIDATE = 'public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {\n    guard type == .voIP else { return }\n    NotificationCenter.default.post(name: NSNotification.Name("VoipTokenUpdated"), object: nil, userInfo: ["token": ""])\n  }';
+      const NEW_DIDINVALIDATE = 'public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {\n    guard type == .voIP else { return }\n    UserDefaults.standard.removeObject(forKey: "familycube_voip_token")\n    NotificationCenter.default.post(name: NSNotification.Name("VoipTokenUpdated"), object: nil, userInfo: ["token": ""])\n  }';
+      if (contents.includes(OLD_DIDINVALIDATE)) {
+        contents = contents.replace(OLD_DIDINVALIDATE, NEW_DIDINVALIDATE);
+      }
     }
 
     config.modResults.contents = contents;

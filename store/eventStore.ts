@@ -1542,7 +1542,31 @@ export const useEventStore = create<EventState>((set, get) => ({
       .then(({ data, error }) => {
         if (error || !data) { console.warn('[eventStore] updateEventScoped: series lookup failed', error?.message); return; }
         const ids = (scope === 'all' ? data : data.filter(r => r.date >= target.date)).map(r => r.id);
-        for (const rowId of ids) get().updateEvent(rowId, updates);
+        if (ids.length === 0) return;
+        // Was: for (const rowId of ids) get().updateEvent(rowId, updates) —
+        // a daily series materializes up to 84 rows (RECURRENCE_WINDOW_DAYS),
+        // so "This and following"/"All events" fired up to 84 separate
+        // updateEvent calls, each doing 2 synchronous set()s PLUS its own
+        // DB write, PLUS the resulting ~84 realtime echo-backs each calling
+        // setState again — enough rapid-fire React re-renders in one tick
+        // to trip "Maximum update depth exceeded" and crash (live-reported).
+        // updateEvent's per-row side effects (decline auto-reopen, activity
+        // log, chat notification) only make sense for a single occurrence's
+        // status change anyway, not a bulk date/time shift — so this skips
+        // them here and does one batched local update + one batched DB
+        // write instead of looping the single-row path.
+        const idSet = new Set(ids);
+        const stamped = { ...updates, updatedBy: getActiveMemberId() ?? undefined, updatedAt: new Date().toISOString() };
+        const patchOne = (e: FamilyEvent) => idSet.has(e.id) ? { ...e, ...stamped } : e;
+        set({
+          dayEvents:   sortByTime(get().dayEvents.map(patchOne)),
+          events:      sortByTime(get().events.map(patchOne)),
+          rangeEvents: sortByTime(get().rangeEvents.map(patchOne)),
+        });
+        const patch = toRowPartial(stamped as FamilyEvent, Object.keys(stamped) as (keyof FamilyEvent)[]);
+        supabase.from('calendar_events').update(patch).in('id', ids).then(({ error: updateError }) => {
+          if (updateError) console.warn('[eventStore] updateEventScoped: bulk update failed', updateError.message);
+        });
       });
   },
 

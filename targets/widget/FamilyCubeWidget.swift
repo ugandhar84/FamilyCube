@@ -116,7 +116,8 @@ private struct StatColumn: View {
     var body: some View {
         VStack(alignment: alignment, spacing: 2) {
             Text(value).font(.title2).bold().foregroundColor(.white)
-            Text(label).font(.caption).foregroundColor(.white.opacity(0.75))
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Text(label).font(.caption).foregroundColor(.white.opacity(0.75)).lineLimit(1)
         }
     }
 }
@@ -284,7 +285,7 @@ private struct MemberWidgetView: View {
     @ViewBuilder private var header: some View {
         HStack {
             Text(data.memberEmoji).font(.title2)
-            Text(data.memberName).font(.headline).bold().foregroundColor(.white)
+            Text(data.memberName).font(.headline).bold().foregroundColor(.white).lineLimit(1)
             Spacer()
         }
     }

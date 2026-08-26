@@ -215,7 +215,7 @@ npx tsc --noEmit
 
 - `ENABLE_USER_SCRIPT_SANDBOXING = NO` in pbxproj (sandbox deny fix)
 - `SKIP_BUNDLING_METRO_IP=1` in `ios/.xcode.env.local`
-- Widget target: `com.familycube.ios.widget` (no App Group entitlement — not registered in portal)
+- Widget target: `com.familycube.ios.widget`, App Group `group.com.familycube.ios` — confirmed live and receiving real data as of 2026-08-26
 - Physical device UDID: `00008120-00110DE634BB601E`
 
 ---

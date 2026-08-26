@@ -81,9 +81,13 @@ function MessageBubbleImpl({ msg, isMe, isGroupFirst, isGroupLast, senderName, s
   const alertTint = detectAlertTint(msg.text);
   const alertColor = alertTint === 'danger' ? colors.danger : alertTint === 'warning' ? colors.warning : alertTint === 'success' ? colors.success : null;
 
-  // Reduced from E0/D8 (~88%/85% opacity) — a lighter "my bubble" so it
-  // sits back a bit rather than reading as the loudest thing on screen.
-  const bubbleMe       = isDark ? colors.primary + 'B0' : colors.primary + 'A8';
+  // Blue "my bubble" from the brand palette (colors.info) instead of the
+  // primary terracotta — distinguishes "my own message" from the app's
+  // universal CTA/action color, matching the classic messaging-app
+  // convention of a distinct blue for your own bubbles. Kept the same
+  // softened alpha treatment (reduced from full opacity so it sits back a
+  // bit rather than reading as the loudest thing on screen).
+  const bubbleMe       = isDark ? colors.info + 'B0' : colors.info + 'A8';
   const bubbleMeTxt    = '#FFFFFF';
   const bubbleOther    = alertColor ? (isDark ? alertColor + '20' : alertColor + '12') : colors.card;
   const bubbleOtherTxt = colors.textPrimary;

@@ -35,6 +35,9 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
   const [saving, setSaving]           = useState(false);
   const [showRefillPicker, setShowRefillPicker] = useState(false);
   const [refillDate, setRefillDate]   = useState<Date | null>(null);
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker]     = useState(false);
+  const [showTimePicker, setShowTimePicker]   = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
   const [globalSuggestions, setGlobalSuggestions] = useState<{ name: string; hint: string; category: string }[]>([]);
   const [touched, setTouched]         = useState<Record<string, boolean>>({});
@@ -72,6 +75,7 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
   const reset = () => {
     setForm(BLANK_MED); setRefillDate(null);
     setShowRefillPicker(false); setNameFocused(false);
+    setShowStartPicker(false); setShowEndPicker(false); setShowTimePicker(false);
     setTouched({}); setSubmitAttempted(false); setStepIndex(0);
   };
 
@@ -328,6 +332,147 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
                       </TouchableOpacity>
                     ))}
                   </View>
+
+                  {/* ── Reminder Schedule — start/end dates + a daily
+                      reminder time, materialized as a real recurring
+                      calendar entry on save (see HealthTab.tsx's addMed). ── */}
+                  <View style={{ marginTop: 16 }}>
+                    <Text style={[aStyles.sectionLabel, { color: catColor }]}>Reminder Schedule</Text>
+                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[aStyles.label, { color: colors.textSecondary }]}>Starts</Text>
+                        <TouchableOpacity onPress={() => setShowStartPicker(p => !p)}
+                          style={[aStyles.dateBtn, {
+                            backgroundColor: showStartPicker ? catColor + '20' : colors.surface,
+                            borderColor: showStartPicker ? catColor : colors.border,
+                          }]}>
+                          <Calendar size={14} color={showStartPicker ? catColor : colors.textTertiary} />
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: showStartPicker ? catColor : colors.textPrimary }}>
+                            {fmtDateDisplay(new Date(form.start_date + 'T00:00:00'))}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[aStyles.label, { color: colors.textSecondary }]}>Ends (optional)</Text>
+                        <TouchableOpacity onPress={() => setShowEndPicker(p => !p)}
+                          style={[aStyles.dateBtn, {
+                            backgroundColor: showEndPicker ? catColor + '20' : colors.surface,
+                            borderColor: showEndPicker ? catColor : colors.border,
+                          }]}>
+                          <Calendar size={14} color={showEndPicker ? catColor : colors.textTertiary} />
+                          <Text style={{ fontSize: 13, fontWeight: '700',
+                            color: form.end_date ? (showEndPicker ? catColor : colors.textPrimary) : colors.textTertiary }}>
+                            {form.end_date ? fmtDateDisplay(new Date(form.end_date + 'T00:00:00')) : 'Ongoing'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {showStartPicker && (
+                      <Modal transparent animationType="fade" visible onRequestClose={() => setShowStartPicker(false)}>
+                        <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1} onPress={() => setShowStartPicker(false)}>
+                          <TouchableOpacity activeOpacity={1} style={[aStyles.pickerCard, { backgroundColor: colors.card }]}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                              paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                              <Text style={{ fontSize: 15, fontWeight: '900', color: colors.textPrimary }}>Start Date</Text>
+                              <TouchableOpacity onPress={() => setShowStartPicker(false)}>
+                                <Text style={{ color: catColor, fontWeight: '900', fontSize: 15 }}>Done</Text>
+                              </TouchableOpacity>
+                            </View>
+                            <DateTimePicker
+                              value={new Date(form.start_date + 'T00:00:00')} mode="date" display="spinner"
+                              onChange={(_, d) => { if (d) set('start_date', fmtDate(d)); }}
+                              textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
+                            />
+                          </TouchableOpacity>
+                        </TouchableOpacity>
+                      </Modal>
+                    )}
+                    {showEndPicker && (
+                      <Modal transparent animationType="fade" visible onRequestClose={() => setShowEndPicker(false)}>
+                        <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1} onPress={() => setShowEndPicker(false)}>
+                          <TouchableOpacity activeOpacity={1} style={[aStyles.pickerCard, { backgroundColor: colors.card }]}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                              paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                              <Text style={{ fontSize: 15, fontWeight: '900', color: colors.textPrimary }}>End Date</Text>
+                              <View style={{ flexDirection: 'row', gap: 16 }}>
+                                {!!form.end_date && (
+                                  <TouchableOpacity onPress={() => { set('end_date', ''); setShowEndPicker(false); }}>
+                                    <Text style={{ color: colors.danger, fontWeight: '800', fontSize: 15 }}>Clear</Text>
+                                  </TouchableOpacity>
+                                )}
+                                <TouchableOpacity onPress={() => setShowEndPicker(false)}>
+                                  <Text style={{ color: catColor, fontWeight: '900', fontSize: 15 }}>Done</Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                            <DateTimePicker
+                              value={form.end_date ? new Date(form.end_date + 'T00:00:00') : new Date(form.start_date + 'T00:00:00')}
+                              mode="date" display="spinner"
+                              onChange={(_, d) => { if (d) set('end_date', fmtDate(d)); }}
+                              textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
+                            />
+                          </TouchableOpacity>
+                        </TouchableOpacity>
+                      </Modal>
+                    )}
+
+                    <View style={{ marginTop: 10 }}>
+                      <Text style={[aStyles.label, { color: colors.textSecondary }]}>Reminder Time</Text>
+                      <TouchableOpacity onPress={() => setShowTimePicker(p => !p)}
+                        style={[aStyles.dateBtn, { alignSelf: 'flex-start', minWidth: 110,
+                          backgroundColor: showTimePicker ? catColor + '20' : colors.surface,
+                          borderColor: showTimePicker ? catColor : colors.border }]}>
+                        <Calendar size={14} color={showTimePicker ? catColor : colors.textTertiary} />
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: showTimePicker ? catColor : colors.textPrimary }}>
+                          {form.reminder_time}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    {showTimePicker && (
+                      <Modal transparent animationType="fade" visible onRequestClose={() => setShowTimePicker(false)}>
+                        <TouchableOpacity style={aStyles.pickerOverlay} activeOpacity={1} onPress={() => setShowTimePicker(false)}>
+                          <TouchableOpacity activeOpacity={1} style={[aStyles.pickerCard, { backgroundColor: colors.card }]}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                              paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
+                              <Text style={{ fontSize: 15, fontWeight: '900', color: colors.textPrimary }}>Reminder Time</Text>
+                              <TouchableOpacity onPress={() => setShowTimePicker(false)}>
+                                <Text style={{ color: catColor, fontWeight: '900', fontSize: 15 }}>Done</Text>
+                              </TouchableOpacity>
+                            </View>
+                            <DateTimePicker
+                              value={(() => { const [h, m] = form.reminder_time.split(':').map(Number); const d = new Date(); d.setHours(h || 8, m || 0, 0, 0); return d; })()}
+                              mode="time" display="spinner"
+                              onChange={(_, d) => { if (d) set('reminder_time', `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`); }}
+                              textColor={colors.textPrimary} style={{ height: 180, width: '100%' }}
+                            />
+                          </TouchableOpacity>
+                        </TouchableOpacity>
+                      </Modal>
+                    )}
+
+                    {/* Ring-style reminder toggle — same CallKit ringing
+                        infrastructure chores/events already use, riding
+                        the existing call-reminder-sweeper with zero new
+                        native/server work. */}
+                    <TouchableOpacity onPress={() => setForm(f => ({ ...f, alert_call: !f.alert_call }))}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14,
+                        borderRadius: 12, borderWidth: 1.5, padding: 12,
+                        borderColor: form.alert_call ? catColor : colors.border,
+                        backgroundColor: form.alert_call ? catColor + '10' : 'transparent' }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: form.alert_call ? catColor : colors.textPrimary }}>
+                          Ring like a call
+                        </Text>
+                        <Text style={{ fontSize: 11, color: colors.textTertiary, marginTop: 1 }}>
+                          A loud ringing alert instead of a normal notification
+                        </Text>
+                      </View>
+                      <Switch value={form.alert_call} onValueChange={v => setForm(f => ({ ...f, alert_call: v }))}
+                        trackColor={{ false: colors.border, true: catColor + '80' }}
+                        thumbColor={form.alert_call ? catColor : colors.textTertiary} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
 
@@ -472,6 +617,10 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
                   <Text style={{ fontSize: 12, color: colors.textSecondary }}>
                     For {members.find(m => m.id === selectedMember)?.name ?? '—'}
                     {form.prescribing_doctor ? ` · Dr. ${form.prescribing_doctor}` : ''}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                    Reminds daily at {form.reminder_time}{form.alert_call ? ' (ringing alert)' : ''}
+                    {form.end_date ? ` until ${fmtDateDisplay(new Date(form.end_date + 'T00:00:00'))}` : ', ongoing'}
                   </Text>
                 </View>
               )}

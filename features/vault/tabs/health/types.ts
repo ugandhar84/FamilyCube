@@ -79,12 +79,25 @@ export interface MedForm {
   pharmacy: string; refill_date: string; pills_remaining: string;
   instructions: string; notes: string;
   escalation_enabled: boolean; escalation_after_min: string;
+  // Reminder scheduling — start_date/end_date/frequency_times already
+  // exist as DB columns on Medication (types.ts's Medication interface)
+  // but were never exposed in the add-form; reminder_time is the single
+  // time-of-day used to materialize a recurring calendar reminder
+  // (multiple daily times aren't supported yet — frequency_times stays a
+  // 1-element array until that's needed). alert_call opts into the
+  // existing CallKit-style ringing reminder (same alertCall/
+  // alertCallLeadMinutes pattern FamilyEvent already uses for chores/
+  // events) instead of a plain push.
+  start_date: string; end_date: string; reminder_time: string;
+  alert_call: boolean;
 }
 export const BLANK_MED: MedForm = {
   name: '', dosage: '', dosage_unit: 'tablet', frequency: 'daily',
   category: 'prescription', prescribing_doctor: '', pharmacy: '',
   refill_date: '', pills_remaining: '', instructions: '', notes: '',
   escalation_enabled: false, escalation_after_min: '60',
+  start_date: today(), end_date: '', reminder_time: '08:00',
+  alert_call: false,
 };
 
 // Quick pick suggestions by medication category

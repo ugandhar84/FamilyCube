@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useFamilyStore } from '@/store/familyStore';
 import { useChatStore } from '@/store/chatStore';
 import { useUIStore } from '@/store/uiStore';
+import { useEventStore } from '@/store/eventStore';
 import { SCard, CardHeader } from './shared';
 import { ParsedMedication, ParsedVaccine } from '../usePrescriptionScanner';
 
@@ -278,15 +279,17 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
       dosage: form.dosage.trim(),
       dosage_unit: form.dosage_unit,
       frequency: form.frequency,
-      frequency_times: ['08:00'],
+      frequency_times: [form.reminder_time || '08:00'],
       category: form.category,
       prescribing_doctor: form.prescribing_doctor || null,
       pharmacy: form.pharmacy || null,
       refill_date: form.refill_date || null,
       pills_remaining: form.pills_remaining ? parseInt(form.pills_remaining) : null,
       instructions: form.instructions || null,
-      is_ongoing: true,
+      is_ongoing: !form.end_date,
       is_active: true,
+      start_date: form.start_date || today(),
+      end_date: form.end_date || null,
       escalation_enabled: form.escalation_enabled,
       escalation_after_min: parseInt(form.escalation_after_min) || 60,
     }).select().single();
@@ -298,6 +301,30 @@ export default function HealthTab({ colors, isDark, kidView = false, healthTab, 
         p_category: form.category,
         p_hint: form.category,
       }).then(() => {});
+
+      // Materialize the reminder as a real recurring calendar entry (daily,
+      // from start_date through end_date if set) instead of a silent DB
+      // flag with no schedule anywhere — the medication now actually shows
+      // up on the member's own Schedule, and alert_call opts into the same
+      // CallKit-style ringing reminder chores/events already use, riding
+      // that existing infrastructure with zero new native/server work.
+      useEventStore.getState().addRecurringEvent(
+        {
+          title: `Take ${form.name.trim()}`,
+          date: form.start_date || today(),
+          time: form.reminder_time || '08:00',
+          memberId,
+          type: 'reminder',
+          category: 'Medication',
+          notes: form.instructions || undefined,
+          alertCall: form.alert_call,
+          alertCallLeadMinutes: 0,
+        },
+        {
+          frequency: 'daily',
+          ...(form.end_date ? { endDate: form.end_date } : {}),
+        }
+      );
     }
   };
 

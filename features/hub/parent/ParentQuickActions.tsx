@@ -33,7 +33,8 @@ export function ParentQuickActions({ colors, isDark, groceryCount, onScanFlyer, 
         return (
           <Pressable key={t.key} onPress={t.onPress} style={{
             flex: 1, borderRadius: 18, paddingVertical: 14, paddingHorizontal: 4, alignItems: 'center', gap: 6,
-            backgroundColor: isDark ? t.tint + '28' : t.tint + '22',
+            backgroundColor: isDark ? t.tint + '32' : t.tint + '2E',
+            borderWidth: 1, borderColor: isDark ? t.tint + '45' : t.tint + '3A',
           }}>
             <Icon size={19} color={t.tint} />
             <Text style={{ fontSize: TYPO.label - 1, fontWeight: '800', color: t.tint }} numberOfLines={1}>

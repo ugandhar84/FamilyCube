@@ -8,7 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
-import { TYPO } from '@/constants/theme';
+import { TYPO, LETTER_SPACING } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
 import { useRewardStore, Reward } from '@/store/rewardStore';
 import { useChoreStore } from '@/store/choreStore';
@@ -514,7 +514,8 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
           };
           return (
             <View style={{ paddingHorizontal: 12, marginBottom: 10 }}>
-              <Text style={{ fontSize: 13, fontWeight: '900', color: colors.textPrimary, marginBottom: 8 }}>
+              <Text style={{ fontSize: TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
+                textTransform: 'uppercase', letterSpacing: LETTER_SPACING.sectionLabel, marginBottom: 8 }}>
                 My Redemptions
               </Text>
               <View style={{ gap: 6 }}>
@@ -554,7 +555,8 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
           if (pending.length === 0) return null;
           return (
             <View style={{ paddingHorizontal: 12, marginBottom: 4 }}>
-              <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 10 }}>
+              <Text style={{ fontSize: TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
+                textTransform: 'uppercase', letterSpacing: LETTER_SPACING.sectionLabel, marginBottom: 10 }}>
                 Pending Approvals ({pending.length})
               </Text>
               <View style={{ gap: 8 }}>
@@ -596,9 +598,15 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
             this is the one place a parent checks kids' coin balances. */}
         {isParent && kids.length > 0 && (
           <View style={{ paddingHorizontal: 12, marginBottom: 4 }}>
-            <Text style={{ fontSize: 16, fontWeight: '900', color: colors.textPrimary, marginBottom: 10 }}>
+            <Text style={{ fontSize: TYPO.sectionLabel, fontWeight: '800', color: colors.textSecondary,
+              textTransform: 'uppercase', letterSpacing: LETTER_SPACING.sectionLabel, marginBottom: 10 }}>
               Kids' Piggy Banks & Wishlists
             </Text>
+            {/* Fixed 3-column grid (was 2-up via minWidth:'46%') — card
+                Fixed 2-column grid (was full-width single column via
+                minWidth:'46%' with only 1 fitting per row at larger sizes;
+                also tried a denser 3-up pass, landed on 2x2 as the better
+                balance of legibility vs. density). */}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
               {kids.map(kid => {
                 const kidCoins = ((kid as any).mainCoins ?? 0) + ((kid as any).gpCoins ?? 0);
@@ -608,7 +616,7 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
                 const streak = (kid as any).streak ?? 0;
                 return (
                   <View key={kid.id} style={{
-                    flexGrow: 1, minWidth: '46%', borderRadius: 18, padding: 16, alignItems: 'center',
+                    width: '48%', borderRadius: 18, padding: 14, alignItems: 'center',
                     backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.teal + (isDark ? '55' : '40'),
                     shadowColor: colors.teal, shadowOpacity: 0.1, shadowRadius: 10,
                     shadowOffset: { width: 0, height: 4 }, elevation: 3, overflow: 'hidden',
@@ -626,34 +634,34 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
                     )}
                     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1,
                       backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)' }} pointerEvents="none" />
-                    <View style={{ width: 52, height: 52, borderRadius: 16, marginBottom: 8,
+                    <View style={{ width: 48, height: 48, borderRadius: 14, marginBottom: 8,
                       backgroundColor: colors.teal + '25', borderWidth: 1, borderColor: colors.teal + '45',
                       alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: 26 }}>{kid.emoji ?? '🙂'}</Text>
+                      <Text style={{ fontSize: 24 }}>{kid.emoji ?? '🙂'}</Text>
                     </View>
-                    <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary, marginBottom: 6 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textPrimary, marginBottom: 5 }} numberOfLines={1}>
                       {kid.name.split(' ')[0]}
                     </Text>
-                    <Text style={{ fontSize: 22, fontWeight: '900', color: BRAND.teal, marginBottom: 8 }}>
+                    <Text style={{ fontSize: 20, fontWeight: '900', color: BRAND.teal, marginBottom: 7 }}>
                       {currencySymbol}{dollars}
                     </Text>
                     {streak > 0 && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 12,
-                        paddingHorizontal: 10, paddingVertical: 4, marginBottom: 10,
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 11,
+                        paddingHorizontal: 9, paddingVertical: 4, marginBottom: 8,
                         backgroundColor: colors.amberLight }}>
-                        <Flame size={12} color={colors.amber} />
-                        <Text style={{ fontSize: 11, fontWeight: '800', color: colors.amber }}>
+                        <Flame size={11} color={colors.amber} />
+                        <Text style={{ fontSize: 10, fontWeight: '800', color: colors.amber }}>
                           {streak}-day streak
                         </Text>
                       </View>
                     )}
                     {goal && (
-                      <View style={{ width: '100%', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }} numberOfLines={1}>
+                      <View style={{ width: '100%', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 9 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 }}>
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textSecondary }} numberOfLines={1}>
                             Goal: {goal.title}
                           </Text>
-                          <Text style={{ fontSize: 11, fontWeight: '800', color: colors.textPrimary }}>
+                          <Text style={{ fontSize: 10, fontWeight: '800', color: colors.textPrimary }}>
                             {Math.round(pct * 100)}%
                           </Text>
                         </View>
@@ -663,11 +671,11 @@ export default function StoreScreen({ hideHeader = false }: { hideHeader?: boole
                       </View>
                     )}
                     <Pressable onPress={() => { setGrantAmount(''); setGrantTarget({ id: kid.id, name: kid.name }); }}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 12,
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10,
                         borderRadius: 10, borderWidth: 1, borderColor: colors.amber + '60',
                         backgroundColor: colors.amberLight, paddingHorizontal: 10, paddingVertical: 6 }}>
-                      <Ionicons name="gift-outline" size={13} color={colors.amber} />
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: colors.amber }}>Grant Coins</Text>
+                      <Ionicons name="gift-outline" size={12} color={colors.amber} />
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: colors.amber }}>Grant Coins</Text>
                     </Pressable>
                   </View>
                 );

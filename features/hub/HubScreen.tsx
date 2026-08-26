@@ -130,11 +130,13 @@ export default function HubScreen() {
         memberRole={active.role as 'parent' | 'kid' | 'teen' | 'senior'}
         notifCount={unreadNotifCount}
         onBellPress={() => setNotifPanelOpen(true)}
-        // GP's bottom nav swaps Profile/Apps for Memories — this is their
-        // only remaining path to settings/PIN, since the tab is gone.
-        // /profile (VaultScreen) no longer exists — profile-settings is the
-        // real settings/PIN screen.
-        onSettingsPress={isSenior ? () => router.push('/profile-settings') : undefined}
+        // /profile (VaultScreen) no longer exists and no Hub pill links to
+        // profile-settings for any role — this header gear icon is the only
+        // remaining path to settings/PIN/notifications/danger-zone for
+        // every role, not just seniors (regression: this was previously
+        // senior-only, leaving parent/kid/teen with no way to reach the
+        // Profile screen at all).
+        onSettingsPress={() => router.push('/profile-settings')}
       />
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 

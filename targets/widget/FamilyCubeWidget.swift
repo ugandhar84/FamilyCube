@@ -270,14 +270,20 @@ private struct ParentWidgetView: View {
         }
     }
 
-    // Each stat only renders when > 0, so in practice this rarely shows
-    // all three at once — minimumScaleFactor above is the safety net for
-    // when it does.
+    // Was: unread/events/grocery all crammed onto one HStack — three short
+    // labels still truncated to "1 ev…"/"16 i…" in the small widget's
+    // narrow width (live-reported). Grocery now gets its own row below,
+    // and this row keeps just unread + events so both render in full.
     @ViewBuilder private var secondaryRow: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             if data.unreadMessages > 0 { miniStat("bubble.left.fill", "\(data.unreadMessages) unread") }
             if data.eventsToday > 0 { miniStat("calendar", "\(data.eventsToday) events") }
-            if data.groceryPending > 0 { miniStat("cart.fill", "\(data.groceryPending) items") }
+        }
+    }
+
+    @ViewBuilder private var groceryRow: some View {
+        if data.groceryPending > 0 {
+            miniStat("cart.fill", "\(data.groceryPending) grocery item\(data.groceryPending == 1 ? "" : "s")")
         }
     }
 
@@ -304,6 +310,10 @@ private struct ParentWidgetView: View {
                     pendingBlock(compact: data.pendingApprovals == 0)
                     Spacer(minLength: 8)
                     secondaryRow
+                    if data.groceryPending > 0 {
+                        Spacer(minLength: 6)
+                        groceryRow
+                    }
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -341,6 +351,10 @@ private struct ParentWidgetView: View {
                             Text(time).font(.system(size: 10)).foregroundColor(.white.opacity(0.7)).lineLimit(1)
                         }
                     }
+                }
+                if data.groceryPending > 0 {
+                    Spacer(minLength: 6)
+                    groceryRow
                 }
                 Spacer(minLength: 0)
             }

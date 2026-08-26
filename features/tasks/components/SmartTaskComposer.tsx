@@ -113,6 +113,7 @@ export default function SmartTaskComposer({
   // a VoIP-style ringing reminder (call-reminder-sweeper cron), distinct
   // from the app's ordinary push notifications. Off by default, 10 min
   // lead once turned on — only meaningful when a "When" time is set.
+  const [touchedAlertCall, setTouchedAlertCall] = useState(false);
   const [alertCall, setAlertCall] = useState(false);
   const [alertCallLeadMinutes, setAlertCallLeadMinutes] = useState(10);
   // Multi-select — "all kids"/"Leo and Maya" resolve to multiple ids via
@@ -209,7 +210,7 @@ export default function SmartTaskComposer({
     setInput(''); setDetection(null); setVoiceError(null);
     setTouchedTitle(false); setTouchedMember(false); setTouchedCategory(false);
     setTouchedUrgent(false); setUrgent(false);
-    setAlertCall(false); setAlertCallLeadMinutes(10);
+    setTouchedAlertCall(false); setAlertCall(false); setAlertCallLeadMinutes(10);
     setTitle(''); setForMemberIds([]); setCategory(undefined);
     setCoinsStr('20'); setPhotoRequired(false);
     setPickupLocation(''); setTouchedPickup(false); setDropLocation(''); setTouchedDrop(false); setReturnTime(''); setShowReturnTime(false);
@@ -286,6 +287,12 @@ export default function SmartTaskComposer({
       setRecurDays(d.recurrence === 'weekly' ? d.recurrenceDays : []);
     }
     if (!touchedUrgent && d.urgent) setUrgent(true);
+    // "enable call reminder"/"call notification" typed directly into the
+    // free-text box previously did nothing — alertCall only ever flipped
+    // via the manual toggle button (live-reported). Same touched-guard
+    // pattern as urgent above: once the user manually taps the toggle,
+    // further typing/re-detection won't silently flip it back.
+    if (!touchedAlertCall && d.alertCall) setAlertCall(true);
   };
 
   // Instant local re-classification on every keystroke — no debounce, no
@@ -340,6 +347,7 @@ export default function SmartTaskComposer({
       urgent: false,
       kindOverride: task.kind,
       driverName: null,
+      alertCall: false,
     });
     // family-ai's `requirements` is exactly "what the AI inferred beyond
     // the structured fields" — surface it into Notes and open the toggle
@@ -1244,7 +1252,7 @@ export default function SmartTaskComposer({
                     Off by default; turning it on defaults to 10 min before,
                     same default AskCubeProposalCard's ReminderPicker uses
                     when a reminder is first added. */}
-                <Pressable onPress={() => setAlertCall(v => !v)}
+                <Pressable onPress={() => { setTouchedAlertCall(true); setAlertCall(v => !v); }}
                   style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                     backgroundColor: alertCall ? colors.primary + '14' : (isDark ? colors.surface : colors.inputBg),
                     borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 12,

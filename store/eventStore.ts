@@ -73,6 +73,13 @@ export interface FamilyEvent {
   // at the same time) — see AlertBanner's Dismiss action. Distinct from
   // `conflict` above (a separate, currently client-unwritten column).
   conflictAcknowledged?: boolean;
+  // Manual dismiss for the Hub's "Trip Never Started" banner
+  // (neverDispatchedOverdue in ParentView.tsx), alongside its existing
+  // 1-hour auto-clear — per-occurrence (this row only), not per-series, so
+  // dismissing today's overdue banner on a recurring event doesn't
+  // suppress tomorrow's.
+  tripAlertDismissedAt?: string;
+  tripAlertDismissedBy?: string;
   approvalPending?: boolean;
   isOpenToGrandparents?: boolean;
   grandparentPassedIds?: string[];  // seniors who tapped Pass — hidden from their feed
@@ -478,6 +485,8 @@ export function fromRow(row: any): FamilyEvent {
     approvalPending:        row.approval_pending ?? false,
     conflict:               row.conflict ?? false,
     conflictAcknowledged:   row.conflict_acknowledged ?? false,
+    tripAlertDismissedAt:   row.trip_alert_dismissed_at ?? undefined,
+    tripAlertDismissedBy:   row.trip_alert_dismissed_by ?? undefined,
     isOpenToGrandparents:   row.is_open_to_grandparents ?? false,
     grandparentPassedIds:   row.grandparent_passed_ids ?? [],
     isOpenToTeens:          row.is_open_to_teens ?? false,
@@ -536,6 +545,8 @@ function toRow(ev: FamilyEvent): Record<string, unknown> {
     approval_pending:           ev.approvalPending ?? false,
     conflict:                   ev.conflict ?? false,
     conflict_acknowledged:      ev.conflictAcknowledged ?? false,
+    trip_alert_dismissed_at:    ev.tripAlertDismissedAt ?? null,
+    trip_alert_dismissed_by:    ev.tripAlertDismissedBy ?? null,
     is_open_to_grandparents:    ev.isOpenToGrandparents ?? false,
     grandparent_passed_ids:     ev.grandparentPassedIds ?? [],
     is_open_to_teens:           ev.isOpenToTeens ?? false,
@@ -591,6 +602,7 @@ const EVENT_COLUMN: Partial<Record<keyof FamilyEvent, string>> = {
   doctorName: 'doctor_name', subject: 'subject', coachName: 'coach_name',
   pickupLocation: 'pickup_location', dropLocation: 'drop_location',
   approvalPending: 'approval_pending', conflict: 'conflict', conflictAcknowledged: 'conflict_acknowledged',
+  tripAlertDismissedAt: 'trip_alert_dismissed_at', tripAlertDismissedBy: 'trip_alert_dismissed_by',
   isOpenToGrandparents: 'is_open_to_grandparents', grandparentPassedIds: 'grandparent_passed_ids',
   isOpenToTeens: 'is_open_to_teens', rideCoins: 'ride_coins', rideRequired: 'ride_required',
   driverName: 'driver_name', driverStatus: 'driver_status',

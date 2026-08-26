@@ -267,6 +267,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
     // happened. Live-reported/DB-confirmed: today's ride had a real
     // pickup_confirmed_at timestamp, yet the banner stayed stuck.
     if (e.pickupConfirmedAt) return false;
+    if (e.tripAlertDismissedAt) return false; // manually dismissed via the banner's own Dismiss button
     if (activeTripDriverNames.has(a.name)) return false; // a trip IS running, just use the normal overdue path
     const h = hoursUntilEvent(e.date, e.time);
     return h < 0 && h > -1; // 1hr outer bound — auto-clears itself instead of lingering all day
@@ -550,7 +551,7 @@ export function ParentView({ active, members, colors, isDark, onScanFlyer, onDis
           neverDispatchedEvents={neverDispatchedOverdue}
           conflictReasons={conflictReasons}
           members={members} colors={colors} isDark={isDark} updateEvent={updateEvent}
-          activeName={active.name}
+          activeName={active.name} activeMemberId={active.id}
           onDispatch={onDispatchDirect}
         />
       )}

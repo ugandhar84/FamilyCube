@@ -328,7 +328,7 @@ export function notifyTakeover(ev: FamilyEvent, newName: string, members: Family
 
 export function AlertBanner({
   conflictEvents, neverDispatchedEvents = [],
-  conflictReasons, members, colors, isDark, updateEvent, activeName, onDispatch,
+  conflictReasons, members, colors, isDark, updateEvent, activeName, activeMemberId, onDispatch,
 }: {
   conflictEvents: FamilyEvent[];
   neverDispatchedEvents?: FamilyEvent[];
@@ -339,6 +339,9 @@ export function AlertBanner({
   // instead of routing the common "I'll just take it" case through the full
   // reassign picker.
   activeName?: string;
+  // Viewer's own id — stamped onto tripAlertDismissedBy when a
+  // never-dispatched card's own Dismiss button is tapped.
+  activeMemberId?: string;
   // Lets the confirmed driver start the trip directly from their own
   // never-dispatched card, instead of having to scroll down to Pick-up
   // Radar and find the right nextRide slot themselves.
@@ -389,6 +392,17 @@ export function AlertBanner({
                   Check in with {(assignee.name?.split(' ')[0] ?? 'Driver')} — the pickup may already be handled but never marked En Route.
                 </Text>
               )}
+              {/* Alongside the existing 1-hour auto-clear (ParentView.tsx's
+                  neverDispatchedOverdue) — a parent who's already checked in
+                  and confirmed the pickup happened (just never tapped Start
+                  Trip/marked it done) can dismiss this specific occurrence's
+                  banner directly instead of waiting it out. Per-row, not
+                  per-series — dismissing today's overdue banner on a
+                  recurring event doesn't suppress tomorrow's. */}
+              <Pressable onPress={() => updateEvent(ev.id, { tripAlertDismissedAt: new Date().toISOString(), tripAlertDismissedBy: activeMemberId })}
+                style={{ borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1.5, borderColor: colors.border, alignSelf: 'flex-start' }}>
+                <Text style={{ fontSize: TYPO.label, fontWeight: '800', color: colors.textSecondary }}>Dismiss</Text>
+              </Pressable>
             </View>
           </View>
         );

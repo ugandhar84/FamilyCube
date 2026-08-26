@@ -448,6 +448,9 @@ export interface LocalDetectionResult {
   // FOR) — see extractDriver's own comment. Full name, ready to resolve to
   // a MemberPicker selection; null when no driver phrase was found.
   driverName: string | null;
+  // "enable call reminder"/"call notification" typed directly into the
+  // free-text box — see CALL_REMINDER_RE.
+  alertCall: boolean;
 }
 
 // Leading framing phrases stripped entirely before the date/time cutoff
@@ -467,7 +470,7 @@ function suggestTitle(rawInput: string, entry: CategoryEntry, person: string | n
     if (locs.dropoff) return (person ? `Drop off ${person}` : 'Drop-off') + ` at ${locs.dropoff}`;
   }
   t = t.replace(LEADING_FRAME_RE, '');
-  const cutoffRe = /\b(today|tonight|tomorrow|next\s+\w+|every\s+\w+|daily|weekly|monthly|sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|at\s+\d{1,2}(:\d{2})?\s?(am|pm)?|about\s*\$\s?\d+(\.\d+)?|for all kids|for the kids|for kids|for the whole family|for everyone|for family|urgent|asap|as soon as possible|right away|immediately)\b/i;
+  const cutoffRe = /\b(today|tonight|tomorrow|next\s+\w+|every\s+\w+|daily|weekly|monthly|sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|at\s+\d{1,2}(:\d{2})?\s?(am|pm)?|about\s*\$\s?\d+(\.\d+)?|for all kids|for the kids|for kids|for the whole family|for everyone|for family|urgent|asap|as soon as possible|right away|immediately|(?:enable\s+)?call\s+(?:reminder|notification|alert)s?)\b/i;
   const m = cutoffRe.exec(t);
   if (m) t = m.index > 0 ? t.slice(0, m.index) : t.slice(m[0].length);
   t = t.replace(/\s+/g, ' ').trim().replace(/^[,.\-—]+|[,.\-—]+$/g, '').trim();
@@ -492,6 +495,15 @@ const QUEST_VERB_RE = /\b(remind me to|remember to|need(?:s)? to|someone (?:need
 const EVENT_VERB_RE = /\b(schedule|book|set up an? appointment)\b/;
 
 const URGENT_RE = /\b(urgent|asap|as soon as possible|right away|immediately|emergency|now)\b/;
+
+// "enable call reminder"/"call notification"/"call alert" — the composer's
+// own alertCall/alertCallLeadMinutes toggle otherwise only ever flips via a
+// manual button tap; typing the request directly into the free-text box did
+// nothing to it (live-reported). "call" alone is too broad (would misfire on
+// "call the dentist," "phone call with tutor," etc. — a chore/event ABOUT a
+// phone call, not a request to be called-reminded about THIS one), so this
+// requires a reminder/notification/alert word alongside "call".
+const CALL_REMINDER_RE = /\b(?:enable\s+)?call\s+(?:reminder|notification|alert)s?\b|\b(?:reminder|notification|alert)s?\s+(?:via\s+)?call\b/;
 
 const DAY_TOKEN_MAP: Record<string, number> = {
   sun: 0, sunday: 0, mon: 1, monday: 1, tue: 2, tues: 2, tuesday: 2, wed: 3, weds: 3, wednesday: 3,
@@ -564,6 +576,7 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
   const memberNames = extractMemberNames(rawInput, members).filter(n => n !== driverName);
   const amount = extractAmount(rawInput);
   const urgent = URGENT_RE.test(input);
+  const alertCall = CALL_REMINDER_RE.test(input);
 
   // "every monday"/"weekly on tues" is real recurrence; a bare "Thursday
   // 2pm" (no "every"/"weekly"/plural-day framing) is a one-time event on
@@ -595,5 +608,6 @@ export function detectLocalTask(rawInput: string, members: { id: string; name: s
     urgent,
     kindOverride,
     driverName,
+    alertCall,
   };
 }

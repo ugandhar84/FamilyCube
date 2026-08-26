@@ -100,9 +100,13 @@ struct FamilyCubeProvider: TimelineProvider {
 
 // MARK: - Shared visual language
 
-private let brandPurple = Color(red: 0.42, green: 0.36, blue: 0.90)
-private let brandTeal   = Color(red: 0.24, green: 0.48, blue: 0.35)   // colors.parent-ish
-private let brandAmber  = Color(red: 0.85, green: 0.47, blue: 0.02)   // colors.kid-ish
+// Matches constants/colors.ts's lightColors exactly (colors.accent/teal/amber)
+// — these were hand-approximated placeholders before and didn't track the
+// app's real Kinfolk palette after it moved off the original louder
+// purple/teal/pink set.
+private let brandAccent = Color(red: 0.588, green: 0.525, blue: 0.710)  // colors.accent  #9686B5
+private let brandTeal   = Color(red: 0.412, green: 0.573, blue: 0.486)  // colors.teal    #69927C — parent role accent
+private let brandAmber  = Color(red: 0.788, green: 0.588, blue: 0.310)  // colors.amber   #C9964F — kid role accent
 
 private struct StatColumn: View {
     let value: String
@@ -151,7 +155,7 @@ private struct AgendaColumn: View {
             if events.isEmpty {
                 Spacer()
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("📭").font(.caption)
+                    Image(systemName: "tray").font(.caption).foregroundColor(.white.opacity(0.8))
                     Text("Nothing scheduled").font(.system(size: 11)).foregroundColor(.white.opacity(0.7))
                 }
                 Spacer()
@@ -171,7 +175,7 @@ private struct AgendaColumn: View {
 private struct EmptyStateView: View {
     var body: some View {
         VStack(spacing: 6) {
-            Text("👨‍👩‍👧").font(.title)
+            Image(systemName: "house.fill").font(.title2).foregroundColor(.white)
             Text("Open Family Cube").font(.caption).bold().foregroundColor(.white.opacity(0.9))
         }
         // .containerBackground(for: .widget) is required on iOS 17+ (this
@@ -182,7 +186,7 @@ private struct EmptyStateView: View {
         // to render the widget's content at all (shows blank), most
         // reliably reproduced on Lock Screen/StandBy but not limited to
         // it. All three views below had this same gap.
-        .containerBackground(brandPurple, for: .widget)
+        .containerBackground(brandAccent, for: .widget)
     }
 }
 
@@ -192,12 +196,11 @@ private struct ParentWidgetView: View {
     let data: WidgetParentSummary
     @Environment(\.widgetFamily) var family
 
-    @ViewBuilder private var header: some View {
+    @ViewBuilder private func header(showUnreadBadge: Bool) -> some View {
         HStack {
-            Text("🏠").font(.title3)
-            Text(data.familyName).font(.subheadline).bold().foregroundColor(.white)
-            Spacer()
-            if data.unreadMessages > 0 {
+            Text(data.familyName).font(.subheadline).bold().foregroundColor(.white).lineLimit(1)
+            Spacer(minLength: 4)
+            if showUnreadBadge, data.unreadMessages > 0 {
                 Text("\(data.unreadMessages)")
                     .font(.caption2).bold().foregroundColor(brandTeal)
                     .padding(.horizontal, 6).padding(.vertical, 2)
@@ -214,7 +217,7 @@ private struct ParentWidgetView: View {
     @ViewBuilder private var pendingBlock: some View {
         if data.pendingApprovals == 0 {
             VStack(alignment: .leading, spacing: 2) {
-                Text("✓").font(.system(size: 28, weight: .bold)).foregroundColor(.white)
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 26)).foregroundColor(.white)
                 Text("All caught up").font(.caption).bold().foregroundColor(.white.opacity(0.9))
             }
         } else {
@@ -237,7 +240,7 @@ private struct ParentWidgetView: View {
             // "next event" caption.
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
-                    header
+                    header(showUnreadBadge: true)
                     Spacer(minLength: 4)
                     pendingBlock
                     Spacer(minLength: 4)
@@ -256,22 +259,15 @@ private struct ParentWidgetView: View {
             .padding()
             .containerBackground(brandTeal, for: .widget)
         } else {
+            // Small widget's ~110pt of height only fits ONE hero thing —
+            // pending approvals is the reason this widget exists ("parents
+            // see what needs review"). No unread badge, no up-next line:
+            // stacking 3 blocks here is what produced the cramped,
+            // truncated layout this replaced.
             VStack(alignment: .leading, spacing: 8) {
-                header
+                header(showUnreadBadge: false)
                 Spacer()
                 pendingBlock
-                if let title = data.nextEventTitle, !title.isEmpty {
-                    // Small widget has no room for a full agenda list — a
-                    // single compact "up next" line is the one extra thing
-                    // worth showing here.
-                    HStack(spacing: 3) {
-                        Text("📅").font(.system(size: 9))
-                        Text(title).font(.system(size: 10)).bold().foregroundColor(.white).lineLimit(1)
-                        if let time = data.nextEventTime {
-                            Text("· \(time)").font(.system(size: 9)).foregroundColor(.white.opacity(0.75)).lineLimit(1)
-                        }
-                    }
-                }
             }
             .padding()
             .containerBackground(brandTeal, for: .widget)
@@ -334,7 +330,7 @@ private struct MemberWidgetView: View {
                     // single compact "up next" line is the one extra thing
                     // worth showing here.
                     HStack(spacing: 3) {
-                        Text("📅").font(.system(size: 9))
+                        Image(systemName: "calendar").font(.system(size: 9)).foregroundColor(.white.opacity(0.85))
                         Text(title).font(.system(size: 10)).bold().foregroundColor(.white).lineLimit(1)
                         if let time = data.nextEventTime {
                             Text("· \(time)").font(.system(size: 9)).foregroundColor(.white.opacity(0.75)).lineLimit(1)

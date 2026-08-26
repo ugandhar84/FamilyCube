@@ -7,6 +7,7 @@ import { usePetStore } from '@/store/petStore';
 import { clearWeatherCache } from '@/lib/weather';
 import { resetAppSettingsSubscription } from '@/lib/hooks/useAppSettings';
 import { useNotifStore } from '@/store/notifStore';
+import { useFamilyStore } from '@/store/familyStore';
 
 export const TERMS_VERSION = '1.0';
 
@@ -224,6 +225,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     usePreferenceStore.getState().reset();
     usePetStore.getState().reset();
     useNotifStore.getState().reset();
+    // Critical: familyStore caches members/activeMemberId under fixed
+    // (non-user-scoped) AsyncStorage keys, and derives which family to
+    // query on next load from whatever's already cached. Without this,
+    // signing out and back in as a DIFFERENT account kept showing (and
+    // re-querying) the previous account's family — a real cross-account
+    // data leak, not just a stale-UI flash.
+    await useFamilyStore.getState().reset();
     clearWeatherCache();
     resetAppSettingsSubscription();
   },

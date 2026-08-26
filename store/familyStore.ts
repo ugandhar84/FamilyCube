@@ -226,6 +226,14 @@ interface FamilyState {
   setMemberPin: (id: string, pin: string | null) => Promise<void>;
   loadFromStorage: () => Promise<void>;
   syncFromDB: () => Promise<void>;
+  // Clears both the in-memory state AND the AsyncStorage cache. Must run
+  // on sign-out: loadFromStorage()/syncFromDB() derive which family to
+  // query from whatever's ALREADY cached (see syncFromDB's knownFamilyId),
+  // so without this, signing out and back in as a different account kept
+  // showing — and re-querying — the PREVIOUS account's family data, since
+  // nothing ever cleared the stale cache in between (real cross-account
+  // data leak, not just a stale-UI flash).
+  reset: () => Promise<void>;
 }
 
 const STORAGE_KEY = '@familycube_members_v4';
@@ -789,5 +797,18 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     } catch (e) {
       console.warn('[familyStore] syncFromDB:', e);
     }
+  },
+
+  reset: async () => {
+    if (_rtChannel) {
+      supabase.removeChannel(_rtChannel);
+      _rtChannel = null;
+      _rtFamilyId = '';
+    }
+    await Promise.all([
+      AsyncStorage.removeItem(STORAGE_KEY),
+      AsyncStorage.removeItem(ACTIVE_KEY),
+    ]);
+    set({ members: [], activeMemberId: null, loaded: false, familyName: '' });
   },
 }));

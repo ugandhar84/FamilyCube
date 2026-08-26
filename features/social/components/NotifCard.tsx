@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { TYPO } from '@/constants/theme';
-import { View, Text, TouchableOpacity, StyleSheet, Animated, Pressable, Linking } from 'react-native';
+import { View, Text, StyleSheet, Animated, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { parseISO, isToday, isYesterday, format } from 'date-fns';
 import { formatTime } from '@/lib/units';
@@ -84,21 +84,6 @@ export const TYPE_META: Record<string, { icon: string; label: string; tint: stri
 // notification_logs rows of those types still display (see TYPE_META below)
 // but fall through to the generic notifications list on tap instead of 404ing.
 export const ALERT_NAV: Record<string, string> = {
-  // Health
-  appointment_reminder:        '/health/appointments',
-  appointment_complete_prompt: '/health/appointments',
-  medication_reminder:         '/health/medications',
-  med_missed_dose:             '/health/medications',
-  med_monthly_nudge:           '/health/medications',
-  med_monthly_followup:        '/health/medications',
-  vaccine_reminder:            '/health/vaccines',
-  symptom_scan_ready:          '/ai/symptom-scan',
-  // Care
-  mood_reminder:               '/ai/mood-camera',
-  feeding_reminder:            '/(tabs)/care',
-  walk_reminder:               '/(tabs)/care',
-  birthday_notif:              '/(tabs)/care',
-  memorial_notif:              '/(tabs)/care',
   daily_tip:                   '/(tabs)/notifications',
   chat_message:                '/(tabs)/chat',
   // System
@@ -235,15 +220,4 @@ export const nc = StyleSheet.create({
   rightCol:       { alignItems: 'flex-end', gap: 6, alignSelf: 'flex-start', paddingTop: 1 },
   timeText:       { fontSize: TYPO.body, fontWeight: '600' },
   unreadDot:      { width: 8, height: 8, borderRadius: 4 },
-  infoRow:        { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
-  infoChip:       { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20, backgroundColor: '#F59E0B15' },
-  infoChipText:   { fontSize: TYPO.body, fontWeight: '600' },
-  expandPanel:    { marginTop: 12, paddingTop: 12, borderTopWidth: 1, gap: 8 },
-  expandRow:      { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  expandText:     { fontSize: TYPO.body, flex: 1, lineHeight: 18 },
-  profileBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 12, paddingVertical: 10, marginTop: 6, borderWidth: 1 },
-  profileBtnText: { fontSize: TYPO.body, fontWeight: '700' },
-  actionRow:      { marginTop: 10 },
-  actionPill:     { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
-  actionPillText: { fontSize: TYPO.caption, fontWeight: '700' },
 });

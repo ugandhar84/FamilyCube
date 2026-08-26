@@ -99,6 +99,16 @@ function RootNavigator() {
   const bootCompleted = useRef(false);
   const pendingWidgetTap = useRef(false);
   const bootTime = useRef(Date.now()).current;
+  // Monotonic guard against overlapping post-auth profile checks: multiple
+  // onAuthStateChange events (INITIAL_SESSION, SIGNED_IN, TOKEN_REFRESHED)
+  // can fire in quick succession, each kicking off its own async `.single()`
+  // profile fetch — without this, an EARLIER request that happens to
+  // resolve LAST (network jitter, a transient read racing a just-completed
+  // write) could call router.replace('/onboarding') and stomp a correct,
+  // already-applied '/(tabs)' navigation from a later, faster request.
+  // Reported: user with terms_accepted=true/onboarding_completed=true
+  // confirmed correct in the DB still landed back on /onboarding.
+  const profileCheckSeq = useRef(0);
 
   // Root-level overlay covers everything including the tab bar.
   // hideAsync fires in onSplashLayout — only after gradient is painted —
@@ -285,11 +295,16 @@ function RootNavigator() {
         // During initial app boot, getSession handles the first navigation.
         // Only navigate from SIGNED_IN after boot is done (i.e. user signed in from the login screen).
         if (!bootCompleted.current) return;
+        const mySeq = ++profileCheckSeq.current;
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('onboarding_completed, terms_accepted, deleted_at, handle')
           .eq('id', session.user.id)
           .single();
+        // A newer check already started (and may have already navigated)
+        // while this one was in flight — this result is stale, don't act
+        // on it or risk stomping a correct navigation with an outdated read.
+        if (mySeq !== profileCheckSeq.current) return;
 
         console.log('[PawBond:ProfileCheck]', {
           userId: session.user.id,

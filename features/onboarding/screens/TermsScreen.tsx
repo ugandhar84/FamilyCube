@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/lib/ThemeContext';
 import BackButton from '@/components/BackButton';
 import { useAuthStore } from '@/store/authStore';
+import { showAlert } from '@/components/AppAlert';
 import { TYPO } from '@/constants/theme';
 
 // Exported so Profile's read-only "Terms & Privacy" link (features/profile)
@@ -250,8 +251,15 @@ export default function TermsScreen() {
     try {
       await acceptTerms();
       router.replace('/onboarding/family-choice');
-    } catch {
-      // Retry-able; keep user on screen so they can try again
+    } catch (e: any) {
+      // Was a silent no-op catch — a failed write (RLS denial, network
+      // error) left the user staring at an unresponsive Accept button
+      // with no explanation, and onboarding_completed never actually got
+      // set, so the next app launch routed straight back to /onboarding
+      // even though the user believed they'd already completed it
+      // (reported: "completed onboarding multiple times, still asking").
+      console.error('[TermsScreen] acceptTerms failed:', e?.message, e);
+      showAlert('Something went wrong', e?.message ?? 'Could not save your acceptance. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }

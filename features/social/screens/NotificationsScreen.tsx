@@ -116,7 +116,7 @@ export default function NotificationsScreen({ hideHeader = false, onUnreadChange
           </View>
           <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>All caught up!</Text>
           <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
-            Lost pet alerts, appointment reminders{'\n'}and family updates will appear here.
+            Reminders, alerts{'\n'}and family updates will appear here.
           </Text>
         </View>
       ) : (
@@ -211,7 +211,6 @@ const styles = StyleSheet.create({
   headerBtnText: { fontSize: TYPO.body, fontWeight: '600' },
   filterRow:     { paddingHorizontal: 20, paddingVertical: 6, paddingBottom: 6, gap: 8 },
   filterChip:    { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: RADIUS.full, borderWidth: 1 },
-  filterIcon:    { fontSize: TYPO.body },
   filterLabel:   { fontSize: TYPO.body, fontWeight: '600' },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 18, marginBottom: 10 },
   sectionDot:    { width: 6, height: 6, borderRadius: 3 },

@@ -767,6 +767,7 @@ function InviteMemberSheet({
               flexDirection: 'row', alignItems: 'center', gap: 8,
               paddingVertical: 8, paddingHorizontal: 12, borderRadius: RADIUS.sm,
               backgroundColor: colors.surface, marginBottom: 6,
+              borderWidth: 1, borderColor: colors.success + '30',
             }}>
               <Ionicons name="checkmark-circle" size={16} color={colors.success} />
               <Text style={{ flex: 1, fontSize: TYPO.caption, fontWeight: '700', color: colors.textPrimary }}>{m.name}</Text>

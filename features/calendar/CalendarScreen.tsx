@@ -1135,7 +1135,8 @@ export default function CalendarScreen({ hideHeader, hideCreateButton, headerCon
               {/* Mock's segmented control: equal-width tabs in one pill-shaped
                   bar, active tab lifted on a white/card chip — not a
                   scrolling row of separate pills. */}
-              <View style={{ flexDirection: 'row', marginHorizontal: 14, backgroundColor: colors.surface, borderRadius: 12, padding: 3 }}>
+              <View style={{ flexDirection: 'row', marginHorizontal: 14, backgroundColor: colors.surface, borderRadius: 12, padding: 3,
+                borderWidth: 1, borderColor: colors.border }}>
                 {([
                   { key: 'agenda' as const, label: 'Agenda' },
                   { key: 'month' as const,  label: 'Month' },

@@ -213,7 +213,8 @@ export function EventCardRow({ ev, members, colors, isDark, onPress, onLongPress
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
               {showCategory && ev.category && (
-                <View style={{ backgroundColor: colors.surface, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 }}>
+                <View style={{ backgroundColor: colors.surface, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1,
+                  borderWidth: 1, borderColor: colors.border }}>
                   <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textSecondary }}>{ev.category}</Text>
                 </View>
               )}

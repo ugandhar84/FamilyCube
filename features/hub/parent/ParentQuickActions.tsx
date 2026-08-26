@@ -33,8 +33,8 @@ export function ParentQuickActions({ colors, isDark, groceryCount, onScanFlyer, 
         return (
           <Pressable key={t.key} onPress={t.onPress} style={{
             flex: 1, borderRadius: 18, paddingVertical: 14, paddingHorizontal: 4, alignItems: 'center', gap: 8,
-            backgroundColor: isDark ? t.tint + '32' : t.tint + '2E',
-            borderWidth: 1, borderColor: isDark ? t.tint + '45' : t.tint + '3A',
+            backgroundColor: isDark ? t.tint + '22' : t.tint + '1E',
+            borderWidth: 1, borderColor: isDark ? t.tint + '38' : t.tint + '2C',
           }}>
             {/* Solid-tint icon chip with a white icon — bolder "badge" look
                 instead of a thin outline icon floating on the wash. */}

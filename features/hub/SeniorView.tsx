@@ -821,10 +821,10 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
       {hasCaregiverAccess && (
         <View style={{ paddingHorizontal: 16, marginBottom: 4 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8,
-            backgroundColor: isDark ? BRAND.purple + '18' : BRAND.purple + '10',
-            borderRadius: 12, padding: 10, borderWidth: 1, borderColor: BRAND.purple + '30' }}>
+            backgroundColor: isDark ? colors.accent + '18' : colors.accent + '10',
+            borderRadius: 12, padding: 10, borderWidth: 1, borderColor: colors.accent + '30' }}>
             <Text style={{ fontSize: 16 }}>🔑</Text>
-            <Text style={{ flex: 1, fontSize: 12.5, fontWeight: '700', color: BRAND.purple }}>
+            <Text style={{ flex: 1, fontSize: 12.5, fontWeight: '700', color: colors.accent }}>
               You're the temporary approver{caregiverGrant ? ` until ${new Date(caregiverGrant.expiresAt).toLocaleString()}` : ''} — you can approve/decline chore submissions below.
             </Text>
           </View>

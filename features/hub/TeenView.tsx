@@ -324,7 +324,7 @@ export function TeenView({ active, members, colors, isDark, activeTrips, compose
         <View style={pad}>
           <Pressable onPress={() => setOpenSheet('rides')}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 10,
-              backgroundColor: isDark ? colors.danger + '15' : '#FEF2F2',
+              backgroundColor: isDark ? colors.danger + '15' : colors.dangerLight,
               borderWidth: 1.5, borderColor: colors.danger + '40',
               borderRadius: 16, padding: 12, marginBottom: 12 }}>
             <Bell size={18} color={colors.danger} />

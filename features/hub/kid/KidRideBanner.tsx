@@ -8,11 +8,6 @@ import type { FamilyEvent } from '@/store/eventStore';
 import type { FamilyMember } from '@/store/familyStore';
 import { driverLabelByName } from '@/lib/format';
 
-// Money-green — "ride here / on the way" positive accent, distinct from
-// brand teal used elsewhere in the kid hub. Not colors.success (which IS
-// brand teal in this app) — kept as one local constant.
-const MONEY_GREEN = '#10B981';
-
 // A ride goes through four states, not one steady display:
 //   counting down  -> the normal "picks you up in Nm" view
 //   here            -> arrived (<=2 min either side of scheduled time)
@@ -83,7 +78,7 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, membe
   const canDismiss = rideCountdown <= -30 || confirmed;
 
   const Icon = confirmed ? Check : isOverdue ? AlertTriangle : (rideHere || onTheWay) ? PartyPopper : Car;
-  const iconColor = confirmed ? MONEY_GREEN : isOverdue ? colors.danger : (rideHere || onTheWay) ? '#6EE7B7' : MONEY_GREEN;
+  const iconColor = isOverdue ? colors.danger : colors.teal;
 
   // Was ev.helper?.split(' ')[0] everywhere — undefined for every
   // driverName-based kid ride request (KidRequestModal's own shape), so
@@ -118,8 +113,8 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, membe
         // red combo), was hard to read. Reduced to a translucent danger
         // tint (matches the confirmed/here cards' own lower-opacity
         // treatment) with the headline in plain white instead.
-        backgroundColor: confirmed ? (isDark ? '#0F2A20' : '#ECFDF5') : isOverdue ? colors.danger + '55' : rideHere ? '#064E3B' : (isDark ? '#0F2A20' : '#ECFDF5'),
-        borderWidth: 1.5, borderColor: confirmed ? `${MONEY_GREEN}50` : isOverdue ? colors.danger : rideHere ? MONEY_GREEN : `${MONEY_GREEN}50` }}>
+        backgroundColor: isOverdue ? colors.danger + '55' : rideHere ? colors.teal : (isDark ? colors.teal + '22' : colors.tealLight),
+        borderWidth: 1.5, borderColor: isOverdue ? colors.danger : colors.teal + '50' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: iconColor + '25', alignItems: 'center', justifyContent: 'center' }}>
             <Icon size={22} color={iconColor} />
@@ -157,7 +152,7 @@ export function KidRideBanner({ ev, rideCountdown, colors, isDark, active, membe
         {!confirmed && (rideHere || isOverdue || onTheWay) && (
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=kid member=${active.name} tapped "I'm picked up" on "${ev.title}" (id=${ev.id}) → onConfirmPickup [features/hub/kid/KidRideBanner.tsx]`); onConfirmPickup(ev); }}
-              style={{ flex: 1, backgroundColor: MONEY_GREEN, borderRadius: 12, paddingVertical: 9, alignItems: 'center' }}>
+              style={{ flex: 1, backgroundColor: colors.teal, borderRadius: 12, paddingVertical: 9, alignItems: 'center' }}>
               <Text style={{ fontSize: KID.sub, fontWeight: '900', color: '#fff' }}>I'm picked up</Text>
             </Pressable>
             {onSendDriverLate && (

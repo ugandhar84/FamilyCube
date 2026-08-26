@@ -14,11 +14,11 @@ const config = {
   newArchEnabled: true,
   splash: {
     resizeMode: "cover",
-    backgroundColor: "#FDFBF7",
+    backgroundColor: "#FAF8F4",
     image: "./assets/splash-gradient-light.png",
     dark: {
       image: "./assets/splash-gradient-dark.png",
-      backgroundColor: "#12141C",
+      backgroundColor: "#0E0C13",
     },
   },
   ios: {
@@ -34,10 +34,10 @@ const config = {
     splash: {
       image: "./assets/splash-gradient-light.png",
       resizeMode: "cover",
-      backgroundColor: "#FDFBF7",
+      backgroundColor: "#FAF8F4",
       dark: {
         image: "./assets/splash-gradient-dark.png",
-        backgroundColor: "#12141C",
+        backgroundColor: "#0E0C13",
       },
     },
     icon: {

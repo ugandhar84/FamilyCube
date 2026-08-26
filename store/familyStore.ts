@@ -749,7 +749,20 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
     // members empty on a failed sync is the honest state; the UI should
     // show a loading/retry state instead of silently substituting fake
     // people.
-    await get().syncFromDB();
+    //
+    // Short retry with backoff specifically for the "no cache AND couldn't
+    // resolve this member's own family_id yet" case — this is exactly the
+    // auth.uid()-propagation window right after a fresh sign-in (a real,
+    // already-onboarded family with real members briefly reads back as
+    // empty). Without this, loaded:true + members:[] after a single failed
+    // attempt looked identical to "genuinely no family," which sent an
+    // already-onboarded user through onboarding's Create/Join Family
+    // screen (reported live).
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await get().syncFromDB();
+      if (get().members.length > 0) break;
+      if (attempt < 2) await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+    }
     set({ loaded: true });
   },
 
@@ -775,12 +788,32 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
       // state, but still bounced to onboarding right after logging back in).
       // Resolving the real family via this member's own auth_user_id row
       // first removes the dependency on the in-memory cache entirely.
+      let ownRowLookupAttempted = false;
       if (!knownFamilyId) {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
+          ownRowLookupAttempted = true;
           const { data: ownRow } = await supabase.from('members').select('family_id').eq('auth_user_id', user.id).maybeSingle();
           knownFamilyId = ownRow?.family_id ?? undefined;
         }
+      }
+      // Never fall through to an unscoped `select('*')` across the whole
+      // members table — that was the actual root cause of a real,
+      // already-onboarded family being told it had "no members" (RLS/
+      // auth.uid() propagation race right after a fresh sign-in returning
+      // zero rows, misread as ground truth). If we genuinely can't resolve
+      // this member's own family_id after actually trying, bail out
+      // without touching `members`/`loaded` at all — the caller (
+      // loadFromStorage) still sets loaded:true afterward, but leaving
+      // `members` untouched here means it stays whatever it already was
+      // (freshly-reset [] right after sign-in, which is the honest "still
+      // loading" state) instead of getting overwritten by an unscoped
+      // query's unreliable result.
+      if (!knownFamilyId) {
+        if (ownRowLookupAttempted) {
+          console.warn('[familyStore] syncFromDB: could not resolve this member\'s own family_id — skipping sync rather than running an unscoped query');
+        }
+        return;
       }
       const [activeId, { data, error }] = await Promise.all([
         AsyncStorage.getItem(ACTIVE_KEY),
@@ -793,9 +826,7 @@ export const useFamilyStore = create<FamilyState>((set, get) => ({
         // id asc) uses, or a tie could make the client show/hide the wrong
         // seniors_a/seniors_b tab compared to what the server actually
         // enforces (live-DB QA verification finding, this session).
-        knownFamilyId
-          ? supabase.from('members').select('*').eq('family_id', knownFamilyId).order('created_at').order('id')
-          : supabase.from('members').select('*').order('created_at').order('id'),
+        supabase.from('members').select('*').eq('family_id', knownFamilyId).order('created_at').order('id'),
       ]);
       if (error || !data) return;
       const members = dedupeMembers(data.map(fromRow));

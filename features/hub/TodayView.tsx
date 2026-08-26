@@ -69,7 +69,7 @@ export function GreetingHeader({ colors, isDark, activeMember, otherAttentionCou
       }}>
         {getGreetingPrefix()}
         {'\n'}
-        <Text style={{ fontWeight: '400' }}>{firstName}</Text>
+        <Text style={{ fontWeight: '600' }}>{firstName}</Text>
       </Text>
       <Text style={{
         fontSize: TYPO.label, fontWeight: '600',

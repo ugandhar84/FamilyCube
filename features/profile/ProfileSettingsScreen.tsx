@@ -1551,7 +1551,14 @@ export default function ProfileSettingsScreen() {
               label="Sign Out"
               subtitle="You can sign back in anytime"
               onPress={async () => {
-                await signOut();
+                try {
+                  await signOut();
+                } catch (e: any) {
+                  console.error('[ProfileSettingsScreen] Sign Out failed:', e?.message, e);
+                  // Don't leave the user stuck mid-session on a failed sign-out —
+                  // navigate to login regardless, since local state was likely
+                  // still cleared even if the network signOut() call itself threw.
+                }
                 router.replace('/(auth)/login');
               }}
               colors={colors} isDark={isDark}

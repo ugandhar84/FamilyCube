@@ -102,7 +102,9 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
           <View style={{ borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 12,
-            maxHeight: '90%', backgroundColor: colors.card }}>
+            maxHeight: '90%', backgroundColor: colors.card,
+            borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
+            shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }}>
 
             {/* Drag handle */}
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 12 }} />

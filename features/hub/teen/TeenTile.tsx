@@ -13,14 +13,17 @@ export function TeenTile({ label, sublabel, Icon, accent, badge, onPress, colors
     <Pressable onPress={() => { console.log(`[UserAction] screen=Hub role=teen tapped "${label}" on "TeenTile" → onPress [features/hub/teen/TeenTile.tsx:13]`); onPress(); }}
       style={({ pressed }) => ({
         flexBasis: '48%', flexGrow: 1,
-        borderRadius: 18, borderWidth: 1, borderColor: isDark ? colors.border : '#E8E8F0',
-        backgroundColor: colors.card, padding: 14, gap: 8,
+        borderRadius: 18, borderWidth: 1, borderColor: accent + (isDark ? '38' : '2C'),
+        backgroundColor: isDark ? accent + '22' : accent + '1E', padding: 14, gap: 8,
         opacity: pressed ? 0.7 : 1,
       })}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: accent + '20',
+        {/* Solid-tint icon chip with a white icon — matches the Parent
+            Hub's quick-action tile treatment instead of a tint-only chip
+            with a colored icon on a flat card background. */}
+        <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: accent,
           alignItems: 'center', justifyContent: 'center' }}>
-          <Icon size={19} color={accent} />
+          <Icon size={19} color="#fff" />
         </View>
         {!!badge && badge > 0 && (
           <View style={{ backgroundColor: accent, borderRadius: 10, minWidth: 20, paddingHorizontal: 6, paddingVertical: 2, alignItems: 'center' }}>

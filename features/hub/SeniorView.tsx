@@ -977,11 +977,14 @@ export function SeniorView({ active, members, colors, isDark, onHelpRequest, onE
           grandparent-role audit, Critical C2). */}
       <Pressable onPress={() => { logAction('Perks (navigate to Store)', "router.push('/(tabs)/store') [navigation only, no DB write]", { at: '903' }); router.push('/(tabs)/store' as any); }}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 12,
-          backgroundColor: isDark ? colors.card : '#fff', borderRadius: 16,
-          borderWidth: 1, borderColor: colors.border, padding: 14 }}>
-        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#7C3AED20',
+          backgroundColor: isDark ? colors.accent + '22' : colors.accent + '1E', borderRadius: 16,
+          borderWidth: 1, borderColor: colors.accent + (isDark ? '38' : '2C'), padding: 14 }}>
+        {/* Solid-tint icon chip with a white icon, matching the Parent Hub's
+            quick-action tiles — was a tint-only chip with a hardcoded raw
+            hex (#7C3AED) instead of colors.accent. */}
+        <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.accent,
           alignItems: 'center', justifyContent: 'center' }}>
-          <Gift size={20} color="#7C3AED" />
+          <Gift size={20} color="#fff" />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 14, fontWeight: '800', color: colors.textPrimary }}>Perks</Text>

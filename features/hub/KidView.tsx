@@ -456,6 +456,7 @@ export function KidView({ active, members, colors, isDark, activeTrips, familyId
         onPiggyBank={() => setPiggyBankModal(true)} onHistory={() => setHistoryModal(true)}
         onLeaderboard={() => setLeaderboardSheet(true)} onCheerSquad={() => setCheerSquadSheet(true)}
         cheerBadge={siblingCheerable.length}
+        colors={colors} isDark={isDark}
       />
 
       {/* 6. Leaderboard + Cheer Squad — same components as before, now

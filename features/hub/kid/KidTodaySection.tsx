@@ -1,16 +1,9 @@
 import { View, Text, Pressable } from 'react-native';
 import { Home, Backpack, Timer, MessageCircle } from 'lucide-react-native';
-import { BRAND } from '@/components/FamilyCubeLogo';
 import { KID } from './kidTheme';
 import { HubTimelineSection } from '../HubTimelineSection';
 import type { FamilyMember } from '@/store/familyStore';
 import type { FamilyEvent } from '@/store/eventStore';
-
-// Money-green — "I'm home" positive check-in accent, distinct from brand
-// teal (used elsewhere for confirmed/assigned state). Not colors.success
-// (which IS brand teal in this app) — kept as one local constant, matching
-// the original KidCheckinRow.
-const MONEY_GREEN = '#10B981';
 
 // "Today" — HubTimelineSection's existing strip, with KidCheckinRow's
 // "I'm safe" one-tap check-ins and "Ask Parent" folded in as one row of
@@ -38,15 +31,23 @@ export function KidTodaySection({
       <View style={{ paddingHorizontal: 16, marginBottom: 14 }}>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           {([
-            { key: 'home',  label: "I'm Home!",   Icon: Home,     color: MONEY_GREEN,  bg: `${MONEY_GREEN}15`, border: `${MONEY_GREEN}40`, onPress: () => onCheckin('home') },
-            { key: 'ready', label: "I'm Ready!",   Icon: Backpack, color: BRAND.amber,  bg: BRAND.amber + '15', border: BRAND.amber + '40', onPress: () => onCheckin('ready') },
-            { key: 'late',  label: 'Running Late', Icon: Timer,    color: colors.danger, bg: `${colors.danger}15`, border: `${colors.danger}40`, onPress: () => onCheckin('late') },
-            { key: 'ask',   label: 'Ask Parent',   Icon: MessageCircle, color: BRAND.purple, bg: BRAND.purple + '15', border: BRAND.purple + '60', onPress: onAskParent },
-          ] as const).map(({ key, label, Icon, color, bg, border, onPress }) => (
+            // Same 4 brand tokens ParentQuickActions uses (accent/parent/
+            // kid/danger) — no off-palette hex, matching the exact Parent
+            // Hub tile colors instead of a different local set.
+            { key: 'home',  label: "I'm Home!",   Icon: Home,     color: colors.parent, onPress: () => onCheckin('home') },
+            { key: 'ready', label: "I'm Ready!",   Icon: Backpack, color: colors.kid,    onPress: () => onCheckin('ready') },
+            { key: 'late',  label: 'Running Late', Icon: Timer,    color: colors.danger, onPress: () => onCheckin('late') },
+            { key: 'ask',   label: 'Ask Parent',   Icon: MessageCircle, color: colors.accent, onPress: onAskParent },
+          ] as const).map(({ key, label, Icon, color, onPress }) => (
             <Pressable key={key} onPress={() => { console.log(`[UserAction] screen=Hub role=kid tapped "${label}" on "KidTodaySection" (id=${key}) [features/hub/kid/KidTodaySection.tsx]`); onPress(); }}
-              style={{ flex: 1, borderRadius: 16, paddingVertical: 12, alignItems: 'center', gap: 5,
-                backgroundColor: bg, borderWidth: 1.5, borderColor: border }}>
-              <Icon size={19} color={color} strokeWidth={2.2} />
+              style={{ flex: 1, borderRadius: 16, paddingVertical: 12, alignItems: 'center', gap: 6,
+                backgroundColor: isDark ? color + '22' : color + '1E', borderWidth: 1, borderColor: color + (isDark ? '38' : '2C') }}>
+              {/* Solid-tint icon chip with a white icon — matches the Parent
+                  Hub's quick-action tile treatment instead of a bare icon
+                  floating directly on the tinted wash. */}
+              <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: color }}>
+                <Icon size={17} color="#fff" strokeWidth={2.4} />
+              </View>
               <Text style={{ fontSize: KID.tiny, fontWeight: '900', color, textAlign: 'center' }} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
             </Pressable>
           ))}

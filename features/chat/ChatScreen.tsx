@@ -764,7 +764,19 @@ export default function ChatScreen() {
           </View>
         ) : (
           <>
-            {/* ── Messages — inverted so newest is always at visual bottom ── */}
+            {/* ── Messages + scroll-to-latest button, wrapped in their own
+                flex:1 View — the button's position:'absolute' was
+                previously scoped to the WHOLE KeyboardAvoidingView (its
+                nearest ancestor, since a bare Fragment provides no layout
+                boundary), not just this message area. That put `bottom: 12`
+                12px above the very bottom of the entire input+banners
+                stack, not above the input bar — the moderation/reply/edit/
+                attachment banners and the actual TextInput row all render
+                as LATER siblings of this fragment and would sit on top of
+                the button, hiding it entirely (reported live: button never
+                appeared when scrolling up). Wrapping just the FlatList+
+                button pair fixes the positioning boundary. ── */}
+            <View style={{ flex: 1 }}>
             <FlatList
               ref={flatRef}
               data={reversedItems}
@@ -905,6 +917,7 @@ export default function ChatScreen() {
                 <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff' }}>Latest</Text>
               </Pressable>
             )}
+            </View>
 
             {/* ── Moderation warning ── */}
             {moderationWarning && (

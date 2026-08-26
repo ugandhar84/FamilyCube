@@ -260,15 +260,24 @@ private struct ParentWidgetView: View {
             .padding()
             .containerBackground(brandTeal, for: .widget)
         } else {
-            // Small widget's ~110pt of height only fits ONE hero thing —
-            // pending approvals is the reason this widget exists ("parents
-            // see what needs review"). No unread badge, no up-next line:
-            // stacking 3 blocks here is what produced the cramped,
-            // truncated layout this replaced.
+            // Small widget's ~110pt of height fits the hero pending-approval
+            // block plus one slim up-next line below it — pending approvals
+            // still leads (that's the reason this widget exists), no unread
+            // badge (chat has its own badge already), and up-next drops its
+            // icon and shows just the event name + time to keep it slim.
             VStack(alignment: .leading, spacing: 8) {
                 header(showUnreadBadge: false)
                 Spacer()
                 pendingBlock
+                if let title = data.nextEventTitle, !title.isEmpty {
+                    Spacer(minLength: 2)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(title).font(.system(size: 11, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                        if let time = data.nextEventTime {
+                            Text(time).font(.system(size: 10)).foregroundColor(.white.opacity(0.7)).lineLimit(1)
+                        }
+                    }
+                }
             }
             .padding()
             .containerBackground(brandTeal, for: .widget)

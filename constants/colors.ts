@@ -85,7 +85,7 @@ export const lightColors = {
   // ── Text ──────────────────────────────────────────────────────────────
   textPrimary:   '#2C2722',
   textSecondary: '#6B5F52',
-  textTertiary:  '#A69A8A',
+  textTertiary:  '#8A7D6C',
   textInverse:   '#FFFFFF',
   textDisabled:  '#D5CCBE',
 

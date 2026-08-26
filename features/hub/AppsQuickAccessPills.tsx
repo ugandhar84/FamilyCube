@@ -19,12 +19,12 @@ import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, runOnJS, type SharedValue,
 } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
-import { BookOpen, Heart, Image as ImageIcon, SlidersHorizontal, X, GripVertical, Check } from 'lucide-react-native';
+import { BookOpen, Heart, Image as ImageIcon, SlidersHorizontal, X, GripVertical, Check, UserCircle2 } from 'lucide-react-native';
 import { TYPO, RADIUS } from '@/constants/theme';
 import { useFamilyStore } from '@/store/familyStore';
 import type { MemberRole } from '@/store/familyStore';
 
-type PillId = 'school' | 'health' | 'records' | 'meals' | 'memories' | 'ledger' | 'grocery' | 'store';
+type PillId = 'school' | 'health' | 'records' | 'meals' | 'memories' | 'ledger' | 'grocery' | 'store' | 'profile';
 
 // A curated "silky" pastel set (user-picked), one per pill, replacing the
 // single flat beige (#F2ECE1) every pill previously shared regardless of
@@ -41,6 +41,7 @@ export const PILL_COLORS: Record<PillId, { light: string; deep: string }> = {
   memories: { light: '#F5D6DC', deep: '#C46B85' }, // Rose Pink
   records:  { light: '#C6E5F0', deep: '#3E86A0' }, // Light Cyan Blue
   store:    { light: '#F4D4CE', deep: '#C97656' }, // Salmon Cream
+  profile:  { light: '#DCEAE0', deep: '#4F7562' }, // Muted Sage — distinct from School's lavender/Memories' rose
 };
 
 // 'gps'/Radar removed — now a dedicated top-level tab for parents (FindFam),
@@ -58,6 +59,10 @@ export const PILL_COLORS: Record<PillId, { light: string; deep: string }> = {
 // Health/Records segmented switch, one destination instead of two closely
 // related ones.
 const PILLS: { id: PillId; label: string; Icon: any; roles: MemberRole[] }[] = [
+  // Profile-settings has no bottom-nav tab — this pill is now the ONLY
+  // entry point for every role (the header gear icon was removed once
+  // this shipped), so it leads the default row rather than trailing it.
+  { id: 'profile',  label: 'Profile',  Icon: UserCircle2,  roles: ['parent', 'kid', 'teen', 'senior'] },
   { id: 'school',   label: 'School',   Icon: BookOpen,     roles: ['parent', 'kid'] },
   { id: 'health',   label: 'Health',   Icon: Heart,        roles: ['parent', 'kid'] },
   { id: 'memories', label: 'Memories', Icon: ImageIcon,    roles: ['parent', 'kid', 'senior'] },
@@ -71,7 +76,7 @@ const PILLS: { id: PillId; label: string; Icon: any; roles: MemberRole[] }[] = [
 const PILL_ROUTES: Record<PillId, string> = {
   school: '/(tabs)/school', health: '/(tabs)/family-health', records: '/(tabs)/family-health',
   meals: '/(tabs)/meals', memories: '/(tabs)/memories', ledger: '/(tabs)/store',
-  grocery: '/(tabs)/grocery', store: '/(tabs)/store',
+  grocery: '/(tabs)/grocery', store: '/(tabs)/store', profile: '/profile-settings',
 };
 
 function orderPills(available: typeof PILLS, savedOrder: string[] | undefined) {

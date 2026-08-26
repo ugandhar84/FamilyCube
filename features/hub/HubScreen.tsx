@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, RefreshControl } from 'react-native';
-import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus } from 'lucide-react-native';
 import { useTheme } from '@/lib/ThemeContext';
@@ -28,7 +27,6 @@ import GlobalCelebration from '@/components/GlobalCelebration';
 import { AppsQuickAccessPills } from './AppsQuickAccessPills';
 
 export default function HubScreen() {
-  const router = useRouter();
   const { colors, isDark } = useTheme();
   const { members, activeMemberId, setActiveMember, loaded, loadFromStorage } = useFamilyStore();
   const { loadFromStorage: loadQuests }  = useQuestStore();
@@ -130,13 +128,9 @@ export default function HubScreen() {
         memberRole={active.role as 'parent' | 'kid' | 'teen' | 'senior'}
         notifCount={unreadNotifCount}
         onBellPress={() => setNotifPanelOpen(true)}
-        // /profile (VaultScreen) no longer exists and no Hub pill links to
-        // profile-settings for any role — this header gear icon is the only
-        // remaining path to settings/PIN/notifications/danger-zone for
-        // every role, not just seniors (regression: this was previously
-        // senior-only, leaving parent/kid/teen with no way to reach the
-        // Profile screen at all).
-        onSettingsPress={() => router.push('/profile-settings')}
+        // Header gear icon removed — the new Profile pill in
+        // AppsQuickAccessPills (leads the default row) is the sole entry
+        // point to /profile-settings for every role now.
       />
       <NotificationPanel visible={notifPanelOpen} onClose={() => setNotifPanelOpen(false)} />
 

@@ -6,6 +6,8 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Check, Calendar, ChevronLeft } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
+import StepProgressBar from '@/components/StepProgressBar';
+import StepTransition from '@/components/StepTransition';
 import {
   MedForm, BLANK_MED, MED_SUGGESTIONS, getCatColors, FREQ_LABELS,
   fmtDate, fmtDateDisplay, aStyles,
@@ -161,18 +163,14 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
               </View>
             </View>
 
-            {/* Step progress dots */}
-            <View style={{ flexDirection: 'row', gap: 6, paddingHorizontal: 20, paddingTop: 10 }}>
-              {STEPS.map((s, i) => (
-                <View key={s} style={{
-                  flex: 1, height: 4, borderRadius: 2,
-                  backgroundColor: i <= stepIndex ? catColor : colors.border,
-                }} />
-              ))}
+            {/* Step progress — animated fill instead of an instant snap */}
+            <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
+              <StepProgressBar stepCount={STEPS.length} activeIndex={stepIndex} accentColor={catColor} trackColor={colors.border} />
             </View>
 
             <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
               contentContainerStyle={{ padding: 20, paddingBottom: 8, gap: 18 }}>
+              <StepTransition stepKey={step}>
 
               {step === 'basics' && (
                 <>
@@ -477,6 +475,7 @@ export default function AddMedModal({ visible, onClose, onSave, members, colors,
                   </Text>
                 </View>
               )}
+              </StepTransition>
             </ScrollView>
 
             {/* Fixed footer — Back/Next through steps 1-3, Save on the last */}

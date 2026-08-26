@@ -28,6 +28,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/ThemeContext';
 import { TYPO } from '@/constants/theme';
+import StepProgressBar from '@/components/StepProgressBar';
+import StepTransition from '@/components/StepTransition';
 
 export function TaskFormShell({
   visible, onClose, stepIds, stepTitles, step, setStep,
@@ -61,7 +63,9 @@ export function TaskFormShell({
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={s.backdrop}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-          <View style={[s.sheet, { backgroundColor: colors.card }]}>
+          <View style={[s.sheet, { backgroundColor: colors.card,
+            borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border,
+            shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 24, shadowOffset: { width: 0, height: -6 }, elevation: 8 }]}>
             {/* Drag handle */}
             <View style={[s.handle, { backgroundColor: colors.border }]} />
 
@@ -91,14 +95,8 @@ export function TaskFormShell({
                   <Ionicons name="chevron-back" size={20} color={colors.textSecondary} />
                 </TouchableOpacity>
               )}
-              <View style={{ flexDirection: 'row', gap: 6, flex: 1 }}>
-                {stepIds.map((id, i) => (
-                  <View key={id} style={{
-                    flex: 1, height: 4, borderRadius: 2,
-                    backgroundColor: i <= step ? accentColor : (isDark ? colors.border : '#E2E8F0'),
-                  }} />
-                ))}
-              </View>
+              <StepProgressBar stepCount={stepIds.length} activeIndex={step} accentColor={accentColor}
+                trackColor={isDark ? colors.border : '#E2E8F0'} />
               <Text style={{ fontSize: TYPO.micro, fontWeight: '800', color: colors.textTertiary }}>
                 {step + 1}/{stepIds.length}
               </Text>
@@ -115,7 +113,9 @@ export function TaskFormShell({
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: isReview ? Math.max(48, insets.bottom + 32) : 48 }}
             >
-              {children}
+              <StepTransition stepKey={currentStepId}>
+                {children}
+              </StepTransition>
             </ScrollView>
 
             {/* ── Footer nav — Next on every step but review, which renders

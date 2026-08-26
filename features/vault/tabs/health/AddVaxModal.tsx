@@ -5,6 +5,8 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Check, Calendar, ChevronLeft } from 'lucide-react-native';
+import StepProgressBar from '@/components/StepProgressBar';
+import StepTransition from '@/components/StepTransition';
 import {
   VaxForm, BLANK_VAX, VAX_TYPES, VAX_SUGGESTIONS,
   fmtDate, fmtDateDisplay, aStyles,
@@ -128,18 +130,14 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
               </View>
             </View>
 
-            {/* Step progress dots */}
-            <View style={{ flexDirection: 'row', gap: 6, paddingHorizontal: 20, paddingTop: 10 }}>
-              {STEPS.map((s, i) => (
-                <View key={s} style={{
-                  flex: 1, height: 4, borderRadius: 2,
-                  backgroundColor: i <= stepIndex ? colors.teal : colors.border,
-                }} />
-              ))}
+            {/* Step progress — animated fill instead of an instant snap */}
+            <View style={{ paddingHorizontal: 20, paddingTop: 10 }}>
+              <StepProgressBar stepCount={STEPS.length} activeIndex={stepIndex} accentColor={colors.teal} trackColor={colors.border} />
             </View>
 
             <ScrollView keyboardShouldPersistTaps="always" onScrollBeginDrag={Keyboard.dismiss} showsVerticalScrollIndicator={false}
               contentContainerStyle={{ padding: 20, paddingBottom: 8, gap: 18 }}>
+              <StepTransition stepKey={step}>
 
               {step === 'basics' && (
                 <>
@@ -394,6 +392,7 @@ export default function AddVaxModal({ visible, onClose, onSave, members, colors,
                   </View>
                 </>
               )}
+              </StepTransition>
             </ScrollView>
 
             {/* Fixed footer — Back/Next through steps 1-2, Save on the last */}
